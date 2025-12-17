@@ -1,24 +1,74 @@
 # WidgetWeaver
 
-WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”). The widget extension renders the saved specs reliably, with validation and safe fallbacks.
+WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”). The widget extension renders the saved spec reliably from the App Group boundary, with normalisation/clamping and safe fallbacks.
 
 This repo is being built milestone-by-milestone with working commits.
 
 ---
 
-## Current status (v0.9.4)
+## Current status
 
 ✅ iOS app target created and runs on a real device  
 ✅ App icon set  
 ✅ Widget extension target added  
-✅ Widget now renders a saved spec (App Group storage + `WidgetSpecStore`)  
-✅ App UI can edit/save a basic spec and trigger widget reloads  
+✅ Widget renders a saved spec (App Group storage + `WidgetSpecStore`)  
+✅ App UI can edit/save a spec and trigger widget reloads  
+✅ WidgetSpec v0 tokens started (layout + style)  
+✅ Shared renderer parity (app previews + widget use the same render path)
 
 Next:
-- ⏭ Formalise WidgetSpec v0 (layout + style tokens)
-- ⏭ Manual editor for v0 components
-- ⏭ In-app preview parity with widget renderer
+- ⏭ Add v0 components beyond text (symbol/image/etc.)
+- ⏭ Multiple saved specs + per-widget instance selection
 - ⏭ Prompt → Spec generation (Foundation Models) with validation + repair
+- ⏭ Matched sets + variables (later)
+
+---
+
+## Quick start
+
+1. Open `WidgetWeaver.xcodeproj` in Xcode 26+.
+2. Ensure both targets have the App Group entitlement:
+   - `group.com.conornolan.widgetweaver`
+3. Run the app on a real device.
+4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
+5. In the app, edit the spec and tap **Save to Widget**. The widget reloads via:
+   - `WidgetCenter.shared.reloadTimelines(ofKind:)`
+
+---
+
+## Architecture
+
+### Targets
+
+- **WidgetWeaver** (iOS app)
+  - Create/edit/save `WidgetSpec`
+  - In-app previews (Small/Medium/Large)
+- **WidgetWeaverWidget** (Widget Extension)
+  - Reads the current spec from App Group storage
+  - Renders Small/Medium/Large
+
+### Shared boundary
+
+- App Group: `group.com.conornolan.widgetweaver`
+- Storage: `UserDefaults(suiteName:)` (JSON-encoded `WidgetSpec`) for v0.9.x simplicity
+- Safety:
+  - Load failures fall back to `WidgetSpec.defaultSpec()`
+  - Specs are normalised/clamped before save and after load
+
+---
+
+## WidgetSpec
+
+`WidgetSpec` is the contract between the app and the widget. It’s versioned and designed to be:
+- Strictly typed (Codable)
+- Easy to validate/repair
+- Deterministic to render
+
+### v0 (current direction)
+
+- Content: `name`, `primaryText`, optional `secondaryText`
+- Layout tokens: axis/alignment/spacing/line limits
+- Style tokens: padding/corner/background/accent/typography tokens
 
 ---
 
@@ -43,13 +93,12 @@ Next:
   - `WidgetCenter.shared.reloadTimelines(ofKind:)`
 - Update widget to load spec from store and render it
 
-### Milestone 3 — Manual editor + preview loop (NEXT)
+### Milestone 3 — Manual editor + preview loop (IN PROGRESS)
 - Expand WidgetSpec v0 to support:
-  - layout (stack/grid)
-  - basic components (text/symbol/image)
-  - style tokens (typography/spacing/corner/background/accent/contrast rules)
-- Add an in-app editor for those fields
-- Add an in-app preview that uses the same renderer logic as the widget
+  - layout tokens
+  - style tokens
+  - (components next)
+- Keep an in-app preview that matches the widget renderer
 
 ### Milestone 4 — Prompt → WidgetSpec generation (NEXT)
 - Define a constrained generation contract (“generate WidgetSpec v0”)
@@ -84,31 +133,9 @@ Next:
 
 ---
 
-## Architecture
-
-### Targets
-- **WidgetWeaver** (iOS app)
-  - Create/edit/save WidgetSpec
-  - Preview specs
-  - Prompt → spec generation (later)
-- **WidgetWeaverWidget** (Widget Extension)
-  - Reads the current spec from App Group storage
-  - Renders Small/Medium/Large
-
-### Shared boundary
-- App Group: `group.com.conornolan.widgetweaver`
-- Storage: `UserDefaults(suiteName:)` for v0.9.x simplicity
-- Safety:
-  - load failures fall back to `WidgetSpec.defaultSpec()`
-  - values are normalised/clamped before save and after load
-
----
-
 ## Repo notes
 
-- Versioning:
-  - Marketing version: `0.9.4`
-  - Build number: tracked via Xcode build settings
-  - Widget extension Info.plist references `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)` for consistency.
+- Marketing version: `0.9.4`
+- Widget kind string lives in `Shared/WidgetWeaverWidgetKinds.swift`
 - Working principle:
   - ship small commits where the app + widget always build and run.
