@@ -32,64 +32,10 @@ struct WidgetWeaverProvider: TimelineProvider {
 
 struct WidgetWeaverWidgetView: View {
     let entry: WidgetWeaverEntry
-
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(entry.spec.name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Text(entry.spec.primaryText)
-                .font(primaryFont)
-                .foregroundStyle(.primary)
-                .lineLimit(primaryLineLimit)
-
-            if let secondary = entry.spec.secondaryText, showSecondary {
-                Text(secondary)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .containerBackground(.fill.tertiary, for: .widget)
-        .padding(12)
-    }
-
-    private var showSecondary: Bool {
-        switch family {
-        case .systemSmall:
-            return false
-        default:
-            return true
-        }
-    }
-
-    private var primaryFont: Font {
-        switch family {
-        case .systemSmall:
-            return .headline
-        case .systemMedium:
-            return .title3
-        case .systemLarge:
-            return .title2
-        default:
-            return .headline
-        }
-    }
-
-    private var primaryLineLimit: Int {
-        switch family {
-        case .systemSmall:
-            return 2
-        default:
-            return 3
-        }
+        WidgetWeaverSpecView(spec: entry.spec, family: family, context: .widget)
     }
 }
 

@@ -1,12 +1,12 @@
 # WidgetWeaver
 
-WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”). The widget extension renders the saved spec reliably from the App Group boundary, with normalisation/clamping and safe fallbacks.
+WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”). The widget extension renders the saved spec from the App Group boundary, with normalisation/clamping and safe fallbacks.
 
 This repo is being built milestone-by-milestone with working commits.
 
 ---
 
-## Current status
+## Current status (v0.9.4)
 
 ✅ iOS app target created and runs on a real device  
 ✅ App icon set  
@@ -20,7 +20,7 @@ Next:
 - ⏭ Add v0 components beyond text (symbol/image/etc.)
 - ⏭ Multiple saved specs + per-widget instance selection
 - ⏭ Prompt → Spec generation (Foundation Models) with validation + repair
-- ⏭ Matched sets + variables (later)
+- ⏭ “Patch edits” (e.g. “more minimal”) against an existing spec
 
 ---
 
@@ -31,8 +31,7 @@ Next:
    - `group.com.conornolan.widgetweaver`
 3. Run the app on a real device.
 4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
-5. In the app, edit the spec and tap **Save to Widget**. The widget reloads via:
-   - `WidgetCenter.shared.reloadTimelines(ofKind:)`
+5. In the app, edit the spec and tap **Save to Widget** (the widget reloads).
 
 ---
 
@@ -41,7 +40,7 @@ Next:
 ### Targets
 
 - **WidgetWeaver** (iOS app)
-  - Create/edit/save `WidgetSpec`
+  - Create/edit/save a `WidgetSpec`
   - In-app previews (Small/Medium/Large)
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads the current spec from App Group storage
@@ -69,6 +68,7 @@ Next:
 - Content: `name`, `primaryText`, optional `secondaryText`
 - Layout tokens: axis/alignment/spacing/line limits
 - Style tokens: padding/corner/background/accent/typography tokens
+- Shared renderer: a single SwiftUI view that both the app previews and the widget render through
 
 ---
 
@@ -97,12 +97,11 @@ Next:
 - Expand WidgetSpec v0 to support:
   - layout tokens
   - style tokens
-  - (components next)
-- Keep an in-app preview that matches the widget renderer
+- Add an in-app editor for those fields
+- Add an in-app preview that uses the same renderer logic as the widget
 
 ### Milestone 4 — Prompt → WidgetSpec generation (NEXT)
 - Define a constrained generation contract (“generate WidgetSpec v0”)
-- Use structured generation into typed models when available
 - Always run validation/clamping/repair at the boundary
 - Deterministic fallback when model unavailable (templates/rules)
 - Add “patch edits” (small diffs) like:
@@ -122,7 +121,6 @@ Next:
 
 ### Milestone 7 — Sharing / import / export (LATER)
 - Export/import specs (validated, versioned)
-- Optional QR export later
 
 ### Milestone 8 — Monetisation (LATER)
 - Free tier limits
@@ -136,6 +134,6 @@ Next:
 ## Repo notes
 
 - Marketing version: `0.9.4`
-- Widget kind string lives in `Shared/WidgetWeaverWidgetKinds.swift`
+- Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - Working principle:
-  - ship small commits where the app + widget always build and run.
+  - ship small commits where the app + widget always build and run
