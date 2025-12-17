@@ -1,24 +1,26 @@
 # WidgetWeaver
 
-WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”).
+WidgetWeaver is an iOS 26 app for building WidgetKit widgets from a **typed widget specification** (“WidgetSpec”).
+
+Right now the spec is edited manually in-app. Natural-language → spec generation is planned as a later milestone.
 
 The widget extension renders a selected saved spec from the App Group boundary, with normalisation/clamping and safe fallbacks. This repo is being built milestone-by-milestone with working commits.
 
 ---
 
-## Current status (v0.9.5)
+## Current status (0.9.4 (1))
 
 ✅ iOS app target created and runs on a real device  
-✅ App icon set  
-✅ Widget extension target added  
-✅ Shared `WidgetSpec` v0 tokens started (layout + style)  
+✅ Widget extension target added and shows in the widget gallery  
+✅ Shared `WidgetSpec` tokens (layout + style)  
 ✅ Shared renderer parity (app previews + widget use the same render path)  
 ✅ App can edit and save specs into the App Group store  
-✅ Multiple saved specs (library)  
-✅ Per-widget instance selection (Edit Widget → choose a saved design)
+✅ Multiple saved specs (design library)  
+✅ Per-widget instance selection (Edit Widget → choose a saved design)  
+✅ SF Symbol component (optional) with placement + size + weight + rendering + tint
 
 Next:
-- ⏭ Add v0 components beyond text (symbol/image/etc.)
+- ⏭ Add v0 components beyond text + symbol (image, etc.)
 - ⏭ Prompt → Spec generation (Foundation Models) with validation + repair
 - ⏭ “Patch edits” (e.g. “more minimal”) against an existing spec
 - ⏭ Matched sets (Small/Medium/Large) + design system tokens
@@ -36,6 +38,8 @@ Next:
 5. In the app, create/edit a design and tap **Save to Widget**.
 6. To choose a design per widget instance:
    - Long-press the widget → **Edit Widget** → select a **Design**
+7. To show an icon:
+   - In the app, fill **Symbol → SF Symbol name** (for example: `sparkles`)
 
 ---
 
@@ -70,14 +74,20 @@ Next:
 - Easy to validate/repair
 - Deterministic to render
 
-### v0 (current direction)
+### v0 components (current direction)
 
-- Content:
+- Text:
   - `name`, `primaryText`, optional `secondaryText`
+- Symbol (optional):
+  - SF Symbol name string
+  - placement (above/before name)
+  - size + weight
+  - rendering mode (monochrome / hierarchical / multicolour)
+  - tint (accent / primary / secondary)
 - Layout tokens:
   - axis / alignment / spacing / line limits
 - Style tokens:
-  - padding / corner / background / accent / typography tokens
+  - padding / corner radius / background / accent / typography tokens
 - Shared renderer:
   - a single SwiftUI view that both the app previews and the widget render through
 
@@ -115,6 +125,11 @@ Next:
 - Store multiple specs in the App Group store
 - Choose a saved spec per widget instance (Edit Widget → Design)
 
+### Milestone 3.6 — Symbol component (DONE)
+- Add optional `SymbolSpec` to `WidgetSpec`
+- Expose symbol controls in the editor
+- Render symbols in both previews and widget (shared renderer)
+
 ### Milestone 4 — Prompt → WidgetSpec generation (NEXT)
 - Define a constrained generation contract (“generate WidgetSpec v0”)
 - Always run validation/clamping/repair at the boundary
@@ -148,7 +163,7 @@ Next:
 
 ## Repo notes
 
-- Marketing version: `0.9.5`
+- Marketing version / build: `0.9.4 (1)` (stays fixed until TestFlight starts)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - Working principle:
   - ship small commits where the app + widget always build and run
