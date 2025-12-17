@@ -14,6 +14,10 @@ struct WidgetWeaverEntry: TimelineEntry {
     let spec: WidgetSpec
 }
 
+private enum WidgetWeaverSpecEntityIDs {
+    static let appDefault = "default"
+}
+
 // MARK: - AppEntity for selecting a saved spec
 
 struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
@@ -34,21 +38,27 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
         let byID = Dictionary(uniqueKeysWithValues: specs.map { ($0.id.uuidString, $0) })
 
         return identifiers.compactMap { id in
+            if id == WidgetWeaverSpecEntityIDs.appDefault {
+                return WidgetWeaverSpecEntity(id: id, name: "Default (App)")
+            }
             guard let spec = byID[id] else { return nil }
             return WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name)
         }
     }
 
     func suggestedEntities() async throws -> [WidgetWeaverSpecEntity] {
-        WidgetSpecStore.shared
+        let defaultEntity = WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
+
+        let saved = WidgetSpecStore.shared
             .loadAll()
             .sorted { $0.updatedAt > $1.updatedAt }
             .map { WidgetWeaverSpecEntity(id: $0.id.uuidString, name: $0.name) }
+
+        return [defaultEntity] + saved
     }
 
     func defaultResult() async -> WidgetWeaverSpecEntity? {
-        let spec = WidgetSpecStore.shared.loadDefault()
-        return WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name)
+        WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
     }
 }
 
@@ -89,6 +99,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let store = WidgetSpecStore.shared
 
         guard let idString = configuration.spec?.id,
+              idString != WidgetWeaverSpecEntityIDs.appDefault,
               let id = UUID(uuidString: idString),
               let spec = store.load(id: id) else {
             return store.loadDefault()

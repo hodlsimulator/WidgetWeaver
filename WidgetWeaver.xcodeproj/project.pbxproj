@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
+		2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
+		4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
+		5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
+		68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
+		6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
+		745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
+		7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
+		8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
 		E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676902EF232180098B095 /* WidgetKit.framework */; };
 		E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676922EF232180098B095 /* SwiftUI.framework */; };
 		E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -18,6 +27,9 @@
 		E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
 		E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
 		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
+		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
+		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
+		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,15 +57,20 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Symbol.swift"; sourceTree = "<group>"; };
+		28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSpecView.swift; sourceTree = "<group>"; };
+		77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Utilities.swift"; sourceTree = "<group>"; };
+		C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Image.swift"; sourceTree = "<group>"; };
+		CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Style.swift"; sourceTree = "<group>"; };
 		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetWeaverWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E18676902EF232180098B095 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		E18676922EF232180098B095 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		E18676A42EF23F800098B095 /* WidgetWeaverWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WidgetWeaverWidgetExtension.entitlements; sourceTree = "<group>"; };
 		E18676A72EF240A70098B095 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
 		E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetKinds.swift; sourceTree = "<group>"; };
 		E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
 		E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
+		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -104,23 +121,22 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */,
 				E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */,
+				E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		E186766F2EF227C20098B095 = {
+		E186766E2EF227C20098B095 = {
 			isa = PBXGroup;
 			children = (
-				E18676A62EF240690098B095 /* Shared */,
-				E18676A42EF23F800098B095 /* WidgetWeaverWidgetExtension.entitlements */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
-				E186768F2EF232180098B095 /* Frameworks */,
+				E18676A62EF240690098B095 /* Shared */,
 				E18676792EF227C30098B095 /* Products */,
+				E186768F2EF232180098B095 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -148,6 +164,12 @@
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
 				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
 				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
+				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
+				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
+				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
+				F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */,
+				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
+				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
 			);
 			path = Shared;
@@ -174,15 +196,13 @@
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 			);
 			name = WidgetWeaver;
-			packageProductDependencies = (
-			);
 			productName = WidgetWeaver;
 			productReference = E18676782EF227C30098B095 /* WidgetWeaver.app */;
 			productType = "com.apple.product-type.application";
 		};
 		E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = E186769F2EF2321A0098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */;
+			buildConfigurationList = E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */;
 			buildPhases = (
 				E186768A2EF232180098B095 /* Sources */,
 				E186768B2EF232180098B095 /* Frameworks */,
@@ -196,8 +216,6 @@
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
 			);
 			name = WidgetWeaverWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = WidgetWeaverWidgetExtension;
 			productReference = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -208,15 +226,15 @@
 		E18676702EF227C20098B095 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					E18676772EF227C30098B095 = {
-						CreatedOnToolsVersion = 26.0;
+						CreatedOnToolsVersion = 16.2;
 					};
 					E186768D2EF232180098B095 = {
-						CreatedOnToolsVersion = 26.0;
+						CreatedOnToolsVersion = 16.2;
 					};
 				};
 			};
@@ -227,8 +245,7 @@
 				en,
 				Base,
 			);
-			mainGroup = E186766F2EF227C20098B095;
-			minimizedProjectReferenceProxies = 1;
+			mainGroup = E186766E2EF227C20098B095;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E18676792EF227C30098B095 /* Products */;
 			projectDirPath = "";
@@ -264,6 +281,12 @@
 			files = (
 				E18676A82EF240B30098B095 /* AppGroup.swift in Sources */,
 				E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+				F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */,
+				21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
+				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
+				FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
+				7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */,
+				68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */,
 				E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */,
 				E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 			);
@@ -275,6 +298,12 @@
 			files = (
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
+				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
+				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
+				5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
+				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
+				4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
 				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
 				E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 			);
@@ -291,6 +320,56 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		E1785D0C2EF341EF00F7D707 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MARKETING_VERSION = 0.9.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
+				PRODUCT_NAME = WidgetWeaver;
+			};
+			name = Debug;
+		};
+		E1785D0D2EF341EF00F7D707 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MARKETING_VERSION = 0.9.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
+				PRODUCT_NAME = WidgetWeaver;
+			};
+			name = Release;
+		};
+		E1785D0E2EF341EF00F7D707 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MARKETING_VERSION = 0.9.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
+				PRODUCT_NAME = WidgetWeaverWidgetExtension;
+			};
+			name = Debug;
+		};
+		E1785D0F2EF341EF00F7D707 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MARKETING_VERSION = 0.9.4;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
+				PRODUCT_NAME = WidgetWeaverWidgetExtension;
+			};
+			name = Release;
+		};
 		E18676812EF227C80098B095 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -345,12 +424,15 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -403,140 +485,15 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		E18676842EF227C80098B095 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		E18676852EF227C80098B095 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		E18676A02EF2321A0098B095 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = WidgetWeaverWidget;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		E18676A12EF2321A0098B095 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = WidgetWeaverWidget;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -555,17 +512,17 @@
 		E18676832EF227C80098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaver" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				E18676842EF227C80098B095 /* Debug */,
-				E18676852EF227C80098B095 /* Release */,
+				E1785D0C2EF341EF00F7D707 /* Debug */,
+				E1785D0D2EF341EF00F7D707 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		E186769F2EF2321A0098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */ = {
+		E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				E18676A02EF2321A0098B095 /* Debug */,
-				E18676A12EF2321A0098B095 /* Release */,
+				E1785D0E2EF341EF00F7D707 /* Debug */,
+				E1785D0F2EF341EF00F7D707 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

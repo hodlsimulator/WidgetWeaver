@@ -3,7 +3,7 @@
 WidgetWeaver is an iOS 26 app for building WidgetKit widgets from a **typed widget specification** (“WidgetSpec”).
 
 - The iOS app creates/edits/saves widget designs (specs).
-- The Widget Extension reads a selected saved spec via the App Group boundary and renders it.
+- The Widget Extension reads a selected spec via the App Group boundary and renders it.
 - Specs are always **normalised/clamped** and have safe fallbacks, so the widget never crashes on bad data.
 
 WidgetWeaver supports both:
@@ -12,7 +12,7 @@ WidgetWeaver supports both:
 
 ---
 
-## Current status (0.9.4 (1))
+## Current status (0.9.4 (2))
 
 ✅ iOS app target created and runs on a real device  
 ✅ Widget extension target added and shows in the widget gallery  
@@ -21,10 +21,11 @@ WidgetWeaver supports both:
 ✅ App can edit and save specs into the App Group store  
 ✅ Multiple saved specs (design library)  
 ✅ Per-widget instance selection (Edit Widget → choose a saved design)  
+✅ “Default (App)” selection supported (widget can follow the app’s current default design)  
 ✅ SF Symbol component (optional) with placement + size + weight + rendering + tint  
 ✅ Image component (optional) using PhotosPicker; image files are stored in the App Group container and referenced by filename in the spec  
 ✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
-✅ “Patch edits” (e.g. “more minimal”) against an existing spec, with deterministic fallback
+✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback
 
 Next:
 - ⏭ Matched sets (Small/Medium/Large) + design system tokens
@@ -42,6 +43,7 @@ Next:
 5. In the app, create/edit a design and tap **Save to Widget**.
 6. To choose a design per widget instance:
    - Long-press the widget → **Edit Widget** → select a **Design**
+   - If you want the widget to always follow the app’s current default design, select **Default (App)**.
 7. To show an icon (optional):
    - In the app, fill **Symbol → SF Symbol name** (for example: `sparkles`)
 8. To show an image (optional):
@@ -50,6 +52,7 @@ Next:
 Notes:
 - The photo picker does not require photo library permission prompts.
 - Picked images are saved into the App Group container so the widget can render them offline.
+- The app supports dismissing the keyboard by tapping outside inputs, plus a “Done” keyboard button.
 
 ---
 
@@ -58,6 +61,7 @@ Notes:
 WidgetWeaver can generate and edit designs from natural language using **Foundation Models** when available.
 
 ### Generate a new design
+
 - Use the **AI** section in the app
 - Enter a prompt like:
   - “minimal habit tracker, teal accent, no icon”
@@ -66,6 +70,7 @@ WidgetWeaver can generate and edit designs from natural language using **Foundat
 - Optionally toggle **Make generated design default**
 
 ### Patch an existing design
+
 Patch edits apply small changes to the current design, for example:
 - “more minimal”
 - “bigger title”
@@ -76,12 +81,14 @@ Patch edits apply small changes to the current design, for example:
 Tap **Apply Patch To Current Design**.
 
 ### Availability + fallbacks
+
 - If Apple Intelligence / Foundation Models are available, the app generates a constrained payload and maps it into `WidgetSpec`.
 - If unavailable (device not eligible, Apple Intelligence disabled, model not ready, etc.), WidgetWeaver still works:
   - New designs fall back to deterministic templates/rules
   - Patch edits fall back to deterministic rules
 
 ### Privacy
+
 - Prompt generation is designed to run on-device.
 - Images are never generated; images are picked by PhotosPicker and stored locally in the App Group container.
 
@@ -90,25 +97,30 @@ Tap **Apply Patch To Current Design**.
 ## Architecture
 
 ### Targets
+
 - **WidgetWeaver** (iOS app)
   - Create/edit/save a `WidgetSpec`
   - In-app previews (Small/Medium/Large)
   - Manage a library of saved designs
   - Pick an optional image for a design
   - Optional AI prompt/patch workflow
+
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
   - Renders Small/Medium/Large
-  - Uses per-instance configuration to select a saved design
+  - Uses per-instance configuration to select a saved design (or “Default (App)”)
   - Loads an optional image from the App Group container (by filename)
 
 ### Shared boundary
+
 - App Group: `group.com.conornolan.widgetweaver`
-- Storage (v0.9.x simplicity):
-  - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
-  - Images: files in the App Group container directory `WidgetWeaverImages/`
+
+Storage (v0.9.x simplicity):
+- Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
+- Images: files in the App Group container directory `WidgetWeaverImages/`
 
 ### Safety
+
 - Load failures fall back to `WidgetSpec.defaultSpec()`
 - Specs are normalised/clamped before save and after load
 - Missing image files simply render as “no image” (no crash)
@@ -117,33 +129,41 @@ Tap **Apply Patch To Current Design**.
 
 ## WidgetSpec
 
-`WidgetSpec` is the contract between the app and the widget.
-
-It’s versioned and designed to be:
+`WidgetSpec` is the contract between the app and the widget. It’s versioned and designed to be:
 - Strictly typed (Codable)
 - Easy to validate/repair
 - Deterministic to render
 
 ### v0 components (current direction)
+
 - Text:
   - `name`, `primaryText`, optional `secondaryText`
+
 - Symbol (optional):
   - SF Symbol name string
   - placement (above/before name)
   - size + weight
   - rendering mode (monochrome / hierarchical / multicolour)
   - tint (accent / primary / secondary)
+
 - Image (optional):
   - `fileName` (stored in App Group container)
   - `contentMode` (fill / fit)
   - `height` (clamped per family)
   - `cornerRadius`
+
 - Layout tokens:
   - axis / alignment / spacing / line limits
+
 - Style tokens:
   - padding / corner radius / background / accent / typography tokens
+
 - Shared renderer:
   - a single SwiftUI view that both the app previews and the widget render through
+
+### File layout (modularised)
+
+Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as the core spec type and the supporting pieces split into focused files (e.g. symbol/image/layout/style tokens and the shared renderer view).
 
 ---
 
@@ -223,22 +243,28 @@ It’s versioned and designed to be:
 
 ## Troubleshooting
 
-- Image not showing in the widget:
-  - Ensure you picked an image and then tapped **Save to Widget**.
-  - Ensure both targets have the App Group entitlement: `group.com.conornolan.widgetweaver`.
-  - If the app was reinstalled, previously saved specs may reference image filenames that no longer exist in the App Group container; remove/re-pick the image and save again.
-- Widget not updating:
-  - Tap **Save to Widget** again.
-  - Remove/re-add the widget after significant schema changes.
-- AI shows “Unavailable”:
-  - The app still works (deterministic fallbacks).
-  - If you want on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
+### Image not showing in the widget
+- Ensure you picked an image and then tapped **Save to Widget**.
+- Ensure both targets have the App Group entitlement: `group.com.conornolan.widgetweaver`.
+- If the app was reinstalled, previously saved specs may reference image filenames that no longer exist in the App Group container; remove/re-pick the image and save again.
+- If re-selecting the same photo seems to do nothing, pick a different photo once, then pick the original again, and save.
+
+### Widget not updating
+- Tap **Save to Widget** again.
+- Ensure the widget instance is set to either:
+  - **Default (App)** (recommended while iterating), or
+  - the specific saved design you’re editing
+- Remove/re-add the widget after significant schema changes.
+
+### AI shows “Unavailable”
+- The app still works (deterministic fallbacks).
+- If you want on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
 
 ---
 
 ## Repo notes
 
-- Marketing version / build: `0.9.4 (1)` (stays fixed until TestFlight starts)
+- Marketing version / build: `0.9.4 (2)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - Working principle:
   - ship small commits where the app + widget always build and run

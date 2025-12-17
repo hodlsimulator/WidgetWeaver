@@ -11,48 +11,56 @@ import PhotosUI
 import UIKit
 
 struct ContentView: View {
-
     @State private var savedSpecs: [WidgetSpec] = []
-    @State private var selectedSpecID: UUID = UUID()
     @State private var defaultSpecID: UUID?
 
-    @State private var name: String = ""
-    @State private var primaryText: String = ""
+    @State private var selectedSpecID: UUID = UUID()
+
+    // Draft fields (manual editor)
+    @State private var name: String = "WidgetWeaver"
+    @State private var primaryText: String = "Hello"
     @State private var secondaryText: String = ""
 
-    @State private var symbolName: String = ""
+    @State private var symbolName: String = "sparkles"
     @State private var symbolPlacement: SymbolPlacementToken = .beforeName
     @State private var symbolSize: Double = 18
     @State private var symbolWeight: SymbolWeightToken = .semibold
     @State private var symbolRenderingMode: SymbolRenderingModeToken = .hierarchical
     @State private var symbolTint: SymbolTintToken = .accent
 
-    @State private var pickedPhoto: PhotosPickerItem?
     @State private var imageFileName: String = ""
     @State private var imageContentMode: ImageContentModeToken = .fill
-    @State private var imageHeight: Double = 90
-    @State private var imageCornerRadius: Double = 14
+    @State private var imageHeight: Double = 120
+    @State private var imageCornerRadius: Double = 16
 
-    @State private var axis: LayoutAxisToken = LayoutSpec.defaultLayout.axis
-    @State private var alignment: LayoutAlignmentToken = LayoutSpec.defaultLayout.alignment
-    @State private var spacing: Double = LayoutSpec.defaultLayout.spacing
-    @State private var showSecondaryInSmall: Bool = LayoutSpec.defaultLayout.showSecondaryInSmall
+    @State private var axis: LayoutAxisToken = .vertical
+    @State private var alignment: LayoutAlignmentToken = .leading
+    @State private var spacing: Double = 8
 
-    @State private var padding: Double = StyleSpec.defaultStyle.padding
-    @State private var cornerRadius: Double = StyleSpec.defaultStyle.cornerRadius
-    @State private var background: BackgroundToken = StyleSpec.defaultStyle.background
-    @State private var accent: AccentToken = StyleSpec.defaultStyle.accent
-    @State private var primaryTextStyle: TextStyleToken = StyleSpec.defaultStyle.primaryTextStyle
-    @State private var secondaryTextStyle: TextStyleToken = StyleSpec.defaultStyle.secondaryTextStyle
+    @State private var primaryLineLimitSmall: Int = 1
+    @State private var primaryLineLimit: Int = 2
+    @State private var secondaryLineLimit: Int = 2
 
-    @State private var lastSavedAt: Date?
+    @State private var padding: Double = 16
+    @State private var cornerRadius: Double = 20
+    @State private var background: BackgroundToken = .accentGlow
+    @State private var accent: AccentToken = .blue
+
+    @State private var nameTextStyle: TextStyleToken = .caption
+    @State private var primaryTextStyle: TextStyleToken = .headline
+    @State private var secondaryTextStyle: TextStyleToken = .caption2
+
+    // Photos picker
+    @State private var pickedPhoto: PhotosPickerItem?
 
     // AI
     @State private var aiPrompt: String = ""
-    @State private var aiPatchInstruction: String = ""
     @State private var aiMakeGeneratedDefault: Bool = true
-    @State private var aiIsWorking: Bool = false
-    @State private var aiStatusMessage: String?
+    @State private var aiPatchInstruction: String = ""
+    @State private var aiStatusMessage: String = ""
+
+    // Status
+    @State private var lastSavedAt: Date?
 
     private let store = WidgetSpecStore.shared
 
@@ -60,17 +68,28 @@ struct ContentView: View {
         NavigationStack {
             Form {
                 savedDesignsSection
-                aiSection
-                specSection
+                textSection
                 symbolSection
                 imageSection
                 layoutSection
                 styleSection
+                typographySection
+                aiSection
                 previewSection
                 actionsSection
                 statusSection
             }
             .navigationTitle("WidgetWeaver")
+            .scrollDismissesKeyboard(.interactively)
+            .background(KeyboardDismissOnTap())
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        Keyboard.dismiss()
+                    }
+                }
+            }
             .onAppear {
                 bootstrap()
             }
@@ -89,7 +108,7 @@ struct ContentView: View {
     private var savedDesignsSection: some View {
         Section("Saved Designs") {
             if savedSpecs.isEmpty {
-                Text("No saved designs found.")
+                Text("No saved designs yet.")
                     .foregroundStyle(.secondary)
             } else {
                 Picker("Design", selection: $selectedSpecID) {
@@ -99,78 +118,17 @@ struct ContentView: View {
                             .tag(spec.id)
                     }
                 }
-
-                Button("New Design (Copy Current)") {
-                    createNewFromCurrentDraft()
-                }
-
-                Button("Make This Default") {
-                    makeSelectedDefault()
-                }
-                .disabled(savedSpecs.isEmpty)
-
-                Button("Delete Design", role: .destructive) {
-                    deleteSelected()
-                }
-                .disabled(savedSpecs.count <= 1)
             }
         }
     }
 
-    private var aiSection: some View {
-        Section("AI") {
-            Text(WidgetSpecAIService.availabilityMessage())
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            TextField(
-                "Describe a design (e.g., “minimal habit tracker, teal accent, no icon”)",
-                text: $aiPrompt,
-                axis: .vertical
-            )
-
-            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
-
-            Button {
-                Task { await generateNewDesignFromPrompt() }
-            } label: {
-                Label("Generate New Design", systemImage: "sparkles")
-            }
-            .disabled(aiIsWorking || aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Divider()
-
-            TextField(
-                "Patch instruction (e.g., “more minimal”, “bigger title”, “accent teal”, “remove image”)",
-                text: $aiPatchInstruction,
-                axis: .vertical
-            )
-
-            Button {
-                Task { await applyPatchToCurrentDesign() }
-            } label: {
-                Label("Apply Patch To Current Design", systemImage: "wand.and.stars")
-            }
-            .disabled(aiIsWorking || aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            if aiIsWorking {
-                ProgressView()
-            }
-
-            if let msg = aiStatusMessage, !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(msg)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var specSection: some View {
-        Section("Spec") {
-            TextField("Name", text: $name)
+    private var textSection: some View {
+        Section("Text") {
+            TextField("Design name", text: $name)
                 .textInputAutocapitalization(.words)
 
             TextField("Primary text", text: $primaryText)
+
             TextField("Secondary text (optional)", text: $secondaryText)
         }
     }
@@ -179,55 +137,37 @@ struct ContentView: View {
         Section("Symbol") {
             TextField("SF Symbol name (optional)", text: $symbolName)
                 .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .autocorrectionDisabled(true)
 
             Picker("Placement", selection: $symbolPlacement) {
                 ForEach(SymbolPlacementToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
+                }
+            }
+
+            HStack {
+                Text("Size")
+                Slider(value: $symbolSize, in: 8...96, step: 1)
+                Text("\(Int(symbolSize))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Weight", selection: $symbolWeight) {
+                ForEach(SymbolWeightToken.allCases) { token in
+                    Text(token.rawValue).tag(token)
                 }
             }
 
             Picker("Rendering", selection: $symbolRenderingMode) {
                 ForEach(SymbolRenderingModeToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
             Picker("Tint", selection: $symbolTint) {
                 ForEach(SymbolTintToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            Picker("Weight", selection: $symbolWeight) {
-                ForEach(SymbolWeightToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Size")
-                    Spacer()
-                    Text("\(Int(symbolSize))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $symbolSize, in: 8...96, step: 1)
-            }
-
-            if !symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                HStack(spacing: 10) {
-                    Text("Preview")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Image(systemName: symbolName.trimmingCharacters(in: .whitespacesAndNewlines))
-                        .symbolRenderingMode(symbolRenderingMode.swiftUISymbolRenderingMode)
-                        .font(.system(size: symbolSize, weight: symbolWeight.fontWeight))
-                        .foregroundStyle(
-                            symbolTint == .accent
-                            ? accent.swiftUIColor
-                            : (symbolTint == .primary ? Color.primary : Color.secondary)
-                        )
+                    Text(token.rawValue).tag(token)
                 }
             }
         }
@@ -235,61 +175,52 @@ struct ContentView: View {
 
     private var imageSection: some View {
         Section("Image") {
-            PhotosPicker(selection: $pickedPhoto, matching: .images) {
-                Label(
-                    imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? "Choose photo (optional)"
-                    : "Replace photo",
-                    systemImage: "photo"
-                )
+            PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
+                Label(imageFileName.isEmpty ? "Choose photo (optional)" : "Replace photo", systemImage: "photo")
             }
 
-            if let uiImage = AppGroup.loadUIImage(fileName: imageFileName) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Preview")
-                        .foregroundStyle(.secondary)
-
+            if !imageFileName.isEmpty {
+                if let uiImage = AppGroup.loadUIImage(fileName: imageFileName) {
                     Image(uiImage: uiImage)
                         .resizable()
-                        .aspectRatio(contentMode: imageContentMode.swiftUIContentMode)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 140)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous))
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                } else {
+                    Text("Selected image file not found in App Group.")
+                        .foregroundStyle(.secondary)
                 }
 
-                Button("Remove Image", role: .destructive) {
+                Picker("Content mode", selection: $imageContentMode) {
+                    ForEach(ImageContentModeToken.allCases) { token in
+                        Text(token.rawValue).tag(token)
+                    }
+                }
+
+                HStack {
+                    Text("Height")
+                    Slider(value: $imageHeight, in: 40...240, step: 1)
+                    Text("\(Int(imageHeight))")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Text("Corner radius")
+                    Slider(value: $imageCornerRadius, in: 0...44, step: 1)
+                    Text("\(Int(imageCornerRadius))")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(role: .destructive) {
                     imageFileName = ""
+                } label: {
+                    Text("Remove image")
                 }
             } else {
                 Text("No image selected.")
                     .foregroundStyle(.secondary)
-            }
-
-            Picker("Content mode", selection: $imageContentMode) {
-                ForEach(ImageContentModeToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Height")
-                    Spacer()
-                    Text("\(Int(imageHeight))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $imageHeight, in: 40...240, step: 1)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Corner radius")
-                    Spacer()
-                    Text("\(Int(imageCornerRadius))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $imageCornerRadius, in: 0...44, step: 1)
             }
         }
     }
@@ -298,100 +229,127 @@ struct ContentView: View {
         Section("Layout") {
             Picker("Axis", selection: $axis) {
                 ForEach(LayoutAxisToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
             Picker("Alignment", selection: $alignment) {
                 ForEach(LayoutAlignmentToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Spacing")
-                    Spacer()
-                    Text("\(Int(spacing))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $spacing, in: 0...24, step: 1)
+            HStack {
+                Text("Spacing")
+                Slider(value: $spacing, in: 0...32, step: 1)
+                Text("\(Int(spacing))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
 
-            Toggle("Show secondary in Small", isOn: $showSecondaryInSmall)
+            Stepper("Primary line limit (Small): \(primaryLineLimitSmall)", value: $primaryLineLimitSmall, in: 1...8)
+            Stepper("Primary line limit: \(primaryLineLimit)", value: $primaryLineLimit, in: 1...10)
+            Stepper("Secondary line limit: \(secondaryLineLimit)", value: $secondaryLineLimit, in: 1...10)
         }
     }
 
     private var styleSection: some View {
         Section("Style") {
+            HStack {
+                Text("Padding")
+                Slider(value: $padding, in: 0...32, step: 1)
+                Text("\(Int(padding))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Corner radius")
+                Slider(value: $cornerRadius, in: 0...44, step: 1)
+                Text("\(Int(cornerRadius))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
             Picker("Background", selection: $background) {
                 ForEach(BackgroundToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
             Picker("Accent", selection: $accent) {
                 ForEach(AccentToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Padding")
-                    Spacer()
-                    Text("\(Int(padding))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $padding, in: 0...24, step: 1)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Corner radius")
-                    Spacer()
-                    Text("\(Int(cornerRadius))")
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $cornerRadius, in: 0...44, step: 1)
-            }
-
-            Picker("Primary font", selection: $primaryTextStyle) {
+    private var typographySection: some View {
+        Section("Typography") {
+            Picker("Name text style", selection: $nameTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Secondary font", selection: $secondaryTextStyle) {
+            Picker("Primary text style", selection: $primaryTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
+            }
+
+            Picker("Secondary text style", selection: $secondaryTextStyle) {
+                ForEach(TextStyleToken.allCases) { token in
+                    Text(token.rawValue).tag(token)
+                }
+            }
+        }
+    }
+
+    private var aiSection: some View {
+        Section("AI") {
+            Text("Optional on-device generation/edits. Images are never generated.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            TextField("Prompt (new design)", text: $aiPrompt, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+
+            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+
+            Button("Generate New Design") {
+                Task { await generateNewDesignFromPrompt() }
+            }
+            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Divider()
+
+            TextField("Patch instruction (edit current design)", text: $aiPatchInstruction, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+
+            Button("Apply Patch To Current Design") {
+                Task { await applyPatchToCurrentDesign() }
+            }
+            .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if !aiStatusMessage.isEmpty {
+                Text(aiStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var previewSection: some View {
         Section("Preview") {
+            let spec = draftSpec(id: selectedSpecID)
+
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    PreviewTile(
-                        title: "Small",
-                        family: .systemSmall,
-                        spec: draftSpec(id: selectedSpecID),
-                        cornerRadius: cornerRadius
-                    )
-                    PreviewTile(
-                        title: "Medium",
-                        family: .systemMedium,
-                        spec: draftSpec(id: selectedSpecID),
-                        cornerRadius: cornerRadius
-                    )
-                    PreviewTile(
-                        title: "Large",
-                        family: .systemLarge,
-                        spec: draftSpec(id: selectedSpecID),
-                        cornerRadius: cornerRadius
-                    )
+                HStack(alignment: .top, spacing: 16) {
+                    PreviewTile(title: "Small", family: .systemSmall, spec: spec, cornerRadius: cornerRadius)
+                    PreviewTile(title: "Medium", family: .systemMedium, spec: spec, cornerRadius: cornerRadius)
+                    PreviewTile(title: "Large", family: .systemLarge, spec: spec, cornerRadius: cornerRadius)
                 }
                 .padding(.vertical, 4)
             }
@@ -399,19 +357,31 @@ struct ContentView: View {
     }
 
     private var actionsSection: some View {
-        Section {
+        Section("Actions") {
             Button("Save to Widget") {
                 saveSelected(makeDefault: true)
             }
-            .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Button("Reload From Store") {
+            Button("Save (do not change default)") {
+                saveSelected(makeDefault: false)
+            }
+
+            Button("Make This Default") {
+                store.setDefault(id: selectedSpecID)
+                defaultSpecID = selectedSpecID
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            }
+            .disabled(selectedSpecID == defaultSpecID)
+
+            Button(role: .destructive) {
+                store.delete(id: selectedSpecID)
+                refreshSavedSpecs(preservingSelection: false)
                 loadSelected()
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            } label: {
+                Text("Delete Design")
             }
-
-            Button("Reset Selected To Template", role: .destructive) {
-                resetSelectedToTemplate()
-            }
+            .disabled(savedSpecs.count <= 1)
         }
     }
 
@@ -490,19 +460,22 @@ struct ContentView: View {
         } else {
             imageFileName = ""
             imageContentMode = .fill
-            imageHeight = 90
-            imageCornerRadius = 14
+            imageHeight = 120
+            imageCornerRadius = 16
         }
 
         axis = n.layout.axis
         alignment = n.layout.alignment
         spacing = n.layout.spacing
-        showSecondaryInSmall = n.layout.showSecondaryInSmall
+        primaryLineLimitSmall = n.layout.primaryLineLimitSmall
+        primaryLineLimit = n.layout.primaryLineLimit
+        secondaryLineLimit = n.layout.secondaryLineLimit
 
         padding = n.style.padding
         cornerRadius = n.style.cornerRadius
         background = n.style.background
         accent = n.style.accent
+        nameTextStyle = n.style.nameTextStyle
         primaryTextStyle = n.style.primaryTextStyle
         secondaryTextStyle = n.style.secondaryTextStyle
 
@@ -510,36 +483,41 @@ struct ContentView: View {
     }
 
     private func draftSpec(id: UUID) -> WidgetSpec {
-        let trimmedSymbolName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let symbolSpec: SymbolSpec? = trimmedSymbolName.isEmpty
-        ? nil
-        : SymbolSpec(
-            name: trimmedSymbolName,
-            size: symbolSize,
-            weight: symbolWeight,
-            renderingMode: symbolRenderingMode,
-            tint: symbolTint,
-            placement: symbolPlacement
-        )
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let trimmedImageFileName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let imageSpec: ImageSpec? = trimmedImageFileName.isEmpty
-        ? nil
-        : ImageSpec(
-            fileName: trimmedImageFileName,
-            contentMode: imageContentMode,
-            height: imageHeight,
-            cornerRadius: imageCornerRadius
-        )
+        let symbolSpec: SymbolSpec? = {
+            let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !symName.isEmpty else { return nil }
+            return SymbolSpec(
+                name: symName,
+                size: symbolSize,
+                weight: symbolWeight,
+                renderingMode: symbolRenderingMode,
+                tint: symbolTint,
+                placement: symbolPlacement
+            )
+        }()
+
+        let imageSpec: ImageSpec? = {
+            let fn = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fn.isEmpty else { return nil }
+            return ImageSpec(
+                fileName: fn,
+                contentMode: imageContentMode,
+                height: imageHeight,
+                cornerRadius: imageCornerRadius
+            )
+        }()
 
         let layout = LayoutSpec(
             axis: axis,
             alignment: alignment,
             spacing: spacing,
-            showSecondaryInSmall: showSecondaryInSmall,
-            primaryLineLimitSmall: LayoutSpec.defaultLayout.primaryLineLimitSmall,
-            primaryLineLimit: LayoutSpec.defaultLayout.primaryLineLimit,
-            secondaryLineLimit: LayoutSpec.defaultLayout.secondaryLineLimit
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
         )
 
         let style = StyleSpec(
@@ -547,16 +525,16 @@ struct ContentView: View {
             cornerRadius: cornerRadius,
             background: background,
             accent: accent,
-            nameTextStyle: .caption,
+            nameTextStyle: nameTextStyle,
             primaryTextStyle: primaryTextStyle,
             secondaryTextStyle: secondaryTextStyle
         )
 
         return WidgetSpec(
             id: id,
-            name: name,
-            primaryText: primaryText,
-            secondaryText: secondaryText.isEmpty ? nil : secondaryText,
+            name: trimmedName.isEmpty ? "WidgetWeaver" : trimmedName,
+            primaryText: trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary,
+            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
             updatedAt: lastSavedAt ?? Date(),
             symbol: symbolSpec,
             image: imageSpec,
@@ -578,6 +556,7 @@ struct ContentView: View {
 
             await MainActor.run {
                 imageFileName = fileName
+                pickedPhoto = nil
             }
         } catch {
             // Intentionally ignored (image remains unchanged).
@@ -603,127 +582,52 @@ struct ContentView: View {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
 
-    private func createNewFromCurrentDraft() {
-        var spec = draftSpec(id: UUID())
-        spec.updatedAt = Date()
-
-        let trimmedName = spec.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedName.isEmpty {
-            spec.name = "New Design"
-        }
-
-        spec = spec.normalised()
-
-        store.save(spec, makeDefault: false)
-
-        refreshSavedSpecs(preservingSelection: false)
-        selectedSpecID = spec.id
-        applySpec(spec)
-
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-    }
-
-    private func makeSelectedDefault() {
-        store.setDefault(id: selectedSpecID)
-        defaultSpecID = selectedSpecID
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-    }
-
-    private func deleteSelected() {
-        store.delete(id: selectedSpecID)
-
-        let fallback = store.loadDefault()
-        refreshSavedSpecs(preservingSelection: false)
-
-        selectedSpecID = store.defaultSpecID() ?? fallback.id
-        applySpec(store.load(id: selectedSpecID) ?? fallback)
-
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-    }
-
-    private func resetSelectedToTemplate() {
-        let template = WidgetSpec.defaultSpec().normalised()
-        var spec = template
-        spec.id = selectedSpecID
-
-        let currentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !currentName.isEmpty {
-            spec.name = currentName
-        }
-
-        spec.updatedAt = Date()
-        spec = spec.normalised()
-
-        store.save(spec, makeDefault: true)
-        refreshSavedSpecs(preservingSelection: true)
-        applySpec(spec)
-
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-    }
-
-    // MARK: - AI actions
+    // MARK: - AI
 
     @MainActor
     private func generateNewDesignFromPrompt() async {
+        aiStatusMessage = ""
         let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
 
-        aiIsWorking = true
-        aiStatusMessage = nil
-        defer { aiIsWorking = false }
-
         let result = await WidgetSpecAIService.shared.generateNewSpec(from: prompt)
 
-        var spec = result.spec
+        var spec = result.spec.normalised()
         spec.updatedAt = Date()
-        spec = spec.normalised()
 
         store.save(spec, makeDefault: aiMakeGeneratedDefault)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
 
-        lastSavedAt = spec.updatedAt
+        aiStatusMessage = result.note
+        aiPrompt = ""
+
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
-
-        aiStatusMessage = result.usedModel ? result.note : "\(result.note) (Fallback)"
-        aiPrompt = ""
-
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
 
     @MainActor
     private func applyPatchToCurrentDesign() async {
+        aiStatusMessage = ""
         let instruction = aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else { return }
 
-        aiIsWorking = true
-        aiStatusMessage = nil
-        defer { aiIsWorking = false }
-
-        // Patch the current draft so unsaved edits are included.
         let base = draftSpec(id: selectedSpecID)
         let result = await WidgetSpecAIService.shared.applyPatch(to: base, instruction: instruction)
 
-        var patched = result.spec
-        patched.id = selectedSpecID
-        patched.updatedAt = Date()
-        patched = patched.normalised()
+        var spec = result.spec.normalised()
+        spec.updatedAt = Date()
 
-        let keepDefault = (defaultSpecID == selectedSpecID)
-        store.save(patched, makeDefault: keepDefault)
+        store.save(spec, makeDefault: (defaultSpecID == selectedSpecID))
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
 
-        lastSavedAt = patched.updatedAt
-        refreshSavedSpecs(preservingSelection: true)
-        applySpec(patched)
-
-        aiStatusMessage = result.usedModel ? result.note : "\(result.note) (Fallback)"
+        aiStatusMessage = result.note
         aiPatchInstruction = ""
 
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        refreshSavedSpecs(preservingSelection: true)
+        applySpec(spec)
     }
 }
-
-// MARK: - Preview tile
 
 private struct PreviewTile: View {
     let title: String
@@ -754,5 +658,105 @@ private struct PreviewTile: View {
         default:
             return CGSize(width: 170, height: 170)
         }
+    }
+}
+
+// MARK: - Keyboard
+
+private enum Keyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+
+private struct KeyboardDismissOnTap: UIViewRepresentable {
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero)
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard context.coordinator.gesture == nil else { return }
+
+        DispatchQueue.main.async {
+            guard context.coordinator.gesture == nil else { return }
+
+            let g = UITapGestureRecognizer(
+                target: context.coordinator,
+                action: #selector(Coordinator.handleTap)
+            )
+            g.cancelsTouchesInView = false
+            g.delegate = context.coordinator
+
+            if let window = uiView.window {
+                window.addGestureRecognizer(g)
+                context.coordinator.hostView = window
+                context.coordinator.gesture = g
+                return
+            }
+
+            if let superview = uiView.superview {
+                superview.addGestureRecognizer(g)
+                context.coordinator.hostView = superview
+                context.coordinator.gesture = g
+            }
+        }
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        if let gesture = coordinator.gesture, let host = coordinator.hostView {
+            host.removeGestureRecognizer(gesture)
+        }
+        coordinator.gesture = nil
+        coordinator.hostView = nil
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var hostView: UIView?
+        weak var gesture: UITapGestureRecognizer?
+
+        @objc func handleTap() {
+            Keyboard.dismiss()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = touch.view else { return true }
+
+            // Allow normal text editing gestures without dismissing.
+            if view is UITextField || view is UITextView {
+                return false
+            }
+
+            // SwiftUI sometimes wraps the underlying UIKit view.
+            // If the tap lands inside a UITextField/UITextView hierarchy, ignore it.
+            if view.isDescendant(ofType: UITextField.self) || view.isDescendant(ofType: UITextView.self) {
+                return false
+            }
+
+            return true
+        }
+    }
+}
+
+private extension UIView {
+    func isDescendant<T: UIView>(ofType type: T.Type) -> Bool {
+        var v: UIView? = self
+        while let current = v {
+            if current is T { return true }
+            v = current.superview
+        }
+        return false
     }
 }
