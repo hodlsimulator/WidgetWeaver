@@ -10,6 +10,14 @@
 		E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676902EF232180098B095 /* WidgetKit.framework */; };
 		E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676922EF232180098B095 /* SwiftUI.framework */; };
 		E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E18676A82EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
+		E18676A92EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
+		E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
+		E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
+		E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
+		E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
+		E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
+		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +49,11 @@
 		E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetWeaverWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E18676902EF232180098B095 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		E18676922EF232180098B095 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		E18676A42EF23F800098B095 /* WidgetWeaverWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WidgetWeaverWidgetExtension.entitlements; sourceTree = "<group>"; };
+		E18676A72EF240A70098B095 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
+		E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetKinds.swift; sourceTree = "<group>"; };
+		E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
+		E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -102,6 +115,8 @@
 		E186766F2EF227C20098B095 = {
 			isa = PBXGroup;
 			children = (
+				E18676A62EF240690098B095 /* Shared */,
+				E18676A42EF23F800098B095 /* WidgetWeaverWidgetExtension.entitlements */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
 				E186768F2EF232180098B095 /* Frameworks */,
@@ -125,6 +140,17 @@
 				E18676922EF232180098B095 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E18676A62EF240690098B095 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				E18676A72EF240A70098B095 /* AppGroup.swift */,
+				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
+				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
+				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -236,6 +262,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E18676A82EF240B30098B095 /* AppGroup.swift in Sources */,
+				E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+				E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */,
+				E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -243,6 +273,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
+				E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -383,6 +417,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92HEPEJ42Z;
@@ -415,6 +450,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92HEPEJ42Z;
@@ -447,6 +483,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92HEPEJ42Z;
@@ -477,6 +514,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 92HEPEJ42Z;

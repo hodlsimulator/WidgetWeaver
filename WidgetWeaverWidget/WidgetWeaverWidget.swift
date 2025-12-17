@@ -8,77 +8,106 @@
 import WidgetKit
 import SwiftUI
 
-struct Provider: TimelineProvider {
-    func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), emoji: "😀")
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), emoji: "😀")
-        completion(entry)
-    }
-
-    func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> ()) {
-        var entries: [SimpleEntry] = []
-
-        // Generate a timeline consisting of five entries an hour apart, starting from the current date.
-        let currentDate = Date()
-        for hourOffset in 0 ..< 5 {
-            let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate)!
-            let entry = SimpleEntry(date: entryDate, emoji: "😀")
-            entries.append(entry)
-        }
-
-        let timeline = Timeline(entries: entries, policy: .atEnd)
-        completion(timeline)
-    }
-
-//    func relevances() async -> WidgetRelevances<Void> {
-//        // Generate a list containing the contexts this widget is relevant in.
-//    }
-}
-
-struct SimpleEntry: TimelineEntry {
+struct WidgetWeaverEntry: TimelineEntry {
     let date: Date
-    let emoji: String
+    let spec: WidgetSpec
 }
 
-struct WidgetWeaverWidgetEntryView : View {
-    var entry: Provider.Entry
+struct WidgetWeaverProvider: TimelineProvider {
+    func placeholder(in context: Context) -> WidgetWeaverEntry {
+        WidgetWeaverEntry(date: Date(), spec: .defaultSpec())
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (WidgetWeaverEntry) -> Void) {
+        let spec = WidgetSpecStore.shared.load()
+        completion(WidgetWeaverEntry(date: Date(), spec: spec))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetWeaverEntry>) -> Void) {
+        let spec = WidgetSpecStore.shared.load()
+        let entry = WidgetWeaverEntry(date: Date(), spec: spec)
+        completion(Timeline(entries: [entry], policy: .never))
+    }
+}
+
+struct WidgetWeaverWidgetView: View {
+    let entry: WidgetWeaverEntry
+
+    @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        VStack {
-            Text("Time:")
-            Text(entry.date, style: .time)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(entry.spec.name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
-            Text("Emoji:")
-            Text(entry.emoji)
+            Text(entry.spec.primaryText)
+                .font(primaryFont)
+                .foregroundStyle(.primary)
+                .lineLimit(primaryLineLimit)
+
+            if let secondary = entry.spec.secondaryText, showSecondary {
+                Text(secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .containerBackground(.fill.tertiary, for: .widget)
+        .padding(12)
+    }
+
+    private var showSecondary: Bool {
+        switch family {
+        case .systemSmall:
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var primaryFont: Font {
+        switch family {
+        case .systemSmall:
+            return .headline
+        case .systemMedium:
+            return .title3
+        case .systemLarge:
+            return .title2
+        default:
+            return .headline
+        }
+    }
+
+    private var primaryLineLimit: Int {
+        switch family {
+        case .systemSmall:
+            return 2
+        default:
+            return 3
         }
     }
 }
 
 struct WidgetWeaverWidget: Widget {
-    let kind: String = "WidgetWeaverWidget"
+    let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            if #available(iOS 17.0, *) {
-                WidgetWeaverWidgetEntryView(entry: entry)
-                    .containerBackground(.fill.tertiary, for: .widget)
-            } else {
-                WidgetWeaverWidgetEntryView(entry: entry)
-                    .padding()
-                    .background()
-            }
+        StaticConfiguration(kind: kind, provider: WidgetWeaverProvider()) { entry in
+            WidgetWeaverWidgetView(entry: entry)
         }
-        .configurationDisplayName("My Widget")
-        .description("This is an example widget.")
+        .configurationDisplayName("WidgetWeaver")
+        .description("Renders the latest saved WidgetWeaver spec.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
 #Preview(as: .systemSmall) {
     WidgetWeaverWidget()
 } timeline: {
-    SimpleEntry(date: .now, emoji: "😀")
-    SimpleEntry(date: .now, emoji: "🤩")
+    WidgetWeaverEntry(date: .now, spec: .defaultSpec())
 }
