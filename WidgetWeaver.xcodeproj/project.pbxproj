@@ -361,6 +361,7 @@
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
                 INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
+                INFOPLIST_OUTPUT_FORMAT = xml;
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
@@ -376,6 +377,7 @@
 				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
                 INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
+                INFOPLIST_OUTPUT_FORMAT = xml;
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
