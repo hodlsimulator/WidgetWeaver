@@ -8,7 +8,7 @@
 import Foundation
 import FoundationModels
 
-struct WidgetSpecAIGenerationResult: Sendable {
+struct WidgetSpecAIGenerationResult {
     let spec: WidgetSpec
     let usedModel: Bool
     let note: String
@@ -32,19 +32,12 @@ struct WidgetSpecGenerationPayload {
 
     @Guide(
         description: "Overall alignment.",
-        .anyOf([
-            "topLeading", "top", "topTrailing",
-            "leading", "center", "trailing",
-            "bottomLeading", "bottom", "bottomTrailing"
-        ])
+        .anyOf(["leading", "center", "trailing"])
     )
     var alignment: String
 
     @Guide(description: "Spacing between elements (points).", .range(0.0...24.0))
     var spacing: Double
-
-    @Guide(description: "Show secondary text in Small widgets.")
-    var showSecondaryInSmall: Bool
 
     @Guide(description: "Padding around content (points).", .range(0.0...24.0))
     var padding: Double
@@ -54,25 +47,25 @@ struct WidgetSpecGenerationPayload {
 
     @Guide(
         description: "Background token.",
-        .anyOf(["fillSecondary", "fillTertiary", "fillQuaternary", "accent", "clear"])
+        .anyOf(["plain", "accentGlow", "subtleMaterial"])
     )
     var background: String
 
     @Guide(
         description: "Accent colour token.",
-        .anyOf(["auto", "blue", "teal", "mint", "green", "yellow", "orange", "red", "pink", "purple", "indigo", "brown", "gray"])
+        .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray"])
     )
     var accent: String
 
     @Guide(
         description: "Primary font token.",
-        .anyOf(["auto", "largeTitle", "title", "title2", "title3", "headline", "subheadline", "body", "callout", "footnote", "caption", "caption2"])
+        .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
     )
     var primaryTextStyle: String
 
     @Guide(
         description: "Secondary font token.",
-        .anyOf(["auto", "largeTitle", "title", "title2", "title3", "headline", "subheadline", "body", "callout", "footnote", "caption", "caption2"])
+        .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
     )
     var secondaryTextStyle: String
 
@@ -114,19 +107,12 @@ struct WidgetSpecPatchPayload {
 
     @Guide(
         description: "Optional alignment override.",
-        .anyOf([
-            "topLeading", "top", "topTrailing",
-            "leading", "center", "trailing",
-            "bottomLeading", "bottom", "bottomTrailing"
-        ])
+        .anyOf(["leading", "center", "trailing"])
     )
     var alignment: String?
 
     @Guide(description: "Optional spacing override (points).", .range(0.0...24.0))
     var spacing: Double?
-
-    @Guide(description: "Optional show-secondary-in-small override.")
-    var showSecondaryInSmall: Bool?
 
     @Guide(description: "Optional primary line limit in Small.", .range(1...8))
     var primaryLineLimitSmall: Int?
@@ -143,16 +129,16 @@ struct WidgetSpecPatchPayload {
     @Guide(description: "Optional corner radius override (points).", .range(0.0...44.0))
     var cornerRadius: Double?
 
-    @Guide(description: "Optional background token.", .anyOf(["fillSecondary", "fillTertiary", "fillQuaternary", "accent", "clear"]))
+    @Guide(description: "Optional background token.", .anyOf(["plain", "accentGlow", "subtleMaterial"]))
     var background: String?
 
-    @Guide(description: "Optional accent token.", .anyOf(["auto", "blue", "teal", "mint", "green", "yellow", "orange", "red", "pink", "purple", "indigo", "brown", "gray"]))
+    @Guide(description: "Optional accent token.", .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray"]))
     var accent: String?
 
-    @Guide(description: "Optional primary font token.", .anyOf(["auto", "largeTitle", "title", "title2", "title3", "headline", "subheadline", "body", "callout", "footnote", "caption", "caption2"]))
+    @Guide(description: "Optional primary font token.", .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
     var primaryTextStyle: String?
 
-    @Guide(description: "Optional secondary font token.", .anyOf(["auto", "largeTitle", "title", "title2", "title3", "headline", "subheadline", "body", "callout", "footnote", "caption", "caption2"]))
+    @Guide(description: "Optional secondary font token.", .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
     var secondaryTextStyle: String?
 
     @Guide(description: "Set true to remove the symbol.")
@@ -365,7 +351,7 @@ private extension WidgetSpecAIService {
         secondaryText: \(s.secondaryText ?? "none")
         symbol: \(symbolSummary)
         image: \(imageSummary)
-        layout: axis=\(s.layout.axis.rawValue), alignment=\(s.layout.alignment.rawValue), spacing=\(Int(s.layout.spacing)), showSecondaryInSmall=\(s.layout.showSecondaryInSmall), primaryLineLimitSmall=\(s.layout.primaryLineLimitSmall), primaryLineLimit=\(s.layout.primaryLineLimit), secondaryLineLimit=\(s.layout.secondaryLineLimit)
+        layout: axis=\(s.layout.axis.rawValue), alignment=\(s.layout.alignment.rawValue), spacing=\(Int(s.layout.spacing)), primaryLineLimitSmall=\(s.layout.primaryLineLimitSmall), primaryLineLimit=\(s.layout.primaryLineLimit), secondaryLineLimit=\(s.layout.secondaryLineLimit)
         style: background=\(s.style.background.rawValue), accent=\(s.style.accent.rawValue), padding=\(Int(s.style.padding)), cornerRadius=\(Int(s.style.cornerRadius)), primaryTextStyle=\(s.style.primaryTextStyle.rawValue), secondaryTextStyle=\(s.style.secondaryTextStyle.rawValue)
         """
     }
@@ -381,18 +367,17 @@ private extension WidgetSpecAIService {
         let secondary = optionalClean(payload.secondaryText, maxLength: 60)
 
         let axis = LayoutAxisToken(rawValue: payload.axis) ?? .vertical
-        let alignment = LayoutAlignmentToken(rawValue: payload.alignment) ?? .topLeading
+        let alignment = LayoutAlignmentToken(rawValue: payload.alignment) ?? .leading
 
         var layout = LayoutSpec.defaultLayout
         layout.axis = axis
         layout.alignment = alignment
         layout.spacing = payload.spacing
-        layout.showSecondaryInSmall = payload.showSecondaryInSmall
 
-        let background = BackgroundToken(rawValue: payload.background) ?? .fillTertiary
+        let background = BackgroundToken(rawValue: payload.background) ?? .accentGlow
         let accent = AccentToken(rawValue: payload.accent) ?? .blue
-        let primaryStyle = TextStyleToken(rawValue: payload.primaryTextStyle) ?? .auto
-        let secondaryStyle = TextStyleToken(rawValue: payload.secondaryTextStyle) ?? .auto
+        let primaryStyle = TextStyleToken(rawValue: payload.primaryTextStyle) ?? .headline
+        let secondaryStyle = TextStyleToken(rawValue: payload.secondaryTextStyle) ?? .caption2
 
         var style = StyleSpec.defaultStyle
         style.padding = payload.padding
@@ -467,9 +452,6 @@ private extension WidgetSpecAIService {
         }
         if let spacing = payload.spacing {
             layout.spacing = spacing
-        }
-        if let show = payload.showSecondaryInSmall {
-            layout.showSecondaryInSmall = show
         }
         if let v = payload.primaryLineLimitSmall {
             layout.primaryLineLimitSmall = v
@@ -557,19 +539,27 @@ private extension WidgetSpecAIService {
 
         let accent = detectAccent(in: lower) ?? .blue
 
-        var background: BackgroundToken = .fillTertiary
-        if lower.contains("minimal") || lower.contains("clean") || lower.contains("simple") {
-            background = .fillQuaternary
+        var background: BackgroundToken = .accentGlow
+        if lower.contains("material") || lower.contains("frosted") || lower.contains("blur") {
+            background = .subtleMaterial
         }
-        if lower.contains("bold") || lower.contains("vibrant") {
-            background = .accent
+        if lower.contains("minimal") || lower.contains("clean") || lower.contains("simple") {
+            background = .plain
+        }
+        if lower.contains("bold") || lower.contains("vibrant") || lower.contains("glow") {
+            background = .accentGlow
         }
         if lower.contains("transparent") || lower.contains("clear background") {
-            background = .clear
+            background = .plain
         }
 
         let axis: LayoutAxisToken = (lower.contains("horizontal") || lower.contains("row")) ? .horizontal : .vertical
-        let alignment: LayoutAlignmentToken = lower.contains("center") ? .center : .topLeading
+
+        let alignment: LayoutAlignmentToken = {
+            if lower.contains("trailing") || lower.contains("right") { return .trailing }
+            if lower.contains("center") || lower.contains("centre") { return .center }
+            return .leading
+        }()
 
         var spacing: Double = 6
         if lower.contains("compact") || lower.contains("tight") {
@@ -579,16 +569,14 @@ private extension WidgetSpecAIService {
             spacing = 10
         }
 
-        let showSecondaryInSmall: Bool = lower.contains("show secondary in small") || lower.contains("two lines")
-
         let texts = fallbackTexts(from: trimmed)
         let wantsSymbol: Bool = !(lower.contains("no icon") || lower.contains("no symbol") || lower.contains("without icon"))
 
         var style = StyleSpec.defaultStyle
         style.background = background
         style.accent = accent
-        style.primaryTextStyle = lower.contains("big title") || lower.contains("bigger title") || lower.contains("large title") ? .title2 : .auto
-        style.secondaryTextStyle = .auto
+        style.primaryTextStyle = lower.contains("big title") || lower.contains("bigger title") || lower.contains("large title") ? .title2 : .headline
+        style.secondaryTextStyle = .caption2
         style.nameTextStyle = .caption
         if lower.contains("minimal") {
             style.padding = 10
@@ -598,7 +586,6 @@ private extension WidgetSpecAIService {
         layout.axis = axis
         layout.alignment = alignment
         layout.spacing = spacing
-        layout.showSecondaryInSmall = showSecondaryInSmall
 
         let symbol = wantsSymbol ? fallbackSymbol(for: lower, accentPreferred: true) : nil
 
@@ -627,7 +614,7 @@ private extension WidgetSpecAIService {
 
         // Common patch phrases
         if lower.contains("more minimal") || lower.contains("make it minimal") || lower.contains("cleaner") || lower.contains("simpler") {
-            s.style.background = .fillQuaternary
+            s.style.background = .plain
             s.style.accent = .gray
             s.style.padding = min(s.style.padding, 10)
             s.style.cornerRadius = min(max(s.style.cornerRadius, 16), 28)
@@ -651,11 +638,11 @@ private extension WidgetSpecAIService {
         }
 
         if lower.contains("transparent") || lower.contains("clear background") {
-            s.style.background = .clear
+            s.style.background = .plain
         }
 
         if lower.contains("accent background") || lower.contains("use accent as background") {
-            s.style.background = .accent
+            s.style.background = .accentGlow
         }
 
         if lower.contains("horizontal") {
@@ -674,13 +661,6 @@ private extension WidgetSpecAIService {
         }
         if lower.contains("less spacing") || lower.contains("decrease spacing") {
             s.layout.spacing -= 2
-        }
-
-        if lower.contains("show secondary in small") {
-            s.layout.showSecondaryInSmall = true
-        }
-        if lower.contains("hide secondary in small") {
-            s.layout.showSecondaryInSmall = false
         }
 
         if lower.contains("remove secondary") || lower.contains("no secondary") || lower.contains("no subtitle") || lower.contains("remove subtitle") {
@@ -773,18 +753,15 @@ private extension WidgetSpecAIService {
     }
 
     static func detectAccent(in lowerText: String) -> AccentToken? {
-        // Accepts both "grey" and "gray"
-        if lowerText.contains("auto accent") { return .auto }
-        if lowerText.contains("teal") { return .teal }
-        if lowerText.contains("mint") { return .mint }
+        // Accepts both "grey" and "gray".
+        if lowerText.contains("teal") || lowerText.contains("mint") { return .teal }
         if lowerText.contains("green") { return .green }
-        if lowerText.contains("yellow") { return .yellow }
+        if lowerText.contains("yellow") { return .orange }
         if lowerText.contains("orange") { return .orange }
         if lowerText.contains("red") { return .red }
         if lowerText.contains("pink") { return .pink }
-        if lowerText.contains("purple") { return .purple }
-        if lowerText.contains("indigo") { return .indigo }
-        if lowerText.contains("brown") { return .brown }
+        if lowerText.contains("purple") || lowerText.contains("indigo") { return .purple }
+        if lowerText.contains("brown") { return .orange }
         if lowerText.contains("gray") || lowerText.contains("grey") { return .gray }
         if lowerText.contains("blue") { return .blue }
         return nil

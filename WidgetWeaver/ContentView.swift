@@ -10,6 +10,7 @@ import WidgetKit
 import PhotosUI
 import UIKit
 
+@MainActor
 struct ContentView: View {
     @State private var savedSpecs: [WidgetSpec] = []
     @State private var defaultSpecID: UUID?
@@ -174,9 +175,11 @@ struct ContentView: View {
     }
 
     private var imageSection: some View {
-        Section("Image") {
+        let hasImage = !imageFileName.isEmpty
+
+        return Section("Image") {
             PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
-                Label(imageFileName.isEmpty ? "Choose photo (optional)" : "Replace photo", systemImage: "photo")
+                Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
             }
 
             if !imageFileName.isEmpty {
@@ -665,12 +668,14 @@ private struct PreviewTile: View {
 
 private enum Keyboard {
     static func dismiss() {
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder),
-            to: nil,
-            from: nil,
-            for: nil
-        )
+        Task { @MainActor in
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil,
+                from: nil,
+                for: nil
+            )
+        }
     }
 }
 
