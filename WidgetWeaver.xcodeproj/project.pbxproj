@@ -327,9 +327,11 @@
 				CURRENT_PROJECT_VERSION = 2;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
+				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
 				PRODUCT_NAME = WidgetWeaver;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -339,9 +341,11 @@
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
 				PRODUCT_NAME = WidgetWeaver;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -352,9 +356,11 @@
 				CURRENT_PROJECT_VERSION = 2;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
+				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
 				PRODUCT_NAME = WidgetWeaverWidgetExtension;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -364,9 +370,11 @@
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.9.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
 				PRODUCT_NAME = WidgetWeaverWidgetExtension;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
