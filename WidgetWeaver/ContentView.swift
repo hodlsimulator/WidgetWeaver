@@ -11,6 +11,7 @@ import PhotosUI
 import UIKit
 
 struct ContentView: View {
+
     @State private var savedSpecs: [WidgetSpec] = []
     @State private var selectedSpecID: UUID = UUID()
     @State private var defaultSpecID: UUID?
@@ -46,12 +47,20 @@ struct ContentView: View {
 
     @State private var lastSavedAt: Date?
 
+    // AI
+    @State private var aiPrompt: String = ""
+    @State private var aiPatchInstruction: String = ""
+    @State private var aiMakeGeneratedDefault: Bool = true
+    @State private var aiIsWorking: Bool = false
+    @State private var aiStatusMessage: String?
+
     private let store = WidgetSpecStore.shared
 
     var body: some View {
         NavigationStack {
             Form {
                 savedDesignsSection
+                aiSection
                 specSection
                 symbolSection
                 imageSection
@@ -62,8 +71,12 @@ struct ContentView: View {
                 statusSection
             }
             .navigationTitle("WidgetWeaver")
-            .onAppear { bootstrap() }
-            .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+            .onAppear {
+                bootstrap()
+            }
+            .onChange(of: selectedSpecID) { _, _ in
+                loadSelected()
+            }
             .onChange(of: pickedPhoto) { _, newItem in
                 guard let newItem else { return }
                 Task { await importPickedImage(newItem) }
@@ -87,13 +100,67 @@ struct ContentView: View {
                     }
                 }
 
-                Button("New Design (Copy Current)") { createNewFromCurrentDraft() }
+                Button("New Design (Copy Current)") {
+                    createNewFromCurrentDraft()
+                }
 
-                Button("Make This Default") { makeSelectedDefault() }
-                    .disabled(savedSpecs.isEmpty)
+                Button("Make This Default") {
+                    makeSelectedDefault()
+                }
+                .disabled(savedSpecs.isEmpty)
 
-                Button("Delete Design", role: .destructive) { deleteSelected() }
-                    .disabled(savedSpecs.count <= 1)
+                Button("Delete Design", role: .destructive) {
+                    deleteSelected()
+                }
+                .disabled(savedSpecs.count <= 1)
+            }
+        }
+    }
+
+    private var aiSection: some View {
+        Section("AI") {
+            Text(WidgetSpecAIService.availabilityMessage())
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            TextField(
+                "Describe a design (e.g., “minimal habit tracker, teal accent, no icon”)",
+                text: $aiPrompt,
+                axis: .vertical
+            )
+
+            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+
+            Button {
+                Task { await generateNewDesignFromPrompt() }
+            } label: {
+                Label("Generate New Design", systemImage: "sparkles")
+            }
+            .disabled(aiIsWorking || aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Divider()
+
+            TextField(
+                "Patch instruction (e.g., “more minimal”, “bigger title”, “accent teal”, “remove image”)",
+                text: $aiPatchInstruction,
+                axis: .vertical
+            )
+
+            Button {
+                Task { await applyPatchToCurrentDesign() }
+            } label: {
+                Label("Apply Patch To Current Design", systemImage: "wand.and.stars")
+            }
+            .disabled(aiIsWorking || aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if aiIsWorking {
+                ProgressView()
+            }
+
+            if let msg = aiStatusMessage, !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(msg)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -104,7 +171,6 @@ struct ContentView: View {
                 .textInputAutocapitalization(.words)
 
             TextField("Primary text", text: $primaryText)
-
             TextField("Secondary text (optional)", text: $secondaryText)
         }
     }
@@ -143,16 +209,17 @@ struct ContentView: View {
                 HStack {
                     Text("Size")
                     Spacer()
-                    Text("\(Int(symbolSize))").foregroundStyle(.secondary)
+                    Text("\(Int(symbolSize))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $symbolSize, in: 8...96, step: 1)
             }
 
             if !symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 HStack(spacing: 10) {
-                    Text("Preview").foregroundStyle(.secondary)
+                    Text("Preview")
+                        .foregroundStyle(.secondary)
                     Spacer()
-
                     Image(systemName: symbolName.trimmingCharacters(in: .whitespacesAndNewlines))
                         .symbolRenderingMode(symbolRenderingMode.swiftUISymbolRenderingMode)
                         .font(.system(size: symbolSize, weight: symbolWeight.fontWeight))
@@ -169,7 +236,12 @@ struct ContentView: View {
     private var imageSection: some View {
         Section("Image") {
             PhotosPicker(selection: $pickedPhoto, matching: .images) {
-                Label(imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose photo (optional)" : "Replace photo", systemImage: "photo")
+                Label(
+                    imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Choose photo (optional)"
+                    : "Replace photo",
+                    systemImage: "photo"
+                )
             }
 
             if let uiImage = AppGroup.loadUIImage(fileName: imageFileName) {
@@ -204,7 +276,8 @@ struct ContentView: View {
                 HStack {
                     Text("Height")
                     Spacer()
-                    Text("\(Int(imageHeight))").foregroundStyle(.secondary)
+                    Text("\(Int(imageHeight))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $imageHeight, in: 40...240, step: 1)
             }
@@ -213,7 +286,8 @@ struct ContentView: View {
                 HStack {
                     Text("Corner radius")
                     Spacer()
-                    Text("\(Int(imageCornerRadius))").foregroundStyle(.secondary)
+                    Text("\(Int(imageCornerRadius))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $imageCornerRadius, in: 0...44, step: 1)
             }
@@ -238,7 +312,8 @@ struct ContentView: View {
                 HStack {
                     Text("Spacing")
                     Spacer()
-                    Text("\(Int(spacing))").foregroundStyle(.secondary)
+                    Text("\(Int(spacing))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $spacing, in: 0...24, step: 1)
             }
@@ -265,7 +340,8 @@ struct ContentView: View {
                 HStack {
                     Text("Padding")
                     Spacer()
-                    Text("\(Int(padding))").foregroundStyle(.secondary)
+                    Text("\(Int(padding))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $padding, in: 0...24, step: 1)
             }
@@ -274,7 +350,8 @@ struct ContentView: View {
                 HStack {
                     Text("Corner radius")
                     Spacer()
-                    Text("\(Int(cornerRadius))").foregroundStyle(.secondary)
+                    Text("\(Int(cornerRadius))")
+                        .foregroundStyle(.secondary)
                 }
                 Slider(value: $cornerRadius, in: 0...44, step: 1)
             }
@@ -323,12 +400,18 @@ struct ContentView: View {
 
     private var actionsSection: some View {
         Section {
-            Button("Save to Widget") { saveSelected(makeDefault: true) }
-                .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Save to Widget") {
+                saveSelected(makeDefault: true)
+            }
+            .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Button("Reload From Store") { loadSelected() }
+            Button("Reload From Store") {
+                loadSelected()
+            }
 
-            Button("Reset Selected To Template", role: .destructive) { resetSelectedToTemplate() }
+            Button("Reset Selected To Template", role: .destructive) {
+                resetSelectedToTemplate()
+            }
         }
     }
 
@@ -354,6 +437,7 @@ struct ContentView: View {
 
         let fallback = store.loadDefault()
         selectedSpecID = defaultSpecID ?? fallback.id
+
         applySpec(store.load(id: selectedSpecID) ?? fallback)
     }
 
@@ -366,7 +450,9 @@ struct ContentView: View {
         defaultSpecID = store.defaultSpecID()
 
         if preservingSelection {
-            if specs.contains(where: { $0.id == selectedSpecID }) { return }
+            if specs.contains(where: { $0.id == selectedSpecID }) {
+                return
+            }
         }
 
         let fallback = store.loadDefault()
@@ -511,10 +597,9 @@ struct ContentView: View {
         spec = spec.normalised()
 
         store.save(spec, makeDefault: makeDefault)
-
         lastSavedAt = spec.updatedAt
-        refreshSavedSpecs(preservingSelection: true)
 
+        refreshSavedSpecs(preservingSelection: true)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
 
@@ -528,6 +613,7 @@ struct ContentView: View {
         }
 
         spec = spec.normalised()
+
         store.save(spec, makeDefault: false)
 
         refreshSavedSpecs(preservingSelection: false)
@@ -569,13 +655,75 @@ struct ContentView: View {
         spec = spec.normalised()
 
         store.save(spec, makeDefault: true)
-
         refreshSavedSpecs(preservingSelection: true)
         applySpec(spec)
 
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
+
+    // MARK: - AI actions
+
+    @MainActor
+    private func generateNewDesignFromPrompt() async {
+        let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+
+        aiIsWorking = true
+        aiStatusMessage = nil
+        defer { aiIsWorking = false }
+
+        let result = await WidgetSpecAIService.shared.generateNewSpec(from: prompt)
+
+        var spec = result.spec
+        spec.updatedAt = Date()
+        spec = spec.normalised()
+
+        store.save(spec, makeDefault: aiMakeGeneratedDefault)
+
+        lastSavedAt = spec.updatedAt
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
+
+        aiStatusMessage = result.usedModel ? result.note : "\(result.note) (Fallback)"
+        aiPrompt = ""
+
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+    }
+
+    @MainActor
+    private func applyPatchToCurrentDesign() async {
+        let instruction = aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+
+        aiIsWorking = true
+        aiStatusMessage = nil
+        defer { aiIsWorking = false }
+
+        // Patch the current draft so unsaved edits are included.
+        let base = draftSpec(id: selectedSpecID)
+        let result = await WidgetSpecAIService.shared.applyPatch(to: base, instruction: instruction)
+
+        var patched = result.spec
+        patched.id = selectedSpecID
+        patched.updatedAt = Date()
+        patched = patched.normalised()
+
+        let keepDefault = (defaultSpecID == selectedSpecID)
+        store.save(patched, makeDefault: keepDefault)
+
+        lastSavedAt = patched.updatedAt
+        refreshSavedSpecs(preservingSelection: true)
+        applySpec(patched)
+
+        aiStatusMessage = result.usedModel ? result.note : "\(result.note) (Fallback)"
+        aiPatchInstruction = ""
+
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+    }
 }
+
+// MARK: - Preview tile
 
 private struct PreviewTile: View {
     let title: String
@@ -597,10 +745,14 @@ private struct PreviewTile: View {
 
     private var size: CGSize {
         switch family {
-        case .systemSmall: return CGSize(width: 170, height: 170)
-        case .systemMedium: return CGSize(width: 364, height: 170)
-        case .systemLarge: return CGSize(width: 364, height: 382)
-        default: return CGSize(width: 170, height: 170)
+        case .systemSmall:
+            return CGSize(width: 170, height: 170)
+        case .systemMedium:
+            return CGSize(width: 364, height: 170)
+        case .systemLarge:
+            return CGSize(width: 364, height: 382)
+        default:
+            return CGSize(width: 170, height: 170)
         }
     }
 }

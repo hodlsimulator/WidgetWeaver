@@ -2,7 +2,13 @@
 
 WidgetWeaver is an iOS 26 app for building WidgetKit widgets from a **typed widget specification** (“WidgetSpec”).
 
-Right now the spec is edited manually in-app. Natural-language → spec generation is planned as a later milestone. The widget extension renders a selected saved spec across the App Group boundary, with normalisation/clamping and safe fallbacks. This repo is being built milestone-by-milestone with working commits.
+- The iOS app creates/edits/saves widget designs (specs).
+- The Widget Extension reads a selected saved spec via the App Group boundary and renders it.
+- Specs are always **normalised/clamped** and have safe fallbacks, so the widget never crashes on bad data.
+
+WidgetWeaver supports both:
+- **Manual editing** (always available)
+- **Optional on-device prompt → spec generation** (Apple Intelligence / Foundation Models), with deterministic fallbacks when unavailable
 
 ---
 
@@ -16,11 +22,11 @@ Right now the spec is edited manually in-app. Natural-language → spec generati
 ✅ Multiple saved specs (design library)  
 ✅ Per-widget instance selection (Edit Widget → choose a saved design)  
 ✅ SF Symbol component (optional) with placement + size + weight + rendering + tint  
-✅ Image component (optional) using PhotosPicker; image files are stored in the App Group container and referenced by filename in the spec
+✅ Image component (optional) using PhotosPicker; image files are stored in the App Group container and referenced by filename in the spec  
+✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
+✅ “Patch edits” (e.g. “more minimal”) against an existing spec, with deterministic fallback
 
 Next:
-- ⏭ Prompt → Spec generation (Foundation Models) with validation + repair
-- ⏭ “Patch edits” (e.g. “more minimal”) against an existing spec
 - ⏭ Matched sets (Small/Medium/Large) + design system tokens
 - ⏭ Variables + Shortcuts
 
@@ -43,20 +49,53 @@ Next:
 
 Notes:
 - The photo picker does not require photo library permission prompts.
-- Picked images are saved into the App Group container (downsampled) so the widget can render them offline.
+- Picked images are saved into the App Group container so the widget can render them offline.
+
+---
+
+## AI (prompt → spec + patch edits)
+
+WidgetWeaver can generate and edit designs from natural language using **Foundation Models** when available.
+
+### Generate a new design
+- Use the **AI** section in the app
+- Enter a prompt like:
+  - “minimal habit tracker, teal accent, no icon”
+  - “bold countdown widget, centred, bigger title”
+- Tap **Generate New Design**
+- Optionally toggle **Make generated design default**
+
+### Patch an existing design
+Patch edits apply small changes to the current design, for example:
+- “more minimal”
+- “bigger title”
+- “change accent to teal”
+- “remove image”
+- “remove symbol”
+
+Tap **Apply Patch To Current Design**.
+
+### Availability + fallbacks
+- If Apple Intelligence / Foundation Models are available, the app generates a constrained payload and maps it into `WidgetSpec`.
+- If unavailable (device not eligible, Apple Intelligence disabled, model not ready, etc.), WidgetWeaver still works:
+  - New designs fall back to deterministic templates/rules
+  - Patch edits fall back to deterministic rules
+
+### Privacy
+- Prompt generation is designed to run on-device.
+- Images are never generated; images are picked by PhotosPicker and stored locally in the App Group container.
 
 ---
 
 ## Architecture
 
 ### Targets
-
 - **WidgetWeaver** (iOS app)
   - Create/edit/save a `WidgetSpec`
   - In-app previews (Small/Medium/Large)
   - Manage a library of saved designs
   - Pick an optional image for a design
-
+  - Optional AI prompt/patch workflow
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
   - Renders Small/Medium/Large
@@ -64,49 +103,45 @@ Notes:
   - Loads an optional image from the App Group container (by filename)
 
 ### Shared boundary
-
 - App Group: `group.com.conornolan.widgetweaver`
 - Storage (v0.9.x simplicity):
   - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
   - Images: files in the App Group container directory `WidgetWeaverImages/`
-- Safety:
-  - Load failures fall back to `WidgetSpec.defaultSpec()`
-  - Specs are normalised/clamped before save and after load
-  - Missing image files simply render as “no image” (no crash)
+
+### Safety
+- Load failures fall back to `WidgetSpec.defaultSpec()`
+- Specs are normalised/clamped before save and after load
+- Missing image files simply render as “no image” (no crash)
 
 ---
 
 ## WidgetSpec
 
-`WidgetSpec` is the contract between the app and the widget. It’s versioned and designed to be:
+`WidgetSpec` is the contract between the app and the widget.
+
+It’s versioned and designed to be:
 - Strictly typed (Codable)
 - Easy to validate/repair
 - Deterministic to render
 
 ### v0 components (current direction)
-
 - Text:
   - `name`, `primaryText`, optional `secondaryText`
-
 - Symbol (optional):
   - SF Symbol name string
   - placement (above/before name)
   - size + weight
   - rendering mode (monochrome / hierarchical / multicolour)
   - tint (accent / primary / secondary)
-
 - Image (optional):
   - `fileName` (stored in App Group container)
   - `contentMode` (fill / fit)
   - `height` (clamped per family)
   - `cornerRadius`
-
 - Layout tokens:
   - axis / alignment / spacing / line limits
-
 - Style tokens:
   - padding / corner radius / background / accent / typography tokens
-
 - Shared renderer:
   - a single SwiftUI view that both the app previews and the widget render through
 
@@ -154,14 +189,15 @@ Notes:
 - Store image files in the App Group container
 - Load and render the image in both previews and widget (shared renderer)
 
-### Milestone 4 — Prompt → WidgetSpec generation (NEXT)
-- Define a constrained generation contract (“generate WidgetSpec v0”)
-- Always run validation/clamping/repair at the boundary
-- Deterministic fallback when model unavailable (templates/rules)
-- Add “patch edits” (small diffs) like:
+### Milestone 4 — Prompt → WidgetSpec generation + patch edits (DONE)
+- Constrained generation contract (guided payloads mapped into `WidgetSpec`)
+- Always run normalisation/clamping/repair at the boundary
+- Deterministic fallback when the model is unavailable
+- Patch edits like:
   - “more minimal”
   - “bigger title”
   - “change accent to teal”
+  - “remove image / remove symbol”
 
 ### Milestone 5 — Matched sets (Small/Medium/Large) (LATER)
 - Introduce a `DesignSystem` token set shared across widget sizes
@@ -191,6 +227,12 @@ Notes:
   - Ensure you picked an image and then tapped **Save to Widget**.
   - Ensure both targets have the App Group entitlement: `group.com.conornolan.widgetweaver`.
   - If the app was reinstalled, previously saved specs may reference image filenames that no longer exist in the App Group container; remove/re-pick the image and save again.
+- Widget not updating:
+  - Tap **Save to Widget** again.
+  - Remove/re-add the widget after significant schema changes.
+- AI shows “Unavailable”:
+  - The app still works (deterministic fallbacks).
+  - If you want on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
 
 ---
 
