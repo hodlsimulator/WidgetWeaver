@@ -8,6 +8,16 @@
 import Foundation
 import UIKit
 
+private final class ImageCacheBox: @unchecked Sendable {
+    let cache: NSCache<NSString, UIImage>
+
+    init(countLimit: Int) {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = countLimit
+        self.cache = c
+    }
+}
+
 public enum AppGroup {
     public static let identifier = "group.com.conornolan.widgetweaver"
 
@@ -31,11 +41,7 @@ public enum AppGroup {
         containerURL.appendingPathComponent("WidgetWeaverImages", isDirectory: true)
     }
 
-    private static let imageCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 32
-        return cache
-    }()
+    private static let imageCache = ImageCacheBox(countLimit: 32)
 
     public static func ensureImagesDirectoryExists() {
         let url = imagesDirectoryURL
@@ -59,7 +65,7 @@ public enum AppGroup {
         ensureImagesDirectoryExists()
         let url = imagesDirectoryURL.appendingPathComponent(fileName)
         try data.write(to: url, options: [.atomic])
-        imageCache.removeObject(forKey: fileName as NSString)
+        imageCache.cache.removeObject(forKey: fileName as NSString)
     }
 
     public static func writeUIImage(_ image: UIImage, fileName: String, compressionQuality: CGFloat = 0.85) throws {
@@ -85,7 +91,7 @@ public enum AppGroup {
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let cached = imageCache.object(forKey: trimmed as NSString) {
+        if let cached = imageCache.cache.object(forKey: trimmed as NSString) {
             return cached
         }
 
@@ -93,7 +99,7 @@ public enum AppGroup {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         guard let img = UIImage(contentsOfFile: url.path) else { return nil }
 
-        imageCache.setObject(img, forKey: trimmed as NSString)
+        imageCache.cache.setObject(img, forKey: trimmed as NSString)
         return img
     }
 
@@ -103,14 +109,13 @@ public enum AppGroup {
 
         let url = imagesDirectoryURL.appendingPathComponent(trimmed)
         try? FileManager.default.removeItem(at: url)
-        imageCache.removeObject(forKey: trimmed as NSString)
+        imageCache.cache.removeObject(forKey: trimmed as NSString)
     }
 }
 
 private extension UIImage {
     func normalisedOrientation() -> UIImage {
         if imageOrientation == .up { return self }
-
         UIGraphicsBeginImageContextWithOptions(size, false, scale)
         draw(in: CGRect(origin: .zero, size: size))
         let img = UIGraphicsGetImageFromCurrentImageContext()

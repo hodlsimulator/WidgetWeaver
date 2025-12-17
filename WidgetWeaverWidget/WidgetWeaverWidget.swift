@@ -21,8 +21,13 @@ private enum WidgetWeaverSpecEntityIDs {
 // MARK: - AppEntity for selecting a saved spec
 
 struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = TypeDisplayRepresentation(name: "Widget Design")
-    static var defaultQuery = WidgetWeaverSpecEntityQuery()
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Widget Design")
+    }
+
+    static var defaultQuery: WidgetWeaverSpecEntityQuery {
+        WidgetWeaverSpecEntityQuery()
+    }
 
     var id: String
     var name: String
@@ -48,7 +53,6 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 
     func suggestedEntities() async throws -> [WidgetWeaverSpecEntity] {
         let defaultEntity = WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
-
         let saved = WidgetSpecStore.shared
             .loadAll()
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -65,8 +69,11 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 // MARK: - Widget configuration intent
 
 struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "WidgetWeaver"
-    static var description = IntentDescription("Choose which saved WidgetWeaver design to render.")
+    static var title: LocalizedStringResource { "WidgetWeaver" }
+
+    static var description: IntentDescription {
+        IntentDescription("Choose which saved WidgetWeaver design to render.")
+    }
 
     @Parameter(title: "Design")
     var spec: WidgetWeaverSpecEntity?
@@ -98,10 +105,12 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     private func loadSpec(for configuration: Intent) -> WidgetSpec {
         let store = WidgetSpecStore.shared
 
-        guard let idString = configuration.spec?.id,
-              idString != WidgetWeaverSpecEntityIDs.appDefault,
-              let id = UUID(uuidString: idString),
-              let spec = store.load(id: id) else {
+        guard
+            let idString = configuration.spec?.id,
+            idString != WidgetWeaverSpecEntityIDs.appDefault,
+            let id = UUID(uuidString: idString),
+            let spec = store.load(id: id)
+        else {
             return store.loadDefault()
         }
 
@@ -127,7 +136,11 @@ struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: WidgetWeaverConfigurationIntent.self, provider: WidgetWeaverProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: WidgetWeaverConfigurationIntent.self,
+            provider: WidgetWeaverProvider()
+        ) { entry in
             WidgetWeaverWidgetView(entry: entry)
         }
         .configurationDisplayName("WidgetWeaver")

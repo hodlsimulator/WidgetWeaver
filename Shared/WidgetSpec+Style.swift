@@ -10,7 +10,7 @@ import SwiftUI
 
 // MARK: - Style
 
-public struct StyleSpec: Codable, Hashable {
+public struct StyleSpec: Codable, Hashable, Sendable {
     public var padding: Double
     public var cornerRadius: Double
     public var background: BackgroundToken
@@ -55,7 +55,7 @@ public struct StyleSpec: Codable, Hashable {
     }
 }
 
-public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiable {
+public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case plain
     case accentGlow
     case subtleMaterial
@@ -67,21 +67,20 @@ public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiab
         case .plain:
             return AnyShapeStyle(.background)
         case .accentGlow:
-            return AnyShapeStyle(.linearGradient(
-                colors: [
-                    accent.opacity(0.35),
-                    .clear
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ))
+            return AnyShapeStyle(
+                .linearGradient(
+                    colors: [accent.opacity(0.35), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
         }
     }
 }
 
-public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable {
+public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case blue
     case teal
     case green
@@ -107,7 +106,7 @@ public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable {
     }
 }
 
-public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiable {
+public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case caption2
     case caption
     case footnote

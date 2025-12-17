@@ -10,11 +10,10 @@ import SwiftUI
 
 // MARK: - Layout
 
-public struct LayoutSpec: Codable, Hashable {
+public struct LayoutSpec: Codable, Hashable, Sendable {
     public var axis: LayoutAxisToken
     public var alignment: LayoutAlignmentToken
     public var spacing: Double
-
     public var primaryLineLimitSmall: Int
     public var primaryLineLimit: Int
     public var secondaryLineLimit: Int
@@ -54,14 +53,14 @@ public struct LayoutSpec: Codable, Hashable {
     }
 }
 
-public enum LayoutAxisToken: String, Codable, CaseIterable, Hashable, Identifiable {
+public enum LayoutAxisToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case vertical
     case horizontal
 
     public var id: String { rawValue }
 }
 
-public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Identifiable {
+public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case leading
     case center
     case trailing

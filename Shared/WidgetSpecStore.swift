@@ -7,7 +7,7 @@
 
 import Foundation
 
-public final class WidgetSpecStore {
+public final class WidgetSpecStore: @unchecked Sendable {
     public static let shared = WidgetSpecStore()
 
     private let defaults: UserDefaults
