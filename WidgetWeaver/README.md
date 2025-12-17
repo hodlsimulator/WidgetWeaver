@@ -1,26 +1,28 @@
 # WidgetWeaver
 
-WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”). The widget extension renders the saved spec from the App Group boundary, with normalisation/clamping and safe fallbacks.
+WidgetWeaver is an iOS 26 app for building WidgetKit widgets from natural language by generating a **typed widget specification** (“WidgetSpec”).
 
-This repo is being built milestone-by-milestone with working commits.
+The widget extension renders a selected saved spec from the App Group boundary, with normalisation/clamping and safe fallbacks. This repo is being built milestone-by-milestone with working commits.
 
 ---
 
-## Current status (v0.9.4)
+## Current status (v0.9.5)
 
 ✅ iOS app target created and runs on a real device  
 ✅ App icon set  
 ✅ Widget extension target added  
-✅ Widget renders a saved spec (App Group storage + `WidgetSpecStore`)  
-✅ App UI can edit/save a spec and trigger widget reloads  
-✅ WidgetSpec v0 tokens started (layout + style)  
-✅ Shared renderer parity (app previews + widget use the same render path)
+✅ Shared `WidgetSpec` v0 tokens started (layout + style)  
+✅ Shared renderer parity (app previews + widget use the same render path)  
+✅ App can edit and save specs into the App Group store  
+✅ Multiple saved specs (library)  
+✅ Per-widget instance selection (Edit Widget → choose a saved design)
 
 Next:
 - ⏭ Add v0 components beyond text (symbol/image/etc.)
-- ⏭ Multiple saved specs + per-widget instance selection
 - ⏭ Prompt → Spec generation (Foundation Models) with validation + repair
 - ⏭ “Patch edits” (e.g. “more minimal”) against an existing spec
+- ⏭ Matched sets (Small/Medium/Large) + design system tokens
+- ⏭ Variables + Shortcuts
 
 ---
 
@@ -31,7 +33,9 @@ Next:
    - `group.com.conornolan.widgetweaver`
 3. Run the app on a real device.
 4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
-5. In the app, edit the spec and tap **Save to Widget** (the widget reloads).
+5. In the app, create/edit a design and tap **Save to Widget**.
+6. To choose a design per widget instance:
+   - Long-press the widget → **Edit Widget** → select a **Design**
 
 ---
 
@@ -42,14 +46,16 @@ Next:
 - **WidgetWeaver** (iOS app)
   - Create/edit/save a `WidgetSpec`
   - In-app previews (Small/Medium/Large)
+  - Manage a library of saved designs
 - **WidgetWeaverWidget** (Widget Extension)
-  - Reads the current spec from App Group storage
+  - Reads specs from App Group storage
   - Renders Small/Medium/Large
+  - Uses per-instance configuration to select a saved design
 
 ### Shared boundary
 
 - App Group: `group.com.conornolan.widgetweaver`
-- Storage: `UserDefaults(suiteName:)` (JSON-encoded `WidgetSpec`) for v0.9.x simplicity
+- Storage: `UserDefaults(suiteName:)` (JSON-encoded specs) for v0.9.x simplicity
 - Safety:
   - Load failures fall back to `WidgetSpec.defaultSpec()`
   - Specs are normalised/clamped before save and after load
@@ -59,16 +65,21 @@ Next:
 ## WidgetSpec
 
 `WidgetSpec` is the contract between the app and the widget. It’s versioned and designed to be:
+
 - Strictly typed (Codable)
 - Easy to validate/repair
 - Deterministic to render
 
 ### v0 (current direction)
 
-- Content: `name`, `primaryText`, optional `secondaryText`
-- Layout tokens: axis/alignment/spacing/line limits
-- Style tokens: padding/corner/background/accent/typography tokens
-- Shared renderer: a single SwiftUI view that both the app previews and the widget render through
+- Content:
+  - `name`, `primaryText`, optional `secondaryText`
+- Layout tokens:
+  - axis / alignment / spacing / line limits
+- Style tokens:
+  - padding / corner / background / accent / typography tokens
+- Shared renderer:
+  - a single SwiftUI view that both the app previews and the widget render through
 
 ---
 
@@ -91,14 +102,18 @@ Next:
   - `WidgetSpecStore` (JSON in App Group UserDefaults)
 - Update app UI to save a spec and call:
   - `WidgetCenter.shared.reloadTimelines(ofKind:)`
-- Update widget to load spec from store and render it
+- Update widget to load from store and render via the shared renderer
 
-### Milestone 3 — Manual editor + preview loop (IN PROGRESS)
+### Milestone 3 — Manual editor + preview loop (DONE)
 - Expand WidgetSpec v0 to support:
   - layout tokens
   - style tokens
 - Add an in-app editor for those fields
-- Add an in-app preview that uses the same renderer logic as the widget
+- Add in-app previews that use the same renderer as the widget
+
+### Milestone 3.5 — Multiple specs + per-widget selection (DONE)
+- Store multiple specs in the App Group store
+- Choose a saved spec per widget instance (Edit Widget → Design)
 
 ### Milestone 4 — Prompt → WidgetSpec generation (NEXT)
 - Define a constrained generation contract (“generate WidgetSpec v0”)
@@ -133,7 +148,7 @@ Next:
 
 ## Repo notes
 
-- Marketing version: `0.9.4`
+- Marketing version: `0.9.5`
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - Working principle:
   - ship small commits where the app + widget always build and run

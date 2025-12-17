@@ -9,6 +9,10 @@ import SwiftUI
 import WidgetKit
 
 struct ContentView: View {
+    @State private var savedSpecs: [WidgetSpec] = []
+    @State private var selectedSpecID: UUID = UUID()
+    @State private var defaultSpecID: UUID?
+
     @State private var name: String = ""
     @State private var primaryText: String = ""
     @State private var secondaryText: String = ""
@@ -32,20 +36,52 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Form {
+                savedDesignsSection
                 specSection
                 layoutSection
                 styleSection
                 previewSection
                 actionsSection
-
-                if let lastSavedAt {
-                    Section("Status") {
-                        Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
-                    }
-                }
+                statusSection
             }
             .navigationTitle("WidgetWeaver")
-            .onAppear { load() }
+            .onAppear { bootstrap() }
+            .onChange(of: selectedSpecID) { _, _ in
+                loadSelected()
+            }
+        }
+    }
+
+    // MARK: - Sections
+
+    private var savedDesignsSection: some View {
+        Section("Saved Designs") {
+            if savedSpecs.isEmpty {
+                Text("No saved designs found.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Design", selection: $selectedSpecID) {
+                    ForEach(savedSpecs) { spec in
+                        let isDefault = (spec.id == defaultSpecID)
+                        Text(isDefault ? "\(spec.name) (Default)" : spec.name)
+                            .tag(spec.id)
+                    }
+                }
+
+                Button("New Design (Copy Current)") {
+                    createNewFromCurrentDraft()
+                }
+
+                Button("Make This Default") {
+                    makeSelectedDefault()
+                }
+                .disabled(savedSpecs.isEmpty)
+
+                Button("Delete Design", role: .destructive) {
+                    deleteSelected()
+                }
+                .disabled(savedSpecs.count <= 1)
+            }
         }
     }
 
@@ -78,8 +114,7 @@ struct ContentView: View {
                 HStack {
                     Text("Spacing")
                     Spacer()
-                    Text("\(Int(spacing))")
-                        .foregroundStyle(.secondary)
+                    Text("\(Int(spacing))").foregroundStyle(.secondary)
                 }
                 Slider(value: $spacing, in: 0...24, step: 1)
             }
@@ -106,8 +141,7 @@ struct ContentView: View {
                 HStack {
                     Text("Padding")
                     Spacer()
-                    Text("\(Int(padding))")
-                        .foregroundStyle(.secondary)
+                    Text("\(Int(padding))").foregroundStyle(.secondary)
                 }
                 Slider(value: $padding, in: 0...24, step: 1)
             }
@@ -116,8 +150,7 @@ struct ContentView: View {
                 HStack {
                     Text("Corner radius")
                     Spacer()
-                    Text("\(Int(cornerRadius))")
-                        .foregroundStyle(.secondary)
+                    Text("\(Int(cornerRadius))").foregroundStyle(.secondary)
                 }
                 Slider(value: $cornerRadius, in: 0...44, step: 1)
             }
@@ -143,21 +176,21 @@ struct ContentView: View {
                     PreviewTile(
                         title: "Small",
                         family: .systemSmall,
-                        spec: draftSpec(),
+                        spec: draftSpec(id: selectedSpecID),
                         cornerRadius: cornerRadius
                     )
 
                     PreviewTile(
                         title: "Medium",
                         family: .systemMedium,
-                        spec: draftSpec(),
+                        spec: draftSpec(id: selectedSpecID),
                         cornerRadius: cornerRadius
                     )
 
                     PreviewTile(
                         title: "Large",
                         family: .systemLarge,
-                        spec: draftSpec(),
+                        spec: draftSpec(id: selectedSpecID),
                         cornerRadius: cornerRadius
                     )
                 }
@@ -168,16 +201,86 @@ struct ContentView: View {
 
     private var actionsSection: some View {
         Section {
-            Button("Save to Widget") { save() }
-                .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Save to Widget") {
+                saveSelected(makeDefault: true)
+            }
+            .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Button("Load Saved") { load() }
+            Button("Reload From Store") {
+                loadSelected()
+            }
 
-            Button("Reset to Default", role: .destructive) { resetToDefault() }
+            Button("Reset Selected To Template", role: .destructive) {
+                resetSelectedToTemplate()
+            }
         }
     }
 
-    private func draftSpec() -> WidgetSpec {
+    private var statusSection: some View {
+        Group {
+            if let lastSavedAt {
+                Section("Status") {
+                    Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
+                }
+            }
+        }
+    }
+
+    // MARK: - Model glue
+
+    private func bootstrap() {
+        let specs = store
+            .loadAll()
+            .sorted { $0.updatedAt > $1.updatedAt }
+
+        savedSpecs = specs
+        defaultSpecID = store.defaultSpecID()
+
+        let fallback = store.loadDefault()
+        selectedSpecID = defaultSpecID ?? fallback.id
+
+        applySpec(store.load(id: selectedSpecID) ?? fallback)
+    }
+
+    private func refreshSavedSpecs(preservingSelection: Bool = true) {
+        let specs = store
+            .loadAll()
+            .sorted { $0.updatedAt > $1.updatedAt }
+
+        savedSpecs = specs
+        defaultSpecID = store.defaultSpecID()
+
+        if preservingSelection {
+            if specs.contains(where: { $0.id == selectedSpecID }) {
+                return
+            }
+        }
+
+        let fallback = store.loadDefault()
+        selectedSpecID = defaultSpecID ?? fallback.id
+    }
+
+    private func applySpec(_ spec: WidgetSpec) {
+        name = spec.name
+        primaryText = spec.primaryText
+        secondaryText = spec.secondaryText ?? ""
+
+        axis = spec.layout.axis
+        alignment = spec.layout.alignment
+        spacing = spec.layout.spacing
+        showSecondaryInSmall = spec.layout.showSecondaryInSmall
+
+        padding = spec.style.padding
+        cornerRadius = spec.style.cornerRadius
+        background = spec.style.background
+        accent = spec.style.accent
+        primaryTextStyle = spec.style.primaryTextStyle
+        secondaryTextStyle = spec.style.secondaryTextStyle
+
+        lastSavedAt = spec.updatedAt
+    }
+
+    private func draftSpec(id: UUID) -> WidgetSpec {
         let layout = LayoutSpec(
             axis: axis,
             alignment: alignment,
@@ -199,6 +302,7 @@ struct ContentView: View {
         )
 
         return WidgetSpec(
+            id: id,
             name: name,
             primaryText: primaryText,
             secondaryText: secondaryText.isEmpty ? nil : secondaryText,
@@ -209,43 +313,79 @@ struct ContentView: View {
         .normalised()
     }
 
-    private func load() {
-        let spec = store.load()
+    // MARK: - Actions
 
-        name = spec.name
-        primaryText = spec.primaryText
-        secondaryText = spec.secondaryText ?? ""
-
-        axis = spec.layout.axis
-        alignment = spec.layout.alignment
-        spacing = spec.layout.spacing
-        showSecondaryInSmall = spec.layout.showSecondaryInSmall
-
-        padding = spec.style.padding
-        cornerRadius = spec.style.cornerRadius
-        background = spec.style.background
-        accent = spec.style.accent
-        primaryTextStyle = spec.style.primaryTextStyle
-        secondaryTextStyle = spec.style.secondaryTextStyle
+    private func loadSelected() {
+        let spec = store.load(id: selectedSpecID) ?? store.loadDefault()
+        applySpec(spec)
     }
 
-    private func save() {
-        var spec = draftSpec()
+    private func saveSelected(makeDefault: Bool) {
+        var spec = draftSpec(id: selectedSpecID)
         spec.updatedAt = Date()
         spec = spec.normalised()
 
-        store.save(spec)
+        store.save(spec, makeDefault: makeDefault)
         lastSavedAt = spec.updatedAt
+
+        refreshSavedSpecs(preservingSelection: true)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+    }
+
+    private func createNewFromCurrentDraft() {
+        var spec = draftSpec(id: UUID())
+        spec.updatedAt = Date()
+
+        let trimmedName = spec.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedName.isEmpty {
+            spec.name = "New Design"
+        }
+
+        spec = spec.normalised()
+
+        store.save(spec, makeDefault: false)
+
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
 
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
 
-    private func resetToDefault() {
-        let spec = WidgetSpec.defaultSpec()
-        store.save(spec)
+    private func makeSelectedDefault() {
+        store.setDefault(id: selectedSpecID)
+        defaultSpecID = selectedSpecID
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+    }
 
-        lastSavedAt = Date()
-        load()
+    private func deleteSelected() {
+        store.delete(id: selectedSpecID)
+
+        let fallback = store.loadDefault()
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = store.defaultSpecID() ?? fallback.id
+        applySpec(store.load(id: selectedSpecID) ?? fallback)
+
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+    }
+
+    private func resetSelectedToTemplate() {
+        let template = WidgetSpec.defaultSpec().normalised()
+
+        var spec = template
+        spec.id = selectedSpecID
+
+        let currentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !currentName.isEmpty {
+            spec.name = currentName
+        }
+
+        spec.updatedAt = Date()
+        spec = spec.normalised()
+
+        store.save(spec, makeDefault: true)
+        refreshSavedSpecs(preservingSelection: true)
+        applySpec(spec)
 
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
