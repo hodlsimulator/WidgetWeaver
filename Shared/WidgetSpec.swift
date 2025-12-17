@@ -8,8 +8,11 @@
 import Foundation
 import SwiftUI
 import WidgetKit
+import UIKit
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
+    public static let currentVersion: Int = 3
+
     public var version: Int
     public var id: UUID
     public var name: String
@@ -18,18 +21,20 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var updatedAt: Date
 
     public var symbol: SymbolSpec?
+    public var image: ImageSpec?
 
     public var layout: LayoutSpec
     public var style: StyleSpec
 
     public init(
-        version: Int = 2,
+        version: Int = WidgetSpec.currentVersion,
         id: UUID = UUID(),
         name: String,
         primaryText: String,
         secondaryText: String?,
         updatedAt: Date = Date(),
         symbol: SymbolSpec? = nil,
+        image: ImageSpec? = nil,
         layout: LayoutSpec = .defaultLayout,
         style: StyleSpec = .defaultStyle
     ) {
@@ -40,6 +45,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.secondaryText = secondaryText
         self.updatedAt = updatedAt
         self.symbol = symbol
+        self.image = image
         self.layout = layout
         self.style = style
     }
@@ -58,6 +64,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
                 tint: .accent,
                 placement: .beforeName
             ),
+            image: nil,
             layout: .defaultLayout,
             style: .defaultStyle
         )
@@ -66,7 +73,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public func normalised() -> WidgetSpec {
         var s = self
 
-        s.version = max(1, s.version)
+        s.version = max(WidgetSpec.currentVersion, s.version)
 
         let trimmedName = s.name.trimmingCharacters(in: .whitespacesAndNewlines)
         s.name = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
@@ -90,9 +97,18 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             s.symbol = nil
         }
 
+        if let img = s.image?.normalised() {
+            if img.fileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                s.image = nil
+            } else {
+                s.image = img
+            }
+        } else {
+            s.image = nil
+        }
+
         s.layout = s.layout.normalised()
         s.style = s.style.normalised()
-
         return s
     }
 
@@ -104,6 +120,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case secondaryText
         case updatedAt
         case symbol
+        case image
         case layout
         case style
     }
@@ -119,6 +136,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let updatedAt = (try? c.decode(Date.self, forKey: .updatedAt)) ?? Date()
 
         let symbol = (try? c.decodeIfPresent(SymbolSpec.self, forKey: .symbol)) ?? nil
+        let image = (try? c.decodeIfPresent(ImageSpec.self, forKey: .image)) ?? nil
+
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
 
@@ -130,6 +149,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             secondaryText: secondaryText,
             updatedAt: updatedAt,
             symbol: symbol,
+            image: image,
             layout: layout,
             style: style
         )
@@ -145,6 +165,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(secondaryText, forKey: .secondaryText)
         try c.encode(updatedAt, forKey: .updatedAt)
         try c.encodeIfPresent(symbol, forKey: .symbol)
+        try c.encodeIfPresent(image, forKey: .image)
         try c.encode(layout, forKey: .layout)
         try c.encode(style, forKey: .style)
     }
@@ -178,10 +199,8 @@ public struct SymbolSpec: Codable, Hashable {
 
     public func normalised() -> SymbolSpec {
         var s = self
-
         s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines)
         s.size = s.size.clamped(to: 8...96)
-
         return s
     }
 
@@ -196,7 +215,6 @@ public struct SymbolSpec: Codable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-
         let name = (try? c.decode(String.self, forKey: .name)) ?? ""
         let size = (try? c.decode(Double.self, forKey: .size)) ?? 18
         let weight = (try? c.decode(SymbolWeightToken.self, forKey: .weight)) ?? .regular
@@ -340,13 +358,96 @@ public enum SymbolWeightToken: String, Codable, Hashable, CaseIterable, Identifi
     }
 }
 
+// MARK: - Image component (v0)
+
+public struct ImageSpec: Codable, Hashable {
+    public var fileName: String
+    public var contentMode: ImageContentModeToken
+    public var height: Double
+    public var cornerRadius: Double
+
+    public init(
+        fileName: String,
+        contentMode: ImageContentModeToken = .fill,
+        height: Double = 90,
+        cornerRadius: Double = 14
+    ) {
+        self.fileName = fileName
+        self.contentMode = contentMode
+        self.height = height
+        self.cornerRadius = cornerRadius
+    }
+
+    public func normalised() -> ImageSpec {
+        var i = self
+        i.fileName = i.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        i.height = i.height.clamped(to: 40...240)
+        i.cornerRadius = i.cornerRadius.clamped(to: 0...44)
+        return i
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fileName
+        case contentMode
+        case height
+        case cornerRadius
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        let fileName = (try? c.decode(String.self, forKey: .fileName)) ?? ""
+        let contentMode = (try? c.decode(ImageContentModeToken.self, forKey: .contentMode)) ?? .fill
+        let height = (try? c.decode(Double.self, forKey: .height)) ?? 90
+        let cornerRadius = (try? c.decode(Double.self, forKey: .cornerRadius)) ?? 14
+
+        self.init(
+            fileName: fileName,
+            contentMode: contentMode,
+            height: height,
+            cornerRadius: cornerRadius
+        )
+    }
+}
+
+public enum ImageContentModeToken: String, Codable, Hashable, CaseIterable, Identifiable {
+    case fill
+    case fit
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .fill: return "Fill"
+        case .fit: return "Fit"
+        }
+    }
+
+    public var swiftUIContentMode: ContentMode {
+        switch self {
+        case .fill: return .fill
+        case .fit: return .fit
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let raw = (try? c.decode(String.self)) ?? ""
+        self = ImageContentModeToken(rawValue: raw) ?? .fill
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
+    }
+}
+
 // MARK: - Layout
 
 public struct LayoutSpec: Codable, Hashable {
     public var axis: LayoutAxisToken
     public var alignment: LayoutAlignmentToken
     public var spacing: Double
-
     public var showSecondaryInSmall: Bool
     public var primaryLineLimitSmall: Int
     public var primaryLineLimit: Int
@@ -374,13 +475,10 @@ public struct LayoutSpec: Codable, Hashable {
 
     public func normalised() -> LayoutSpec {
         var l = self
-
         l.spacing = l.spacing.clamped(to: 0...32)
-
         l.primaryLineLimitSmall = l.primaryLineLimitSmall.clamped(to: 1...8)
         l.primaryLineLimit = l.primaryLineLimit.clamped(to: 1...10)
         l.secondaryLineLimit = l.secondaryLineLimit.clamped(to: 1...10)
-
         return l
     }
 
@@ -396,11 +494,9 @@ public struct LayoutSpec: Codable, Hashable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-
         let axis = (try? c.decode(LayoutAxisToken.self, forKey: .axis)) ?? .vertical
         let alignment = (try? c.decode(LayoutAlignmentToken.self, forKey: .alignment)) ?? .topLeading
         let spacing = (try? c.decode(Double.self, forKey: .spacing)) ?? 6
-
         let showSecondaryInSmall = (try? c.decode(Bool.self, forKey: .showSecondaryInSmall)) ?? false
         let primaryLineLimitSmall = (try? c.decode(Int.self, forKey: .primaryLineLimitSmall)) ?? 2
         let primaryLineLimit = (try? c.decode(Int.self, forKey: .primaryLineLimit)) ?? 3
@@ -501,10 +597,8 @@ public enum LayoutAlignmentToken: String, Codable, Hashable, CaseIterable, Ident
 public struct StyleSpec: Codable, Hashable {
     public var padding: Double
     public var cornerRadius: Double
-
     public var background: BackgroundToken
     public var accent: AccentToken
-
     public var nameTextStyle: TextStyleToken
     public var primaryTextStyle: TextStyleToken
     public var secondaryTextStyle: TextStyleToken
@@ -551,10 +645,8 @@ public struct StyleSpec: Codable, Hashable {
 
         let padding = (try? c.decode(Double.self, forKey: .padding)) ?? 12
         let cornerRadius = (try? c.decode(Double.self, forKey: .cornerRadius)) ?? 22
-
         let background = (try? c.decode(BackgroundToken.self, forKey: .background)) ?? .fillTertiary
         let accent = (try? c.decode(AccentToken.self, forKey: .accent)) ?? .blue
-
         let nameTextStyle = (try? c.decode(TextStyleToken.self, forKey: .nameTextStyle)) ?? .caption
         let primaryTextStyle = (try? c.decode(TextStyleToken.self, forKey: .primaryTextStyle)) ?? .auto
         let secondaryTextStyle = (try? c.decode(TextStyleToken.self, forKey: .secondaryTextStyle)) ?? .auto
@@ -592,16 +684,11 @@ public enum BackgroundToken: String, Codable, Hashable, CaseIterable, Identifiab
 
     public func shapeStyle(accent: Color) -> AnyShapeStyle {
         switch self {
-        case .fillSecondary:
-            return AnyShapeStyle(.fill.secondary)
-        case .fillTertiary:
-            return AnyShapeStyle(.fill.tertiary)
-        case .fillQuaternary:
-            return AnyShapeStyle(.fill.quaternary)
-        case .accent:
-            return AnyShapeStyle(accent)
-        case .clear:
-            return AnyShapeStyle(Color.clear)
+        case .fillSecondary: return AnyShapeStyle(.fill.secondary)
+        case .fillTertiary: return AnyShapeStyle(.fill.tertiary)
+        case .fillQuaternary: return AnyShapeStyle(.fill.quaternary)
+        case .accent: return AnyShapeStyle(accent)
+        case .clear: return AnyShapeStyle(Color.clear)
         }
     }
 
@@ -770,7 +857,6 @@ public struct WidgetWeaverSpecView: View {
         let spec = spec.normalised()
         let layout = spec.layout
         let style = spec.style
-
         let accent = style.accent.swiftUIColor
         let background = style.background.shapeStyle(accent: accent)
 
@@ -800,6 +886,10 @@ public struct WidgetWeaverSpecView: View {
 
     private func contentStack(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: layout.spacing) {
+            if let img = spec.image {
+                bannerImage(img, style: style)
+            }
+
             header(spec: spec, style: style, accent: accent)
 
             Text(spec.primaryText)
@@ -819,12 +909,47 @@ public struct WidgetWeaverSpecView: View {
     }
 
     @ViewBuilder
+    private func bannerImage(_ image: ImageSpec, style: StyleSpec) -> some View {
+        if let uiImage = AppGroup.loadUIImage(fileName: image.fileName) {
+            let h = bannerHeight(image: image, family: family)
+
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: image.contentMode.swiftUIContentMode)
+                .frame(maxWidth: .infinity)
+                .frame(height: h)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: image.cornerRadius, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            EmptyView()
+        }
+    }
+
+    private func bannerHeight(image: ImageSpec, family: WidgetFamily) -> CGFloat {
+        let requested = image.height.normalised().clamped(to: 40...240)
+
+        let maxForFamily: Double
+        switch family {
+        case .systemSmall:
+            maxForFamily = 90
+        case .systemMedium:
+            maxForFamily = 110
+        case .systemLarge:
+            maxForFamily = 180
+        default:
+            maxForFamily = 110
+        }
+
+        return CGFloat(min(requested, maxForFamily))
+    }
+
+    @ViewBuilder
     private func header(spec: WidgetSpec, style: StyleSpec, accent: Color) -> some View {
-        let nameView =
-            Text(spec.name)
-                .font(style.nameTextStyle.font(fallback: .caption))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        let nameView = Text(spec.name)
+            .font(style.nameTextStyle.font(fallback: .caption))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
 
         if let symbol = spec.symbol {
             switch symbol.placement {
@@ -833,7 +958,6 @@ public struct WidgetWeaverSpecView: View {
                     symbolView(symbol, accent: accent)
                     nameView
                 }
-
             case .beforeName:
                 HStack(alignment: .center, spacing: 6) {
                     symbolView(symbol, accent: accent)
@@ -847,10 +971,9 @@ public struct WidgetWeaverSpecView: View {
 
     @ViewBuilder
     private func symbolView(_ symbol: SymbolSpec, accent: Color) -> some View {
-        let base =
-            Image(systemName: symbol.name)
-                .symbolRenderingMode(symbol.renderingMode.swiftUISymbolRenderingMode)
-                .font(.system(size: symbol.size, weight: symbol.weight.fontWeight))
+        let base = Image(systemName: symbol.name)
+            .symbolRenderingMode(symbol.renderingMode.swiftUISymbolRenderingMode)
+            .font(.system(size: symbol.size, weight: symbol.weight.fontWeight))
 
         switch symbol.tint {
         case .accent:
@@ -870,29 +993,21 @@ public struct WidgetWeaverSpecView: View {
     }
 
     private func shouldShowSecondary(layout: LayoutSpec) -> Bool {
-        if family == .systemSmall {
-            return layout.showSecondaryInSmall
-        }
+        if family == .systemSmall { return layout.showSecondaryInSmall }
         return true
     }
 
     private func primaryLineLimit(layout: LayoutSpec) -> Int {
-        if family == .systemSmall {
-            return layout.primaryLineLimitSmall
-        }
+        if family == .systemSmall { return layout.primaryLineLimitSmall }
         return layout.primaryLineLimit
     }
 
     private func defaultPrimaryFont(for family: WidgetFamily) -> Font {
         switch family {
-        case .systemSmall:
-            return .headline
-        case .systemMedium:
-            return .title3
-        case .systemLarge:
-            return .title2
-        default:
-            return .headline
+        case .systemSmall: return .headline
+        case .systemMedium: return .title3
+        case .systemLarge: return .title2
+        default: return .headline
         }
     }
 }
@@ -905,9 +1020,7 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         switch context {
         case .widget:
-            content
-                .containerBackground(background, for: .widget)
-
+            content.containerBackground(background, for: .widget)
         case .preview:
             let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             content
@@ -925,4 +1038,8 @@ private extension Comparable {
         if self > range.upperBound { return range.upperBound }
         return self
     }
+}
+
+private extension Double {
+    func normalised() -> Double { self.isFinite ? self : 0 }
 }

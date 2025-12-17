@@ -7,6 +7,8 @@
 
 import SwiftUI
 import WidgetKit
+import PhotosUI
+import UIKit
 
 struct ContentView: View {
     @State private var savedSpecs: [WidgetSpec] = []
@@ -23,6 +25,12 @@ struct ContentView: View {
     @State private var symbolWeight: SymbolWeightToken = .semibold
     @State private var symbolRenderingMode: SymbolRenderingModeToken = .hierarchical
     @State private var symbolTint: SymbolTintToken = .accent
+
+    @State private var pickedPhoto: PhotosPickerItem?
+    @State private var imageFileName: String = ""
+    @State private var imageContentMode: ImageContentModeToken = .fill
+    @State private var imageHeight: Double = 90
+    @State private var imageCornerRadius: Double = 14
 
     @State private var axis: LayoutAxisToken = LayoutSpec.defaultLayout.axis
     @State private var alignment: LayoutAlignmentToken = LayoutSpec.defaultLayout.alignment
@@ -46,6 +54,7 @@ struct ContentView: View {
                 savedDesignsSection
                 specSection
                 symbolSection
+                imageSection
                 layoutSection
                 styleSection
                 previewSection
@@ -54,8 +63,10 @@ struct ContentView: View {
             }
             .navigationTitle("WidgetWeaver")
             .onAppear { bootstrap() }
-            .onChange(of: selectedSpecID) { _, _ in
-                loadSelected()
+            .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+            .onChange(of: pickedPhoto) { _, newItem in
+                guard let newItem else { return }
+                Task { await importPickedImage(newItem) }
             }
         }
     }
@@ -76,19 +87,13 @@ struct ContentView: View {
                     }
                 }
 
-                Button("New Design (Copy Current)") {
-                    createNewFromCurrentDraft()
-                }
+                Button("New Design (Copy Current)") { createNewFromCurrentDraft() }
 
-                Button("Make This Default") {
-                    makeSelectedDefault()
-                }
-                .disabled(savedSpecs.isEmpty)
+                Button("Make This Default") { makeSelectedDefault() }
+                    .disabled(savedSpecs.isEmpty)
 
-                Button("Delete Design", role: .destructive) {
-                    deleteSelected()
-                }
-                .disabled(savedSpecs.count <= 1)
+                Button("Delete Design", role: .destructive) { deleteSelected() }
+                    .disabled(savedSpecs.count <= 1)
             }
         }
     }
@@ -145,14 +150,72 @@ struct ContentView: View {
 
             if !symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 HStack(spacing: 10) {
-                    Text("Preview")
-                        .foregroundStyle(.secondary)
+                    Text("Preview").foregroundStyle(.secondary)
                     Spacer()
+
                     Image(systemName: symbolName.trimmingCharacters(in: .whitespacesAndNewlines))
                         .symbolRenderingMode(symbolRenderingMode.swiftUISymbolRenderingMode)
                         .font(.system(size: symbolSize, weight: symbolWeight.fontWeight))
-                        .foregroundStyle(symbolTint == .accent ? accent.swiftUIColor : (symbolTint == .primary ? Color.primary : Color.secondary))
+                        .foregroundStyle(
+                            symbolTint == .accent
+                            ? accent.swiftUIColor
+                            : (symbolTint == .primary ? Color.primary : Color.secondary)
+                        )
                 }
+            }
+        }
+    }
+
+    private var imageSection: some View {
+        Section("Image") {
+            PhotosPicker(selection: $pickedPhoto, matching: .images) {
+                Label(imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose photo (optional)" : "Replace photo", systemImage: "photo")
+            }
+
+            if let uiImage = AppGroup.loadUIImage(fileName: imageFileName) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Preview")
+                        .foregroundStyle(.secondary)
+
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: imageContentMode.swiftUIContentMode)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 140)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous))
+                }
+
+                Button("Remove Image", role: .destructive) {
+                    imageFileName = ""
+                }
+            } else {
+                Text("No image selected.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Content mode", selection: $imageContentMode) {
+                ForEach(ImageContentModeToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Height")
+                    Spacer()
+                    Text("\(Int(imageHeight))").foregroundStyle(.secondary)
+                }
+                Slider(value: $imageHeight, in: 40...240, step: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Corner radius")
+                    Spacer()
+                    Text("\(Int(imageCornerRadius))").foregroundStyle(.secondary)
+                }
+                Slider(value: $imageCornerRadius, in: 0...44, step: 1)
             }
         }
     }
@@ -240,14 +303,12 @@ struct ContentView: View {
                         spec: draftSpec(id: selectedSpecID),
                         cornerRadius: cornerRadius
                     )
-
                     PreviewTile(
                         title: "Medium",
                         family: .systemMedium,
                         spec: draftSpec(id: selectedSpecID),
                         cornerRadius: cornerRadius
                     )
-
                     PreviewTile(
                         title: "Large",
                         family: .systemLarge,
@@ -262,18 +323,12 @@ struct ContentView: View {
 
     private var actionsSection: some View {
         Section {
-            Button("Save to Widget") {
-                saveSelected(makeDefault: true)
-            }
-            .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Save to Widget") { saveSelected(makeDefault: true) }
+                .disabled(primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Button("Reload From Store") {
-                loadSelected()
-            }
+            Button("Reload From Store") { loadSelected() }
 
-            Button("Reset Selected To Template", role: .destructive) {
-                resetSelectedToTemplate()
-            }
+            Button("Reset Selected To Template", role: .destructive) { resetSelectedToTemplate() }
         }
     }
 
@@ -299,7 +354,6 @@ struct ContentView: View {
 
         let fallback = store.loadDefault()
         selectedSpecID = defaultSpecID ?? fallback.id
-
         applySpec(store.load(id: selectedSpecID) ?? fallback)
     }
 
@@ -312,9 +366,7 @@ struct ContentView: View {
         defaultSpecID = store.defaultSpecID()
 
         if preservingSelection {
-            if specs.contains(where: { $0.id == selectedSpecID }) {
-                return
-            }
+            if specs.contains(where: { $0.id == selectedSpecID }) { return }
         }
 
         let fallback = store.loadDefault()
@@ -344,6 +396,18 @@ struct ContentView: View {
             symbolTint = .accent
         }
 
+        if let img = n.image {
+            imageFileName = img.fileName
+            imageContentMode = img.contentMode
+            imageHeight = img.height
+            imageCornerRadius = img.cornerRadius
+        } else {
+            imageFileName = ""
+            imageContentMode = .fill
+            imageHeight = 90
+            imageCornerRadius = 14
+        }
+
         axis = n.layout.axis
         alignment = n.layout.alignment
         spacing = n.layout.spacing
@@ -361,18 +425,26 @@ struct ContentView: View {
 
     private func draftSpec(id: UUID) -> WidgetSpec {
         let trimmedSymbolName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbolSpec: SymbolSpec? = trimmedSymbolName.isEmpty
+        ? nil
+        : SymbolSpec(
+            name: trimmedSymbolName,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint,
+            placement: symbolPlacement
+        )
 
-        let symbolSpec: SymbolSpec? =
-            trimmedSymbolName.isEmpty
-            ? nil
-            : SymbolSpec(
-                name: trimmedSymbolName,
-                size: symbolSize,
-                weight: symbolWeight,
-                renderingMode: symbolRenderingMode,
-                tint: symbolTint,
-                placement: symbolPlacement
-            )
+        let trimmedImageFileName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let imageSpec: ImageSpec? = trimmedImageFileName.isEmpty
+        ? nil
+        : ImageSpec(
+            fileName: trimmedImageFileName,
+            contentMode: imageContentMode,
+            height: imageHeight,
+            cornerRadius: imageCornerRadius
+        )
 
         let layout = LayoutSpec(
             axis: axis,
@@ -401,10 +473,29 @@ struct ContentView: View {
             secondaryText: secondaryText.isEmpty ? nil : secondaryText,
             updatedAt: lastSavedAt ?? Date(),
             symbol: symbolSpec,
+            image: imageSpec,
             layout: layout,
             style: style
         )
         .normalised()
+    }
+
+    // MARK: - Photos import
+
+    private func importPickedImage(_ item: PhotosPickerItem) async {
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            guard let uiImage = UIImage(data: data) else { return }
+
+            let fileName = AppGroup.createImageFileName(ext: "jpg")
+            try AppGroup.writeUIImage(uiImage, fileName: fileName, compressionQuality: 0.85)
+
+            await MainActor.run {
+                imageFileName = fileName
+            }
+        } catch {
+            // Intentionally ignored (image remains unchanged).
+        }
     }
 
     // MARK: - Actions
@@ -420,9 +511,10 @@ struct ContentView: View {
         spec = spec.normalised()
 
         store.save(spec, makeDefault: makeDefault)
-        lastSavedAt = spec.updatedAt
 
+        lastSavedAt = spec.updatedAt
         refreshSavedSpecs(preservingSelection: true)
+
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
     }
 
@@ -436,7 +528,6 @@ struct ContentView: View {
         }
 
         spec = spec.normalised()
-
         store.save(spec, makeDefault: false)
 
         refreshSavedSpecs(preservingSelection: false)
@@ -457,6 +548,7 @@ struct ContentView: View {
 
         let fallback = store.loadDefault()
         refreshSavedSpecs(preservingSelection: false)
+
         selectedSpecID = store.defaultSpecID() ?? fallback.id
         applySpec(store.load(id: selectedSpecID) ?? fallback)
 
@@ -465,7 +557,6 @@ struct ContentView: View {
 
     private func resetSelectedToTemplate() {
         let template = WidgetSpec.defaultSpec().normalised()
-
         var spec = template
         spec.id = selectedSpecID
 
@@ -478,6 +569,7 @@ struct ContentView: View {
         spec = spec.normalised()
 
         store.save(spec, makeDefault: true)
+
         refreshSavedSpecs(preservingSelection: true)
         applySpec(spec)
 
@@ -505,14 +597,10 @@ private struct PreviewTile: View {
 
     private var size: CGSize {
         switch family {
-        case .systemSmall:
-            return CGSize(width: 170, height: 170)
-        case .systemMedium:
-            return CGSize(width: 364, height: 170)
-        case .systemLarge:
-            return CGSize(width: 364, height: 382)
-        default:
-            return CGSize(width: 170, height: 170)
+        case .systemSmall: return CGSize(width: 170, height: 170)
+        case .systemMedium: return CGSize(width: 364, height: 170)
+        case .systemLarge: return CGSize(width: 364, height: 382)
+        default: return CGSize(width: 170, height: 170)
         }
     }
 }
