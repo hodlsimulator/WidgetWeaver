@@ -17,16 +17,19 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var secondaryText: String?
     public var updatedAt: Date
 
+    public var symbol: SymbolSpec?
+
     public var layout: LayoutSpec
     public var style: StyleSpec
 
     public init(
-        version: Int = 1,
+        version: Int = 2,
         id: UUID = UUID(),
         name: String,
         primaryText: String,
         secondaryText: String?,
         updatedAt: Date = Date(),
+        symbol: SymbolSpec? = nil,
         layout: LayoutSpec = .defaultLayout,
         style: StyleSpec = .defaultStyle
     ) {
@@ -36,6 +39,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.primaryText = primaryText
         self.secondaryText = secondaryText
         self.updatedAt = updatedAt
+        self.symbol = symbol
         self.layout = layout
         self.style = style
     }
@@ -46,6 +50,14 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             primaryText: "Hello",
             secondaryText: "Saved spec → widget",
             updatedAt: Date(),
+            symbol: SymbolSpec(
+                name: "sparkles",
+                size: 18,
+                weight: .semibold,
+                renderingMode: .hierarchical,
+                tint: .accent,
+                placement: .beforeName
+            ),
             layout: .defaultLayout,
             style: .defaultStyle
         )
@@ -68,6 +80,16 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             s.secondaryText = nil
         }
 
+        if let sym = s.symbol?.normalised() {
+            if sym.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                s.symbol = nil
+            } else {
+                s.symbol = sym
+            }
+        } else {
+            s.symbol = nil
+        }
+
         s.layout = s.layout.normalised()
         s.style = s.style.normalised()
 
@@ -81,6 +103,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case primaryText
         case secondaryText
         case updatedAt
+        case symbol
         case layout
         case style
     }
@@ -95,6 +118,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let secondaryText = try? c.decodeIfPresent(String.self, forKey: .secondaryText)
         let updatedAt = (try? c.decode(Date.self, forKey: .updatedAt)) ?? Date()
 
+        let symbol = (try? c.decodeIfPresent(SymbolSpec.self, forKey: .symbol)) ?? nil
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
 
@@ -105,6 +129,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             primaryText: primaryText,
             secondaryText: secondaryText,
             updatedAt: updatedAt,
+            symbol: symbol,
             layout: layout,
             style: style
         )
@@ -119,8 +144,199 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encode(primaryText, forKey: .primaryText)
         try c.encodeIfPresent(secondaryText, forKey: .secondaryText)
         try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encodeIfPresent(symbol, forKey: .symbol)
         try c.encode(layout, forKey: .layout)
         try c.encode(style, forKey: .style)
+    }
+}
+
+// MARK: - Components (v0)
+
+public struct SymbolSpec: Codable, Hashable {
+    public var name: String
+    public var size: Double
+    public var weight: SymbolWeightToken
+    public var renderingMode: SymbolRenderingModeToken
+    public var tint: SymbolTintToken
+    public var placement: SymbolPlacementToken
+
+    public init(
+        name: String,
+        size: Double = 18,
+        weight: SymbolWeightToken = .regular,
+        renderingMode: SymbolRenderingModeToken = .monochrome,
+        tint: SymbolTintToken = .accent,
+        placement: SymbolPlacementToken = .beforeName
+    ) {
+        self.name = name
+        self.size = size
+        self.weight = weight
+        self.renderingMode = renderingMode
+        self.tint = tint
+        self.placement = placement
+    }
+
+    public func normalised() -> SymbolSpec {
+        var s = self
+
+        s.name = s.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        s.size = s.size.clamped(to: 8...96)
+
+        return s
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case size
+        case weight
+        case renderingMode
+        case tint
+        case placement
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        let name = (try? c.decode(String.self, forKey: .name)) ?? ""
+        let size = (try? c.decode(Double.self, forKey: .size)) ?? 18
+        let weight = (try? c.decode(SymbolWeightToken.self, forKey: .weight)) ?? .regular
+        let renderingMode = (try? c.decode(SymbolRenderingModeToken.self, forKey: .renderingMode)) ?? .monochrome
+        let tint = (try? c.decode(SymbolTintToken.self, forKey: .tint)) ?? .accent
+        let placement = (try? c.decode(SymbolPlacementToken.self, forKey: .placement)) ?? .beforeName
+
+        self.init(
+            name: name,
+            size: size,
+            weight: weight,
+            renderingMode: renderingMode,
+            tint: tint,
+            placement: placement
+        )
+    }
+}
+
+public enum SymbolPlacementToken: String, Codable, Hashable, CaseIterable, Identifiable {
+    case beforeName
+    case aboveName
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .beforeName: return "Before Name"
+        case .aboveName: return "Above Name"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let raw = (try? c.decode(String.self)) ?? ""
+        self = SymbolPlacementToken(rawValue: raw) ?? .beforeName
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
+    }
+}
+
+public enum SymbolTintToken: String, Codable, Hashable, CaseIterable, Identifiable {
+    case accent
+    case primary
+    case secondary
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .accent: return "Accent"
+        case .primary: return "Primary"
+        case .secondary: return "Secondary"
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let raw = (try? c.decode(String.self)) ?? ""
+        self = SymbolTintToken(rawValue: raw) ?? .accent
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
+    }
+}
+
+public enum SymbolRenderingModeToken: String, Codable, Hashable, CaseIterable, Identifiable {
+    case monochrome
+    case hierarchical
+    case multicolor
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .monochrome: return "Monochrome"
+        case .hierarchical: return "Hierarchical"
+        case .multicolor: return "Multicolour"
+        }
+    }
+
+    public var swiftUISymbolRenderingMode: SymbolRenderingMode {
+        switch self {
+        case .monochrome: return .monochrome
+        case .hierarchical: return .hierarchical
+        case .multicolor: return .multicolor
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let raw = (try? c.decode(String.self)) ?? ""
+        self = SymbolRenderingModeToken(rawValue: raw) ?? .monochrome
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
+    }
+}
+
+public enum SymbolWeightToken: String, Codable, Hashable, CaseIterable, Identifiable {
+    case regular
+    case medium
+    case semibold
+    case bold
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .regular: return "Regular"
+        case .medium: return "Medium"
+        case .semibold: return "Semibold"
+        case .bold: return "Bold"
+        }
+    }
+
+    public var fontWeight: Font.Weight {
+        switch self {
+        case .regular: return .regular
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let raw = (try? c.decode(String.self)) ?? ""
+        self = SymbolWeightToken(rawValue: raw) ?? .regular
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
     }
 }
 
@@ -562,12 +778,12 @@ public struct WidgetWeaverSpecView: View {
             if layout.axis == .horizontal {
                 HStack(alignment: .top, spacing: layout.spacing) {
                     accentBar(isHorizontal: true, accent: accent)
-                    contentStack(spec: spec, layout: layout, style: style)
+                    contentStack(spec: spec, layout: layout, style: style, accent: accent)
                 }
             } else {
                 VStack(alignment: .leading, spacing: layout.spacing) {
                     accentBar(isHorizontal: false, accent: accent)
-                    contentStack(spec: spec, layout: layout, style: style)
+                    contentStack(spec: spec, layout: layout, style: style, accent: accent)
                 }
             }
         }
@@ -582,12 +798,9 @@ public struct WidgetWeaverSpecView: View {
         )
     }
 
-    private func contentStack(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec) -> some View {
+    private func contentStack(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: layout.spacing) {
-            Text(spec.name)
-                .font(style.nameTextStyle.font(fallback: .caption))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            header(spec: spec, style: style, accent: accent)
 
             Text(spec.primaryText)
                 .font(style.primaryTextStyle.font(fallback: defaultPrimaryFont(for: family)))
@@ -602,6 +815,50 @@ public struct WidgetWeaverSpecView: View {
             }
 
             Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func header(spec: WidgetSpec, style: StyleSpec, accent: Color) -> some View {
+        let nameView =
+            Text(spec.name)
+                .font(style.nameTextStyle.font(fallback: .caption))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+        if let symbol = spec.symbol {
+            switch symbol.placement {
+            case .aboveName:
+                VStack(alignment: .leading, spacing: 6) {
+                    symbolView(symbol, accent: accent)
+                    nameView
+                }
+
+            case .beforeName:
+                HStack(alignment: .center, spacing: 6) {
+                    symbolView(symbol, accent: accent)
+                    nameView
+                }
+            }
+        } else {
+            nameView
+        }
+    }
+
+    @ViewBuilder
+    private func symbolView(_ symbol: SymbolSpec, accent: Color) -> some View {
+        let base =
+            Image(systemName: symbol.name)
+                .symbolRenderingMode(symbol.renderingMode.swiftUISymbolRenderingMode)
+                .font(.system(size: symbol.size, weight: symbol.weight.fontWeight))
+
+        switch symbol.tint {
+        case .accent:
+            base.foregroundStyle(accent)
+        case .primary:
+            base.foregroundStyle(.primary)
+        case .secondary:
+            base.foregroundStyle(.secondary)
         }
     }
 

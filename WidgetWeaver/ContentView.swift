@@ -17,6 +17,13 @@ struct ContentView: View {
     @State private var primaryText: String = ""
     @State private var secondaryText: String = ""
 
+    @State private var symbolName: String = ""
+    @State private var symbolPlacement: SymbolPlacementToken = .beforeName
+    @State private var symbolSize: Double = 18
+    @State private var symbolWeight: SymbolWeightToken = .semibold
+    @State private var symbolRenderingMode: SymbolRenderingModeToken = .hierarchical
+    @State private var symbolTint: SymbolTintToken = .accent
+
     @State private var axis: LayoutAxisToken = LayoutSpec.defaultLayout.axis
     @State private var alignment: LayoutAlignmentToken = LayoutSpec.defaultLayout.alignment
     @State private var spacing: Double = LayoutSpec.defaultLayout.spacing
@@ -38,6 +45,7 @@ struct ContentView: View {
             Form {
                 savedDesignsSection
                 specSection
+                symbolSection
                 layoutSection
                 styleSection
                 previewSection
@@ -93,6 +101,59 @@ struct ContentView: View {
             TextField("Primary text", text: $primaryText)
 
             TextField("Secondary text (optional)", text: $secondaryText)
+        }
+    }
+
+    private var symbolSection: some View {
+        Section("Symbol") {
+            TextField("SF Symbol name (optional)", text: $symbolName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            Picker("Placement", selection: $symbolPlacement) {
+                ForEach(SymbolPlacementToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Picker("Rendering", selection: $symbolRenderingMode) {
+                ForEach(SymbolRenderingModeToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Picker("Tint", selection: $symbolTint) {
+                ForEach(SymbolTintToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Picker("Weight", selection: $symbolWeight) {
+                ForEach(SymbolWeightToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Size")
+                    Spacer()
+                    Text("\(Int(symbolSize))").foregroundStyle(.secondary)
+                }
+                Slider(value: $symbolSize, in: 8...96, step: 1)
+            }
+
+            if !symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                HStack(spacing: 10) {
+                    Text("Preview")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: symbolName.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .symbolRenderingMode(symbolRenderingMode.swiftUISymbolRenderingMode)
+                        .font(.system(size: symbolSize, weight: symbolWeight.fontWeight))
+                        .foregroundStyle(symbolTint == .accent ? accent.swiftUIColor : (symbolTint == .primary ? Color.primary : Color.secondary))
+                }
+            }
         }
     }
 
@@ -261,26 +322,58 @@ struct ContentView: View {
     }
 
     private func applySpec(_ spec: WidgetSpec) {
-        name = spec.name
-        primaryText = spec.primaryText
-        secondaryText = spec.secondaryText ?? ""
+        let n = spec.normalised()
 
-        axis = spec.layout.axis
-        alignment = spec.layout.alignment
-        spacing = spec.layout.spacing
-        showSecondaryInSmall = spec.layout.showSecondaryInSmall
+        name = n.name
+        primaryText = n.primaryText
+        secondaryText = n.secondaryText ?? ""
 
-        padding = spec.style.padding
-        cornerRadius = spec.style.cornerRadius
-        background = spec.style.background
-        accent = spec.style.accent
-        primaryTextStyle = spec.style.primaryTextStyle
-        secondaryTextStyle = spec.style.secondaryTextStyle
+        if let sym = n.symbol {
+            symbolName = sym.name
+            symbolPlacement = sym.placement
+            symbolSize = sym.size
+            symbolWeight = sym.weight
+            symbolRenderingMode = sym.renderingMode
+            symbolTint = sym.tint
+        } else {
+            symbolName = ""
+            symbolPlacement = .beforeName
+            symbolSize = 18
+            symbolWeight = .semibold
+            symbolRenderingMode = .hierarchical
+            symbolTint = .accent
+        }
 
-        lastSavedAt = spec.updatedAt
+        axis = n.layout.axis
+        alignment = n.layout.alignment
+        spacing = n.layout.spacing
+        showSecondaryInSmall = n.layout.showSecondaryInSmall
+
+        padding = n.style.padding
+        cornerRadius = n.style.cornerRadius
+        background = n.style.background
+        accent = n.style.accent
+        primaryTextStyle = n.style.primaryTextStyle
+        secondaryTextStyle = n.style.secondaryTextStyle
+
+        lastSavedAt = n.updatedAt
     }
 
     private func draftSpec(id: UUID) -> WidgetSpec {
+        let trimmedSymbolName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let symbolSpec: SymbolSpec? =
+            trimmedSymbolName.isEmpty
+            ? nil
+            : SymbolSpec(
+                name: trimmedSymbolName,
+                size: symbolSize,
+                weight: symbolWeight,
+                renderingMode: symbolRenderingMode,
+                tint: symbolTint,
+                placement: symbolPlacement
+            )
+
         let layout = LayoutSpec(
             axis: axis,
             alignment: alignment,
@@ -307,6 +400,7 @@ struct ContentView: View {
             primaryText: primaryText,
             secondaryText: secondaryText.isEmpty ? nil : secondaryText,
             updatedAt: lastSavedAt ?? Date(),
+            symbol: symbolSpec,
             layout: layout,
             style: style
         )
