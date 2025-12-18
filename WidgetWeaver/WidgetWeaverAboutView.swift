@@ -33,10 +33,9 @@ struct WidgetWeaverAboutView: View {
             List {
                 aboutHeaderSection
                 capabilitiesSection
-
                 starterTemplatesSection
                 proTemplatesSection
-
+                interactiveButtonsSection
                 variablesSection
                 aiSection
                 sharingSection
@@ -62,26 +61,30 @@ struct WidgetWeaverAboutView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("WidgetWeaver")
                         .font(.title2.weight(.semibold))
+
                     Spacer(minLength: 0)
+
                     Text(appVersionString)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Build WidgetKit widgets from a typed design spec. Designs are saved locally and rendered by the widget extension.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    """
+                    Build WidgetKit widgets from a typed design spec.
+                    Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons.
+                    Designs are saved locally and rendered by the widget extension.
+                    """
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
-                    Button {
-                        onShowWidgetHelp()
-                    } label: {
+                    Button { onShowWidgetHelp() } label: {
                         Label("Widget Help", systemImage: "questionmark.circle")
                     }
 
-                    Button {
-                        onShowPro()
-                    } label: {
+                    Button { onShowPro() } label: {
                         if proManager.isProUnlocked {
                             Label("Pro (Unlocked)", systemImage: "checkmark.seal.fill")
                         } else {
@@ -103,8 +106,33 @@ struct WidgetWeaverAboutView: View {
     private var capabilitiesSection: some View {
         Section {
             FeatureRow(
+                title: "Templates library",
+                subtitle: "Add starter designs (and Pro designs) to your library, then edit freely."
+            )
+
+            FeatureRow(
                 title: "Text-first widgets",
                 subtitle: "Design name, primary text, and optional secondary text."
+            )
+
+            FeatureRow(
+                title: "Layout templates",
+                subtitle: "Classic / Hero / Poster presets, plus axis, alignment, spacing, and line limits."
+            )
+
+            FeatureRow(
+                title: "Accent bar toggle",
+                subtitle: "Optional accent bar per design (handy for Hero/Poster layouts)."
+            )
+
+            FeatureRow(
+                title: "Style tokens",
+                subtitle: "Padding, corner radius, background style, and accent colour."
+            )
+
+            FeatureRow(
+                title: "“Wow” backgrounds",
+                subtitle: "Aurora / Sunset / Midnight / Candy overlays for extra depth."
             )
 
             FeatureRow(
@@ -114,22 +142,22 @@ struct WidgetWeaverAboutView: View {
 
             FeatureRow(
                 title: "Optional photo banner",
-                subtitle: "Pick a photo with PhotosPicker. The image is stored in the App Group so it renders offline."
+                subtitle: "Pick a photo with PhotosPicker. Stored in the App Group so it renders offline."
             )
 
             FeatureRow(
-                title: "Layout tokens",
-                subtitle: "Vertical/horizontal axis, alignment, spacing, and line limits."
+                title: "Interactive buttons (Pro)",
+                subtitle: "Add up to \(WidgetActionBarSpec.maxActions) widget buttons (iOS 17+) to increment variables or set timestamps."
             )
 
             FeatureRow(
-                title: "Style tokens",
-                subtitle: "Padding, corner radius, background style, and accent colour."
+                title: "Variables + Shortcuts (Pro)",
+                subtitle: "{{key}} templates with number/date/relative formatting, updated in-app or via Shortcuts."
             )
 
             FeatureRow(
-                title: "Typography tokens",
-                subtitle: "Per-field text styles (name/primary/secondary)."
+                title: "Matched sets (Pro)",
+                subtitle: "Per-size overrides (Small/Medium/Large) while sharing style + typography tokens."
             )
 
             FeatureRow(
@@ -148,8 +176,8 @@ struct WidgetWeaverAboutView: View {
             )
 
             FeatureRow(
-                title: "Pro features",
-                subtitle: "Matched sets (Small/Medium/Large), Variables + Shortcuts, unlimited designs."
+                title: "Maintenance tools",
+                subtitle: "Randomise Style (draft-only) and Clean Up Unused Images."
             )
         } header: {
             Text("What’s supported right now")
@@ -160,14 +188,15 @@ struct WidgetWeaverAboutView: View {
                     .foregroundStyle(.secondary)
 
                 BulletList(items: [
-                    "Habit tracker / streak counter (with Variables + Shortcuts in Pro)",
+                    "Habit tracker / streak counter (with Variables + interactive buttons in Pro)",
+                    "Counter widget (tap +1 / -1 in Pro)",
                     "Countdown widget (manual or variable-driven)",
                     "Daily focus / top task",
                     "Shopping list / reminder",
                     "Reading progress / next chapter",
                     "Workout plan / routine cue",
                     "Quote / affirmation card",
-                    "Simple dashboard numbers (with Variables + Shortcuts in Pro)",
+                    "Photo caption card (add a banner image)",
                     "Matched per-size designs (Small/Medium/Large) in Pro"
                 ])
             }
@@ -185,16 +214,14 @@ struct WidgetWeaverAboutView: View {
                     onAdd: { makeDefault in
                         handleAdd(template: template, makeDefault: makeDefault)
                     },
-                    onShowPro: {
-                        onShowPro()
-                    }
+                    onShowPro: { onShowPro() }
                 )
             }
         } header: {
             Text("Templates — Starter")
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Templates add a new saved design to the library. Edit freely, then Save to refresh widgets.")
+                Text("Templates add a new saved design to the library.\nEdit freely, then Save to refresh widgets.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -222,15 +249,13 @@ struct WidgetWeaverAboutView: View {
                     onAdd: { makeDefault in
                         handleAdd(template: template, makeDefault: makeDefault)
                     },
-                    onShowPro: {
-                        onShowPro()
-                    }
+                    onShowPro: { onShowPro() }
                 )
             }
         } header: {
             Text("Templates — Pro")
         } footer: {
-            Text("Pro templates use Matched Sets and/or Variables + Shortcuts.")
+            Text("Pro templates can include Matched Sets, Variables + Shortcuts, and Interactive Buttons.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -248,41 +273,94 @@ struct WidgetWeaverAboutView: View {
         statusMessage = makeDefault
             ? "Added “\(template.title)” and set as default."
             : "Added “\(template.title)”."
+
         refreshDesignCount()
+    }
+
+    // MARK: - Interactive Buttons
+
+    private var interactiveButtonsSection: some View {
+        Section {
+            Text(
+                """
+                Interactive buttons add a compact action bar to the bottom of the widget on iOS 17+.
+                Each button runs an App Intent and updates a variable in the App Group, so the widget can update without opening the app.
+                """
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+
+            BulletList(items: [
+                "Up to \(WidgetActionBarSpec.maxActions) buttons per widget.",
+                "Actions: Increment Variable, Set Variable to Now.",
+                "Buttons can include a title and optional SF Symbol.",
+                "Pairs with templates like {{count|0}} or {{last_done|Never|relative}}."
+            ])
+
+            if proManager.isProUnlocked {
+                Text("See Templates — Pro for ready-made button examples (e.g. Habit Streak, Counter).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Label("Interactive buttons are a Pro feature.", systemImage: "lock.fill")
+                    .foregroundStyle(.secondary)
+
+                Button { onShowPro() } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+                .controlSize(.small)
+            }
+        } header: {
+            Text("Interactive Buttons")
+        } footer: {
+            Text("Buttons only appear in the widget. Configure them in the editor under Actions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Variables
 
     private var variablesSection: some View {
         Section {
-            Text("Variables let text fields pull values updated via Shortcuts actions. Variable rendering happens at widget render time.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Text(
+                """
+                Variables let text fields pull values updated via Shortcuts actions.
+                They can also be updated by interactive widget buttons (Pro).
+                Variable rendering happens at widget render time.
+                """
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Template syntax")
                         .font(.subheadline.weight(.semibold))
 
-                    CodeBlock("""
-                    {{key}}
-                    {{key|fallback}}
-                    {{key|fallback|upper}}
-                    {{amount|0|number:0}}
-                    {{last_done|Never|relative}}
-                    {{progress|0|bar:10}}
-                    {{__now||date:HH:mm}}
-                    {{=done/total*100|0|number:0}}%
-                    """)
+                    CodeBlock(
+                        """
+                        {{key}}
+                        {{key|fallback}}
+                        {{key|fallback|upper}}
+                        {{amount|0|number:0}}
+                        {{last_done|Never|relative}}
+                        {{progress|0|bar:10}}
+                        {{__now||date:HH:mm}}
+                        {{=done/total*100|0|number:0}}%
+                        """
+                    )
                 }
 
                 Spacer(minLength: 0)
 
                 Button {
-                    copyToPasteboard("""
-                    Streak: {{streak|0}} days
-                    Last done: {{last_done|Never}}
-                    """)
+                    copyToPasteboard(
+                        """
+                        Streak: {{streak|0}} days
+                        Last done: {{last_done|Never|relative}}
+                        """
+                    )
                 } label: {
                     Label("Copy example", systemImage: "doc.on.doc")
                 }
@@ -306,9 +384,7 @@ struct WidgetWeaverAboutView: View {
                 Label("Variables are a Pro feature.", systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
 
-                Button {
-                    onShowPro()
-                } label: {
+                Button { onShowPro() } label: {
                     Label("Unlock Pro", systemImage: "crown.fill")
                 }
                 .controlSize(.small)
@@ -330,7 +406,7 @@ struct WidgetWeaverAboutView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("Generation and edits are designed to run on-device. Images are never generated; photos are chosen manually in the editor.")
+            Text("Generation and edits are designed to run on-device.\nImages are never generated; photos are chosen manually in the editor.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -393,25 +469,23 @@ struct WidgetWeaverAboutView: View {
         Section {
             if proManager.isProUnlocked {
                 Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                Text("Matched sets, variables, and unlimited designs are enabled.")
+
+                Text("Matched sets, variables, interactive buttons, and unlimited designs are enabled.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button {
-                    onShowPro()
-                } label: {
+                Button { onShowPro() } label: {
                     Label("Manage Pro", systemImage: "crown.fill")
                 }
                 .controlSize(.small)
             } else {
                 Label("Free tier", systemImage: "sparkles")
-                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.")
+
+                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, variables, and interactive buttons.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button {
-                    onShowPro()
-                } label: {
+                Button { onShowPro() } label: {
                     Label("Unlock Pro", systemImage: "crown.fill")
                 }
                 .controlSize(.small)
@@ -433,7 +507,8 @@ struct WidgetWeaverAboutView: View {
             BulletList(items: [
                 "Designs: JSON in App Group UserDefaults",
                 "Images: files in App Group container (WidgetWeaverImages/)",
-                "Variables: JSON dictionary in App Group UserDefaults (Pro)"
+                "Variables: JSON dictionary in App Group UserDefaults (Pro)",
+                "Action bars: stored in the design spec; buttons run App Intents (iOS 17+)"
             ])
         } header: {
             Text("Implementation notes")
@@ -494,23 +569,17 @@ private struct TemplateRow: View {
                 Spacer(minLength: 0)
 
                 if template.requiresPro && !isProUnlocked {
-                    Button {
-                        onShowPro()
-                    } label: {
+                    Button { onShowPro() } label: {
                         Label("Pro required", systemImage: "lock.fill")
                     }
                     .controlSize(.small)
                 } else {
                     Menu {
-                        Button {
-                            onAdd(false)
-                        } label: {
+                        Button { onAdd(false) } label: {
                             Label("Add to library", systemImage: "plus")
                         }
 
-                        Button {
-                            onAdd(true)
-                        } label: {
+                        Button { onAdd(true) } label: {
                             Label("Add & Make Default", systemImage: "star.fill")
                         }
                     } label: {
@@ -556,6 +625,7 @@ private struct PreviewLabeled<Content: View>: View {
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
             content
+
             Text(familyLabel)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -579,9 +649,7 @@ private struct PromptRow: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                onCopy()
-            } label: {
+            Button { onCopy() } label: {
                 Label(copyLabel, systemImage: "doc.on.doc")
                     .labelStyle(.iconOnly)
             }
@@ -601,6 +669,7 @@ private struct FeatureRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
+
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -618,6 +687,7 @@ private struct BulletList: View {
                 HStack(alignment: .top, spacing: 8) {
                     Text("•")
                         .foregroundStyle(.secondary)
+
                     Text(item)
                         .foregroundStyle(.secondary)
                 }
@@ -662,6 +732,7 @@ private struct FlowTags: View {
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial, in: Capsule())
             }
+
             Spacer(minLength: 0)
         }
     }
@@ -679,7 +750,7 @@ private extension WidgetWeaverAboutView {
             "reading progress widget, blue accent, book icon, short secondary text",
             "workout routine widget, red accent, strong title, simple layout",
             "note widget, horizontal layout, orange accent, minimal styling",
-            "habit tracker widget, orange accent, flame icon, short glanceable text"
+            "habit streak widget, orange accent, uses {{streak|0}} and {{last_done|Never|relative}}, with interactive buttons"
         ]
     }
 
@@ -691,7 +762,8 @@ private extension WidgetWeaverAboutView {
             "switch to horizontal layout",
             "centre the layout",
             "remove the symbol",
-            "remove secondary text"
+            "remove secondary text",
+            "add interactive buttons"
         ]
     }
 
@@ -777,18 +849,18 @@ private extension WidgetWeaverAboutView {
             AboutTemplate(
                 id: "pro-habit-streak",
                 title: "Habit Streak",
-                subtitle: "Variables + Shortcuts",
-                description: "Uses {{streak|0}} and {{last_done|Never}} so Shortcuts can update the widget.",
-                tags: ["Variables", "Symbol", "Accent glow"],
+                subtitle: "Buttons + Variables",
+                description: "Tap +1 to increment {{streak}}, and Done to set {{last_done}} to now (iOS 17+).",
+                tags: ["Actions", "Variables", "Accent glow"],
                 requiresPro: true,
                 spec: specHabitStreak()
             ),
             AboutTemplate(
                 id: "pro-counter",
                 title: "Counter",
-                subtitle: "Big number + Increment intent",
-                description: "A large counter value designed to be incremented from Shortcuts.",
-                tags: ["Variables", "Big type"],
+                subtitle: "Big number + buttons",
+                description: "Tap +1 / -1 in the widget (iOS 17+) to update {{count}}.",
+                tags: ["Actions", "Variables", "Big type"],
                 requiresPro: true,
                 spec: specCounter()
             ),
@@ -863,7 +935,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specCountdown() -> WidgetSpec {
@@ -905,7 +978,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specQuote() -> WidgetSpec {
@@ -947,7 +1021,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specList() -> WidgetSpec {
@@ -989,7 +1064,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specReading() -> WidgetSpec {
@@ -1031,7 +1107,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specWorkout() -> WidgetSpec {
@@ -1073,7 +1150,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specPhotoCaption() -> WidgetSpec {
@@ -1115,7 +1193,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specHorizontalNote() -> WidgetSpec {
@@ -1157,7 +1236,8 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specHabitStreak() -> WidgetSpec {
@@ -1189,17 +1269,40 @@ private extension WidgetWeaverAboutView {
             placement: .beforeName
         )
 
+        let bar = WidgetActionBarSpec(
+            actions: [
+                WidgetActionSpec(
+                    title: "+1",
+                    systemImage: "plus",
+                    kind: .incrementVariable,
+                    variableKey: "streak",
+                    incrementAmount: 1
+                ),
+                WidgetActionSpec(
+                    title: "Done",
+                    systemImage: "checkmark",
+                    kind: .setVariableToNow,
+                    variableKey: "last_done",
+                    nowFormat: .iso8601
+                )
+            ],
+            style: .prominent
+        )
+        .normalisedOrNil()
+
         return WidgetSpec(
             name: "Habit",
             primaryText: "Streak: {{streak|0}} days",
-            secondaryText: "Last done: {{last_done|Never}}",
+            secondaryText: "Last done: {{last_done|Never|relative}}",
             updatedAt: Date(),
             symbol: symbol,
             image: nil,
             layout: layout,
             style: style,
+            actionBar: bar,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specCounter() -> WidgetSpec {
@@ -1231,17 +1334,40 @@ private extension WidgetWeaverAboutView {
             placement: .beforeName
         )
 
+        let bar = WidgetActionBarSpec(
+            actions: [
+                WidgetActionSpec(
+                    title: "+1",
+                    systemImage: "plus",
+                    kind: .incrementVariable,
+                    variableKey: "count",
+                    incrementAmount: 1
+                ),
+                WidgetActionSpec(
+                    title: "-1",
+                    systemImage: "minus",
+                    kind: .incrementVariable,
+                    variableKey: "count",
+                    incrementAmount: -1
+                )
+            ],
+            style: .prominent
+        )
+        .normalisedOrNil()
+
         return WidgetSpec(
             name: "Counter",
             primaryText: "{{count|0}}",
-            secondaryText: "Increment via Shortcuts",
+            secondaryText: "Tap +1 / -1",
             updatedAt: Date(),
             symbol: symbol,
             image: nil,
             layout: layout,
             style: style,
+            actionBar: bar,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specDayPlanMatched() -> WidgetSpec {
@@ -1295,7 +1421,8 @@ private extension WidgetWeaverAboutView {
             ),
             image: nil,
             layout: smallVariantLayout
-        ).normalised()
+        )
+        .normalised()
 
         let largeVariantLayout = LayoutSpec(
             axis: .horizontal,
@@ -1319,13 +1446,15 @@ private extension WidgetWeaverAboutView {
             ),
             image: nil,
             layout: largeVariantLayout
-        ).normalised()
+        )
+        .normalised()
 
         let matched = WidgetSpecMatchedSet(
             small: smallVariant,
             medium: nil,
             large: largeVariant
-        ).normalisedOrNil()
+        )
+        .normalisedOrNil()
 
         return WidgetSpec(
             name: "Day Plan",
@@ -1337,7 +1466,8 @@ private extension WidgetWeaverAboutView {
             layout: baseLayout,
             style: style,
             matchedSet: matched
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specLaunchMatched() -> WidgetSpec {
@@ -1382,7 +1512,8 @@ private extension WidgetWeaverAboutView {
                 primaryLineLimit: 1,
                 secondaryLineLimit: 1
             )
-        ).normalised()
+        )
+        .normalised()
 
         let largeVariant = WidgetSpecVariant(
             primaryText: "Launch in {{days_left|14}} days",
@@ -1404,13 +1535,15 @@ private extension WidgetWeaverAboutView {
                 primaryLineLimit: 3,
                 secondaryLineLimit: 2
             )
-        ).normalised()
+        )
+        .normalised()
 
         let matched = WidgetSpecMatchedSet(
             small: smallVariant,
             medium: nil,
             large: largeVariant
-        ).normalisedOrNil()
+        )
+        .normalisedOrNil()
 
         return WidgetSpec(
             name: "Launch",
@@ -1422,7 +1555,8 @@ private extension WidgetWeaverAboutView {
             layout: baseLayout,
             style: style,
             matchedSet: matched
-        ).normalised()
+        )
+        .normalised()
     }
 
     static func specMiniDashboard() -> WidgetSpec {
@@ -1464,6 +1598,7 @@ private extension WidgetWeaverAboutView {
             layout: layout,
             style: style,
             matchedSet: nil
-        ).normalised()
+        )
+        .normalised()
     }
 }

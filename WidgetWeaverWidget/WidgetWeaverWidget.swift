@@ -25,7 +25,9 @@ struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Widget Design")
     }
 
-    static var defaultQuery: WidgetWeaverSpecEntityQuery { WidgetWeaverSpecEntityQuery() }
+    static var defaultQuery: WidgetWeaverSpecEntityQuery {
+        WidgetWeaverSpecEntityQuery()
+    }
 
     var id: String
     var name: String
@@ -44,6 +46,7 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
             if id == WidgetWeaverSpecEntityIDs.appDefault {
                 return WidgetWeaverSpecEntity(id: id, name: "Default (App)")
             }
+
             guard let spec = byID[id] else { return nil }
             return WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name)
         }
@@ -51,6 +54,7 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 
     func suggestedEntities() async throws -> [WidgetWeaverSpecEntity] {
         let defaultEntity = WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
+
         let saved = WidgetSpecStore.shared
             .loadAll()
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -68,6 +72,7 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 
 struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "WidgetWeaver" }
+
     static var description: IntentDescription {
         IntentDescription("Choose which saved WidgetWeaver design to render.")
     }
@@ -100,10 +105,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         // refresh more frequently.
         let refreshSeconds: TimeInterval = spec.usesTimeDependentRendering() ? (60 * 5) : (60 * 15)
 
-        return Timeline(
-            entries: [entry],
-            policy: .after(Date().addingTimeInterval(refreshSeconds))
-        )
+        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(refreshSeconds)))
     }
 
     private func loadSpec(for configuration: Intent) -> WidgetSpec {
@@ -140,17 +142,18 @@ struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: kind,
-            intent: WidgetWeaverConfigurationIntent.self,
-            provider: WidgetWeaverProvider()
-        ) { entry in
-            WidgetWeaverWidgetView(entry: entry)
+            AppIntentConfiguration(
+                kind: kind,
+                intent: WidgetWeaverConfigurationIntent.self,
+                provider: WidgetWeaverProvider()
+            ) { entry in
+                WidgetWeaverWidgetView(entry: entry)
+            }
+            .configurationDisplayName("WidgetWeaver")
+            .description("Renders a selected saved WidgetWeaver spec.")
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+            .contentMarginsDisabled()
         }
-        .configurationDisplayName("WidgetWeaver")
-        .description("Renders a selected saved WidgetWeaver spec.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
-    }
 }
 
 #Preview(as: .systemSmall) {
