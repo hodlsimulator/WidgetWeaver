@@ -39,7 +39,6 @@ public struct WidgetWeaverSpecView: View {
 
         let layout = spec.layout
         let style = spec.style
-
         let accent = style.accent.swiftUIColor
         let background = style.background.shapeStyle(accent: accent)
 
@@ -77,6 +76,7 @@ public struct WidgetWeaverSpecView: View {
 
             Text(spec.primaryText)
                 .font(style.primaryTextStyle.font(fallback: defaultPrimaryFont(for: family)))
+                .monospacedDigit()
                 .foregroundStyle(.primary)
                 .lineLimit(primaryLineLimit(layout: layout))
                 .minimumScaleFactor(0.85)
@@ -84,6 +84,7 @@ public struct WidgetWeaverSpecView: View {
             if let secondary = spec.secondaryText, shouldShowSecondary(layout: layout) {
                 Text(secondary)
                     .font(style.secondaryTextStyle.font(fallback: .caption2))
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(layout.secondaryLineLimit)
                     .minimumScaleFactor(0.85)
@@ -150,7 +151,6 @@ public struct WidgetWeaverSpecView: View {
 
     private func accentBar(isHorizontal: Bool, accent: Color) -> some View {
         let barThickness: Double = 4
-
         return RoundedRectangle(cornerRadius: 2, style: .continuous)
             .fill(accent.opacity(0.9))
             .frame(

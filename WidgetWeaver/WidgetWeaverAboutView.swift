@@ -267,6 +267,12 @@ struct WidgetWeaverAboutView: View {
                     CodeBlock("""
                     {{key}}
                     {{key|fallback}}
+                    {{key|fallback|upper}}
+                    {{amount|0|number:0}}
+                    {{last_done|Never|relative}}
+                    {{progress|0|bar:10}}
+                    {{__now||date:HH:mm}}
+                    {{=done/total*100|0|number:0}}%
                     """)
                 }
 
@@ -292,7 +298,8 @@ struct WidgetWeaverAboutView: View {
                 "Set WidgetWeaver Variable",
                 "Get WidgetWeaver Variable",
                 "Remove WidgetWeaver Variable",
-                "Increment WidgetWeaver Variable"
+                "Increment WidgetWeaver Variable",
+                "Set WidgetWeaver Variable to Now"
             ])
 
             if !proManager.isProUnlocked {

@@ -25,9 +25,7 @@ struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Widget Design")
     }
 
-    static var defaultQuery: WidgetWeaverSpecEntityQuery {
-        WidgetWeaverSpecEntityQuery()
-    }
+    static var defaultQuery: WidgetWeaverSpecEntityQuery { WidgetWeaverSpecEntityQuery() }
 
     var id: String
     var name: String
@@ -70,15 +68,13 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 
 struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "WidgetWeaver" }
-
     static var description: IntentDescription {
         IntentDescription("Choose which saved WidgetWeaver design to render.")
     }
 
-    @Parameter(title: "Design")
-    var spec: WidgetWeaverSpecEntity?
+    @Parameter(title: "Design") var spec: WidgetWeaverSpecEntity?
 
-    init() { }
+    init() {}
 }
 
 // MARK: - Provider
@@ -99,8 +95,15 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
         let entry = Entry(date: Date(), spec: spec)
-        // Periodic refresh as a backstop in case an explicit reload is delayed.
-        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60 * 15)))
+
+        // If the design uses time-relative templates (e.g. {{__now}} or |relative),
+        // refresh more frequently.
+        let refreshSeconds: TimeInterval = spec.usesTimeDependentRendering() ? (60 * 5) : (60 * 15)
+
+        return Timeline(
+            entries: [entry],
+            policy: .after(Date().addingTimeInterval(refreshSeconds))
+        )
     }
 
     private func loadSpec(for configuration: Intent) -> WidgetSpec {

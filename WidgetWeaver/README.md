@@ -69,11 +69,9 @@ Optional symbol:
 Optional image:
 
 - Choose **Image → Choose photo**, then save.
-
-Notes:
-
-- PhotosPicker does not require photo library permission prompts.
-- Picked images are saved into the App Group container so the widget can render them offline.
+- Notes:
+  - PhotosPicker does not require photo library permission prompts.
+  - Picked images are saved into the App Group container so the widget can render them offline.
 
 ---
 
@@ -145,6 +143,21 @@ Pro: there’s an in-app **Variables** screen (toolbar menu **…** → **Variab
 - `{{key}}` replaces with the value of `key`
 - `{{key|fallback}}` uses `fallback` if `key` is missing or empty
 
+Filters (examples):
+
+- `{{amount|0|number:0}}`
+- `{{last_done|Never|relative}}`
+- `{{progress|0|bar:10}}`
+
+Built-ins (no stored variable needed):
+
+- `{{__now||date:HH:mm}}`
+- `{{__today}}`
+
+Inline maths (example):
+
+- `{{=done/total*100|0|number:0}}%`
+
 Examples:
 
 - Primary text: `Streak: {{streak|0}} days`
@@ -160,6 +173,7 @@ WidgetWeaver exposes App Intents that appear as Shortcuts actions:
 - **Get WidgetWeaver Variable** (key)
 - **Remove WidgetWeaver Variable** (key)
 - **Increment WidgetWeaver Variable** (key, amount)
+- **Set WidgetWeaver Variable to Now** (key, format)
 
 When a variable changes, WidgetWeaver triggers widget refresh so widgets re-render with the latest values.
 
@@ -318,6 +332,7 @@ Storage:
 - App Intents (Shortcuts) to:
   - set / get / remove variables
   - increment numeric variables
+  - set a variable to the current date/time
 - Variable changes trigger widget refresh
 
 ### Milestone 7 — Sharing / import / export (DONE)
@@ -374,7 +389,7 @@ Storage:
 ### Variables not updating in the widget
 
 - Confirm the spec contains `{{...}}` tokens (for example `{{streak|0}}`).
-- Run a Shortcut action (Set/Increment) and verify the key matches (keys are lowercased and whitespace-normalised).
+- Run a Shortcut action (Set/Increment/Set to Now) and verify the key matches (keys are lowercased and whitespace-normalised).
 - If a widget instance is configured to a specific saved design, ensure that design is the one using the variable tokens.
 
 ### Import not behaving as expected

@@ -55,9 +55,7 @@ struct WidgetWeaverVariablesView: View {
                 Text("This removes all saved variables from the App Group.\nWidgets will update after clearing.")
             }
             .onAppear { refresh() }
-            .onChange(of: proManager.isProUnlocked) { _, _ in
-                refresh()
-            }
+            .onChange(of: proManager.isProUnlocked) { _, _ in refresh() }
         }
     }
 
@@ -65,23 +63,42 @@ struct WidgetWeaverVariablesView: View {
 
     private var headerSection: some View {
         Section {
-            Text("Variables let text fields pull values at render time.\nUse {{key}} or {{key|fallback}} in any text field.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Text(
+                """
+                Variables let text fields pull values at render time.
+
+                Basic:
+                {{key}}  •  {{key|fallback}}
+
+                Filters:
+                {{amount|0|number:0}}
+                {{last_done|Never|relative}}
+                {{progress|0|bar:10}}
+
+                Built-ins:
+                {{__now||date:HH:mm}}  •  {{__today}}
+                """
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
             HStack(alignment: .top, spacing: 12) {
-                Text("""
-                Example:
-                Streak: {{streak|0}} days
-                Last done: {{last_done|Never}}
-                """)
+                Text(
+                    """
+                    Example:
+                    Streak: {{streak|0}} {{streak|0|plural:day:days}}
+                    Last done: {{last_done|Never|relative}}
+                    Progress: {{progress|0|bar:10}}
+                    """
+                )
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
 
                 Spacer(minLength: 0)
 
                 Button {
-                    UIPasteboard.general.string = "Streak: {{streak|0}} days\nLast done: {{last_done|Never}}"
+                    UIPasteboard.general.string =
+                    "Streak: {{streak|0}} {{streak|0|plural:day:days}}\nLast done: {{last_done|Never|relative}}\nProgress: {{progress|0|bar:10}}"
                     statusMessage = "Copied example."
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
@@ -126,9 +143,7 @@ struct WidgetWeaverVariablesView: View {
 
             TextField("Value", text: $newValue)
 
-            Button {
-                addVariable()
-            } label: {
+            Button { addVariable() } label: {
                 Label("Add Variable", systemImage: "plus.circle.fill")
             }
             .disabled(WidgetWeaverVariableStore.canonicalKey(newKey).isEmpty)
@@ -209,9 +224,7 @@ struct WidgetWeaverVariablesView: View {
 
     private var toolsSection: some View {
         Section {
-            Button(role: .destructive) {
-                showClearConfirmation = true
-            } label: {
+            Button(role: .destructive) { showClearConfirmation = true } label: {
                 Label("Clear All Variables", systemImage: "trash")
             }
         } header: {
@@ -225,7 +238,9 @@ struct WidgetWeaverVariablesView: View {
         let keys = variables.keys.sorted()
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if q.isEmpty { return keys }
-        return keys.filter { $0.lowercased().contains(q) || (variables[$0] ?? "").lowercased().contains(q) }
+        return keys.filter {
+            $0.lowercased().contains(q) || (variables[$0] ?? "").lowercased().contains(q)
+        }
     }
 
     private func refresh() {
@@ -241,7 +256,6 @@ struct WidgetWeaverVariablesView: View {
         guard !canonical.isEmpty else { return }
 
         WidgetWeaverVariableStore.shared.setValue(newValue, for: canonical)
-
         newKey = ""
         newValue = ""
         statusMessage = "Saved \(canonical)."
@@ -258,6 +272,7 @@ struct WidgetWeaverVariablesView: View {
 private struct WidgetWeaverVariableDetailView: View {
     let key: String
     let initialValue: String
+
     let onSave: (String) -> Void
     let onDelete: () -> Void
 
@@ -303,6 +318,31 @@ private struct WidgetWeaverVariableDetailView: View {
             }
 
             Section {
+                Button {
+                    let now = Date()
+                    value = WidgetWeaverVariableTemplate.iso8601String(now)
+                    onSave(value)
+                    statusMessage = "Set to now."
+                } label: {
+                    Label("Set to Now (ISO8601)", systemImage: "clock")
+                }
+
+                Button {
+                    value = String(Int64(Date().timeIntervalSince1970))
+                    onSave(value)
+                    statusMessage = "Set to unix seconds."
+                } label: {
+                    Label("Set to Now (Unix seconds)", systemImage: "timer")
+                }
+            } header: {
+                Text("Quick date/time")
+            } footer: {
+                Text("Handy for {{\(key)|Never|relative}} or {{\(key)||date:EEE d MMM}}.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Stepper("Amount: \(incrementAmount)", value: $incrementAmount, in: 1...999)
 
                 Button {
@@ -327,7 +367,7 @@ private struct WidgetWeaverVariableDetailView: View {
             } header: {
                 Text("Quick maths")
             } footer: {
-                Text("Increment/decrement treats the value as an integer (non‑numbers become 0).")
+                Text("Increment/decrement treats the value as an integer (non-numbers become 0).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -348,8 +388,6 @@ private struct WidgetWeaverVariableDetailView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .onAppear {
-            value = initialValue
-        }
+        .onAppear { value = initialValue }
     }
 }
