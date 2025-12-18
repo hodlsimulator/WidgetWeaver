@@ -190,9 +190,15 @@ public final class WidgetSpecStore: @unchecked Sendable {
         defaults.synchronize()
 
         #if canImport(WidgetKit)
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-        if #available(iOS 17.0, *) {
-            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        let kind = WidgetWeaverWidgetKinds.main
+
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadAllTimelines()
+
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
         }
         #endif
     }
