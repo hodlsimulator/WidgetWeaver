@@ -76,31 +76,31 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                    .ignoresSafeArea()
+            Form {
+                designsSection
+                previewSection
+                widgetWorkflowSection
 
-                Form {
-                    designsSection
-                    previewSection
-                    widgetWorkflowSection
+                textSection
+                symbolSection
+                imageSection
+                layoutSection
+                styleSection
+                typographySection
 
-                    textSection
-                    symbolSection
-                    imageSection
-                    layoutSection
-                    styleSection
-                    typographySection
-
-                    aiSection
-                    statusSection
-                }
-                .font(.callout)
-                .scrollDismissesKeyboard(.interactively)
-                .scrollContentBackground(.hidden)
+                aiSection
+                statusSection
             }
+            .font(.callout)
+            .scrollDismissesKeyboard(.interactively)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .listSectionSpacing(12)
+            .contentMargins(.top, 0, for: .scrollContent)
+            .contentMargins(.bottom, 0, for: .scrollContent)
             .navigationTitle("WidgetWeaver")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
@@ -918,6 +918,7 @@ private struct WidgetWorkflowHelpView: View {
             }
             .navigationTitle("Widgets")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
         }
     }
 }
