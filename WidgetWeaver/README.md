@@ -7,16 +7,20 @@ WidgetWeaver is an iOS 26 app for building WidgetKit widgets from a **typed widg
 - Specs are always **normalised/clamped** and have safe fallbacks, so the widget never crashes on bad data.
 
 WidgetWeaver supports both:
+
 - **Manual editing** (always available)
 - **Optional on-device prompt → spec generation** (Apple Intelligence / Foundation Models), with deterministic fallbacks when unavailable
 
 ---
 
-## Current status (0.9.4 (4))
+## Current status (0.9.4 (5))
 
 ✅ iOS app target created and runs on a real device  
 ✅ Widget extension target added and shows in the widget gallery  
 ✅ Shared `WidgetSpec` tokens (layout + style)  
+✅ Expanded style tokens (Radial Glow / Solid Accent backgrounds; Indigo / Yellow accents)  
+✅ Style exploration tool: Randomise Style (draft-only)  
+✅ Image maintenance tool: Clean Up Unused Images (removes unreferenced files)  
 ✅ Shared renderer parity (app previews + widget use the same render path)  
 ✅ App can edit and save specs into the App Group store  
 ✅ Multiple saved specs (design library)  
@@ -27,7 +31,7 @@ WidgetWeaver supports both:
 ✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
 ✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback  
 ✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
-✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)  
+✅ **Variables + Shortcuts** (text templates + in-app Variables manager + App Intents actions to update variables and refresh widgets)  
 ✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)  
 ✅ About page with template gallery (starter + Pro), examples, and one-tap add  
 ✅ **Monetisation scaffolding** (StoreKit 2 Pro unlock + free-tier limits for designs; Pro-only matched sets + variables)
@@ -45,21 +49,26 @@ WidgetWeaver supports both:
 6. In the app, create/edit a design and tap **Save & Make Default** (recommended while iterating).
 
 Per-widget selection:
+
 - Long-press the widget → **Edit Widget** → choose **Design**
 - To follow the app’s current default design, choose **Default (App)**
 
 Matched sets (Small/Medium/Large):
+
 - Enable **Matched set (Small/Medium/Large)** in the editor.
 - Use the preview size picker (Small/Medium/Large) to edit each size.
 - Style and typography are shared across the set; content/layout components can differ per size.
 
 Optional symbol:
+
 - Fill **Symbol → SF Symbol name** (for example: `sparkles`).
 
 Optional image:
+
 - Choose **Image → Choose photo**, then save.
 
 Notes:
+
 - PhotosPicker does not require photo library permission prompts.
 - Picked images are saved into the App Group container so the widget can render them offline.
 
@@ -70,17 +79,22 @@ Notes:
 WidgetWeaver includes an in-app **About** page that doubles as a template gallery and quick reference.
 
 In the app:
+
 - Open the toolbar menu (**…**) → **About**
 
 From there you can:
+
 - Browse **Starter** and **Pro** templates, each with Small/Medium/Large previews.
 - Add a template to your design library, optionally **Add & Make Default**.
 - Copy Variable template syntax + examples.
 - Copy AI prompt and patch ideas (for on-device generation).
 
 Template scope (what’s included today):
+
 - Templates only use capabilities already supported: **text**, optional **SF Symbol**, optional **photo banner** (picked manually), layout/style/typography tokens, optional **Matched Sets** (Pro), and optional **Variables + Shortcuts** (Pro).
 - No live external data sources are bundled yet (for example weather). If you want dynamic text/numbers today, use **Variables + Shortcuts**.
+
+---
 
 ## Sharing / import / export
 
@@ -90,11 +104,14 @@ WidgetWeaver can export one design or all designs as a single file, and import d
 - **Images:** exports embed image bytes when the referenced files exist in the App Group container.
 - **Import behaviour:** imported designs are duplicated with new IDs to avoid overwriting existing designs; embedded images are restored into the App Group container and references are rewritten.
 - **Widget refresh:** imports and exports trigger a widget refresh so changes show quickly.
+- **Maintenance:** “Clean Up Unused Images” deletes image files in the App Group container that are not referenced by any saved design.
 
 In the app:
+
 - Use the toolbar menu (**…**) → **About** to browse and add templates.
 - Use the toolbar menu (**…**) → **Share this design** / **Share all designs**.
 - Use **Import designs…** to bring designs back in.
+- Use the toolbar menu (**…**) → **Clean Up Unused Images** to delete unreferenced image files.
 
 ---
 
@@ -102,12 +119,15 @@ In the app:
 
 WidgetWeaver supports simple text templating in spec text fields, backed by a shared variable store in the App Group.
 
+Pro: there’s an in-app **Variables** screen (toolbar menu **…** → **Variables**) to view/edit keys, copy templates, and quickly increment/decrement numeric values.
+
 ### Template syntax
 
 - `{{key}}` replaces with the value of `key`
 - `{{key|fallback}}` uses `fallback` if `key` is missing or empty
 
 Examples:
+
 - Primary text: `Streak: {{streak|0}} days`
 - Secondary text: `Last done: {{last_done|Never}}`
 
@@ -131,6 +151,7 @@ When a variable changes, WidgetWeaver triggers widget refresh so widgets re-rend
 WidgetWeaver can generate and edit designs from natural language using **Foundation Models** when available.
 
 Generate a new design:
+
 - Use the **AI** section in the app
 - Example prompts:
   - “minimal habit tracker, teal accent, no icon”
@@ -139,6 +160,7 @@ Generate a new design:
 - Optionally enable **Make generated design default**
 
 Patch an existing design:
+
 - Example patch instructions:
   - “more minimal”
   - “bigger title”
@@ -148,12 +170,14 @@ Patch an existing design:
 - Tap **Apply Patch To Current Design**
 
 Availability + fallbacks:
+
 - If Apple Intelligence / Foundation Models are available, the app generates a constrained payload and maps it into `WidgetSpec`.
 - If unavailable (device not eligible, Apple Intelligence disabled, model not ready, etc.), WidgetWeaver still works:
   - New designs fall back to deterministic templates/rules
   - Patch edits fall back to deterministic rules
 
 Privacy:
+
 - Prompt generation is designed to run on-device.
 - Images are never generated; images are picked by PhotosPicker and stored locally in the App Group container.
 
@@ -172,7 +196,6 @@ Privacy:
   - Optional AI prompt/patch workflow
   - Variables store + App Intents (Shortcuts actions)
   - Sharing / import / export
-
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
   - Renders Small/Medium/Large
@@ -185,6 +208,7 @@ Privacy:
 App Group: `group.com.conornolan.widgetweaver`
 
 Storage:
+
 - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
 - Variables: `UserDefaults(suiteName:)` (JSON-encoded dictionary)
 - Images: files in the App Group container directory `WidgetWeaverImages/`
@@ -201,15 +225,18 @@ Storage:
 ## Milestones
 
 ### Milestone 0 — Scaffold (DONE)
+
 - Create app (SwiftUI, iOS 26)
 - Add icon
 - Initialise repo + push
 
 ### Milestone 1 — Widget extension scaffold (DONE)
+
 - Add Widget Extension (no Controls / Live Activity for now)
 - Ensure widget appears in gallery and can be added on-device
 
 ### Milestone 2 — Shared storage + render a saved spec (DONE)
+
 - Add App Group entitlement to app + widget extension:
   - `group.com.conornolan.widgetweaver`
 - Add shared model + store:
@@ -220,6 +247,7 @@ Storage:
 - Update widget to load from store and render via the shared renderer
 
 ### Milestone 3 — Manual editor + preview loop (DONE)
+
 - Expand WidgetSpec v0 to support:
   - layout tokens
   - style tokens
@@ -227,20 +255,24 @@ Storage:
 - Add in-app previews that use the same renderer as the widget
 
 ### Milestone 3.5 — Multiple specs + per-widget selection (DONE)
+
 - Store multiple specs in the App Group store
 - Choose a saved spec per widget instance (Edit Widget → Design)
 
 ### Milestone 3.6 — Symbol component (DONE)
+
 - Add optional `SymbolSpec` to `WidgetSpec`
 - Expose symbol controls in the editor
 - Render symbols in both previews and widget (shared renderer)
 
 ### Milestone 3.7 — Image component (DONE)
+
 - Add optional `ImageSpec` to `WidgetSpec`
 - Store image files in the App Group container
 - Load and render the image in both previews and widget (shared renderer)
 
 ### Milestone 4 — Prompt → WidgetSpec generation + patch edits (DONE)
+
 - Constrained generation contract (guided payloads mapped into `WidgetSpec`)
 - Always run normalisation/clamping/repair at the boundary
 - Deterministic fallback when the model is unavailable
@@ -251,6 +283,7 @@ Storage:
   - “remove image / remove symbol”
 
 ### Milestone 5 — Matched sets (Small/Medium/Large) (DONE)
+
 - Optional `matchedSet` that stores per-size variant overrides
 - Medium stored as the base; Small/Large can override
 - Shared style + typography across the set
@@ -258,6 +291,7 @@ Storage:
 - Shared renderer resolves the correct per-family variant automatically
 
 ### Milestone 6 — Variables + Shortcuts (DONE)
+
 - Variables (“slots”) referenced by specs using `{{key}}` / `{{key|fallback}}`
 - Variables stored in the App Group for app + widget
 - Widget resolves variables at render time
@@ -267,17 +301,20 @@ Storage:
 - Variable changes trigger widget refresh
 
 ### Milestone 7 — Sharing / import / export (DONE)
+
 - Export/import designs (validated, versioned exchange JSON)
 - Optional embedded images (restored on import)
 - Import duplicates designs with new IDs to avoid overwriting
 
 ### Milestone 7.5 — About page + template gallery (DONE)
+
 - Add an in-app About page that explains current capabilities
 - Starter + Pro template gallery with Small/Medium/Large previews
 - One-tap **Add** / **Add & Make Default** actions
 - Quick reference: Variables syntax + Shortcuts actions + AI prompt/patch ideas
 
 ### Milestone 8 — Monetisation (IN PROGRESS)
+
 - Free tier limits (max designs)
 - Pro unlock (StoreKit 2) for:
   - matched sets
@@ -285,6 +322,7 @@ Storage:
   - unlimited designs
 
 ### Milestone 9 — Control Widgets (OPTIONAL)
+
 - Add only after the main widget pipeline is stable
 
 ---
@@ -292,12 +330,14 @@ Storage:
 ## Troubleshooting
 
 ### Image not showing in the widget
+
 - Ensure an image was picked and then **Save** was tapped.
 - Ensure both targets have the App Group entitlement: `group.com.conornolan.widgetweaver`.
 - If the app was reinstalled, previously saved specs may reference image filenames that no longer exist in the App Group container; remove/re-pick the image and save again.
 - If re-selecting the same photo seems to do nothing, pick a different photo once, then pick the original again, and save.
 
 ### Widget not updating
+
 - Save again (prefer **Save & Make Default** while iterating).
 - Ensure the widget instance is set to either:
   - **Default (App)** (recommended while iterating), or
@@ -306,15 +346,18 @@ Storage:
 - Remove/re-add the widget after significant schema changes.
 
 ### Variables not updating in the widget
+
 - Confirm the spec contains `{{...}}` tokens (for example `{{streak|0}}`).
 - Run a Shortcut action (Set/Increment) and verify the key matches (keys are lowercased and whitespace-normalised).
 - If a widget instance is configured to a specific saved design, ensure that design is the one using the variable tokens.
 
 ### Import not behaving as expected
+
 - Imports always create new designs (new IDs). If you expected an overwrite, delete the old design manually.
 - If an imported design used embedded images but the widget shows “no image”, open the design, re-save it once, then refresh widgets.
 
 ### AI shows “Unavailable”
+
 - The app still works (deterministic fallbacks).
 - For on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
 
@@ -322,7 +365,7 @@ Storage:
 
 ## Repo notes
 
-- Marketing version / build: `0.9.4 (4)` (from target settings / Info.plist values, not hardcoded in code)
+- Marketing version / build: `0.9.4 (5)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - About page: `WidgetWeaver/WidgetWeaverAboutView.swift`
 - Working principle: ship small commits where the app + widget always build and run

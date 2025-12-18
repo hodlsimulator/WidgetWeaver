@@ -58,22 +58,53 @@ public struct StyleSpec: Codable, Hashable, Sendable {
 public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case plain
     case accentGlow
+    case radialGlow
+    case solidAccent
     case subtleMaterial
 
     public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .plain: return "Plain"
+        case .accentGlow: return "Accent Glow"
+        case .radialGlow: return "Radial Glow"
+        case .solidAccent: return "Solid Accent"
+        case .subtleMaterial: return "Subtle Material"
+        }
+    }
 
     public func shapeStyle(accent: Color) -> AnyShapeStyle {
         switch self {
         case .plain:
             return AnyShapeStyle(.background)
+
         case .accentGlow:
             return AnyShapeStyle(
-                .linearGradient(
+                LinearGradient(
                     colors: [accent.opacity(0.35), .clear],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
+
+        case .radialGlow:
+            return AnyShapeStyle(
+                RadialGradient(
+                    colors: [
+                        accent.opacity(0.42),
+                        accent.opacity(0.12),
+                        .clear
+                    ],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+
+        case .solidAccent:
+            return AnyShapeStyle(accent.opacity(0.18))
+
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
         }
@@ -89,8 +120,25 @@ public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable, 
     case purple
     case red
     case gray
+    case yellow
+    case indigo
 
     public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .blue: return "Blue"
+        case .teal: return "Teal"
+        case .green: return "Green"
+        case .orange: return "Orange"
+        case .pink: return "Pink"
+        case .purple: return "Purple"
+        case .red: return "Red"
+        case .gray: return "Grey"
+        case .yellow: return "Yellow"
+        case .indigo: return "Indigo"
+        }
+    }
 
     public var swiftUIColor: Color {
         switch self {
@@ -102,6 +150,8 @@ public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable, 
         case .purple: return .purple
         case .red: return .red
         case .gray: return .gray
+        case .yellow: return .yellow
+        case .indigo: return .indigo
         }
     }
 }
@@ -117,6 +167,19 @@ public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiabl
     case title2
 
     public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .caption2: return "Caption 2"
+        case .caption: return "Caption"
+        case .footnote: return "Footnote"
+        case .subheadline: return "Subheadline"
+        case .headline: return "Headline"
+        case .title3: return "Title 3"
+        case .title2: return "Title 2"
+        }
+    }
 
     public func font(fallback: Font) -> Font {
         switch self {

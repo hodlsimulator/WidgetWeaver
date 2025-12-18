@@ -38,9 +38,11 @@ extension ContentView {
         Form {
             designsSection
             proSection
+            variablesManagerSection
             sharingSection
             matchedSetSection
             widgetWorkflowSection
+
             textSection
             symbolSection
             imageSection

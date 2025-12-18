@@ -52,8 +52,8 @@ extension ContentView {
         lastWidgetRefreshAt = Date()
 
         saveStatusMessage = makeDefault
-            ? "Saved and set as default.\nWidgets refreshed."
-            : "Saved.\nWidgets refreshed."
+        ? "Saved and set as default.\nWidgets refreshed."
+        : "Saved.\nWidgets refreshed."
 
         refreshSavedSpecs(preservingSelection: true)
     }
@@ -122,8 +122,8 @@ extension ContentView {
         applySpec(spec)
 
         saveStatusMessage = makeDefault
-            ? "Added template and set as default.\nWidgets refreshed."
-            : "Added template.\nWidgets refreshed."
+        ? "Added template and set as default.\nWidgets refreshed."
+        : "Added template.\nWidgets refreshed."
     }
 
     func duplicateCurrentDesign() {
@@ -135,7 +135,6 @@ extension ContentView {
         }
 
         let base = draftSpec(id: selectedSpecID)
-
         var spec = base
         spec.id = UUID()
         spec.updatedAt = Date()
@@ -157,6 +156,40 @@ extension ContentView {
 
         lastWidgetRefreshAt = Date()
         saveStatusMessage = "Deleted design.\nWidgets refreshed."
+    }
+
+    // MARK: - Draft helpers
+
+    func randomiseStyleDraft() {
+        var s = styleDraft
+
+        s.background = BackgroundToken.allCases.randomElement() ?? s.background
+        s.accent = AccentToken.allCases.randomElement() ?? s.accent
+
+        s.padding = Double(Int.random(in: 8...24))
+        s.cornerRadius = Double(Int.random(in: 16...32))
+
+        let primaryOptions: [TextStyleToken] = [.automatic, .headline, .subheadline, .title3, .title2]
+        let secondaryOptions: [TextStyleToken] = [.automatic, .caption, .caption2, .footnote, .subheadline]
+
+        s.primaryTextStyle = primaryOptions.randomElement() ?? s.primaryTextStyle
+        s.secondaryTextStyle = secondaryOptions.randomElement() ?? s.secondaryTextStyle
+        s.nameTextStyle = .automatic
+
+        styleDraft = s
+        saveStatusMessage = "Randomised style (draft only)."
+    }
+
+    func cleanupUnusedImages() {
+        let result = store.cleanupUnusedImages()
+        lastWidgetRefreshAt = Date()
+
+        if result.deletedCount == 0 {
+            saveStatusMessage = "No unused images found.\n(\(result.existingCount) files, \(result.referencedCount) referenced)"
+            return
+        }
+
+        saveStatusMessage = "Cleaned up \(result.deletedCount) unused image\(result.deletedCount == 1 ? "" : "s").\n(\(result.existingCount) files, \(result.referencedCount) referenced)"
     }
 
     // MARK: - AI
@@ -183,6 +216,7 @@ extension ContentView {
 
         defaultSpecID = store.defaultSpecID()
         lastWidgetRefreshAt = Date()
+
         aiStatusMessage = result.note
         aiPrompt = ""
 
@@ -203,9 +237,7 @@ extension ContentView {
         let style = styleDraft.toStyleSpec()
         let current = currentFamilyDraft().toFlatSpec(
             id: selectedSpecID,
-            name: designName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "WidgetWeaver"
-                : designName.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: designName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "WidgetWeaver" : designName.trimmingCharacters(in: .whitespacesAndNewlines),
             style: style,
             updatedAt: Date()
         )
@@ -222,11 +254,11 @@ extension ContentView {
 
         var combined = draftSpec(id: selectedSpecID).normalised()
         combined.updatedAt = Date()
-
         store.save(combined, makeDefault: false)
 
         lastSavedAt = combined.updatedAt
         lastWidgetRefreshAt = Date()
+
         aiStatusMessage = result.note
         aiPatchInstruction = ""
 
@@ -253,9 +285,7 @@ extension ContentView {
         defer { importInProgress = false }
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer {
-            if didStart { url.stopAccessingSecurityScopedResource() }
-        }
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
         do {
             let data = try Data(contentsOf: url)

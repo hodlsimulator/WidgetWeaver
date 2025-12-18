@@ -24,9 +24,7 @@ struct ContentView: View {
 
     @State var designName: String = "WidgetWeaver"
     @State var styleDraft: StyleDraft = .defaultDraft
-
     @State var baseDraft: FamilyDraft = .defaultDraft
-
     @State var matchedSetEnabled: Bool = false
     @State var matchedDrafts: MatchedDrafts = MatchedDrafts(
         small: .defaultDraft,
@@ -45,20 +43,24 @@ struct ContentView: View {
 
     @State var lastSavedAt: Date?
     @State var lastWidgetRefreshAt: Date?
+
     @State var saveStatusMessage: String = ""
 
     @State var showDeleteConfirmation: Bool = false
+    @State var showImageCleanupConfirmation: Bool = false
 
     enum ActiveSheet: Identifiable {
         case widgetHelp
         case pro
         case about
+        case variables
 
         var id: Int {
             switch self {
             case .widgetHelp: return 1
             case .pro: return 2
             case .about: return 3
+            case .variables: return 4
             }
         }
     }
@@ -82,7 +84,10 @@ struct ContentView: View {
             .navigationTitle("WidgetWeaver")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
+                ToolbarItem(placement: .topBarTrailing) {
+                    toolbarMenu
+                }
+
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { Keyboard.dismiss() }
@@ -94,9 +99,19 @@ struct ContentView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) { deleteCurrentDesign() }
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
+            }
+            .confirmationDialog(
+                "Clean up unused images?",
+                isPresented: $showImageCleanupConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -109,15 +124,15 @@ struct ContentView: View {
                 case .about:
                     WidgetWeaverAboutView(
                         proManager: proManager,
-                        onAddTemplate: { spec, makeDefault in
-                            addTemplateDesign(spec, makeDefault: makeDefault)
-                        },
-                        onShowPro: {
-                            activeSheet = .pro
-                        },
-                        onShowWidgetHelp: {
-                            activeSheet = .widgetHelp
-                        }
+                        onAddTemplate: { spec, makeDefault in addTemplateDesign(spec, makeDefault: makeDefault) },
+                        onShowPro: { activeSheet = .pro },
+                        onShowWidgetHelp: { activeSheet = .widgetHelp }
+                    )
+
+                case .variables:
+                    WidgetWeaverVariablesView(
+                        proManager: proManager,
+                        onShowPro: { activeSheet = .pro }
                     )
                 }
             }

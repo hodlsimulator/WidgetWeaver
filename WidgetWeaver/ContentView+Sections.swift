@@ -36,10 +36,7 @@ extension ContentView {
             }
 
             if !proManager.isProUnlocked {
-                LabeledContent(
-                    "Free tier designs",
-                    value: "\(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)"
-                )
+                LabeledContent("Free tier designs", value: "\(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
             }
 
             if selectedSpecID == defaultSpecID {
@@ -54,10 +51,8 @@ extension ContentView {
 
             ControlGroup {
                 Button { createNewDesign() } label: { Label("New", systemImage: "plus") }
-
                 Button { duplicateCurrentDesign() } label: { Label("Duplicate", systemImage: "doc.on.doc") }
                     .disabled(savedSpecs.isEmpty)
-
                 Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete", systemImage: "trash") }
                     .disabled(savedSpecs.count <= 1)
             }
@@ -75,23 +70,13 @@ extension ContentView {
         Section {
             if proManager.isProUnlocked {
                 Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                Button {
-                    activeSheet = .pro
-                } label: {
-                    Label("Manage Pro", systemImage: "crown.fill")
-                }
+                Button { activeSheet = .pro } label: { Label("Manage Pro", systemImage: "crown.fill") }
             } else {
                 Label("Free tier", systemImage: "sparkles")
                 Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, and variables.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Button {
-                    activeSheet = .pro
-                } label: {
-                    Label("Unlock Pro", systemImage: "crown.fill")
-                }
-
+                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
                 if !proManager.statusMessage.isEmpty {
                     Text(proManager.statusMessage)
                         .font(.caption)
@@ -100,6 +85,45 @@ extension ContentView {
             }
         } header: {
             sectionHeader("Pro")
+        }
+    }
+
+    var variablesManagerSection: some View {
+        Section {
+            if proManager.isProUnlocked {
+                let vars = WidgetWeaverVariableStore.shared.loadAll()
+                LabeledContent("Saved variables", value: "\(vars.count)")
+
+                if vars.isEmpty {
+                    Text("No variables yet.\nAdd some here, or update via Shortcuts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    let preview = vars.keys.sorted().prefix(3)
+                    ForEach(Array(preview), id: \.self) { k in
+                        let v = vars[k] ?? ""
+                        LabeledContent(k, value: v.isEmpty ? " " : v)
+                    }
+                }
+
+                Button { activeSheet = .variables } label: {
+                    Label("Manage Variables", systemImage: "slider.horizontal.3")
+                }
+            } else {
+                Text("Variables are a Pro feature.\nUse {{key}} templates in text fields, then update values via Shortcuts or in-app once Pro is unlocked.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button { activeSheet = .pro } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+            }
+        } header: {
+            sectionHeader("Variables")
+        } footer: {
+            Text("Variables render at widget render time.\nTemplate syntax: {{key}} or {{key|fallback}}.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -124,10 +148,16 @@ extension ContentView {
             Button { showImportPicker = true } label: {
                 Label("Import designs…", systemImage: "square.and.arrow.down")
             }
+
+            Button(role: .destructive) {
+                showImageCleanupConfirmation = true
+            } label: {
+                Label("Clean Up Unused Images", systemImage: "trash.slash")
+            }
         } header: {
             sectionHeader("Sharing")
         } footer: {
-            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.")
+            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.\n\"Clean Up\" removes image files not referenced by any saved design.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -142,11 +172,8 @@ extension ContentView {
                 Text("Matched sets are a Pro feature.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button {
-                    activeSheet = .pro
-                } label: {
-                    Label("Unlock Pro", systemImage: "crown.fill")
-                }
+
+                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
             } else if matchedSetEnabled {
                 Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
                     .font(.caption)
@@ -363,7 +390,6 @@ extension ContentView {
                     value: binding(\.primaryLineLimit),
                     in: 1...10
                 )
-
                 Stepper(
                     "Secondary line limit: \(currentFamilyDraft().secondaryLineLimit)",
                     value: binding(\.secondaryLineLimit),
@@ -395,14 +421,18 @@ extension ContentView {
 
             Picker("Background", selection: $styleDraft.background) {
                 ForEach(BackgroundToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
             }
 
             Picker("Accent", selection: $styleDraft.accent) {
                 ForEach(AccentToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
+            }
+
+            Button { randomiseStyleDraft() } label: {
+                Label("Randomise Style (Draft)", systemImage: "shuffle")
             }
 
             if matchedSetEnabled {
@@ -419,19 +449,19 @@ extension ContentView {
         Section {
             Picker("Name text style", selection: $styleDraft.nameTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
             }
 
             Picker("Primary text style", selection: $styleDraft.primaryTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
             }
 
             Picker("Secondary text style", selection: $styleDraft.secondaryTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
             }
 

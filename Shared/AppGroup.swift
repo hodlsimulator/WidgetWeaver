@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -114,12 +115,25 @@ public enum AppGroup {
         try? FileManager.default.removeItem(at: url)
         imageCache.cache.removeObject(forKey: trimmed as NSString)
     }
+
+    public static func listImageFileNames() -> [String] {
+        ensureImagesDirectoryExists()
+        do {
+            let urls = try FileManager.default.contentsOfDirectory(
+                at: imagesDirectoryURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            return urls.map(\.lastPathComponent).sorted()
+        } catch {
+            return []
+        }
+    }
 }
 
 private extension UIImage {
     func normalisedOrientation() -> UIImage {
         if imageOrientation == .up { return self }
-
         UIGraphicsBeginImageContextWithOptions(size, false, scale)
         draw(in: CGRect(origin: .zero, size: size))
         let img = UIGraphicsGetImageFromCurrentImageContext()

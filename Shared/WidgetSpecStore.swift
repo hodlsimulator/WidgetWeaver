@@ -6,15 +6,29 @@
 //
 
 import Foundation
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
+
+public struct WidgetWeaverImageCleanupResult: Hashable, Sendable {
+    public var referencedCount: Int
+    public var existingCount: Int
+    public var deletedFileNames: [String]
+
+    public var deletedCount: Int { deletedFileNames.count }
+
+    public init(referencedCount: Int, existingCount: Int, deletedFileNames: [String]) {
+        self.referencedCount = referencedCount
+        self.existingCount = existingCount
+        self.deletedFileNames = deletedFileNames
+    }
+}
 
 public final class WidgetSpecStore: @unchecked Sendable {
     public static let shared = WidgetSpecStore()
 
     private let defaults: UserDefaults
-
     private let specsKey = "widgetweaver.specs.v1"
     private let defaultIDKey = "widgetweaver.specs.v1.default_id"
     private let legacySingleSpecKey = "widgetweaver.spec.v1.default"
@@ -27,9 +41,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     // MARK: - Compatibility (v0.9.x API)
 
-    public func load() -> WidgetSpec {
-        loadDefault()
-    }
+    public func load() -> WidgetSpec { loadDefault() }
 
     public func save(_ spec: WidgetSpec) {
         save(spec, makeDefault: false)
@@ -69,11 +81,9 @@ public final class WidgetSpecStore: @unchecked Sendable {
         if let id = defaultSpecID(), let match = specs.first(where: { $0.id == id }) {
             return match.normalised()
         }
-
         if let first = specs.first {
             return first.normalised()
         }
-
         return WidgetSpec.defaultSpec().normalised()
     }
 
@@ -119,6 +129,33 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     public func reloadWidgets() {
         flushAndNotifyWidgets()
+    }
+
+    // MARK: - Image maintenance
+
+    public func cleanupUnusedImages() -> WidgetWeaverImageCleanupResult {
+        let specs = loadAllInternal()
+        let referenced = Set(collectUniqueImageFileNames(in: specs))
+        let existing = AppGroup.listImageFileNames()
+
+        var deleted: [String] = []
+        deleted.reserveCapacity(max(0, existing.count - referenced.count))
+
+        for fileName in existing {
+            if referenced.contains(fileName) { continue }
+            AppGroup.deleteImage(fileName: fileName)
+            deleted.append(fileName)
+        }
+
+        if !deleted.isEmpty {
+            flushAndNotifyWidgets()
+        }
+
+        return WidgetWeaverImageCleanupResult(
+            referencedCount: referenced.count,
+            existingCount: existing.count,
+            deletedFileNames: deleted
+        )
     }
 
     // MARK: - Sharing / Import / Export (Milestone 7 + 8)
@@ -180,14 +217,12 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     private func seedIfNeeded() {
         let specs = loadAllInternal()
-
         if specs.isEmpty {
             let seeded = WidgetSpec.defaultSpec().normalised()
             saveAllInternal([seeded])
             setDefaultInternal(id: seeded.id)
             return
         }
-
         if defaultSpecID() == nil, let first = specs.first {
             setDefaultInternal(id: first.id)
         }
@@ -267,7 +302,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
             }
 
             if imported.count > available {
-                notes.append("Free tier limit: imported \(available) of \(imported.count) designs. Upgrade to Pro for unlimited designs.")
+                notes.append("Free tier limit: imported \(available) of \(imported.count) designs.\nUpgrade to Pro for unlimited designs.")
                 imported = Array(imported.prefix(available))
             }
         }
@@ -353,16 +388,11 @@ public enum WidgetWeaverDesignExchangeError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .emptyExport:
-            return "Nothing to export."
-        case .invalidExchangeFile:
-            return "This file does not look like a WidgetWeaver export."
-        case .unsupportedFormatVersion(let v):
-            return "Unsupported WidgetWeaver export format version: \(v)."
-        case .noSpecsFound:
-            return "No designs were found in the file."
-        case .decodingFailed:
-            return "Could not read this file."
+        case .emptyExport: return "Nothing to export."
+        case .invalidExchangeFile: return "This file does not look like a WidgetWeaver export."
+        case .unsupportedFormatVersion(let v): return "Unsupported WidgetWeaver export format version: \(v)."
+        case .noSpecsFound: return "No designs were found in the file."
+        case .decodingFailed: return "Could not read this file."
         }
     }
 }
@@ -370,7 +400,6 @@ public enum WidgetWeaverDesignExchangeError: Error, LocalizedError {
 public enum WidgetWeaverDesignExchangeCodec {
     public static func encode(_ payload: WidgetWeaverDesignExchangePayload) throws -> Data {
         guard !payload.specs.isEmpty else { throw WidgetWeaverDesignExchangeError.emptyExport }
-
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -382,13 +411,8 @@ public enum WidgetWeaverDesignExchangeCodec {
     /// - Array of WidgetSpec
     /// - Single WidgetSpec
     public static func decodeAny(_ data: Data) throws -> WidgetWeaverDesignExchangePayload {
-        if let payload = try? decodeExchange(data, iso8601: true) {
-            return try validate(payload)
-        }
-
-        if let payload = try? decodeExchange(data, iso8601: false) {
-            return try validate(payload)
-        }
+        if let payload = try? decodeExchange(data, iso8601: true) { return try validate(payload) }
+        if let payload = try? decodeExchange(data, iso8601: false) { return try validate(payload) }
 
         if let specs = try? JSONDecoder().decode([WidgetSpec].self, from: data) {
             let normalised = specs.map { $0.normalised() }
@@ -405,9 +429,7 @@ public enum WidgetWeaverDesignExchangeCodec {
 
     private static func decodeExchange(_ data: Data, iso8601: Bool) throws -> WidgetWeaverDesignExchangePayload {
         let decoder = JSONDecoder()
-        if iso8601 {
-            decoder.dateDecodingStrategy = .iso8601
-        }
+        if iso8601 { decoder.dateDecodingStrategy = .iso8601 }
         return try decoder.decode(WidgetWeaverDesignExchangePayload.self, from: data)
     }
 
@@ -415,14 +437,10 @@ public enum WidgetWeaverDesignExchangeCodec {
         guard payload.magic == WidgetWeaverDesignExchangePayload.magicValue else {
             throw WidgetWeaverDesignExchangeError.invalidExchangeFile
         }
-
         if payload.formatVersion > WidgetWeaverDesignExchangePayload.currentFormatVersion {
             throw WidgetWeaverDesignExchangeError.unsupportedFormatVersion(payload.formatVersion)
         }
-
-        guard !payload.specs.isEmpty else {
-            throw WidgetWeaverDesignExchangeError.noSpecsFound
-        }
+        guard !payload.specs.isEmpty else { throw WidgetWeaverDesignExchangeError.noSpecsFound }
 
         var out = payload
         out.specs = out.specs.map { $0.normalised() }
@@ -435,8 +453,8 @@ public enum WidgetWeaverDesignExchangeCodec {
 private extension WidgetSpecStore {
     func exportExchangeFile(specs: [WidgetSpec], includeImages: Bool) -> WidgetWeaverDesignExchangePayload {
         let normalisedSpecs = specs.map { $0.normalised() }
-
         var embeddedImages: [WidgetWeaverEmbeddedImage] = []
+
         if includeImages {
             let fileNames = collectUniqueImageFileNames(in: normalisedSpecs)
             embeddedImages = fileNames.compactMap { fileName in
@@ -467,15 +485,9 @@ private extension WidgetSpecStore {
             }
 
             if let matched = spec.matchedSet {
-                if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    set.insert(img)
-                }
-                if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    set.insert(img)
-                }
-                if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    set.insert(img)
-                }
+                if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
+                if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
+                if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
             }
         }
 
@@ -500,18 +512,9 @@ private extension WidgetSpec {
         }
 
         if var matched = out.matchedSet {
-            if var v = matched.small {
-                v = v.rewritingImageFileNames(using: map)
-                matched.small = v
-            }
-            if var v = matched.medium {
-                v = v.rewritingImageFileNames(using: map)
-                matched.medium = v
-            }
-            if var v = matched.large {
-                v = v.rewritingImageFileNames(using: map)
-                matched.large = v
-            }
+            if var v = matched.small { v = v.rewritingImageFileNames(using: map); matched.small = v }
+            if var v = matched.medium { v = v.rewritingImageFileNames(using: map); matched.medium = v }
+            if var v = matched.large { v = v.rewritingImageFileNames(using: map); matched.large = v }
             out.matchedSet = matched
         }
 
@@ -524,7 +527,6 @@ private extension WidgetSpecVariant {
         guard !map.isEmpty else { return self }
 
         var out = self
-
         if var img = out.image {
             let old = img.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
             if let new = map[old] {

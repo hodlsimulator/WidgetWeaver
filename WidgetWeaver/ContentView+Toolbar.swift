@@ -10,9 +10,7 @@ import SwiftUI
 extension ContentView {
     var toolbarMenu: some View {
         Menu {
-            Button { activeSheet = .about } label: {
-                Label("About", systemImage: "info.circle")
-            }
+            Button { activeSheet = .about } label: { Label("About", systemImage: "info.circle") }
 
             Divider()
 
@@ -20,29 +18,29 @@ extension ContentView {
                 Label(proManager.isProUnlocked ? "WidgetWeaver Pro" : "Upgrade to Pro", systemImage: "crown.fill")
             }
 
-            Button { activeSheet = .widgetHelp } label: {
-                Label("Widget Help", systemImage: "questionmark.circle")
+            Button { activeSheet = .variables } label: {
+                Label("Variables", systemImage: "slider.horizontal.3")
             }
+
+            Button { activeSheet = .widgetHelp } label: { Label("Widget Help", systemImage: "questionmark.circle") }
 
             Divider()
 
-            Button { createNewDesign() } label: {
-                Label("New Design", systemImage: "plus")
-            }
-
-            Button { duplicateCurrentDesign() } label: {
-                Label("Duplicate Design", systemImage: "doc.on.doc")
-            }
-            .disabled(savedSpecs.isEmpty)
+            Button { createNewDesign() } label: { Label("New Design", systemImage: "plus") }
+            Button { duplicateCurrentDesign() } label: { Label("Duplicate Design", systemImage: "doc.on.doc") }
+                .disabled(savedSpecs.isEmpty)
 
             Divider()
 
-            Button { saveSelected(makeDefault: true) } label: {
-                Label("Save & Make Default", systemImage: "checkmark.circle")
-            }
+            Button { saveSelected(makeDefault: true) } label: { Label("Save & Make Default", systemImage: "checkmark.circle") }
+            Button { saveSelected(makeDefault: false) } label: { Label("Save (Keep Default)", systemImage: "tray.and.arrow.down") }
 
-            Button { saveSelected(makeDefault: false) } label: {
-                Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
+            Divider()
+
+            Button { randomiseStyleDraft() } label: { Label("Randomise Style (Draft)", systemImage: "shuffle") }
+
+            Button(role: .destructive) { showImageCleanupConfirmation = true } label: {
+                Label("Clean Up Unused Images", systemImage: "trash.slash")
             }
 
             Divider()
@@ -55,22 +53,16 @@ extension ContentView {
                 Label("Share All Designs", systemImage: "square.and.arrow.up.on.square")
             }
 
-            Button { showImportPicker = true } label: {
-                Label("Import Designs…", systemImage: "square.and.arrow.down")
-            }
+            Button { showImportPicker = true } label: { Label("Import Designs…", systemImage: "square.and.arrow.down") }
 
             Divider()
 
-            Button { refreshWidgets() } label: {
-                Label("Refresh Widgets", systemImage: "arrow.clockwise")
-            }
+            Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
 
             Divider()
 
-            Button(role: .destructive) { showDeleteConfirmation = true } label: {
-                Label("Delete Design", systemImage: "trash")
-            }
-            .disabled(savedSpecs.count <= 1)
+            Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete Design", systemImage: "trash") }
+                .disabled(savedSpecs.count <= 1)
         } label: {
             Image(systemName: "ellipsis.circle")
         }

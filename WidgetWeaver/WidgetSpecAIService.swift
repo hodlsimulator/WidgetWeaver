@@ -30,10 +30,7 @@ struct WidgetSpecGenerationPayload {
     @Guide(description: "Layout axis.", .anyOf(["vertical", "horizontal"]))
     var axis: String
 
-    @Guide(
-        description: "Overall alignment.",
-        .anyOf(["leading", "center", "trailing"])
-    )
+    @Guide(description: "Overall alignment.", .anyOf(["leading", "center", "trailing"]))
     var alignment: String
 
     @Guide(description: "Spacing between elements (points).", .range(0.0...24.0))
@@ -47,13 +44,13 @@ struct WidgetSpecGenerationPayload {
 
     @Guide(
         description: "Background token.",
-        .anyOf(["plain", "accentGlow", "subtleMaterial"])
+        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial"])
     )
     var background: String
 
     @Guide(
         description: "Accent colour token.",
-        .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray"])
+        .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray", "yellow", "indigo"])
     )
     var accent: String
 
@@ -105,10 +102,7 @@ struct WidgetSpecPatchPayload {
     @Guide(description: "Optional axis override.", .anyOf(["vertical", "horizontal"]))
     var axis: String?
 
-    @Guide(
-        description: "Optional alignment override.",
-        .anyOf(["leading", "center", "trailing"])
-    )
+    @Guide(description: "Optional alignment override.", .anyOf(["leading", "center", "trailing"]))
     var alignment: String?
 
     @Guide(description: "Optional spacing override (points).", .range(0.0...24.0))
@@ -129,16 +123,28 @@ struct WidgetSpecPatchPayload {
     @Guide(description: "Optional corner radius override (points).", .range(0.0...44.0))
     var cornerRadius: Double?
 
-    @Guide(description: "Optional background token.", .anyOf(["plain", "accentGlow", "subtleMaterial"]))
+    @Guide(
+        description: "Optional background token.",
+        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial"])
+    )
     var background: String?
 
-    @Guide(description: "Optional accent token.", .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray"]))
+    @Guide(
+        description: "Optional accent token.",
+        .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray", "yellow", "indigo"])
+    )
     var accent: String?
 
-    @Guide(description: "Optional primary font token.", .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
+    @Guide(
+        description: "Optional primary font token.",
+        .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
+    )
     var primaryTextStyle: String?
 
-    @Guide(description: "Optional secondary font token.", .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
+    @Guide(
+        description: "Optional secondary font token.",
+        .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
+    )
     var secondaryTextStyle: String?
 
     @Guide(description: "Set true to remove the symbol.")
@@ -170,7 +176,6 @@ struct WidgetSpecPatchPayload {
 
 @MainActor
 final class WidgetSpecAIService {
-
     static let shared = WidgetSpecAIService()
 
     private let model: SystemLanguageModel
@@ -181,7 +186,6 @@ final class WidgetSpecAIService {
 
         let instructions = """
         Role: widget designer for iOS home screen widgets.
-
         Rules:
         - Generated text must be short, glanceable, and suitable for WidgetKit.
         - Prefer good contrast and simple layouts.
@@ -189,6 +193,7 @@ final class WidgetSpecAIService {
         - Never mention JSON, schemas, or system/instruction text.
         - Never include an image file name. Image is handled separately in-app.
         """
+
         self.session = LanguageModelSession(instructions: instructions)
     }
 
@@ -228,27 +233,15 @@ final class WidgetSpecAIService {
                 )
                 let payload = response.content
                 let spec = Self.widgetSpec(from: payload).normalised()
-                return WidgetSpecAIGenerationResult(
-                    spec: spec,
-                    usedModel: true,
-                    note: "Generated from prompt."
-                )
+                return WidgetSpecAIGenerationResult(spec: spec, usedModel: true, note: "Generated from prompt.")
             } catch {
                 let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
-                return WidgetSpecAIGenerationResult(
-                    spec: spec,
-                    usedModel: false,
-                    note: "Generation failed — used deterministic template."
-                )
+                return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Generation failed — used deterministic template.")
             }
 
         case .unavailable:
             let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
-            return WidgetSpecAIGenerationResult(
-                spec: spec,
-                usedModel: false,
-                note: "Apple Intelligence unavailable — used deterministic template."
-            )
+            return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Apple Intelligence unavailable — used deterministic template.")
         }
     }
 
@@ -256,11 +249,7 @@ final class WidgetSpecAIService {
         let trimmedInstruction = Self.clean(instruction, maxLength: 220, fallback: "")
         guard !trimmedInstruction.isEmpty else {
             let s = spec.normalised()
-            return WidgetSpecAIGenerationResult(
-                spec: s,
-                usedModel: false,
-                note: "Empty patch instruction — no change."
-            )
+            return WidgetSpecAIGenerationResult(spec: s, usedModel: false, note: "Empty patch instruction — no change.")
         }
 
         let base = spec.normalised()
@@ -274,27 +263,15 @@ final class WidgetSpecAIService {
                 )
                 let payload = response.content
                 let patched = Self.apply(payload: payload, to: base).normalised()
-                return WidgetSpecAIGenerationResult(
-                    spec: patched,
-                    usedModel: true,
-                    note: "Applied patch."
-                )
+                return WidgetSpecAIGenerationResult(spec: patched, usedModel: true, note: "Applied patch.")
             } catch {
                 let patched = Self.fallbackPatch(base: base, instruction: trimmedInstruction).normalised()
-                return WidgetSpecAIGenerationResult(
-                    spec: patched,
-                    usedModel: false,
-                    note: "Patch failed — used deterministic rules."
-                )
+                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Patch failed — used deterministic rules.")
             }
 
         case .unavailable:
             let patched = Self.fallbackPatch(base: base, instruction: trimmedInstruction).normalised()
-            return WidgetSpecAIGenerationResult(
-                spec: patched,
-                usedModel: false,
-                note: "Apple Intelligence unavailable — used deterministic rules."
-            )
+            return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Apple Intelligence unavailable — used deterministic rules.")
         }
     }
 }
@@ -302,31 +279,20 @@ final class WidgetSpecAIService {
 // MARK: - Prompt building
 
 private extension WidgetSpecAIService {
-
     static func newSpecPrompt(userPrompt: String) -> String {
         """
         Create a WidgetWeaver widget design.
-
-        Keep it simple and readable for WidgetKit.
-        Text should be short and glanceable.
-
-        Brief:
-        \(userPrompt)
+        Keep it simple and readable for WidgetKit. Text should be short and glanceable.
+        Brief: \(userPrompt)
         """
     }
 
     static func patchPrompt(baseSpec: WidgetSpec, instruction: String) -> String {
         let summary = specSummary(baseSpec)
-
         return """
         Update the existing WidgetWeaver design using the edit instruction.
-
-        Current design:
-        \(summary)
-
-        Edit instruction:
-        \(instruction)
-
+        Current design: \(summary)
+        Edit instruction: \(instruction)
         Output only the changes as a patch:
         - Leave unchanged fields as nil.
         - Use removeSecondaryText/removeSymbol/removeImage when the instruction asks for removal.
@@ -335,6 +301,7 @@ private extension WidgetSpecAIService {
 
     static func specSummary(_ spec: WidgetSpec) -> String {
         let s = spec.normalised()
+
         let symbolSummary: String = {
             guard let sym = s.symbol else { return "none" }
             return "\(sym.name), placement=\(sym.placement.rawValue), size=\(Int(sym.size)), weight=\(sym.weight.rawValue), rendering=\(sym.renderingMode.rawValue), tint=\(sym.tint.rawValue)"
@@ -360,7 +327,6 @@ private extension WidgetSpecAIService {
 // MARK: - Mapping to WidgetSpec
 
 private extension WidgetSpecAIService {
-
     static func widgetSpec(from payload: WidgetSpecGenerationPayload) -> WidgetSpec {
         let name = clean(payload.name, maxLength: 24, fallback: "WidgetWeaver")
         let primary = clean(payload.primaryText, maxLength: 46, fallback: "Hello")
@@ -376,6 +342,7 @@ private extension WidgetSpecAIService {
 
         let background = BackgroundToken(rawValue: payload.background) ?? .accentGlow
         let accent = AccentToken(rawValue: payload.accent) ?? .blue
+
         let primaryStyle = TextStyleToken(rawValue: payload.primaryTextStyle) ?? .automatic
         let secondaryStyle = TextStyleToken(rawValue: payload.secondaryTextStyle) ?? .automatic
 
@@ -390,7 +357,6 @@ private extension WidgetSpecAIService {
 
         let symbol: SymbolSpec? = {
             guard let symName = optionalClean(payload.symbolName, maxLength: 80), !symName.isEmpty else { return nil }
-
             let placement = SymbolPlacementToken(rawValue: payload.symbolPlacement ?? "") ?? .beforeName
             let weight = SymbolWeightToken(rawValue: payload.symbolWeight ?? "") ?? .semibold
             let rendering = SymbolRenderingModeToken(rawValue: payload.symbolRenderingMode ?? "") ?? .hierarchical
@@ -423,67 +389,35 @@ private extension WidgetSpecAIService {
     static func apply(payload: WidgetSpecPatchPayload, to base: WidgetSpec) -> WidgetSpec {
         var s = base.normalised()
 
-        if let name = payload.name {
-            s.name = clean(name, maxLength: 24, fallback: s.name)
-        }
-
-        if let primary = payload.primaryText {
-            s.primaryText = clean(primary, maxLength: 46, fallback: s.primaryText)
-        }
+        if let name = payload.name { s.name = clean(name, maxLength: 24, fallback: s.name) }
+        if let primary = payload.primaryText { s.primaryText = clean(primary, maxLength: 46, fallback: s.primaryText) }
 
         if payload.removeSecondaryText == true {
             s.secondaryText = nil
         } else if let secondary = payload.secondaryText {
-            let cleaned = optionalClean(secondary, maxLength: 60)
-            s.secondaryText = cleaned
+            s.secondaryText = optionalClean(secondary, maxLength: 60)
         }
 
-        if payload.removeImage == true {
-            s.image = nil
-        }
+        if payload.removeImage == true { s.image = nil }
 
         // Layout edits
         var layout = s.layout
-        if let axisRaw = payload.axis, let axis = LayoutAxisToken(rawValue: axisRaw) {
-            layout.axis = axis
-        }
-        if let alignmentRaw = payload.alignment, let align = LayoutAlignmentToken(rawValue: alignmentRaw) {
-            layout.alignment = align
-        }
-        if let spacing = payload.spacing {
-            layout.spacing = spacing
-        }
-        if let v = payload.primaryLineLimitSmall {
-            layout.primaryLineLimitSmall = v
-        }
-        if let v = payload.primaryLineLimit {
-            layout.primaryLineLimit = v
-        }
-        if let v = payload.secondaryLineLimit {
-            layout.secondaryLineLimit = v
-        }
+        if let axisRaw = payload.axis, let axis = LayoutAxisToken(rawValue: axisRaw) { layout.axis = axis }
+        if let alignmentRaw = payload.alignment, let align = LayoutAlignmentToken(rawValue: alignmentRaw) { layout.alignment = align }
+        if let spacing = payload.spacing { layout.spacing = spacing }
+        if let v = payload.primaryLineLimitSmall { layout.primaryLineLimitSmall = v }
+        if let v = payload.primaryLineLimit { layout.primaryLineLimit = v }
+        if let v = payload.secondaryLineLimit { layout.secondaryLineLimit = v }
         s.layout = layout
 
         // Style edits
         var style = s.style
-        if let padding = payload.padding {
-            style.padding = padding
-        }
-        if let radius = payload.cornerRadius {
-            style.cornerRadius = radius
-        }
-        if let bgRaw = payload.background, let bg = BackgroundToken(rawValue: bgRaw) {
-            style.background = bg
-        }
-        if let accentRaw = payload.accent, let ac = AccentToken(rawValue: accentRaw) {
-            style.accent = ac
-        }
-        if let ptRaw = payload.primaryTextStyle, let pt = TextStyleToken(rawValue: ptRaw) {
-            style.primaryTextStyle = pt
-        }
-        if let stRaw = payload.secondaryTextStyle, let st = TextStyleToken(rawValue: stRaw) {
-            style.secondaryTextStyle = st
-        }
+        if let padding = payload.padding { style.padding = padding }
+        if let radius = payload.cornerRadius { style.cornerRadius = radius }
+        if let bgRaw = payload.background, let bg = BackgroundToken(rawValue: bgRaw) { style.background = bg }
+        if let accentRaw = payload.accent, let ac = AccentToken(rawValue: accentRaw) { style.accent = ac }
+        if let ptRaw = payload.primaryTextStyle, let pt = TextStyleToken(rawValue: ptRaw) { style.primaryTextStyle = pt }
+        if let stRaw = payload.secondaryTextStyle, let st = TextStyleToken(rawValue: stRaw) { style.secondaryTextStyle = st }
         s.style = style
 
         // Symbol edits
@@ -501,24 +435,12 @@ private extension WidgetSpecAIService {
             if anySymbolField {
                 var sym = s.symbol ?? SymbolSpec(name: "sparkles")
 
-                if let symName = optionalClean(payload.symbolName, maxLength: 80), !symName.isEmpty {
-                    sym.name = symName
-                }
-                if let placementRaw = payload.symbolPlacement, let placement = SymbolPlacementToken(rawValue: placementRaw) {
-                    sym.placement = placement
-                }
-                if let size = payload.symbolSize {
-                    sym.size = size
-                }
-                if let weightRaw = payload.symbolWeight, let weight = SymbolWeightToken(rawValue: weightRaw) {
-                    sym.weight = weight
-                }
-                if let modeRaw = payload.symbolRenderingMode, let mode = SymbolRenderingModeToken(rawValue: modeRaw) {
-                    sym.renderingMode = mode
-                }
-                if let tintRaw = payload.symbolTint, let tint = SymbolTintToken(rawValue: tintRaw) {
-                    sym.tint = tint
-                }
+                if let symName = optionalClean(payload.symbolName, maxLength: 80), !symName.isEmpty { sym.name = symName }
+                if let placementRaw = payload.symbolPlacement, let placement = SymbolPlacementToken(rawValue: placementRaw) { sym.placement = placement }
+                if let size = payload.symbolSize { sym.size = size }
+                if let weightRaw = payload.symbolWeight, let weight = SymbolWeightToken(rawValue: weightRaw) { sym.weight = weight }
+                if let modeRaw = payload.symbolRenderingMode, let mode = SymbolRenderingModeToken(rawValue: modeRaw) { sym.renderingMode = mode }
+                if let tintRaw = payload.symbolTint, let tint = SymbolTintToken(rawValue: tintRaw) { sym.tint = tint }
 
                 s.symbol = sym
             }
@@ -532,7 +454,6 @@ private extension WidgetSpecAIService {
 // MARK: - Deterministic fallback rules
 
 private extension WidgetSpecAIService {
-
     static func fallbackNewSpec(prompt: String) -> WidgetSpec {
         let trimmed = clean(prompt, maxLength: 280, fallback: "WidgetWeaver")
         let lower = trimmed.lowercased()
@@ -542,6 +463,12 @@ private extension WidgetSpecAIService {
         var background: BackgroundToken = .accentGlow
         if lower.contains("material") || lower.contains("frosted") || lower.contains("blur") {
             background = .subtleMaterial
+        }
+        if lower.contains("radial") {
+            background = .radialGlow
+        }
+        if lower.contains("solid accent") || lower.contains("tinted") {
+            background = .solidAccent
         }
         if lower.contains("minimal") || lower.contains("clean") || lower.contains("simple") {
             background = .plain
@@ -562,25 +489,20 @@ private extension WidgetSpecAIService {
         }()
 
         var spacing: Double = 6
-        if lower.contains("compact") || lower.contains("tight") {
-            spacing = 4
-        }
-        if lower.contains("spacious") || lower.contains("airy") {
-            spacing = 10
-        }
+        if lower.contains("compact") || lower.contains("tight") { spacing = 4 }
+        if lower.contains("spacious") || lower.contains("airy") { spacing = 10 }
 
         let texts = fallbackTexts(from: trimmed)
+
         let wantsSymbol: Bool = !(lower.contains("no icon") || lower.contains("no symbol") || lower.contains("without icon"))
 
         var style = StyleSpec.defaultStyle
         style.background = background
         style.accent = accent
-        style.primaryTextStyle = lower.contains("big title") || lower.contains("bigger title") || lower.contains("large title") ? .title2 : .headline
+        style.primaryTextStyle = (lower.contains("big title") || lower.contains("bigger title") || lower.contains("large title")) ? .title2 : .headline
         style.secondaryTextStyle = .caption2
         style.nameTextStyle = .caption
-        if lower.contains("minimal") {
-            style.padding = 10
-        }
+        if lower.contains("minimal") { style.padding = 10 }
 
         var layout = LayoutSpec.defaultLayout
         layout.axis = axis
@@ -607,12 +529,11 @@ private extension WidgetSpecAIService {
         var s = base.normalised()
         let lower = instruction.lowercased()
 
-        // Accent changes
-        if let ac = detectAccent(in: lower) {
-            s.style.accent = ac
-        }
+        if let ac = detectAccent(in: lower) { s.style.accent = ac }
 
-        // Common patch phrases
+        if lower.contains("radial") { s.style.background = .radialGlow }
+        if lower.contains("solid accent") || lower.contains("tinted") { s.style.background = .solidAccent }
+
         if lower.contains("more minimal") || lower.contains("make it minimal") || lower.contains("cleaner") || lower.contains("simpler") {
             s.style.background = .plain
             s.style.accent = .gray
@@ -632,36 +553,19 @@ private extension WidgetSpecAIService {
         if lower.contains("bigger title") || lower.contains("larger title") || lower.contains("make title bigger") || lower.contains("bigger primary") {
             s.style.primaryTextStyle = .title2
         }
-
         if lower.contains("smaller title") || lower.contains("make title smaller") {
             s.style.primaryTextStyle = .headline
         }
 
-        if lower.contains("transparent") || lower.contains("clear background") {
-            s.style.background = .plain
-        }
+        if lower.contains("transparent") || lower.contains("clear background") { s.style.background = .plain }
+        if lower.contains("accent background") || lower.contains("use accent as background") { s.style.background = .accentGlow }
 
-        if lower.contains("accent background") || lower.contains("use accent as background") {
-            s.style.background = .accentGlow
-        }
+        if lower.contains("horizontal") { s.layout.axis = .horizontal }
+        if lower.contains("vertical") { s.layout.axis = .vertical }
+        if lower.contains("center") || lower.contains("centre") { s.layout.alignment = .center }
 
-        if lower.contains("horizontal") {
-            s.layout.axis = .horizontal
-        }
-        if lower.contains("vertical") {
-            s.layout.axis = .vertical
-        }
-
-        if lower.contains("center") {
-            s.layout.alignment = .center
-        }
-
-        if lower.contains("more spacing") || lower.contains("increase spacing") {
-            s.layout.spacing += 2
-        }
-        if lower.contains("less spacing") || lower.contains("decrease spacing") {
-            s.layout.spacing -= 2
-        }
+        if lower.contains("more spacing") || lower.contains("increase spacing") { s.layout.spacing += 2 }
+        if lower.contains("less spacing") || lower.contains("decrease spacing") { s.layout.spacing -= 2 }
 
         if lower.contains("remove secondary") || lower.contains("no secondary") || lower.contains("no subtitle") || lower.contains("remove subtitle") {
             s.secondaryText = nil
@@ -675,19 +579,11 @@ private extension WidgetSpecAIService {
             s.image = nil
         }
 
-        if lower.contains("more padding") || lower.contains("increase padding") {
-            s.style.padding += 2
-        }
-        if lower.contains("less padding") || lower.contains("decrease padding") {
-            s.style.padding -= 2
-        }
+        if lower.contains("more padding") || lower.contains("increase padding") { s.style.padding += 2 }
+        if lower.contains("less padding") || lower.contains("decrease padding") { s.style.padding -= 2 }
 
-        if lower.contains("more rounded") || lower.contains("rounder") {
-            s.style.cornerRadius += 4
-        }
-        if lower.contains("less rounded") || lower.contains("sharper") {
-            s.style.cornerRadius -= 4
-        }
+        if lower.contains("more rounded") || lower.contains("rounder") { s.style.cornerRadius += 4 }
+        if lower.contains("less rounded") || lower.contains("sharper") { s.style.cornerRadius -= 4 }
 
         s.updatedAt = Date()
         return s
@@ -697,7 +593,6 @@ private extension WidgetSpecAIService {
 // MARK: - Small text helpers
 
 private extension WidgetSpecAIService {
-
     struct FallbackTexts {
         let name: String
         let primary: String
@@ -706,10 +601,7 @@ private extension WidgetSpecAIService {
 
     static func fallbackTexts(from prompt: String) -> FallbackTexts {
         let collapsed = collapseWhitespace(prompt)
-
-        let words = collapsed
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
+        let words = collapsed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
 
         let nameRaw = words.prefix(2).joined(separator: " ")
         let primaryRaw = words.prefix(6).joined(separator: " ")
@@ -753,23 +645,28 @@ private extension WidgetSpecAIService {
     }
 
     static func detectAccent(in lowerText: String) -> AccentToken? {
-        // Accepts both "grey" and "gray".
+        if lowerText.contains("indigo") { return .indigo }
+        if lowerText.contains("yellow") || lowerText.contains("gold") { return .yellow }
+
         if lowerText.contains("teal") || lowerText.contains("mint") { return .teal }
         if lowerText.contains("green") { return .green }
-        if lowerText.contains("yellow") { return .orange }
         if lowerText.contains("orange") { return .orange }
         if lowerText.contains("red") { return .red }
         if lowerText.contains("pink") { return .pink }
-        if lowerText.contains("purple") || lowerText.contains("indigo") { return .purple }
-        if lowerText.contains("brown") { return .orange }
+        if lowerText.contains("purple") { return .purple }
         if lowerText.contains("gray") || lowerText.contains("grey") { return .gray }
         if lowerText.contains("blue") { return .blue }
+
+        if lowerText.contains("brown") { return .orange }
+        if lowerText.contains("indigo") { return .indigo }
+
         return nil
     }
 
     static func clean(_ text: String, maxLength: Int, fallback: String) -> String {
         let collapsed = collapseWhitespace(text)
         let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+
         if trimmed.isEmpty { return fallback }
         if trimmed.count <= maxLength { return trimmed }
         return String(trimmed.prefix(maxLength))
