@@ -27,10 +27,8 @@ WidgetWeaver supports both:
 ✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
 ✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback  
 ✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
-✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)
-
-Next:
-- ⏭ Sharing / import / export
+✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)  
+✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)
 
 ---
 
@@ -64,6 +62,21 @@ Notes:
 
 ---
 
+## Sharing / import / export
+
+WidgetWeaver can export one design or all designs as a single file, and import designs back into the app.
+
+- **Export format:** versioned exchange JSON (validated on import).
+- **Images:** exports embed image bytes when the referenced files exist in the App Group container.
+- **Import behaviour:** imported designs are duplicated with new IDs to avoid overwriting existing designs; embedded images are restored into the App Group container and references are rewritten.
+- **Widget refresh:** imports and exports trigger a widget refresh so changes show quickly.
+
+In the app:
+- Use the toolbar menu (**…**) → **Share this design** / **Share all designs**.
+- Use **Import designs…** to bring designs back in.
+
+---
+
 ## Variables + Shortcuts
 
 WidgetWeaver supports simple text templating in spec text fields, backed by a shared variable store in the App Group.
@@ -82,7 +95,6 @@ Keys are canonicalised (trimmed + lowercased; whitespace normalised).
 ### Updating variables (Shortcuts)
 
 WidgetWeaver exposes App Intents that appear as Shortcuts actions:
-
 - **Set WidgetWeaver Variable** (key, value)
 - **Get WidgetWeaver Variable** (key)
 - **Remove WidgetWeaver Variable** (key)
@@ -136,6 +148,7 @@ Privacy:
   - Pick an optional image for a design
   - Optional AI prompt/patch workflow
   - Variables store + App Intents (Shortcuts actions)
+  - Sharing / import / export
 
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
@@ -148,10 +161,11 @@ Privacy:
 
 App Group: `group.com.conornolan.widgetweaver`
 
-Storage (v0.9.x simplicity):
+Storage:
 - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
 - Variables: `UserDefaults(suiteName:)` (JSON-encoded dictionary)
 - Images: files in the App Group container directory `WidgetWeaverImages/`
+- Sharing files: exported JSON exchange (versioned, validated), optionally embedding image bytes
 
 ### Safety
 
@@ -277,8 +291,10 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
   - increment numeric variables
 - Variable changes trigger widget refresh
 
-### Milestone 7 — Sharing / import / export (LATER)
-- Export/import specs (validated, versioned)
+### Milestone 7 — Sharing / import / export (DONE)
+- Export/import designs (validated, versioned exchange JSON)
+- Optional embedded images (restored on import)
+- Import duplicates designs with new IDs to avoid overwriting
 
 ### Milestone 8 — Monetisation (LATER)
 - Free tier limits
@@ -309,6 +325,10 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
 - Confirm the spec contains `{{...}}` tokens (for example `{{streak|0}}`).
 - Run a Shortcut action (Set/Increment) and verify the key matches (keys are lowercased and whitespace-normalised).
 - If a widget instance is configured to a specific saved design, ensure that design is the one using the variable tokens.
+
+### Import not behaving as expected
+- Imports always create new designs (new IDs). If you expected an overwrite, delete the old design manually.
+- If an imported design used embedded images but the widget shows “no image”, open the design, re-save it once, then refresh widgets.
 
 ### AI shows “Unavailable”
 - The app still works (deterministic fallbacks).

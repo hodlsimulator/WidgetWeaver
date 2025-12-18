@@ -47,7 +47,6 @@ public final class WidgetSpecStore: @unchecked Sendable {
         defaults.removeObject(forKey: defaultIDKey)
         defaults.removeObject(forKey: legacySingleSpecKey)
         seedIfNeeded()
-
         flushAndNotifyWidgets()
     }
 
@@ -74,7 +73,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
     public func loadDefault() -> WidgetSpec {
         let specs = loadAllInternal()
 
-        if let id = defaultSpecID(), let match = specs.first(where: { $0.id == id }) {
+        if let id = defaultSpecID(),
+           let match = specs.first(where: { $0.id == id }) {
             return match.normalised()
         }
 
@@ -129,7 +129,29 @@ public final class WidgetSpecStore: @unchecked Sendable {
         flushAndNotifyWidgets()
     }
 
-    // MARK: - Internals
+    // MARK: - Sharing / Import / Export (Milestone 7)
+
+    /// Encodes one or more specs into a versioned exchange file (optionally embedding images).
+    public func exportExchangeData(specs: [WidgetSpec], includeImages: Bool = true) throws -> Data {
+        let file = exportExchangeFile(specs: specs, includeImages: includeImages)
+        return try WidgetWeaverDesignExchangeCodec.encode(file)
+    }
+
+    /// Encodes all saved specs into a versioned exchange file (optionally embedding images).
+    public func exportAllExchangeData(includeImages: Bool = true) throws -> Data {
+        let specs = loadAllInternal()
+        return try exportExchangeData(specs: specs, includeImages: includeImages)
+    }
+
+    /// Imports specs from an exchange payload (also accepts raw `WidgetSpec` or `[WidgetSpec]` JSON for convenience).
+    /// - Behaviour: imported specs are duplicated with new IDs and updated timestamps to avoid overwriting.
+    /// - Images: embedded images are restored into the App Group container and fileName references are rewritten.
+    public func importDesigns(from data: Data, makeDefault: Bool = false) throws -> WidgetWeaverImportResult {
+        let payload = try WidgetWeaverDesignExchangeCodec.decodeAny(data)
+        return importExchangePayload(payload, makeDefault: makeDefault)
+    }
+
+    // MARK: - Internals (storage)
 
     private func loadAllInternal() -> [WidgetSpec] {
         guard let data = defaults.data(forKey: specsKey) else { return [] }
@@ -146,7 +168,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
             let data = try JSONEncoder().encode(specs.map { $0.normalised() })
             defaults.set(data, forKey: specsKey)
         } catch {
-            // Intentionally ignored
+            // Intentionally ignored.
         }
     }
 
@@ -154,16 +176,14 @@ public final class WidgetSpecStore: @unchecked Sendable {
         guard defaults.data(forKey: specsKey) == nil else { return }
         guard let legacyData = defaults.data(forKey: legacySingleSpecKey) else { return }
 
-        defer {
-            defaults.removeObject(forKey: legacySingleSpecKey)
-        }
+        defer { defaults.removeObject(forKey: legacySingleSpecKey) }
 
         do {
             let legacySpec = try JSONDecoder().decode(WidgetSpec.self, from: legacyData).normalised()
             saveAllInternal([legacySpec])
             setDefaultInternal(id: legacySpec.id)
         } catch {
-            // Intentionally ignored
+            // Intentionally ignored.
         }
     }
 
@@ -195,11 +215,322 @@ public final class WidgetSpecStore: @unchecked Sendable {
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: kind)
             WidgetCenter.shared.reloadAllTimelines()
-
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }
         }
         #endif
+    }
+
+    // MARK: - Internals (import)
+
+    private func importExchangePayload(_ payload: WidgetWeaverDesignExchangePayload, makeDefault: Bool) -> WidgetWeaverImportResult {
+        var notes: [String] = []
+
+        // Restore embedded images first.
+        var imageFileNameMap: [String: String] = [:] // originalFileName -> newFileName
+
+        if !payload.images.isEmpty {
+            for embedded in payload.images {
+                let original = embedded.originalFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !original.isEmpty else { continue }
+
+                let ext = URL(fileURLWithPath: original).pathExtension
+                let safeExt = ext.isEmpty ? "jpg" : ext
+                let newFileName = AppGroup.createImageFileName(ext: safeExt)
+
+                do {
+                    try AppGroup.writeImageData(embedded.data, fileName: newFileName)
+                    imageFileNameMap[original] = newFileName
+                } catch {
+                    notes.append("Failed to restore image: \(original)")
+                }
+            }
+        }
+
+        // Duplicate specs with new IDs (avoid overwrite).
+        let now = Date()
+        var imported: [WidgetSpec] = []
+        imported.reserveCapacity(payload.specs.count)
+
+        for raw in payload.specs {
+            var s = raw.normalised()
+            s.id = UUID()
+            s.updatedAt = now
+
+            // Rewrite any image references (base + matched variants).
+            s = s.rewritingImageFileNames(using: imageFileNameMap)
+
+            imported.append(s)
+        }
+
+        if imported.isEmpty {
+            return WidgetWeaverImportResult(importedCount: 0, importedIDs: [], notes: notes)
+        }
+
+        // Merge into store.
+        var existing = loadAllInternal()
+        existing.append(contentsOf: imported.map { $0.normalised() })
+
+        saveAllInternal(existing)
+
+        if makeDefault, let last = imported.last {
+            setDefaultInternal(id: last.id)
+        } else if defaultSpecID() == nil, let first = existing.first {
+            setDefaultInternal(id: first.id)
+        }
+
+        flushAndNotifyWidgets()
+
+        return WidgetWeaverImportResult(
+            importedCount: imported.count,
+            importedIDs: imported.map(\.id),
+            notes: notes
+        )
+    }
+}
+
+// MARK: - Exchange payload + codec
+
+public struct WidgetWeaverDesignExchangePayload: Codable, Hashable {
+    public static let magicValue = "com.conornolan.widgetweaver.exchange"
+    public static let currentFormatVersion = 1
+
+    public var magic: String
+    public var formatVersion: Int
+    public var createdAt: Date
+    public var specs: [WidgetSpec]
+    public var images: [WidgetWeaverEmbeddedImage]
+
+    public init(
+        magic: String = WidgetWeaverDesignExchangePayload.magicValue,
+        formatVersion: Int = WidgetWeaverDesignExchangePayload.currentFormatVersion,
+        createdAt: Date = Date(),
+        specs: [WidgetSpec],
+        images: [WidgetWeaverEmbeddedImage] = []
+    ) {
+        self.magic = magic
+        self.formatVersion = formatVersion
+        self.createdAt = createdAt
+        self.specs = specs
+        self.images = images
+    }
+}
+
+public struct WidgetWeaverEmbeddedImage: Codable, Hashable {
+    public var originalFileName: String
+    public var data: Data
+
+    public init(originalFileName: String, data: Data) {
+        self.originalFileName = originalFileName
+        self.data = data
+    }
+}
+
+public struct WidgetWeaverImportResult: Hashable {
+    public var importedCount: Int
+    public var importedIDs: [UUID]
+    public var notes: [String]
+
+    public init(importedCount: Int, importedIDs: [UUID], notes: [String]) {
+        self.importedCount = importedCount
+        self.importedIDs = importedIDs
+        self.notes = notes
+    }
+}
+
+public enum WidgetWeaverDesignExchangeError: Error, LocalizedError {
+    case emptyExport
+    case invalidExchangeFile
+    case unsupportedFormatVersion(Int)
+    case noSpecsFound
+    case decodingFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyExport:
+            return "Nothing to export."
+        case .invalidExchangeFile:
+            return "This file does not look like a WidgetWeaver export."
+        case .unsupportedFormatVersion(let v):
+            return "Unsupported WidgetWeaver export format version: \(v)."
+        case .noSpecsFound:
+            return "No designs were found in the file."
+        case .decodingFailed:
+            return "Could not read this file."
+        }
+    }
+}
+
+public enum WidgetWeaverDesignExchangeCodec {
+    public static func encode(_ payload: WidgetWeaverDesignExchangePayload) throws -> Data {
+        guard !payload.specs.isEmpty else { throw WidgetWeaverDesignExchangeError.emptyExport }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        return try encoder.encode(payload)
+    }
+
+    /// Decodes:
+    /// - WidgetWeaver exchange payload (preferred)
+    /// - Array of WidgetSpec
+    /// - Single WidgetSpec
+    public static func decodeAny(_ data: Data) throws -> WidgetWeaverDesignExchangePayload {
+        // 1) Try exchange payload (ISO8601)
+        if let payload = try? decodeExchange(data, iso8601: true) {
+            return try validate(payload)
+        }
+
+        // 2) Try exchange payload (default date strategy)
+        if let payload = try? decodeExchange(data, iso8601: false) {
+            return try validate(payload)
+        }
+
+        // 3) Try [WidgetSpec]
+        if let specs = try? JSONDecoder().decode([WidgetSpec].self, from: data) {
+            let normalised = specs.map { $0.normalised() }
+            guard !normalised.isEmpty else { throw WidgetWeaverDesignExchangeError.noSpecsFound }
+            return WidgetWeaverDesignExchangePayload(specs: normalised, images: [])
+        }
+
+        // 4) Try WidgetSpec
+        if let spec = try? JSONDecoder().decode(WidgetSpec.self, from: data) {
+            return WidgetWeaverDesignExchangePayload(specs: [spec.normalised()], images: [])
+        }
+
+        throw WidgetWeaverDesignExchangeError.decodingFailed
+    }
+
+    private static func decodeExchange(_ data: Data, iso8601: Bool) throws -> WidgetWeaverDesignExchangePayload {
+        let decoder = JSONDecoder()
+        if iso8601 {
+            decoder.dateDecodingStrategy = .iso8601
+        }
+        return try decoder.decode(WidgetWeaverDesignExchangePayload.self, from: data)
+    }
+
+    private static func validate(_ payload: WidgetWeaverDesignExchangePayload) throws -> WidgetWeaverDesignExchangePayload {
+        guard payload.magic == WidgetWeaverDesignExchangePayload.magicValue else {
+            throw WidgetWeaverDesignExchangeError.invalidExchangeFile
+        }
+
+        if payload.formatVersion > WidgetWeaverDesignExchangePayload.currentFormatVersion {
+            throw WidgetWeaverDesignExchangeError.unsupportedFormatVersion(payload.formatVersion)
+        }
+
+        guard !payload.specs.isEmpty else {
+            throw WidgetWeaverDesignExchangeError.noSpecsFound
+        }
+
+        var out = payload
+        out.specs = out.specs.map { $0.normalised() }
+        return out
+    }
+}
+
+// MARK: - Export builder
+
+private extension WidgetSpecStore {
+    func exportExchangeFile(specs: [WidgetSpec], includeImages: Bool) -> WidgetWeaverDesignExchangePayload {
+        let normalisedSpecs = specs.map { $0.normalised() }
+        var embeddedImages: [WidgetWeaverEmbeddedImage] = []
+
+        if includeImages {
+            let fileNames = collectUniqueImageFileNames(in: normalisedSpecs)
+            embeddedImages = fileNames.compactMap { fileName in
+                let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+
+                let url = AppGroup.imageFileURL(fileName: trimmed)
+                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                guard let data = try? Data(contentsOf: url) else { return nil }
+
+                return WidgetWeaverEmbeddedImage(originalFileName: trimmed, data: data)
+            }
+        }
+
+        return WidgetWeaverDesignExchangePayload(
+            createdAt: Date(),
+            specs: normalisedSpecs,
+            images: embeddedImages
+        )
+    }
+
+    func collectUniqueImageFileNames(in specs: [WidgetSpec]) -> [String] {
+        var set = Set<String>()
+
+        for spec in specs {
+            if let img = spec.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                set.insert(img)
+            }
+
+            if let matched = spec.matchedSet {
+                if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    set.insert(img)
+                }
+                if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    set.insert(img)
+                }
+                if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    set.insert(img)
+                }
+            }
+        }
+
+        return Array(set).sorted()
+    }
+}
+
+// MARK: - Image fileName rewriting (base + matched variants)
+
+private extension WidgetSpec {
+    func rewritingImageFileNames(using map: [String: String]) -> WidgetSpec {
+        guard !map.isEmpty else { return self }
+
+        var out = self
+
+        if var base = out.image {
+            let old = base.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let new = map[old] {
+                base.fileName = new
+                out.image = base
+            }
+        }
+
+        if var matched = out.matchedSet {
+            if var v = matched.small {
+                v = v.rewritingImageFileNames(using: map)
+                matched.small = v
+            }
+            if var v = matched.medium {
+                v = v.rewritingImageFileNames(using: map)
+                matched.medium = v
+            }
+            if var v = matched.large {
+                v = v.rewritingImageFileNames(using: map)
+                matched.large = v
+            }
+            out.matchedSet = matched
+        }
+
+        return out.normalised()
+    }
+}
+
+private extension WidgetSpecVariant {
+    func rewritingImageFileNames(using map: [String: String]) -> WidgetSpecVariant {
+        guard !map.isEmpty else { return self }
+
+        var out = self
+        if var img = out.image {
+            let old = img.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let new = map[old] {
+                img.fileName = new
+                out.image = img
+            }
+        }
+        return out.normalised()
     }
 }
