@@ -11,7 +11,7 @@ WidgetWeaver supports both:
 - **Optional on-device prompt → spec generation** (Apple Intelligence / Foundation Models), with deterministic fallbacks when unavailable
 
 
-## Current status (0.9.4 (5))
+## Current status (0.9.4 (6))
 
 ✅ iOS app target created and runs on a real device  
 ✅ Widget extension target added and shows in the widget gallery  
@@ -428,7 +428,7 @@ Storage:
 
 ## Repo notes
 
-- Marketing version / build: `0.9.4 (5)` (from target settings / Info.plist values, not hardcoded in code)
+- Marketing version / build: `0.9.4 (6)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - About page: `WidgetWeaver/WidgetWeaverAboutView.swift`
 - Working principle: ship small commits where the app + widget always build and run

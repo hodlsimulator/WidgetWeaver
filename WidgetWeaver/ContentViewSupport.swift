@@ -166,6 +166,11 @@ final class WidgetWeaverProManager: ObservableObject {
             statusMessage = "Restore failed: \(error.localizedDescription)"
         }
     }
+    
+    func syncFromLocalEntitlements(status: String? = nil) {
+        isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
+        if let status { statusMessage = status }
+    }
 
     private func loadProduct() async {
         do {
@@ -231,22 +236,31 @@ private struct ProFeatureRow: View {
 struct WidgetWeaverProView: View {
     @ObservedObject var manager: WidgetWeaverProManager
 
+    @State private var showInternalTools: Bool = false
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    if manager.isProUnlocked {
-                        Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                        Text("Matched sets, variables, and unlimited designs are enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Label("WidgetWeaver Pro", systemImage: "crown.fill")
-                        Text("Unlock matched sets, variables, and unlimited designs.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if manager.isProUnlocked {
+                            Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
+                            Text("Matched sets, variables, and unlimited designs are enabled.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Label("WidgetWeaver Pro", systemImage: "crown.fill")
+                            Text("Unlock matched sets, variables, and unlimited designs.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 7) {
+                        guard WidgetWeaverEntitlements.isLikelyTestFlightBuild else { return }
+                        showInternalTools.toggle()
                     }
                 } header: {
                     Text("Status")
@@ -305,6 +319,26 @@ struct WidgetWeaverProView: View {
                     }
                 } header: {
                     Text("Actions")
+                }
+
+                if showInternalTools && WidgetWeaverEntitlements.isLikelyTestFlightBuild {
+                    Section {
+                        Button {
+                            WidgetWeaverEntitlements.setProUnlocked(true)
+                            manager.syncFromLocalEntitlements(status: "Pro unlocked (internal).")
+                        } label: {
+                            Label("Unlock Pro (Internal)", systemImage: "wand.and.stars")
+                        }
+
+                        Button(role: .destructive) {
+                            WidgetWeaverEntitlements.setProUnlocked(false)
+                            manager.syncFromLocalEntitlements(status: "Pro reset (internal).")
+                        } label: {
+                            Label("Reset Pro flag (Internal)", systemImage: "xmark.seal")
+                        }
+                    } header: {
+                        Text("Internal Testing")
+                    }
                 }
             }
             .navigationTitle("Pro")
