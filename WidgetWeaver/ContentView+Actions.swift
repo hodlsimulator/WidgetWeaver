@@ -12,6 +12,7 @@ import PhotosUI
 import UIKit
 
 extension ContentView {
+
     // MARK: - Photos import
 
     func importPickedImage(_ item: PhotosPickerItem) async {
@@ -61,10 +62,18 @@ extension ContentView {
     func refreshWidgets() {
         WidgetCenter.shared.reloadAllTimelines()
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-        WidgetCenter.shared.invalidateConfigurationRecommendations()
+
+        if #available(iOS 17.0, *) {
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
 
         lastWidgetRefreshAt = Date()
         saveStatusMessage = "Widgets refreshed."
+    }
+
+    func revertUnsavedChanges() {
+        loadSelected()
+        saveStatusMessage = "Reverted to last saved."
     }
 
     private func freeTierHasCapacityForNewDesign() -> Bool {
@@ -135,6 +144,7 @@ extension ContentView {
         }
 
         let base = draftSpec(id: selectedSpecID)
+
         var spec = base
         spec.id = UUID()
         spec.updatedAt = Date()
@@ -151,6 +161,7 @@ extension ContentView {
 
     func deleteCurrentDesign() {
         store.delete(id: selectedSpecID)
+
         refreshSavedSpecs(preservingSelection: false)
         loadSelected()
 
@@ -235,9 +246,12 @@ extension ContentView {
         guard !instruction.isEmpty else { return }
 
         let style = styleDraft.toStyleSpec()
+
         let current = currentFamilyDraft().toFlatSpec(
             id: selectedSpecID,
-            name: designName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "WidgetWeaver" : designName.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: designName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "WidgetWeaver"
+            : designName.trimmingCharacters(in: .whitespacesAndNewlines),
             style: style,
             updatedAt: Date()
         )
@@ -254,6 +268,7 @@ extension ContentView {
 
         var combined = draftSpec(id: selectedSpecID).normalised()
         combined.updatedAt = Date()
+
         store.save(combined, makeDefault: false)
 
         lastSavedAt = combined.updatedAt
@@ -285,7 +300,9 @@ extension ContentView {
         defer { importInProgress = false }
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart { url.stopAccessingSecurityScopedResource() }
+        }
 
         do {
             let data = try Data(contentsOf: url)
@@ -339,6 +356,7 @@ extension ContentView {
     static func applyAppearanceIfNeeded() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
+
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }

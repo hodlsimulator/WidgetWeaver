@@ -18,8 +18,22 @@ extension ContentView {
     }
 
     func specDisplayName(_ spec: WidgetSpec) -> String {
-        if spec.id == defaultSpecID { return "\(spec.name) (Default)" }
+        if spec.id == defaultSpecID {
+            return "\(spec.name) (Default)"
+        }
         return spec.name
+    }
+
+    var hasUnsavedChanges: Bool {
+        guard let saved = store.load(id: selectedSpecID) else { return false }
+        let draft = draftSpec(id: selectedSpecID)
+        return comparableSpec(draft) != comparableSpec(saved)
+    }
+
+    private func comparableSpec(_ spec: WidgetSpec) -> WidgetSpec {
+        var s = spec.normalised()
+        s.updatedAt = Date(timeIntervalSince1970: 0)
+        return s
     }
 
     // MARK: - Model glue
@@ -68,6 +82,7 @@ extension ContentView {
             baseDraft = matchedDrafts.medium
         } else {
             matchedSetEnabled = false
+
             baseDraft = FamilyDraft(from: n)
             matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
         }
@@ -76,10 +91,12 @@ extension ContentView {
     func draftSpec(id: UUID) -> WidgetSpec {
         let trimmedName = designName.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
+
         let style = styleDraft.toStyleSpec()
 
         if matchedSetEnabled {
             let base = matchedDrafts.medium
+
             let baseSpec = base.toFlatSpec(
                 id: id,
                 name: finalName,

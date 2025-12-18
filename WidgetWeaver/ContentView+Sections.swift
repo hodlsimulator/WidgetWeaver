@@ -10,6 +10,7 @@ import PhotosUI
 import UIKit
 
 extension ContentView {
+
     func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.caption)
@@ -50,13 +51,22 @@ extension ContentView {
             }
 
             ControlGroup {
-                Button { createNewDesign() } label: { Label("New", systemImage: "plus") }
-                Button { duplicateCurrentDesign() } label: { Label("Duplicate", systemImage: "doc.on.doc") }
-                    .disabled(savedSpecs.isEmpty)
-                Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete", systemImage: "trash") }
-                    .disabled(savedSpecs.count <= 1)
+                Button { createNewDesign() } label: {
+                    Label("New", systemImage: "plus")
+                }
+
+                Button { duplicateCurrentDesign() } label: {
+                    Label("Duplicate", systemImage: "doc.on.doc")
+                }
+                .disabled(savedSpecs.isEmpty)
+
+                Button(role: .destructive) { showDeleteConfirmation = true } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(savedSpecs.count <= 1)
             }
             .controlSize(.small)
+
         } header: {
             sectionHeader("Design")
         } footer: {
@@ -70,13 +80,21 @@ extension ContentView {
         Section {
             if proManager.isProUnlocked {
                 Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                Button { activeSheet = .pro } label: { Label("Manage Pro", systemImage: "crown.fill") }
+
+                Button { activeSheet = .pro } label: {
+                    Label("Manage Pro", systemImage: "crown.fill")
+                }
             } else {
                 Label("Free tier", systemImage: "sparkles")
+
                 Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, and variables.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
+
+                Button { activeSheet = .pro } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+
                 if !proManager.statusMessage.isEmpty {
                     Text(proManager.statusMessage)
                         .font(.caption)
@@ -132,8 +150,7 @@ extension ContentView {
             if importInProgress {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Importing…")
-                        .foregroundStyle(.secondary)
+                    Text("Importing…").foregroundStyle(.secondary)
                 }
             }
 
@@ -149,11 +166,10 @@ extension ContentView {
                 Label("Import designs…", systemImage: "square.and.arrow.down")
             }
 
-            Button(role: .destructive) {
-                showImageCleanupConfirmation = true
-            } label: {
+            Button(role: .destructive) { showImageCleanupConfirmation = true } label: {
                 Label("Clean Up Unused Images", systemImage: "trash.slash")
             }
+
         } header: {
             sectionHeader("Sharing")
         } footer: {
@@ -173,7 +189,9 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
+                Button { activeSheet = .pro } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
             } else if matchedSetEnabled {
                 Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
                     .font(.caption)
@@ -187,6 +205,7 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Matched set")
         }
@@ -228,6 +247,7 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Widgets")
         } footer: {
@@ -347,10 +367,12 @@ extension ContentView {
                 } label: {
                     Text("Remove image")
                 }
+
             } else {
                 Text("No image selected.")
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Image")
         }
@@ -390,12 +412,14 @@ extension ContentView {
                     value: binding(\.primaryLineLimit),
                     in: 1...10
                 )
+
                 Stepper(
                     "Secondary line limit: \(currentFamilyDraft().secondaryLineLimit)",
                     value: binding(\.secondaryLineLimit),
                     in: 1...10
                 )
             }
+
         } header: {
             sectionHeader("Layout")
         }
@@ -440,6 +464,7 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Style")
         }
@@ -470,6 +495,7 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Typography")
         }
@@ -510,6 +536,7 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("AI")
         }
@@ -517,6 +544,23 @@ extension ContentView {
 
     var statusSection: some View {
         Section {
+            if hasUnsavedChanges {
+                Label("Unsaved changes", systemImage: "pencil.tip.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.secondary)
+
+                Button(role: .destructive) { showRevertConfirmation = true } label: {
+                    Label("Revert to last saved", systemImage: "arrow.uturn.backward")
+                }
+
+                Button { activeSheet = .inspector } label: {
+                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
+                }
+            } else {
+                Button { activeSheet = .inspector } label: {
+                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
+                }
+            }
+
             if let lastSavedAt {
                 Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
                     .foregroundStyle(.secondary)
@@ -524,6 +568,7 @@ extension ContentView {
                 Text("Not saved yet.")
                     .foregroundStyle(.secondary)
             }
+
         } header: {
             sectionHeader("Status")
         }

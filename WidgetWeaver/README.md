@@ -33,6 +33,8 @@ WidgetWeaver supports both:
 ✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
 ✅ **Variables + Shortcuts** (text templates + in-app Variables manager + App Intents actions to update variables and refresh widgets)  
 ✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)  
+✅ **Inspector** (view/copy Design JSON + resolved JSON + exchange JSON; inspect image references)  
+✅ **Unsaved changes indicator + revert** (discard current draft edits and reload last saved)  
 ✅ About page with template gallery (starter + Pro), examples, and one-tap add  
 ✅ **Monetisation scaffolding** (StoreKit 2 Pro unlock + free-tier limits for designs; Pro-only matched sets + variables)
 
@@ -47,6 +49,7 @@ WidgetWeaver supports both:
 4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
 5. Optional: open the toolbar menu (**…**) → **About** and add a template (fastest way to get started).
 6. In the app, create/edit a design and tap **Save & Make Default** (recommended while iterating).
+7. Optional: open the toolbar menu (**…**) → **Inspector** to view/copy the exact JSON being rendered.
 
 Per-widget selection:
 
@@ -108,10 +111,26 @@ WidgetWeaver can export one design or all designs as a single file, and import d
 
 In the app:
 
-- Use the toolbar menu (**…**) → **About** to browse and add templates.
 - Use the toolbar menu (**…**) → **Share this design** / **Share all designs**.
 - Use **Import designs…** to bring designs back in.
 - Use the toolbar menu (**…**) → **Clean Up Unused Images** to delete unreferenced image files.
+
+---
+
+## Inspector
+
+The Inspector is a debug view for understanding exactly what the widget will render.
+
+In the app:
+
+- Open the toolbar menu (**…**) → **Inspector**
+
+From there you can:
+
+- View/copy the base **Design JSON** (what’s saved).
+- View/copy the **Resolved JSON** for a selected size (applies matched-set overrides + variables).
+- View/copy the **Exchange JSON** (export format without embedded images).
+- See referenced image file names and whether they exist on disk.
 
 ---
 
@@ -196,6 +215,7 @@ Privacy:
   - Optional AI prompt/patch workflow
   - Variables store + App Intents (Shortcuts actions)
   - Sharing / import / export
+  - Inspector (JSON + image references)
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
   - Renders Small/Medium/Large
@@ -313,6 +333,11 @@ Storage:
 - One-tap **Add** / **Add & Make Default** actions
 - Quick reference: Variables syntax + Shortcuts actions + AI prompt/patch ideas
 
+### Milestone 7.6 — Inspector + revert (DONE)
+
+- Inspector: copy base/resolved/exchange JSON + view image references
+- Unsaved changes indicator + revert to last saved
+
 ### Milestone 8 — Monetisation (IN PROGRESS)
 
 - Free tier limits (max designs)
@@ -344,6 +369,7 @@ Storage:
   - the specific saved design being edited
 - If Matched set is enabled, ensure edits are being made to the intended size (Small/Medium/Large) via the preview size picker.
 - Remove/re-add the widget after significant schema changes.
+- Use **Inspector** to confirm what the app thinks is saved (base JSON) and what the widget will resolve for a size (resolved JSON).
 
 ### Variables not updating in the widget
 

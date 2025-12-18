@@ -50,6 +50,9 @@
             ReferencedContainer = "container:WidgetWeaver.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../../WidgetWeaver/WidgetWeaver.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

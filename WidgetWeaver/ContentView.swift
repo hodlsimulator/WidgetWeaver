@@ -24,7 +24,9 @@ struct ContentView: View {
 
     @State var designName: String = "WidgetWeaver"
     @State var styleDraft: StyleDraft = .defaultDraft
+
     @State var baseDraft: FamilyDraft = .defaultDraft
+
     @State var matchedSetEnabled: Bool = false
     @State var matchedDrafts: MatchedDrafts = MatchedDrafts(
         small: .defaultDraft,
@@ -48,12 +50,14 @@ struct ContentView: View {
 
     @State var showDeleteConfirmation: Bool = false
     @State var showImageCleanupConfirmation: Bool = false
+    @State var showRevertConfirmation: Bool = false
 
     enum ActiveSheet: Identifiable {
         case widgetHelp
         case pro
         case about
         case variables
+        case inspector
 
         var id: Int {
             switch self {
@@ -61,11 +65,13 @@ struct ContentView: View {
             case .pro: return 2
             case .about: return 3
             case .variables: return 4
+            case .inspector: return 5
             }
         }
     }
 
     @State var activeSheet: ActiveSheet?
+
     @State var showImportPicker: Bool = false
     @State var importInProgress: Bool = false
 
@@ -99,7 +105,7 @@ struct ContentView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) { deleteCurrentDesign() }
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) { }
             } message: {
                 Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
             }
@@ -109,9 +115,19 @@ struct ContentView: View {
                 titleVisibility: .visible
             ) {
                 Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) { }
             } message: {
                 Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
+            }
+            .confirmationDialog(
+                "Revert unsaved changes?",
+                isPresented: $showRevertConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Revert", role: .destructive) { revertUnsavedChanges() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This discards current draft edits and reloads the last saved version of this design.")
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -124,15 +140,27 @@ struct ContentView: View {
                 case .about:
                     WidgetWeaverAboutView(
                         proManager: proManager,
-                        onAddTemplate: { spec, makeDefault in addTemplateDesign(spec, makeDefault: makeDefault) },
-                        onShowPro: { activeSheet = .pro },
-                        onShowWidgetHelp: { activeSheet = .widgetHelp }
+                        onAddTemplate: { spec, makeDefault in
+                            addTemplateDesign(spec, makeDefault: makeDefault)
+                        },
+                        onShowPro: {
+                            activeSheet = .pro
+                        },
+                        onShowWidgetHelp: {
+                            activeSheet = .widgetHelp
+                        }
                     )
 
                 case .variables:
                     WidgetWeaverVariablesView(
                         proManager: proManager,
                         onShowPro: { activeSheet = .pro }
+                    )
+
+                case .inspector:
+                    WidgetWeaverDesignInspectorView(
+                        spec: draftSpec(id: selectedSpecID),
+                        initialFamily: previewFamily
                     )
                 }
             }
@@ -152,7 +180,9 @@ struct ContentView: View {
                 }
             }
             .onAppear { bootstrap() }
-            .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+            .onChange(of: selectedSpecID) { _, _ in
+                loadSelected()
+            }
             .onChange(of: pickedPhoto) { _, newItem in
                 guard let newItem else { return }
                 Task { await importPickedImage(newItem) }
