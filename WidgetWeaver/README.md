@@ -26,10 +26,11 @@ WidgetWeaver supports both:
 ✅ Image component (optional) using PhotosPicker; image files are stored in the App Group container and referenced by filename in the spec  
 ✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
 ✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback  
-✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)
+✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
+✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)
 
 Next:
-- ⏭ Variables + Shortcuts
+- ⏭ Sharing / import / export
 
 ---
 
@@ -44,7 +45,7 @@ Next:
 
 Per-widget selection:
 - Long-press the widget → **Edit Widget** → choose **Design**
-- To follow the app’s current default design, choose **Default (App)**.
+- To follow the app’s current default design, choose **Default (App)**
 
 Matched sets (Small/Medium/Large):
 - Enable **Matched set (Small/Medium/Large)** in the editor.
@@ -60,6 +61,34 @@ Optional image:
 Notes:
 - PhotosPicker does not require photo library permission prompts.
 - Picked images are saved into the App Group container so the widget can render them offline.
+
+---
+
+## Variables + Shortcuts
+
+WidgetWeaver supports simple text templating in spec text fields, backed by a shared variable store in the App Group.
+
+### Template syntax
+
+- `{{key}}` replaces with the value of `key`
+- `{{key|fallback}}` uses `fallback` if `key` is missing or empty
+
+Examples:
+- Primary text: `Streak: {{streak|0}} days`
+- Secondary text: `Last done: {{last_done|Never}}`
+
+Keys are canonicalised (trimmed + lowercased; whitespace normalised).
+
+### Updating variables (Shortcuts)
+
+WidgetWeaver exposes App Intents that appear as Shortcuts actions:
+
+- **Set WidgetWeaver Variable** (key, value)
+- **Get WidgetWeaver Variable** (key)
+- **Remove WidgetWeaver Variable** (key)
+- **Increment WidgetWeaver Variable** (key, amount)
+
+When a variable changes, WidgetWeaver triggers widget refresh so widgets re-render with the latest values.
 
 ---
 
@@ -106,12 +135,14 @@ Privacy:
   - Manage a library of saved designs
   - Pick an optional image for a design
   - Optional AI prompt/patch workflow
+  - Variables store + App Intents (Shortcuts actions)
 
 - **WidgetWeaverWidget** (Widget Extension)
   - Reads specs from App Group storage
   - Renders Small/Medium/Large
   - Uses per-instance configuration to select a saved design (or “Default (App)”)
   - Loads an optional image from the App Group container (by filename)
+  - Resolves variables at render time
 
 ### Shared boundary
 
@@ -119,6 +150,7 @@ App Group: `group.com.conornolan.widgetweaver`
 
 Storage (v0.9.x simplicity):
 - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
+- Variables: `UserDefaults(suiteName:)` (JSON-encoded dictionary)
 - Images: files in the App Group container directory `WidgetWeaverImages/`
 
 ### Safety
@@ -142,6 +174,7 @@ Design goals:
 
 Text:
 - `name`, `primaryText`, optional `secondaryText`
+- Text supports variable templates: `{{key}}` / `{{key|fallback}}`
 
 Symbol (optional):
 - SF Symbol name string
@@ -235,10 +268,14 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
 - Editor behaviour is driven by the preview size picker (edits apply to the selected size)
 - Shared renderer resolves the correct per-family variant automatically
 
-### Milestone 6 — Variables + Shortcuts (LATER)
-- Variables (“slots”) referenced by specs
-- App Intents to update variables (Shortcuts integration)
-- Widget reads values at render time from App Group storage
+### Milestone 6 — Variables + Shortcuts (DONE)
+- Variables (“slots”) referenced by specs using `{{key}}` / `{{key|fallback}}`
+- Variables stored in the App Group for app + widget
+- Widget resolves variables at render time
+- App Intents (Shortcuts) to:
+  - set / get / remove variables
+  - increment numeric variables
+- Variable changes trigger widget refresh
 
 ### Milestone 7 — Sharing / import / export (LATER)
 - Export/import specs (validated, versioned)
@@ -267,6 +304,11 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
   - the specific saved design being edited
 - If Matched set is enabled, ensure edits are being made to the intended size (Small/Medium/Large) via the preview size picker.
 - Remove/re-add the widget after significant schema changes.
+
+### Variables not updating in the widget
+- Confirm the spec contains `{{...}}` tokens (for example `{{streak|0}}`).
+- Run a Shortcut action (Set/Increment) and verify the key matches (keys are lowercased and whitespace-normalised).
+- If a widget instance is configured to a specific saved design, ensure that design is the one using the variable tokens.
 
 ### AI shows “Unavailable”
 - The app still works (deterministic fallbacks).

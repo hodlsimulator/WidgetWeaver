@@ -17,7 +17,6 @@ public enum WidgetWeaverRenderContext: String, Codable, Hashable {
 }
 
 public struct WidgetWeaverSpecView: View {
-
     public let spec: WidgetSpec
     public let family: WidgetFamily
     public let context: WidgetWeaverRenderContext
@@ -33,7 +32,11 @@ public struct WidgetWeaverSpecView: View {
     }
 
     public var body: some View {
-        let spec = spec.resolved(for: family)
+        // Resolve matched-set variant first, then resolve variables at render time.
+        let spec = spec
+            .resolved(for: family)
+            .resolvingVariables()
+
         let layout = spec.layout
         let style = spec.style
 
@@ -66,7 +69,6 @@ public struct WidgetWeaverSpecView: View {
 
     private func contentStack(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: layout.spacing) {
-
             if let img = spec.image {
                 bannerImage(img, style: style)
             }
@@ -125,14 +127,10 @@ public struct WidgetWeaverSpecView: View {
 
         let maxH: Double
         switch family {
-        case .systemSmall:
-            maxH = 110
-        case .systemMedium:
-            maxH = 130
-        case .systemLarge:
-            maxH = 160
-        default:
-            maxH = 120
+        case .systemSmall: maxH = 110
+        case .systemMedium: maxH = 130
+        case .systemLarge: maxH = 160
+        default: maxH = 120
         }
 
         let h = min(requested, maxH)
@@ -164,32 +162,24 @@ public struct WidgetWeaverSpecView: View {
 
     private func defaultPrimaryFont(for family: WidgetFamily) -> Font {
         switch family {
-        case .systemSmall:
-            return .subheadline
-        case .systemMedium:
-            return .headline
-        case .systemLarge:
-            return .title3
-        default:
-            return .subheadline
+        case .systemSmall: return .subheadline
+        case .systemMedium: return .headline
+        case .systemLarge: return .title3
+        default: return .subheadline
         }
     }
 
     private func primaryLineLimit(layout: LayoutSpec) -> Int {
         switch family {
-        case .systemSmall:
-            return layout.primaryLineLimitSmall
-        default:
-            return layout.primaryLineLimit
+        case .systemSmall: return layout.primaryLineLimitSmall
+        default: return layout.primaryLineLimit
         }
     }
 
     private func shouldShowSecondary(layout: LayoutSpec) -> Bool {
         switch family {
-        case .systemSmall:
-            return false
-        default:
-            return true
+        case .systemSmall: return false
+        default: return true
         }
     }
 }
