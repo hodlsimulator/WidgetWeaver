@@ -22,7 +22,7 @@ public struct StyleSpec: Codable, Hashable, Sendable {
     public static let defaultStyle = StyleSpec(
         padding: 16,
         cornerRadius: 20,
-        background: .accentGlow,
+        background: .aurora,
         accent: .blue,
         nameTextStyle: .automatic,
         primaryTextStyle: .automatic,
@@ -32,7 +32,7 @@ public struct StyleSpec: Codable, Hashable, Sendable {
     public init(
         padding: Double = 16,
         cornerRadius: Double = 20,
-        background: BackgroundToken = .accentGlow,
+        background: BackgroundToken = .aurora,
         accent: AccentToken = .blue,
         nameTextStyle: TextStyleToken = .automatic,
         primaryTextStyle: TextStyleToken = .automatic,
@@ -62,6 +62,12 @@ public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiab
     case solidAccent
     case subtleMaterial
 
+    // New "wow" backgrounds
+    case aurora
+    case sunset
+    case midnight
+    case candy
+
     public var id: String { rawValue }
 
     public var displayName: String {
@@ -71,6 +77,10 @@ public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiab
         case .radialGlow: return "Radial Glow"
         case .solidAccent: return "Solid Accent"
         case .subtleMaterial: return "Subtle Material"
+        case .aurora: return "Aurora"
+        case .sunset: return "Sunset"
+        case .midnight: return "Midnight"
+        case .candy: return "Candy"
         }
     }
 
@@ -107,6 +117,61 @@ public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiab
 
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
+
+        case .aurora:
+            // Designed to be layered with additional overlays in the renderer.
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        accent.opacity(0.45),
+                        Color.purple.opacity(0.28),
+                        Color.cyan.opacity(0.22),
+                        .clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+
+        case .sunset:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.orange.opacity(0.40),
+                        Color.pink.opacity(0.30),
+                        Color.purple.opacity(0.18),
+                        .clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+
+        case .midnight:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.indigo.opacity(0.40),
+                        Color.black.opacity(0.55)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+
+        case .candy:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color.pink.opacity(0.38),
+                        accent.opacity(0.25),
+                        Color.yellow.opacity(0.18),
+                        .clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
         }
     }
 }

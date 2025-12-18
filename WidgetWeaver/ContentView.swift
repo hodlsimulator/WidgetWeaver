@@ -25,6 +25,8 @@ struct ContentView: View {
     @State var designName: String = "WidgetWeaver"
     @State var styleDraft: StyleDraft = .defaultDraft
 
+    @State var actionBarDraft: ActionBarDraft = .defaultDraft
+
     @State var baseDraft: FamilyDraft = .defaultDraft
 
     @State var matchedSetEnabled: Bool = false

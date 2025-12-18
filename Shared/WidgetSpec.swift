@@ -12,7 +12,7 @@ import WidgetKit
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
     // Bump when the schema changes.
-    public static let currentVersion: Int = 5
+    public static let currentVersion: Int = 6
 
     public var version: Int
     public var id: UUID
@@ -25,6 +25,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var image: ImageSpec?
     public var layout: LayoutSpec
     public var style: StyleSpec
+
+    public var actionBar: WidgetActionBarSpec?
 
     /// Optional per-size overrides.
     /// Convention in this milestone:
@@ -43,6 +45,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         image: ImageSpec? = nil,
         layout: LayoutSpec = .defaultLayout,
         style: StyleSpec = .defaultStyle,
+        actionBar: WidgetActionBarSpec? = nil,
         matchedSet: WidgetSpecMatchedSet? = nil
     ) {
         self.version = version
@@ -55,6 +58,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.image = image
         self.layout = layout
         self.style = style
+        self.actionBar = actionBar
         self.matchedSet = matchedSet
     }
 
@@ -119,6 +123,12 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         s.layout = s.layout.normalised()
         s.style = s.style.normalised()
 
+        if let bar = s.actionBar?.normalisedOrNil() {
+            s.actionBar = bar
+        } else {
+            s.actionBar = nil
+        }
+
         if let m = s.matchedSet?.normalisedOrNil() {
             s.matchedSet = m
         } else {
@@ -167,6 +177,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case image
         case layout
         case style
+        case actionBar
         case matchedSet
     }
 
@@ -183,6 +194,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let image = (try? c.decodeIfPresent(ImageSpec.self, forKey: .image)) ?? nil
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
+        let actionBar = (try? c.decodeIfPresent(WidgetActionBarSpec.self, forKey: .actionBar)) ?? nil
         let matchedSet = (try? c.decodeIfPresent(WidgetSpecMatchedSet.self, forKey: .matchedSet)) ?? nil
 
         self.init(
@@ -196,6 +208,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             image: image,
             layout: layout,
             style: style,
+            actionBar: actionBar,
             matchedSet: matchedSet
         )
     }
@@ -213,7 +226,156 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(image, forKey: .image)
         try c.encode(layout, forKey: .layout)
         try c.encode(style, forKey: .style)
+        try c.encodeIfPresent(actionBar, forKey: .actionBar)
         try c.encodeIfPresent(matchedSet, forKey: .matchedSet)
+    }
+}
+
+
+// MARK: - Quick Actions
+
+/// A lightweight spec for interactive widget buttons.
+///
+/// Notes:
+/// - Buttons only show up in the widget (iOS 17+ interactive widgets).
+/// - Actions currently target the Pro variable store (App Group).
+public struct WidgetActionBarSpec: Codable, Hashable, Sendable {
+    public static let maxActions: Int = 2
+
+    public var actions: [WidgetActionSpec]
+    public var style: WidgetActionButtonStyleToken
+
+    public init(
+        actions: [WidgetActionSpec] = [],
+        style: WidgetActionButtonStyleToken = .prominent
+    ) {
+        self.actions = actions
+        self.style = style
+    }
+
+    public func normalisedOrNil() -> WidgetActionBarSpec? {
+        var out = self
+
+        let cleaned = out.actions.compactMap { $0.normalisedOrNil() }
+        out.actions = Array(cleaned.prefix(Self.maxActions))
+
+        if out.actions.isEmpty {
+            return nil
+        }
+        return out
+    }
+}
+
+public struct WidgetActionSpec: Codable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var title: String
+    public var systemImage: String?
+    public var kind: WidgetActionKindToken
+    public var variableKey: String
+
+    /// Used when `kind == .incrementVariable`.
+    public var incrementAmount: Int
+
+    /// Used when `kind == .setVariableToNow`.
+    public var nowFormat: WidgetNowFormatToken
+
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        systemImage: String? = nil,
+        kind: WidgetActionKindToken,
+        variableKey: String,
+        incrementAmount: Int = 1,
+        nowFormat: WidgetNowFormatToken = .iso8601
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImage = systemImage
+        self.kind = kind
+        self.variableKey = variableKey
+        self.incrementAmount = incrementAmount
+        self.nowFormat = nowFormat
+    }
+
+    public func normalisedOrNil() -> WidgetActionSpec? {
+        var a = self
+
+        let key = WidgetWeaverVariableStore.canonicalKey(a.variableKey)
+        guard !key.isEmpty else { return nil }
+        a.variableKey = key
+
+        let t = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty {
+            switch a.kind {
+            case .incrementVariable:
+                a.title = "+1"
+            case .setVariableToNow:
+                a.title = "Done"
+            }
+        } else {
+            a.title = String(t.prefix(24))
+        }
+
+        if let img = a.systemImage?.trimmingCharacters(in: .whitespacesAndNewlines), !img.isEmpty {
+            a.systemImage = String(img.prefix(64))
+        } else {
+            a.systemImage = nil
+        }
+
+        a.incrementAmount = a.incrementAmount.clamped(to: -99...99)
+        if a.incrementAmount == 0 {
+            a.incrementAmount = 1
+        }
+
+        return a
+    }
+}
+
+public enum WidgetActionKindToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case incrementVariable
+    case setVariableToNow
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .incrementVariable: return "Increment Variable"
+        case .setVariableToNow: return "Set Variable to Now"
+        }
+    }
+}
+
+public enum WidgetActionButtonStyleToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case prominent
+    case subtle
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .prominent: return "Prominent"
+        case .subtle: return "Subtle"
+        }
+    }
+}
+
+public enum WidgetNowFormatToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case iso8601
+    case unixSeconds
+    case unixMilliseconds
+    case dateOnly
+    case timeOnly
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .iso8601: return "ISO 8601"
+        case .unixSeconds: return "Unix (Seconds)"
+        case .unixMilliseconds: return "Unix (Milliseconds)"
+        case .dateOnly: return "Date (YYYY-MM-DD)"
+        case .timeOnly: return "Time (HH:mm)"
+        }
     }
 }
 

@@ -49,6 +49,7 @@ extension ContentView {
             layoutSection
             styleSection
             typographySection
+            actionsSection
             aiSection
             statusSection
         }

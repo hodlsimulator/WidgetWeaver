@@ -380,6 +380,14 @@ extension ContentView {
 
     var layoutSection: some View {
         Section {
+            Picker("Template", selection: binding(\.template)) {
+                ForEach(LayoutTemplateToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Toggle("Accent bar", isOn: binding(\.showsAccentBar))
+
             Picker("Axis", selection: binding(\.axis)) {
                 ForEach(LayoutAxisToken.allCases) { token in
                     Text(token.rawValue).tag(token)
@@ -498,6 +506,113 @@ extension ContentView {
 
         } header: {
             sectionHeader("Typography")
+        }
+    }
+
+
+    var actionsSection: some View {
+        Section {
+            if !proManager.isProUnlocked {
+                Toggle("Interactive buttons (Pro)", isOn: .constant(false))
+                    .disabled(true)
+
+                Text("Interactive widget buttons are a Pro feature.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button { activeSheet = .pro } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+            } else {
+                Toggle("Interactive buttons", isOn: $actionBarDraft.isEnabled)
+
+                if actionBarDraft.isEnabled {
+                    Picker("Button style", selection: $actionBarDraft.style) {
+                        ForEach(WidgetActionButtonStyleToken.allCases) { token in
+                            Text(token.displayName).tag(token)
+                        }
+                    }
+
+                    if actionBarDraft.actions.isEmpty {
+                        Button {
+                            actionBarDraft.actions = [
+                                .defaultIncrement(),
+                                .defaultDone()
+                            ]
+                        } label: {
+                            Label("Add starter buttons", systemImage: "sparkles")
+                        }
+                    } else {
+                        ForEach($actionBarDraft.actions) { $action in
+                            DisclosureGroup {
+                                TextField("Button title", text: $action.title)
+                                    .textInputAutocapitalization(.words)
+
+                                TextField("SF Symbol (optional)", text: $action.systemImage)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+
+                                Picker("Action", selection: $action.kind) {
+                                    ForEach(WidgetActionKindToken.allCases) { token in
+                                        Text(token.displayName).tag(token)
+                                    }
+                                }
+
+                                TextField("Variable key", text: $action.variableKey)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+
+                                switch action.kind {
+                                case .incrementVariable:
+                                    Stepper(
+                                        "Increment amount: \(action.incrementAmount)",
+                                        value: $action.incrementAmount,
+                                        in: -99...99
+                                    )
+                                case .setVariableToNow:
+                                    Picker("Now format", selection: $action.nowFormat) {
+                                        ForEach(WidgetNowFormatToken.allCases) { token in
+                                            Text(token.displayName).tag(token)
+                                        }
+                                    }
+                                }
+
+                                Button(role: .destructive) {
+                                    actionBarDraft.actions.removeAll { $0.id == action.id }
+                                } label: {
+                                    Label("Remove button", systemImage: "trash")
+                                }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? action.kind.displayName : action.title)
+                                        .lineLimit(1)
+                                    if !action.variableKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text(action.variableKey)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+
+                        Button {
+                            if actionBarDraft.actions.count < WidgetActionBarSpec.maxActions {
+                                actionBarDraft.actions.append(.defaultIncrement())
+                            }
+                        } label: {
+                            Label("Add button", systemImage: "plus")
+                        }
+                        .disabled(actionBarDraft.actions.count >= WidgetActionBarSpec.maxActions)
+                    }
+
+                    Text("Buttons render on iOS 17+ as interactive widgets.\nThey update variables stored in the App Group.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            sectionHeader("Actions")
         }
     }
 

@@ -110,6 +110,8 @@ struct FamilyDraft: Hashable {
     var imageCornerRadius: Double
 
     // Layout
+    var template: LayoutTemplateToken
+    var showsAccentBar: Bool
     var axis: LayoutAxisToken
     var alignment: LayoutAlignmentToken
     var spacing: Double
@@ -153,6 +155,8 @@ struct FamilyDraft: Hashable {
             self.imageCornerRadius = 16
         }
 
+        self.template = s.layout.template
+        self.showsAccentBar = s.layout.showsAccentBar
         self.axis = s.layout.axis
         self.alignment = s.layout.alignment
         self.spacing = s.layout.spacing
@@ -184,6 +188,8 @@ struct FamilyDraft: Hashable {
         )
 
         let layout = LayoutSpec(
+            template: template,
+            showsAccentBar: showsAccentBar,
             axis: axis,
             alignment: alignment,
             spacing: spacing,
@@ -229,6 +235,8 @@ struct FamilyDraft: Hashable {
         )
 
         let layout = LayoutSpec(
+            template: template,
+            showsAccentBar: showsAccentBar,
             axis: axis,
             alignment: alignment,
             spacing: spacing,
@@ -272,11 +280,124 @@ struct FamilyDraft: Hashable {
             imageFileName = ""
         }
 
+        template = s.layout.template
+        showsAccentBar = s.layout.showsAccentBar
         axis = s.layout.axis
         alignment = s.layout.alignment
         spacing = s.layout.spacing
         primaryLineLimitSmall = s.layout.primaryLineLimitSmall
         primaryLineLimit = s.layout.primaryLineLimit
         secondaryLineLimit = s.layout.secondaryLineLimit
+    }
+}
+
+
+// MARK: - Actions (Interactive Widget Buttons)
+
+struct ActionBarDraft: Hashable {
+    var isEnabled: Bool
+    var style: WidgetActionButtonStyleToken
+    var actions: [WidgetActionDraft]
+
+    static var defaultDraft: ActionBarDraft {
+        ActionBarDraft(isEnabled: false, style: .prominent, actions: [])
+    }
+
+    init(isEnabled: Bool, style: WidgetActionButtonStyleToken, actions: [WidgetActionDraft]) {
+        self.isEnabled = isEnabled
+        self.style = style
+        self.actions = actions
+    }
+
+    init(from spec: WidgetActionBarSpec?) {
+        guard let bar = spec?.normalisedOrNil() else {
+            self = .defaultDraft
+            return
+        }
+        self.isEnabled = true
+        self.style = bar.style
+        self.actions = bar.actions.map { WidgetActionDraft(from: $0) }
+    }
+
+    func toActionBarSpec() -> WidgetActionBarSpec? {
+        guard isEnabled else { return nil }
+        let specs = actions.compactMap { $0.toActionSpecOrNil() }
+        return WidgetActionBarSpec(actions: specs, style: style).normalisedOrNil()
+    }
+}
+
+struct WidgetActionDraft: Hashable, Identifiable {
+    var id: UUID
+    var title: String
+    var systemImage: String
+    var kind: WidgetActionKindToken
+    var variableKey: String
+    var incrementAmount: Int
+    var nowFormat: WidgetNowFormatToken
+
+    init(
+        id: UUID = UUID(),
+        title: String = "",
+        systemImage: String = "",
+        kind: WidgetActionKindToken = .incrementVariable,
+        variableKey: String = "",
+        incrementAmount: Int = 1,
+        nowFormat: WidgetNowFormatToken = .iso8601
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImage = systemImage
+        self.kind = kind
+        self.variableKey = variableKey
+        self.incrementAmount = incrementAmount
+        self.nowFormat = nowFormat
+    }
+
+    init(from spec: WidgetActionSpec) {
+        self.id = spec.id
+        self.title = spec.title
+        self.systemImage = spec.systemImage ?? ""
+        self.kind = spec.kind
+        self.variableKey = spec.variableKey
+        self.incrementAmount = spec.incrementAmount
+        self.nowFormat = spec.nowFormat
+    }
+
+    static func defaultIncrement() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "+1",
+            systemImage: "plus.circle.fill",
+            kind: .incrementVariable,
+            variableKey: "counter",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
+    }
+
+    static func defaultDone() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "Done",
+            systemImage: "checkmark.circle.fill",
+            kind: .setVariableToNow,
+            variableKey: "last_done",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
+    }
+
+    func toActionSpecOrNil() -> WidgetActionSpec? {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return WidgetActionSpec(
+            id: id,
+            title: trimmedTitle.isEmpty ? (kind == .incrementVariable ? "+1" : "Done") : trimmedTitle,
+            systemImage: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
+            kind: kind,
+            variableKey: trimmedKey,
+            incrementAmount: incrementAmount,
+            nowFormat: nowFormat
+        ).normalisedOrNil()
     }
 }

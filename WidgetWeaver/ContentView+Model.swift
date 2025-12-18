@@ -64,6 +64,7 @@ extension ContentView {
 
         designName = n.name
         styleDraft = StyleDraft(from: n.style)
+        actionBarDraft = ActionBarDraft(from: n.actionBar)
         lastSavedAt = n.updatedAt
 
         if n.matchedSet != nil {
@@ -111,15 +112,17 @@ extension ContentView {
             )
 
             var out = baseSpec
+            out.actionBar = actionBarDraft.toActionBarSpec()
             out.matchedSet = matched
             return out.normalised()
         } else {
-            let out = baseDraft.toFlatSpec(
+            var out = baseDraft.toFlatSpec(
                 id: id,
                 name: finalName,
                 style: style,
                 updatedAt: lastSavedAt ?? Date()
             )
+            out.actionBar = actionBarDraft.toActionBarSpec()
             return out.normalised()
         }
     }
