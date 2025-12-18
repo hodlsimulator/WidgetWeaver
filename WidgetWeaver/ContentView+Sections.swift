@@ -10,17 +10,12 @@ import PhotosUI
 import UIKit
 
 extension ContentView {
-
-    // MARK: - Section styling
-
     func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.caption)
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
     }
-
-    // MARK: - Sections
 
     var designsSection: some View {
         Section {
@@ -40,6 +35,13 @@ extension ContentView {
                 LabeledContent("App default", value: defaultName)
             }
 
+            if !proManager.isProUnlocked {
+                LabeledContent(
+                    "Free tier designs",
+                    value: "\(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)"
+                )
+            }
+
             if selectedSpecID == defaultSpecID {
                 Text("This design is the app default.\nWidgets set to \"Default (App)\" will show it.")
                     .font(.caption)
@@ -51,19 +53,13 @@ extension ContentView {
             }
 
             ControlGroup {
-                Button { createNewDesign() } label: {
-                    Label("New", systemImage: "plus")
-                }
+                Button { createNewDesign() } label: { Label("New", systemImage: "plus") }
 
-                Button { duplicateCurrentDesign() } label: {
-                    Label("Duplicate", systemImage: "doc.on.doc")
-                }
-                .disabled(savedSpecs.isEmpty)
+                Button { duplicateCurrentDesign() } label: { Label("Duplicate", systemImage: "doc.on.doc") }
+                    .disabled(savedSpecs.isEmpty)
 
-                Button(role: .destructive) { showDeleteConfirmation = true } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .disabled(savedSpecs.count <= 1)
+                Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete", systemImage: "trash") }
+                    .disabled(savedSpecs.count <= 1)
             }
             .controlSize(.small)
         } header: {
@@ -72,6 +68,38 @@ extension ContentView {
             Text("Each widget instance can be configured to follow \"Default (App)\" or a specific saved design (long-press the widget → Edit Widget).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    var proSection: some View {
+        Section {
+            if proManager.isProUnlocked {
+                Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
+                Button {
+                    activeSheet = .pro
+                } label: {
+                    Label("Manage Pro", systemImage: "crown.fill")
+                }
+            } else {
+                Label("Free tier", systemImage: "sparkles")
+                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, and variables.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    activeSheet = .pro
+                } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+
+                if !proManager.statusMessage.isEmpty {
+                    Text(proManager.statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            sectionHeader("Pro")
         }
     }
 
@@ -93,15 +121,13 @@ extension ContentView {
                 Label("Share All Designs", systemImage: "square.and.arrow.up.on.square")
             }
 
-            Button {
-                showImportPicker = true
-            } label: {
+            Button { showImportPicker = true } label: {
                 Label("Import designs…", systemImage: "square.and.arrow.down")
             }
         } header: {
             sectionHeader("Sharing")
         } footer: {
-            Text("Exports are JSON and include embedded images when available. Imported designs are duplicated with new IDs to avoid overwriting.")
+            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -110,9 +136,19 @@ extension ContentView {
     var matchedSetSection: some View {
         Section {
             Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
+                .disabled(!proManager.isProUnlocked)
 
-            if matchedSetEnabled {
-                Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large. Style and typography are shared.")
+            if !proManager.isProUnlocked {
+                Text("Matched sets are a Pro feature.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    activeSheet = .pro
+                } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+            } else if matchedSetEnabled {
+                Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -180,7 +216,6 @@ extension ContentView {
                 .textInputAutocapitalization(.words)
 
             TextField("Primary text", text: binding(\.primaryText))
-
             TextField("Secondary text (optional)", text: binding(\.secondaryText))
 
             if matchedSetEnabled {

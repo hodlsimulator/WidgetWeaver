@@ -11,13 +11,11 @@ import WidgetKit
 #endif
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
-
     // Bump when the schema changes.
     public static let currentVersion: Int = 5
 
     public var version: Int
     public var id: UUID
-
     public var name: String
     public var primaryText: String
     public var secondaryText: String?
@@ -25,7 +23,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public var symbol: SymbolSpec?
     public var image: ImageSpec?
-
     public var layout: LayoutSpec
     public var style: StyleSpec
 
@@ -134,10 +131,15 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     #if canImport(WidgetKit)
     /// Returns a flat spec suitable for rendering in a specific `WidgetFamily`.
     /// This drops `matchedSet` in the returned value to keep the render path simple.
+    ///
+    /// Milestone 8: Matched sets are Pro-only. Without Pro, matched variants are ignored.
     public func resolved(for family: WidgetFamily) -> WidgetSpec {
         let base = self.normalised()
 
-        guard let variant = base.matchedSet?.variant(for: family)?.normalised() else {
+        guard
+            WidgetWeaverEntitlements.isProUnlocked,
+            let variant = base.matchedSet?.variant(for: family)?.normalised()
+        else {
             var out = base
             out.matchedSet = nil
             return out
@@ -153,8 +155,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         return out.normalised()
     }
     #endif
-
-    // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -179,13 +179,10 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let primaryText = (try? c.decode(String.self, forKey: .primaryText)) ?? "Hello"
         let secondaryText = try? c.decodeIfPresent(String.self, forKey: .secondaryText)
         let updatedAt = (try? c.decode(Date.self, forKey: .updatedAt)) ?? Date()
-
         let symbol = (try? c.decodeIfPresent(SymbolSpec.self, forKey: .symbol)) ?? nil
         let image = (try? c.decodeIfPresent(ImageSpec.self, forKey: .image)) ?? nil
-
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
-
         let matchedSet = (try? c.decodeIfPresent(WidgetSpecMatchedSet.self, forKey: .matchedSet)) ?? nil
 
         self.init(
@@ -205,6 +202,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+
         try c.encode(version, forKey: .version)
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
@@ -222,7 +220,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 // MARK: - Matched Set
 
 public struct WidgetSpecMatchedSet: Codable, Hashable {
-
     public var small: WidgetSpecVariant?
     public var medium: WidgetSpecVariant?
     public var large: WidgetSpecVariant?
@@ -266,7 +263,6 @@ public struct WidgetSpecMatchedSet: Codable, Hashable {
 }
 
 public struct WidgetSpecVariant: Codable, Hashable {
-
     public var primaryText: String
     public var secondaryText: String?
     public var symbol: SymbolSpec?

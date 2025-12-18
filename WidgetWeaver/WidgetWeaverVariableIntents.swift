@@ -5,6 +5,7 @@
 //  Created by . . on 12/18/25.
 //
 //  Variables + Shortcuts (Milestone 6)
+//  Milestone 8: Variables are Pro-only.
 //
 
 import AppIntents
@@ -13,7 +14,7 @@ import Foundation
 struct WidgetWeaverSetVariableIntent: AppIntent {
     static var title: LocalizedStringResource { "Set WidgetWeaver Variable" }
     static var description: IntentDescription {
-        IntentDescription("Sets a variable used by WidgetWeaver designs. Reference variables in text using {{key}} or {{key|fallback}}.")
+        IntentDescription("Sets a variable used by WidgetWeaver designs.\nReference variables in text using {{key}} or {{key|fallback}}.")
     }
     static var openAppWhenRun: Bool { false }
 
@@ -28,10 +29,12 @@ struct WidgetWeaverSetVariableIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
-        guard !canonical.isEmpty else {
-            return .result(dialog: "Key was empty.")
+        guard WidgetWeaverEntitlements.isProUnlocked else {
+            return .result(dialog: "WidgetWeaver Pro is required for variables.")
         }
+
+        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
+        guard !canonical.isEmpty else { return .result(dialog: "Key was empty.") }
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
         return .result(dialog: "Set \(canonical) to \(value).")
@@ -40,9 +43,7 @@ struct WidgetWeaverSetVariableIntent: AppIntent {
 
 struct WidgetWeaverGetVariableIntent: AppIntent {
     static var title: LocalizedStringResource { "Get WidgetWeaver Variable" }
-    static var description: IntentDescription {
-        IntentDescription("Gets a WidgetWeaver variable value.")
-    }
+    static var description: IntentDescription { IntentDescription("Gets a WidgetWeaver variable value.") }
     static var openAppWhenRun: Bool { false }
 
     @Parameter(title: "Key", description: "Example: streak (used as {{streak}})")
@@ -52,11 +53,13 @@ struct WidgetWeaverGetVariableIntent: AppIntent {
         Summary("Get \(\.$key)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
-        guard !canonical.isEmpty else {
-            return .result(value: "", dialog: "Key was empty.")
+    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+        guard WidgetWeaverEntitlements.isProUnlocked else {
+            return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
+
+        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
+        guard !canonical.isEmpty else { return .result(value: "", dialog: "Key was empty.") }
 
         let value = WidgetWeaverVariableStore.shared.value(for: canonical) ?? ""
         return .result(value: value, dialog: "Value for \(canonical): \(value)")
@@ -65,9 +68,7 @@ struct WidgetWeaverGetVariableIntent: AppIntent {
 
 struct WidgetWeaverRemoveVariableIntent: AppIntent {
     static var title: LocalizedStringResource { "Remove WidgetWeaver Variable" }
-    static var description: IntentDescription {
-        IntentDescription("Removes a WidgetWeaver variable.")
-    }
+    static var description: IntentDescription { IntentDescription("Removes a WidgetWeaver variable.") }
     static var openAppWhenRun: Bool { false }
 
     @Parameter(title: "Key", description: "Example: streak (used as {{streak}})")
@@ -78,10 +79,12 @@ struct WidgetWeaverRemoveVariableIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
-        guard !canonical.isEmpty else {
-            return .result(dialog: "Key was empty.")
+        guard WidgetWeaverEntitlements.isProUnlocked else {
+            return .result(dialog: "WidgetWeaver Pro is required for variables.")
         }
+
+        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
+        guard !canonical.isEmpty else { return .result(dialog: "Key was empty.") }
 
         WidgetWeaverVariableStore.shared.removeValue(for: canonical)
         return .result(dialog: "Removed \(canonical).")
@@ -105,11 +108,13 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         Summary("Increment \(\.$key) by \(\.$amount)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
-        guard !canonical.isEmpty else {
-            return .result(value: "0", dialog: "Key was empty.")
+    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+        guard WidgetWeaverEntitlements.isProUnlocked else {
+            return .result(value: "0", dialog: "WidgetWeaver Pro is required for variables.")
         }
+
+        let canonical = WidgetWeaverVariableStore.canonicalKey(key)
+        guard !canonical.isEmpty else { return .result(value: "0", dialog: "Key was empty.") }
 
         let store = WidgetWeaverVariableStore.shared
         let existingRaw = store.value(for: canonical) ?? "0"

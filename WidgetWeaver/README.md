@@ -28,7 +28,8 @@ WidgetWeaver supports both:
 ✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback  
 ✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
 ✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)  
-✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)
+✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)  
+✅ **Monetisation scaffolding** (StoreKit 2 Pro unlock + free-tier limits for designs; Pro-only matched sets + variables)
 
 ---
 
@@ -95,6 +96,7 @@ Keys are canonicalised (trimmed + lowercased; whitespace normalised).
 ### Updating variables (Shortcuts)
 
 WidgetWeaver exposes App Intents that appear as Shortcuts actions:
+
 - **Set WidgetWeaver Variable** (key, value)
 - **Get WidgetWeaver Variable** (key)
 - **Remove WidgetWeaver Variable** (key)
@@ -175,54 +177,6 @@ Storage:
 
 ---
 
-## WidgetSpec
-
-`WidgetSpec` is the contract between the app and the widget.
-
-Design goals:
-- Strictly typed (Codable)
-- Easy to validate/repair
-- Deterministic to render
-
-### v0 components (current direction)
-
-Text:
-- `name`, `primaryText`, optional `secondaryText`
-- Text supports variable templates: `{{key}}` / `{{key|fallback}}`
-
-Symbol (optional):
-- SF Symbol name string
-- placement (above/before name)
-- size + weight
-- rendering mode (monochrome / hierarchical / multicolour)
-- tint (accent / primary / secondary)
-
-Image (optional):
-- `fileName` (stored in App Group container)
-- `contentMode` (fill / fit)
-- `height` (clamped per family)
-- `cornerRadius`
-
-Layout tokens:
-- axis / alignment / spacing / line limits
-
-Style tokens:
-- padding / corner radius / background / accent / typography tokens
-
-Matched sets (Small/Medium/Large):
-- Optional `matchedSet` stores per-size overrides (variants).
-- Medium is treated as the base (stored on the main spec fields); Small/Large can override.
-- Rendering resolves the correct variant per `WidgetFamily`, producing a flat spec for that family.
-
-Shared renderer:
-- A single SwiftUI view that both the app previews and the widget render through.
-
-### File layout (modularised)
-
-Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as the core spec type and the supporting pieces split into focused files (symbol/image/layout/style tokens and the shared renderer view).
-
----
-
 ## Milestones
 
 ### Milestone 0 — Scaffold (DONE)
@@ -296,9 +250,12 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
 - Optional embedded images (restored on import)
 - Import duplicates designs with new IDs to avoid overwriting
 
-### Milestone 8 — Monetisation (LATER)
-- Free tier limits
-- Pro unlocks advanced components, matched sets, variables, unlimited specs
+### Milestone 8 — Monetisation (IN PROGRESS)
+- Free tier limits (max designs)
+- Pro unlock (StoreKit 2) for:
+  - matched sets
+  - variables
+  - unlimited designs
 
 ### Milestone 9 — Control Widgets (OPTIONAL)
 - Add only after the main widget pipeline is stable

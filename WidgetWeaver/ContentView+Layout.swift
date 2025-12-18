@@ -9,9 +9,6 @@ import SwiftUI
 import WidgetKit
 
 extension ContentView {
-
-    // MARK: - Layout
-
     @ViewBuilder
     var editorLayout: some View {
         if horizontalSizeClass == .regular {
@@ -40,6 +37,7 @@ extension ContentView {
     var editorForm: some View {
         Form {
             designsSection
+            proSection
             sharingSection
             matchedSetSection
             widgetWorkflowSection

@@ -7,6 +7,9 @@
 
 import Foundation
 import UIKit
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 private final class ImageCacheBox: @unchecked Sendable {
     let cache: NSCache<NSString, UIImage>
@@ -25,7 +28,7 @@ public enum AppGroup {
         if let ud = UserDefaults(suiteName: identifier) {
             return ud
         }
-        assertionFailure("App Group UserDefaults unavailable. Check App Groups entitlement: \(identifier)")
+        assertionFailure("App Group UserDefaults unavailable.\nCheck App Groups entitlement: \(identifier)")
         return .standard
     }
 
@@ -33,7 +36,7 @@ public enum AppGroup {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
-        assertionFailure("App Group container URL unavailable. Check App Groups entitlement: \(identifier)")
+        assertionFailure("App Group container URL unavailable.\nCheck App Groups entitlement: \(identifier)")
         return FileManager.default.temporaryDirectory
     }
 
@@ -116,6 +119,7 @@ public enum AppGroup {
 private extension UIImage {
     func normalisedOrientation() -> UIImage {
         if imageOrientation == .up { return self }
+
         UIGraphicsBeginImageContextWithOptions(size, false, scale)
         draw(in: CGRect(origin: .zero, size: size))
         let img = UIGraphicsGetImageFromCurrentImageContext()
@@ -134,7 +138,38 @@ private extension UIImage {
         draw(in: CGRect(origin: .zero, size: newSize))
         let img = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-
         return img ?? self
+    }
+}
+
+// MARK: - Monetisation / Entitlements (Milestone 8)
+
+public enum WidgetWeaverEntitlements {
+    private static let proUnlockedKey = "widgetweaver.pro.v1.unlocked"
+
+    public static let maxFreeDesigns: Int = 3
+
+    public static var isProUnlocked: Bool {
+        AppGroup.userDefaults.bool(forKey: proUnlockedKey)
+    }
+
+    public static func setProUnlocked(_ unlocked: Bool) {
+        AppGroup.userDefaults.set(unlocked, forKey: proUnlockedKey)
+        flushAndNotifyWidgets()
+    }
+
+    public static func flushAndNotifyWidgets() {
+        AppGroup.userDefaults.synchronize()
+
+        #if canImport(WidgetKit)
+        let kind = WidgetWeaverWidgetKinds.main
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+        #endif
     }
 }

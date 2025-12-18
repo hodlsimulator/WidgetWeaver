@@ -9,9 +9,6 @@ import SwiftUI
 import WidgetKit
 
 extension ContentView {
-
-    // MARK: - Editing family (driven by preview size)
-
     var editingFamily: EditingFamily {
         EditingFamily(widgetFamily: previewFamily) ?? .small
     }
@@ -19,8 +16,6 @@ extension ContentView {
     var editingFamilyLabel: String {
         editingFamily.label
     }
-
-    // MARK: - Active draft helpers
 
     func currentFamilyDraft() -> FamilyDraft {
         matchedSetEnabled ? matchedDrafts[editingFamily] : baseDraft
@@ -54,6 +49,12 @@ extension ContentView {
 
     func setMatchedSetEnabled(_ enabled: Bool) {
         guard enabled != matchedSetEnabled else { return }
+
+        if enabled && !proManager.isProUnlocked {
+            saveStatusMessage = "Matched sets require WidgetWeaver Pro."
+            activeSheet = .pro
+            return
+        }
 
         if enabled {
             matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -28,20 +27,16 @@ extension Double {
 }
 
 // MARK: - Variables (App Group)
-
+//
 // Variable references inside text fields:
 //
-// - "{{key}}"              -> replaced with the current value for "key"
-// - "{{key|fallback}}"     -> fallback used when key is missing/empty
+// - "{{key}}" -> replaced with the current value for "key"
+// - "{{key|fallback}}" -> fallback used when key is missing/empty
 //
 // Keys are canonicalised as:
 // - trimmed
 // - lowercased
 // - internal whitespace collapsed to single spaces
-//
-// Examples:
-// - primaryText: "Streak: {{streak|0}} days"
-// - secondaryText: "Last: {{last_done|Never}}"
 
 public final class WidgetWeaverVariableStore: @unchecked Sendable {
     public static let shared = WidgetWeaverVariableStore()
@@ -54,17 +49,23 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
     }
 
     public func loadAll() -> [String: String] {
-        loadAllInternal()
+        guard WidgetWeaverEntitlements.isProUnlocked else { return [:] }
+        return loadAllInternal()
     }
 
     public func value(for rawKey: String) -> String? {
+        guard WidgetWeaverEntitlements.isProUnlocked else { return nil }
+
         let key = Self.canonicalKey(rawKey)
         guard !key.isEmpty else { return nil }
+
         let vars = loadAllInternal()
         return vars[key]
     }
 
     public func setValue(_ value: String, for rawKey: String) {
+        guard WidgetWeaverEntitlements.isProUnlocked else { return }
+
         let key = Self.canonicalKey(rawKey)
         guard !key.isEmpty else { return }
 
@@ -75,6 +76,8 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
     }
 
     public func removeValue(for rawKey: String) {
+        guard WidgetWeaverEntitlements.isProUnlocked else { return }
+
         let key = Self.canonicalKey(rawKey)
         guard !key.isEmpty else { return }
 
@@ -85,6 +88,7 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
     }
 
     public func clearAll() {
+        guard WidgetWeaverEntitlements.isProUnlocked else { return }
         defaults.removeObject(forKey: variablesKey)
         flushAndNotifyWidgets()
     }
@@ -107,18 +111,15 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
                 out.append(ch)
                 lastWasSpace = false
             }
+
             if out.count >= 64 { break }
         }
 
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - Internals
-
     private func loadAllInternal() -> [String: String] {
-        guard let data = defaults.data(forKey: variablesKey) else {
-            return [:]
-        }
+        guard let data = defaults.data(forKey: variablesKey) else { return [:] }
         do {
             let decoded = try JSONDecoder().decode([String: String].self, from: data)
             return decoded
@@ -132,7 +133,7 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
             let data = try JSONEncoder().encode(vars)
             defaults.set(data, forKey: variablesKey)
         } catch {
-            // Intentionally ignored
+            // Intentionally ignored.
         }
     }
 
@@ -158,8 +159,8 @@ public enum WidgetWeaverVariableTemplate {
     public static func render(_ template: String, variables: [String: String]) -> String {
         guard template.contains("{{") else { return template }
 
-        let end = template.endIndex
         var cursor = template.startIndex
+        let end = template.endIndex
         var out = ""
 
         while cursor < end {
@@ -168,15 +169,18 @@ public enum WidgetWeaverVariableTemplate {
                 break
             }
 
-            out.append(contentsOf: template[cursor..<open.lowerBound])
+            if open.lowerBound > cursor {
+                out.append(contentsOf: template[cursor..<open.lowerBound])
+            }
 
-            guard let close = template.range(of: "}}", range: open.upperBound..<end) else {
+            let afterOpen = open.upperBound
+            guard let close = template.range(of: "}}", range: afterOpen..<end) else {
                 out.append(contentsOf: template[open.lowerBound..<end])
                 break
             }
 
-            let token = template[open.upperBound..<close.lowerBound]
-            out.append(resolve(token: token, variables: variables))
+            let token = template[afterOpen..<close.lowerBound]
+            out.append(resolveToken(token, variables: variables))
 
             cursor = close.upperBound
         }
@@ -184,7 +188,7 @@ public enum WidgetWeaverVariableTemplate {
         return out
     }
 
-    private static func resolve(token: Substring, variables: [String: String]) -> String {
+    private static func resolveToken(_ token: Substring, variables: [String: String]) -> String {
         let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return "" }
 
@@ -198,7 +202,6 @@ public enum WidgetWeaverVariableTemplate {
         if let value = variables[key], !value.isEmpty {
             return value
         }
-
         return fallback
     }
 }
@@ -207,7 +210,8 @@ public enum WidgetWeaverVariableTemplate {
 
 public extension WidgetSpec {
     func resolvingVariables(using store: WidgetWeaverVariableStore = .shared) -> WidgetSpec {
-        resolvingVariables(using: store.loadAll())
+        let vars = WidgetWeaverEntitlements.isProUnlocked ? store.loadAll() : [:]
+        return resolvingVariables(using: vars)
     }
 
     func resolvingVariables(using variables: [String: String]) -> WidgetSpec {

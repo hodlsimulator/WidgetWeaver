@@ -16,18 +16,17 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
 
+    @StateObject var proManager = WidgetWeaverProManager()
+
     @State var savedSpecs: [WidgetSpec] = []
     @State var defaultSpecID: UUID?
     @State var selectedSpecID: UUID = UUID()
 
-    // Global (shared across sizes)
     @State var designName: String = "WidgetWeaver"
     @State var styleDraft: StyleDraft = .defaultDraft
 
-    // Single-spec mode draft (legacy behaviour)
     @State var baseDraft: FamilyDraft = .defaultDraft
 
-    // Matched set drafts (per size). Medium acts as the base.
     @State var matchedSetEnabled: Bool = false
     @State var matchedDrafts: MatchedDrafts = MatchedDrafts(
         small: .defaultDraft,
@@ -35,28 +34,35 @@ struct ContentView: View {
         large: .defaultDraft
     )
 
-    // Photos picker
     @State var pickedPhoto: PhotosPickerItem?
 
-    // AI
     @State var aiPrompt: String = ""
     @State var aiMakeGeneratedDefault: Bool = true
     @State var aiPatchInstruction: String = ""
     @State var aiStatusMessage: String = ""
 
-    // Preview
     @State var previewFamily: WidgetFamily = .systemSmall
 
-    // Status
     @State var lastSavedAt: Date?
     @State var lastWidgetRefreshAt: Date?
     @State var saveStatusMessage: String = ""
 
-    // UI
     @State var showDeleteConfirmation: Bool = false
-    @State var showWidgetHelp: Bool = false
 
-    // Sharing / Import
+    enum ActiveSheet: Identifiable {
+        case widgetHelp
+        case pro
+
+        var id: Int {
+            switch self {
+            case .widgetHelp: return 1
+            case .pro: return 2
+            }
+        }
+    }
+
+    @State var activeSheet: ActiveSheet?
+
     @State var showImportPicker: Bool = false
     @State var importInProgress: Bool = false
 
@@ -91,8 +97,13 @@ struct ContentView: View {
             } message: {
                 Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
             }
-            .sheet(isPresented: $showWidgetHelp) {
-                WidgetWorkflowHelpView()
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .widgetHelp:
+                    WidgetWorkflowHelpView()
+                case .pro:
+                    WidgetWeaverProView(manager: proManager)
+                }
             }
             .fileImporter(
                 isPresented: $showImportPicker,
@@ -103,10 +114,9 @@ struct ContentView: View {
                 case .success(let urls):
                     guard let url = urls.first else { return }
                     Task { await importDesigns(from: url) }
+
                 case .failure(let error):
-                    if (error as NSError).code == NSUserCancelledError {
-                        return
-                    }
+                    if (error as NSError).code == NSUserCancelledError { return }
                     saveStatusMessage = "Import failed: \(error.localizedDescription)"
                 }
             }

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -16,11 +15,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     private let defaults: UserDefaults
 
-    // v1 multi-spec storage
     private let specsKey = "widgetweaver.specs.v1"
     private let defaultIDKey = "widgetweaver.specs.v1.default_id"
-
-    // Legacy (v0.9.x) single-spec storage
     private let legacySingleSpecKey = "widgetweaver.spec.v1.default"
 
     public init(defaults: UserDefaults = AppGroup.userDefaults) {
@@ -31,17 +27,14 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     // MARK: - Compatibility (v0.9.x API)
 
-    /// Legacy API: returns the current default spec.
     public func load() -> WidgetSpec {
         loadDefault()
     }
 
-    /// Legacy API: saves without changing default.
     public func save(_ spec: WidgetSpec) {
         save(spec, makeDefault: false)
     }
 
-    /// Legacy API: clears storage (keeps at least one seeded spec afterwards).
     public func clear() {
         defaults.removeObject(forKey: specsKey)
         defaults.removeObject(forKey: defaultIDKey)
@@ -73,8 +66,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
     public func loadDefault() -> WidgetSpec {
         let specs = loadAllInternal()
 
-        if let id = defaultSpecID(),
-           let match = specs.first(where: { $0.id == id }) {
+        if let id = defaultSpecID(), let match = specs.first(where: { $0.id == id }) {
             return match.normalised()
         }
 
@@ -129,15 +121,13 @@ public final class WidgetSpecStore: @unchecked Sendable {
         flushAndNotifyWidgets()
     }
 
-    // MARK: - Sharing / Import / Export (Milestone 7)
+    // MARK: - Sharing / Import / Export (Milestone 7 + 8)
 
-    /// Encodes one or more specs into a versioned exchange file (optionally embedding images).
     public func exportExchangeData(specs: [WidgetSpec], includeImages: Bool = true) throws -> Data {
         let file = exportExchangeFile(specs: specs, includeImages: includeImages)
         return try WidgetWeaverDesignExchangeCodec.encode(file)
     }
 
-    /// Encodes all saved specs into a versioned exchange file (optionally embedding images).
     public func exportAllExchangeData(includeImages: Bool = true) throws -> Data {
         let specs = loadAllInternal()
         return try exportExchangeData(specs: specs, includeImages: includeImages)
@@ -146,6 +136,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
     /// Imports specs from an exchange payload (also accepts raw `WidgetSpec` or `[WidgetSpec]` JSON for convenience).
     /// - Behaviour: imported specs are duplicated with new IDs and updated timestamps to avoid overwriting.
     /// - Images: embedded images are restored into the App Group container and fileName references are rewritten.
+    ///
+    /// Milestone 8: Free tier import respects the max designs limit.
     public func importDesigns(from data: Data, makeDefault: Bool = false) throws -> WidgetWeaverImportResult {
         let payload = try WidgetWeaverDesignExchangeCodec.decodeAny(data)
         return importExchangePayload(payload, makeDefault: makeDefault)
@@ -175,7 +167,6 @@ public final class WidgetSpecStore: @unchecked Sendable {
     private func migrateLegacySingleSpecIfNeeded() {
         guard defaults.data(forKey: specsKey) == nil else { return }
         guard let legacyData = defaults.data(forKey: legacySingleSpecKey) else { return }
-
         defer { defaults.removeObject(forKey: legacySingleSpecKey) }
 
         do {
@@ -211,7 +202,6 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
         #if canImport(WidgetKit)
         let kind = WidgetWeaverWidgetKinds.main
-
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: kind)
             WidgetCenter.shared.reloadAllTimelines()
@@ -229,7 +219,6 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
         // Restore embedded images first.
         var imageFileNameMap: [String: String] = [:] // originalFileName -> newFileName
-
         if !payload.images.isEmpty {
             for embedded in payload.images {
                 let original = embedded.originalFileName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -257,10 +246,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
             var s = raw.normalised()
             s.id = UUID()
             s.updatedAt = now
-
-            // Rewrite any image references (base + matched variants).
             s = s.rewritingImageFileNames(using: imageFileNameMap)
-
             imported.append(s)
         }
 
@@ -268,10 +254,29 @@ public final class WidgetSpecStore: @unchecked Sendable {
             return WidgetWeaverImportResult(importedCount: 0, importedIDs: [], notes: notes)
         }
 
-        // Merge into store.
+        // Merge into store with Milestone 8 (free tier) enforcement.
         var existing = loadAllInternal()
-        existing.append(contentsOf: imported.map { $0.normalised() })
 
+        if !WidgetWeaverEntitlements.isProUnlocked {
+            let max = WidgetWeaverEntitlements.maxFreeDesigns
+            let available = max - existing.count
+
+            if available <= 0 {
+                notes.append("Free tier allows up to \(max) designs. Upgrade to Pro to import more.")
+                return WidgetWeaverImportResult(importedCount: 0, importedIDs: [], notes: notes)
+            }
+
+            if imported.count > available {
+                notes.append("Free tier limit: imported \(available) of \(imported.count) designs. Upgrade to Pro for unlimited designs.")
+                imported = Array(imported.prefix(available))
+            }
+        }
+
+        if imported.isEmpty {
+            return WidgetWeaverImportResult(importedCount: 0, importedIDs: [], notes: notes)
+        }
+
+        existing.append(contentsOf: imported.map { $0.normalised() })
         saveAllInternal(existing)
 
         if makeDefault, let last = imported.last {
@@ -369,7 +374,6 @@ public enum WidgetWeaverDesignExchangeCodec {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-
         return try encoder.encode(payload)
     }
 
@@ -378,24 +382,20 @@ public enum WidgetWeaverDesignExchangeCodec {
     /// - Array of WidgetSpec
     /// - Single WidgetSpec
     public static func decodeAny(_ data: Data) throws -> WidgetWeaverDesignExchangePayload {
-        // 1) Try exchange payload (ISO8601)
         if let payload = try? decodeExchange(data, iso8601: true) {
             return try validate(payload)
         }
 
-        // 2) Try exchange payload (default date strategy)
         if let payload = try? decodeExchange(data, iso8601: false) {
             return try validate(payload)
         }
 
-        // 3) Try [WidgetSpec]
         if let specs = try? JSONDecoder().decode([WidgetSpec].self, from: data) {
             let normalised = specs.map { $0.normalised() }
             guard !normalised.isEmpty else { throw WidgetWeaverDesignExchangeError.noSpecsFound }
             return WidgetWeaverDesignExchangePayload(specs: normalised, images: [])
         }
 
-        // 4) Try WidgetSpec
         if let spec = try? JSONDecoder().decode(WidgetSpec.self, from: data) {
             return WidgetWeaverDesignExchangePayload(specs: [spec.normalised()], images: [])
         }
@@ -435,8 +435,8 @@ public enum WidgetWeaverDesignExchangeCodec {
 private extension WidgetSpecStore {
     func exportExchangeFile(specs: [WidgetSpec], includeImages: Bool) -> WidgetWeaverDesignExchangePayload {
         let normalisedSpecs = specs.map { $0.normalised() }
-        var embeddedImages: [WidgetWeaverEmbeddedImage] = []
 
+        var embeddedImages: [WidgetWeaverEmbeddedImage] = []
         if includeImages {
             let fileNames = collectUniqueImageFileNames(in: normalisedSpecs)
             embeddedImages = fileNames.compactMap { fileName in
@@ -524,6 +524,7 @@ private extension WidgetSpecVariant {
         guard !map.isEmpty else { return self }
 
         var out = self
+
         if var img = out.image {
             let old = img.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
             if let new = map[old] {
@@ -531,6 +532,7 @@ private extension WidgetSpecVariant {
                 out.image = img
             }
         }
+
         return out.normalised()
     }
 }

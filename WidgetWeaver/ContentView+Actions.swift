@@ -12,7 +12,6 @@ import PhotosUI
 import UIKit
 
 extension ContentView {
-
     // MARK: - Photos import
 
     func importPickedImage(_ item: PhotosPickerItem) async {
@@ -63,11 +62,29 @@ extension ContentView {
         WidgetCenter.shared.reloadAllTimelines()
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
         WidgetCenter.shared.invalidateConfigurationRecommendations()
+
         lastWidgetRefreshAt = Date()
         saveStatusMessage = "Widgets refreshed."
     }
 
+    private func freeTierHasCapacityForNewDesign() -> Bool {
+        if proManager.isProUnlocked { return true }
+        return savedSpecs.count < WidgetWeaverEntitlements.maxFreeDesigns
+    }
+
+    private func showProForDesignLimit(message: String) {
+        saveStatusMessage = message
+        activeSheet = .pro
+    }
+
     func createNewDesign() {
+        guard freeTierHasCapacityForNewDesign() else {
+            showProForDesignLimit(
+                message: "Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) designs.\nUnlock Pro for unlimited designs."
+            )
+            return
+        }
+
         var spec = WidgetSpec.defaultSpec().normalised()
         spec.id = UUID()
         spec.updatedAt = Date()
@@ -83,6 +100,13 @@ extension ContentView {
     }
 
     func duplicateCurrentDesign() {
+        guard freeTierHasCapacityForNewDesign() else {
+            showProForDesignLimit(
+                message: "Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) designs.\nUnlock Pro for unlimited designs."
+            )
+            return
+        }
+
         let base = draftSpec(id: selectedSpecID)
 
         var spec = base
@@ -103,6 +127,7 @@ extension ContentView {
         store.delete(id: selectedSpecID)
         refreshSavedSpecs(preservingSelection: false)
         loadSelected()
+
         lastWidgetRefreshAt = Date()
         saveStatusMessage = "Deleted design.\nWidgets refreshed."
     }
@@ -112,6 +137,12 @@ extension ContentView {
     @MainActor
     func generateNewDesignFromPrompt() async {
         aiStatusMessage = ""
+
+        guard freeTierHasCapacityForNewDesign() else {
+            aiStatusMessage = "Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) designs.\nUnlock Pro for unlimited designs."
+            activeSheet = .pro
+            return
+        }
 
         let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
@@ -125,6 +156,7 @@ extension ContentView {
 
         defaultSpecID = store.defaultSpecID()
         lastWidgetRefreshAt = Date()
+
         aiStatusMessage = result.note
         aiPrompt = ""
 
@@ -164,15 +196,16 @@ extension ContentView {
 
         var combined = draftSpec(id: selectedSpecID).normalised()
         combined.updatedAt = Date()
+
         store.save(combined, makeDefault: false)
 
         lastSavedAt = combined.updatedAt
         lastWidgetRefreshAt = Date()
+
         aiStatusMessage = result.note
         aiPatchInstruction = ""
 
         refreshSavedSpecs(preservingSelection: true)
-
         saveStatusMessage = "Patched design saved.\nWidgets refreshed."
     }
 
@@ -180,13 +213,22 @@ extension ContentView {
 
     func importDesigns(from url: URL) async {
         guard !importInProgress else { return }
+
+        if !proManager.isProUnlocked {
+            let available = WidgetWeaverEntitlements.maxFreeDesigns - savedSpecs.count
+            if available <= 0 {
+                showProForDesignLimit(
+                    message: "Free tier is at the \(WidgetWeaverEntitlements.maxFreeDesigns)-design limit.\nUnlock Pro to import more."
+                )
+                return
+            }
+        }
+
         importInProgress = true
         defer { importInProgress = false }
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer {
-            if didStart { url.stopAccessingSecurityScopedResource() }
-        }
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
         do {
             let data = try Data(contentsOf: url)
@@ -211,6 +253,10 @@ extension ContentView {
                 let suffix = result.notes.prefix(2).joined(separator: "\n")
                 saveStatusMessage += "\n\(suffix)"
             }
+
+            if !proManager.isProUnlocked, result.importedCount == 0 {
+                activeSheet = .pro
+            }
         } catch {
             saveStatusMessage = "Import failed: \(error.localizedDescription)"
         }
@@ -221,7 +267,6 @@ extension ContentView {
     func sharePackageForCurrentDesign() -> WidgetWeaverSharePackage {
         let spec = draftSpec(id: selectedSpecID).normalised()
         let fileName = WidgetWeaverSharePackage.suggestedFileName(prefix: spec.name, suffix: "design")
-
         let data = (try? store.exportExchangeData(specs: [spec], includeImages: true)) ?? Data()
         return WidgetWeaverSharePackage(fileName: fileName, data: data)
     }
