@@ -53,7 +53,7 @@ struct WidgetWeaverGetVariableIntent: AppIntent {
         Summary("Get \(\.$key)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -108,7 +108,7 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         Summary("Increment \(\.$key) by \(\.$amount)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "0", dialog: "WidgetWeaver Pro is required for variables.")
         }
