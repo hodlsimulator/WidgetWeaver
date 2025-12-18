@@ -6,12 +6,18 @@
 //
 
 import Foundation
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
-    public static let currentVersion: Int = 4
+
+    // Bump when the schema changes.
+    public static let currentVersion: Int = 5
 
     public var version: Int
     public var id: UUID
+
     public var name: String
     public var primaryText: String
     public var secondaryText: String?
@@ -23,6 +29,12 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var layout: LayoutSpec
     public var style: StyleSpec
 
+    /// Optional per-size overrides.
+    /// Convention in this milestone:
+    /// - Medium is the base spec fields.
+    /// - Small + Large live in `matchedSet` (Medium override is typically nil).
+    public var matchedSet: WidgetSpecMatchedSet?
+
     public init(
         version: Int = WidgetSpec.currentVersion,
         id: UUID = UUID(),
@@ -33,7 +45,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         symbol: SymbolSpec? = nil,
         image: ImageSpec? = nil,
         layout: LayoutSpec = .defaultLayout,
-        style: StyleSpec = .defaultStyle
+        style: StyleSpec = .defaultStyle,
+        matchedSet: WidgetSpecMatchedSet? = nil
     ) {
         self.version = version
         self.id = id
@@ -45,6 +58,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.image = image
         self.layout = layout
         self.style = style
+        self.matchedSet = matchedSet
     }
 
     public static func defaultSpec() -> WidgetSpec {
@@ -63,7 +77,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             ),
             image: nil,
             layout: .defaultLayout,
-            style: .defaultStyle
+            style: .defaultStyle,
+            matchedSet: nil
         )
     }
 
@@ -106,8 +121,40 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
         s.layout = s.layout.normalised()
         s.style = s.style.normalised()
+
+        if let m = s.matchedSet?.normalisedOrNil() {
+            s.matchedSet = m
+        } else {
+            s.matchedSet = nil
+        }
+
         return s
     }
+
+    #if canImport(WidgetKit)
+    /// Returns a flat spec suitable for rendering in a specific `WidgetFamily`.
+    /// This drops `matchedSet` in the returned value to keep the render path simple.
+    public func resolved(for family: WidgetFamily) -> WidgetSpec {
+        let base = self.normalised()
+
+        guard let variant = base.matchedSet?.variant(for: family)?.normalised() else {
+            var out = base
+            out.matchedSet = nil
+            return out
+        }
+
+        var out = base
+        out.primaryText = variant.primaryText
+        out.secondaryText = variant.secondaryText
+        out.symbol = variant.symbol
+        out.image = variant.image
+        out.layout = variant.layout
+        out.matchedSet = nil
+        return out.normalised()
+    }
+    #endif
+
+    // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -120,6 +167,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case image
         case layout
         case style
+        case matchedSet
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +186,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
 
+        let matchedSet = (try? c.decodeIfPresent(WidgetSpecMatchedSet.self, forKey: .matchedSet)) ?? nil
+
         self.init(
             version: version,
             id: id,
@@ -148,13 +198,13 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             symbol: symbol,
             image: image,
             layout: layout,
-            style: style
+            style: style,
+            matchedSet: matchedSet
         )
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-
         try c.encode(version, forKey: .version)
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
@@ -165,5 +215,122 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(image, forKey: .image)
         try c.encode(layout, forKey: .layout)
         try c.encode(style, forKey: .style)
+        try c.encodeIfPresent(matchedSet, forKey: .matchedSet)
+    }
+}
+
+// MARK: - Matched Set
+
+public struct WidgetSpecMatchedSet: Codable, Hashable {
+
+    public var small: WidgetSpecVariant?
+    public var medium: WidgetSpecVariant?
+    public var large: WidgetSpecVariant?
+
+    public init(
+        small: WidgetSpecVariant? = nil,
+        medium: WidgetSpecVariant? = nil,
+        large: WidgetSpecVariant? = nil
+    ) {
+        self.small = small
+        self.medium = medium
+        self.large = large
+    }
+
+    public func normalisedOrNil() -> WidgetSpecMatchedSet? {
+        var m = self
+        m.small = m.small?.normalised()
+        m.medium = m.medium?.normalised()
+        m.large = m.large?.normalised()
+
+        if m.small == nil && m.medium == nil && m.large == nil {
+            return nil
+        }
+        return m
+    }
+
+    #if canImport(WidgetKit)
+    public func variant(for family: WidgetFamily) -> WidgetSpecVariant? {
+        switch family {
+        case .systemSmall:
+            return small
+        case .systemMedium:
+            return medium
+        case .systemLarge:
+            return large
+        default:
+            return medium ?? small ?? large
+        }
+    }
+    #endif
+}
+
+public struct WidgetSpecVariant: Codable, Hashable {
+
+    public var primaryText: String
+    public var secondaryText: String?
+    public var symbol: SymbolSpec?
+    public var image: ImageSpec?
+    public var layout: LayoutSpec
+
+    public init(
+        primaryText: String,
+        secondaryText: String?,
+        symbol: SymbolSpec?,
+        image: ImageSpec?,
+        layout: LayoutSpec
+    ) {
+        self.primaryText = primaryText
+        self.secondaryText = secondaryText
+        self.symbol = symbol
+        self.image = image
+        self.layout = layout
+    }
+
+    public static func fromBaseSpec(_ spec: WidgetSpec) -> WidgetSpecVariant {
+        let s = spec.normalised()
+        return WidgetSpecVariant(
+            primaryText: s.primaryText,
+            secondaryText: s.secondaryText,
+            symbol: s.symbol,
+            image: s.image,
+            layout: s.layout
+        )
+    }
+
+    public func normalised() -> WidgetSpecVariant {
+        var v = self
+
+        let trimmedPrimary = v.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
+
+        if let secondary = v.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines), !secondary.isEmpty {
+            v.secondaryText = secondary
+        } else {
+            v.secondaryText = nil
+        }
+
+        if let sym = v.symbol?.normalised() {
+            if sym.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                v.symbol = nil
+            } else {
+                v.symbol = sym
+            }
+        } else {
+            v.symbol = nil
+        }
+
+        if let img = v.image?.normalised() {
+            if img.fileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                v.image = nil
+            } else {
+                v.image = img
+            }
+        } else {
+            v.image = nil
+        }
+
+        v.layout = v.layout.normalised()
+        return v
     }
 }

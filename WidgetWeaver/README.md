@@ -25,10 +25,10 @@ WidgetWeaver supports both:
 ✅ SF Symbol component (optional) with placement + size + weight + rendering + tint  
 ✅ Image component (optional) using PhotosPicker; image files are stored in the App Group container and referenced by filename in the spec  
 ✅ Prompt → Spec generation (Foundation Models) with validation + repair + deterministic fallback  
-✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback
+✅ Patch edits (e.g. “more minimal”) against an existing spec, with deterministic fallback  
+✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)
 
 Next:
-- ⏭ Matched sets (Small/Medium/Large) + design system tokens
 - ⏭ Variables + Shortcuts
 
 ---
@@ -40,19 +40,26 @@ Next:
    - `group.com.conornolan.widgetweaver`
 3. Run the app on a real device.
 4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
-5. In the app, create/edit a design and tap **Save to Widget**.
-6. To choose a design per widget instance:
-   - Long-press the widget → **Edit Widget** → select a **Design**
-   - If you want the widget to always follow the app’s current default design, select **Default (App)**.
-7. To show an icon (optional):
-   - In the app, fill **Symbol → SF Symbol name** (for example: `sparkles`)
-8. To show an image (optional):
-   - In the app, choose **Image → Choose photo**, then **Save to Widget**
+5. In the app, create/edit a design and tap **Save & Make Default** (recommended while iterating).
+
+Per-widget selection:
+- Long-press the widget → **Edit Widget** → choose **Design**
+- To follow the app’s current default design, choose **Default (App)**.
+
+Matched sets (Small/Medium/Large):
+- Enable **Matched set (Small/Medium/Large)** in the editor.
+- Use the preview size picker (Small/Medium/Large) to edit each size.
+- Style and typography are shared across the set; content/layout components can differ per size.
+
+Optional symbol:
+- Fill **Symbol → SF Symbol name** (for example: `sparkles`).
+
+Optional image:
+- Choose **Image → Choose photo**, then save.
 
 Notes:
-- The photo picker does not require photo library permission prompts.
+- PhotosPicker does not require photo library permission prompts.
 - Picked images are saved into the App Group container so the widget can render them offline.
-- The app supports dismissing the keyboard by tapping outside inputs, plus a “Done” keyboard button.
 
 ---
 
@@ -60,35 +67,30 @@ Notes:
 
 WidgetWeaver can generate and edit designs from natural language using **Foundation Models** when available.
 
-### Generate a new design
-
+Generate a new design:
 - Use the **AI** section in the app
-- Enter a prompt like:
+- Example prompts:
   - “minimal habit tracker, teal accent, no icon”
   - “bold countdown widget, centred, bigger title”
 - Tap **Generate New Design**
-- Optionally toggle **Make generated design default**
+- Optionally enable **Make generated design default**
 
-### Patch an existing design
+Patch an existing design:
+- Example patch instructions:
+  - “more minimal”
+  - “bigger title”
+  - “change accent to teal”
+  - “remove image”
+  - “remove symbol”
+- Tap **Apply Patch To Current Design**
 
-Patch edits apply small changes to the current design, for example:
-- “more minimal”
-- “bigger title”
-- “change accent to teal”
-- “remove image”
-- “remove symbol”
-
-Tap **Apply Patch To Current Design**.
-
-### Availability + fallbacks
-
+Availability + fallbacks:
 - If Apple Intelligence / Foundation Models are available, the app generates a constrained payload and maps it into `WidgetSpec`.
 - If unavailable (device not eligible, Apple Intelligence disabled, model not ready, etc.), WidgetWeaver still works:
   - New designs fall back to deterministic templates/rules
   - Patch edits fall back to deterministic rules
 
-### Privacy
-
+Privacy:
 - Prompt generation is designed to run on-device.
 - Images are never generated; images are picked by PhotosPicker and stored locally in the App Group container.
 
@@ -113,7 +115,7 @@ Tap **Apply Patch To Current Design**.
 
 ### Shared boundary
 
-- App Group: `group.com.conornolan.widgetweaver`
+App Group: `group.com.conornolan.widgetweaver`
 
 Storage (v0.9.x simplicity):
 - Specs: `UserDefaults(suiteName:)` (JSON-encoded specs)
@@ -129,41 +131,48 @@ Storage (v0.9.x simplicity):
 
 ## WidgetSpec
 
-`WidgetSpec` is the contract between the app and the widget. It’s versioned and designed to be:
+`WidgetSpec` is the contract between the app and the widget.
+
+Design goals:
 - Strictly typed (Codable)
 - Easy to validate/repair
 - Deterministic to render
 
 ### v0 components (current direction)
 
-- Text:
-  - `name`, `primaryText`, optional `secondaryText`
+Text:
+- `name`, `primaryText`, optional `secondaryText`
 
-- Symbol (optional):
-  - SF Symbol name string
-  - placement (above/before name)
-  - size + weight
-  - rendering mode (monochrome / hierarchical / multicolour)
-  - tint (accent / primary / secondary)
+Symbol (optional):
+- SF Symbol name string
+- placement (above/before name)
+- size + weight
+- rendering mode (monochrome / hierarchical / multicolour)
+- tint (accent / primary / secondary)
 
-- Image (optional):
-  - `fileName` (stored in App Group container)
-  - `contentMode` (fill / fit)
-  - `height` (clamped per family)
-  - `cornerRadius`
+Image (optional):
+- `fileName` (stored in App Group container)
+- `contentMode` (fill / fit)
+- `height` (clamped per family)
+- `cornerRadius`
 
-- Layout tokens:
-  - axis / alignment / spacing / line limits
+Layout tokens:
+- axis / alignment / spacing / line limits
 
-- Style tokens:
-  - padding / corner radius / background / accent / typography tokens
+Style tokens:
+- padding / corner radius / background / accent / typography tokens
 
-- Shared renderer:
-  - a single SwiftUI view that both the app previews and the widget render through
+Matched sets (Small/Medium/Large):
+- Optional `matchedSet` stores per-size overrides (variants).
+- Medium is treated as the base (stored on the main spec fields); Small/Large can override.
+- Rendering resolves the correct variant per `WidgetFamily`, producing a flat spec for that family.
+
+Shared renderer:
+- A single SwiftUI view that both the app previews and the widget render through.
 
 ### File layout (modularised)
 
-Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as the core spec type and the supporting pieces split into focused files (e.g. symbol/image/layout/style tokens and the shared renderer view).
+Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as the core spec type and the supporting pieces split into focused files (symbol/image/layout/style tokens and the shared renderer view).
 
 ---
 
@@ -219,10 +228,12 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
   - “change accent to teal”
   - “remove image / remove symbol”
 
-### Milestone 5 — Matched sets (Small/Medium/Large) (LATER)
-- Introduce a `DesignSystem` token set shared across widget sizes
-- Generate coherent sets that reference shared tokens
-- “Update the vibe” modifies tokens and updates the whole set
+### Milestone 5 — Matched sets (Small/Medium/Large) (DONE)
+- Optional `matchedSet` that stores per-size variant overrides
+- Medium stored as the base; Small/Large can override
+- Shared style + typography across the set
+- Editor behaviour is driven by the preview size picker (edits apply to the selected size)
+- Shared renderer resolves the correct per-family variant automatically
 
 ### Milestone 6 — Variables + Shortcuts (LATER)
 - Variables (“slots”) referenced by specs
@@ -244,21 +255,22 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
 ## Troubleshooting
 
 ### Image not showing in the widget
-- Ensure you picked an image and then tapped **Save to Widget**.
+- Ensure an image was picked and then **Save** was tapped.
 - Ensure both targets have the App Group entitlement: `group.com.conornolan.widgetweaver`.
 - If the app was reinstalled, previously saved specs may reference image filenames that no longer exist in the App Group container; remove/re-pick the image and save again.
 - If re-selecting the same photo seems to do nothing, pick a different photo once, then pick the original again, and save.
 
 ### Widget not updating
-- Tap **Save to Widget** again.
+- Save again (prefer **Save & Make Default** while iterating).
 - Ensure the widget instance is set to either:
   - **Default (App)** (recommended while iterating), or
-  - the specific saved design you’re editing
+  - the specific saved design being edited
+- If Matched set is enabled, ensure edits are being made to the intended size (Small/Medium/Large) via the preview size picker.
 - Remove/re-add the widget after significant schema changes.
 
 ### AI shows “Unavailable”
 - The app still works (deterministic fallbacks).
-- If you want on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
+- For on-device generation, enable Apple Intelligence in Settings and allow time for the model to become ready.
 
 ---
 
@@ -266,5 +278,4 @@ Shared model + renderer live under `Shared/`, with `WidgetSpec.swift` kept as th
 
 - Marketing version / build: `0.9.4 (2)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
-- Working principle:
-  - ship small commits where the app + widget always build and run
+- Working principle: ship small commits where the app + widget always build and run

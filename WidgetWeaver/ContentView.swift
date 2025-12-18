@@ -12,6 +12,7 @@ import UIKit
 
 @MainActor
 struct ContentView: View {
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -19,38 +20,20 @@ struct ContentView: View {
     @State private var defaultSpecID: UUID?
     @State private var selectedSpecID: UUID = UUID()
 
-    // Draft fields (manual editor)
-    @State private var name: String = "WidgetWeaver"
-    @State private var primaryText: String = "Hello"
-    @State private var secondaryText: String = ""
+    // Global (shared across sizes)
+    @State private var designName: String = "WidgetWeaver"
+    @State private var styleDraft: StyleDraft = .defaultDraft
 
-    @State private var symbolName: String = "sparkles"
-    @State private var symbolPlacement: SymbolPlacementToken = .beforeName
-    @State private var symbolSize: Double = 18
-    @State private var symbolWeight: SymbolWeightToken = .semibold
-    @State private var symbolRenderingMode: SymbolRenderingModeToken = .hierarchical
-    @State private var symbolTint: SymbolTintToken = .accent
+    // Single-spec mode draft (legacy behaviour)
+    @State private var baseDraft: FamilyDraft = .defaultDraft
 
-    @State private var imageFileName: String = ""
-    @State private var imageContentMode: ImageContentModeToken = .fill
-    @State private var imageHeight: Double = 120
-    @State private var imageCornerRadius: Double = 16
-
-    @State private var axis: LayoutAxisToken = .vertical
-    @State private var alignment: LayoutAlignmentToken = .leading
-    @State private var spacing: Double = 8
-    @State private var primaryLineLimitSmall: Int = 1
-    @State private var primaryLineLimit: Int = 2
-    @State private var secondaryLineLimit: Int = 2
-
-    @State private var padding: Double = 16
-    @State private var cornerRadius: Double = 20
-    @State private var background: BackgroundToken = .accentGlow
-    @State private var accent: AccentToken = .blue
-
-    @State private var nameTextStyle: TextStyleToken = .automatic
-    @State private var primaryTextStyle: TextStyleToken = .automatic
-    @State private var secondaryTextStyle: TextStyleToken = .automatic
+    // Matched set drafts (per size). Medium acts as the base.
+    @State private var matchedSetEnabled: Bool = false
+    @State private var matchedDrafts: MatchedDrafts = MatchedDrafts(
+        small: .defaultDraft,
+        medium: .defaultDraft,
+        large: .defaultDraft
+    )
 
     // Photos picker
     @State private var pickedPhoto: PhotosPickerItem?
@@ -88,9 +71,7 @@ struct ContentView: View {
             .navigationTitle("WidgetWeaver")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    toolbarMenu
-                }
+                ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { Keyboard.dismiss() }
@@ -102,7 +83,7 @@ struct ContentView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) { deleteCurrentDesign() }
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) { }
             } message: {
                 Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
             }
@@ -123,18 +104,14 @@ struct ContentView: View {
     @ViewBuilder
     private var editorLayout: some View {
         if horizontalSizeClass == .regular {
-            // iPad / wide layouts: keep preview visible as a side panel.
             HStack(alignment: .top, spacing: 16) {
                 previewDock(presentation: .sidebar)
                     .frame(width: 420)
                     .padding(.top, 8)
-
                 editorForm
             }
             .padding(.horizontal, 16)
         } else {
-            // iPhone / compact: keep preview visible without permanently stealing vertical space.
-            // Reserve only the collapsed height so the full editor remains usable.
             editorForm
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear
@@ -151,6 +128,7 @@ struct ContentView: View {
     private var editorForm: some View {
         Form {
             designsSection
+            matchedSetSection
             widgetWorkflowSection
             textSection
             symbolSection
@@ -178,52 +156,38 @@ struct ContentView: View {
 
     private var toolbarMenu: some View {
         Menu {
-            Button {
-                showWidgetHelp = true
-            } label: {
+            Button { showWidgetHelp = true } label: {
                 Label("Widget Help", systemImage: "questionmark.circle")
             }
 
             Divider()
 
-            Button {
-                createNewDesign()
-            } label: {
+            Button { createNewDesign() } label: {
                 Label("New Design", systemImage: "plus")
             }
 
-            Button {
-                duplicateCurrentDesign()
-            } label: {
+            Button { duplicateCurrentDesign() } label: {
                 Label("Duplicate Design", systemImage: "doc.on.doc")
             }
             .disabled(savedSpecs.isEmpty)
 
             Divider()
 
-            Button {
-                saveSelected(makeDefault: true)
-            } label: {
+            Button { saveSelected(makeDefault: true) } label: {
                 Label("Save & Make Default", systemImage: "checkmark.circle")
             }
 
-            Button {
-                saveSelected(makeDefault: false)
-            } label: {
+            Button { saveSelected(makeDefault: false) } label: {
                 Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
             }
 
-            Button {
-                refreshWidgets()
-            } label: {
+            Button { refreshWidgets() } label: {
                 Label("Refresh Widgets", systemImage: "arrow.clockwise")
             }
 
             Divider()
 
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
+            Button(role: .destructive) { showDeleteConfirmation = true } label: {
                 Label("Delete Design", systemImage: "trash")
             }
             .disabled(savedSpecs.count <= 1)
@@ -241,6 +205,74 @@ struct ContentView: View {
             .textCase(.uppercase)
     }
 
+    // MARK: - Editing family (driven by preview size)
+
+    private var editingFamily: EditingFamily {
+        EditingFamily(widgetFamily: previewFamily) ?? .small
+    }
+
+    private var editingFamilyLabel: String {
+        switch editingFamily {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        }
+    }
+
+    // MARK: - Active draft helpers
+
+    private func currentFamilyDraft() -> FamilyDraft {
+        if matchedSetEnabled {
+            return matchedDrafts[editingFamily]
+        }
+        return baseDraft
+    }
+
+    private func setCurrentFamilyDraft(_ newValue: FamilyDraft) {
+        if matchedSetEnabled {
+            matchedDrafts[editingFamily] = newValue
+        } else {
+            baseDraft = newValue
+        }
+    }
+
+    private func binding<T>(_ keyPath: WritableKeyPath<FamilyDraft, T>) -> Binding<T> {
+        Binding(
+            get: { currentFamilyDraft()[keyPath: keyPath] },
+            set: { newValue in
+                var d = currentFamilyDraft()
+                d[keyPath: keyPath] = newValue
+                setCurrentFamilyDraft(d)
+            }
+        )
+    }
+
+    private var matchedSetBinding: Binding<Bool> {
+        Binding(
+            get: { matchedSetEnabled },
+            set: { newValue in setMatchedSetEnabled(newValue) }
+        )
+    }
+
+    private func setMatchedSetEnabled(_ enabled: Bool) {
+        guard enabled != matchedSetEnabled else { return }
+
+        if enabled {
+            matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+            matchedSetEnabled = true
+        } else {
+            baseDraft = matchedDrafts.medium
+            matchedSetEnabled = false
+        }
+    }
+
+    private func copyCurrentSizeToAllSizes() {
+        guard matchedSetEnabled else { return }
+        let d = matchedDrafts[editingFamily]
+        matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
+        saveStatusMessage = "Copied \(editingFamilyLabel) settings to Small/Medium/Large (draft only)."
+    }
+
     // MARK: - Sections
 
     private var designsSection: some View {
@@ -251,8 +283,7 @@ struct ContentView: View {
             } else {
                 Picker("Design", selection: $selectedSpecID) {
                     ForEach(savedSpecs) { spec in
-                        Text(specDisplayName(spec))
-                            .tag(spec.id)
+                        Text(specDisplayName(spec)).tag(spec.id)
                     }
                 }
                 .pickerStyle(.menu)
@@ -263,11 +294,11 @@ struct ContentView: View {
             }
 
             if selectedSpecID == defaultSpecID {
-                Text("This design is the app default. Widgets set to \"Default (App)\" will show it.")
+                Text("This design is the app default.\nWidgets set to \"Default (App)\" will show it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("This design is not the app default. Use \"Save & Make Default\" to update widgets set to \"Default (App)\".")
+                Text("This design is not the app default.\nUse \"Save & Make Default\" to update widgets set to \"Default (App)\".")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -290,17 +321,38 @@ struct ContentView: View {
         }
     }
 
+    private var matchedSetSection: some View {
+        Section {
+            Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
+
+            if matchedSetEnabled {
+                Text("Editing is per preview size: \(editingFamilyLabel). Use the preview size picker to edit Small/Medium/Large. Style and typography are shared.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    copyCurrentSizeToAllSizes()
+                } label: {
+                    Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
+                }
+            } else {
+                Text("When enabled, Small and Large can differ while sharing the same style tokens. Medium is treated as the base.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        } header: {
+            sectionHeader("Matched set")
+        }
+    }
+
     private var widgetWorkflowSection: some View {
         Section {
-            Button {
-                saveSelected(makeDefault: true)
-            } label: {
+            Button { saveSelected(makeDefault: true) } label: {
                 Label("Save & Make Default", systemImage: "checkmark.circle.fill")
             }
 
-            Button {
-                saveSelected(makeDefault: false)
-            } label: {
+            Button { saveSelected(makeDefault: false) } label: {
                 Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
             }
 
@@ -309,15 +361,13 @@ struct ContentView: View {
                     store.setDefault(id: selectedSpecID)
                     defaultSpecID = store.defaultSpecID()
                     lastWidgetRefreshAt = Date()
-                    saveStatusMessage = "Made default. Widgets refreshed."
+                    saveStatusMessage = "Made default.\nWidgets refreshed."
                 } label: {
                     Label("Make This Design Default", systemImage: "star")
                 }
             }
 
-            Button {
-                refreshWidgets()
-            } label: {
+            Button { refreshWidgets() } label: {
                 Label("Refresh Widgets", systemImage: "arrow.clockwise")
             }
 
@@ -336,7 +386,7 @@ struct ContentView: View {
         } header: {
             sectionHeader("Widgets")
         } footer: {
-            Text("If a widget doesn’t change, check which Design it is using (Edit Widget). Widgets set to \"Default (App)\" always follow the app default design.")
+            Text("If a widget doesn’t change, check which Design it is using (Edit Widget).\nWidgets set to \"Default (App)\" always follow the app default design.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -344,10 +394,19 @@ struct ContentView: View {
 
     private var textSection: some View {
         Section {
-            TextField("Design name", text: $name)
+            TextField("Design name", text: $designName)
                 .textInputAutocapitalization(.words)
-            TextField("Primary text", text: $primaryText)
-            TextField("Secondary text (optional)", text: $secondaryText)
+
+            TextField("Primary text", text: binding(\.primaryText))
+
+            TextField("Secondary text (optional)", text: binding(\.secondaryText))
+
+            if matchedSetEnabled {
+                Text("Text fields are currently editing: \(editingFamilyLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
         } header: {
             sectionHeader("Text")
         }
@@ -355,11 +414,11 @@ struct ContentView: View {
 
     private var symbolSection: some View {
         Section {
-            TextField("SF Symbol name (optional)", text: $symbolName)
+            TextField("SF Symbol name (optional)", text: binding(\.symbolName))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
 
-            Picker("Placement", selection: $symbolPlacement) {
+            Picker("Placement", selection: binding(\.symbolPlacement)) {
                 ForEach(SymbolPlacementToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
@@ -367,25 +426,25 @@ struct ContentView: View {
 
             HStack {
                 Text("Size")
-                Slider(value: $symbolSize, in: 8...96, step: 1)
-                Text("\(Int(symbolSize))")
+                Slider(value: binding(\.symbolSize), in: 8...96, step: 1)
+                Text("\(Int(currentFamilyDraft().symbolSize))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
-            Picker("Weight", selection: $symbolWeight) {
+            Picker("Weight", selection: binding(\.symbolWeight)) {
                 ForEach(SymbolWeightToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Rendering", selection: $symbolRenderingMode) {
+            Picker("Rendering", selection: binding(\.symbolRenderingMode)) {
                 ForEach(SymbolRenderingModeToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Tint", selection: $symbolTint) {
+            Picker("Tint", selection: binding(\.symbolTint)) {
                 ForEach(SymbolTintToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
@@ -397,15 +456,16 @@ struct ContentView: View {
     }
 
     private var imageSection: some View {
-        let hasImage = !imageFileName.isEmpty
+        let currentImageFileName = currentFamilyDraft().imageFileName
+        let hasImage = !currentImageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return Section {
             PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
                 Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
             }
 
-            if !imageFileName.isEmpty {
-                if let uiImage = AppGroup.loadUIImage(fileName: imageFileName) {
+            if hasImage {
+                if let uiImage = AppGroup.loadUIImage(fileName: currentImageFileName) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -416,7 +476,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Picker("Content mode", selection: $imageContentMode) {
+                Picker("Content mode", selection: binding(\.imageContentMode)) {
                     ForEach(ImageContentModeToken.allCases) { token in
                         Text(token.rawValue).tag(token)
                     }
@@ -424,22 +484,24 @@ struct ContentView: View {
 
                 HStack {
                     Text("Height")
-                    Slider(value: $imageHeight, in: 40...240, step: 1)
-                    Text("\(Int(imageHeight))")
+                    Slider(value: binding(\.imageHeight), in: 40...240, step: 1)
+                    Text("\(Int(currentFamilyDraft().imageHeight))")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
 
                 HStack {
                     Text("Corner radius")
-                    Slider(value: $imageCornerRadius, in: 0...44, step: 1)
-                    Text("\(Int(imageCornerRadius))")
+                    Slider(value: binding(\.imageCornerRadius), in: 0...44, step: 1)
+                    Text("\(Int(currentFamilyDraft().imageCornerRadius))")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
 
                 Button(role: .destructive) {
-                    imageFileName = ""
+                    var d = currentFamilyDraft()
+                    d.imageFileName = ""
+                    setCurrentFamilyDraft(d)
                 } label: {
                     Text("Remove image")
                 }
@@ -456,13 +518,13 @@ struct ContentView: View {
 
     private var layoutSection: some View {
         Section {
-            Picker("Axis", selection: $axis) {
+            Picker("Axis", selection: binding(\.axis)) {
                 ForEach(LayoutAxisToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Alignment", selection: $alignment) {
+            Picker("Alignment", selection: binding(\.alignment)) {
                 ForEach(LayoutAlignmentToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
@@ -470,15 +532,31 @@ struct ContentView: View {
 
             HStack {
                 Text("Spacing")
-                Slider(value: $spacing, in: 0...32, step: 1)
-                Text("\(Int(spacing))")
+                Slider(value: binding(\.spacing), in: 0...32, step: 1)
+                Text("\(Int(currentFamilyDraft().spacing))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
-            Stepper("Primary line limit (Small): \(primaryLineLimitSmall)", value: $primaryLineLimitSmall, in: 1...8)
-            Stepper("Primary line limit: \(primaryLineLimit)", value: $primaryLineLimit, in: 1...10)
-            Stepper("Secondary line limit: \(secondaryLineLimit)", value: $secondaryLineLimit, in: 1...10)
+            if editingFamily == .small {
+                Stepper(
+                    "Primary line limit: \(currentFamilyDraft().primaryLineLimitSmall)",
+                    value: binding(\.primaryLineLimitSmall),
+                    in: 1...8
+                )
+            } else {
+                Stepper(
+                    "Primary line limit: \(currentFamilyDraft().primaryLineLimit)",
+                    value: binding(\.primaryLineLimit),
+                    in: 1...10
+                )
+
+                Stepper(
+                    "Secondary line limit: \(currentFamilyDraft().secondaryLineLimit)",
+                    value: binding(\.secondaryLineLimit),
+                    in: 1...10
+                )
+            }
 
         } header: {
             sectionHeader("Layout")
@@ -489,30 +567,36 @@ struct ContentView: View {
         Section {
             HStack {
                 Text("Padding")
-                Slider(value: $padding, in: 0...32, step: 1)
-                Text("\(Int(padding))")
+                Slider(value: $styleDraft.padding, in: 0...32, step: 1)
+                Text("\(Int(styleDraft.padding))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
             HStack {
                 Text("Corner radius")
-                Slider(value: $cornerRadius, in: 0...44, step: 1)
-                Text("\(Int(cornerRadius))")
+                Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
+                Text("\(Int(styleDraft.cornerRadius))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
-            Picker("Background", selection: $background) {
+            Picker("Background", selection: $styleDraft.background) {
                 ForEach(BackgroundToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Accent", selection: $accent) {
+            Picker("Accent", selection: $styleDraft.accent) {
                 ForEach(AccentToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
+            }
+
+            if matchedSetEnabled {
+                Text("Style is shared across Small/Medium/Large.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
         } header: {
@@ -522,22 +606,28 @@ struct ContentView: View {
 
     private var typographySection: some View {
         Section {
-            Picker("Name text style", selection: $nameTextStyle) {
+            Picker("Name text style", selection: $styleDraft.nameTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Primary text style", selection: $primaryTextStyle) {
+            Picker("Primary text style", selection: $styleDraft.primaryTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
             }
 
-            Picker("Secondary text style", selection: $secondaryTextStyle) {
+            Picker("Secondary text style", selection: $styleDraft.secondaryTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
                     Text(token.rawValue).tag(token)
                 }
+            }
+
+            if matchedSetEnabled {
+                Text("Typography is shared across Small/Medium/Large.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
         } header: {
@@ -551,7 +641,7 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text("Optional on-device generation/edits. Images are never generated.")
+            Text("Optional on-device generation/edits.\nImages are never generated.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -608,9 +698,7 @@ struct ContentView: View {
     }
 
     private func specDisplayName(_ spec: WidgetSpec) -> String {
-        if spec.id == defaultSpecID {
-            return "\(spec.name) (Default)"
-        }
+        if spec.id == defaultSpecID { return "\(spec.name) (Default)" }
         return spec.name
     }
 
@@ -640,117 +728,64 @@ struct ContentView: View {
     private func applySpec(_ spec: WidgetSpec) {
         let n = spec.normalised()
 
-        name = n.name
-        primaryText = n.primaryText
-        secondaryText = n.secondaryText ?? ""
-
-        if let sym = n.symbol {
-            symbolName = sym.name
-            symbolPlacement = sym.placement
-            symbolSize = sym.size
-            symbolWeight = sym.weight
-            symbolRenderingMode = sym.renderingMode
-            symbolTint = sym.tint
-        } else {
-            symbolName = ""
-            symbolPlacement = .beforeName
-            symbolSize = 18
-            symbolWeight = .semibold
-            symbolRenderingMode = .hierarchical
-            symbolTint = .accent
-        }
-
-        if let img = n.image {
-            imageFileName = img.fileName
-            imageContentMode = img.contentMode
-            imageHeight = img.height
-            imageCornerRadius = img.cornerRadius
-        } else {
-            imageFileName = ""
-            imageContentMode = .fill
-            imageHeight = 120
-            imageCornerRadius = 16
-        }
-
-        axis = n.layout.axis
-        alignment = n.layout.alignment
-        spacing = n.layout.spacing
-        primaryLineLimitSmall = n.layout.primaryLineLimitSmall
-        primaryLineLimit = n.layout.primaryLineLimit
-        secondaryLineLimit = n.layout.secondaryLineLimit
-
-        padding = n.style.padding
-        cornerRadius = n.style.cornerRadius
-        background = n.style.background
-        accent = n.style.accent
-
-        nameTextStyle = n.style.nameTextStyle
-        primaryTextStyle = n.style.primaryTextStyle
-        secondaryTextStyle = n.style.secondaryTextStyle
-
+        designName = n.name
+        styleDraft = StyleDraft(from: n.style)
         lastSavedAt = n.updatedAt
+
+        if n.matchedSet != nil {
+            matchedSetEnabled = true
+
+            let smallFlat = n.resolved(for: .systemSmall)
+            let mediumFlat = n.resolved(for: .systemMedium)
+            let largeFlat = n.resolved(for: .systemLarge)
+
+            matchedDrafts = MatchedDrafts(
+                small: FamilyDraft(from: smallFlat),
+                medium: FamilyDraft(from: mediumFlat),
+                large: FamilyDraft(from: largeFlat)
+            )
+
+            baseDraft = matchedDrafts.medium
+        } else {
+            matchedSetEnabled = false
+            baseDraft = FamilyDraft(from: n)
+            matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+        }
     }
 
     private func draftSpec(id: UUID) -> WidgetSpec {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = designName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
 
-        let symbolSpec: SymbolSpec? = {
-            let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !symName.isEmpty else { return nil }
-            return SymbolSpec(
-                name: symName,
-                size: symbolSize,
-                weight: symbolWeight,
-                renderingMode: symbolRenderingMode,
-                tint: symbolTint,
-                placement: symbolPlacement
+        let style = styleDraft.toStyleSpec()
+
+        if matchedSetEnabled {
+            let base = matchedDrafts.medium
+            let baseSpec = base.toFlatSpec(
+                id: id,
+                name: finalName,
+                style: style,
+                updatedAt: lastSavedAt ?? Date()
             )
-        }()
 
-        let imageSpec: ImageSpec? = {
-            let fn = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !fn.isEmpty else { return nil }
-            return ImageSpec(
-                fileName: fn,
-                contentMode: imageContentMode,
-                height: imageHeight,
-                cornerRadius: imageCornerRadius
+            let matched = WidgetSpecMatchedSet(
+                small: matchedDrafts.small.toVariantSpec(),
+                medium: nil,
+                large: matchedDrafts.large.toVariantSpec()
             )
-        }()
 
-        let layout = LayoutSpec(
-            axis: axis,
-            alignment: alignment,
-            spacing: spacing,
-            primaryLineLimitSmall: primaryLineLimitSmall,
-            primaryLineLimit: primaryLineLimit,
-            secondaryLineLimit: secondaryLineLimit
-        )
-
-        let style = StyleSpec(
-            padding: padding,
-            cornerRadius: cornerRadius,
-            background: background,
-            accent: accent,
-            nameTextStyle: nameTextStyle,
-            primaryTextStyle: primaryTextStyle,
-            secondaryTextStyle: secondaryTextStyle
-        )
-
-        return WidgetSpec(
-            id: id,
-            name: trimmedName.isEmpty ? "WidgetWeaver" : trimmedName,
-            primaryText: trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary,
-            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
-            updatedAt: lastSavedAt ?? Date(),
-            symbol: symbolSpec,
-            image: imageSpec,
-            layout: layout,
-            style: style
-        )
-        .normalised()
+            var out = baseSpec
+            out.matchedSet = matched
+            return out.normalised()
+        } else {
+            let out = baseDraft.toFlatSpec(
+                id: id,
+                name: finalName,
+                style: style,
+                updatedAt: lastSavedAt ?? Date()
+            )
+            return out.normalised()
+        }
     }
 
     // MARK: - Photos import
@@ -764,7 +799,9 @@ struct ContentView: View {
             try AppGroup.writeUIImage(uiImage, fileName: fileName, compressionQuality: 0.85)
 
             await MainActor.run {
-                imageFileName = fileName
+                var d = currentFamilyDraft()
+                d.imageFileName = fileName
+                setCurrentFamilyDraft(d)
                 pickedPhoto = nil
             }
         } catch {
@@ -788,11 +825,7 @@ struct ContentView: View {
 
         lastSavedAt = spec.updatedAt
         defaultSpecID = store.defaultSpecID()
-
-        saveStatusMessage = makeDefault
-            ? "Saved and set as default. Widgets refreshed."
-            : "Saved. Widgets refreshed."
-
+        saveStatusMessage = makeDefault ? "Saved and set as default. Widgets refreshed." : "Saved.\nWidgets refreshed."
         lastWidgetRefreshAt = Date()
         refreshSavedSpecs(preservingSelection: true)
     }
@@ -800,6 +833,7 @@ struct ContentView: View {
     private func refreshWidgets() {
         WidgetCenter.shared.reloadAllTimelines()
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+
         if #available(iOS 17.0, *) {
             WidgetCenter.shared.invalidateConfigurationRecommendations()
         }
@@ -815,7 +849,6 @@ struct ContentView: View {
         spec.name = "New Design"
 
         store.save(spec, makeDefault: false)
-
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
@@ -831,7 +864,6 @@ struct ContentView: View {
         spec.name = "Copy of \(base.name)"
 
         store.save(spec, makeDefault: false)
-
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
@@ -840,12 +872,10 @@ struct ContentView: View {
 
     private func deleteCurrentDesign() {
         store.delete(id: selectedSpecID)
-
         refreshSavedSpecs(preservingSelection: false)
         loadSelected()
-
         lastWidgetRefreshAt = Date()
-        saveStatusMessage = "Deleted design. Widgets refreshed."
+        saveStatusMessage = "Deleted design.\nWidgets refreshed."
     }
 
     // MARK: - AI
@@ -853,7 +883,6 @@ struct ContentView: View {
     @MainActor
     private func generateNewDesignFromPrompt() async {
         aiStatusMessage = ""
-
         let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
 
@@ -866,14 +895,13 @@ struct ContentView: View {
 
         defaultSpecID = store.defaultSpecID()
         lastWidgetRefreshAt = Date()
-
         aiStatusMessage = result.note
         aiPrompt = ""
 
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
-        saveStatusMessage = "Generated design saved. Widgets refreshed."
+        saveStatusMessage = "Generated design saved.\nWidgets refreshed."
     }
 
     @MainActor
@@ -883,23 +911,40 @@ struct ContentView: View {
         let instruction = aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else { return }
 
-        let base = draftSpec(id: selectedSpecID)
-        let result = await WidgetSpecAIService.shared.applyPatch(to: base, instruction: instruction)
+        // Patch the currently edited size (and shared style).
+        let style = styleDraft.toStyleSpec()
+        let current = currentFamilyDraft().toFlatSpec(
+            id: selectedSpecID,
+            name: designName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "WidgetWeaver" : designName.trimmingCharacters(in: .whitespacesAndNewlines),
+            style: style,
+            updatedAt: Date()
+        )
 
-        var spec = result.spec.normalised()
-        spec.updatedAt = Date()
+        let result = await WidgetSpecAIService.shared.applyPatch(to: current, instruction: instruction)
+        let patched = result.spec.normalised()
 
-        store.save(spec, makeDefault: (defaultSpecID == selectedSpecID))
+        // Apply back to drafts:
+        designName = patched.name
+        styleDraft = StyleDraft(from: patched.style)
 
+        var d = currentFamilyDraft()
+        d.apply(flatSpec: patched)
+        setCurrentFamilyDraft(d)
+
+        // Save combined spec back to store.
+        var combined = draftSpec(id: selectedSpecID)
+        combined.updatedAt = Date()
+        combined = combined.normalised()
+
+        store.save(combined, makeDefault: (defaultSpecID == selectedSpecID))
         defaultSpecID = store.defaultSpecID()
-        lastWidgetRefreshAt = Date()
 
+        lastWidgetRefreshAt = Date()
         aiStatusMessage = result.note
         aiPatchInstruction = ""
-
         refreshSavedSpecs(preservingSelection: true)
-        applySpec(spec)
-        saveStatusMessage = "Patch saved. Widgets refreshed."
+        applySpec(combined)
+        saveStatusMessage = "Patch saved.\nWidgets refreshed."
     }
 
     // MARK: - Appearance
@@ -910,8 +955,6 @@ struct ContentView: View {
         guard !didApplyAppearance else { return }
         didApplyAppearance = true
 
-        // Keep the navigation bar visually "invisible" at both scroll-edge and scrolled states.
-        // This avoids the abrupt "bar appears" transition when the large title collapses.
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
         appearance.backgroundEffect = nil
@@ -928,535 +971,658 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Preview Dock
+// MARK: - Draft Models
 
-private struct WidgetPreviewDock: View {
-    enum Presentation {
-        case dock
-        case sidebar
-    }
+private enum EditingFamily: String, CaseIterable, Identifiable {
+    case small
+    case medium
+    case large
 
-    static func reservedInsetHeight(verticalSizeClass: UserInterfaceSizeClass?) -> CGFloat {
-        collapsedCardHeight(verticalSizeClass: verticalSizeClass) + outerBottomPadding
-    }
+    var id: String { rawValue }
 
-    private static let outerBottomPadding: CGFloat = 10
-
-    private static func collapsedCardHeight(verticalSizeClass: UserInterfaceSizeClass?) -> CGFloat {
-        (verticalSizeClass == .compact) ? 62 : 72
-    }
-
-    let spec: WidgetSpec
-    @Binding var family: WidgetFamily
-    let presentation: Presentation
-
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-
-    @SceneStorage("widgetPreviewDock.isExpanded") private var isExpanded: Bool = false
-
-    var body: some View {
-        switch presentation {
-        case .sidebar:
-            expandedCard
-        case .dock:
-            dockCard
-        }
-    }
-
-    private var dockCard: some View {
-        ZStack {
-            if isExpanded {
-                expandedCard
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else {
-                collapsedCard
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy(duration: 0.25), value: isExpanded)
-        .gesture(dragGesture)
-        .onChange(of: verticalSizeClass) { _, newValue in
-            guard presentation == .dock else { return }
-            if newValue == .compact {
-                setExpanded(false)
-            }
-        }
-    }
-
-    private var expandedCard: some View {
-        VStack(spacing: 12) {
-            if presentation == .dock {
-                grabber
-                    .padding(.top, 2)
-                    .padding(.bottom, 2)
-            }
-
-            HStack(spacing: 10) {
-                Text("Preview")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 0)
-
-                Picker("Size", selection: $family) {
-                    Text("Small").tag(WidgetFamily.systemSmall)
-                    Text("Medium").tag(WidgetFamily.systemMedium)
-                    Text("Large").tag(WidgetFamily.systemLarge)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(maxWidth: presentation == .sidebar ? 280 : 240)
-
-                if presentation == .dock {
-                    Button {
-                        setExpanded(false)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Collapse preview")
-                }
-            }
-
-            WidgetPreview(spec: spec, family: family, maxHeight: expandedPreviewMaxHeight)
-
-            Text("Preview is approximate; final widget size is device-dependent.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(12)
-        .background(.regularMaterial, in: cardShape)
-        .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
-        .shadow(color: .black.opacity(presentation == .dock ? 0.10 : 0.06), radius: 18, y: 8)
-    }
-
-    private var collapsedCard: some View {
-        HStack(spacing: 12) {
-            WidgetPreviewThumbnail(spec: spec, family: family, height: collapsedThumbnailHeight)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Preview")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Text(familyLabel)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            familyMenu
-
-            Image(systemName: "chevron.up")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(height: collapsedHeight)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: cardShape)
-        .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
-        .contentShape(cardShape)
-        .onTapGesture {
-            setExpanded(true)
-        }
-    }
-
-    private var grabber: some View {
-        Capsule()
-            .fill(.secondary.opacity(0.35))
-            .frame(width: 36, height: 5)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                toggleExpanded()
-            }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel(isExpanded ? "Collapse preview" : "Expand preview")
-    }
-
-    private var familyMenu: some View {
-        Menu {
-            Button {
-                family = .systemSmall
-            } label: {
-                Label("Small", systemImage: "square")
-            }
-            Button {
-                family = .systemMedium
-            } label: {
-                Label("Medium", systemImage: "rectangle")
-            }
-            Button {
-                family = .systemLarge
-            } label: {
-                Label("Large", systemImage: "rectangle.portrait")
-            }
-        } label: {
-            Text(familyAbbreviation)
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .global)
-            .onEnded { value in
-                let dy = value.translation.height
-                if dy > 24 {
-                    setExpanded(false)
-                } else if dy < -24 {
-                    setExpanded(true)
-                }
-            }
-    }
-
-    private var cardShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-    }
-
-    private var collapsedHeight: CGFloat {
-        Self.collapsedCardHeight(verticalSizeClass: verticalSizeClass)
-    }
-
-    private var collapsedThumbnailHeight: CGFloat {
-        (verticalSizeClass == .compact) ? 30 : 38
-    }
-
-    private var expandedPreviewMaxHeight: CGFloat {
-        switch presentation {
-        case .sidebar:
-            return 420
-        case .dock:
-            return (verticalSizeClass == .compact) ? 150 : 260
-        }
-    }
-
-    private var familyLabel: String {
-        switch family {
-        case .systemSmall:
-            return "Small"
-        case .systemMedium:
-            return "Medium"
-        case .systemLarge:
-            return "Large"
-        default:
-            return "Small"
-        }
-    }
-
-    private var familyAbbreviation: String {
-        switch family {
-        case .systemSmall:
-            return "S"
-        case .systemMedium:
-            return "M"
-        case .systemLarge:
-            return "L"
-        default:
-            return "S"
-        }
-    }
-
-    private func toggleExpanded() {
-        setExpanded(!isExpanded)
-    }
-
-    private func setExpanded(_ expanded: Bool) {
-        guard presentation == .dock else { return }
-        withAnimation(.snappy(duration: 0.25)) {
-            isExpanded = expanded
+    init?(widgetFamily: WidgetFamily) {
+        switch widgetFamily {
+        case .systemSmall: self = .small
+        case .systemMedium: self = .medium
+        case .systemLarge: self = .large
+        default: return nil
         }
     }
 }
 
-@MainActor
-private struct WidgetPreview: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    var maxHeight: CGFloat?
+private struct StyleDraft: Equatable {
+    var padding: Double
+    var cornerRadius: Double
+    var background: BackgroundToken
+    var accent: AccentToken
+    var nameTextStyle: TextStyleToken
+    var primaryTextStyle: TextStyleToken
+    var secondaryTextStyle: TextStyleToken
 
-    var body: some View {
-        GeometryReader { proxy in
-            let base = Self.widgetSize(for: family)
+    static let defaultDraft = StyleDraft(from: .defaultStyle)
 
-            let scaleX = proxy.size.width / base.width
-            let scaleY = proxy.size.height / base.height
-            let scale = min(scaleX, scaleY)
-
-            WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-                // Render at the real widget size first…
-                .frame(width: base.width, height: base.height)
-                // …then scale the whole rendered widget up/down.
-                .scaleEffect(scale, anchor: .center)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
-        }
-        .frame(height: maxHeight)
-        .clipped()
+    init(from style: StyleSpec) {
+        self.padding = style.padding
+        self.cornerRadius = style.cornerRadius
+        self.background = style.background
+        self.accent = style.accent
+        self.nameTextStyle = style.nameTextStyle
+        self.primaryTextStyle = style.primaryTextStyle
+        self.secondaryTextStyle = style.secondaryTextStyle
     }
-    
+
+    func toStyleSpec() -> StyleSpec {
+        StyleSpec(
+            padding: padding,
+            cornerRadius: cornerRadius,
+            background: background,
+            accent: accent,
+            nameTextStyle: nameTextStyle,
+            primaryTextStyle: primaryTextStyle,
+            secondaryTextStyle: secondaryTextStyle
+        )
+    }
+}
+
+private struct FamilyDraft: Equatable, @unchecked Sendable {
+
+    var primaryText: String
+    var secondaryText: String
+
+    var symbolName: String
+    var symbolPlacement: SymbolPlacementToken
+    var symbolSize: Double
+    var symbolWeight: SymbolWeightToken
+    var symbolRenderingMode: SymbolRenderingModeToken
+    var symbolTint: SymbolTintToken
+
+    var imageFileName: String
+    var imageContentMode: ImageContentModeToken
+    var imageHeight: Double
+    var imageCornerRadius: Double
+
+    var axis: LayoutAxisToken
+    var alignment: LayoutAlignmentToken
+    var spacing: Double
+    var primaryLineLimitSmall: Int
+    var primaryLineLimit: Int
+    var secondaryLineLimit: Int
+
+    static let defaultDraft: FamilyDraft = {
+        FamilyDraft(from: WidgetSpec.defaultSpec())
+    }()
+
+    init(from spec: WidgetSpec) {
+        let s = spec.normalised()
+
+        self.primaryText = s.primaryText
+        self.secondaryText = s.secondaryText ?? ""
+
+        if let sym = s.symbol {
+            self.symbolName = sym.name
+            self.symbolPlacement = sym.placement
+            self.symbolSize = sym.size
+            self.symbolWeight = sym.weight
+            self.symbolRenderingMode = sym.renderingMode
+            self.symbolTint = sym.tint
+        } else {
+            self.symbolName = ""
+            self.symbolPlacement = .beforeName
+            self.symbolSize = 18
+            self.symbolWeight = .semibold
+            self.symbolRenderingMode = .hierarchical
+            self.symbolTint = .accent
+        }
+
+        if let img = s.image {
+            self.imageFileName = img.fileName
+            self.imageContentMode = img.contentMode
+            self.imageHeight = img.height
+            self.imageCornerRadius = img.cornerRadius
+        } else {
+            self.imageFileName = ""
+            self.imageContentMode = .fill
+            self.imageHeight = 120
+            self.imageCornerRadius = 16
+        }
+
+        self.axis = s.layout.axis
+        self.alignment = s.layout.alignment
+        self.spacing = s.layout.spacing
+        self.primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        self.primaryLineLimit = s.layout.primaryLineLimit
+        self.secondaryLineLimit = s.layout.secondaryLineLimit
+    }
+
+    mutating func apply(flatSpec spec: WidgetSpec) {
+        let s = spec.normalised()
+
+        primaryText = s.primaryText
+        secondaryText = s.secondaryText ?? ""
+
+        if let sym = s.symbol {
+            symbolName = sym.name
+            symbolPlacement = sym.placement
+            symbolSize = sym.size
+            symbolWeight = sym.weight
+            symbolRenderingMode = sym.renderingMode
+            symbolTint = sym.tint
+        } else {
+            symbolName = ""
+        }
+
+        if let img = s.image {
+            imageFileName = img.fileName
+            imageContentMode = img.contentMode
+            imageHeight = img.height
+            imageCornerRadius = img.cornerRadius
+        } else {
+            imageFileName = ""
+        }
+
+        axis = s.layout.axis
+        alignment = s.layout.alignment
+        spacing = s.layout.spacing
+        primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        primaryLineLimit = s.layout.primaryLineLimit
+        secondaryLineLimit = s.layout.secondaryLineLimit
+    }
+
+    func toLayoutSpec() -> LayoutSpec {
+        LayoutSpec(
+            axis: axis,
+            alignment: alignment,
+            spacing: spacing,
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
+        )
+    }
+
+    func toSymbolSpecOrNil() -> SymbolSpec? {
+        let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !symName.isEmpty else { return nil }
+
+        return SymbolSpec(
+            name: symName,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint,
+            placement: symbolPlacement
+        )
+    }
+
+    func toImageSpecOrNil() -> ImageSpec? {
+        let fn = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fn.isEmpty else { return nil }
+
+        return ImageSpec(
+            fileName: fn,
+            contentMode: imageContentMode,
+            height: imageHeight,
+            cornerRadius: imageCornerRadius
+        )
+    }
+
+    func secondaryTextOrNil() -> String? {
+        let trimmed = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func primaryTextCleaned() -> String {
+        let trimmed = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Hello" : trimmed
+    }
+
+    func toFlatSpec(id: UUID, name: String, style: StyleSpec, updatedAt: Date) -> WidgetSpec {
+        WidgetSpec(
+            id: id,
+            name: name,
+            primaryText: primaryTextCleaned(),
+            secondaryText: secondaryTextOrNil(),
+            updatedAt: updatedAt,
+            symbol: toSymbolSpecOrNil(),
+            image: toImageSpecOrNil(),
+            layout: toLayoutSpec(),
+            style: style,
+            matchedSet: nil
+        )
+    }
+
+    func toVariantSpec() -> WidgetSpecVariant {
+        WidgetSpecVariant(
+            primaryText: primaryTextCleaned(),
+            secondaryText: secondaryTextOrNil(),
+            symbol: toSymbolSpecOrNil(),
+            image: toImageSpecOrNil(),
+            layout: toLayoutSpec()
+        )
+    }
+}
+
+private struct MatchedDrafts: Equatable {
+    var small: FamilyDraft
+    var medium: FamilyDraft
+    var large: FamilyDraft
+
+    subscript(_ family: EditingFamily) -> FamilyDraft {
+        get {
+            switch family {
+            case .small: return small
+            case .medium: return medium
+            case .large: return large
+            }
+        }
+        set {
+            switch family {
+            case .small: small = newValue
+            case .medium: medium = newValue
+            case .large: large = newValue
+            }
+        }
+    }
+}
+
+// MARK: - Preview Dock (unchanged)
+
+private extension ContentView {
+
+    private struct WidgetPreviewDock: View {
+        enum Presentation { case dock, sidebar }
+
+        static func reservedInsetHeight(verticalSizeClass: UserInterfaceSizeClass?) -> CGFloat {
+            collapsedCardHeight(verticalSizeClass: verticalSizeClass) + outerBottomPadding
+        }
+
+        private static let outerBottomPadding: CGFloat = 10
+
+        private static func collapsedCardHeight(verticalSizeClass: UserInterfaceSizeClass?) -> CGFloat {
+            (verticalSizeClass == .compact) ? 62 : 72
+        }
+
+        let spec: WidgetSpec
+        @Binding var family: WidgetFamily
+        let presentation: Presentation
+
+        @Environment(\.verticalSizeClass) private var verticalSizeClass
+        @SceneStorage("widgetPreviewDock.isExpanded") private var isExpanded: Bool = false
+
+        var body: some View {
+            switch presentation {
+            case .sidebar: expandedCard
+            case .dock: dockCard
+            }
+        }
+
+        private var dockCard: some View {
+            ZStack {
+                if isExpanded {
+                    expandedCard
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    collapsedCard
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: isExpanded)
+            .gesture(dragGesture)
+            .onChange(of: verticalSizeClass) { _, newValue in
+                guard presentation == .dock else { return }
+                if newValue == .compact { setExpanded(false) }
+            }
+        }
+
+        private var expandedCard: some View {
+            VStack(spacing: 12) {
+
+                if presentation == .dock {
+                    grabber
+                        .padding(.top, 2)
+                        .padding(.bottom, 2)
+                }
+
+                HStack(spacing: 10) {
+                    Text("Preview")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Picker("Size", selection: $family) {
+                        Text("Small").tag(WidgetFamily.systemSmall)
+                        Text("Medium").tag(WidgetFamily.systemMedium)
+                        Text("Large").tag(WidgetFamily.systemLarge)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(maxWidth: presentation == .sidebar ? 280 : 240)
+
+                    if presentation == .dock {
+                        Button { setExpanded(false) } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse preview")
+                    }
+                }
+
+                WidgetPreview(spec: spec, family: family, maxHeight: expandedPreviewMaxHeight)
+
+                Text("Preview is approximate; final widget size is device-dependent.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(.regularMaterial, in: cardShape)
+            .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
+            .shadow(color: .black.opacity(presentation == .dock ? 0.10 : 0.06), radius: 18, y: 8)
+        }
+
+        private var collapsedCard: some View {
+            HStack(spacing: 12) {
+                WidgetPreviewThumbnail(spec: spec, family: family, height: collapsedThumbnailHeight)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preview")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text(familyLabel)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                familyMenu
+
+                Image(systemName: "chevron.up")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(height: collapsedHeight)
+            .frame(maxWidth: .infinity)
+            .background(.regularMaterial, in: cardShape)
+            .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
+            .contentShape(cardShape)
+            .onTapGesture { setExpanded(true) }
+        }
+
+        private var grabber: some View {
+            Capsule()
+                .fill(.secondary.opacity(0.35))
+                .frame(width: 36, height: 5)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { toggleExpanded() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(isExpanded ? "Collapse preview" : "Expand preview")
+        }
+
+        private var familyMenu: some View {
+            Menu {
+                Button { family = .systemSmall } label: { Label("Small", systemImage: "square") }
+                Button { family = .systemMedium } label: { Label("Medium", systemImage: "rectangle") }
+                Button { family = .systemLarge } label: { Label("Large", systemImage: "rectangle.portrait") }
+            } label: {
+                Text(familyAbbreviation)
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+
+        private var dragGesture: some Gesture {
+            DragGesture(minimumDistance: 10, coordinateSpace: .global)
+                .onEnded { value in
+                    let dy = value.translation.height
+                    if dy > 24 {
+                        setExpanded(false)
+                    } else if dy < -24 {
+                        setExpanded(true)
+                    }
+                }
+        }
+
+        private var cardShape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+        }
+
+        private var collapsedHeight: CGFloat {
+            Self.collapsedCardHeight(verticalSizeClass: verticalSizeClass)
+        }
+
+        private var collapsedThumbnailHeight: CGFloat {
+            (verticalSizeClass == .compact) ? 30 : 38
+        }
+
+        private var expandedPreviewMaxHeight: CGFloat {
+            switch presentation {
+            case .sidebar:
+                return 420
+            case .dock:
+                return (verticalSizeClass == .compact) ? 150 : 260
+            }
+        }
+
+        private var familyLabel: String {
+            switch family {
+            case .systemSmall: return "Small"
+            case .systemMedium: return "Medium"
+            case .systemLarge: return "Large"
+            default: return "Small"
+            }
+        }
+
+        private var familyAbbreviation: String {
+            switch family {
+            case .systemSmall: return "S"
+            case .systemMedium: return "M"
+            case .systemLarge: return "L"
+            default: return "S"
+            }
+        }
+
+        private func toggleExpanded() {
+            setExpanded(!isExpanded)
+        }
+
+        private func setExpanded(_ expanded: Bool) {
+            guard presentation == .dock else { return }
+            withAnimation(.snappy(duration: 0.25)) {
+                isExpanded = expanded
+            }
+        }
+    }
+
     @MainActor
-    static func widgetSize(for family: WidgetFamily) -> CGSize {
-        let sizes = WidgetPreviewSizing.sizesForCurrentDevice()
-        switch family {
-        case .systemSmall:
-            return sizes.small
-        case .systemMedium:
-            return sizes.medium
-        case .systemLarge:
-            return sizes.large
-        default:
-            return sizes.small
+    private struct WidgetPreview: View {
+        let spec: WidgetSpec
+        let family: WidgetFamily
+        var maxHeight: CGFloat?
+
+        var body: some View {
+            GeometryReader { proxy in
+                let base = Self.widgetSize(for: family)
+                let scaleX = proxy.size.width / base.width
+                let scaleY = proxy.size.height / base.height
+                let scale = min(scaleX, scaleY)
+
+                WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+                    .frame(width: base.width, height: base.height)
+                    .scaleEffect(scale, anchor: .center)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
+            }
+            .frame(height: maxHeight)
+            .clipped()
         }
-    }
-    
-    private struct WidgetPreviewSizing {
+
+        @MainActor
+        static func widgetSize(for family: WidgetFamily) -> CGSize {
+            let sizes = WidgetPreviewSizing.sizesForCurrentDevice()
+            switch family {
+            case .systemSmall: return sizes.small
+            case .systemMedium: return sizes.medium
+            case .systemLarge: return sizes.large
+            default: return sizes.small
+            }
+        }
+
+        private struct WidgetPreviewSizing {
             struct Sizes {
                 let small: CGSize
                 let medium: CGSize
                 let large: CGSize
             }
 
-        @MainActor
-        static func sizesForCurrentDevice() -> Sizes {
-            let screen = currentScreen()
+            @MainActor
+            static func sizesForCurrentDevice() -> Sizes {
+                let screen = currentScreen()
+                let native = screen.nativeBounds.size
+                let w = Int(min(native.width, native.height))
+                let h = Int(max(native.width, native.height))
+                let key = "\(w)x\(h)"
 
-            let native = screen.nativeBounds.size
-            let w = Int(min(native.width, native.height))
-            let h = Int(max(native.width, native.height))
-            let key = "\(w)x\(h)"
+                if let sizes = knownSizesByNativeResolution[key] {
+                    return sizes
+                }
 
-            if let sizes = knownSizesByNativeResolution[key] {
-                return sizes
-            }
+                let points = screen.bounds.size
+                let maxSide = max(points.width, points.height)
+                let minSide = min(points.width, points.height)
 
-            // Fallbacks for unknown/new devices:
-            let points = screen.bounds.size
-            let maxSide = max(points.width, points.height)
-            let minSide = min(points.width, points.height)
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    if minSide >= 1024 || maxSide >= 1366 {
+                        return Sizes(
+                            small: CGSize(width: 170, height: 170),
+                            medium: CGSize(width: 379, height: 170),
+                            large: CGSize(width: 379, height: 379)
+                        )
+                    } else {
+                        return Sizes(
+                            small: CGSize(width: 155, height: 155),
+                            medium: CGSize(width: 342, height: 155),
+                            large: CGSize(width: 342, height: 342)
+                        )
+                    }
+                }
 
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                if minSide >= 1024 || maxSide >= 1366 {
+                if maxSide >= 926 {
                     return Sizes(
                         small: CGSize(width: 170, height: 170),
-                        medium: CGSize(width: 379, height: 170),
-                        large: CGSize(width: 379, height: 379)
+                        medium: CGSize(width: 364, height: 170),
+                        large: CGSize(width: 364, height: 382)
+                    )
+                } else if maxSide >= 844 {
+                    return Sizes(
+                        small: CGSize(width: 158, height: 158),
+                        medium: CGSize(width: 338, height: 158),
+                        large: CGSize(width: 338, height: 354)
+                    )
+                } else if maxSide >= 812 {
+                    return Sizes(
+                        small: CGSize(width: 155, height: 155),
+                        medium: CGSize(width: 329, height: 155),
+                        large: CGSize(width: 329, height: 345)
+                    )
+                } else if maxSide >= 736 {
+                    return Sizes(
+                        small: CGSize(width: 157, height: 157),
+                        medium: CGSize(width: 348, height: 157),
+                        large: CGSize(width: 348, height: 351)
+                    )
+                } else if maxSide >= 667 {
+                    return Sizes(
+                        small: CGSize(width: 148, height: 148),
+                        medium: CGSize(width: 321, height: 148),
+                        large: CGSize(width: 321, height: 324)
                     )
                 } else {
                     return Sizes(
-                        small: CGSize(width: 155, height: 155),
-                        medium: CGSize(width: 342, height: 155),
-                        large: CGSize(width: 342, height: 342)
+                        small: CGSize(width: 141, height: 141),
+                        medium: CGSize(width: 292, height: 141),
+                        large: CGSize(width: 292, height: 311)
                     )
                 }
             }
 
-            if maxSide >= 926 {
-                return Sizes(
-                    small: CGSize(width: 170, height: 170),
-                    medium: CGSize(width: 364, height: 170),
-                    large: CGSize(width: 364, height: 382)
-                )
-            } else if maxSide >= 844 {
-                return Sizes(
-                    small: CGSize(width: 158, height: 158),
-                    medium: CGSize(width: 338, height: 158),
-                    large: CGSize(width: 338, height: 354)
-                )
-            } else if maxSide >= 812 {
-                return Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 329, height: 155),
-                    large: CGSize(width: 329, height: 345)
-                )
-            } else if maxSide >= 736 {
-                return Sizes(
-                    small: CGSize(width: 157, height: 157),
-                    medium: CGSize(width: 348, height: 157),
-                    large: CGSize(width: 348, height: 351)
-                )
-            } else if maxSide >= 667 {
-                return Sizes(
-                    small: CGSize(width: 148, height: 148),
-                    medium: CGSize(width: 321, height: 148),
-                    large: CGSize(width: 321, height: 324)
-                )
-            } else {
-                return Sizes(
-                    small: CGSize(width: 141, height: 141),
-                    medium: CGSize(width: 292, height: 141),
-                    large: CGSize(width: 292, height: 311)
-                )
-            }
-        }
+            @MainActor
+            private static func currentScreen() -> UIScreen {
+                if let activeScene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first(where: { $0.activationState == .foregroundActive }) {
+                    return activeScene.screen
+                }
 
-        @MainActor
-        private static func currentScreen() -> UIScreen {
-            if let activeScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive }) {
-                return activeScene.screen
+                if let anyScene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first {
+                    return anyScene.screen
+                }
+
+                return UIScreen()
             }
 
-            if let anyScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first {
-                return anyScene.screen
-            }
-
-            // Practically unreachable on iOS, but keeps the compiler happy.
-            return UIScreen()
-        }
-
-            // Sizes measured via GeometryReader on real devices (points), keyed by native pixel resolution.
             private static let knownSizesByNativeResolution: [String: Sizes] = [
                 // MARK: - iPhone
-                "1170x2532": Sizes(
-                    small: CGSize(width: 158, height: 158),
-                    medium: CGSize(width: 338, height: 158),
-                    large: CGSize(width: 338, height: 354)
-                ), // 12/13/14/15 (non‑Pro 6.1")
-
-                "1179x2556": Sizes(
-                    small: CGSize(width: 158, height: 158),
-                    medium: CGSize(width: 338, height: 158),
-                    large: CGSize(width: 338, height: 354)
-                ), // 14/15 Pro (6.1")
-
-                "1080x2340": Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 329, height: 155),
-                    large: CGSize(width: 329, height: 345)
-                ), // 12/13 mini
-
-                "1284x2778": Sizes(
-                    small: CGSize(width: 170, height: 170),
-                    medium: CGSize(width: 364, height: 170),
-                    large: CGSize(width: 364, height: 382)
-                ), // 12/13 Pro Max
-
-                "1290x2796": Sizes(
-                    small: CGSize(width: 170, height: 170),
-                    medium: CGSize(width: 364, height: 170),
-                    large: CGSize(width: 364, height: 382)
-                ), // 14/15 Pro Max (+/Max 6.7")
-
-                "828x1792": Sizes(
-                    small: CGSize(width: 169, height: 169),
-                    medium: CGSize(width: 360, height: 169),
-                    large: CGSize(width: 360, height: 379)
-                ), // XR / 11
-
-                "1125x2436": Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 329, height: 155),
-                    large: CGSize(width: 329, height: 345)
-                ), // X / XS / 11 Pro
-
-                "1242x2688": Sizes(
-                    small: CGSize(width: 169, height: 169),
-                    medium: CGSize(width: 360, height: 169),
-                    large: CGSize(width: 360, height: 379)
-                ), // XS Max / 11 Pro Max
-
-                "750x1334": Sizes(
-                    small: CGSize(width: 148, height: 148),
-                    medium: CGSize(width: 321, height: 148),
-                    large: CGSize(width: 321, height: 324)
-                ), // 6/7/8/SE2/SE3
-
-                "1080x1920": Sizes(
-                    small: CGSize(width: 157, height: 157),
-                    medium: CGSize(width: 348, height: 157),
-                    large: CGSize(width: 348, height: 351)
-                ), // Plus (6/7/8 Plus)
-
-                "640x1136": Sizes(
-                    small: CGSize(width: 141, height: 141),
-                    medium: CGSize(width: 292, height: 141),
-                    large: CGSize(width: 292, height: 311)
-                ), // SE 1st gen / iPod touch
+                "1170x2532": Sizes(small: CGSize(width: 158, height: 158), medium: CGSize(width: 338, height: 158), large: CGSize(width: 338, height: 354)), // 12/13/14/15 (non‑Pro 6.1")
+                "1179x2556": Sizes(small: CGSize(width: 158, height: 158), medium: CGSize(width: 338, height: 158), large: CGSize(width: 338, height: 354)), // 14/15 Pro (6.1")
+                "1080x2340": Sizes(small: CGSize(width: 155, height: 155), medium: CGSize(width: 329, height: 155), large: CGSize(width: 329, height: 345)), // 12/13 mini
+                "1284x2778": Sizes(small: CGSize(width: 170, height: 170), medium: CGSize(width: 364, height: 170), large: CGSize(width: 364, height: 382)), // 12/13 Pro Max
+                "1290x2796": Sizes(small: CGSize(width: 170, height: 170), medium: CGSize(width: 364, height: 170), large: CGSize(width: 364, height: 382)), // 14/15 Pro Max
+                "828x1792": Sizes(small: CGSize(width: 169, height: 169), medium: CGSize(width: 360, height: 169), large: CGSize(width: 360, height: 379)), // XR / 11
+                "1125x2436": Sizes(small: CGSize(width: 155, height: 155), medium: CGSize(width: 329, height: 155), large: CGSize(width: 329, height: 345)), // X / XS / 11 Pro
+                "1242x2688": Sizes(small: CGSize(width: 169, height: 169), medium: CGSize(width: 360, height: 169), large: CGSize(width: 360, height: 379)), // XS Max / 11 Pro Max
+                "750x1334": Sizes(small: CGSize(width: 148, height: 148), medium: CGSize(width: 321, height: 148), large: CGSize(width: 321, height: 324)), // 6/7/8/SE2/SE3
+                "1080x1920": Sizes(small: CGSize(width: 157, height: 157), medium: CGSize(width: 348, height: 157), large: CGSize(width: 348, height: 351)), // Plus
+                "640x1136": Sizes(small: CGSize(width: 141, height: 141), medium: CGSize(width: 292, height: 141), large: CGSize(width: 292, height: 311)), // SE 1st gen
 
                 // MARK: - iPad
-                "2732x2048": Sizes(
-                    small: CGSize(width: 170, height: 170),
-                    medium: CGSize(width: 379, height: 170),
-                    large: CGSize(width: 379, height: 379)
-                ), // 12.9" iPad Pro
-
-                "2388x1668": Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 342, height: 155),
-                    large: CGSize(width: 342, height: 342)
-                ), // 11" iPad Pro
-
-                "2360x1640": Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 342, height: 155),
-                    large: CGSize(width: 342, height: 342)
-                ), // iPad Air 4/5
-
-                "2266x1488": Sizes(
-                    small: CGSize(width: 141, height: 141),
-                    medium: CGSize(width: 306, height: 141),
-                    large: CGSize(width: 306, height: 306)
-                ), // iPad mini 6
-
-                "2224x1668": Sizes(
-                    small: CGSize(width: 150, height: 150),
-                    medium: CGSize(width: 328, height: 150),
-                    large: CGSize(width: 328, height: 328)
-                ), // iPad Pro 10.5"
-
-                "2160x1620": Sizes(
-                    small: CGSize(width: 146, height: 146),
-                    medium: CGSize(width: 321, height: 146),
-                    large: CGSize(width: 321, height: 321)
-                ), // iPad 7/8/9
-
-                "2048x1536": Sizes(
-                    small: CGSize(width: 141, height: 141),
-                    medium: CGSize(width: 306, height: 141),
-                    large: CGSize(width: 306, height: 306)
-                ) // older iPads / iPad mini 5 bucket
+                "2732x2048": Sizes(small: CGSize(width: 170, height: 170), medium: CGSize(width: 379, height: 170), large: CGSize(width: 379, height: 379)), // 12.9" iPad Pro
+                "2388x1668": Sizes(small: CGSize(width: 155, height: 155), medium: CGSize(width: 342, height: 155), large: CGSize(width: 342, height: 342)), // 11" iPad Pro
+                "2360x1640": Sizes(small: CGSize(width: 155, height: 155), medium: CGSize(width: 342, height: 155), large: CGSize(width: 342, height: 342)), // iPad Air 4/5
+                "2266x1488": Sizes(small: CGSize(width: 141, height: 141), medium: CGSize(width: 306, height: 141), large: CGSize(width: 306, height: 306)), // iPad mini 6
+                "2224x1668": Sizes(small: CGSize(width: 150, height: 150), medium: CGSize(width: 328, height: 150), large: CGSize(width: 328, height: 328)), // iPad Pro 10.5"
+                "2160x1620": Sizes(small: CGSize(width: 146, height: 146), medium: CGSize(width: 321, height: 146), large: CGSize(width: 321, height: 321)), // iPad 7/8/9
+                "2048x1536": Sizes(small: CGSize(width: 141, height: 141), medium: CGSize(width: 306, height: 141), large: CGSize(width: 306, height: 306))  // older iPads bucket
             ]
         }
     }
 
+    @MainActor
+    private struct WidgetPreviewThumbnail: View {
+        let spec: WidgetSpec
+        let family: WidgetFamily
+        var height: CGFloat
 
-@MainActor
-private struct WidgetPreviewThumbnail: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    var height: CGFloat
+        var body: some View {
+            let base = WidgetPreview.widgetSize(for: family)
+            let scale = height / base.height
+            let scaledWidth = base.width * scale
 
-    var body: some View {
-        let base = WidgetPreview.widgetSize(for: family)
-        let scale = height / base.height
-        let scaledWidth = base.width * scale
-
-        WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-            .frame(width: base.width, height: base.height)
-            .scaleEffect(scale, anchor: .center)
-            .frame(width: scaledWidth, height: height, alignment: .center)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.10))
-            )
-            .clipped()
+            WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+                .frame(width: base.width, height: base.height)
+                .scaleEffect(scale, anchor: .center)
+                .frame(width: scaledWidth, height: height, alignment: .center)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.primary.opacity(0.10))
+                )
+                .clipped()
+        }
     }
 }

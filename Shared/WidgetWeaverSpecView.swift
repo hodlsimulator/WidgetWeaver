@@ -17,6 +17,7 @@ public enum WidgetWeaverRenderContext: String, Codable, Hashable {
 }
 
 public struct WidgetWeaverSpecView: View {
+
     public let spec: WidgetSpec
     public let family: WidgetFamily
     public let context: WidgetWeaverRenderContext
@@ -32,9 +33,10 @@ public struct WidgetWeaverSpecView: View {
     }
 
     public var body: some View {
-        let spec = spec.normalised()
+        let spec = spec.resolved(for: family)
         let layout = spec.layout
         let style = spec.style
+
         let accent = style.accent.swiftUIColor
         let background = style.background.shapeStyle(accent: accent)
 
@@ -64,6 +66,7 @@ public struct WidgetWeaverSpecView: View {
 
     private func contentStack(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: layout.spacing) {
+
             if let img = spec.image {
                 bannerImage(img, style: style)
             }
@@ -112,15 +115,14 @@ public struct WidgetWeaverSpecView: View {
     private func symbolView(_ sym: SymbolSpec, accent: Color) -> some View {
         Image(systemName: sym.name)
             .symbolRenderingMode(sym.renderingMode.swiftUISymbolRenderingMode)
-            .foregroundStyle(
-                sym.tint == .accent ? accent : sym.tint.swiftUIColor
-            )
+            .foregroundStyle(sym.tint == .accent ? accent : sym.tint.swiftUIColor)
             .font(.system(size: sym.size, weight: sym.weight.swiftUIFontWeight))
             .accessibilityHidden(true)
     }
 
     private func bannerImage(_ image: ImageSpec, style: StyleSpec) -> some View {
         let requested = image.height.normalised().clamped(to: 40...240)
+
         let maxH: Double
         switch family {
         case .systemSmall:
@@ -132,6 +134,7 @@ public struct WidgetWeaverSpecView: View {
         default:
             maxH = 120
         }
+
         let h = min(requested, maxH)
 
         return Group {
@@ -199,8 +202,7 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         switch context {
         case .widget:
-            content
-                .containerBackground(background, for: .widget)
+            content.containerBackground(background, for: .widget)
         case .preview:
             content
                 .background(background)
