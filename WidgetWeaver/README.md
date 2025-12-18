@@ -29,6 +29,7 @@ WidgetWeaver supports both:
 ✅ **Matched sets (Small/Medium/Large)** with shared style/typography and per-size overrides (edited via the preview size picker)  
 ✅ **Variables + Shortcuts** (text templates + App Intents actions to update variables and refresh widgets)  
 ✅ **Sharing / import / export** (versioned exchange JSON; embeds images when available)  
+✅ About page with template gallery (starter + Pro), examples, and one-tap add  
 ✅ **Monetisation scaffolding** (StoreKit 2 Pro unlock + free-tier limits for designs; Pro-only matched sets + variables)
 
 ---
@@ -40,7 +41,8 @@ WidgetWeaver supports both:
    - `group.com.conornolan.widgetweaver`
 3. Run the app on a real device.
 4. Add the “WidgetWeaver” widget to the Home Screen (Small/Medium/Large).
-5. In the app, create/edit a design and tap **Save & Make Default** (recommended while iterating).
+5. Optional: open the toolbar menu (**…**) → **About** and add a template (fastest way to get started).
+6. In the app, create/edit a design and tap **Save & Make Default** (recommended while iterating).
 
 Per-widget selection:
 - Long-press the widget → **Edit Widget** → choose **Design**
@@ -63,6 +65,23 @@ Notes:
 
 ---
 
+## About page + templates
+
+WidgetWeaver includes an in-app **About** page that doubles as a template gallery and quick reference.
+
+In the app:
+- Open the toolbar menu (**…**) → **About**
+
+From there you can:
+- Browse **Starter** and **Pro** templates, each with Small/Medium/Large previews.
+- Add a template to your design library, optionally **Add & Make Default**.
+- Copy Variable template syntax + examples.
+- Copy AI prompt and patch ideas (for on-device generation).
+
+Template scope (what’s included today):
+- Templates only use capabilities already supported: **text**, optional **SF Symbol**, optional **photo banner** (picked manually), layout/style/typography tokens, optional **Matched Sets** (Pro), and optional **Variables + Shortcuts** (Pro).
+- No live external data sources are bundled yet (for example weather). If you want dynamic text/numbers today, use **Variables + Shortcuts**.
+
 ## Sharing / import / export
 
 WidgetWeaver can export one design or all designs as a single file, and import designs back into the app.
@@ -73,6 +92,7 @@ WidgetWeaver can export one design or all designs as a single file, and import d
 - **Widget refresh:** imports and exports trigger a widget refresh so changes show quickly.
 
 In the app:
+- Use the toolbar menu (**…**) → **About** to browse and add templates.
 - Use the toolbar menu (**…**) → **Share this design** / **Share all designs**.
 - Use **Import designs…** to bring designs back in.
 
@@ -148,6 +168,7 @@ Privacy:
   - In-app previews (Small/Medium/Large)
   - Manage a library of saved designs
   - Pick an optional image for a design
+  - About page (templates + examples)
   - Optional AI prompt/patch workflow
   - Variables store + App Intents (Shortcuts actions)
   - Sharing / import / export
@@ -250,6 +271,12 @@ Storage:
 - Optional embedded images (restored on import)
 - Import duplicates designs with new IDs to avoid overwriting
 
+### Milestone 7.5 — About page + template gallery (DONE)
+- Add an in-app About page that explains current capabilities
+- Starter + Pro template gallery with Small/Medium/Large previews
+- One-tap **Add** / **Add & Make Default** actions
+- Quick reference: Variables syntax + Shortcuts actions + AI prompt/patch ideas
+
 ### Milestone 8 — Monetisation (IN PROGRESS)
 - Free tier limits (max designs)
 - Pro unlock (StoreKit 2) for:
@@ -297,4 +324,5 @@ Storage:
 
 - Marketing version / build: `0.9.4 (2)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
+- About page: `WidgetWeaver/WidgetWeaverAboutView.swift`
 - Working principle: ship small commits where the app + widget always build and run

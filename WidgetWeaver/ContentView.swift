@@ -52,17 +52,18 @@ struct ContentView: View {
     enum ActiveSheet: Identifiable {
         case widgetHelp
         case pro
+        case about
 
         var id: Int {
             switch self {
             case .widgetHelp: return 1
             case .pro: return 2
+            case .about: return 3
             }
         }
     }
 
     @State var activeSheet: ActiveSheet?
-
     @State var showImportPicker: Bool = false
     @State var importInProgress: Bool = false
 
@@ -101,8 +102,23 @@ struct ContentView: View {
                 switch sheet {
                 case .widgetHelp:
                     WidgetWorkflowHelpView()
+
                 case .pro:
                     WidgetWeaverProView(manager: proManager)
+
+                case .about:
+                    WidgetWeaverAboutView(
+                        proManager: proManager,
+                        onAddTemplate: { spec, makeDefault in
+                            addTemplateDesign(spec, makeDefault: makeDefault)
+                        },
+                        onShowPro: {
+                            activeSheet = .pro
+                        },
+                        onShowWidgetHelp: {
+                            activeSheet = .widgetHelp
+                        }
+                    )
                 }
             }
             .fileImporter(

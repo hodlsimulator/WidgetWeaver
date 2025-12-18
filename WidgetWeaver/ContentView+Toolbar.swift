@@ -10,30 +10,40 @@ import SwiftUI
 extension ContentView {
     var toolbarMenu: some View {
         Menu {
-            Button {
-                activeSheet = .pro
-            } label: {
-                Label(proManager.isProUnlocked ? "WidgetWeaver Pro" : "Upgrade to Pro", systemImage: "crown.fill")
+            Button { activeSheet = .about } label: {
+                Label("About", systemImage: "info.circle")
             }
 
             Divider()
 
-            Button {
-                activeSheet = .widgetHelp
-            } label: {
+            Button { activeSheet = .pro } label: {
+                Label(proManager.isProUnlocked ? "WidgetWeaver Pro" : "Upgrade to Pro", systemImage: "crown.fill")
+            }
+
+            Button { activeSheet = .widgetHelp } label: {
                 Label("Widget Help", systemImage: "questionmark.circle")
             }
 
             Divider()
 
-            Button { createNewDesign() } label: { Label("New Design", systemImage: "plus") }
-            Button { duplicateCurrentDesign() } label: { Label("Duplicate Design", systemImage: "doc.on.doc") }
-                .disabled(savedSpecs.isEmpty)
+            Button { createNewDesign() } label: {
+                Label("New Design", systemImage: "plus")
+            }
+
+            Button { duplicateCurrentDesign() } label: {
+                Label("Duplicate Design", systemImage: "doc.on.doc")
+            }
+            .disabled(savedSpecs.isEmpty)
 
             Divider()
 
-            Button { saveSelected(makeDefault: true) } label: { Label("Save & Make Default", systemImage: "checkmark.circle") }
-            Button { saveSelected(makeDefault: false) } label: { Label("Save (Keep Default)", systemImage: "tray.and.arrow.down") }
+            Button { saveSelected(makeDefault: true) } label: {
+                Label("Save & Make Default", systemImage: "checkmark.circle")
+            }
+
+            Button { saveSelected(makeDefault: false) } label: {
+                Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
+            }
 
             Divider()
 
@@ -51,7 +61,9 @@ extension ContentView {
 
             Divider()
 
-            Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
+            Button { refreshWidgets() } label: {
+                Label("Refresh Widgets", systemImage: "arrow.clockwise")
+            }
 
             Divider()
 

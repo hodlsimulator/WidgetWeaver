@@ -1,0 +1,1462 @@
+//
+//  WidgetWeaverAboutView.swift
+//  WidgetWeaver
+//
+//  Created by . . on 12/18/25.
+//
+
+import Foundation
+import SwiftUI
+import WidgetKit
+import UIKit
+
+struct WidgetWeaverAboutView: View {
+    @ObservedObject var proManager: WidgetWeaverProManager
+
+    /// Adds a template into the design library.
+    /// The caller owns ID/timestamp handling, selection updates, and widget refresh messaging.
+    let onAddTemplate: @MainActor (_ spec: WidgetSpec, _ makeDefault: Bool) -> Void
+
+    /// Switches the sheet to Pro UI.
+    let onShowPro: @MainActor () -> Void
+
+    /// Switches the sheet to widget help UI.
+    let onShowWidgetHelp: @MainActor () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var designCount: Int = 0
+    @State private var statusMessage: String = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                aboutHeaderSection
+                capabilitiesSection
+
+                starterTemplatesSection
+                proTemplatesSection
+
+                variablesSection
+                aiSection
+                sharingSection
+                proSection
+                diagnosticsSection
+            }
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .onAppear { refreshDesignCount() }
+        }
+    }
+
+    // MARK: - Header
+
+    private var aboutHeaderSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("WidgetWeaver")
+                        .font(.title2.weight(.semibold))
+                    Spacer(minLength: 0)
+                    Text(appVersionString)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Build WidgetKit widgets from a typed design spec. Designs are saved locally and rendered by the widget extension.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        onShowWidgetHelp()
+                    } label: {
+                        Label("Widget Help", systemImage: "questionmark.circle")
+                    }
+
+                    Button {
+                        onShowPro()
+                    } label: {
+                        if proManager.isProUnlocked {
+                            Label("Pro (Unlocked)", systemImage: "checkmark.seal.fill")
+                        } else {
+                            Label("Upgrade to Pro", systemImage: "crown.fill")
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("WidgetWeaver")
+        }
+    }
+
+    // MARK: - Capabilities + Examples
+
+    private var capabilitiesSection: some View {
+        Section {
+            FeatureRow(
+                title: "Text-first widgets",
+                subtitle: "Design name, primary text, and optional secondary text."
+            )
+
+            FeatureRow(
+                title: "Optional SF Symbol",
+                subtitle: "Choose a symbol name, size, weight, rendering, tint, and placement."
+            )
+
+            FeatureRow(
+                title: "Optional photo banner",
+                subtitle: "Pick a photo with PhotosPicker. The image is stored in the App Group so it renders offline."
+            )
+
+            FeatureRow(
+                title: "Layout tokens",
+                subtitle: "Vertical/horizontal axis, alignment, spacing, and line limits."
+            )
+
+            FeatureRow(
+                title: "Style tokens",
+                subtitle: "Padding, corner radius, background style, and accent colour."
+            )
+
+            FeatureRow(
+                title: "Typography tokens",
+                subtitle: "Per-field text styles (name/primary/secondary)."
+            )
+
+            FeatureRow(
+                title: "Per-widget selection",
+                subtitle: "Each widget instance can follow Default (App) or a specific saved design."
+            )
+
+            FeatureRow(
+                title: "Sharing / import / export",
+                subtitle: "Export JSON (optionally embedding images), then import back in without overwriting existing designs."
+            )
+
+            FeatureRow(
+                title: "On-device AI (optional)",
+                subtitle: "Prompt → spec generation and patch edits, with deterministic fallbacks when unavailable."
+            )
+
+            FeatureRow(
+                title: "Pro features",
+                subtitle: "Matched sets (Small/Medium/Large), Variables + Shortcuts, unlimited designs."
+            )
+        } header: {
+            Text("What’s supported right now")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Examples of widgets that fit the current renderer:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                BulletList(items: [
+                    "Habit tracker / streak counter (with Variables + Shortcuts in Pro)",
+                    "Countdown widget (manual or variable-driven)",
+                    "Daily focus / top task",
+                    "Shopping list / reminder",
+                    "Reading progress / next chapter",
+                    "Workout plan / routine cue",
+                    "Quote / affirmation card",
+                    "Simple dashboard numbers (with Variables + Shortcuts in Pro)",
+                    "Matched per-size designs (Small/Medium/Large) in Pro"
+                ])
+            }
+        }
+    }
+
+    // MARK: - Templates
+
+    private var starterTemplatesSection: some View {
+        Section {
+            ForEach(Self.starterTemplates) { template in
+                TemplateRow(
+                    template: template,
+                    isProUnlocked: proManager.isProUnlocked,
+                    onAdd: { makeDefault in
+                        handleAdd(template: template, makeDefault: makeDefault)
+                    },
+                    onShowPro: {
+                        onShowPro()
+                    }
+                )
+            }
+        } header: {
+            Text("Templates — Starter")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Templates add a new saved design to the library. Edit freely, then Save to refresh widgets.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if !proManager.isProUnlocked {
+                    Text("Free tier designs: \(designCount)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var proTemplatesSection: some View {
+        Section {
+            ForEach(Self.proTemplates) { template in
+                TemplateRow(
+                    template: template,
+                    isProUnlocked: proManager.isProUnlocked,
+                    onAdd: { makeDefault in
+                        handleAdd(template: template, makeDefault: makeDefault)
+                    },
+                    onShowPro: {
+                        onShowPro()
+                    }
+                )
+            }
+        } header: {
+            Text("Templates — Pro")
+        } footer: {
+            Text("Pro templates use Matched Sets and/or Variables + Shortcuts.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @MainActor
+    private func handleAdd(template: AboutTemplate, makeDefault: Bool) {
+        if template.requiresPro && !proManager.isProUnlocked {
+            statusMessage = "“\(template.title)” requires Pro."
+            onShowPro()
+            return
+        }
+
+        onAddTemplate(template.spec, makeDefault)
+        statusMessage = makeDefault
+            ? "Added “\(template.title)” and set as default."
+            : "Added “\(template.title)”."
+        refreshDesignCount()
+    }
+
+    // MARK: - Variables
+
+    private var variablesSection: some View {
+        Section {
+            Text("Variables let text fields pull values updated via Shortcuts actions. Variable rendering happens at widget render time.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Template syntax")
+                        .font(.subheadline.weight(.semibold))
+
+                    CodeBlock("""
+                    {{key}}
+                    {{key|fallback}}
+                    """)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    copyToPasteboard("""
+                    Streak: {{streak|0}} days
+                    Last done: {{last_done|Never}}
+                    """)
+                } label: {
+                    Label("Copy example", systemImage: "doc.on.doc")
+                }
+                .controlSize(.small)
+            }
+
+            Divider()
+
+            Text("Shortcuts actions (App Intents):")
+                .font(.subheadline.weight(.semibold))
+
+            BulletList(items: [
+                "Set WidgetWeaver Variable",
+                "Get WidgetWeaver Variable",
+                "Remove WidgetWeaver Variable",
+                "Increment WidgetWeaver Variable"
+            ])
+
+            if !proManager.isProUnlocked {
+                Label("Variables are a Pro feature.", systemImage: "lock.fill")
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    onShowPro()
+                } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+                .controlSize(.small)
+            }
+        } header: {
+            Text("Variables + Shortcuts")
+        } footer: {
+            Text("Keys are canonicalised (trimmed, lowercased, internal whitespace collapsed).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - AI
+
+    private var aiSection: some View {
+        Section {
+            Text(WidgetSpecAIService.availabilityMessage())
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Generation and edits are designed to run on-device. Images are never generated; photos are chosen manually in the editor.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Text("Prompt ideas")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Self.promptIdeas, id: \.self) { prompt in
+                PromptRow(
+                    text: prompt,
+                    copyLabel: "Copy prompt",
+                    onCopy: { copyToPasteboard(prompt) }
+                )
+            }
+
+            Divider()
+
+            Text("Patch ideas")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Self.patchIdeas, id: \.self) { patch in
+                PromptRow(
+                    text: patch,
+                    copyLabel: "Copy patch",
+                    onCopy: { copyToPasteboard(patch) }
+                )
+            }
+        } header: {
+            Text("AI (Optional)")
+        }
+    }
+
+    // MARK: - Sharing
+
+    private var sharingSection: some View {
+        Section {
+            FeatureRow(
+                title: "Share one design or the whole library",
+                subtitle: "Exports are JSON and can embed images when available."
+            )
+
+            FeatureRow(
+                title: "Import safely",
+                subtitle: "Imported designs are duplicated with new IDs to avoid overwriting existing work."
+            )
+
+            FeatureRow(
+                title: "Offline-friendly",
+                subtitle: "Images are stored in the App Group container and rendered without a network dependency."
+            )
+        } header: {
+            Text("Sharing / Import / Export")
+        }
+    }
+
+    // MARK: - Pro
+
+    private var proSection: some View {
+        Section {
+            if proManager.isProUnlocked {
+                Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
+                Text("Matched sets, variables, and unlimited designs are enabled.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    onShowPro()
+                } label: {
+                    Label("Manage Pro", systemImage: "crown.fill")
+                }
+                .controlSize(.small)
+            } else {
+                Label("Free tier", systemImage: "sparkles")
+                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    onShowPro()
+                } label: {
+                    Label("Unlock Pro", systemImage: "crown.fill")
+                }
+                .controlSize(.small)
+            }
+        } header: {
+            Text("Pro")
+        }
+    }
+
+    // MARK: - Diagnostics
+
+    private var diagnosticsSection: some View {
+        Section {
+            LabeledContent("App Group", value: AppGroup.identifier)
+
+            Text("Storage:")
+                .font(.subheadline.weight(.semibold))
+
+            BulletList(items: [
+                "Designs: JSON in App Group UserDefaults",
+                "Images: files in App Group container (WidgetWeaverImages/)",
+                "Variables: JSON dictionary in App Group UserDefaults (Pro)"
+            ])
+        } header: {
+            Text("Implementation notes")
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var appVersionString: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(v) (\(b))"
+    }
+
+    @MainActor
+    private func refreshDesignCount() {
+        designCount = WidgetSpecStore.shared.loadAll().count
+    }
+
+    private func copyToPasteboard(_ string: String) {
+        UIPasteboard.general.string = string
+        statusMessage = "Copied to clipboard."
+    }
+}
+
+// MARK: - Template Models
+
+private struct AboutTemplate: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let description: String
+    let tags: [String]
+    let requiresPro: Bool
+    let spec: WidgetSpec
+}
+
+// MARK: - Template Rows
+
+private struct TemplateRow: View {
+    let template: AboutTemplate
+    let isProUnlocked: Bool
+    let onAdd: @MainActor (_ makeDefault: Bool) -> Void
+    let onShowPro: @MainActor () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(template.title)
+                        .font(.headline)
+
+                    Text(template.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                if template.requiresPro && !isProUnlocked {
+                    Button {
+                        onShowPro()
+                    } label: {
+                        Label("Pro required", systemImage: "lock.fill")
+                    }
+                    .controlSize(.small)
+                } else {
+                    Menu {
+                        Button {
+                            onAdd(false)
+                        } label: {
+                            Label("Add to library", systemImage: "plus")
+                        }
+
+                        Button {
+                            onAdd(true)
+                        } label: {
+                            Label("Add & Make Default", systemImage: "star.fill")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus.circle.fill")
+                    }
+                    .controlSize(.small)
+                }
+            }
+
+            Text(template.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if !template.tags.isEmpty {
+                FlowTags(tags: template.tags)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    PreviewLabeled(familyLabel: "S") {
+                        WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 62)
+                    }
+
+                    PreviewLabeled(familyLabel: "M") {
+                        WidgetPreviewThumbnail(spec: template.spec, family: .systemMedium, height: 62)
+                    }
+
+                    PreviewLabeled(familyLabel: "L") {
+                        WidgetPreviewThumbnail(spec: template.spec, family: .systemLarge, height: 62)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct PreviewLabeled<Content: View>: View {
+    let familyLabel: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .center, spacing: 6) {
+            content
+            Text(familyLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Prompt Rows
+
+private struct PromptRow: View {
+    let text: String
+    let copyLabel: String
+    let onCopy: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+
+            Button {
+                onCopy()
+            } label: {
+                Label(copyLabel, systemImage: "doc.on.doc")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(copyLabel)
+        }
+    }
+}
+
+// MARK: - Small UI Helpers
+
+private struct FeatureRow: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct BulletList: View {
+    let items: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(items, id: \.self) { item in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•")
+                        .foregroundStyle(.secondary)
+                    Text(item)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            }
+        }
+    }
+}
+
+private struct CodeBlock: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.primary)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.10))
+            )
+            .textSelection(.enabled)
+    }
+}
+
+private struct FlowTags: View {
+    let tags: [String]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(tags, id: \.self) { tag in
+                Text(tag)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+// MARK: - Catalog
+
+private extension WidgetWeaverAboutView {
+    static var promptIdeas: [String] {
+        [
+            "minimal focus widget, teal accent, no symbol, short text",
+            "bold countdown widget, centred layout, purple accent, bigger title",
+            "quote card, subtle material background, grey accent, no secondary text",
+            "shopping list reminder, green accent, checklist icon",
+            "reading progress widget, blue accent, book icon, short secondary text",
+            "workout routine widget, red accent, strong title, simple layout",
+            "note widget, horizontal layout, orange accent, minimal styling",
+            "habit tracker widget, orange accent, flame icon, short glanceable text"
+        ]
+    }
+
+    static var patchIdeas: [String] {
+        [
+            "more minimal",
+            "bigger title",
+            "change accent to teal",
+            "switch to horizontal layout",
+            "centre the layout",
+            "remove the symbol",
+            "remove secondary text"
+        ]
+    }
+
+    static var starterTemplates: [AboutTemplate] {
+        [
+            AboutTemplate(
+                id: "starter-focus",
+                title: "Focus",
+                subtitle: "Minimal daily focus card",
+                description: "A clean, glanceable widget for a single priority.",
+                tags: ["Text", "Symbol", "Accent glow"],
+                requiresPro: false,
+                spec: specFocus()
+            ),
+            AboutTemplate(
+                id: "starter-countdown",
+                title: "Countdown",
+                subtitle: "Bold countdown styling",
+                description: "A simple countdown layout with a larger primary line.",
+                tags: ["Text", "Symbol", "Big type"],
+                requiresPro: false,
+                spec: specCountdown()
+            ),
+            AboutTemplate(
+                id: "starter-quote",
+                title: "Quote",
+                subtitle: "Quote / affirmation card",
+                description: "Good for short quotes, affirmations, or reminders.",
+                tags: ["Text", "Symbol", "Material"],
+                requiresPro: false,
+                spec: specQuote()
+            ),
+            AboutTemplate(
+                id: "starter-list",
+                title: "List",
+                subtitle: "Shopping / checklist style",
+                description: "A compact list-style widget using a single text line.",
+                tags: ["Text", "Symbol"],
+                requiresPro: false,
+                spec: specList()
+            ),
+            AboutTemplate(
+                id: "starter-reading",
+                title: "Reading",
+                subtitle: "Progress cue",
+                description: "A reading prompt with a clear next-step.",
+                tags: ["Text", "Symbol", "Material"],
+                requiresPro: false,
+                spec: specReading()
+            ),
+            AboutTemplate(
+                id: "starter-workout",
+                title: "Workout",
+                subtitle: "Routine cue",
+                description: "A short workout reminder with a strong accent.",
+                tags: ["Text", "Symbol", "Accent glow"],
+                requiresPro: false,
+                spec: specWorkout()
+            ),
+            AboutTemplate(
+                id: "starter-photo",
+                title: "Photo Caption",
+                subtitle: "Designed for an image banner",
+                description: "Add a photo in the Image section after saving this template.",
+                tags: ["Text", "Symbol", "Photo-ready"],
+                requiresPro: false,
+                spec: specPhotoCaption()
+            ),
+            AboutTemplate(
+                id: "starter-horizontal-note",
+                title: "Side Note",
+                subtitle: "Horizontal layout",
+                description: "Shows how horizontal axis changes the overall composition.",
+                tags: ["Text", "Symbol", "Horizontal"],
+                requiresPro: false,
+                spec: specHorizontalNote()
+            )
+        ]
+    }
+
+    static var proTemplates: [AboutTemplate] {
+        [
+            AboutTemplate(
+                id: "pro-habit-streak",
+                title: "Habit Streak",
+                subtitle: "Variables + Shortcuts",
+                description: "Uses {{streak|0}} and {{last_done|Never}} so Shortcuts can update the widget.",
+                tags: ["Variables", "Symbol", "Accent glow"],
+                requiresPro: true,
+                spec: specHabitStreak()
+            ),
+            AboutTemplate(
+                id: "pro-counter",
+                title: "Counter",
+                subtitle: "Big number + Increment intent",
+                description: "A large counter value designed to be incremented from Shortcuts.",
+                tags: ["Variables", "Big type"],
+                requiresPro: true,
+                spec: specCounter()
+            ),
+            AboutTemplate(
+                id: "pro-day-plan-matched",
+                title: "Day Plan",
+                subtitle: "Matched Set (S/M/L)",
+                description: "Small and Large override content/layout while sharing style tokens.",
+                tags: ["Matched set", "Symbol"],
+                requiresPro: true,
+                spec: specDayPlanMatched()
+            ),
+            AboutTemplate(
+                id: "pro-launch-matched",
+                title: "Launch Countdown",
+                subtitle: "Matched Set + Variables",
+                description: "Per-size overrides plus {{days_left|14}} style tokens for Shortcuts updates.",
+                tags: ["Matched set", "Variables"],
+                requiresPro: true,
+                spec: specLaunchMatched()
+            ),
+            AboutTemplate(
+                id: "pro-dashboard",
+                title: "Mini Dashboard",
+                subtitle: "Two variable-driven stats",
+                description: "A compact dashboard for simple numbers updated via Shortcuts.",
+                tags: ["Variables", "Material"],
+                requiresPro: true,
+                spec: specMiniDashboard()
+            )
+        ]
+    }
+
+    // MARK: - Spec builders
+
+    static func specFocus() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 3,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .teal,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption
+        )
+
+        let symbol = SymbolSpec(
+            name: "target",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Focus",
+            primaryText: "Deep work",
+            secondaryText: "One thing that matters",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specCountdown() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .center,
+            spacing: 6,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 1,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .purple,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .title2,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "timer",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Countdown",
+            primaryText: "14 days",
+            secondaryText: "Until launch",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specQuote() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 4,
+            primaryLineLimit: 4,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .subtleMaterial,
+            accent: .gray,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .subheadline,
+            secondaryTextStyle: .caption
+        )
+
+        let symbol = SymbolSpec(
+            name: "quote.opening",
+            size: 20,
+            weight: .regular,
+            renderingMode: .monochrome,
+            tint: .secondary,
+            placement: .aboveName
+        )
+
+        return WidgetSpec(
+            name: "Quote",
+            primaryText: "Stay curious.",
+            secondaryText: "Small steps, daily.",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specList() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 3,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .green,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .subheadline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "checklist",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "List",
+            primaryText: "Milk • Bread • Eggs",
+            secondaryText: "Edit any time",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specReading() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .subtleMaterial,
+            accent: .blue,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "book.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Reading",
+            primaryText: "Next: 20 pages",
+            secondaryText: "Finish Chapter 6",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specWorkout() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .red,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "dumbbell.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Workout",
+            primaryText: "Upper body",
+            secondaryText: "Pull • Push • Core",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specPhotoCaption() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .pink,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "photo.on.rectangle",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Photo",
+            primaryText: "Favourite memory",
+            secondaryText: "Add a photo in Image",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specHorizontalNote() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .horizontal,
+            alignment: .leading,
+            spacing: 10,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .plain,
+            accent: .orange,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "note.text",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Note",
+            primaryText: "Call Alex",
+            secondaryText: "Before 5pm",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specHabitStreak() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .orange,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "flame.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Habit",
+            primaryText: "Streak: {{streak|0}} days",
+            secondaryText: "Last done: {{last_done|Never}}",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specCounter() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 1,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .subtleMaterial,
+            accent: .green,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .title2,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "plus.circle.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Counter",
+            primaryText: "{{count|0}}",
+            secondaryText: "Increment via Shortcuts",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+
+    static func specDayPlanMatched() -> WidgetSpec {
+        let baseLayout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .subtleMaterial,
+            accent: .blue,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let baseSymbol = SymbolSpec(
+            name: "calendar",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        let smallVariantLayout = LayoutSpec(
+            axis: .vertical,
+            alignment: .center,
+            spacing: 6,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 1,
+            secondaryLineLimit: 1
+        )
+
+        let smallVariant = WidgetSpecVariant(
+            primaryText: "Write",
+            secondaryText: nil,
+            symbol: SymbolSpec(
+                name: "pencil",
+                size: 18,
+                weight: .semibold,
+                renderingMode: .hierarchical,
+                tint: .accent,
+                placement: .beforeName
+            ),
+            image: nil,
+            layout: smallVariantLayout
+        ).normalised()
+
+        let largeVariantLayout = LayoutSpec(
+            axis: .horizontal,
+            alignment: .leading,
+            spacing: 10,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 3,
+            secondaryLineLimit: 2
+        )
+
+        let largeVariant = WidgetSpecVariant(
+            primaryText: "Top 3: Write • Walk • Read",
+            secondaryText: "Next: 2pm call",
+            symbol: SymbolSpec(
+                name: "list.bullet.rectangle",
+                size: 18,
+                weight: .semibold,
+                renderingMode: .hierarchical,
+                tint: .accent,
+                placement: .beforeName
+            ),
+            image: nil,
+            layout: largeVariantLayout
+        ).normalised()
+
+        let matched = WidgetSpecMatchedSet(
+            small: smallVariant,
+            medium: nil,
+            large: largeVariant
+        ).normalisedOrNil()
+
+        return WidgetSpec(
+            name: "Day Plan",
+            primaryText: "Top task: Write",
+            secondaryText: "Next: 2pm call",
+            updatedAt: Date(),
+            symbol: baseSymbol,
+            image: nil,
+            layout: baseLayout,
+            style: style,
+            matchedSet: matched
+        ).normalised()
+    }
+
+    static func specLaunchMatched() -> WidgetSpec {
+        let baseLayout = LayoutSpec(
+            axis: .vertical,
+            alignment: .center,
+            spacing: 6,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 1
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .accentGlow,
+            accent: .purple,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .title3,
+            secondaryTextStyle: .caption2
+        )
+
+        let baseSymbol = SymbolSpec(
+            name: "rocket.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        let smallVariant = WidgetSpecVariant(
+            primaryText: "{{days_left|14}}",
+            secondaryText: nil,
+            symbol: baseSymbol,
+            image: nil,
+            layout: LayoutSpec(
+                axis: .vertical,
+                alignment: .center,
+                spacing: 6,
+                primaryLineLimitSmall: 1,
+                primaryLineLimit: 1,
+                secondaryLineLimit: 1
+            )
+        ).normalised()
+
+        let largeVariant = WidgetSpecVariant(
+            primaryText: "Launch in {{days_left|14}} days",
+            secondaryText: "Ship: {{ship_date|TBD}}",
+            symbol: SymbolSpec(
+                name: "calendar.badge.clock",
+                size: 18,
+                weight: .semibold,
+                renderingMode: .hierarchical,
+                tint: .accent,
+                placement: .beforeName
+            ),
+            image: nil,
+            layout: LayoutSpec(
+                axis: .vertical,
+                alignment: .leading,
+                spacing: 8,
+                primaryLineLimitSmall: 1,
+                primaryLineLimit: 3,
+                secondaryLineLimit: 2
+            )
+        ).normalised()
+
+        let matched = WidgetSpecMatchedSet(
+            small: smallVariant,
+            medium: nil,
+            large: largeVariant
+        ).normalisedOrNil()
+
+        return WidgetSpec(
+            name: "Launch",
+            primaryText: "{{days_left|14}} days",
+            secondaryText: "Until launch",
+            updatedAt: Date(),
+            symbol: baseSymbol,
+            image: nil,
+            layout: baseLayout,
+            style: style,
+            matchedSet: matched
+        ).normalised()
+    }
+
+    static func specMiniDashboard() -> WidgetSpec {
+        let layout = LayoutSpec(
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 8,
+            primaryLineLimitSmall: 2,
+            primaryLineLimit: 2,
+            secondaryLineLimit: 2
+        )
+
+        let style = StyleSpec(
+            padding: 16,
+            cornerRadius: 22,
+            background: .subtleMaterial,
+            accent: .teal,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption2
+        )
+
+        let symbol = SymbolSpec(
+            name: "chart.bar.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return WidgetSpec(
+            name: "Dashboard",
+            primaryText: "Inbox: {{inbox|0}}",
+            secondaryText: "Today: {{today|0}}",
+            updatedAt: Date(),
+            symbol: symbol,
+            image: nil,
+            layout: layout,
+            style: style,
+            matchedSet: nil
+        ).normalised()
+    }
+}

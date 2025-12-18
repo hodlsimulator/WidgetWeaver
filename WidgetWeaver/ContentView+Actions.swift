@@ -99,6 +99,33 @@ extension ContentView {
         saveStatusMessage = "Created a new design."
     }
 
+    func addTemplateDesign(_ template: WidgetSpec, makeDefault: Bool) {
+        guard freeTierHasCapacityForNewDesign() else {
+            showProForDesignLimit(
+                message: "Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) designs.\nUnlock Pro to add more templates."
+            )
+            return
+        }
+
+        var spec = template.normalised()
+        spec.id = UUID()
+        spec.updatedAt = Date()
+
+        store.save(spec, makeDefault: makeDefault)
+
+        defaultSpecID = store.defaultSpecID()
+        lastSavedAt = spec.updatedAt
+        lastWidgetRefreshAt = Date()
+
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
+
+        saveStatusMessage = makeDefault
+            ? "Added template and set as default.\nWidgets refreshed."
+            : "Added template.\nWidgets refreshed."
+    }
+
     func duplicateCurrentDesign() {
         guard freeTierHasCapacityForNewDesign() else {
             showProForDesignLimit(
@@ -156,7 +183,6 @@ extension ContentView {
 
         defaultSpecID = store.defaultSpecID()
         lastWidgetRefreshAt = Date()
-
         aiStatusMessage = result.note
         aiPrompt = ""
 
@@ -201,7 +227,6 @@ extension ContentView {
 
         lastSavedAt = combined.updatedAt
         lastWidgetRefreshAt = Date()
-
         aiStatusMessage = result.note
         aiPatchInstruction = ""
 
@@ -228,7 +253,9 @@ extension ContentView {
         defer { importInProgress = false }
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart { url.stopAccessingSecurityScopedResource() }
+        }
 
         do {
             let data = try Data(contentsOf: url)
