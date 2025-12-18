@@ -7,6 +7,10 @@
 
 import Foundation
 
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
+
 public final class WidgetSpecStore: @unchecked Sendable {
     public static let shared = WidgetSpecStore()
 
@@ -43,6 +47,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
         defaults.removeObject(forKey: defaultIDKey)
         defaults.removeObject(forKey: legacySingleSpecKey)
         seedIfNeeded()
+
+        flushAndNotifyWidgets()
     }
 
     // MARK: - Multi-spec API
@@ -61,7 +67,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
     }
 
     public func setDefault(id: UUID) {
-        defaults.set(id.uuidString, forKey: defaultIDKey)
+        setDefaultInternal(id: id)
+        flushAndNotifyWidgets()
     }
 
     public func loadDefault() -> WidgetSpec {
@@ -91,8 +98,10 @@ public final class WidgetSpecStore: @unchecked Sendable {
         saveAllInternal(specs)
 
         if makeDefault || defaultSpecID() == nil {
-            setDefault(id: normalised.id)
+            setDefaultInternal(id: normalised.id)
         }
+
+        flushAndNotifyWidgets()
     }
 
     public func delete(id: UUID) {
@@ -102,15 +111,22 @@ public final class WidgetSpecStore: @unchecked Sendable {
         if specs.isEmpty {
             let seeded = WidgetSpec.defaultSpec().normalised()
             saveAllInternal([seeded])
-            setDefault(id: seeded.id)
+            setDefaultInternal(id: seeded.id)
+            flushAndNotifyWidgets()
             return
         }
 
         saveAllInternal(specs)
 
         if defaultSpecID() == id {
-            setDefault(id: specs[0].id)
+            setDefaultInternal(id: specs[0].id)
         }
+
+        flushAndNotifyWidgets()
+    }
+
+    public func reloadWidgets() {
+        flushAndNotifyWidgets()
     }
 
     // MARK: - Internals
@@ -145,7 +161,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
         do {
             let legacySpec = try JSONDecoder().decode(WidgetSpec.self, from: legacyData).normalised()
             saveAllInternal([legacySpec])
-            setDefault(id: legacySpec.id)
+            setDefaultInternal(id: legacySpec.id)
         } catch {
             // Intentionally ignored
         }
@@ -157,12 +173,27 @@ public final class WidgetSpecStore: @unchecked Sendable {
         if specs.isEmpty {
             let seeded = WidgetSpec.defaultSpec().normalised()
             saveAllInternal([seeded])
-            setDefault(id: seeded.id)
+            setDefaultInternal(id: seeded.id)
             return
         }
 
         if defaultSpecID() == nil, let first = specs.first {
-            setDefault(id: first.id)
+            setDefaultInternal(id: first.id)
         }
+    }
+
+    private func setDefaultInternal(id: UUID) {
+        defaults.set(id.uuidString, forKey: defaultIDKey)
+    }
+
+    private func flushAndNotifyWidgets() {
+        defaults.synchronize()
+
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        if #available(iOS 17.0, *) {
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
+        #endif
     }
 }

@@ -99,7 +99,8 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
         let entry = Entry(date: Date(), spec: spec)
-        return Timeline(entries: [entry], policy: .never)
+        // Periodic refresh as a backstop in case an explicit reload is delayed.
+        return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60 * 15)))
     }
 
     private func loadSpec(for configuration: Intent) -> WidgetSpec {

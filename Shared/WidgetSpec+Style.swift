@@ -24,9 +24,9 @@ public struct StyleSpec: Codable, Hashable, Sendable {
         cornerRadius: 20,
         background: .accentGlow,
         accent: .blue,
-        nameTextStyle: .caption,
-        primaryTextStyle: .headline,
-        secondaryTextStyle: .caption2
+        nameTextStyle: .automatic,
+        primaryTextStyle: .automatic,
+        secondaryTextStyle: .automatic
     )
 
     public init(
@@ -34,9 +34,9 @@ public struct StyleSpec: Codable, Hashable, Sendable {
         cornerRadius: Double = 20,
         background: BackgroundToken = .accentGlow,
         accent: AccentToken = .blue,
-        nameTextStyle: TextStyleToken = .caption,
-        primaryTextStyle: TextStyleToken = .headline,
-        secondaryTextStyle: TextStyleToken = .caption2
+        nameTextStyle: TextStyleToken = .automatic,
+        primaryTextStyle: TextStyleToken = .automatic,
+        secondaryTextStyle: TextStyleToken = .automatic
     ) {
         self.padding = padding
         self.cornerRadius = cornerRadius
@@ -107,6 +107,7 @@ public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable, 
 }
 
 public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case automatic
     case caption2
     case caption
     case footnote
@@ -119,6 +120,7 @@ public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiabl
 
     public func font(fallback: Font) -> Font {
         switch self {
+        case .automatic: return fallback
         case .caption2: return .caption2
         case .caption: return .caption
         case .footnote: return .footnote

@@ -8,7 +8,7 @@
 import Foundation
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
-    public static let currentVersion: Int = 3
+    public static let currentVersion: Int = 4
 
     public var version: Int
     public var id: UUID

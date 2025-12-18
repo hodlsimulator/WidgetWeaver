@@ -59,13 +59,13 @@ struct WidgetSpecGenerationPayload {
 
     @Guide(
         description: "Primary font token.",
-        .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
+        .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
     )
     var primaryTextStyle: String
 
     @Guide(
         description: "Secondary font token.",
-        .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
+        .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"])
     )
     var secondaryTextStyle: String
 
@@ -135,10 +135,10 @@ struct WidgetSpecPatchPayload {
     @Guide(description: "Optional accent token.", .anyOf(["blue", "teal", "green", "orange", "red", "pink", "purple", "gray"]))
     var accent: String?
 
-    @Guide(description: "Optional primary font token.", .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
+    @Guide(description: "Optional primary font token.", .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
     var primaryTextStyle: String?
 
-    @Guide(description: "Optional secondary font token.", .anyOf(["title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
+    @Guide(description: "Optional secondary font token.", .anyOf(["automatic", "title2", "title3", "headline", "subheadline", "footnote", "caption", "caption2"]))
     var secondaryTextStyle: String?
 
     @Guide(description: "Set true to remove the symbol.")
@@ -376,8 +376,8 @@ private extension WidgetSpecAIService {
 
         let background = BackgroundToken(rawValue: payload.background) ?? .accentGlow
         let accent = AccentToken(rawValue: payload.accent) ?? .blue
-        let primaryStyle = TextStyleToken(rawValue: payload.primaryTextStyle) ?? .headline
-        let secondaryStyle = TextStyleToken(rawValue: payload.secondaryTextStyle) ?? .caption2
+        let primaryStyle = TextStyleToken(rawValue: payload.primaryTextStyle) ?? .automatic
+        let secondaryStyle = TextStyleToken(rawValue: payload.secondaryTextStyle) ?? .automatic
 
         var style = StyleSpec.defaultStyle
         style.padding = payload.padding
@@ -386,7 +386,7 @@ private extension WidgetSpecAIService {
         style.accent = accent
         style.primaryTextStyle = primaryStyle
         style.secondaryTextStyle = secondaryStyle
-        style.nameTextStyle = .caption
+        style.nameTextStyle = .automatic
 
         let symbol: SymbolSpec? = {
             guard let symName = optionalClean(payload.symbolName, maxLength: 80), !symName.isEmpty else { return nil }

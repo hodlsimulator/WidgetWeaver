@@ -47,9 +47,9 @@ struct ContentView: View {
     @State private var background: BackgroundToken = .accentGlow
     @State private var accent: AccentToken = .blue
 
-    @State private var nameTextStyle: TextStyleToken = .caption
-    @State private var primaryTextStyle: TextStyleToken = .headline
-    @State private var secondaryTextStyle: TextStyleToken = .caption2
+    @State private var nameTextStyle: TextStyleToken = .automatic
+    @State private var primaryTextStyle: TextStyleToken = .automatic
+    @State private var secondaryTextStyle: TextStyleToken = .automatic
 
     // Photos picker
     @State private var pickedPhoto: PhotosPickerItem?
@@ -60,36 +60,125 @@ struct ContentView: View {
     @State private var aiPatchInstruction: String = ""
     @State private var aiStatusMessage: String = ""
 
+    // Preview
+    @State private var previewFamily: WidgetFamily = .systemSmall
+
     // Status
     @State private var lastSavedAt: Date?
+    @State private var lastWidgetRefreshAt: Date?
+    @State private var saveStatusMessage: String = ""
+
+    // UI
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var showWidgetHelp: Bool = false
 
     private let store = WidgetSpecStore.shared
 
     var body: some View {
         NavigationStack {
-            Form {
-                savedDesignsSection
-                textSection
-                symbolSection
-                imageSection
-                layoutSection
-                styleSection
-                typographySection
-                aiSection
-                previewSection
-                actionsSection
-                statusSection
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+
+                Form {
+                    designsSection
+                    previewSection
+                    widgetWorkflowSection
+
+                    textSection
+                    symbolSection
+                    imageSection
+                    layoutSection
+                    styleSection
+                    typographySection
+
+                    aiSection
+                    statusSection
+                }
+                .font(.callout)
+                .scrollDismissesKeyboard(.interactively)
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("WidgetWeaver")
-            .scrollDismissesKeyboard(.interactively)
-            .background(KeyboardDismissOnTap())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showWidgetHelp = true
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+
+                    Menu {
+                        Button {
+                            createNewDesign()
+                        } label: {
+                            Label("New Design", systemImage: "plus")
+                        }
+
+                        Button {
+                            duplicateCurrentDesign()
+                        } label: {
+                            Label("Duplicate Design", systemImage: "doc.on.doc")
+                        }
+                        .disabled(savedSpecs.isEmpty)
+
+                        Divider()
+
+                        Button {
+                            saveSelected(makeDefault: true)
+                        } label: {
+                            Label("Save & Make Default", systemImage: "checkmark.circle")
+                        }
+
+                        Button {
+                            saveSelected(makeDefault: false)
+                        } label: {
+                            Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
+                        }
+
+                        Button {
+                            refreshWidgets()
+                        } label: {
+                            Label("Refresh Widgets", systemImage: "arrow.clockwise")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Design", systemImage: "trash")
+                        }
+                        .disabled(savedSpecs.count <= 1)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") {
                         Keyboard.dismiss()
                     }
                 }
+            }
+            .confirmationDialog(
+                "Delete this design?",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    deleteCurrentDesign()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the design from the library. Any widget using it will fall back to another design.")
+            }
+            .sheet(isPresented: $showWidgetHelp) {
+                WidgetWorkflowHelpView()
             }
             .onAppear {
                 bootstrap()
@@ -106,20 +195,131 @@ struct ContentView: View {
 
     // MARK: - Sections
 
-    private var savedDesignsSection: some View {
-        Section("Saved Designs") {
+    private var designsSection: some View {
+        Section {
             if savedSpecs.isEmpty {
                 Text("No saved designs yet.")
                     .foregroundStyle(.secondary)
             } else {
                 Picker("Design", selection: $selectedSpecID) {
                     ForEach(savedSpecs) { spec in
-                        let isDefault = (spec.id == defaultSpecID)
-                        Text(isDefault ? "\(spec.name) (Default)" : spec.name)
+                        Text(specDisplayName(spec))
                             .tag(spec.id)
                     }
                 }
             }
+
+            if let defaultName {
+                LabeledContent("App default", value: defaultName)
+            }
+
+            if selectedSpecID == defaultSpecID {
+                Text("This design is the app default. Widgets set to \"Default (App)\" will show it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("This design is not the app default. Use \"Save & Make Default\" to update widgets set to \"Default (App)\".")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            ControlGroup {
+                Button {
+                    createNewDesign()
+                } label: {
+                    Label("New", systemImage: "plus")
+                }
+
+                Button {
+                    duplicateCurrentDesign()
+                } label: {
+                    Label("Duplicate", systemImage: "doc.on.doc")
+                }
+                .disabled(savedSpecs.isEmpty)
+
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(savedSpecs.count <= 1)
+            }
+        } header: {
+            Text("Design")
+        } footer: {
+            Text("Each widget instance can be configured to follow \"Default (App)\" or a specific saved design (long-press the widget → Edit Widget).")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var previewSection: some View {
+        Section("Preview") {
+            Picker("Size", selection: $previewFamily) {
+                Text("Small").tag(WidgetFamily.systemSmall)
+                Text("Medium").tag(WidgetFamily.systemMedium)
+                Text("Large").tag(WidgetFamily.systemLarge)
+            }
+            .pickerStyle(.segmented)
+
+            let spec = draftSpec(id: selectedSpecID)
+
+            WidgetPreview(spec: spec, family: previewFamily)
+                .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                .listRowBackground(Color.clear)
+
+            Text("Preview is approximate; final widget size is device-dependent.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var widgetWorkflowSection: some View {
+        Section {
+            Button {
+                saveSelected(makeDefault: true)
+            } label: {
+                Label("Save & Make Default", systemImage: "checkmark.circle.fill")
+            }
+
+            Button {
+                saveSelected(makeDefault: false)
+            } label: {
+                Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
+            }
+
+            if selectedSpecID != defaultSpecID {
+                Button {
+                    store.setDefault(id: selectedSpecID)
+                    defaultSpecID = store.defaultSpecID()
+                    lastWidgetRefreshAt = Date()
+                    saveStatusMessage = "Made default. Widgets refreshed."
+                } label: {
+                    Label("Make This Design Default", systemImage: "star")
+                }
+            }
+
+            Button {
+                refreshWidgets()
+            } label: {
+                Label("Refresh Widgets", systemImage: "arrow.clockwise")
+            }
+
+            if !saveStatusMessage.isEmpty {
+                Text(saveStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastWidgetRefreshAt {
+                Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .standard))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Widgets")
+        } footer: {
+            Text("If a widget doesn’t change, check which Design it is using (Edit Widget). Widgets set to \"Default (App)\" always follow the app default design.")
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -312,6 +512,10 @@ struct ContentView: View {
 
     private var aiSection: some View {
         Section("AI") {
+            Text(WidgetSpecAIService.availabilityMessage())
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             Text("Optional on-device generation/edits. Images are never generated.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -344,74 +548,36 @@ struct ContentView: View {
         }
     }
 
-    private var previewSection: some View {
-        Section("Preview") {
-            let spec = draftSpec(id: selectedSpecID)
-
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    PreviewTile(title: "Small", family: .systemSmall, spec: spec, cornerRadius: cornerRadius)
-                    PreviewTile(title: "Medium", family: .systemMedium, spec: spec, cornerRadius: cornerRadius)
-                    PreviewTile(title: "Large", family: .systemLarge, spec: spec, cornerRadius: cornerRadius)
-                }
-                .padding(.vertical, 4)
-            }
-        }
-    }
-
-    private var actionsSection: some View {
-        Section("Actions") {
-            Button("Save to Widget") {
-                saveSelected(makeDefault: true)
-            }
-
-            Button("Save (do not change default)") {
-                saveSelected(makeDefault: false)
-            }
-
-            Button("Make This Default") {
-                store.setDefault(id: selectedSpecID)
-                defaultSpecID = selectedSpecID
-                WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            }
-            .disabled(selectedSpecID == defaultSpecID)
-
-            Button(role: .destructive) {
-                store.delete(id: selectedSpecID)
-                refreshSavedSpecs(preservingSelection: false)
-                loadSelected()
-                WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            } label: {
-                Text("Delete Design")
-            }
-            .disabled(savedSpecs.count <= 1)
-        }
-    }
-
     private var statusSection: some View {
-        Group {
+        Section("Status") {
             if let lastSavedAt {
-                Section("Status") {
-                    Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
-                }
+                Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Not saved yet.")
+                    .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var defaultName: String? {
+        guard let defaultSpecID else { return nil }
+        return savedSpecs.first(where: { $0.id == defaultSpecID })?.name
+            ?? store.loadDefault().name
+    }
+
+    private func specDisplayName(_ spec: WidgetSpec) -> String {
+        if spec.id == defaultSpecID {
+            return "\(spec.name) (Default)"
+        }
+        return spec.name
     }
 
     // MARK: - Model glue
 
     private func bootstrap() {
-        let specs = store
-            .loadAll()
-            .sorted { $0.updatedAt > $1.updatedAt }
-
-        savedSpecs = specs
-        defaultSpecID = store.defaultSpecID()
-
-        let fallback = store.loadDefault()
-        selectedSpecID = defaultSpecID ?? fallback.id
-
-        applySpec(store.load(id: selectedSpecID) ?? fallback)
+        refreshSavedSpecs(preservingSelection: false)
+        loadSelected()
     }
 
     private func refreshSavedSpecs(preservingSelection: Bool = true) {
@@ -422,10 +588,8 @@ struct ContentView: View {
         savedSpecs = specs
         defaultSpecID = store.defaultSpecID()
 
-        if preservingSelection {
-            if specs.contains(where: { $0.id == selectedSpecID }) {
-                return
-            }
+        if preservingSelection, specs.contains(where: { $0.id == selectedSpecID }) {
+            return
         }
 
         let fallback = store.loadDefault()
@@ -579,10 +743,69 @@ struct ContentView: View {
         spec = spec.normalised()
 
         store.save(spec, makeDefault: makeDefault)
+
         lastSavedAt = spec.updatedAt
+        defaultSpecID = store.defaultSpecID()
+
+        saveStatusMessage = makeDefault
+            ? "Saved and set as default. Widgets refreshed."
+            : "Saved. Widgets refreshed."
+        lastWidgetRefreshAt = Date()
 
         refreshSavedSpecs(preservingSelection: true)
+    }
+
+    private func refreshWidgets() {
+        WidgetCenter.shared.reloadAllTimelines()
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        if #available(iOS 17.0, *) {
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
+
+        lastWidgetRefreshAt = Date()
+        saveStatusMessage = "Widgets refreshed."
+    }
+
+    private func createNewDesign() {
+        var spec = WidgetSpec.defaultSpec().normalised()
+        spec.id = UUID()
+        spec.updatedAt = Date()
+        spec.name = "New Design"
+
+        store.save(spec, makeDefault: false)
+
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
+
+        saveStatusMessage = "Created a new design."
+    }
+
+    private func duplicateCurrentDesign() {
+        let base = draftSpec(id: selectedSpecID)
+
+        var spec = base
+        spec.id = UUID()
+        spec.updatedAt = Date()
+        spec.name = "Copy of \(base.name)"
+
+        store.save(spec, makeDefault: false)
+
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
+
+        saveStatusMessage = "Duplicated design."
+    }
+
+    private func deleteCurrentDesign() {
+        store.delete(id: selectedSpecID)
+
+        refreshSavedSpecs(preservingSelection: false)
+        loadSelected()
+
+        lastWidgetRefreshAt = Date()
+        saveStatusMessage = "Deleted design. Widgets refreshed."
     }
 
     // MARK: - AI
@@ -599,7 +822,9 @@ struct ContentView: View {
         spec.updatedAt = Date()
 
         store.save(spec, makeDefault: aiMakeGeneratedDefault)
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+
+        defaultSpecID = store.defaultSpecID()
+        lastWidgetRefreshAt = Date()
 
         aiStatusMessage = result.note
         aiPrompt = ""
@@ -607,6 +832,8 @@ struct ContentView: View {
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
+
+        saveStatusMessage = "Generated design saved. Widgets refreshed."
     }
 
     @MainActor
@@ -622,35 +849,35 @@ struct ContentView: View {
         spec.updatedAt = Date()
 
         store.save(spec, makeDefault: (defaultSpecID == selectedSpecID))
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+
+        defaultSpecID = store.defaultSpecID()
+        lastWidgetRefreshAt = Date()
 
         aiStatusMessage = result.note
         aiPatchInstruction = ""
 
         refreshSavedSpecs(preservingSelection: true)
         applySpec(spec)
+
+        saveStatusMessage = "Patch saved. Widgets refreshed."
     }
 }
 
-private struct PreviewTile: View {
-    let title: String
-    let family: WidgetFamily
+private struct WidgetPreview: View {
     let spec: WidgetSpec
-    let cornerRadius: Double
+    let family: WidgetFamily
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        let size = widgetSize(for: family)
+        let ratio = size.width / size.height
 
-            WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-                .frame(width: size.width, height: size.height)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        }
+        WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+            .aspectRatio(ratio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
     }
 
-    private var size: CGSize {
+    private func widgetSize(for family: WidgetFamily) -> CGSize {
         switch family {
         case .systemSmall:
             return CGSize(width: 170, height: 170)
@@ -660,6 +887,37 @@ private struct PreviewTile: View {
             return CGSize(width: 364, height: 382)
         default:
             return CGSize(width: 170, height: 170)
+        }
+    }
+}
+
+private struct WidgetWorkflowHelpView: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("How widgets update") {
+                    Text("Widgets update when the saved design changes and WidgetKit reloads timelines.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Design selection") {
+                    Text("Each widget instance can follow \"Default (App)\" or a specific saved design.")
+                        .foregroundStyle(.secondary)
+
+                    Text("To change this: long-press the widget → Edit Widget → Design.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("If a widget doesn’t change") {
+                    Text("Try \"Refresh Widgets\" in the app, then wait a moment.")
+                        .foregroundStyle(.secondary)
+
+                    Text("If it still doesn’t update, reselect the Design in Edit Widget. Removing and re-adding the widget is only needed after major schema changes.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Widgets")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -676,92 +934,5 @@ private enum Keyboard {
                 for: nil
             )
         }
-    }
-}
-
-private struct KeyboardDismissOnTap: UIViewRepresentable {
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView(frame: .zero)
-        v.isUserInteractionEnabled = false
-        v.backgroundColor = .clear
-        return v
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        guard context.coordinator.gesture == nil else { return }
-
-        DispatchQueue.main.async {
-            guard context.coordinator.gesture == nil else { return }
-
-            let g = UITapGestureRecognizer(
-                target: context.coordinator,
-                action: #selector(Coordinator.handleTap)
-            )
-            g.cancelsTouchesInView = false
-            g.delegate = context.coordinator
-
-            if let window = uiView.window {
-                window.addGestureRecognizer(g)
-                context.coordinator.hostView = window
-                context.coordinator.gesture = g
-                return
-            }
-
-            if let superview = uiView.superview {
-                superview.addGestureRecognizer(g)
-                context.coordinator.hostView = superview
-                context.coordinator.gesture = g
-            }
-        }
-    }
-
-    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        if let gesture = coordinator.gesture, let host = coordinator.hostView {
-            host.removeGestureRecognizer(gesture)
-        }
-        coordinator.gesture = nil
-        coordinator.hostView = nil
-    }
-
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        weak var hostView: UIView?
-        weak var gesture: UITapGestureRecognizer?
-
-        @objc func handleTap() {
-            Keyboard.dismiss()
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard let view = touch.view else { return true }
-
-            // Allow normal text editing gestures without dismissing.
-            if view is UITextField || view is UITextView {
-                return false
-            }
-
-            // SwiftUI sometimes wraps the underlying UIKit view.
-            // If the tap lands inside a UITextField/UITextView hierarchy, ignore it.
-            if view.isDescendant(ofType: UITextField.self) || view.isDescendant(ofType: UITextView.self) {
-                return false
-            }
-
-            return true
-        }
-    }
-}
-
-private extension UIView {
-    func isDescendant<T: UIView>(ofType type: T.Type) -> Bool {
-        var v: UIView? = self
-        while let current = v {
-            if current is T { return true }
-            v = current.superview
-        }
-        return false
     }
 }

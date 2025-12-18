@@ -74,12 +74,14 @@ public struct WidgetWeaverSpecView: View {
                 .font(style.primaryTextStyle.font(fallback: defaultPrimaryFont(for: family)))
                 .foregroundStyle(.primary)
                 .lineLimit(primaryLineLimit(layout: layout))
+                .minimumScaleFactor(0.85)
 
             if let secondary = spec.secondaryText, shouldShowSecondary(layout: layout) {
                 Text(secondary)
                     .font(style.secondaryTextStyle.font(fallback: .caption2))
                     .foregroundStyle(.secondary)
                     .lineLimit(layout.secondaryLineLimit)
+                    .minimumScaleFactor(0.85)
             }
 
             Spacer(minLength: 0)
@@ -93,7 +95,7 @@ public struct WidgetWeaverSpecView: View {
             }
 
             Text(spec.name)
-                .font(style.nameTextStyle.font(fallback: .caption))
+                .font(style.nameTextStyle.font(fallback: .caption2))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
@@ -160,13 +162,13 @@ public struct WidgetWeaverSpecView: View {
     private func defaultPrimaryFont(for family: WidgetFamily) -> Font {
         switch family {
         case .systemSmall:
-            return .headline
+            return .subheadline
         case .systemMedium:
-            return .title3
-        case .systemLarge:
-            return .title2
-        default:
             return .headline
+        case .systemLarge:
+            return .title3
+        default:
+            return .subheadline
         }
     }
 
