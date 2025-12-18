@@ -12,7 +12,7 @@ WidgetWeaver supports both:
 
 ---
 
-## Current status (0.9.4 (2))
+## Current status (0.9.4 (4))
 
 ✅ iOS app target created and runs on a real device  
 ✅ Widget extension target added and shows in the widget gallery  
@@ -322,7 +322,7 @@ Storage:
 
 ## Repo notes
 
-- Marketing version / build: `0.9.4 (2)` (from target settings / Info.plist values, not hardcoded in code)
+- Marketing version / build: `0.9.4 (4)` (from target settings / Info.plist values, not hardcoded in code)
 - Widget kind string: `Shared/WidgetWeaverWidgetKinds.swift`
 - About page: `WidgetWeaver/WidgetWeaverAboutView.swift`
 - Working principle: ship small commits where the app + widget always build and run
