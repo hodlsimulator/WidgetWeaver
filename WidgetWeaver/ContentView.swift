@@ -12,9 +12,11 @@ import UIKit
 
 @MainActor
 struct ContentView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     @State private var savedSpecs: [WidgetSpec] = []
     @State private var defaultSpecID: UUID?
-
     @State private var selectedSpecID: UUID = UUID()
 
     // Draft fields (manual editor)
@@ -37,7 +39,6 @@ struct ContentView: View {
     @State private var axis: LayoutAxisToken = .vertical
     @State private var alignment: LayoutAlignmentToken = .leading
     @State private var spacing: Double = 8
-
     @State private var primaryLineLimitSmall: Int = 1
     @State private var primaryLineLimit: Int = 2
     @State private var secondaryLineLimit: Int = 2
@@ -74,95 +75,25 @@ struct ContentView: View {
 
     private let store = WidgetSpecStore.shared
 
+    init() {
+        Self.applyAppearanceIfNeeded()
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                designsSection
-                previewSection
-                widgetWorkflowSection
-
-                textSection
-                symbolSection
-                imageSection
-                layoutSection
-                styleSection
-                typographySection
-
-                aiSection
-                statusSection
+            ZStack {
+                EditorBackground()
+                editorLayout
             }
-            .font(.callout)
-            .scrollDismissesKeyboard(.interactively)
-            .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-            .listSectionSpacing(12)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .contentMargins(.bottom, 0, for: .scrollContent)
             .navigationTitle("WidgetWeaver")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        showWidgetHelp = true
-                    } label: {
-                        Image(systemName: "questionmark.circle")
-                    }
-
-                    Menu {
-                        Button {
-                            createNewDesign()
-                        } label: {
-                            Label("New Design", systemImage: "plus")
-                        }
-
-                        Button {
-                            duplicateCurrentDesign()
-                        } label: {
-                            Label("Duplicate Design", systemImage: "doc.on.doc")
-                        }
-                        .disabled(savedSpecs.isEmpty)
-
-                        Divider()
-
-                        Button {
-                            saveSelected(makeDefault: true)
-                        } label: {
-                            Label("Save & Make Default", systemImage: "checkmark.circle")
-                        }
-
-                        Button {
-                            saveSelected(makeDefault: false)
-                        } label: {
-                            Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
-                        }
-
-                        Button {
-                            refreshWidgets()
-                        } label: {
-                            Label("Refresh Widgets", systemImage: "arrow.clockwise")
-                        }
-
-                        Divider()
-
-                        Button(role: .destructive) {
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete Design", systemImage: "trash")
-                        }
-                        .disabled(savedSpecs.count <= 1)
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    toolbarMenu
                 }
-
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
-                    Button("Done") {
-                        Keyboard.dismiss()
-                    }
+                    Button("Done") { Keyboard.dismiss() }
                 }
             }
             .confirmationDialog(
@@ -170,27 +101,139 @@ struct ContentView: View {
                 isPresented: $showDeleteConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Delete", role: .destructive) {
-                    deleteCurrentDesign()
-                }
+                Button("Delete", role: .destructive) { deleteCurrentDesign() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the design from the library. Any widget using it will fall back to another design.")
+                Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
             }
             .sheet(isPresented: $showWidgetHelp) {
                 WidgetWorkflowHelpView()
             }
-            .onAppear {
-                bootstrap()
-            }
-            .onChange(of: selectedSpecID) { _, _ in
-                loadSelected()
-            }
+            .onAppear { bootstrap() }
+            .onChange(of: selectedSpecID) { _, _ in loadSelected() }
             .onChange(of: pickedPhoto) { _, newItem in
                 guard let newItem else { return }
                 Task { await importPickedImage(newItem) }
             }
         }
+    }
+
+    // MARK: - Layout
+
+    @ViewBuilder
+    private var editorLayout: some View {
+        if horizontalSizeClass == .regular {
+            // iPad / wide layouts: keep preview visible as a side panel.
+            HStack(alignment: .top, spacing: 16) {
+                previewDock(presentation: .sidebar)
+                    .frame(width: 420)
+                    .padding(.top, 8)
+
+                editorForm
+            }
+            .padding(.horizontal, 16)
+        } else {
+            // iPhone / compact: keep preview visible in a persistent bottom dock.
+            editorForm
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    previewDock(presentation: .dock)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                }
+        }
+    }
+
+    private var editorForm: some View {
+        Form {
+            designsSection
+            widgetWorkflowSection
+            textSection
+            symbolSection
+            imageSection
+            layoutSection
+            styleSection
+            typographySection
+            aiSection
+            statusSection
+        }
+        .font(.subheadline)
+        .controlSize(.small)
+        .environment(\.defaultMinListRowHeight, 36)
+        .scrollDismissesKeyboard(.interactively)
+        .scrollContentBackground(.hidden)
+    }
+
+    private func previewDock(presentation: WidgetPreviewDock.Presentation) -> some View {
+        WidgetPreviewDock(
+            spec: draftSpec(id: selectedSpecID),
+            family: $previewFamily,
+            presentation: presentation
+        )
+    }
+
+    private var toolbarMenu: some View {
+        Menu {
+            Button {
+                showWidgetHelp = true
+            } label: {
+                Label("Widget Help", systemImage: "questionmark.circle")
+            }
+
+            Divider()
+
+            Button {
+                createNewDesign()
+            } label: {
+                Label("New Design", systemImage: "plus")
+            }
+
+            Button {
+                duplicateCurrentDesign()
+            } label: {
+                Label("Duplicate Design", systemImage: "doc.on.doc")
+            }
+            .disabled(savedSpecs.isEmpty)
+
+            Divider()
+
+            Button {
+                saveSelected(makeDefault: true)
+            } label: {
+                Label("Save & Make Default", systemImage: "checkmark.circle")
+            }
+
+            Button {
+                saveSelected(makeDefault: false)
+            } label: {
+                Label("Save (Keep Default)", systemImage: "tray.and.arrow.down")
+            }
+
+            Button {
+                refreshWidgets()
+            } label: {
+                Label("Refresh Widgets", systemImage: "arrow.clockwise")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Label("Delete Design", systemImage: "trash")
+            }
+            .disabled(savedSpecs.count <= 1)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+    }
+
+    // MARK: - Section styling
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
     }
 
     // MARK: - Sections
@@ -207,6 +250,7 @@ struct ContentView: View {
                             .tag(spec.id)
                     }
                 }
+                .pickerStyle(.menu)
             }
 
             if let defaultName {
@@ -215,60 +259,28 @@ struct ContentView: View {
 
             if selectedSpecID == defaultSpecID {
                 Text("This design is the app default. Widgets set to \"Default (App)\" will show it.")
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text("This design is not the app default. Use \"Save & Make Default\" to update widgets set to \"Default (App)\".")
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             ControlGroup {
-                Button {
-                    createNewDesign()
-                } label: {
-                    Label("New", systemImage: "plus")
-                }
-
-                Button {
-                    duplicateCurrentDesign()
-                } label: {
-                    Label("Duplicate", systemImage: "doc.on.doc")
-                }
-                .disabled(savedSpecs.isEmpty)
-
-                Button(role: .destructive) {
-                    showDeleteConfirmation = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .disabled(savedSpecs.count <= 1)
+                Button { createNewDesign() } label: { Label("New", systemImage: "plus") }
+                Button { duplicateCurrentDesign() } label: { Label("Duplicate", systemImage: "doc.on.doc") }
+                    .disabled(savedSpecs.isEmpty)
+                Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete", systemImage: "trash") }
+                    .disabled(savedSpecs.count <= 1)
             }
+            .controlSize(.small)
+
         } header: {
-            Text("Design")
+            sectionHeader("Design")
         } footer: {
             Text("Each widget instance can be configured to follow \"Default (App)\" or a specific saved design (long-press the widget → Edit Widget).")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var previewSection: some View {
-        Section("Preview") {
-            Picker("Size", selection: $previewFamily) {
-                Text("Small").tag(WidgetFamily.systemSmall)
-                Text("Medium").tag(WidgetFamily.systemMedium)
-                Text("Large").tag(WidgetFamily.systemLarge)
-            }
-            .pickerStyle(.segmented)
-
-            let spec = draftSpec(id: selectedSpecID)
-
-            WidgetPreview(spec: spec, family: previewFamily)
-                .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
-                .listRowBackground(Color.clear)
-
-            Text("Preview is approximate; final widget size is device-dependent.")
-                .font(.footnote)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -306,36 +318,38 @@ struct ContentView: View {
 
             if !saveStatusMessage.isEmpty {
                 Text(saveStatusMessage)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if let lastWidgetRefreshAt {
                 Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .standard))")
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
         } header: {
-            Text("Widgets")
+            sectionHeader("Widgets")
         } footer: {
             Text("If a widget doesn’t change, check which Design it is using (Edit Widget). Widgets set to \"Default (App)\" always follow the app default design.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var textSection: some View {
-        Section("Text") {
+        Section {
             TextField("Design name", text: $name)
                 .textInputAutocapitalization(.words)
-
             TextField("Primary text", text: $primaryText)
-
             TextField("Secondary text (optional)", text: $secondaryText)
+        } header: {
+            sectionHeader("Text")
         }
     }
 
     private var symbolSection: some View {
-        Section("Symbol") {
+        Section {
             TextField("SF Symbol name (optional)", text: $symbolName)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
@@ -371,13 +385,16 @@ struct ContentView: View {
                     Text(token.rawValue).tag(token)
                 }
             }
+
+        } header: {
+            sectionHeader("Symbol")
         }
     }
 
     private var imageSection: some View {
         let hasImage = !imageFileName.isEmpty
 
-        return Section("Image") {
+        return Section {
             PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
                 Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
             }
@@ -421,15 +438,19 @@ struct ContentView: View {
                 } label: {
                     Text("Remove image")
                 }
+
             } else {
                 Text("No image selected.")
                     .foregroundStyle(.secondary)
             }
+
+        } header: {
+            sectionHeader("Image")
         }
     }
 
     private var layoutSection: some View {
-        Section("Layout") {
+        Section {
             Picker("Axis", selection: $axis) {
                 ForEach(LayoutAxisToken.allCases) { token in
                     Text(token.rawValue).tag(token)
@@ -453,11 +474,14 @@ struct ContentView: View {
             Stepper("Primary line limit (Small): \(primaryLineLimitSmall)", value: $primaryLineLimitSmall, in: 1...8)
             Stepper("Primary line limit: \(primaryLineLimit)", value: $primaryLineLimit, in: 1...10)
             Stepper("Secondary line limit: \(secondaryLineLimit)", value: $secondaryLineLimit, in: 1...10)
+
+        } header: {
+            sectionHeader("Layout")
         }
     }
 
     private var styleSection: some View {
-        Section("Style") {
+        Section {
             HStack {
                 Text("Padding")
                 Slider(value: $padding, in: 0...32, step: 1)
@@ -485,11 +509,14 @@ struct ContentView: View {
                     Text(token.rawValue).tag(token)
                 }
             }
+
+        } header: {
+            sectionHeader("Style")
         }
     }
 
     private var typographySection: some View {
-        Section("Typography") {
+        Section {
             Picker("Name text style", selection: $nameTextStyle) {
                 ForEach(TextStyleToken.allCases) { token in
                     Text(token.rawValue).tag(token)
@@ -507,17 +534,20 @@ struct ContentView: View {
                     Text(token.rawValue).tag(token)
                 }
             }
+
+        } header: {
+            sectionHeader("Typography")
         }
     }
 
     private var aiSection: some View {
-        Section("AI") {
+        Section {
             Text(WidgetSpecAIService.availabilityMessage())
-                .font(.footnote)
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
             Text("Optional on-device generation/edits. Images are never generated.")
-                .font(.footnote)
+                .font(.caption)
                 .foregroundStyle(.secondary)
 
             TextField("Prompt (new design)", text: $aiPrompt, axis: .vertical)
@@ -542,14 +572,17 @@ struct ContentView: View {
 
             if !aiStatusMessage.isEmpty {
                 Text(aiStatusMessage)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+        } header: {
+            sectionHeader("AI")
         }
     }
 
     private var statusSection: some View {
-        Section("Status") {
+        Section {
             if let lastSavedAt {
                 Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
                     .foregroundStyle(.secondary)
@@ -557,13 +590,16 @@ struct ContentView: View {
                 Text("Not saved yet.")
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            sectionHeader("Status")
         }
     }
 
+    // MARK: - Derived helpers
+
     private var defaultName: String? {
         guard let defaultSpecID else { return nil }
-        return savedSpecs.first(where: { $0.id == defaultSpecID })?.name
-            ?? store.loadDefault().name
+        return savedSpecs.first(where: { $0.id == defaultSpecID })?.name ?? store.loadDefault().name
     }
 
     private func specDisplayName(_ spec: WidgetSpec) -> String {
@@ -642,6 +678,7 @@ struct ContentView: View {
         cornerRadius = n.style.cornerRadius
         background = n.style.background
         accent = n.style.accent
+
         nameTextStyle = n.style.nameTextStyle
         primaryTextStyle = n.style.primaryTextStyle
         secondaryTextStyle = n.style.secondaryTextStyle
@@ -750,8 +787,8 @@ struct ContentView: View {
         saveStatusMessage = makeDefault
             ? "Saved and set as default. Widgets refreshed."
             : "Saved. Widgets refreshed."
-        lastWidgetRefreshAt = Date()
 
+        lastWidgetRefreshAt = Date()
         refreshSavedSpecs(preservingSelection: true)
     }
 
@@ -777,7 +814,6 @@ struct ContentView: View {
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
-
         saveStatusMessage = "Created a new design."
     }
 
@@ -794,7 +830,6 @@ struct ContentView: View {
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
-
         saveStatusMessage = "Duplicated design."
     }
 
@@ -813,6 +848,7 @@ struct ContentView: View {
     @MainActor
     private func generateNewDesignFromPrompt() async {
         aiStatusMessage = ""
+
         let prompt = aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
 
@@ -832,13 +868,13 @@ struct ContentView: View {
         refreshSavedSpecs(preservingSelection: false)
         selectedSpecID = spec.id
         applySpec(spec)
-
         saveStatusMessage = "Generated design saved. Widgets refreshed."
     }
 
     @MainActor
     private func applyPatchToCurrentDesign() async {
         aiStatusMessage = ""
+
         let instruction = aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !instruction.isEmpty else { return }
 
@@ -858,14 +894,104 @@ struct ContentView: View {
 
         refreshSavedSpecs(preservingSelection: true)
         applySpec(spec)
-
         saveStatusMessage = "Patch saved. Widgets refreshed."
+    }
+
+    // MARK: - Appearance
+
+    private static var didApplyAppearance: Bool = false
+
+    private static func applyAppearanceIfNeeded() {
+        guard !didApplyAppearance else { return }
+        didApplyAppearance = true
+
+        let standard = UINavigationBarAppearance()
+        standard.configureWithTransparentBackground()
+        standard.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        standard.backgroundColor = .clear
+        standard.shadowColor = .clear
+
+        let scrollEdge = UINavigationBarAppearance()
+        scrollEdge.configureWithTransparentBackground()
+        scrollEdge.backgroundEffect = nil
+        scrollEdge.backgroundColor = .clear
+        scrollEdge.shadowColor = .clear
+
+        let navBar = UINavigationBar.appearance()
+        navBar.standardAppearance = standard
+        navBar.compactAppearance = standard
+        navBar.scrollEdgeAppearance = scrollEdge
+        navBar.compactScrollEdgeAppearance = scrollEdge
+
+        UITableView.appearance().backgroundColor = .clear
+    }
+}
+
+// MARK: - Preview Dock
+
+private struct WidgetPreviewDock: View {
+    enum Presentation {
+        case dock
+        case sidebar
+    }
+
+    let spec: WidgetSpec
+    @Binding var family: WidgetFamily
+    let presentation: Presentation
+
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    var body: some View {
+        VStack(spacing: 12) {
+            headerRow
+            WidgetPreview(spec: spec, family: family, maxHeight: previewMaxHeight)
+            Text("Preview is approximate; final widget size is device-dependent.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.primary.opacity(0.10))
+        )
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 10) {
+            Text("Preview")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+
+            Picker("Size", selection: $family) {
+                Text("Small").tag(WidgetFamily.systemSmall)
+                Text("Medium").tag(WidgetFamily.systemMedium)
+                Text("Large").tag(WidgetFamily.systemLarge)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .frame(maxWidth: presentation == .sidebar ? 280 : 240)
+        }
+    }
+
+    private var previewMaxHeight: CGFloat {
+        switch presentation {
+        case .sidebar:
+            return 420
+        case .dock:
+            return (verticalSizeClass == .compact) ? 120 : 190
+        }
     }
 }
 
 private struct WidgetPreview: View {
     let spec: WidgetSpec
     let family: WidgetFamily
+    var maxHeight: CGFloat?
 
     var body: some View {
         let size = widgetSize(for: family)
@@ -874,7 +1000,8 @@ private struct WidgetPreview: View {
         WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
             .aspectRatio(ratio, contentMode: .fit)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 16)
+            .frame(maxHeight: maxHeight)
+            .padding(.horizontal, 8)
     }
 
     private func widgetSize(for family: WidgetFamily) -> CGSize {
@@ -891,6 +1018,8 @@ private struct WidgetPreview: View {
     }
 }
 
+// MARK: - Help
+
 private struct WidgetWorkflowHelpView: View {
     var body: some View {
         NavigationStack {
@@ -899,26 +1028,54 @@ private struct WidgetWorkflowHelpView: View {
                     Text("Widgets update when the saved design changes and WidgetKit reloads timelines.")
                         .foregroundStyle(.secondary)
                 }
-
                 Section("Design selection") {
                     Text("Each widget instance can follow \"Default (App)\" or a specific saved design.")
                         .foregroundStyle(.secondary)
-
                     Text("To change this: long-press the widget → Edit Widget → Design.")
                         .foregroundStyle(.secondary)
                 }
-
                 Section("If a widget doesn’t change") {
                     Text("Try \"Refresh Widgets\" in the app, then wait a moment.")
                         .foregroundStyle(.secondary)
-
                     Text("If it still doesn’t update, reselect the Design in Edit Widget. Removing and re-adding the widget is only needed after major schema changes.")
                         .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Widgets")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+// MARK: - Background
+
+private struct EditorBackground: View {
+    var body: some View {
+        ZStack {
+            Color(uiColor: .secondarySystemGroupedBackground)
+                .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    Color.accentColor.opacity(0.22),
+                    Color.clear
+                ],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 640
+            )
+            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    Color.accentColor.opacity(0.10),
+                    Color.clear
+                ],
+                center: .bottomTrailing,
+                startRadius: 0,
+                endRadius: 760
+            )
+            .ignoresSafeArea()
         }
     }
 }
