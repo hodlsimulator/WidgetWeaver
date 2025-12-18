@@ -1183,52 +1183,280 @@ private struct WidgetPreviewDock: View {
     }
 }
 
+@MainActor
 private struct WidgetPreview: View {
     let spec: WidgetSpec
     let family: WidgetFamily
     var maxHeight: CGFloat?
 
     var body: some View {
-        let size = Self.widgetSize(for: family)
-        let ratio = size.width / size.height
+        GeometryReader { proxy in
+            let base = Self.widgetSize(for: family)
 
-        WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-            .aspectRatio(ratio, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: maxHeight)
-            .padding(.horizontal, 8)
+            let scaleX = proxy.size.width / base.width
+            let scaleY = proxy.size.height / base.height
+            let scale = min(scaleX, scaleY)
+
+            WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+                // Render at the real widget size first…
+                .frame(width: base.width, height: base.height)
+                // …then scale the whole rendered widget up/down.
+                .scaleEffect(scale, anchor: .center)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
+        }
+        .frame(height: maxHeight)
+        .clipped()
     }
-
+    
+    @MainActor
     static func widgetSize(for family: WidgetFamily) -> CGSize {
+        let sizes = WidgetPreviewSizing.sizesForCurrentDevice()
         switch family {
         case .systemSmall:
-            return CGSize(width: 170, height: 170)
+            return sizes.small
         case .systemMedium:
-            return CGSize(width: 364, height: 170)
+            return sizes.medium
         case .systemLarge:
-            return CGSize(width: 364, height: 382)
+            return sizes.large
         default:
-            return CGSize(width: 170, height: 170)
+            return sizes.small
         }
     }
-}
+    
+    private struct WidgetPreviewSizing {
+            struct Sizes {
+                let small: CGSize
+                let medium: CGSize
+                let large: CGSize
+            }
 
+        @MainActor
+        static func sizesForCurrentDevice() -> Sizes {
+            let screen = currentScreen()
+
+            let native = screen.nativeBounds.size
+            let w = Int(min(native.width, native.height))
+            let h = Int(max(native.width, native.height))
+            let key = "\(w)x\(h)"
+
+            if let sizes = knownSizesByNativeResolution[key] {
+                return sizes
+            }
+
+            // Fallbacks for unknown/new devices:
+            let points = screen.bounds.size
+            let maxSide = max(points.width, points.height)
+            let minSide = min(points.width, points.height)
+
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                if minSide >= 1024 || maxSide >= 1366 {
+                    return Sizes(
+                        small: CGSize(width: 170, height: 170),
+                        medium: CGSize(width: 379, height: 170),
+                        large: CGSize(width: 379, height: 379)
+                    )
+                } else {
+                    return Sizes(
+                        small: CGSize(width: 155, height: 155),
+                        medium: CGSize(width: 342, height: 155),
+                        large: CGSize(width: 342, height: 342)
+                    )
+                }
+            }
+
+            if maxSide >= 926 {
+                return Sizes(
+                    small: CGSize(width: 170, height: 170),
+                    medium: CGSize(width: 364, height: 170),
+                    large: CGSize(width: 364, height: 382)
+                )
+            } else if maxSide >= 844 {
+                return Sizes(
+                    small: CGSize(width: 158, height: 158),
+                    medium: CGSize(width: 338, height: 158),
+                    large: CGSize(width: 338, height: 354)
+                )
+            } else if maxSide >= 812 {
+                return Sizes(
+                    small: CGSize(width: 155, height: 155),
+                    medium: CGSize(width: 329, height: 155),
+                    large: CGSize(width: 329, height: 345)
+                )
+            } else if maxSide >= 736 {
+                return Sizes(
+                    small: CGSize(width: 157, height: 157),
+                    medium: CGSize(width: 348, height: 157),
+                    large: CGSize(width: 348, height: 351)
+                )
+            } else if maxSide >= 667 {
+                return Sizes(
+                    small: CGSize(width: 148, height: 148),
+                    medium: CGSize(width: 321, height: 148),
+                    large: CGSize(width: 321, height: 324)
+                )
+            } else {
+                return Sizes(
+                    small: CGSize(width: 141, height: 141),
+                    medium: CGSize(width: 292, height: 141),
+                    large: CGSize(width: 292, height: 311)
+                )
+            }
+        }
+
+        @MainActor
+        private static func currentScreen() -> UIScreen {
+            if let activeScene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) {
+                return activeScene.screen
+            }
+
+            if let anyScene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first {
+                return anyScene.screen
+            }
+
+            // Practically unreachable on iOS, but keeps the compiler happy.
+            return UIScreen()
+        }
+
+            // Sizes measured via GeometryReader on real devices (points), keyed by native pixel resolution.
+            private static let knownSizesByNativeResolution: [String: Sizes] = [
+                // MARK: - iPhone
+                "1170x2532": Sizes(
+                    small: CGSize(width: 158, height: 158),
+                    medium: CGSize(width: 338, height: 158),
+                    large: CGSize(width: 338, height: 354)
+                ), // 12/13/14/15 (non‑Pro 6.1")
+
+                "1179x2556": Sizes(
+                    small: CGSize(width: 158, height: 158),
+                    medium: CGSize(width: 338, height: 158),
+                    large: CGSize(width: 338, height: 354)
+                ), // 14/15 Pro (6.1")
+
+                "1080x2340": Sizes(
+                    small: CGSize(width: 155, height: 155),
+                    medium: CGSize(width: 329, height: 155),
+                    large: CGSize(width: 329, height: 345)
+                ), // 12/13 mini
+
+                "1284x2778": Sizes(
+                    small: CGSize(width: 170, height: 170),
+                    medium: CGSize(width: 364, height: 170),
+                    large: CGSize(width: 364, height: 382)
+                ), // 12/13 Pro Max
+
+                "1290x2796": Sizes(
+                    small: CGSize(width: 170, height: 170),
+                    medium: CGSize(width: 364, height: 170),
+                    large: CGSize(width: 364, height: 382)
+                ), // 14/15 Pro Max (+/Max 6.7")
+
+                "828x1792": Sizes(
+                    small: CGSize(width: 169, height: 169),
+                    medium: CGSize(width: 360, height: 169),
+                    large: CGSize(width: 360, height: 379)
+                ), // XR / 11
+
+                "1125x2436": Sizes(
+                    small: CGSize(width: 155, height: 155),
+                    medium: CGSize(width: 329, height: 155),
+                    large: CGSize(width: 329, height: 345)
+                ), // X / XS / 11 Pro
+
+                "1242x2688": Sizes(
+                    small: CGSize(width: 169, height: 169),
+                    medium: CGSize(width: 360, height: 169),
+                    large: CGSize(width: 360, height: 379)
+                ), // XS Max / 11 Pro Max
+
+                "750x1334": Sizes(
+                    small: CGSize(width: 148, height: 148),
+                    medium: CGSize(width: 321, height: 148),
+                    large: CGSize(width: 321, height: 324)
+                ), // 6/7/8/SE2/SE3
+
+                "1080x1920": Sizes(
+                    small: CGSize(width: 157, height: 157),
+                    medium: CGSize(width: 348, height: 157),
+                    large: CGSize(width: 348, height: 351)
+                ), // Plus (6/7/8 Plus)
+
+                "640x1136": Sizes(
+                    small: CGSize(width: 141, height: 141),
+                    medium: CGSize(width: 292, height: 141),
+                    large: CGSize(width: 292, height: 311)
+                ), // SE 1st gen / iPod touch
+
+                // MARK: - iPad
+                "2732x2048": Sizes(
+                    small: CGSize(width: 170, height: 170),
+                    medium: CGSize(width: 379, height: 170),
+                    large: CGSize(width: 379, height: 379)
+                ), // 12.9" iPad Pro
+
+                "2388x1668": Sizes(
+                    small: CGSize(width: 155, height: 155),
+                    medium: CGSize(width: 342, height: 155),
+                    large: CGSize(width: 342, height: 342)
+                ), // 11" iPad Pro
+
+                "2360x1640": Sizes(
+                    small: CGSize(width: 155, height: 155),
+                    medium: CGSize(width: 342, height: 155),
+                    large: CGSize(width: 342, height: 342)
+                ), // iPad Air 4/5
+
+                "2266x1488": Sizes(
+                    small: CGSize(width: 141, height: 141),
+                    medium: CGSize(width: 306, height: 141),
+                    large: CGSize(width: 306, height: 306)
+                ), // iPad mini 6
+
+                "2224x1668": Sizes(
+                    small: CGSize(width: 150, height: 150),
+                    medium: CGSize(width: 328, height: 150),
+                    large: CGSize(width: 328, height: 328)
+                ), // iPad Pro 10.5"
+
+                "2160x1620": Sizes(
+                    small: CGSize(width: 146, height: 146),
+                    medium: CGSize(width: 321, height: 146),
+                    large: CGSize(width: 321, height: 321)
+                ), // iPad 7/8/9
+
+                "2048x1536": Sizes(
+                    small: CGSize(width: 141, height: 141),
+                    medium: CGSize(width: 306, height: 141),
+                    large: CGSize(width: 306, height: 306)
+                ) // older iPads / iPad mini 5 bucket
+            ]
+        }
+    }
+
+
+@MainActor
 private struct WidgetPreviewThumbnail: View {
     let spec: WidgetSpec
     let family: WidgetFamily
     var height: CGFloat
 
     var body: some View {
-        let size = WidgetPreview.widgetSize(for: family)
-        let ratio = size.width / size.height
+        let base = WidgetPreview.widgetSize(for: family)
+        let scale = height / base.height
+        let scaledWidth = base.width * scale
 
         WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-            .aspectRatio(ratio, contentMode: .fit)
-            .frame(height: height)
+            .frame(width: base.width, height: base.height)
+            .scaleEffect(scale, anchor: .center)
+            .frame(width: scaledWidth, height: height, alignment: .center)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(.primary.opacity(0.10))
             )
+            .clipped()
     }
 }
