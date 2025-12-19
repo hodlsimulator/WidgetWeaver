@@ -7,7 +7,6 @@
 
 import Foundation
 import CoreLocation
-
 #if canImport(WeatherKit)
 import WeatherKit
 #endif
@@ -38,7 +37,12 @@ public struct WidgetWeaverWeatherLocation: Codable, Hashable, Sendable {
     public var longitude: Double
     public var updatedAt: Date
 
-    public init(name: String, latitude: Double, longitude: Double, updatedAt: Date = Date()) {
+    public init(
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        updatedAt: Date = Date()
+    ) {
         self.name = name
         self.latitude = latitude
         self.longitude = longitude
@@ -57,13 +61,17 @@ public struct WidgetWeaverWeatherLocation: Codable, Hashable, Sendable {
 
 public struct WidgetWeaverWeatherHourlyPoint: Codable, Hashable, Sendable, Identifiable {
     public var id: Date { date }
-
     public var date: Date
     public var temperatureC: Double
     public var symbolName: String
     public var precipitationChance01: Double?
 
-    public init(date: Date, temperatureC: Double, symbolName: String, precipitationChance01: Double?) {
+    public init(
+        date: Date,
+        temperatureC: Double,
+        symbolName: String,
+        precipitationChance01: Double?
+    ) {
         self.date = date
         self.temperatureC = temperatureC
         self.symbolName = symbolName
@@ -73,14 +81,19 @@ public struct WidgetWeaverWeatherHourlyPoint: Codable, Hashable, Sendable, Ident
 
 public struct WidgetWeaverWeatherDailyPoint: Codable, Hashable, Sendable, Identifiable {
     public var id: Date { date }
-
     public var date: Date
     public var highTemperatureC: Double?
     public var lowTemperatureC: Double?
     public var symbolName: String
     public var precipitationChance01: Double?
 
-    public init(date: Date, highTemperatureC: Double?, lowTemperatureC: Double?, symbolName: String, precipitationChance01: Double?) {
+    public init(
+        date: Date,
+        highTemperatureC: Double?,
+        lowTemperatureC: Double?,
+        symbolName: String,
+        precipitationChance01: Double?
+    ) {
         self.date = date
         self.highTemperatureC = highTemperatureC
         self.lowTemperatureC = lowTemperatureC
@@ -91,24 +104,18 @@ public struct WidgetWeaverWeatherDailyPoint: Codable, Hashable, Sendable, Identi
 
 public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
     public var fetchedAt: Date
-
     public var locationName: String
     public var latitude: Double
     public var longitude: Double
-
     public var isDaylight: Bool
     public var conditionDescription: String
     public var symbolName: String
-
     public var temperatureC: Double
     public var apparentTemperatureC: Double?
-
     public var precipitationChance01: Double?
     public var humidity01: Double?
-
     public var highTemperatureC: Double?
     public var lowTemperatureC: Double?
-
     public var hourly: [WidgetWeaverWeatherHourlyPoint]
     public var daily: [WidgetWeaverWeatherDailyPoint]
 
@@ -162,13 +169,13 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
 
         let daily: [WidgetWeaverWeatherDailyPoint] = (0..<6).compactMap { i in
             guard let d = cal.date(byAdding: .day, value: i, to: base) else { return nil }
-            let sym = i == 2 ? "cloud.rain.fill" : (i == 4 ? "cloud.bolt.rain.fill" : "sun.max.fill")
+            let sym = (i == 2) ? "cloud.rain.fill" : ((i == 4) ? "cloud.bolt.rain.fill" : "sun.max.fill")
             return WidgetWeaverWeatherDailyPoint(
                 date: d,
                 highTemperatureC: 23.0 + Double(i) * 0.5,
                 lowTemperatureC: 14.0 + Double(i) * 0.3,
                 symbolName: sym,
-                precipitationChance01: i == 2 ? 0.45 : (i == 4 ? 0.35 : 0.10)
+                precipitationChance01: (i == 2) ? 0.45 : ((i == 4) ? 0.35 : 0.10)
             )
         }
 
@@ -226,6 +233,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     @inline(__always)
     private func sync() {
         defaults.synchronize()
+        UserDefaults.standard.synchronize()
     }
 
     private init(defaults: UserDefaults = AppGroup.userDefaults) {
@@ -236,73 +244,142 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         self.decoder.dateDecodingStrategy = .iso8601
     }
 
+    // MARK: Location
+
     public func loadLocation() -> WidgetWeaverWeatherLocation? {
         sync()
-        guard let data = defaults.data(forKey: Keys.locationData) else { return nil }
-        return try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data)
+
+        if let data = defaults.data(forKey: Keys.locationData),
+           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
+            return loc
+        }
+
+        // Fallback for any legacy/misconfigured container situations.
+        if let data = UserDefaults.standard.data(forKey: Keys.locationData),
+           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
+            // Heal: copy into the App Group store so the widget and app converge.
+            if let healed = try? encoder.encode(loc) {
+                defaults.set(healed, forKey: Keys.locationData)
+            }
+            sync()
+            return loc
+        }
+
+        return nil
     }
 
     public func saveLocation(_ location: WidgetWeaverWeatherLocation?) {
-        if let location {
-            if let data = try? encoder.encode(location) {
-                defaults.set(data, forKey: Keys.locationData)
-            }
+        if let location, let data = try? encoder.encode(location) {
+            defaults.set(data, forKey: Keys.locationData)
+            UserDefaults.standard.set(data, forKey: Keys.locationData)
         } else {
             defaults.removeObject(forKey: Keys.locationData)
+            UserDefaults.standard.removeObject(forKey: Keys.locationData)
         }
-
         sync()
     }
+
+    public func preferredCLLocation() -> CLLocation? {
+        loadLocation()?.clLocation
+    }
+
+    // MARK: Snapshot
 
     public func loadSnapshot() -> WidgetWeaverWeatherSnapshot? {
         sync()
-        guard let data = defaults.data(forKey: Keys.snapshotData) else { return nil }
-        return try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data)
+
+        if let data = defaults.data(forKey: Keys.snapshotData),
+           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
+            return snap
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
+           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
+            if let healed = try? encoder.encode(snap) {
+                defaults.set(healed, forKey: Keys.snapshotData)
+            }
+            sync()
+            return snap
+        }
+
+        return nil
     }
 
     public func saveSnapshot(_ snapshot: WidgetWeaverWeatherSnapshot?) {
-        if let snapshot {
-            if let data = try? encoder.encode(snapshot) {
-                defaults.set(data, forKey: Keys.snapshotData)
-            }
+        if let snapshot, let data = try? encoder.encode(snapshot) {
+            defaults.set(data, forKey: Keys.snapshotData)
+            UserDefaults.standard.set(data, forKey: Keys.snapshotData)
         } else {
             defaults.removeObject(forKey: Keys.snapshotData)
+            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         }
-
         sync()
     }
 
     public func clearSnapshot() {
         defaults.removeObject(forKey: Keys.snapshotData)
+        UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         sync()
     }
 
+    // MARK: Units
+
     public func loadUnitPreference() -> WidgetWeaverWeatherUnitPreference {
         sync()
-        let raw = defaults.string(forKey: Keys.unitPreference) ?? WidgetWeaverWeatherUnitPreference.automatic.rawValue
+        let raw = (defaults.string(forKey: Keys.unitPreference) ??
+                   UserDefaults.standard.string(forKey: Keys.unitPreference) ??
+                   WidgetWeaverWeatherUnitPreference.automatic.rawValue)
         return WidgetWeaverWeatherUnitPreference(rawValue: raw) ?? .automatic
     }
 
     public func saveUnitPreference(_ preference: WidgetWeaverWeatherUnitPreference) {
         defaults.set(preference.rawValue, forKey: Keys.unitPreference)
+        UserDefaults.standard.set(preference.rawValue, forKey: Keys.unitPreference)
         sync()
     }
+
+    public func resolvedUnitTemperature() -> UnitTemperature {
+        switch loadUnitPreference() {
+        case .celsius: return .celsius
+        case .fahrenheit: return .fahrenheit
+        case .automatic:
+            switch Locale.current.measurementSystem {
+            case .us: return .fahrenheit
+            default: return .celsius
+            }
+        }
+    }
+
+    // MARK: Attribution
 
     public func loadAttribution() -> WidgetWeaverWeatherAttribution? {
         sync()
-        guard let data = defaults.data(forKey: Keys.attributionData) else { return nil }
-        return try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data)
+
+        if let data = defaults.data(forKey: Keys.attributionData),
+           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
+            return attr
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Keys.attributionData),
+           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
+            if let healed = try? encoder.encode(attr) {
+                defaults.set(healed, forKey: Keys.attributionData)
+            }
+            sync()
+            return attr
+        }
+
+        return nil
     }
 
     public func saveAttribution(_ attribution: WidgetWeaverWeatherAttribution?) {
-        if let attribution {
-            if let data = try? encoder.encode(attribution) {
-                defaults.set(data, forKey: Keys.attributionData)
-            }
+        if let attribution, let data = try? encoder.encode(attribution) {
+            defaults.set(data, forKey: Keys.attributionData)
+            UserDefaults.standard.set(data, forKey: Keys.attributionData)
         } else {
             defaults.removeObject(forKey: Keys.attributionData)
+            UserDefaults.standard.removeObject(forKey: Keys.attributionData)
         }
-
         sync()
     }
 
@@ -310,89 +387,75 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         loadAttribution()?.legalPageURL
     }
 
-    public func preferredCLLocation() -> CLLocation? {
-        loadLocation()?.clLocation
-    }
-
-    public func resolvedUnitTemperature() -> UnitTemperature {
-        switch loadUnitPreference() {
-        case .celsius:
-            return .celsius
-        case .fahrenheit:
-            return .fahrenheit
-        case .automatic:
-            switch Locale.current.measurementSystem {
-            case .us:
-                return .fahrenheit
-            default:
-                return .celsius
-            }
-        }
-    }
+    // MARK: Rendering helpers
 
     public func recommendedRefreshIntervalSeconds() -> TimeInterval {
         60 * 30
     }
 
     public func snapshotForRender(context: WidgetWeaverRenderContext) -> WidgetWeaverWeatherSnapshot? {
-        if let snap = loadSnapshot() {
-            return snap
-        }
-
+        if let snap = loadSnapshot() { return snap }
         switch context {
-        case .preview, .simulator:
-            return .sampleSunny()
-        case .widget:
-            return nil
+        case .preview, .simulator: return .sampleSunny()
+        case .widget: return nil
         }
     }
 
-    public func variablesDictionary(now _: Date = Date()) -> [String: String] {
-        guard let snap = loadSnapshot() else { return [:] }
+    /// Weather variables are treated as “built-in” keys.
+    /// If there is no snapshot yet, the location key still resolves so the widget stops showing the “set a location” prompt.
+    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+        if let snap = loadSnapshot() {
+            var vars: [String: String] = [:]
+            let unit = resolvedUnitTemperature()
+
+            vars["__weather_location"] = snap.locationName
+            vars["__weather_condition"] = snap.conditionDescription
+            vars["__weather_symbol"] = snap.symbolName
+            vars["__weather_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(snap.fetchedAt)
+
+            let temp = temperatureString(snap.temperatureC, unit: unit)
+            vars["__weather_temp"] = temp.value
+            vars["__weather_temp_c"] = temperatureString(snap.temperatureC, unit: .celsius).value
+            vars["__weather_temp_f"] = temperatureString(snap.temperatureC, unit: .fahrenheit).value
+
+            if let feels = snap.apparentTemperatureC {
+                vars["__weather_feels"] = temperatureString(feels, unit: unit).value
+                vars["__weather_feels_c"] = temperatureString(feels, unit: .celsius).value
+                vars["__weather_feels_f"] = temperatureString(feels, unit: .fahrenheit).value
+            }
+
+            if let hi = snap.highTemperatureC {
+                vars["__weather_high"] = temperatureString(hi, unit: unit).value
+            }
+            if let lo = snap.lowTemperatureC {
+                vars["__weather_low"] = temperatureString(lo, unit: unit).value
+            }
+
+            if let p = snap.precipitationChance01 {
+                vars["__weather_precip"] = percentString(fromChance01: p)
+                vars["__weather_precip_fraction"] = String(p)
+            }
+
+            if let h = snap.humidity01 {
+                vars["__weather_humidity"] = percentString(fromChance01: h)
+                vars["__weather_humidity_fraction"] = String(h)
+            }
+
+            return vars
+        }
+
+        // No snapshot yet — still expose the saved location so templates can render immediately.
+        guard let loc = loadLocation() else { return [:] }
 
         var vars: [String: String] = [:]
-        let unit = resolvedUnitTemperature()
-
-        vars["__weather_location"] = snap.locationName
-        vars["__weather_condition"] = snap.conditionDescription
-        vars["__weather_symbol"] = snap.symbolName
-        vars["__weather_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(snap.fetchedAt)
-
-        let temp = temperatureString(snap.temperatureC, unit: unit)
-        vars["__weather_temp"] = temp.value
-        vars["__weather_temp_c"] = temperatureString(snap.temperatureC, unit: .celsius).value
-        vars["__weather_temp_f"] = temperatureString(snap.temperatureC, unit: .fahrenheit).value
-
-        if let feels = snap.apparentTemperatureC {
-            vars["__weather_feels"] = temperatureString(feels, unit: unit).value
-            vars["__weather_feels_c"] = temperatureString(feels, unit: .celsius).value
-            vars["__weather_feels_f"] = temperatureString(feels, unit: .fahrenheit).value
-        }
-
-        if let hi = snap.highTemperatureC {
-            vars["__weather_high"] = temperatureString(hi, unit: unit).value
-        }
-
-        if let lo = snap.lowTemperatureC {
-            vars["__weather_low"] = temperatureString(lo, unit: unit).value
-        }
-
-        if let p = snap.precipitationChance01 {
-            vars["__weather_precip"] = percentString(fromChance01: p)
-            vars["__weather_precip_fraction"] = String(p)
-        }
-
-        if let h = snap.humidity01 {
-            vars["__weather_humidity"] = percentString(fromChance01: h)
-            vars["__weather_humidity_fraction"] = String(h)
-        }
-
+        vars["__weather_location"] = loc.name
+        vars["__weather_lat"] = loc.latitudeString
+        vars["__weather_lon"] = loc.longitudeString
+        vars["__weather_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(loc.updatedAt)
         return vars
     }
 
-    private struct TempValue {
-        var value: String
-    }
+    private struct TempValue { var value: String }
 
     private func temperatureString(_ celsius: Double, unit: UnitTemperature) -> TempValue {
         let m = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit)
@@ -416,7 +479,11 @@ public actor WidgetWeaverWeatherEngine {
         public var attribution: WidgetWeaverWeatherAttribution?
         public var errorDescription: String?
 
-        public init(snapshot: WidgetWeaverWeatherSnapshot?, attribution: WidgetWeaverWeatherAttribution?, errorDescription: String?) {
+        public init(
+            snapshot: WidgetWeaverWeatherSnapshot?,
+            attribution: WidgetWeaverWeatherAttribution?,
+            errorDescription: String?
+        ) {
             self.snapshot = snapshot
             self.attribution = attribution
             self.errorDescription = errorDescription
@@ -424,20 +491,16 @@ public actor WidgetWeaverWeatherEngine {
     }
 
     public var minimumUpdateInterval: TimeInterval = 60 * 20
-
     private var inFlight: Task<Result, Never>?
 
     public func updateIfNeeded(force: Bool = false) async -> Result {
-        if let inFlight {
-            return await inFlight.value
-        }
+        if let inFlight { return await inFlight.value }
 
-        let task = Task<Result, Never> {
-            let result = await self.update(force: force)
-            return result
+        let task = Task { () -> Result in
+            await self.update(force: force)
         }
-
         inFlight = task
+
         let out = await task.value
         inFlight = nil
         return out
@@ -473,7 +536,11 @@ public actor WidgetWeaverWeatherEngine {
 
             return Result(snapshot: snap, attribution: attr, errorDescription: nil)
         } catch {
-            return Result(snapshot: store.loadSnapshot(), attribution: store.loadAttribution(), errorDescription: String(describing: error))
+            return Result(
+                snapshot: store.loadSnapshot(),
+                attribution: store.loadAttribution(),
+                errorDescription: String(describing: error)
+            )
         }
         #else
         return Result(snapshot: store.loadSnapshot(), attribution: store.loadAttribution(), errorDescription: "WeatherKit unavailable")
@@ -485,7 +552,7 @@ public actor WidgetWeaverWeatherEngine {
         let now = Date()
         let current = weather.currentWeather
 
-        // CurrentWeather doesn't expose every "forecast" style field uniformly across OS versions.
+        // CurrentWeather doesn't expose every “forecast” style field uniformly across OS versions.
         // The first hour in the hourly forecast is a dependable proxy for the near term.
         let precipChance01 = weather.hourlyForecast.forecast.first?.precipitationChance
 

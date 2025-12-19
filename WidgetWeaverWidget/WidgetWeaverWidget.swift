@@ -48,7 +48,8 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
                 continue
             }
 
-            if let uuid = UUID(uuidString: ident), let spec = store.load(id: uuid) {
+            if let uuid = UUID(uuidString: ident),
+               let spec = store.load(id: uuid) {
                 out.append(WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name))
             }
         }
@@ -58,7 +59,6 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 
     func suggestedEntities() async throws -> [WidgetWeaverSpecEntity] {
         let defaultEntity = WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
-
         let saved = WidgetSpecStore.shared
             .loadAll()
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -78,11 +78,10 @@ struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "WidgetWeaver Design"
     static let description = IntentDescription("Select which saved design this widget should use.")
 
-    @Parameter(title: "Design")
-    var spec: WidgetWeaverSpecEntity?
+    @Parameter(title: "Design") var spec: WidgetWeaverSpecEntity?
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Show \\(\\.$spec)")
+        Summary("Show \(\.$spec)")
     }
 }
 
@@ -99,7 +98,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let spec = loadSpec(for: configuration)
 
-        if spec.usesWeatherRendering() {
+        if needsWeatherUpdate(for: spec) {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
 
@@ -109,13 +108,13 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
 
-        if spec.usesWeatherRendering() {
+        if needsWeatherUpdate(for: spec) {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
 
         var refreshSeconds: TimeInterval = 60 * 15
 
-        if spec.usesWeatherRendering() {
+        if needsWeatherUpdate(for: spec) {
             refreshSeconds = WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds()
         }
 
@@ -135,13 +134,27 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             if selected.id == WidgetWeaverSpecEntityIDs.appDefault {
                 return store.loadDefault()
             }
-
-            if let uuid = UUID(uuidString: selected.id), let spec = store.load(id: uuid) {
+            if let uuid = UUID(uuidString: selected.id),
+               let spec = store.load(id: uuid) {
                 return spec
             }
         }
 
         return store.loadDefault()
+    }
+
+    private func needsWeatherUpdate(for spec: WidgetSpec) -> Bool {
+        // Weather template always needs it.
+        if spec.layout.template == .weather { return true }
+
+        // Any design can reference weather variables.
+        let primary = spec.primaryText
+        let secondary = spec.secondaryText ?? ""
+
+        if primary.localizedCaseInsensitiveContains("__weather_") { return true }
+        if secondary.localizedCaseInsensitiveContains("__weather_") { return true }
+
+        return false
     }
 }
 
@@ -149,7 +162,6 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
 struct WidgetWeaverWidgetView: View {
     let entry: WidgetWeaverProvider.Entry
-
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
