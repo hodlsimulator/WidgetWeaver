@@ -326,6 +326,8 @@ extension ContentView {
                 Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
             }
 
+            imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
+
             if hasImage {
                 if let uiImage = AppGroup.loadUIImage(fileName: currentImageFileName) {
                     Image(uiImage: uiImage)

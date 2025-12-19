@@ -18,6 +18,8 @@ struct ContentView: View {
 
     @StateObject var proManager = WidgetWeaverProManager()
 
+    @AppStorage("widgetweaver.editor.autoThemeFromImage") var autoThemeFromImage: Bool = true
+
     @State var savedSpecs: [WidgetSpec] = []
     @State var defaultSpecID: UUID?
     @State var selectedSpecID: UUID = UUID()
@@ -37,6 +39,11 @@ struct ContentView: View {
     )
 
     @State var pickedPhoto: PhotosPickerItem?
+
+    @State var lastImageThemeFileName: String = ""
+    @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
+
+    @State var remixVariants: [WidgetWeaverRemixEngine.Variant] = []
 
     @State var aiPrompt: String = ""
     @State var aiMakeGeneratedDefault: Bool = true
@@ -60,6 +67,7 @@ struct ContentView: View {
         case about
         case variables
         case inspector
+        case remix
 
         var id: Int {
             switch self {
@@ -68,6 +76,7 @@ struct ContentView: View {
             case .about: return 3
             case .variables: return 4
             case .inspector: return 5
+            case .remix: return 6
             }
         }
     }
@@ -92,6 +101,10 @@ struct ContentView: View {
             .navigationTitle("WidgetWeaver")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    remixToolbarButton
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     toolbarMenu
                 }
@@ -163,6 +176,21 @@ struct ContentView: View {
                     WidgetWeaverDesignInspectorView(
                         spec: draftSpec(id: selectedSpecID),
                         initialFamily: previewFamily
+                    )
+
+                case .remix:
+                    WidgetWeaverRemixSheet(
+                        variants: remixVariants,
+                        family: previewFamily,
+                        onApply: { spec in
+                            applyRemixVariant(spec)
+                        },
+                        onAgain: {
+                            remixAgain()
+                        },
+                        onClose: {
+                            activeSheet = nil
+                        }
                     )
                 }
             }

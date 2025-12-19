@@ -27,6 +27,8 @@ extension ContentView {
                 var d = currentFamilyDraft()
                 d.imageFileName = fileName
                 setCurrentFamilyDraft(d)
+
+                handleImportedImageTheme(uiImage: uiImage, fileName: fileName)
                 pickedPhoto = nil
             }
         } catch {

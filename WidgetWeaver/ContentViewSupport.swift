@@ -259,7 +259,6 @@ struct WidgetWeaverProView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture(count: 7) {
-                        guard WidgetWeaverEntitlements.isLikelyTestFlightBuild else { return }
                         showInternalTools.toggle()
                     }
                 } header: {
@@ -321,7 +320,7 @@ struct WidgetWeaverProView: View {
                     Text("Actions")
                 }
 
-                if showInternalTools && WidgetWeaverEntitlements.isLikelyTestFlightBuild {
+                if showInternalTools {
                     Section {
                         Button {
                             WidgetWeaverEntitlements.setProUnlocked(true)

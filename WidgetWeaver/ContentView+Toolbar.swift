@@ -68,6 +68,10 @@ extension ContentView {
                 Label("Randomise Style (Draft)", systemImage: "shuffle")
             }
 
+            Button { presentRemixSheet() } label: {
+                Label("Remix (5 options)", systemImage: "wand.and.stars")
+            }
+
             Button(role: .destructive) { showImageCleanupConfirmation = true } label: {
                 Label("Clean Up Unused Images", systemImage: "trash.slash")
             }
