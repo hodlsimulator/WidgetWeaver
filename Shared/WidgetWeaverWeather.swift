@@ -325,7 +325,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         }
     }
 
-    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+    public func variablesDictionary(now _: Date = Date()) -> [String: String] {
         guard let snap = loadSnapshot() else { return [:] }
 
         var vars: [String: String] = [:]
