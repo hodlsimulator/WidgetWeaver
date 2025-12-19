@@ -891,8 +891,8 @@ public struct WidgetWeaverSpecView: View {
                         .lineLimit(layout.primaryLineLimit)
                 }
 
-                if !spec.secondaryText.isEmpty {
-                    Text(spec.secondaryText)
+                if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                    Text(secondaryText)
                         .font(style.secondaryTextStyle.font)
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(layout.secondaryLineLimit)
@@ -956,8 +956,8 @@ public struct WidgetWeaverSpecView: View {
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
 
-            if !spec.secondaryText.isEmpty {
-                Text(spec.secondaryText)
+            if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                Text(secondaryText)
                     .font(style.secondaryTextStyle.font)
                     .foregroundStyle(.secondary)
                     .lineLimit(family == .systemSmall ? layout.secondaryLineLimitSmall : layout.secondaryLineLimit)
@@ -975,8 +975,8 @@ public struct WidgetWeaverSpecView: View {
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
 
-            if !spec.secondaryText.isEmpty {
-                Text(spec.secondaryText)
+            if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                Text(secondaryText)
                     .font(style.secondaryTextStyle.font)
                     .foregroundStyle(.secondary)
                     .lineLimit(family == .systemSmall ? layout.secondaryLineLimitSmall : layout.secondaryLineLimit)

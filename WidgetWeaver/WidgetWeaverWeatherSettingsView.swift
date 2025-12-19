@@ -7,7 +7,7 @@
 
 import SwiftUI
 import CoreLocation
-import MapKit
+@preconcurrency import MapKit
 import WidgetKit
 
 struct WidgetWeaverWeatherSettingsView: View {
@@ -91,7 +91,8 @@ struct WidgetWeaverWeatherSettingsView: View {
             Section("Units") {
                 Picker("Temperature", selection: $unitPreference) {
                     ForEach(WidgetWeaverWeatherUnitPreference.allCases) { pref in
-                        Text(pref.displayName).tag(pref)
+                        Text(pref.displayName)
+                            .tag(pref)
                     }
                 }
                 .onChange(of: unitPreference) { _, newValue in
@@ -111,7 +112,10 @@ struct WidgetWeaverWeatherSettingsView: View {
                             .foregroundStyle(.secondary)
 
                         let unit = store.resolvedUnitTemperature()
-                        let tempValue = Measurement(value: snap.temperatureC, unit: UnitTemperature.celsius).converted(to: unit).value
+                        let tempValue = Measurement(value: snap.temperatureC, unit: UnitTemperature.celsius)
+                            .converted(to: unit)
+                            .value
+
                         Text("Temp \(Int(round(tempValue)))°")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -196,8 +200,8 @@ struct WidgetWeaverWeatherSettingsView: View {
         defer { isWorking = false }
 
         do {
-            let mapItems = try await geocode(trimmed)
-            guard let best = mapItems.first, let loc = best.location else {
+            let candidates = try await geocode(trimmed)
+            guard let best = candidates.first else {
                 statusText = "No results found."
                 return
             }
@@ -207,8 +211,8 @@ struct WidgetWeaverWeatherSettingsView: View {
 
             let stored = WidgetWeaverWeatherLocation(
                 name: name,
-                latitude: loc.coordinate.latitude,
-                longitude: loc.coordinate.longitude,
+                latitude: best.latitude,
+                longitude: best.longitude,
                 updatedAt: Date()
             )
 
@@ -241,11 +245,27 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
     }
 
-    private func geocode(_ query: String) async throws -> [MKMapItem] {
-        guard let request = MKGeocodingRequest(addressString: query) else {
-            return []
-        }
+    private struct GeocodeCandidate: Sendable {
+        let name: String?
+        let latitude: Double
+        let longitude: Double
+    }
 
-        return try await request.mapItems
+    private func geocode(_ query: String) async throws -> [GeocodeCandidate] {
+        try await Task.detached(priority: .userInitiated) { () -> [GeocodeCandidate] in
+            guard let request = MKGeocodingRequest(addressString: query) else {
+                return []
+            }
+
+            let items = try await request.mapItems
+            return items.map { item in
+                let loc = item.location
+                return GeocodeCandidate(
+                    name: item.name,
+                    latitude: loc.coordinate.latitude,
+                    longitude: loc.coordinate.longitude
+                )
+            }
+        }.value
     }
 }
