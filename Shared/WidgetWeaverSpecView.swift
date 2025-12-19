@@ -302,6 +302,7 @@ private struct WeatherEmptyStateView: View {
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
         let location = store.loadLocation()
+        let lastError = store.loadLastError()
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -326,24 +327,7 @@ private struct WeatherEmptyStateView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             VStack(alignment: .leading, spacing: 8) {
-                if let location {
-                    Image(systemName: "cloud.sun")
-                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
-                        .foregroundStyle(accent)
-
-                    Text("Updating weather…")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text(location.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Text("Menu → Weather → Update now")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
+                if location == nil {
                     Image(systemName: "location.slash")
                         .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
                         .foregroundStyle(accent)
@@ -353,6 +337,45 @@ private struct WeatherEmptyStateView: View {
                         .foregroundStyle(.primary)
 
                     Text("Menu → Weather")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let lastError {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                        .foregroundStyle(accent)
+
+                    Text("Weather update failed")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Text(location?.name ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text(lastError)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(family == .systemSmall ? 2 : 3)
+
+                    Text("Menu → Weather → Update now")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "cloud.sun.fill")
+                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                        .foregroundStyle(accent)
+
+                    Text("Updating weather…")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Text(location?.name ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text("Menu → Weather → Update now")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

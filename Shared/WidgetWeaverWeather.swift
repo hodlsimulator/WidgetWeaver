@@ -224,6 +224,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         public static let snapshotData = "widgetweaver.weather.snapshot.v1"
         public static let unitPreference = "widgetweaver.weather.unitPreference.v1"
         public static let attributionData = "widgetweaver.weather.attribution.v1"
+        public static let lastError = "widgetweaver.weather.lastError.v1"
     }
 
     private let defaults: UserDefaults
@@ -467,6 +468,48 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         let pct = Int(round(chance * 100.0))
         return String(pct)
     }
+    
+    // MARK: Last error
+
+    public func loadLastError() -> String? {
+        sync()
+
+        if let s = defaults.string(forKey: Keys.lastError) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { return t }
+        }
+
+        if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                defaults.set(t, forKey: Keys.lastError)
+                sync()
+                return t
+            }
+        }
+
+        return nil
+    }
+
+    public func saveLastError(_ error: String?) {
+        let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let trimmed, !trimmed.isEmpty {
+            defaults.set(trimmed, forKey: Keys.lastError)
+            UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
+        } else {
+            defaults.removeObject(forKey: Keys.lastError)
+            UserDefaults.standard.removeObject(forKey: Keys.lastError)
+        }
+
+        sync()
+    }
+
+    public func clearLastError() {
+        defaults.removeObject(forKey: Keys.lastError)
+        UserDefaults.standard.removeObject(forKey: Keys.lastError)
+        sync()
+    }
 }
 
 // MARK: - Engine
@@ -510,12 +553,15 @@ public actor WidgetWeaverWeatherEngine {
         let store = WidgetWeaverWeatherStore.shared
 
         guard let location = store.loadLocation() else {
+            store.saveLastError("No location configured")
+            notifyWidgetsWeatherUpdated()
             return Result(snapshot: nil, attribution: store.loadAttribution(), errorDescription: "No location configured")
         }
 
         if !force, let existing = store.loadSnapshot() {
             let age = Date().timeIntervalSince(existing.fetchedAt)
             if age < minimumUpdateInterval {
+                store.saveLastError(nil)
                 return Result(snapshot: existing, attribution: store.loadAttribution(), errorDescription: nil)
             }
         }
@@ -533,17 +579,38 @@ public actor WidgetWeaverWeatherEngine {
 
             store.saveSnapshot(snap)
             store.saveAttribution(attr)
+            store.saveLastError(nil)
 
+            notifyWidgetsWeatherUpdated()
             return Result(snapshot: snap, attribution: attr, errorDescription: nil)
         } catch {
+            let message = String(describing: error)
+            store.saveLastError(message)
+            notifyWidgetsWeatherUpdated()
+
             return Result(
                 snapshot: store.loadSnapshot(),
                 attribution: store.loadAttribution(),
-                errorDescription: String(describing: error)
+                errorDescription: message
             )
         }
         #else
+        store.saveLastError("WeatherKit unavailable")
+        notifyWidgetsWeatherUpdated()
         return Result(snapshot: store.loadSnapshot(), attribution: store.loadAttribution(), errorDescription: "WeatherKit unavailable")
+        #endif
+    }
+
+    private func notifyWidgetsWeatherUpdated() {
+        #if canImport(WidgetKit)
+        let kind = WidgetWeaverWidgetKinds.main
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
         #endif
     }
 
@@ -552,8 +619,6 @@ public actor WidgetWeaverWeatherEngine {
         let now = Date()
         let current = weather.currentWeather
 
-        // CurrentWeather doesn't expose every “forecast” style field uniformly across OS versions.
-        // The first hour in the hourly forecast is a dependable proxy for the near term.
         let precipChance01 = weather.hourlyForecast.forecast.first?.precipitationChance
 
         let today = weather.dailyForecast.forecast.first.map { day -> WidgetWeaverWeatherDailyPoint in

@@ -107,19 +107,23 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
+        let needsWeather = needsWeatherUpdate(for: spec)
 
-        if needsWeatherUpdate(for: spec) {
+        if needsWeather {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
 
         var refreshSeconds: TimeInterval = 60 * 15
 
-        if needsWeatherUpdate(for: spec) {
+        if needsWeather {
             refreshSeconds = WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds()
+            if WidgetWeaverWeatherStore.shared.loadSnapshot() == nil {
+                refreshSeconds = min(refreshSeconds, 60 * 2)
+            }
         }
 
         if spec.usesTimeDependentRendering() {
-            refreshSeconds = 60 * 5
+            refreshSeconds = min(refreshSeconds, 60 * 5)
         }
 
         let entry = Entry(date: Date(), spec: spec)
