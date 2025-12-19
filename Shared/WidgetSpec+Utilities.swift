@@ -21,6 +21,18 @@ extension Comparable {
     }
 }
 
+extension Optional where Wrapped == String {
+    /// Mirrors `String.trimmingCharacters(in:)` but returns an empty string when the optional is `nil`.
+    func trimmingCharacters(in set: CharacterSet) -> String {
+        switch self {
+        case .some(let s):
+            return s.trimmingCharacters(in: set)
+        case .none:
+            return ""
+        }
+    }
+}
+
 extension Double {
     func normalised() -> Double { isFinite ? self : 0 }
 }

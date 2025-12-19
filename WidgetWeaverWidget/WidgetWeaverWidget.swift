@@ -75,8 +75,8 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
 // MARK: - Widget configuration intent
 
 struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "WidgetWeaver Design"
-    static var description = IntentDescription("Select which saved design this widget should use.")
+    static let title: LocalizedStringResource = "WidgetWeaver Design"
+    static let description = IntentDescription("Select which saved design this widget should use.")
 
     @Parameter(title: "Design")
     var spec: WidgetWeaverSpecEntity?

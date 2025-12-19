@@ -72,6 +72,11 @@ public struct SymbolSpec: Codable, Hashable {
     }
 }
 
+// MARK: - Compatibility
+
+/// Backwards-compatible alias used by older renderer helpers.
+public typealias WidgetSymbol = SymbolSpec
+
 public enum SymbolPlacementToken: String, Codable, CaseIterable, Hashable, Identifiable {
     case aboveName
     case beforeName

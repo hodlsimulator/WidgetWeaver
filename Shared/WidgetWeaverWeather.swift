@@ -148,7 +148,7 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
 
     public static func sampleSunny(now: Date = Date()) -> WidgetWeaverWeatherSnapshot {
         let cal = Calendar.current
-        let base = cal.date(bySettingMinute: 0, second: 0, of: now) ?? now
+        let base = cal.dateInterval(of: .hour, for: now)?.start ?? now
 
         let hourly: [WidgetWeaverWeatherHourlyPoint] = (0..<8).compactMap { i in
             guard let d = cal.date(byAdding: .hour, value: i, to: base) else { return nil }
@@ -304,7 +304,12 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         case .fahrenheit:
             return .fahrenheit
         case .automatic:
-            return Locale.current.usesMetricSystem ? .celsius : .fahrenheit
+            switch Locale.current.measurementSystem {
+            case .us:
+                return .fahrenheit
+            default:
+                return .celsius
+            }
         }
     }
 

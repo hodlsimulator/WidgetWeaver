@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import MapKit
 import WidgetKit
 
 struct WidgetWeaverWeatherSettingsView: View {
@@ -195,13 +196,14 @@ struct WidgetWeaverWeatherSettingsView: View {
         defer { isWorking = false }
 
         do {
-            let placemarks = try await geocode(trimmed)
-            guard let best = placemarks.first, let loc = best.location else {
+            let mapItems = try await geocode(trimmed)
+            guard let best = mapItems.first, let loc = best.location else {
                 statusText = "No results found."
                 return
             }
 
-            let name = formattedPlacemarkName(best, fallback: trimmed)
+            let name = (best.name?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 } ?? trimmed
 
             let stored = WidgetWeaverWeatherLocation(
                 name: name,
@@ -239,26 +241,11 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
     }
 
-    private func geocode(_ query: String) async throws -> [CLPlacemark] {
-        try await withCheckedThrowingContinuation { continuation in
-            CLGeocoder().geocodeAddressString(query) { placemarks, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: placemarks ?? [])
-            }
+    private func geocode(_ query: String) async throws -> [MKMapItem] {
+        guard let request = MKGeocodingRequest(addressString: query) else {
+            return []
         }
-    }
 
-    private func formattedPlacemarkName(_ placemark: CLPlacemark, fallback: String) -> String {
-        let parts: [String?] = [
-            placemark.locality,
-            placemark.administrativeArea,
-            placemark.country
-        ]
-        let cleaned = parts.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        if cleaned.isEmpty { return fallback }
-        return cleaned.joined(separator: ", ")
+        return try await request.mapItems
     }
 }

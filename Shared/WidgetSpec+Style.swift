@@ -137,16 +137,59 @@ public extension BackgroundToken {
 
 public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
     case plain
+    case accentGlow
+    case radialGlow
+    case solidAccent
     case subtleMaterial
     case aurora
     case sunset
     case midnight
     case candy
 
+    public var uiLabel: String {
+        switch self {
+        case .plain: return "Plain"
+        case .accentGlow: return "Accent Glow"
+        case .radialGlow: return "Radial Glow"
+        case .solidAccent: return "Solid Accent"
+        case .subtleMaterial: return "Subtle Material"
+        case .aurora: return "Aurora"
+        case .sunset: return "Sunset"
+        case .midnight: return "Midnight"
+        case .candy: return "Candy"
+        }
+    }
+
+    /// Backwards-compatible alias.
+    public var displayName: String { uiLabel }
+
     public func shapeStyle(accent: Color) -> AnyShapeStyle {
         switch self {
         case .plain:
             return AnyShapeStyle(Color(.systemBackground))
+        case .accentGlow:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [accent.opacity(0.35), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        case .radialGlow:
+            return AnyShapeStyle(
+                RadialGradient(
+                    colors: [
+                        accent.opacity(0.42),
+                        accent.opacity(0.12),
+                        .clear,
+                    ],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+        case .solidAccent:
+            return AnyShapeStyle(accent.opacity(0.18))
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
         case .aurora:
@@ -210,6 +253,26 @@ public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
     case teal
     case red
     case yellow
+    case gray
+    case indigo
+
+    public var uiLabel: String {
+        switch self {
+        case .blue: return "Blue"
+        case .purple: return "Purple"
+        case .pink: return "Pink"
+        case .orange: return "Orange"
+        case .green: return "Green"
+        case .teal: return "Teal"
+        case .red: return "Red"
+        case .yellow: return "Yellow"
+        case .gray: return "Grey"
+        case .indigo: return "Indigo"
+        }
+    }
+
+    /// Backwards-compatible alias.
+    public var displayName: String { uiLabel }
 
     public func color() -> Color {
         switch self {
@@ -221,8 +284,13 @@ public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
         case .teal: return .teal
         case .red: return .red
         case .yellow: return .yellow
+        case .gray: return .gray
+        case .indigo: return .indigo
         }
     }
+
+    /// Backwards-compatible alias.
+    public var swiftUIColor: Color { color() }
 }
 
 public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
@@ -235,6 +303,26 @@ public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
     case title3
     case title2
     case title
+
+    public var uiLabel: String {
+        switch self {
+        case .caption2: return "Caption 2"
+        case .caption: return "Caption"
+        case .footnote: return "Footnote"
+        case .subheadline: return "Subheadline"
+        case .body: return "Body"
+        case .headline: return "Headline"
+        case .title3: return "Title 3"
+        case .title2: return "Title 2"
+        case .title: return "Title"
+        }
+    }
+
+    /// Backwards-compatible alias.
+    public var displayName: String { uiLabel }
+
+    /// Convenience for places that just need a `Font` and don't care about fallback behaviour.
+    public var font: Font { font(fallback: .body) }
 
     public func font(fallback: Font) -> Font {
         switch self {
