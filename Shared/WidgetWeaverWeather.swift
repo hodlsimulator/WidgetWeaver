@@ -7,6 +7,11 @@
 
 import Foundation
 import CoreLocation
+
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
+
 #if canImport(WeatherKit)
 import WeatherKit
 #endif
