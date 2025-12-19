@@ -125,7 +125,7 @@ private struct WeatherFilledStateView: View {
 
     private var headerRow: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(spec.name)
+            Text(snapshot.locationName)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)

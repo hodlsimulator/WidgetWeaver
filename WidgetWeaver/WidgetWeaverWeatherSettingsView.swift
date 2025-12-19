@@ -9,9 +9,13 @@ import SwiftUI
 import CoreLocation
 @preconcurrency import MapKit
 import WidgetKit
+import UIKit
 
 struct WidgetWeaverWeatherSettingsView: View {
+
     var onClose: (() -> Void)? = nil
+
+    @Environment(\.openURL) private var openURL
 
     @State private var query: String = ""
     @State private var isWorking: Bool = false
@@ -20,6 +24,8 @@ struct WidgetWeaverWeatherSettingsView: View {
     @State private var savedLocation: WidgetWeaverWeatherLocation? = WidgetWeaverWeatherStore.shared.loadLocation()
     @State private var snapshot: WidgetWeaverWeatherSnapshot? = WidgetWeaverWeatherStore.shared.loadSnapshot()
     @State private var unitPreference: WidgetWeaverWeatherUnitPreference = WidgetWeaverWeatherStore.shared.loadUnitPreference()
+
+    @State private var locationAuthStatus: CLAuthorizationStatus = CLLocationManager().authorizationStatus
 
     private let store = WidgetWeaverWeatherStore.shared
 
@@ -74,7 +80,26 @@ struct WidgetWeaverWeatherSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button {
+                        Task { await useCurrentLocation() }
+                    } label: {
+                        Label(currentLocationButtonTitle, systemImage: "location.fill")
+                    }
+                    .disabled(isWorking)
+                    .buttonStyle(.bordered)
+
+                    if locationAuthStatus == .denied || locationAuthStatus == .restricted {
+                        Button {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                openURL(url)
+                            }
+                        } label: {
+                            Label("Open Location Settings", systemImage: "gear")
+                        }
+                        .disabled(isWorking)
+                    }
+
                     TextField("City, town, postcode…", text: $query)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
@@ -91,8 +116,7 @@ struct WidgetWeaverWeatherSettingsView: View {
             Section("Units") {
                 Picker("Temperature", selection: $unitPreference) {
                     ForEach(WidgetWeaverWeatherUnitPreference.allCases) { pref in
-                        Text(pref.displayName)
-                            .tag(pref)
+                        Text(pref.displayName).tag(pref)
                     }
                 }
                 .onChange(of: unitPreference) { _, newValue in
@@ -178,7 +202,28 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
         .onAppear {
             refreshLocalState()
+            refreshLocationAuthStatus()
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            refreshLocationAuthStatus()
+        }
+    }
+
+    private var currentLocationButtonTitle: String {
+        switch locationAuthStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return "Use Current Location"
+        case .notDetermined:
+            return "Use Current Location"
+        case .denied, .restricted:
+            return "Use Current Location (Permission Needed)"
+        @unknown default:
+            return "Use Current Location"
+        }
+    }
+
+    private func refreshLocationAuthStatus() {
+        locationAuthStatus = CLLocationManager().authorizationStatus
     }
 
     private func refreshLocalState() {
@@ -196,6 +241,78 @@ struct WidgetWeaverWeatherSettingsView: View {
 
         if #available(iOS 17.0, *) {
             WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
+    }
+
+    private func useCurrentLocation() async {
+        isWorking = true
+        statusText = nil
+        defer {
+            isWorking = false
+            refreshLocationAuthStatus()
+        }
+
+        let status = await WidgetWeaverLocationService.shared.ensureWhenInUseAuthorisation()
+        refreshLocationAuthStatus()
+
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+            switch status {
+            case .denied, .restricted:
+                statusText = "Location permission is disabled. Enable it in Settings to use Current Location."
+            case .notDetermined:
+                statusText = "Location permission was not granted."
+            default:
+                statusText = "Location permission is unavailable (status: \(status.rawValue))."
+            }
+            return
+        }
+
+        do {
+            let location = try await WidgetWeaverLocationService.shared.fetchOneLocation()
+            let name = await reverseGeocodedName(for: location) ?? "Current Location"
+
+            let stored = WidgetWeaverWeatherLocation(
+                name: name,
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                updatedAt: Date()
+            )
+
+            store.saveLocation(stored)
+            store.clearSnapshot()
+
+            refreshLocalState()
+            reloadWidgets()
+
+            await updateNow(force: true)
+        } catch {
+            statusText = "Location failed: \(String(describing: error))"
+        }
+    }
+
+    private func reverseGeocodedName(for location: CLLocation) async -> String? {
+        guard let request = MKReverseGeocodingRequest(location: location) else { return nil }
+
+        do {
+            let items = try await request.mapItems
+            guard let item = items.first else { return nil }
+
+            if let address = item.address {
+                let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !short.isEmpty { return short }
+
+                let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !full.isEmpty { return full }
+            }
+
+            if let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                return name
+            }
+
+            return nil
+        } catch {
+            return nil
         }
     }
 
@@ -226,6 +343,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
             store.saveLocation(stored)
             store.clearSnapshot()
+
             refreshLocalState()
             reloadWidgets()
 
@@ -241,8 +359,10 @@ struct WidgetWeaverWeatherSettingsView: View {
         defer { isWorking = false }
 
         let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: force)
+
         store.saveSnapshot(result.snapshot)
         store.saveAttribution(result.attribution)
+
         refreshLocalState()
         reloadWidgets()
 
@@ -261,11 +381,9 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     private func geocode(_ query: String) async throws -> [GeocodeCandidate] {
         try await Task.detached(priority: .userInitiated) { () -> [GeocodeCandidate] in
-            guard let request = MKGeocodingRequest(addressString: query) else {
-                return []
-            }
-
+            guard let request = MKGeocodingRequest(addressString: query) else { return [] }
             let items = try await request.mapItems
+
             return items.map { item in
                 let loc = item.location
                 return GeocodeCandidate(
