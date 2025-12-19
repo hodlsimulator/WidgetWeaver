@@ -188,7 +188,15 @@ struct WidgetWeaverWeatherSettingsView: View {
     }
 
     private func reloadWidgets() {
+        AppGroup.userDefaults.synchronize()
+
+        let kind = WidgetWeaverWidgetKinds.main
+        WidgetCenter.shared.reloadTimelines(ofKind: kind)
         WidgetCenter.shared.reloadAllTimelines()
+
+        if #available(iOS 17.0, *) {
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
     }
 
     private func geocodeAndSave() async {

@@ -223,6 +223,11 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
+    @inline(__always)
+    private func sync() {
+        defaults.synchronize()
+    }
+
     private init(defaults: UserDefaults = AppGroup.userDefaults) {
         self.defaults = defaults
         self.encoder = JSONEncoder()
@@ -232,6 +237,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     }
 
     public func loadLocation() -> WidgetWeaverWeatherLocation? {
+        sync()
         guard let data = defaults.data(forKey: Keys.locationData) else { return nil }
         return try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data)
     }
@@ -244,9 +250,12 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: Keys.locationData)
         }
+
+        sync()
     }
 
     public func loadSnapshot() -> WidgetWeaverWeatherSnapshot? {
+        sync()
         guard let data = defaults.data(forKey: Keys.snapshotData) else { return nil }
         return try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data)
     }
@@ -259,22 +268,28 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: Keys.snapshotData)
         }
+
+        sync()
     }
 
     public func clearSnapshot() {
         defaults.removeObject(forKey: Keys.snapshotData)
+        sync()
     }
 
     public func loadUnitPreference() -> WidgetWeaverWeatherUnitPreference {
+        sync()
         let raw = defaults.string(forKey: Keys.unitPreference) ?? WidgetWeaverWeatherUnitPreference.automatic.rawValue
         return WidgetWeaverWeatherUnitPreference(rawValue: raw) ?? .automatic
     }
 
     public func saveUnitPreference(_ preference: WidgetWeaverWeatherUnitPreference) {
         defaults.set(preference.rawValue, forKey: Keys.unitPreference)
+        sync()
     }
 
     public func loadAttribution() -> WidgetWeaverWeatherAttribution? {
+        sync()
         guard let data = defaults.data(forKey: Keys.attributionData) else { return nil }
         return try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data)
     }
@@ -287,6 +302,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: Keys.attributionData)
         }
+
+        sync()
     }
 
     public func attributionLegalURL() -> URL? {
@@ -355,6 +372,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         if let hi = snap.highTemperatureC {
             vars["__weather_high"] = temperatureString(hi, unit: unit).value
         }
+
         if let lo = snap.lowTemperatureC {
             vars["__weather_low"] = temperatureString(lo, unit: unit).value
         }
