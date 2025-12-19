@@ -11,7 +11,7 @@ WidgetWeaver supports both:
 - **Optional on-device prompt → spec generation** (Apple Intelligence / Foundation Models), with deterministic fallbacks when unavailable
 
 
-## Current status (0.9.4 (7))
+## Current status (0.9.4 (8))
 
 ### Core pipeline
 ✅ iOS app target created and runs on a real device  
@@ -20,7 +20,8 @@ WidgetWeaver supports both:
 ✅ App can edit and save specs into the App Group store  
 ✅ Multiple saved specs (design library)  
 ✅ Per-widget instance selection (Edit Widget → choose a saved design)  
-✅ “Default (App)” selection supported (widget can follow the app’s current default design)
+✅ “Default (App)” selection supported (widget can follow the app’s current default design)  
+✅ Preview dock supports **Preview | Live** (Live runs interactive widget buttons locally)
 
 ### Layout + style
 ✅ Shared `WidgetSpec` tokens (layout + style)  
@@ -42,6 +43,7 @@ WidgetWeaver supports both:
 
 ### Interactivity + automation
 ✅ **Widget Action Bar** (interactive buttons on iOS 17+) to run AppIntents  
+✅ **Live preview simulator** (toggle **Live** in the preview dock to tap Action Bar buttons in-app)  
 ✅ **Variables + Shortcuts** (text templates + Variables manager + App Intents actions to update variables and refresh widgets)
 
 ### AI (optional)
@@ -83,7 +85,6 @@ Matched sets (Small/Medium/Large):
 
 ### Layout templates (Classic / Hero / Poster)
 In the editor, pick **Layout → Template**:
-
 - **Classic**
   - The original layout: name + text + optional image banner + optional symbol.
 - **Hero**
@@ -108,7 +109,6 @@ These are style backgrounds designed to look less flat: subtle gradients/glows l
 ## Photo theme extraction (auto accent + auto background)
 
 When a design has a photo, WidgetWeaver can extract a palette and suggest a matching look:
-
 - **Suggested Accent**: pulled from the photo’s dominant/vibrant tones.
 - **Suggested Background**: picked to support contrast/readability with the chosen accent.
 
@@ -122,7 +122,6 @@ This only affects the current draft until you **Save**.
 ## Remix (5 variants, text untouched)
 
 Remix is a one-tap “make this look different” tool:
-
 - Generates **5** visually distinct variants of the current widget.
 - Changes things like template/background/typography/style accents.
 - Keeps the current text content intact.
@@ -134,7 +133,6 @@ Use it to explore directions quickly:
 ## Action Bar (interactive widget buttons)
 
 You can attach a small **Action Bar** to a design.
-
 - Shows at the bottom of the widget.
 - On **Small** widgets it will show up to **1** button; on Medium/Large up to **2**.
 - Buttons run **AppIntents** (iOS 17+) and can update your App Group variable store:
@@ -142,8 +140,9 @@ You can attach a small **Action Bar** to a design.
   - **Set variable to now** (key + format)
 
 Notes:
-- Buttons are only truly interactive when rendered in a real widget context (Home Screen / StandBy).
-- In the app preview they render as non-interactive.
+- Buttons are interactive when rendered as a real widget (Home Screen / StandBy).
+- In the editor preview dock, switch to **Live** to tap Action Bar buttons in-app (no Home Screen round-trip).
+- In normal **Preview** mode, buttons render as non-interactive (safe while editing).
 
 
 ## About page + templates
@@ -167,14 +166,16 @@ Template scope (what’s included today):
 ## Sharing / import / export
 
 WidgetWeaver can export one design or all designs as a single file, and import designs back into the app.
-
 - Export format: versioned exchange JSON (validated on import).
 - Images: exports embed image bytes when the referenced files exist in the App Group container.
-- Import behaviour:
-  - Imported designs are duplicated with new IDs to avoid overwriting existing designs.
-  - Embedded images are restored into the App Group container and references are rewritten.
+
+Import behaviour:
+- Imported designs are duplicated with new IDs to avoid overwriting existing designs.
+- Embedded images are restored into the App Group container and references are rewritten.
 - Widget refresh: imports and exports trigger a widget refresh so changes show quickly.
-- Maintenance: “Clean Up Unused Images” deletes image files in the App Group container that are not referenced by any saved design.
+
+Maintenance:
+- “Clean Up Unused Images” deletes image files in the App Group container that are not referenced by any saved design.
 
 In the app:
 - Toolbar menu (**…**) → **Share this design** / **Share all designs**
@@ -246,7 +247,9 @@ Practical testing recipe:
    - amount: `1`
 3. Save & Make Default
 4. Add a widget set to **Default (App)**
-5. Tap the button on the Home Screen and watch `Clicks:` update.
+5. Either:
+   - Toggle **Live** in the editor preview dock and tap the button there, or
+   - Tap the button on the Home Screen and watch `Clicks:` update.
 
 
 ## AI (prompt → spec + patch edits)
@@ -286,7 +289,7 @@ Privacy:
 Targets:
 - **WidgetWeaver** (iOS app)
   - Create/edit/save a `WidgetSpec`
-  - In-app previews (Small/Medium/Large)
+  - In-app previews (Small/Medium/Large) + **Live** interactive simulator mode
   - Manage a library of saved designs
   - Pick an optional image for a design
   - About page (templates + examples)
@@ -335,6 +338,7 @@ Safety:
 - Milestone 7 — Sharing / import / export (DONE)
 - Milestone 7.5 — About page + template gallery (DONE)
 - Milestone 7.6 — Inspector + revert (DONE)
+- Milestone 7.7 — Live preview simulator (DONE)
 - Milestone 8 — Monetisation (IN PROGRESS)
 - Milestone 9 — Control Widgets (OPTIONAL)
 

@@ -19,6 +19,7 @@ import AppIntents
 public enum WidgetWeaverRenderContext: String, Codable, Hashable {
     case widget
     case preview
+    case simulator
 }
 
 public struct WidgetWeaverSpecView: View {
@@ -415,7 +416,7 @@ public struct WidgetWeaverSpecView: View {
 
         return Group {
             #if canImport(AppIntents)
-            if #available(iOS 17.0, *), context == .widget {
+            if #available(iOS 17.0, *), (context == .widget || context == .simulator) {
                 switch action.kind {
                 case .incrementVariable:
                     Button(intent: WidgetWeaverQuickIncrementVariableIntent(key: action.variableKey, amount: action.incrementAmount)) {
@@ -508,7 +509,7 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
                 content.background(backgroundView)
             }
 
-        case .preview:
+        case .preview, .simulator:
             content
                 .background(backgroundView)
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
