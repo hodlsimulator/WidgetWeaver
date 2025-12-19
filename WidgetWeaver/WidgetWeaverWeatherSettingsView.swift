@@ -236,11 +236,14 @@ struct WidgetWeaverWeatherSettingsView: View {
         AppGroup.userDefaults.synchronize()
 
         let kind = WidgetWeaverWidgetKinds.main
-        WidgetCenter.shared.reloadTimelines(ofKind: kind)
-        WidgetCenter.shared.reloadAllTimelines()
 
-        if #available(iOS 17.0, *) {
-            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadAllTimelines()
+
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
         }
     }
 

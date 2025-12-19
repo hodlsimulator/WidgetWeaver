@@ -300,6 +300,9 @@ private struct WeatherEmptyStateView: View {
     let attributionURL: URL?
 
     var body: some View {
+        let store = WidgetWeaverWeatherStore.shared
+        let location = store.loadLocation()
+
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(spec.name.isEmpty ? "Weather" : spec.name)
@@ -323,17 +326,36 @@ private struct WeatherEmptyStateView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: "location.slash")
-                    .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
-                    .foregroundStyle(accent)
+                if let location {
+                    Image(systemName: "cloud.sun")
+                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                        .foregroundStyle(accent)
 
-                Text("Set a location in Weather settings")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    Text("Updating weather…")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
 
-                Text("Menu → Weather")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text(location.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text("Menu → Weather → Update now")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "location.slash")
+                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                        .foregroundStyle(accent)
+
+                    Text("Set a location in Weather settings")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Text("Menu → Weather")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
