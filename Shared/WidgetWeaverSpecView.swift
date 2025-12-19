@@ -879,21 +879,21 @@ public struct WidgetWeaverSpecView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if !spec.name.isEmpty {
                     Text(spec.name)
-                        .font(style.nameTextStyle.font)
+                        .font(style.nameTextStyle.font(fallback: .caption))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                 }
 
                 if !spec.primaryText.isEmpty {
                     Text(spec.primaryText)
-                        .font(style.primaryTextStyle.font)
+                        .font(style.primaryTextStyle.font(fallback: .title3))
                         .foregroundStyle(.white)
                         .lineLimit(layout.primaryLineLimit)
                 }
 
                 if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                     Text(secondaryText)
-                        .font(style.secondaryTextStyle.font)
+                        .font(style.secondaryTextStyle.font(fallback: .caption2))
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(layout.secondaryLineLimit)
                 }
@@ -938,7 +938,7 @@ public struct WidgetWeaverSpecView: View {
         HStack(alignment: .firstTextBaseline) {
             if !spec.name.isEmpty {
                 Text(spec.name)
-                    .font(style.nameTextStyle.font)
+                    .font(style.nameTextStyle.font(fallback: .caption))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
@@ -951,14 +951,14 @@ public struct WidgetWeaverSpecView: View {
         VStack(alignment: layout.alignment.alignment, spacing: 6) {
             if !spec.primaryText.isEmpty {
                 Text(spec.primaryText)
-                    .font(style.primaryTextStyle.font)
+                    .font(style.primaryTextStyle.font(fallback: .title3))
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
 
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
-                    .font(style.secondaryTextStyle.font)
+                    .font(style.secondaryTextStyle.font(fallback: .caption2))
                     .foregroundStyle(.secondary)
                     .lineLimit(family == .systemSmall ? layout.secondaryLineLimitSmall : layout.secondaryLineLimit)
             }
@@ -970,7 +970,7 @@ public struct WidgetWeaverSpecView: View {
         VStack(alignment: layout.alignment.alignment, spacing: 6) {
             if !spec.primaryText.isEmpty {
                 Text(spec.primaryText)
-                    .font(style.primaryTextStyle.font)
+                    .font(style.primaryTextStyle.font(fallback: .title3))
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }

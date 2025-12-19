@@ -7,9 +7,12 @@
 
 import SwiftUI
 
+// MARK: - Style
+
 public struct StyleSpec: Hashable, Codable, Sendable {
     public var padding: Double
     public var cornerRadius: Double
+
     public var background: BackgroundToken
 
     /// Optional overlay painted above `background` (and above a banner image, if present).
@@ -18,6 +21,7 @@ public struct StyleSpec: Hashable, Codable, Sendable {
     public var backgroundGlowEnabled: Bool
 
     public var accent: AccentToken
+
     public var nameTextStyle: TextStyleToken
     public var primaryTextStyle: TextStyleToken
     public var secondaryTextStyle: TextStyleToken
@@ -135,7 +139,7 @@ public extension BackgroundToken {
     static var none: BackgroundToken { .plain }
 }
 
-public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
+public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case plain
     case accentGlow
     case radialGlow
@@ -145,6 +149,8 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
     case sunset
     case midnight
     case candy
+
+    public var id: String { rawValue }
 
     public var uiLabel: String {
         switch self {
@@ -167,6 +173,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
         switch self {
         case .plain:
             return AnyShapeStyle(Color(.systemBackground))
+
         case .accentGlow:
             return AnyShapeStyle(
                 LinearGradient(
@@ -175,6 +182,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
                     endPoint: .bottomTrailing
                 )
             )
+
         case .radialGlow:
             return AnyShapeStyle(
                 RadialGradient(
@@ -188,10 +196,13 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
                     endRadius: 320
                 )
             )
+
         case .solidAccent:
             return AnyShapeStyle(accent.opacity(0.18))
+
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
+
         case .aurora:
             return AnyShapeStyle(
                 LinearGradient(
@@ -204,6 +215,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
                     endPoint: .bottomTrailing
                 )
             )
+
         case .sunset:
             return AnyShapeStyle(
                 LinearGradient(
@@ -216,6 +228,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
                     endPoint: .bottomTrailing
                 )
             )
+
         case .midnight:
             return AnyShapeStyle(
                 LinearGradient(
@@ -228,6 +241,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
                     endPoint: .bottomTrailing
                 )
             )
+
         case .candy:
             return AnyShapeStyle(
                 LinearGradient(
@@ -244,7 +258,7 @@ public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
     }
 }
 
-public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
+public enum AccentToken: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case blue
     case purple
     case pink
@@ -255,6 +269,8 @@ public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
     case yellow
     case gray
     case indigo
+
+    public var id: String { rawValue }
 
     public var uiLabel: String {
         switch self {
@@ -293,7 +309,8 @@ public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
     public var swiftUIColor: Color { color() }
 }
 
-public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
+public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case automatic
     case caption2
     case caption
     case footnote
@@ -304,8 +321,11 @@ public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
     case title2
     case title
 
+    public var id: String { rawValue }
+
     public var uiLabel: String {
         switch self {
+        case .automatic: return "Automatic"
         case .caption2: return "Caption 2"
         case .caption: return "Caption"
         case .footnote: return "Footnote"
@@ -326,6 +346,7 @@ public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
 
     public func font(fallback: Font) -> Font {
         switch self {
+        case .automatic: return fallback
         case .caption2: return .caption2
         case .caption: return .caption
         case .footnote: return .footnote
