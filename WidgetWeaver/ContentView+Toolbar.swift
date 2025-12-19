@@ -101,6 +101,13 @@ extension ContentView {
             Button(role: .destructive) { showDeleteConfirmation = true } label: {
                 Label("Delete Design", systemImage: "trash")
             }
+            
+            Divider()
+            
+            Button { activeSheet = .weather } label: {
+                Label("Weather", systemImage: "cloud.sun.fill")
+            }
+
             .disabled(savedSpecs.count <= 1)
 
         } label: {

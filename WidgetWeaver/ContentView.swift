@@ -68,6 +68,7 @@ struct ContentView: View {
         case variables
         case inspector
         case remix
+        case weather
 
         var id: Int {
             switch self {
@@ -75,8 +76,10 @@ struct ContentView: View {
             case .pro: return 2
             case .about: return 3
             case .variables: return 4
-            case .inspector: return 5
-            case .remix: return 6
+            case .weather: return 5
+            case .inspector: return 6
+            case .remix: return 7
+            
             }
         }
     }
@@ -192,6 +195,11 @@ struct ContentView: View {
                             activeSheet = nil
                         }
                     )
+                    
+                case .weather:
+                    NavigationStack {
+                        WidgetWeaverWeatherSettingsView(onClose: { activeSheet = nil })
+                    }
                 }
             }
             .fileImporter(

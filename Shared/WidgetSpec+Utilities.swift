@@ -1089,63 +1089,55 @@ public extension WidgetSpec {
         // Custom variables are Pro-gated, built-ins are always present.
         var vars: [String: String] = WidgetWeaverEntitlements.isProUnlocked ? store.loadAll() : [:]
         let builtIns = WidgetWeaverVariableTemplate.builtInVariables(now: Date())
+
         for (k, v) in builtIns where vars[k] == nil {
             vars[k] = v
         }
+
+        // Weather variables behave like built-ins (not Pro-gated).
+        // These intentionally override any existing keys to keep the widget truthful.
+        let weatherVars = WidgetWeaverWeatherStore.shared.variablesDictionary()
+        for (k, v) in weatherVars {
+            vars[k] = v
+        }
+
         return resolvingVariables(using: vars)
     }
 
-    func resolvingVariables(using variables: [String: String]) -> WidgetSpec {
-        let now = Date()
+    func resolvingVariables(using vars: [String: String]) -> WidgetSpec {
+        var out = self
 
-        var s = self
+        out.name = WidgetWeaverVariableTemplate.render(out.name, vars: vars)
+        out.primaryText = WidgetWeaverVariableTemplate.render(out.primaryText, vars: vars)
+        out.secondaryText = WidgetWeaverVariableTemplate.render(out.secondaryText, vars: vars)
 
-        s.name = WidgetWeaverVariableTemplate.render(s.name, variables: variables, now: now, maxPasses: 3)
-        s.primaryText = WidgetWeaverVariableTemplate.render(s.primaryText, variables: variables, now: now, maxPasses: 3)
-
-        if let secondary = s.secondaryText {
-            let rendered = WidgetWeaverVariableTemplate.render(secondary, variables: variables, now: now, maxPasses: 3)
-            let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
-            s.secondaryText = trimmed.isEmpty ? nil : rendered
+        if let m = out.matchedSet {
+            var mm = m
+            if let s = mm.small {
+                var ss = s
+                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
+                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                mm.small = ss
+            }
+            if let s = mm.medium {
+                var ss = s
+                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
+                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                mm.medium = ss
+            }
+            if let s = mm.large {
+                var ss = s
+                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
+                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                mm.large = ss
+            }
+            out.matchedSet = mm
         }
 
-        if let matched = s.matchedSet {
-            var m = matched
-
-            if var v = m.small {
-                v.primaryText = WidgetWeaverVariableTemplate.render(v.primaryText, variables: variables, now: now, maxPasses: 3)
-                if let sec = v.secondaryText {
-                    let rendered = WidgetWeaverVariableTemplate.render(sec, variables: variables, now: now, maxPasses: 3)
-                    let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
-                    v.secondaryText = trimmed.isEmpty ? nil : rendered
-                }
-                m.small = v
-            }
-
-            if var v = m.medium {
-                v.primaryText = WidgetWeaverVariableTemplate.render(v.primaryText, variables: variables, now: now, maxPasses: 3)
-                if let sec = v.secondaryText {
-                    let rendered = WidgetWeaverVariableTemplate.render(sec, variables: variables, now: now, maxPasses: 3)
-                    let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
-                    v.secondaryText = trimmed.isEmpty ? nil : rendered
-                }
-                m.medium = v
-            }
-
-            if var v = m.large {
-                v.primaryText = WidgetWeaverVariableTemplate.render(v.primaryText, variables: variables, now: now, maxPasses: 3)
-                if let sec = v.secondaryText {
-                    let rendered = WidgetWeaverVariableTemplate.render(sec, variables: variables, now: now, maxPasses: 3)
-                    let trimmed = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
-                    v.secondaryText = trimmed.isEmpty ? nil : rendered
-                }
-                m.large = v
-            }
-
-            s.matchedSet = m
-        }
-
-        return s.normalised()
+        return out
     }
 
     func usesTimeDependentRendering() -> Bool {
@@ -1154,6 +1146,23 @@ public extension WidgetSpec {
                 return true
             }
         }
+        return false
+    }
+    
+    func usesWeatherRendering() -> Bool {
+        if layout.template == .weather { return true }
+
+        if let m = matchedSet {
+            if m.small?.layout.template == .weather { return true }
+            if m.medium?.layout.template == .weather { return true }
+            if m.large?.layout.template == .weather { return true }
+        }
+
+        for t in allTemplateStrings() {
+            if t.localizedCaseInsensitiveContains("__weather") { return true }
+            if t.localizedCaseInsensitiveContains("{{weather") { return true }
+        }
+
         return false
     }
 

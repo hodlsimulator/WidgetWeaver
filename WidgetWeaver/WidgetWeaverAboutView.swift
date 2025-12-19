@@ -815,6 +815,15 @@ private extension WidgetWeaverAboutView {
                 spec: specReading()
             ),
             AboutTemplate(
+                id: "starter-weather",
+                title: "Weather",
+                subtitle: "Forecast, but make it art",
+                description: "A premium Weather layout with glass panels, glow, and adaptive small/medium/large composition.",
+                tags: ["Weather", "Dynamic", "Glass"],
+                requiresPro: false,
+                spec: specWeather()
+            ),
+            AboutTemplate(
                 id: "starter-workout",
                 title: "Workout",
                 subtitle: "Routine cue",
@@ -1106,6 +1115,46 @@ private extension WidgetWeaverAboutView {
             image: nil,
             layout: layout,
             style: style,
+            matchedSet: nil
+        )
+        .normalised()
+    }
+    
+    static func specWeather() -> WidgetSpec {
+        let layout = LayoutSpec(
+            template: .weather,
+            axis: .vertical,
+            alignment: .leading,
+            spacing: 10,
+            primaryLineLimitSmall: 1,
+            primaryLineLimit: 1,
+            secondaryLineLimitSmall: 2,
+            secondaryLineLimit: 2,
+            showsAccentBar: false
+        )
+
+        let style = StyleSpec(
+            cornerRadius: 28,
+            padding: 14,
+            background: .midnight,
+            backgroundOverlay: .none,
+            backgroundOverlayOpacity: 0.0,
+            backgroundGlowEnabled: true,
+            accent: .teal,
+            nameTextStyle: .caption2,
+            primaryTextStyle: .headline,
+            secondaryTextStyle: .caption,
+            symbolSize: 42
+        )
+
+        return WidgetSpec(
+            name: "{{__weather_location|Weather}}",
+            primaryText: "{{__weather_condition|Forecast}}",
+            secondaryText: "H {{__weather_high|--}}° • L {{__weather_low|--}}° • {{__weather_precip|0|number:0}}%",
+            layout: layout,
+            style: style,
+            symbol: nil,
+            image: nil,
             matchedSet: nil
         )
         .normalised()

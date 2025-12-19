@@ -77,6 +77,10 @@ struct WidgetWeaverVariablesView: View {
 
                 Built-ins:
                 {{__now||date:HH:mm}}  •  {{__today}}
+                
+                Weather:
+                {{__weather_temp}}°  •  {{__weather_condition}}
+                H {{__weather_high}}°  •  L {{__weather_low}}°  •  {{__weather_precip|0|number:0}}%
                 """
             )
             .font(.subheadline)
