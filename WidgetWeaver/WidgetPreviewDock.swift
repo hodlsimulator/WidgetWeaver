@@ -56,7 +56,7 @@ struct WidgetPreviewDock: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: isExpanded)
-        .gesture(dragGesture)
+        .gesture(dragGesture, including: .gesture)
         .onChange(of: verticalSizeClass) { _, newValue in
             guard presentation == .dock else { return }
             if newValue == .compact {
@@ -297,20 +297,48 @@ struct WidgetPreview: View {
         .clipped()
     }
 
+    @ViewBuilder
     private var previewBody: some View {
+        if isLive {
+            liveBody
+        } else {
+            scaledPreviewBody
+        }
+    }
+
+    private var liveBody: some View {
+        GeometryReader { proxy in
+            let base = Self.widgetSize(for: family)
+            let fits = base.width <= proxy.size.width && base.height <= proxy.size.height
+
+            if fits {
+                ZStack {
+                    WidgetWeaverSpecView(spec: spec, family: family, context: .simulator)
+                        .frame(width: base.width, height: base.height)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
+            } else {
+                ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                    WidgetWeaverSpecView(spec: spec, family: family, context: .simulator)
+                        .frame(width: base.width, height: base.height)
+                        .padding(12)
+                }
+            }
+        }
+    }
+
+    private var scaledPreviewBody: some View {
         GeometryReader { proxy in
             let base = Self.widgetSize(for: family)
             let scaleX = proxy.size.width / base.width
             let scaleY = proxy.size.height / base.height
             let scale = min(scaleX, scaleY)
 
-            WidgetWeaverSpecView(
-                spec: spec,
-                family: family,
-                context: isLive ? .simulator : .preview
-            )
-            .frame(width: base.width, height: base.height)
-            .scaleEffect(scale, anchor: .center)
+            ZStack {
+                WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+                    .frame(width: base.width, height: base.height)
+                    .scaleEffect(scale, anchor: .center)
+            }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
         }
     }

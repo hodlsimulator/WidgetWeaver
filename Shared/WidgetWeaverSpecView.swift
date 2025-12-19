@@ -190,30 +190,47 @@ public struct WidgetWeaverSpecView: View {
     // MARK: - Building Blocks
 
     private func contentStackClassic(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: layout.spacing) {
-            if let img = spec.image {
-                bannerImage(img, style: style)
+        let hasActionBar: Bool = {
+            guard let bar = spec.actionBar?.normalisedOrNil() else { return false }
+            return !bar.actions.isEmpty
+        }()
+
+        let reservedBottom: CGFloat = {
+            guard hasActionBar else { return 0 }
+            switch family {
+            case .systemSmall, .systemMedium: return 36
+            case .systemLarge: return 38
+            default: return 36
             }
+        }()
 
-            header(spec: spec, style: style, accent: accent)
+        return ZStack(alignment: .bottomLeading) {
+            VStack(alignment: .leading, spacing: layout.spacing) {
+                if let img = spec.image {
+                    bannerImage(img, style: style)
+                }
 
-            Text(spec.primaryText)
-                .font(style.primaryTextStyle.font(fallback: defaultPrimaryFont(for: family)))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(primaryLineLimit(layout: layout))
-                .minimumScaleFactor(0.85)
+                header(spec: spec, style: style, accent: accent)
 
-            if let secondary = spec.secondaryText, shouldShowSecondary(layout: layout) {
-                Text(secondary)
-                    .font(style.secondaryTextStyle.font(fallback: .caption2))
+                Text(spec.primaryText)
+                    .font(style.primaryTextStyle.font(fallback: defaultPrimaryFont(for: family)))
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(layout.secondaryLineLimit)
+                    .foregroundStyle(.primary)
+                    .lineLimit(primaryLineLimit(layout: layout))
                     .minimumScaleFactor(0.85)
-            }
 
-            Spacer(minLength: 0)
+                if let secondary = spec.secondaryText, shouldShowSecondary(layout: layout) {
+                    Text(secondary)
+                        .font(style.secondaryTextStyle.font(fallback: .caption2))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(layout.secondaryLineLimit)
+                        .minimumScaleFactor(0.85)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, reservedBottom)
 
             actionBar(spec: spec, accent: accent)
         }
@@ -254,7 +271,7 @@ public struct WidgetWeaverSpecView: View {
         let maxH: Double
         switch family {
         case .systemSmall: maxH = 110
-        case .systemMedium: maxH = 130
+        case .systemMedium: maxH = 110
         case .systemLarge: maxH = 160
         default: maxH = 120
         }
