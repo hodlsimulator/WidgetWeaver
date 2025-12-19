@@ -1107,33 +1107,34 @@ public extension WidgetSpec {
     func resolvingVariables(using vars: [String: String]) -> WidgetSpec {
         var out = self
 
-        out.name = WidgetWeaverVariableTemplate.render(out.name, vars: vars)
-        out.primaryText = WidgetWeaverVariableTemplate.render(out.primaryText, vars: vars)
-        out.secondaryText = WidgetWeaverVariableTemplate.render(out.secondaryText, vars: vars)
+        out.name = WidgetWeaverVariableTemplate.render(out.name, variables: vars)
+        out.primaryText = WidgetWeaverVariableTemplate.render(out.primaryText, variables: vars)
+        out.secondaryText = out.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
 
         if let m = out.matchedSet {
             var mm = m
+
             if let s = mm.small {
                 var ss = s
-                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
-                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
+                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
                 mm.small = ss
             }
+
             if let s = mm.medium {
                 var ss = s
-                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
-                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
+                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
                 mm.medium = ss
             }
+
             if let s = mm.large {
                 var ss = s
-                ss.name = WidgetWeaverVariableTemplate.render(ss.name, vars: vars)
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, vars: vars)
-                ss.secondaryText = WidgetWeaverVariableTemplate.render(ss.secondaryText, vars: vars)
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
+                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
                 mm.large = ss
             }
+
             out.matchedSet = mm
         }
 

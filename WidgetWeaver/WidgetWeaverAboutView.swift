@@ -1122,25 +1122,24 @@ private extension WidgetWeaverAboutView {
     
     static func specWeather() -> WidgetSpec {
         let layout = LayoutSpec(
-            template: .weather,
+            template: .classic,
             axis: .vertical,
-            alignment: .leading,
-            spacing: 10,
+            alignment: .center,
+            spacing: 4,
             primaryLineLimitSmall: 1,
             primaryLineLimit: 1,
-            secondaryLineLimitSmall: 2,
-            secondaryLineLimit: 2,
-            showsAccentBar: false
+            secondaryLineLimitSmall: 1,
+            secondaryLineLimit: 2
         )
 
         let style = StyleSpec(
-            cornerRadius: 28,
-            padding: 14,
+            padding: 18,
+            cornerRadius: 26,
             background: .midnight,
             backgroundOverlay: .none,
-            backgroundOverlayOpacity: 0.0,
+            backgroundOverlayOpacity: 0,
             backgroundGlowEnabled: true,
-            accent: .teal,
+            accent: .purple,
             nameTextStyle: .caption2,
             primaryTextStyle: .headline,
             secondaryTextStyle: .caption,
@@ -1148,16 +1147,16 @@ private extension WidgetWeaverAboutView {
         )
 
         return WidgetSpec(
-            name: "{{__weather_location|Weather}}",
-            primaryText: "{{__weather_condition|Forecast}}",
-            secondaryText: "H {{__weather_high|--}}° • L {{__weather_low|--}}° • {{__weather_precip|0|number:0}}%",
-            layout: layout,
-            style: style,
+            name: "Weather Now",
+            primaryText: "{{weather_temp}}",
+            secondaryText: "{{weather_summary|Loading...}}",
+            updatedAt: Date(),
             symbol: nil,
             image: nil,
+            layout: layout,
+            style: style,
             matchedSet: nil
         )
-        .normalised()
     }
 
     static func specWorkout() -> WidgetSpec {

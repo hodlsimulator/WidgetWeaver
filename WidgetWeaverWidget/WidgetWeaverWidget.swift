@@ -7,18 +7,93 @@
 
 import WidgetKit
 import SwiftUI
+import AppIntents
 
-struct WidgetWeaverWidgetEntry: TimelineEntry {
+struct WidgetWeaverEntry: TimelineEntry {
     let date: Date
     let spec: WidgetSpec
 }
 
-struct WidgetWeaverWidgetProvider: AppIntentTimelineProvider {
-    typealias Entry = WidgetWeaverWidgetEntry
-    typealias Intent = WidgetWeaverSelectDesignIntent
+// MARK: - AppEntity for widget configuration
+
+enum WidgetWeaverSpecEntityIDs {
+    static let appDefault = "app_default"
+}
+
+struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Widget Design")
+    }
+
+    static var defaultQuery: WidgetWeaverSpecEntityQuery {
+        WidgetWeaverSpecEntityQuery()
+    }
+
+    var id: String
+    var name: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: LocalizedStringResource(stringLiteral: name))
+    }
+}
+
+struct WidgetWeaverSpecEntityQuery: EntityQuery {
+    func entities(for identifiers: [WidgetWeaverSpecEntity.ID]) async throws -> [WidgetWeaverSpecEntity] {
+        let store = WidgetSpecStore.shared
+        var out: [WidgetWeaverSpecEntity] = []
+
+        for ident in identifiers {
+            if ident == WidgetWeaverSpecEntityIDs.appDefault {
+                out.append(WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)"))
+                continue
+            }
+
+            if let uuid = UUID(uuidString: ident), let spec = store.load(id: uuid) {
+                out.append(WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name))
+            }
+        }
+
+        return out
+    }
+
+    func suggestedEntities() async throws -> [WidgetWeaverSpecEntity] {
+        let defaultEntity = WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
+
+        let saved = WidgetSpecStore.shared
+            .loadAll()
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { WidgetWeaverSpecEntity(id: $0.id.uuidString, name: $0.name) }
+
+        return [defaultEntity] + saved
+    }
+
+    func defaultResult() async -> WidgetWeaverSpecEntity? {
+        WidgetWeaverSpecEntity(id: WidgetWeaverSpecEntityIDs.appDefault, name: "Default (App)")
+    }
+}
+
+// MARK: - Widget configuration intent
+
+struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "WidgetWeaver Design"
+    static var description = IntentDescription("Select which saved design this widget should use.")
+
+    @Parameter(title: "Design")
+    var spec: WidgetWeaverSpecEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Show \\(\\.$spec)")
+    }
+}
+
+// MARK: - Timeline provider
+
+struct WidgetWeaverProvider: AppIntentTimelineProvider {
+    typealias Entry = WidgetWeaverEntry
+    typealias Intent = WidgetWeaverConfigurationIntent
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), spec: .defaultSpec().resolved(for: context.family))
+        Entry(date: Date(), spec: .defaultSpec())
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
@@ -56,20 +131,25 @@ struct WidgetWeaverWidgetProvider: AppIntentTimelineProvider {
     private func loadSpec(for configuration: Intent) -> WidgetSpec {
         let store = WidgetSpecStore.shared
 
-        if let designId = configuration.design?.id, let spec = store.loadDesign(id: designId) {
-            return spec
+        if let selected = configuration.spec {
+            if selected.id == WidgetWeaverSpecEntityIDs.appDefault {
+                return store.loadDefault()
+            }
+
+            if let uuid = UUID(uuidString: selected.id), let spec = store.load(id: uuid) {
+                return spec
+            }
         }
 
-        if let spec = store.loadAllDesigns().first {
-            return spec
-        }
-
-        return .defaultSpec()
+        return store.loadDefault()
     }
 }
 
+// MARK: - Widget view
+
 struct WidgetWeaverWidgetView: View {
-    let entry: WidgetWeaverWidgetProvider.Entry
+    let entry: WidgetWeaverProvider.Entry
+
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
@@ -77,12 +157,14 @@ struct WidgetWeaverWidgetView: View {
     }
 }
 
+// MARK: - Widget
+
 struct WidgetWeaverWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(
-            kind: WidgetWeaverWidgetKinds.designWidget,
-            intent: WidgetWeaverSelectDesignIntent.self,
-            provider: WidgetWeaverWidgetProvider()
+            kind: WidgetWeaverWidgetKinds.main,
+            intent: WidgetWeaverConfigurationIntent.self,
+            provider: WidgetWeaverProvider()
         ) { entry in
             WidgetWeaverWidgetView(entry: entry)
         }
@@ -91,4 +173,10 @@ struct WidgetWeaverWidget: Widget {
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
+}
+
+#Preview(as: .systemSmall) {
+    WidgetWeaverWidget()
+} timeline: {
+    WidgetWeaverEntry(date: Date(), spec: .defaultSpec())
 }

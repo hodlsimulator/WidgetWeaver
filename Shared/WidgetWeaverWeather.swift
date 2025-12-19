@@ -334,7 +334,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         vars["__weather_location"] = snap.locationName
         vars["__weather_condition"] = snap.conditionDescription
         vars["__weather_symbol"] = snap.symbolName
-        vars["__weather_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(from: snap.fetchedAt)
+        vars["__weather_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(snap.fetchedAt)
 
         let temp = temperatureString(snap.temperatureC, unit: unit)
         vars["__weather_temp"] = temp.value

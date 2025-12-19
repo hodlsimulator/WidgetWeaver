@@ -5,168 +5,193 @@
 //  Created by . . on 12/17/25.
 //
 
-import Foundation
 import SwiftUI
 
-// MARK: - Style
-
-public struct StyleSpec: Codable, Hashable, Sendable {
+public struct StyleSpec: Hashable, Codable, Sendable {
     public var padding: Double
     public var cornerRadius: Double
     public var background: BackgroundToken
+
+    /// Optional overlay painted above `background` (and above a banner image, if present).
+    public var backgroundOverlay: BackgroundToken
+    public var backgroundOverlayOpacity: Double
+    public var backgroundGlowEnabled: Bool
+
     public var accent: AccentToken
     public var nameTextStyle: TextStyleToken
     public var primaryTextStyle: TextStyleToken
     public var secondaryTextStyle: TextStyleToken
 
-    public static let defaultStyle = StyleSpec(
-        padding: 16,
-        cornerRadius: 20,
-        background: .aurora,
-        accent: .blue,
-        nameTextStyle: .automatic,
-        primaryTextStyle: .automatic,
-        secondaryTextStyle: .automatic
-    )
+    /// Default symbol point size used by some templates.
+    public var symbolSize: Double
 
     public init(
         padding: Double = 16,
-        cornerRadius: Double = 20,
-        background: BackgroundToken = .aurora,
+        cornerRadius: Double = 18,
+        background: BackgroundToken = .subtleMaterial,
+        backgroundOverlay: BackgroundToken = .plain,
+        backgroundOverlayOpacity: Double = 0,
+        backgroundGlowEnabled: Bool = false,
         accent: AccentToken = .blue,
-        nameTextStyle: TextStyleToken = .automatic,
-        primaryTextStyle: TextStyleToken = .automatic,
-        secondaryTextStyle: TextStyleToken = .automatic
+        nameTextStyle: TextStyleToken = .caption,
+        primaryTextStyle: TextStyleToken = .title3,
+        secondaryTextStyle: TextStyleToken = .caption2,
+        symbolSize: Double = 34
     ) {
         self.padding = padding
         self.cornerRadius = cornerRadius
         self.background = background
+        self.backgroundOverlay = backgroundOverlay
+        self.backgroundOverlayOpacity = backgroundOverlayOpacity
+        self.backgroundGlowEnabled = backgroundGlowEnabled
         self.accent = accent
         self.nameTextStyle = nameTextStyle
         self.primaryTextStyle = primaryTextStyle
         self.secondaryTextStyle = secondaryTextStyle
+        self.symbolSize = symbolSize
     }
 
     public func normalised() -> StyleSpec {
-        var s = self
-        s.padding = s.padding.clamped(to: 0...32)
-        s.cornerRadius = s.cornerRadius.clamped(to: 0...44)
-        return s
+        StyleSpec(
+            padding: max(0, padding),
+            cornerRadius: max(0, cornerRadius),
+            background: background,
+            backgroundOverlay: backgroundOverlay,
+            backgroundOverlayOpacity: max(0, min(1, backgroundOverlayOpacity)),
+            backgroundGlowEnabled: backgroundGlowEnabled,
+            accent: accent,
+            nameTextStyle: nameTextStyle,
+            primaryTextStyle: primaryTextStyle,
+            secondaryTextStyle: secondaryTextStyle,
+            symbolSize: max(0, symbolSize)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case padding
+        case cornerRadius
+        case background
+        case backgroundOverlay
+        case backgroundOverlayOpacity
+        case backgroundGlowEnabled
+        case accent
+        case nameTextStyle
+        case primaryTextStyle
+        case secondaryTextStyle
+        case symbolSize
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = StyleSpec.defaultStyle
+
+        self.padding = try c.decodeIfPresent(Double.self, forKey: .padding) ?? defaults.padding
+        self.cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? defaults.cornerRadius
+        self.background = try c.decodeIfPresent(BackgroundToken.self, forKey: .background) ?? defaults.background
+        self.backgroundOverlay = try c.decodeIfPresent(BackgroundToken.self, forKey: .backgroundOverlay) ?? defaults.backgroundOverlay
+        self.backgroundOverlayOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOverlayOpacity) ?? defaults.backgroundOverlayOpacity
+        self.backgroundGlowEnabled = try c.decodeIfPresent(Bool.self, forKey: .backgroundGlowEnabled) ?? defaults.backgroundGlowEnabled
+        self.accent = try c.decodeIfPresent(AccentToken.self, forKey: .accent) ?? defaults.accent
+        self.nameTextStyle = try c.decodeIfPresent(TextStyleToken.self, forKey: .nameTextStyle) ?? defaults.nameTextStyle
+        self.primaryTextStyle = try c.decodeIfPresent(TextStyleToken.self, forKey: .primaryTextStyle) ?? defaults.primaryTextStyle
+        self.secondaryTextStyle = try c.decodeIfPresent(TextStyleToken.self, forKey: .secondaryTextStyle) ?? defaults.secondaryTextStyle
+        self.symbolSize = try c.decodeIfPresent(Double.self, forKey: .symbolSize) ?? defaults.symbolSize
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(padding, forKey: .padding)
+        try c.encode(cornerRadius, forKey: .cornerRadius)
+        try c.encode(background, forKey: .background)
+        try c.encode(backgroundOverlay, forKey: .backgroundOverlay)
+        try c.encode(backgroundOverlayOpacity, forKey: .backgroundOverlayOpacity)
+        try c.encode(backgroundGlowEnabled, forKey: .backgroundGlowEnabled)
+        try c.encode(accent, forKey: .accent)
+        try c.encode(nameTextStyle, forKey: .nameTextStyle)
+        try c.encode(primaryTextStyle, forKey: .primaryTextStyle)
+        try c.encode(secondaryTextStyle, forKey: .secondaryTextStyle)
+        try c.encode(symbolSize, forKey: .symbolSize)
+    }
+
+    public static var defaultStyle: StyleSpec {
+        StyleSpec(
+            padding: 16,
+            cornerRadius: 20,
+            background: .subtleMaterial,
+            backgroundOverlay: .plain,
+            backgroundOverlayOpacity: 0,
+            backgroundGlowEnabled: false,
+            accent: .blue,
+            nameTextStyle: .caption,
+            primaryTextStyle: .title3,
+            secondaryTextStyle: .caption2,
+            symbolSize: 34
+        )
     }
 }
 
-public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
-    case plain
-    case accentGlow
-    case radialGlow
-    case solidAccent
-    case subtleMaterial
+public extension BackgroundToken {
+    /// Convenience alias used by overlay APIs.
+    static var none: BackgroundToken { .plain }
+}
 
-    // New "wow" backgrounds
+public enum BackgroundToken: String, CaseIterable, Codable, Hashable, Sendable {
+    case plain
+    case subtleMaterial
     case aurora
     case sunset
     case midnight
     case candy
 
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .plain: return "Plain"
-        case .accentGlow: return "Accent Glow"
-        case .radialGlow: return "Radial Glow"
-        case .solidAccent: return "Solid Accent"
-        case .subtleMaterial: return "Subtle Material"
-        case .aurora: return "Aurora"
-        case .sunset: return "Sunset"
-        case .midnight: return "Midnight"
-        case .candy: return "Candy"
-        }
-    }
-
     public func shapeStyle(accent: Color) -> AnyShapeStyle {
         switch self {
         case .plain:
-            return AnyShapeStyle(.background)
-
-        case .accentGlow:
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [accent.opacity(0.35), .clear],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-
-        case .radialGlow:
-            return AnyShapeStyle(
-                RadialGradient(
-                    colors: [
-                        accent.opacity(0.42),
-                        accent.opacity(0.12),
-                        .clear
-                    ],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 320
-                )
-            )
-
-        case .solidAccent:
-            return AnyShapeStyle(accent.opacity(0.18))
-
+            return AnyShapeStyle(Color(.systemBackground))
         case .subtleMaterial:
             return AnyShapeStyle(.ultraThinMaterial)
-
         case .aurora:
-            // Designed to be layered with additional overlays in the renderer.
             return AnyShapeStyle(
                 LinearGradient(
-                    colors: [
-                        accent.opacity(0.45),
-                        Color.purple.opacity(0.28),
-                        Color.cyan.opacity(0.22),
-                        .clear
+                    stops: [
+                        .init(color: accent.opacity(0.45), location: 0.0),
+                        .init(color: Color.green.opacity(0.25), location: 0.55),
+                        .init(color: Color.blue.opacity(0.25), location: 1.0),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-
         case .sunset:
             return AnyShapeStyle(
                 LinearGradient(
-                    colors: [
-                        Color.orange.opacity(0.40),
-                        Color.pink.opacity(0.30),
-                        Color.purple.opacity(0.18),
-                        .clear
+                    stops: [
+                        .init(color: Color.orange.opacity(0.35), location: 0.0),
+                        .init(color: Color.pink.opacity(0.25), location: 0.5),
+                        .init(color: Color.purple.opacity(0.25), location: 1.0),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-
         case .midnight:
             return AnyShapeStyle(
                 LinearGradient(
-                    colors: [
-                        Color.indigo.opacity(0.40),
-                        Color.black.opacity(0.55)
+                    stops: [
+                        .init(color: Color.black.opacity(0.35), location: 0.0),
+                        .init(color: Color.blue.opacity(0.25), location: 0.6),
+                        .init(color: Color.purple.opacity(0.25), location: 1.0),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
-
         case .candy:
             return AnyShapeStyle(
                 LinearGradient(
-                    colors: [
-                        Color.pink.opacity(0.38),
-                        accent.opacity(0.25),
-                        Color.yellow.opacity(0.18),
-                        .clear
+                    stops: [
+                        .init(color: Color.pink.opacity(0.35), location: 0.0),
+                        .init(color: Color.blue.opacity(0.25), location: 0.55),
+                        .init(color: Color.mint.opacity(0.25), location: 1.0),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -176,86 +201,52 @@ public enum BackgroundToken: String, Codable, CaseIterable, Hashable, Identifiab
     }
 }
 
-public enum AccentToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+public enum AccentToken: String, CaseIterable, Codable, Hashable, Sendable {
     case blue
-    case teal
-    case green
-    case orange
-    case pink
     case purple
+    case pink
+    case orange
+    case green
+    case teal
     case red
-    case gray
     case yellow
-    case indigo
 
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .blue: return "Blue"
-        case .teal: return "Teal"
-        case .green: return "Green"
-        case .orange: return "Orange"
-        case .pink: return "Pink"
-        case .purple: return "Purple"
-        case .red: return "Red"
-        case .gray: return "Grey"
-        case .yellow: return "Yellow"
-        case .indigo: return "Indigo"
-        }
-    }
-
-    public var swiftUIColor: Color {
+    public func color() -> Color {
         switch self {
         case .blue: return .blue
-        case .teal: return .teal
-        case .green: return .green
-        case .orange: return .orange
-        case .pink: return .pink
         case .purple: return .purple
+        case .pink: return .pink
+        case .orange: return .orange
+        case .green: return .green
+        case .teal: return .teal
         case .red: return .red
-        case .gray: return .gray
         case .yellow: return .yellow
-        case .indigo: return .indigo
         }
     }
 }
 
-public enum TextStyleToken: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
-    case automatic
+public enum TextStyleToken: String, CaseIterable, Codable, Hashable, Sendable {
     case caption2
     case caption
     case footnote
     case subheadline
+    case body
     case headline
     case title3
     case title2
-
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .automatic: return "Automatic"
-        case .caption2: return "Caption 2"
-        case .caption: return "Caption"
-        case .footnote: return "Footnote"
-        case .subheadline: return "Subheadline"
-        case .headline: return "Headline"
-        case .title3: return "Title 3"
-        case .title2: return "Title 2"
-        }
-    }
+    case title
 
     public func font(fallback: Font) -> Font {
         switch self {
-        case .automatic: return fallback
         case .caption2: return .caption2
         case .caption: return .caption
         case .footnote: return .footnote
         case .subheadline: return .subheadline
+        case .body: return .body
         case .headline: return .headline
         case .title3: return .title3
         case .title2: return .title2
+        case .title: return .title
         }
     }
 }
