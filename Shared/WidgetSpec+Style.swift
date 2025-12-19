@@ -29,6 +29,11 @@ public struct StyleSpec: Hashable, Codable, Sendable {
     /// Default symbol point size used by some templates.
     public var symbolSize: Double
 
+    /// Scales the built-in Weather template's typography + spacing.
+    /// 1.0 is the default.
+    public var weatherScale: Double
+
+
     public init(
         padding: Double = 16,
         cornerRadius: Double = 18,
@@ -40,7 +45,8 @@ public struct StyleSpec: Hashable, Codable, Sendable {
         nameTextStyle: TextStyleToken = .caption,
         primaryTextStyle: TextStyleToken = .title3,
         secondaryTextStyle: TextStyleToken = .caption2,
-        symbolSize: Double = 34
+        symbolSize: Double = 34,
+        weatherScale: Double = 1.0
     ) {
         self.padding = padding
         self.cornerRadius = cornerRadius
@@ -53,6 +59,7 @@ public struct StyleSpec: Hashable, Codable, Sendable {
         self.primaryTextStyle = primaryTextStyle
         self.secondaryTextStyle = secondaryTextStyle
         self.symbolSize = symbolSize
+        self.weatherScale = weatherScale
     }
 
     public func normalised() -> StyleSpec {
@@ -67,7 +74,8 @@ public struct StyleSpec: Hashable, Codable, Sendable {
             nameTextStyle: nameTextStyle,
             primaryTextStyle: primaryTextStyle,
             secondaryTextStyle: secondaryTextStyle,
-            symbolSize: max(0, symbolSize)
+            symbolSize: max(0, symbolSize),
+            weatherScale: max(0.6, min(1.4, weatherScale))
         )
     }
 
@@ -83,6 +91,7 @@ public struct StyleSpec: Hashable, Codable, Sendable {
         case primaryTextStyle
         case secondaryTextStyle
         case symbolSize
+        case weatherScale
     }
 
     public init(from decoder: Decoder) throws {
@@ -100,6 +109,7 @@ public struct StyleSpec: Hashable, Codable, Sendable {
         self.primaryTextStyle = try c.decodeIfPresent(TextStyleToken.self, forKey: .primaryTextStyle) ?? defaults.primaryTextStyle
         self.secondaryTextStyle = try c.decodeIfPresent(TextStyleToken.self, forKey: .secondaryTextStyle) ?? defaults.secondaryTextStyle
         self.symbolSize = try c.decodeIfPresent(Double.self, forKey: .symbolSize) ?? defaults.symbolSize
+        self.weatherScale = try c.decodeIfPresent(Double.self, forKey: .weatherScale) ?? defaults.weatherScale
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -115,6 +125,7 @@ public struct StyleSpec: Hashable, Codable, Sendable {
         try c.encode(primaryTextStyle, forKey: .primaryTextStyle)
         try c.encode(secondaryTextStyle, forKey: .secondaryTextStyle)
         try c.encode(symbolSize, forKey: .symbolSize)
+        try c.encode(weatherScale, forKey: .weatherScale)
     }
 
     public static var defaultStyle: StyleSpec {
@@ -129,7 +140,8 @@ public struct StyleSpec: Hashable, Codable, Sendable {
             nameTextStyle: .caption,
             primaryTextStyle: .title3,
             secondaryTextStyle: .caption2,
-            symbolSize: 34
+            symbolSize: 34,
+            weatherScale: 1.0
         )
     }
 }

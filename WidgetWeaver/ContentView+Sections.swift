@@ -453,6 +453,17 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
+            if currentFamilyDraft().template == .weather {
+                HStack {
+                    Text("Weather scale")
+                    Slider(value: $styleDraft.weatherScale, in: 0.75...1.25, step: 0.01)
+                    Text(String(format: "%.2f×", styleDraft.weatherScale))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+
             Picker("Background", selection: $styleDraft.background) {
                 ForEach(BackgroundToken.allCases) { token in
                     Text(token.displayName).tag(token)

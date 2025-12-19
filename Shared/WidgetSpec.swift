@@ -92,7 +92,11 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         s.name = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
 
         let trimmedPrimary = s.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        s.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
+        if s.layout.template == .weather {
+            s.primaryText = trimmedPrimary
+        } else {
+            s.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
+        }
 
         if let secondary = s.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines), !secondary.isEmpty {
             s.secondaryText = secondary
@@ -460,7 +464,11 @@ public struct WidgetSpecVariant: Codable, Hashable {
         var v = self
 
         let trimmedPrimary = v.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
+        if v.layout.template == .weather {
+            v.primaryText = trimmedPrimary
+        } else {
+            v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
+        }
 
         if let secondary = v.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines), !secondary.isEmpty {
             v.secondaryText = secondary

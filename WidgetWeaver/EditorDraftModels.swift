@@ -59,6 +59,7 @@ struct MatchedDrafts: Hashable {
 struct StyleDraft: Hashable {
     var padding: Double
     var cornerRadius: Double
+    var weatherScale: Double
     var background: BackgroundToken
     var accent: AccentToken
     var nameTextStyle: TextStyleToken
@@ -70,6 +71,7 @@ struct StyleDraft: Hashable {
     init(from style: StyleSpec) {
         self.padding = style.padding
         self.cornerRadius = style.cornerRadius
+        self.weatherScale = style.weatherScale
         self.background = style.background
         self.accent = style.accent
         self.nameTextStyle = style.nameTextStyle
@@ -85,7 +87,8 @@ struct StyleDraft: Hashable {
             accent: accent,
             nameTextStyle: nameTextStyle,
             primaryTextStyle: primaryTextStyle,
-            secondaryTextStyle: secondaryTextStyle
+            secondaryTextStyle: secondaryTextStyle,
+            weatherScale: weatherScale
         ).normalised()
     }
 }
@@ -201,7 +204,7 @@ struct FamilyDraft: Hashable {
         return WidgetSpec(
             id: id,
             name: name,
-            primaryText: trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary,
+            primaryText: template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
             secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
             updatedAt: updatedAt,
             symbol: symbol,
@@ -246,7 +249,7 @@ struct FamilyDraft: Hashable {
         ).normalised()
 
         return WidgetSpecVariant(
-            primaryText: trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary,
+            primaryText: layout.template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
             secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
             symbol: symbol,
             image: image,

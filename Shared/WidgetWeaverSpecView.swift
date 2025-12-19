@@ -22,6 +22,7 @@ private struct WeatherTemplateView: View {
     let spec: WidgetSpec
     let family: WidgetFamily
     let context: WidgetWeaverRenderContext
+    let layout: LayoutSpec
     let style: StyleSpec
     let accent: Color
     let snapshot: WidgetWeaverWeatherSnapshot?
@@ -29,11 +30,16 @@ private struct WeatherTemplateView: View {
     let attributionURL: URL?
 
     var body: some View {
+        let metrics = WeatherMetrics(family: family, layout: layout, style: style)
+
         ZStack(alignment: .topLeading) {
             if let snapshot {
                 WeatherFilledStateView(
                     spec: spec,
                     family: family,
+                    layout: layout,
+                    style: style,
+                    metrics: metrics,
                     snapshot: snapshot,
                     unit: unit,
                     accent: accent,
@@ -43,90 +49,465 @@ private struct WeatherTemplateView: View {
                 WeatherEmptyStateView(
                     spec: spec,
                     family: family,
+                    metrics: metrics,
                     accent: accent,
                     attributionURL: attributionURL
                 )
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct WeatherMetrics {
+    let family: WidgetFamily
+    let layout: LayoutSpec
+    let style: StyleSpec
+
+    let scale: CGFloat
+    let contentPadding: CGFloat
+    let sectionSpacing: CGFloat
+    let containerCornerRadius: CGFloat
+    let pillCornerRadius: CGFloat
+
+    let temperatureFont: Font
+    let degreeFont: Font
+    let conditionIconFont: Font
+
+    init(family: WidgetFamily, layout: LayoutSpec, style: StyleSpec) {
+        self.family = family
+        self.layout = layout
+        self.style = style
+
+        let clampedScale = CGFloat(max(0.6, min(1.4, style.weatherScale)))
+        self.scale = clampedScale
+
+        let rawPad = CGFloat(style.padding)
+        let padMultiplier: CGFloat = family == .systemLarge ? 1.0 : 0.75
+        let tunedPad = rawPad * padMultiplier
+        let maxPad: CGFloat = family == .systemLarge ? 24 : 16
+        self.contentPadding = max(0, min(maxPad, tunedPad)) * min(1.15, max(0.85, clampedScale))
+
+        let rawSpacing = CGFloat(layout.spacing)
+        let tunedSpacing = max(0, rawSpacing * 0.7)
+        let baseSpacing = min(16, tunedSpacing)
+        self.sectionSpacing = baseSpacing * min(1.15, max(0.85, clampedScale))
+
+        let rawRadius = CGFloat(style.cornerRadius)
+        self.containerCornerRadius = max(0, min(32, rawRadius))
+        self.pillCornerRadius = max(10, min(18, rawRadius == 0 ? 14 : rawRadius - 6))
+
+        let tempSize: CGFloat
+        let degreeSize: CGFloat
+        let iconSize: CGFloat
+
+        switch family {
+        case .systemSmall:
+            tempSize = 50
+            degreeSize = 24
+            iconSize = 34
+        case .systemMedium:
+            tempSize = 56
+            degreeSize = 26
+            iconSize = 44
+        case .systemLarge:
+            tempSize = 60
+            degreeSize = 28
+            iconSize = 54
+        default:
+            tempSize = 56
+            degreeSize = 26
+            iconSize = 44
+        }
+
+        self.temperatureFont = .system(size: tempSize * clampedScale, weight: .heavy, design: .rounded)
+        self.degreeFont = .system(size: degreeSize * clampedScale, weight: .bold, design: .rounded)
+        self.conditionIconFont = .system(size: iconSize * clampedScale, weight: .regular)
     }
 }
 
 private struct WeatherFilledStateView: View {
     let spec: WidgetSpec
     let family: WidgetFamily
+    let layout: LayoutSpec
+    let style: StyleSpec
+    let metrics: WeatherMetrics
     let snapshot: WidgetWeaverWeatherSnapshot
     let unit: UnitTemperature
     let accent: Color
     let attributionURL: URL?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: verticalSpacing) {
-            headerRow
+        ZStack(alignment: .topLeading) {
+            WeatherGlassContainer(metrics: metrics) {
+                switch family {
+                case .systemSmall:
+                    WeatherSmallLayout(
+                        spec: spec,
+                        metrics: metrics,
+                        snapshot: snapshot,
+                        unit: unit
+                    )
 
-            HStack(alignment: .top, spacing: 14) {
-                temperatureBlock
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                case .systemMedium:
+                    WeatherMediumLayout(
+                        spec: spec,
+                        metrics: metrics,
+                        snapshot: snapshot,
+                        unit: unit,
+                        attributionURL: attributionURL
+                    )
 
-                conditionBlock
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                case .systemLarge:
+                    WeatherLargeLayout(
+                        spec: spec,
+                        metrics: metrics,
+                        snapshot: snapshot,
+                        unit: unit,
+                        accent: accent,
+                        attributionURL: attributionURL
+                    )
+
+                default:
+                    WeatherMediumLayout(
+                        spec: spec,
+                        metrics: metrics,
+                        snapshot: snapshot,
+                        unit: unit,
+                        attributionURL: attributionURL
+                    )
+                }
             }
 
-            statsRow
+            if family == .systemSmall {
+                WeatherAttributionLink(attributionURL: attributionURL)
+                    .padding(.trailing, metrics.contentPadding + 6)
+                    .padding(.bottom, metrics.contentPadding + 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
+    }
+}
 
-            if family != .systemSmall {
-                HourlyForecastStrip(
-                    points: Array(snapshot.hourly.prefix(family == .systemMedium ? 5 : 6)),
-                    unit: unit,
-                    accent: accent
-                )
+private struct WeatherGlassContainer<Content: View>: View {
+    let metrics: WeatherMetrics
+    @ViewBuilder var content: Content
 
-                TemperatureSparklineView(
-                    points: Array(snapshot.hourly.prefix(family == .systemMedium ? 5 : 6)),
-                    unit: unit,
-                    accent: accent
+    var body: some View {
+        content
+            .padding(metrics.contentPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(
+                    cornerRadius: metrics.containerCornerRadius,
+                    style: .continuous
                 )
-                .frame(height: family == .systemMedium ? 28 : 34)
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: metrics.containerCornerRadius,
+                    style: .continuous
+                )
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+    }
+}
+
+private struct WeatherAttributionLink: View {
+    let attributionURL: URL?
+
+    var body: some View {
+        if let url = attributionURL {
+            Link(destination: url) {
+                Text("Weather")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Apple Weather attribution")
+        }
+    }
+}
+
+private struct WeatherSmallLayout: View {
+    let spec: WidgetSpec
+    let metrics: WeatherMetrics
+    let snapshot: WidgetWeaverWeatherSnapshot
+    let unit: UnitTemperature
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+            Text(snapshot.locationName)
+                .font(metrics.style.nameTextStyle.font(fallback: .caption).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    tempRow
+
+                    Text(headlineText)
+                        .font(metrics.style.primaryTextStyle.font(fallback: .caption).weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
+                    Text(hiLoLine)
+                        .font(metrics.style.secondaryTextStyle.font(fallback: .caption2))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .monospacedDigit()
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: snapshot.symbolName)
+                    .symbolRenderingMode(.multicolor)
+                    .font(metrics.conditionIconFont)
+                    .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
             }
 
-            if family == .systemLarge {
-                DailyForecastListView(
-                    points: Array(snapshot.daily.prefix(5)),
-                    unit: unit,
-                    accent: accent
-                )
+            if let p = snapshot.precipitationChance01 {
+                let pct = Int(round(p * 100))
+                Text("Precip \(pct)%")
+                    .font(metrics.style.secondaryTextStyle.font(fallback: .caption2))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if let url = attributionURL {
-                Link(destination: url) {
-                    Text("Weather")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 6)
-            }
+    }
+
+    private var headlineText: String {
+        let trimmed = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = spec.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isDefaultPlaceholder = trimmed == "Hello" && trimmedSecondary == "Saved spec → widget"
+        return (trimmed.isEmpty || isDefaultPlaceholder) ? snapshot.conditionDescription : trimmed
+    }
+
+    private var tempRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text(roundedTemperature(snapshot.temperatureC))
+                .font(metrics.temperatureFont)
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+
+            Text("°")
+                .font(metrics.degreeFont)
+                .foregroundStyle(.primary)
         }
     }
 
-    private var verticalSpacing: CGFloat {
-        switch family {
-        case .systemSmall: return 10
-        case .systemMedium: return 12
-        case .systemLarge: return 12
-        default: return 12
+    private var hiLoLine: String {
+        guard let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC else { return "" }
+        return "H \(roundedTemperature(hi))°  L \(roundedTemperature(lo))°"
+    }
+
+    private func roundedTemperature(_ celsius: Double) -> String {
+        let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
+        return String(Int(round(v)))
+    }
+}
+
+private struct WeatherMediumLayout: View {
+    let spec: WidgetSpec
+    let metrics: WeatherMetrics
+    let snapshot: WidgetWeaverWeatherSnapshot
+    let unit: UnitTemperature
+    let attributionURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+            headerRow
+
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    tempRow
+
+                    Text(headlineText)
+                        .font(metrics.style.primaryTextStyle.font(fallback: .headline).weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: snapshot.symbolName)
+                    .symbolRenderingMode(.multicolor)
+                    .font(metrics.conditionIconFont)
+                    .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+            }
+
+            WeatherHourlyRow(
+                points: Array(snapshot.hourly.prefix(5)),
+                unit: unit,
+                showHourLabels: false,
+                compact: true,
+                metrics: metrics
+            )
+
+            Spacer(minLength: 0)
         }
     }
 
     private var headerRow: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(snapshot.locationName)
-                .font(.caption.weight(.semibold))
+                .font(metrics.style.nameTextStyle.font(fallback: .caption).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 8)
+
+            if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
+                Text("H \(roundedTemperature(hi))°  L \(roundedTemperature(lo))°")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+
+            if let url = attributionURL {
+                Link(destination: url) {
+                    Text("Weather")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var headlineText: String {
+        let trimmed = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = spec.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isDefaultPlaceholder = trimmed == "Hello" && trimmedSecondary == "Saved spec → widget"
+        return (trimmed.isEmpty || isDefaultPlaceholder) ? snapshot.conditionDescription : trimmed
+    }
+
+    private var tempRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text(roundedTemperature(snapshot.temperatureC))
+                .font(metrics.temperatureFont)
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+
+            Text("°")
+                .font(metrics.degreeFont)
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private func roundedTemperature(_ celsius: Double) -> String {
+        let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
+        return String(Int(round(v)))
+    }
+}
+
+
+private struct WeatherLargeLayout: View {
+    let spec: WidgetSpec
+    let metrics: WeatherMetrics
+    let snapshot: WidgetWeaverWeatherSnapshot
+    let unit: UnitTemperature
+    let accent: Color
+    let attributionURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+            headerRow
+
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    tempRow
+
+                    Text(headlineText)
+                        .font(metrics.style.primaryTextStyle.font(fallback: .title3).weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+
+                    if let feels = snapshot.apparentTemperatureC {
+                        Text("Feels \(roundedTemperature(feels))°")
+                            .font(metrics.style.secondaryTextStyle.font(fallback: .caption))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    if let subtitle = spec.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !subtitle.isEmpty,
+                       subtitle != "Saved spec → widget" {
+                        Text(subtitle)
+                            .font(metrics.style.secondaryTextStyle.font(fallback: .caption2))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    Image(systemName: snapshot.symbolName)
+                        .symbolRenderingMode(.multicolor)
+                        .font(metrics.conditionIconFont)
+                        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+
+                    if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
+                        Text("H \(roundedTemperature(hi))°  L \(roundedTemperature(lo))°")
+                            .font(metrics.style.secondaryTextStyle.font(fallback: .caption).weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .monospacedDigit()
+                    }
+                }
+            }
+
+            WeatherStatsRow(metrics: metrics, snapshot: snapshot, unit: unit)
+
+            WeatherSectionCard(metrics: metrics) {
+                VStack(alignment: .leading, spacing: 10) {
+                    WeatherHourlyRow(
+                        points: Array(snapshot.hourly.prefix(7)),
+                        unit: unit,
+                        showHourLabels: true,
+                        compact: false,
+                        metrics: metrics
+                    )
+
+                    WeatherSparkline(
+                        points: Array(snapshot.hourly.prefix(7)),
+                        unit: unit,
+                        accent: accent
+                    )
+                    .frame(height: 26)
+                }
+            }
+
+            WeatherSectionCard(metrics: metrics) {
+                WeatherDailyList(
+                    points: Array(snapshot.daily.prefix(4)),
+                    unit: unit,
+                    metrics: metrics
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(snapshot.locationName)
+                .font(metrics.style.nameTextStyle.font(fallback: .caption).weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
@@ -138,10 +519,16 @@ private struct WeatherFilledStateView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
+
+            if let url = attributionURL {
+                Link(destination: url) {
+                    Text("Weather")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var updatedLabel: String {
@@ -151,80 +538,62 @@ private struct WeatherFilledStateView: View {
         return "Updated \(rel)"
     }
 
-    private var temperatureBlock: some View {
-        let temp = roundedTemperature(snapshot.temperatureC, unit: unit)
-        let feels = snapshot.apparentTemperatureC.map { roundedTemperature($0, unit: unit) }
-
-        let title = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let subtitle = spec.secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(temp)
-                    .font(temperatureFont)
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-
-                Text("°")
-                    .font(degreeFont)
-                    .foregroundStyle(.primary)
-            }
-
-            if !title.isEmpty {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(family == .systemSmall ? 1 : 2)
-            } else {
-                Text(snapshot.conditionDescription)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(family == .systemSmall ? 1 : 2)
-            }
-
-            if let feels, family != .systemSmall {
-                Text("Feels \(feels)°")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    private var headlineText: String {
+        let trimmed = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = spec.secondaryText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isDefaultPlaceholder = trimmed == "Hello" && trimmedSecondary == "Saved spec → widget"
+        return (trimmed.isEmpty || isDefaultPlaceholder) ? snapshot.conditionDescription : trimmed
     }
 
-    private var conditionBlock: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            Image(systemName: snapshot.symbolName)
-                .symbolRenderingMode(.multicolor)
-                .font(conditionIconFont)
-                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+    private var tempRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text(roundedTemperature(snapshot.temperatureC))
+                .font(metrics.temperatureFont)
+                .monospacedDigit()
+                .foregroundStyle(.primary)
 
-            Text(snapshot.conditionDescription)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            Text("°")
+                .font(metrics.degreeFont)
+                .foregroundStyle(.primary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    private var statsRow: some View {
+    private func roundedTemperature(_ celsius: Double) -> String {
+        let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
+        return String(Int(round(v)))
+    }
+}
+
+private struct WeatherSectionCard<Content: View>: View {
+    let metrics: WeatherMetrics
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: metrics.pillCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: metrics.pillCornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+    }
+}
+
+private struct WeatherStatsRow: View {
+    let metrics: WeatherMetrics
+    let snapshot: WidgetWeaverWeatherSnapshot
+    let unit: UnitTemperature
+
+    var body: some View {
         HStack(spacing: 10) {
             if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
                 WeatherStatPill(
                     title: "H/L",
                     icon: "arrow.up.arrow.down",
-                    value: "\(roundedTemperature(hi, unit: unit))° / \(roundedTemperature(lo, unit: unit))°"
+                    value: "\(roundedTemperature(hi))° / \(roundedTemperature(lo))°",
+                    metrics: metrics
                 )
             }
 
@@ -233,7 +602,8 @@ private struct WeatherFilledStateView: View {
                 WeatherStatPill(
                     title: "Precip",
                     icon: "drop.fill",
-                    value: "\(pct)%"
+                    value: "\(pct)%",
+                    metrics: metrics
                 )
             }
 
@@ -242,150 +612,16 @@ private struct WeatherFilledStateView: View {
                 WeatherStatPill(
                     title: "Humidity",
                     icon: "humidity.fill",
-                    value: "\(pct)%"
+                    value: "\(pct)%",
+                    metrics: metrics
                 )
             }
         }
     }
 
-    private var temperatureFont: Font {
-        switch family {
-        case .systemSmall:
-            return .system(size: 52, weight: .heavy, design: .rounded)
-        case .systemMedium:
-            return .system(size: 62, weight: .heavy, design: .rounded)
-        case .systemLarge:
-            return .system(size: 64, weight: .heavy, design: .rounded)
-        default:
-            return .system(size: 62, weight: .heavy, design: .rounded)
-        }
-    }
-
-    private var degreeFont: Font {
-        switch family {
-        case .systemSmall:
-            return .system(size: 26, weight: .bold, design: .rounded)
-        case .systemMedium:
-            return .system(size: 30, weight: .bold, design: .rounded)
-        case .systemLarge:
-            return .system(size: 30, weight: .bold, design: .rounded)
-        default:
-            return .system(size: 30, weight: .bold, design: .rounded)
-        }
-    }
-
-    private var conditionIconFont: Font {
-        switch family {
-        case .systemSmall:
-            return .system(size: 34, weight: .regular)
-        case .systemMedium:
-            return .system(size: 40, weight: .regular)
-        case .systemLarge:
-            return .system(size: 46, weight: .regular)
-        default:
-            return .system(size: 40, weight: .regular)
-        }
-    }
-
-    private func roundedTemperature(_ celsius: Double, unit: UnitTemperature) -> String {
+    private func roundedTemperature(_ celsius: Double) -> String {
         let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
         return String(Int(round(v)))
-    }
-}
-
-private struct WeatherEmptyStateView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let accent: Color
-    let attributionURL: URL?
-
-    var body: some View {
-        let store = WidgetWeaverWeatherStore.shared
-        let location = store.loadLocation()
-        let lastError = store.loadLastError()
-
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(spec.name.isEmpty ? "Weather" : spec.name)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                if let url = attributionURL {
-                    Link(destination: url) {
-                        Text("Weather")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 8) {
-                if location == nil {
-                    Image(systemName: "location.slash")
-                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
-                        .foregroundStyle(accent)
-
-                    Text("Set a location in Weather settings")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text("Menu → Weather")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if let lastError {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
-                        .foregroundStyle(accent)
-
-                    Text("Weather update failed")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text(location?.name ?? "")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Text(lastError)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(family == .systemSmall ? 2 : 3)
-
-                    Text("Menu → Weather → Update now")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Image(systemName: "cloud.sun.fill")
-                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
-                        .foregroundStyle(accent)
-
-                    Text("Updating weather…")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
-
-                    Text(location?.name ?? "")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Text("Menu → Weather → Update now")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-            Spacer(minLength: 0)
-        }
     }
 }
 
@@ -393,6 +629,7 @@ private struct WeatherStatPill: View {
     let title: String
     let icon: String
     let value: String
+    let metrics: WeatherMetrics
 
     var body: some View {
         HStack(spacing: 8) {
@@ -416,41 +653,59 @@ private struct WeatherStatPill: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: metrics.pillCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: metrics.pillCornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 }
 
-private struct HourlyForecastStrip: View {
+private struct WeatherHourlyRow: View {
     let points: [WidgetWeaverWeatherHourlyPoint]
     let unit: UnitTemperature
-    let accent: Color
+    let showHourLabels: Bool
+    let compact: Bool
+    let metrics: WeatherMetrics
 
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(points.prefix(6)) { p in
-                VStack(spacing: 6) {
-                    Text(hourLabel(p.date))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+        HStack(spacing: compact ? 8 : 10) {
+            ForEach(points) { p in
+                VStack(spacing: compact ? 4 : 6) {
+                    if showHourLabels {
+                        Text(hourLabel(p.date))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
 
-                    Image(systemName: p.symbolName)
-                        .symbolRenderingMode(.multicolor)
-                        .font(.system(size: 14, weight: .regular))
+                    if compact {
+                        HStack(spacing: 4) {
+                            Image(systemName: p.symbolName)
+                                .symbolRenderingMode(.multicolor)
+                                .font(.system(size: 12, weight: .regular))
 
-                    Text("\(roundedTemp(p.temperatureC))°")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
+                            Text("\(roundedTemperature(p.temperatureC))°")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .monospacedDigit()
+                        }
+                    } else {
+                        Image(systemName: p.symbolName)
+                            .symbolRenderingMode(.multicolor)
+                            .font(.system(size: 14, weight: .regular))
+
+                        Text("\(roundedTemperature(p.temperatureC))°")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .monospacedDigit()
+                    }
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func roundedTemp(_ celsius: Double) -> Int {
+    private func roundedTemperature(_ celsius: Double) -> Int {
         let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
         return Int(round(v))
     }
@@ -463,7 +718,8 @@ private struct HourlyForecastStrip: View {
     }
 }
 
-private struct TemperatureSparklineView: View {
+
+private struct WeatherSparkline: View {
     let points: [WidgetWeaverWeatherHourlyPoint]
     let unit: UnitTemperature
     let accent: Color
@@ -478,7 +734,7 @@ private struct TemperatureSparklineView: View {
             let w = geo.size.width
             let h = geo.size.height
             let stepX = w / CGFloat(max(temps.count - 1, 1))
-            let padY: CGFloat = 4
+            let padY: CGFloat = 3
 
             let pointsCG: [CGPoint] = temps.enumerated().map { i, v in
                 let x = CGFloat(i) * stepX
@@ -514,7 +770,7 @@ private struct TemperatureSparklineView: View {
                     }
                     .fill(
                         LinearGradient(
-                            colors: [accent.opacity(0.20), Color.clear],
+                            colors: [accent.opacity(0.18), Color.clear],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -529,9 +785,6 @@ private struct TemperatureSparklineView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func tempValue(_ celsius: Double) -> Double {
@@ -539,10 +792,10 @@ private struct TemperatureSparklineView: View {
     }
 }
 
-private struct DailyForecastListView: View {
+private struct WeatherDailyList: View {
     let points: [WidgetWeaverWeatherDailyPoint]
     let unit: UnitTemperature
-    let accent: Color
+    let metrics: WeatherMetrics
 
     var body: some View {
         VStack(spacing: 10) {
@@ -560,28 +813,25 @@ private struct DailyForecastListView: View {
                     Spacer(minLength: 8)
 
                     if let hi = d.highTemperatureC {
-                        Text("\(rounded(hi))°")
+                        Text("\(roundedTemperature(hi))°")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.primary)
                             .monospacedDigit()
                     }
 
                     if let lo = d.lowTemperatureC {
-                        Text("\(rounded(lo))°")
+                        Text("\(roundedTemperature(lo))°")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                             .frame(width: 34, alignment: .trailing)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: metrics.pillCornerRadius, style: .continuous))
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func weekday(_ date: Date) -> String {
@@ -591,11 +841,104 @@ private struct DailyForecastListView: View {
         return f.string(from: date)
     }
 
-    private func rounded(_ celsius: Double) -> Int {
+    private func roundedTemperature(_ celsius: Double) -> Int {
         let v = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit).value
         return Int(round(v))
     }
 }
+
+private struct WeatherEmptyStateView: View {
+    let spec: WidgetSpec
+    let family: WidgetFamily
+    let metrics: WeatherMetrics
+    let accent: Color
+    let attributionURL: URL?
+
+    var body: some View {
+        let store = WidgetWeaverWeatherStore.shared
+        let location = store.loadLocation()
+        let lastError = store.loadLastError()
+
+        ZStack(alignment: .topLeading) {
+            WeatherGlassContainer(metrics: metrics) {
+                VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+                    headerRow(locationName: location?.name)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        if location == nil {
+                            Image(systemName: "location.slash")
+                                .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                                .foregroundStyle(accent)
+
+                            Text("Set a location in Weather settings")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text("Menu → Weather")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else if let lastError {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                                .foregroundStyle(accent)
+
+                            Text("Weather update failed")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text(lastError)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(family == .systemSmall ? 2 : 3)
+
+                            Text("Menu → Weather → Update now")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Image(systemName: "cloud.sun.fill")
+                                .font(.system(size: family == .systemSmall ? 28 : 34, weight: .semibold))
+                                .foregroundStyle(accent)
+
+                            Text("Updating weather…")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text("Menu → Weather → Update now")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+
+            WeatherAttributionLink(attributionURL: attributionURL)
+                .padding(.trailing, metrics.contentPadding + 6)
+                .padding(.bottom, metrics.contentPadding + 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    }
+
+    private func headerRow(locationName: String?) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(spec.name.isEmpty ? "Weather" : spec.name)
+                .font(metrics.style.nameTextStyle.font(fallback: .caption).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            if let locationName, !locationName.isEmpty {
+                Text(locationName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
 
 private struct WeatherBackdropView: View {
     let snapshot: WidgetWeaverWeatherSnapshot?
@@ -863,7 +1206,7 @@ public struct WidgetWeaverSpecView: View {
                     weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
                 }
             }
-            .padding(layout.template == .poster ? 0 : style.padding)
+            .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
         }
         .modifier(
             WidgetWeaverBackgroundModifier(
@@ -969,6 +1312,7 @@ public struct WidgetWeaverSpecView: View {
             spec: spec,
             family: family,
             context: context,
+            layout: layout,
             style: style,
             accent: accent,
             snapshot: snapshot,
