@@ -128,12 +128,12 @@ struct WidgetPreviewDock: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                if isLive {
-                    Text("Live mode runs interactive widget buttons locally (no Home Screen round-trip).")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                Text("Live mode runs interactive widget buttons locally (no Home Screen round-trip).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(isLive ? 1 : 0)
+                    .accessibilityHidden(!isLive)
             }
         }
         .padding(12)
