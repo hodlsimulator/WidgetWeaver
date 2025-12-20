@@ -40,7 +40,7 @@ public struct WidgetWeaverDesignSelectionIntent: AppIntent, WidgetConfigurationI
     public init() {}
 }
 
-public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable {
+public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable, Sendable {
     public let id: String // UUID string
     public let name: String
 
@@ -52,9 +52,10 @@ public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable {
         DisplayRepresentation(title: "\(name)")
     }
 
-    public static var defaultQuery = Query()
+    // ✅ Computed (not stored) to avoid nonisolated global shared mutable state
+    public static var defaultQuery: Query { Query() }
 
-    public struct Query: EntityQuery {
+    public struct Query: EntityQuery, Sendable {
         public init() {}
 
         public func suggestedEntities() async throws -> [WidgetWeaverDesignChoice] {
@@ -194,26 +195,29 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        // Run a best-effort refresh in the background.
-        Task {
-            let _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
-            let store = WidgetWeaverWeatherStore.shared
-            let hasLocation = (store.loadLocation() != nil)
-            let snap = store.loadSnapshot()
-            let now = Date()
-
-            // Create 60 entries (1 per minute) so the lock screen widget stays “alive”.
-            let count = 60
-            var entries: [Entry] = []
-            entries.reserveCapacity(count)
-
-            for i in 0..<count {
-                let d = now.addingTimeInterval(TimeInterval(i) * 60)
-                entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
+        // Fire-and-forget refresh (does not capture `completion`)
+        if !context.isPreview {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
             }
-
-            completion(Timeline(entries: entries, policy: .atEnd))
         }
+
+        let store = WidgetWeaverWeatherStore.shared
+        let hasLocation = context.isPreview ? true : (store.loadLocation() != nil)
+        let snap = context.isPreview ? store.snapshotForRender(context: .preview) : store.loadSnapshot()
+
+        let now = Date()
+        let count = 60
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(count)
+
+        for i in 0..<count {
+            let d = now.addingTimeInterval(TimeInterval(i) * 60)
+            entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
+        }
+
+        completion(Timeline(entries: entries, policy: .atEnd))
     }
 }
 
@@ -298,26 +302,29 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        Task {
-            let _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
-
-            let store = WidgetWeaverCalendarStore.shared
-            let hasAccess = store.canReadEvents()
-            let snap = store.loadSnapshot()
-            let now = Date()
-
-            // 60 entries (1/min) keeps the countdown “alive”.
-            let count = 60
-            var entries: [Entry] = []
-            entries.reserveCapacity(count)
-
-            for i in 0..<count {
-                let d = now.addingTimeInterval(TimeInterval(i) * 60)
-                entries.append(Entry(date: d, hasAccess: hasAccess, snapshot: snap))
+        // Fire-and-forget refresh (does not capture `completion`)
+        if !context.isPreview {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
             }
-
-            completion(Timeline(entries: entries, policy: .atEnd))
         }
+
+        let store = WidgetWeaverCalendarStore.shared
+        let hasAccess = context.isPreview ? true : store.canReadEvents()
+        let snap: WidgetWeaverCalendarSnapshot? = context.isPreview ? .sample() : store.loadSnapshot()
+
+        let now = Date()
+        let count = 60
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(count)
+
+        for i in 0..<count {
+            let d = now.addingTimeInterval(TimeInterval(i) * 60)
+            entries.append(Entry(date: d, hasAccess: hasAccess, snapshot: snap))
+        }
+
+        completion(Timeline(entries: entries, policy: .atEnd))
     }
 }
 
