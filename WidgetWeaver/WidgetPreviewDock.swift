@@ -300,10 +300,27 @@ struct WidgetPreview: View {
 
     private var previewBody: some View {
         GeometryReader { proxy in
-            let base = Self.widgetSize(for: family)
-            let scaleX = proxy.size.width / base.width
-            let scaleY = proxy.size.height / base.height
+            // Keep the preview's *physical* widget dimensions stable.
+            //
+            // Widgets have fixed sizes per family (Small/Medium share the same height on iOS).
+            // The old approach scaled each family independently to fill the available box, which
+            // made Small appear "deeper" than Medium (and caused noticeable resizing/jitter when
+            // switching families or editing).
+            //
+            // Instead, compute a single scale factor based on the largest system widget size for
+            // the current device, and render all families using that same scale.
+            let small = Self.widgetSize(for: .systemSmall)
+            let medium = Self.widgetSize(for: .systemMedium)
+            let large = Self.widgetSize(for: .systemLarge)
+
+            let maxBaseWidth = max(small.width, max(medium.width, large.width))
+            let maxBaseHeight = max(small.height, max(medium.height, large.height))
+
+            let scaleX = proxy.size.width / maxBaseWidth
+            let scaleY = proxy.size.height / maxBaseHeight
             let scale = min(scaleX, scaleY)
+
+            let base = Self.widgetSize(for: family)
 
             WidgetWeaverSpecView(
                 spec: spec,

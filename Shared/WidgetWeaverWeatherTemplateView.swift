@@ -207,9 +207,27 @@ private struct WeatherFilledStateView: View {
                 )
             }
         }
+        // Small: attribution button only.
         .overlay(alignment: .bottomTrailing) {
             if family == .systemSmall {
                 WeatherAttributionLink(accent: accent)
+                    .padding(metrics.contentPadding)
+            }
+        }
+        // Medium: pin footer items as overlays so they never get pushed off-screen.
+        .overlay(alignment: .bottomLeading) {
+            if family == .systemMedium {
+                WeatherAttributionLink(accent: accent)
+                    .padding(metrics.contentPadding)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if family == .systemMedium {
+                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
+                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .padding(metrics.contentPadding)
             }
         }
@@ -333,19 +351,8 @@ private struct WeatherMediumRainLayout: View {
                 )
             }
 
+            // Leaves room at the bottom for the pinned footer overlays.
             Spacer(minLength: 0)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                WeatherAttributionLink(accent: accent)
-
-                Spacer(minLength: 0)
-
-                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
         }
     }
 }
