@@ -2,6 +2,8 @@
 //  WidgetWeaverCalendar.swift
 //  WidgetWeaver
 //
+//  Created by . . on 12/20/25.
+//
 //  Calendar snapshot store + EventKit engine + “Next Up” calendar template view.
 //
 
@@ -60,6 +62,7 @@ public struct WidgetWeaverCalendarSnapshot: Codable, Hashable, Sendable {
             isAllDay: false,
             location: "Room 2"
         )
+
         let b = WidgetWeaverCalendarEvent(
             title: "Lunch",
             startDate: now.addingTimeInterval(2 * 60 * 60),
@@ -67,6 +70,7 @@ public struct WidgetWeaverCalendarSnapshot: Codable, Hashable, Sendable {
             isAllDay: false,
             location: nil
         )
+
         return WidgetWeaverCalendarSnapshot(
             generatedAt: now,
             next: a,
@@ -144,9 +148,7 @@ public final class WidgetWeaverCalendarStore: @unchecked Sendable {
         }
     }
 
-    public func recommendedRefreshIntervalSeconds() -> TimeInterval {
-        60
-    }
+    public func recommendedRefreshIntervalSeconds() -> TimeInterval { 60 }
 }
 
 // MARK: - Engine
@@ -175,15 +177,12 @@ public actor WidgetWeaverCalendarEngine {
     private let eventStore = EKEventStore()
 
     public func updateIfNeeded(force: Bool = false) async -> Result {
-        if let inFlight {
-            return await inFlight.value
-        }
+        if let inFlight { return await inFlight.value }
 
-        let t = Task<Result, Never> { [weak self] in
+        let t = Task { [weak self] in
             guard let self else {
                 return Result(didUpdate: false, generatedAt: nil, errorMessage: "Update cancelled.")
             }
-
             let r = await self.update(force: force)
             await self.clearInFlight()
             return r
@@ -258,16 +257,34 @@ public actor WidgetWeaverCalendarEngine {
 
     private func fetchSnapshot(now: Date) async throws -> WidgetWeaverCalendarSnapshot {
         let calendars = eventStore.calendars(for: .event)
-        let end = now.addingTimeInterval(24 * 60 * 60)
 
-        let predicate = eventStore.predicateForEvents(withStart: now, end: end, calendars: calendars)
-        let events = eventStore.events(matching: predicate)
+        let horizons: [TimeInterval] = [
+            24 * 60 * 60,
+            7 * 24 * 60 * 60,
+            30 * 24 * 60 * 60,
+            180 * 24 * 60 * 60,
+            365 * 24 * 60 * 60,
+            5 * 365 * 24 * 60 * 60
+        ]
 
-        let future = events
-            .filter { $0.endDate > now }
-            .sorted { a, b in
-                a.startDate < b.startDate
+        var future: [EKEvent] = []
+
+        for h in horizons {
+            let end = now.addingTimeInterval(h)
+            let predicate = eventStore.predicateForEvents(withStart: now, end: end, calendars: calendars)
+            let events = eventStore.events(matching: predicate)
+
+            let filtered = events
+                .filter { $0.endDate > now }
+                .sorted { a, b in
+                    a.startDate < b.startDate
+                }
+
+            if !filtered.isEmpty {
+                future = filtered
+                break
             }
+        }
 
         let mapped: [WidgetWeaverCalendarEvent] = future.prefix(10).map { e in
             WidgetWeaverCalendarEvent(
@@ -298,21 +315,61 @@ public actor WidgetWeaverCalendarEngine {
 
 // MARK: - Formatting helpers
 
+private func wwCalendarDayDifference(from now: Date, to start: Date) -> Int {
+    let cal = Calendar.current
+    let a = cal.startOfDay(for: now)
+    let b = cal.startOfDay(for: start)
+    return cal.dateComponents([.day], from: a, to: b).day ?? 0
+}
+
+private func wwCalendarShortDateToken(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.locale = .current
+    f.setLocalizedDateFormatFromTemplate("MMM d")
+    return f.string(from: date)
+}
+
+private func wwCalendarLongDateToken(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.locale = .current
+    f.setLocalizedDateFormatFromTemplate("EEE MMM d")
+    return f.string(from: date)
+}
+
 private func wwCalendarShortCountdownValue(from now: Date, to start: Date) -> String {
-    let dt = max(0, start.timeIntervalSince(now))
+    let dt = start.timeIntervalSince(now)
+    if dt <= 0 { return "Now" }
+
     let minutes = Int(dt / 60)
     if minutes < 60 { return "\(minutes)m" }
-    let hours = Int(Double(minutes) / 60.0)
-    return "\(hours)h"
+
+    let hours = minutes / 60
+    if hours < 24 { return "\(hours)h" }
+
+    let days = max(1, wwCalendarDayDifference(from: now, to: start))
+    if days < 14 { return "\(days)d" }
+
+    return wwCalendarShortDateToken(start)
 }
 
 private func wwCalendarCountdownLabel(from now: Date, to start: Date) -> String {
-    let dt = max(0, start.timeIntervalSince(now))
+    let dt = start.timeIntervalSince(now)
+    if dt <= 0 { return "Now" }
+
     let minutes = Int(dt / 60)
     if minutes <= 1 { return "Soon" }
     if minutes < 60 { return "In \(minutes) min" }
-    let hours = Int(Double(minutes) / 60.0)
-    return "In \(hours) hr"
+
+    let hours = minutes / 60
+    if hours < 24 { return "In \(hours) hr" }
+
+    let cal = Calendar.current
+    if cal.isDateInTomorrow(start) { return "Tomorrow" }
+
+    let days = max(1, wwCalendarDayDifference(from: now, to: start))
+    if days < 7 { return "In \(days) days" }
+
+    return "On \(wwCalendarLongDateToken(start))"
 }
 
 private func wwCalendarTimeRangeString(_ start: Date, _ end: Date) -> String {
@@ -338,7 +395,6 @@ public struct NextUpCalendarTemplateView: View {
     private var calendarLastError: String = ""
 
     @Environment(\.openURL) private var openURL
-
     @State private var accessRequestInFlight: Bool = false
 
     public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, accent: Color) {
@@ -414,9 +470,7 @@ public struct NextUpCalendarTemplateView: View {
                             if granted {
                                 _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
                             }
-                            await MainActor.run {
-                                accessRequestInFlight = false
-                            }
+                            await MainActor.run { accessRequestInFlight = false }
                         }
                     } label: {
                         Label(accessRequestInFlight ? "Requesting…" : "Enable", systemImage: "checkmark.circle.fill")
@@ -454,7 +508,8 @@ public struct NextUpCalendarTemplateView: View {
     }
 
     private func filledView(snapshot: WidgetWeaverCalendarSnapshot, next: WidgetWeaverCalendarEvent, now: Date) -> some View {
-        let header = (family == .systemSmall) ? "Next" : "Next Up"
+        let isFar = next.startDate.timeIntervalSince(now) >= (24 * 60 * 60)
+        let header = (family == .systemSmall || isFar) ? "Next" : "Next Up"
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {

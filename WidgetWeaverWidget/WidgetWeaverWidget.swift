@@ -30,6 +30,7 @@ public struct WidgetWeaverEntry: TimelineEntry {
 /// Each widget instance can follow the app’s default design or pick a specific saved design.
 public struct WidgetWeaverDesignSelectionIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Design" }
+
     public static var description: IntentDescription {
         IntentDescription("Choose a saved WidgetWeaver design for this widget.")
     }
@@ -52,7 +53,7 @@ public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable, Senda
         DisplayRepresentation(title: "\(name)")
     }
 
-    // ✅ Computed (not stored) to avoid nonisolated global shared mutable state
+    // Computed (not stored) to avoid nonisolated global shared mutable state
     public static var defaultQuery: Query { Query() }
 
     public struct Query: EntityQuery, Sendable {
@@ -105,14 +106,13 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let usesTime = spec.usesTimeDependentRendering()
         let usesCalendar = (spec.layout.template == .nextUpCalendar)
 
-        // Best-effort calendar refresh when the Next Up template is used.
         if usesCalendar {
             let _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
         }
 
         let now = Date()
-        let refreshSeconds: TimeInterval
 
+        let refreshSeconds: TimeInterval
         if usesWeather {
             if usesTime {
                 refreshSeconds = 60
@@ -126,21 +126,24 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         }
 
         let count = max(2, Int((60 * 60) / refreshSeconds))
+
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = now.addingTimeInterval(TimeInterval(i) * refreshSeconds)
-            entries.append(Entry(date: d, family: context.family, spec: spec))
+            let t = now.addingTimeInterval(TimeInterval(i) * refreshSeconds)
+            entries.append(Entry(date: t, family: context.family, spec: spec))
         }
 
         return Timeline(entries: entries, policy: .atEnd)
     }
 
     private func resolveSpec(for configuration: Intent) -> WidgetSpec {
-        if let idString = configuration.design?.id,
-           let id = UUID(uuidString: idString),
-           let loaded = WidgetSpecStore.shared.load(id: id) {
+        if
+            let idString = configuration.design?.id,
+            let id = UUID(uuidString: idString),
+            let loaded = WidgetSpecStore.shared.load(id: id)
+        {
             return loaded
         }
         return WidgetSpecStore.shared.loadDefault()
@@ -167,7 +170,7 @@ struct WidgetWeaverWidget: Widget {
     }
 }
 
-// MARK: - Lock Screen Weather Widget (existing)
+// MARK: - Lock Screen Weather Widget
 
 public struct WidgetWeaverLockScreenWeatherEntry: TimelineEntry {
     public let date: Date
@@ -208,13 +211,14 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
         let snap = context.isPreview ? store.snapshotForRender(context: .preview) : store.loadSnapshot()
 
         let now = Date()
-        let count = 60
+        let base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
 
+        let count = 60
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = now.addingTimeInterval(TimeInterval(i) * 60)
+            let d = base.addingTimeInterval(TimeInterval(i) * 60)
             entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
         }
 
@@ -226,21 +230,32 @@ struct WidgetWeaverLockScreenWeatherView: View {
     let entry: WidgetWeaverLockScreenWeatherEntry
 
     var body: some View {
-        SwiftUI.Group {
-            if !entry.hasLocation {
-                Label("Set location", systemImage: "location.slash")
+        let now = entry.date
+
+        if !entry.hasLocation {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Set a location")
+                    .font(.headline)
+                    .bold()
+                Text("Open WidgetWeaver to choose one.")
                     .font(.caption2)
-            } else if let snap = entry.snapshot {
-                lockScreenContent(snapshot: snap, now: entry.date)
-            } else {
-                Label("Updating…", systemImage: "cloud.sun")
+                    .foregroundStyle(.secondary)
+            }
+        } else if let snapshot = entry.snapshot {
+            weatherContent(snapshot: snapshot, now: now)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Updating…")
+                    .font(.headline)
+                    .bold()
+                Text("Open the app to refresh now.")
                     .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
-        .widgetURL(URL(string: "widgetweaver://weather"))
     }
 
-    private func lockScreenContent(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
+    private func weatherContent(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
         let unit = WidgetWeaverWeatherStore.shared.resolvedUnitTemperature()
         let temp = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius).converted(to: unit).value
         let tempInt = Int(round(temp))
@@ -267,6 +282,7 @@ struct WidgetWeaverLockScreenWeatherWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: WidgetWeaverLockScreenWeatherProvider()) { entry in
             WidgetWeaverLockScreenWeatherView(entry: entry)
+                .wwWidgetContainerBackground()
         }
         .configurationDisplayName("Rain (WidgetWeaver)")
         .description("Next hour precipitation, temperature, and nowcast.")
@@ -274,7 +290,7 @@ struct WidgetWeaverLockScreenWeatherWidget: Widget {
     }
 }
 
-// MARK: - Lock Screen Next Up (Calendar) Widget (NEW)
+// MARK: - Lock Screen Next Up (Calendar) Widget
 
 public struct WidgetWeaverLockScreenNextUpEntry: TimelineEntry {
     public let date: Date
@@ -315,13 +331,14 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
         let snap: WidgetWeaverCalendarSnapshot? = context.isPreview ? .sample() : store.loadSnapshot()
 
         let now = Date()
-        let count = 60
+        let base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
 
+        let count = 60
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = now.addingTimeInterval(TimeInterval(i) * 60)
+            let d = base.addingTimeInterval(TimeInterval(i) * 60)
             entries.append(Entry(date: d, hasAccess: hasAccess, snapshot: snap))
         }
 
@@ -331,166 +348,111 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
 
 struct WidgetWeaverLockScreenNextUpView: View {
     let entry: WidgetWeaverLockScreenNextUpEntry
-    
+
     @Environment(\.widgetFamily) private var family
-    
+
     var body: some View {
-        content
-            .widgetURL(URL(string: "widgetweaver://calendar"))
+        let now = entry.date
+
+        Group {
+            if !entry.hasAccess {
+                Text("Calendar access off")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if let snap = entry.snapshot, let next = snap.next {
+                content(now: now, next: next, after: snap.second)
+            } else {
+                Text("No upcoming events")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
-    
+
     @ViewBuilder
-    private var content: some View {
-        if !entry.hasAccess {
-            lockScreenNoAccess
-        } else if let snap = entry.snapshot, let next = snap.next {
-            lockScreenHasEvent(next: next, after: snap.second, now: entry.date)
-        } else {
-            lockScreenNoEvents
-        }
-    }
-    
-    private var lockScreenNoAccess: some View {
-        switch family {
-        case .accessoryInline:
-            return AnyView(Text("Enable Calendar access"))
-            
-        case .accessoryCircular:
-            return AnyView(
-                VStack(spacing: 2) {
-                    Image(systemName: "calendar.badge.exclamationmark")
-                    Text("Off")
-                        .font(.caption2)
-                }
-            )
-            
-        default:
-            return AnyView(
-                Label("Enable Calendar", systemImage: "calendar.badge.exclamationmark")
-                    .font(.caption2)
-            )
-        }
-    }
-    
-    private var lockScreenNoEvents: some View {
-        switch family {
-        case .accessoryInline:
-            return AnyView(Text("No upcoming events"))
-            
-        case .accessoryCircular:
-            return AnyView(
-                VStack(spacing: 2) {
-                    Image(systemName: "calendar")
-                    Text("—")
-                        .font(.caption2)
-                }
-            )
-            
-        default:
-            return AnyView(
-                Label("No events", systemImage: "calendar")
-                    .font(.caption2)
-            )
-        }
-    }
-    
-    private func lockScreenHasEvent(next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?, now: Date) -> some View {
+    private func content(now: Date, next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?) -> some View {
         let short = calendarShortCountdownValue(from: now, to: next.startDate, end: next.endDate)
         let label = calendarCountdownLabel(from: now, to: next.startDate, end: next.endDate)
-        
+
         switch family {
         case .accessoryInline:
-            return AnyView(Text("\(next.title) \(label)"))
-            
+            Text("\(next.title) \(label)")
+
         case .accessoryCircular:
-            return AnyView(
-                VStack(spacing: 2) {
-                    Text(short)
-                        .font(.headline)
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                    Image(systemName: "calendar")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            )
-            
-        case .accessoryRectangular:
-            return AnyView(
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(next.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                    
-                    Text(label)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    
-                    if let loc = next.location, !loc.isEmpty {
-                        Text(loc)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    
-                    if let after {
-                        let afterLabel = calendarCountdownLabel(from: now, to: after.startDate, end: after.endDate)
-                        Text("After: \(after.title) (\(afterLabel))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                }
-            )
-            
-        default:
-            return AnyView(
-                Text("\(next.title) \(label)")
+            VStack(spacing: 2) {
+                Text(short)
+                    .font(.headline)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+
+                Image(systemName: "calendar")
                     .font(.caption2)
-            )
+                    .foregroundStyle(.secondary)
+            }
+
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 3) {
+                Text(next.title)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let loc = next.location, !loc.isEmpty {
+                    Text(loc)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let after {
+                    let afterLabel = calendarCountdownLabel(from: now, to: after.startDate, end: after.endDate)
+                    Text("After: \(after.title) (\(afterLabel))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+
+        default:
+            Text("\(next.title) \(label)")
+                .font(.caption2)
         }
     }
-    
+
     private func calendarShortCountdownValue(from now: Date, to start: Date, end: Date) -> String {
-        if start <= now, end > now {
-            return compactIntervalString(seconds: end.timeIntervalSince(now))
-        }
-        if start > now {
-            return compactIntervalString(seconds: start.timeIntervalSince(now))
-        }
+        if start <= now, end > now { return compactIntervalString(seconds: end.timeIntervalSince(now)) }
+        if start > now { return compactIntervalString(seconds: start.timeIntervalSince(now)) }
         return "Now"
     }
-    
+
     private func calendarCountdownLabel(from now: Date, to start: Date, end: Date) -> String {
-        if start <= now, end > now {
-            return "ends in \(compactIntervalString(seconds: end.timeIntervalSince(now)))"
-        }
-        if start > now {
-            return "in \(compactIntervalString(seconds: start.timeIntervalSince(now)))"
-        }
+        if start <= now, end > now { return "ends in \(compactIntervalString(seconds: end.timeIntervalSince(now)))" }
+        if start > now { return "in \(compactIntervalString(seconds: start.timeIntervalSince(now)))" }
         return "now"
     }
-    
+
     private func compactIntervalString(seconds: TimeInterval) -> String {
         let s = max(0, seconds)
         let minutes = Int(ceil(s / 60.0))
-        
-        if minutes < 60 {
-            return "\(minutes)m"
-        }
-        
+
+        if minutes < 60 { return "\(minutes)m" }
+
         let hours = minutes / 60
         let remM = minutes % 60
-        
+
         if hours < 24 {
             if remM == 0 { return "\(hours)h" }
             return "\(hours)h \(remM)m"
         }
-        
+
         let days = hours / 24
         let remH = hours % 24
+
         if remH == 0 { return "\(days)d" }
         return "\(days)d \(remH)h"
     }
@@ -502,9 +464,23 @@ struct WidgetWeaverLockScreenNextUpWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: WidgetWeaverLockScreenNextUpProvider()) { entry in
             WidgetWeaverLockScreenNextUpView(entry: entry)
+                .wwWidgetContainerBackground()
         }
         .configurationDisplayName("Next Up (WidgetWeaver)")
         .description("Next calendar event with a live countdown.")
         .supportedFamilies([.accessoryInline, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+// MARK: - Container background helper (Lock Screen / accessory widgets)
+
+private extension View {
+    @ViewBuilder
+    func wwWidgetContainerBackground() -> some View {
+        if #available(iOS 17.0, *) {
+            self.containerBackground(for: .widget) { Color.clear }
+        } else {
+            self
+        }
     }
 }
