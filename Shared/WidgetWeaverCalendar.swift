@@ -2,12 +2,7 @@
 //  WidgetWeaverCalendar.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/20/25.
-//
-//  Next Up (Calendar) support:
-//  - App Group snapshot store (like Weather)
-//  - EventKit engine to refresh snapshot
-//  - Template view for Home Screen widgets
+//  Calendar snapshot store + EventKit engine + “Next Up” calendar template view.
 //
 
 import Foundation
@@ -22,84 +17,60 @@ import WidgetKit
 
 public struct WidgetWeaverCalendarEvent: Codable, Hashable, Sendable {
     public var title: String
-    public var location: String?
     public var startDate: Date
     public var endDate: Date
     public var isAllDay: Bool
+    public var location: String?
 
     public init(
         title: String,
-        location: String?,
         startDate: Date,
         endDate: Date,
-        isAllDay: Bool
+        isAllDay: Bool,
+        location: String? = nil
     ) {
         self.title = title
-        self.location = location
         self.startDate = startDate
         self.endDate = endDate
         self.isAllDay = isAllDay
-    }
-
-    public func normalised() -> WidgetWeaverCalendarEvent {
-        var e = self
-        let t = e.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        e.title = t.isEmpty ? "Untitled Event" : String(t.prefix(120))
-
-        if let loc = e.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
-            e.location = String(loc.prefix(120))
-        } else {
-            e.location = nil
-        }
-        return e
+        self.location = location
     }
 }
 
 public struct WidgetWeaverCalendarSnapshot: Codable, Hashable, Sendable {
-    public var fetchedAt: Date
+    public var generatedAt: Date
     public var next: WidgetWeaverCalendarEvent?
-    public var after: WidgetWeaverCalendarEvent?
+    public var second: WidgetWeaverCalendarEvent?
 
     public init(
-        fetchedAt: Date,
+        generatedAt: Date,
         next: WidgetWeaverCalendarEvent?,
-        after: WidgetWeaverCalendarEvent?
+        second: WidgetWeaverCalendarEvent?
     ) {
-        self.fetchedAt = fetchedAt
+        self.generatedAt = generatedAt
         self.next = next
-        self.after = after
+        self.second = second
     }
 
     public static func sample(now: Date = Date()) -> WidgetWeaverCalendarSnapshot {
-        let cal = Calendar.autoupdatingCurrent
-        let base = cal.dateInterval(of: .minute, for: now)?.start ?? now
-
-        let nextStart = base.addingTimeInterval(18 * 60)
-        let nextEnd = nextStart.addingTimeInterval(45 * 60)
-
-        let afterStart = base.addingTimeInterval(120 * 60)
-        let afterEnd = afterStart.addingTimeInterval(60 * 60)
-
-        let next = WidgetWeaverCalendarEvent(
-            title: "Standup",
-            location: "Meeting Room 2",
-            startDate: nextStart,
-            endDate: nextEnd,
-            isAllDay: false
+        let a = WidgetWeaverCalendarEvent(
+            title: "Stand-up",
+            startDate: now.addingTimeInterval(15 * 60),
+            endDate: now.addingTimeInterval(45 * 60),
+            isAllDay: false,
+            location: "Room 2"
         )
-
-        let after = WidgetWeaverCalendarEvent(
+        let b = WidgetWeaverCalendarEvent(
             title: "Lunch",
-            location: "Café",
-            startDate: afterStart,
-            endDate: afterEnd,
-            isAllDay: false
+            startDate: now.addingTimeInterval(2 * 60 * 60),
+            endDate: now.addingTimeInterval(3 * 60 * 60),
+            isAllDay: false,
+            location: nil
         )
-
         return WidgetWeaverCalendarSnapshot(
-            fetchedAt: now,
-            next: next,
-            after: after
+            generatedAt: now,
+            next: a,
+            second: b
         )
     }
 }
@@ -118,93 +89,41 @@ public final class WidgetWeaverCalendarStore: @unchecked Sendable {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    @inline(__always)
-    private func sync() {
-        defaults.synchronize()
-        UserDefaults.standard.synchronize()
-    }
-
     private init(defaults: UserDefaults = AppGroup.userDefaults) {
         self.defaults = defaults
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
-        self.encoder.dateEncodingStrategy = .iso8601
-        self.decoder.dateDecodingStrategy = .iso8601
+
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        self.encoder = enc
+
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .iso8601
+        self.decoder = dec
     }
 
     public func loadSnapshot() -> WidgetWeaverCalendarSnapshot? {
-        sync()
-
-        if let data = defaults.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverCalendarSnapshot.self, from: data) {
-            return snap
-        }
-
-        if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverCalendarSnapshot.self, from: data) {
-            if let healed = try? encoder.encode(snap) {
-                defaults.set(healed, forKey: Keys.snapshotData)
-            }
-            sync()
-            return snap
-        }
-
-        return nil
+        guard let data = defaults.data(forKey: Keys.snapshotData) else { return nil }
+        return try? decoder.decode(WidgetWeaverCalendarSnapshot.self, from: data)
     }
 
     public func saveSnapshot(_ snapshot: WidgetWeaverCalendarSnapshot?) {
-        if let snapshot, let data = try? encoder.encode(snapshot) {
-            defaults.set(data, forKey: Keys.snapshotData)
-            UserDefaults.standard.set(data, forKey: Keys.snapshotData)
+        if let snapshot {
+            if let data = try? encoder.encode(snapshot) {
+                defaults.set(data, forKey: Keys.snapshotData)
+                defaults.set("", forKey: Keys.lastError)
+            }
         } else {
             defaults.removeObject(forKey: Keys.snapshotData)
-            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         }
-        sync()
     }
 
-    public func clearSnapshot() {
-        defaults.removeObject(forKey: Keys.snapshotData)
-        UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
-        sync()
+    public func setLastError(_ message: String) {
+        defaults.set(message, forKey: Keys.lastError)
     }
 
-    public func loadLastError() -> String? {
-        sync()
-
-        if let s = defaults.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty { return t }
-        }
-
-        if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty {
-                defaults.set(t, forKey: Keys.lastError)
-                sync()
-                return t
-            }
-        }
-
-        return nil
-    }
-
-    public func saveLastError(_ error: String?) {
-        let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmed, !trimmed.isEmpty {
-            defaults.set(trimmed, forKey: Keys.lastError)
-            UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
-        } else {
-            defaults.removeObject(forKey: Keys.lastError)
-            UserDefaults.standard.removeObject(forKey: Keys.lastError)
-        }
-        sync()
-    }
-
-    public func clearLastError() {
-        defaults.removeObject(forKey: Keys.lastError)
-        UserDefaults.standard.removeObject(forKey: Keys.lastError)
-        sync()
+    public func lastError() -> String? {
+        let v = defaults.string(forKey: Keys.lastError) ?? ""
+        return v.isEmpty ? nil : v
     }
 
     public func canReadEvents() -> Bool {
@@ -217,12 +136,11 @@ public final class WidgetWeaverCalendarStore: @unchecked Sendable {
     }
 
     public func snapshotForRender(context: WidgetWeaverRenderContext) -> WidgetWeaverCalendarSnapshot? {
-        if let snap = loadSnapshot() { return snap }
         switch context {
-        case .preview, .simulator:
-            return .sample()
         case .widget:
-            return nil
+            return loadSnapshot()
+        case .preview, .simulator:
+            return loadSnapshot() ?? .sample()
         }
     }
 
@@ -237,38 +155,57 @@ public actor WidgetWeaverCalendarEngine {
     public static let shared = WidgetWeaverCalendarEngine()
 
     public struct Result: Sendable {
-        public var snapshot: WidgetWeaverCalendarSnapshot?
-        public var errorDescription: String?
+        public var didUpdate: Bool
+        public var generatedAt: Date?
+        public var errorMessage: String?
 
-        public init(snapshot: WidgetWeaverCalendarSnapshot?, errorDescription: String?) {
-            self.snapshot = snapshot
-            self.errorDescription = errorDescription
+        public init(didUpdate: Bool, generatedAt: Date?, errorMessage: String?) {
+            self.didUpdate = didUpdate
+            self.generatedAt = generatedAt
+            self.errorMessage = errorMessage
         }
     }
 
     public var minimumUpdateInterval: TimeInterval = 60
 
     private var inFlight: Task<Result, Never>?
+    private var lastUpdateAt: Date?
+
+    private let store = WidgetWeaverCalendarStore.shared
+    private let eventStore = EKEventStore()
 
     public func updateIfNeeded(force: Bool = false) async -> Result {
-        if let inFlight { return await inFlight.value }
-        let task = Task { await self.update(force: force) }
-        inFlight = task
-        let out = await task.value
-        inFlight = nil
-        return out
+        if let inFlight {
+            return await inFlight.value
+        }
+
+        let t = Task<Result, Never> { [weak self] in
+            guard let self else {
+                return Result(didUpdate: false, generatedAt: nil, errorMessage: "Update cancelled.")
+            }
+
+            let r = await self.update(force: force)
+            await self.clearInFlight()
+            return r
+        }
+
+        inFlight = t
+        return await t.value
     }
 
-    /// Intended for the main app (permission prompt).
+    private func clearInFlight() {
+        inFlight = nil
+    }
+
     public func requestAccessIfNeeded() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
+
         if #available(iOS 17.0, *) {
             if status == .fullAccess { return true }
             if status != .notDetermined { return false }
 
-            let store = EKEventStore()
             do {
-                let granted = try await store.requestFullAccessToEvents()
+                let granted = try await eventStore.requestFullAccessToEvents()
                 return granted
             } catch {
                 return false
@@ -277,9 +214,8 @@ public actor WidgetWeaverCalendarEngine {
             if status == .authorized { return true }
             if status != .notDetermined { return false }
 
-            let store = EKEventStore()
             return await withCheckedContinuation { cont in
-                store.requestAccess(to: .event) { granted, _ in
+                eventStore.requestAccess(to: .event) { granted, _ in
                     cont.resume(returning: granted)
                 }
             }
@@ -287,175 +223,143 @@ public actor WidgetWeaverCalendarEngine {
     }
 
     private func update(force: Bool) async -> Result {
-        let store = WidgetWeaverCalendarStore.shared
+        let now = Date()
 
-        guard store.canReadEvents() else {
-            store.saveLastError("Calendar access not enabled.")
-            store.saveSnapshot(nil)
-            notifyWidgetsCalendarUpdated()
-            return Result(snapshot: nil, errorDescription: "Calendar access not enabled.")
+        if !force, let lastUpdateAt {
+            let dt = now.timeIntervalSince(lastUpdateAt)
+            if dt < minimumUpdateInterval {
+                return Result(didUpdate: false, generatedAt: nil, errorMessage: nil)
+            }
         }
 
-        if !force, let existing = store.loadSnapshot() {
-            let age = Date().timeIntervalSince(existing.fetchedAt)
-            if age < minimumUpdateInterval {
-                store.saveLastError(nil)
-                return Result(snapshot: existing, errorDescription: nil)
-            }
+        guard store.canReadEvents() else {
+            store.saveSnapshot(nil)
+            store.setLastError("Calendar access not granted.")
+            await notifyWidgetsCalendarUpdated()
+            lastUpdateAt = now
+            return Result(didUpdate: true, generatedAt: nil, errorMessage: "Calendar access not granted.")
         }
 
         do {
-            let snap = try fetchSnapshot(now: Date()).normalised()
+            let snap = try await fetchSnapshot(now: now)
             store.saveSnapshot(snap)
-            store.saveLastError(nil)
-            notifyWidgetsCalendarUpdated()
-            return Result(snapshot: snap, errorDescription: nil)
+            store.setLastError("")
+            await notifyWidgetsCalendarUpdated()
+            lastUpdateAt = now
+            return Result(didUpdate: true, generatedAt: snap.generatedAt, errorMessage: nil)
         } catch {
-            let message = String(describing: error)
-            store.saveLastError(message)
-            notifyWidgetsCalendarUpdated()
-            return Result(snapshot: store.loadSnapshot(), errorDescription: message)
+            store.saveSnapshot(nil)
+            store.setLastError(error.localizedDescription)
+            await notifyWidgetsCalendarUpdated()
+            lastUpdateAt = now
+            return Result(didUpdate: true, generatedAt: nil, errorMessage: error.localizedDescription)
         }
     }
 
-    private func fetchSnapshot(now: Date) throws -> WidgetWeaverCalendarSnapshot {
-        let eventStore = EKEventStore()
-
-        // Include a small past window to catch “currently happening” events.
-        let start = now.addingTimeInterval(-60 * 60)
+    private func fetchSnapshot(now: Date) async throws -> WidgetWeaverCalendarSnapshot {
+        let calendars = eventStore.calendars(for: .event)
         let end = now.addingTimeInterval(24 * 60 * 60)
 
-        let calendars = eventStore.calendars(for: .event)
-        let predicate = eventStore.predicateForEvents(withStart: start, end: end, calendars: calendars)
+        let predicate = eventStore.predicateForEvents(withStart: now, end: end, calendars: calendars)
+        let events = eventStore.events(matching: predicate)
 
-        let all = eventStore.events(matching: predicate)
-
-        let upcoming = all
+        let future = events
             .filter { $0.endDate > now }
-            .sorted { $0.startDate < $1.startDate }
+            .sorted { a, b in
+                a.startDate < b.startDate
+            }
 
-        // Prefer non-all-day for “Next Up”.
-        let nonAllDay = upcoming.filter { !$0.isAllDay }
-        let chosen = nonAllDay.isEmpty ? upcoming : nonAllDay
-
-        guard let first = chosen.first else {
-            return WidgetWeaverCalendarSnapshot(fetchedAt: now, next: nil, after: nil)
-        }
-
-        let second = chosen.dropFirst().first
-
-        let next = WidgetWeaverCalendarEvent(
-            title: first.title,
-            location: first.location,
-            startDate: first.startDate,
-            endDate: first.endDate,
-            isAllDay: first.isAllDay
-        ).normalised()
-
-        let after = second.map {
+        let mapped: [WidgetWeaverCalendarEvent] = future.prefix(10).map { e in
             WidgetWeaverCalendarEvent(
-                title: $0.title,
-                location: $0.location,
-                startDate: $0.startDate,
-                endDate: $0.endDate,
-                isAllDay: $0.isAllDay
-            ).normalised()
+                title: (e.title ?? "").isEmpty ? "Untitled" : (e.title ?? "Untitled"),
+                startDate: e.startDate,
+                endDate: e.endDate,
+                isAllDay: e.isAllDay,
+                location: e.location
+            )
         }
 
-        return WidgetWeaverCalendarSnapshot(fetchedAt: now, next: next, after: after)
+        let next = mapped.first
+        let second = mapped.dropFirst().first
+
+        return WidgetWeaverCalendarSnapshot(
+            generatedAt: now,
+            next: next,
+            second: second
+        )
     }
 
-    private func notifyWidgetsCalendarUpdated() {
+    private func notifyWidgetsCalendarUpdated() async {
         #if canImport(WidgetKit)
-        let kind = WidgetWeaverWidgetKinds.main
-        Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: kind)
-            WidgetCenter.shared.reloadAllTimelines()
-            if #available(iOS 17.0, *) {
-                WidgetCenter.shared.invalidateConfigurationRecommendations()
-            }
-        }
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
         #endif
     }
 }
 
-private extension WidgetWeaverCalendarSnapshot {
-    func normalised() -> WidgetWeaverCalendarSnapshot {
-        var s = self
-        s.next = s.next?.normalised()
-        s.after = s.after?.normalised()
-        return s
-    }
+// MARK: - Formatting helpers
+
+private func wwCalendarShortCountdownValue(from now: Date, to start: Date) -> String {
+    let dt = max(0, start.timeIntervalSince(now))
+    let minutes = Int(dt / 60)
+    if minutes < 60 { return "\(minutes)m" }
+    let hours = Int(Double(minutes) / 60.0)
+    return "\(hours)h"
 }
 
-// MARK: - Countdown helpers (shared by template + lock screen widget)
-
-@inline(__always)
-func wwCalendarShortCountdownValue(now: Date, start: Date, end: Date) -> String {
-    if start <= now, end > now {
-        return wwCalendarCompactIntervalString(seconds: end.timeIntervalSince(now))
-    }
-    if start > now {
-        return wwCalendarCompactIntervalString(seconds: start.timeIntervalSince(now))
-    }
-    return "Now"
+private func wwCalendarCountdownLabel(from now: Date, to start: Date) -> String {
+    let dt = max(0, start.timeIntervalSince(now))
+    let minutes = Int(dt / 60)
+    if minutes <= 1 { return "Soon" }
+    if minutes < 60 { return "In \(minutes) min" }
+    let hours = Int(Double(minutes) / 60.0)
+    return "In \(hours) hr"
 }
 
-@inline(__always)
-func wwCalendarCountdownLabel(now: Date, start: Date, end: Date) -> String {
-    if start <= now, end > now {
-        return "ends in \(wwCalendarCompactIntervalString(seconds: end.timeIntervalSince(now)))"
-    }
-    if start > now {
-        return "in \(wwCalendarCompactIntervalString(seconds: start.timeIntervalSince(now)))"
-    }
-    return "now"
+private func wwCalendarTimeRangeString(_ start: Date, _ end: Date) -> String {
+    let f = DateFormatter()
+    f.locale = .current
+    f.timeStyle = .short
+    f.dateStyle = .none
+    return "\(f.string(from: start))–\(f.string(from: end))"
 }
 
-private func wwCalendarCompactIntervalString(seconds: TimeInterval) -> String {
-    let s = max(0, seconds)
-    let minutes = Int(ceil(s / 60.0))
+// MARK: - Template View (Calendar)
 
-    if minutes < 60 {
-        return "\(minutes)m"
-    }
+public struct NextUpCalendarTemplateView: View {
+    public let spec: WidgetSpec
+    public let family: WidgetFamily
+    public let context: WidgetWeaverRenderContext
+    public let accent: Color
 
-    let hours = minutes / 60
-    let remM = minutes % 60
+    @AppStorage(WidgetWeaverCalendarStore.Keys.snapshotData, store: AppGroup.userDefaults)
+    private var calendarSnapshotData: Data = Data()
 
-    if hours < 24 {
-        if remM == 0 { return "\(hours)h" }
-        return "\(hours)h \(remM)m"
-    }
+    @AppStorage(WidgetWeaverCalendarStore.Keys.lastError, store: AppGroup.userDefaults)
+    private var calendarLastError: String = ""
 
-    let days = Int(ceil(Double(hours) / 24.0))
-    return "\(days)d"
-}
+    @Environment(\.openURL) private var openURL
 
-// MARK: - Template View (Layout Template)
+    @State private var accessRequestInFlight: Bool = false
 
-struct NextUpCalendarTemplateView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-    let accent: Color
-
-    init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, accent: Color) {
+    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, accent: Color) {
         self.spec = spec
         self.family = family
         self.context = context
         self.accent = accent
     }
 
-    var body: some View {
+    public var body: some View {
+        let _ = calendarSnapshotData
+        let _ = calendarLastError
+
         let store = WidgetWeaverCalendarStore.shared
+        let hasAccess = store.canReadEvents()
         let snapshot = store.snapshotForRender(context: context)
-        let hasAccess: Bool = (context == .widget) ? store.canReadEvents() : true
 
         Group {
             if context == .widget || context == .simulator {
-                TimelineView(.periodic(from: Date(), by: 60)) { timeline in
-                    content(snapshot: snapshot, now: timeline.date, hasAccess: hasAccess)
+                TimelineView(.periodic(from: Date(), by: 60)) { tl in
+                    content(snapshot: snapshot, now: tl.date, hasAccess: hasAccess)
                 }
             } else {
                 content(snapshot: snapshot, now: Date(), hasAccess: hasAccess)
@@ -468,90 +372,181 @@ struct NextUpCalendarTemplateView: View {
     @ViewBuilder
     private func content(snapshot: WidgetWeaverCalendarSnapshot?, now: Date, hasAccess: Bool) -> some View {
         if !hasAccess {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar.badge.exclamationmark")
-                        .foregroundStyle(accent)
-                    Text("Next Up")
-                        .font(.headline)
-                }
-                Text("Enable Calendar access in the app.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text("Tap to open settings")
-                    .font(.caption2)
-                    .foregroundStyle(accent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            noAccessView
         } else if let snap = snapshot, let next = snap.next {
-            filled(next: next, after: snap.after, now: now)
+            filledView(snapshot: snap, next: next, now: now)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(accent)
-                    Text("Next Up")
-                        .font(.headline)
-                }
-                Text("No upcoming events.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text(Date().formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            emptyView
         }
     }
 
-    private func filled(next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?, now: Date) -> some View {
-        let countdown = wwCalendarCountdownLabel(now: now, start: next.startDate, end: next.endDate)
+    private var noAccessView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Calendar")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "calendar")
+                Spacer(minLength: 0)
+
+                Image(systemName: "calendar.badge.exclamationmark")
                     .foregroundStyle(accent)
-                Text("Next Up")
+                    .opacity(0.9)
+            }
+
+            Text("Calendar access is off.")
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+
+            Text("Enable access to show your upcoming events.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            if context != .widget {
+                HStack(spacing: 10) {
+                    Button {
+                        guard !accessRequestInFlight else { return }
+                        accessRequestInFlight = true
+                        Task {
+                            let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
+                            if granted {
+                                _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
+                            }
+                            await MainActor.run {
+                                accessRequestInFlight = false
+                            }
+                        }
+                    } label: {
+                        Label(accessRequestInFlight ? "Requesting…" : "Enable", systemImage: "checkmark.circle.fill")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .disabled(accessRequestInFlight)
+
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Settings", systemImage: "gearshape.fill")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+            } else {
+                Text("Open the app to enable access.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let err = WidgetWeaverCalendarStore.shared.lastError() {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(14)
+    }
+
+    private func filledView(snapshot: WidgetWeaverCalendarSnapshot, next: WidgetWeaverCalendarEvent, now: Date) -> some View {
+        let header = (family == .systemSmall) ? "Next" : "Next Up"
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(header)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Text(wwCalendarShortCountdownValue(from: now, to: next.startDate))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(accent)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(next.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(family == .systemSmall ? 2 : 3)
+
+                Text(wwCalendarCountdownLabel(from: now, to: next.startDate))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text(countdown)
+                    .lineLimit(1)
+
+                Text(wwCalendarTimeRangeString(next.startDate, next.endDate))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+
+                if let loc = next.location, !loc.isEmpty, family != .systemSmall {
+                    Text(loc)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
-            Text(next.title)
-                .font(family == .systemSmall ? .headline : .title3)
-                .lineLimit(family == .systemSmall ? 2 : 3)
+            if family != .systemSmall, let second = snapshot.second {
+                Divider().opacity(0.35)
 
-            if let loc = next.location {
-                Label(loc, systemImage: "mappin.and.ellipse")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Then")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Text(wwCalendarShortCountdownValue(from: now, to: second.startDate))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(accent.opacity(0.85))
+                }
+
+                Text(second.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-
-            if let after, family == .systemSmall {
-                let afterText = wwCalendarCountdownLabel(now: now, start: after.startDate, end: after.endDate)
-                Text("After that: \(after.title) (\(afterText))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(14)
+    }
+
+    private var emptyView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Next Up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "calendar")
+                    .foregroundStyle(accent)
+                    .opacity(0.9)
+            }
+
+            Text("No upcoming events.")
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+
+            Text("Events refresh on a cache. Open the app to update now.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+        }
+        .padding(14)
     }
 
     private func accessibilityLabel(snapshot: WidgetWeaverCalendarSnapshot?, hasAccess: Bool) -> String {
-        if !hasAccess { return "Next Up. Calendar access not enabled." }
-        guard let snapshot, let next = snapshot.next else { return "Next Up. No upcoming events." }
-        return "Next Up. \(next.title). \(wwCalendarCountdownLabel(now: Date(), start: next.startDate, end: next.endDate))."
+        if !hasAccess { return "Calendar access is off." }
+        guard let next = snapshot?.next else { return "No upcoming events." }
+        return "Next event: \(next.title)."
     }
 }
