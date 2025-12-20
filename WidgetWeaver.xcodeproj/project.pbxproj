@@ -22,8 +22,8 @@
 		E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
 		E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
 		E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
-		E15B0BB32EF6CD0700760C03 /*  WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /*  WidgetWeaverWeatherTemplateComponents.swift */; };
-		E15B0BB42EF6CD0700760C03 /*  WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /*  WidgetWeaverWeatherTemplateComponents.swift */; };
+		E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
+		E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
 		E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
@@ -77,7 +77,7 @@
 		E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateHelpers.swift; sourceTree = "<group>"; };
 		E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateModels.swift; sourceTree = "<group>"; };
 		E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
-		E15B0BB22EF6CD0500760C03 /*  WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = " WidgetWeaverWeatherTemplateComponents.swift"; sourceTree = "<group>"; };
+		E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateComponents.swift; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
 		E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
 		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -180,21 +180,21 @@
 			isa = PBXGroup;
 			children = (
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
-				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
 				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
-				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
-				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
-				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
-				E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */,
-				E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */,
-				E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */,
-				E15B0BB22EF6CD0500760C03 /*  WidgetWeaverWeatherTemplateComponents.swift */,
-				E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */,
 				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
 				F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */,
 				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
-				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
+				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
+				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
+				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
+				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
+				E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */,
+				E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */,
+				E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */,
+				E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */,
+				E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */,
+				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -310,7 +310,7 @@
 				E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
 				E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
-				E15B0BB42EF6CD0700760C03 /*  WidgetWeaverWeatherTemplateComponents.swift in Sources */,
+				E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
 				FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
 				7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */,
 				68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */,
@@ -331,7 +331,7 @@
 				E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
-				E15B0BB32EF6CD0700760C03 /*  WidgetWeaverWeatherTemplateComponents.swift in Sources */,
+				E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
 				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
 				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
