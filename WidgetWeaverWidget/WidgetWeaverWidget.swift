@@ -225,7 +225,7 @@ struct WidgetWeaverLockScreenWeatherView: View {
     let entry: WidgetWeaverLockScreenWeatherEntry
 
     var body: some View {
-        Group {
+        SwiftUI.Group {
             if !entry.hasLocation {
                 Label("Set location", systemImage: "location.slash")
                     .font(.caption2)
@@ -330,27 +330,30 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
 
 struct WidgetWeaverLockScreenNextUpView: View {
     let entry: WidgetWeaverLockScreenNextUpEntry
-
+    
     @Environment(\.widgetFamily) private var family
-
+    
     var body: some View {
-        Group {
-            if !entry.hasAccess {
-                lockScreenNoAccess
-            } else if let snap = entry.snapshot, let next = snap.next {
-                lockScreenHasEvent(next: next, after: snap.after, now: entry.date)
-            } else {
-                lockScreenNoEvents
-            }
-        }
-        .widgetURL(URL(string: "widgetweaver://calendar"))
+        content
+            .widgetURL(URL(string: "widgetweaver://calendar"))
     }
-
+    
+    @ViewBuilder
+    private var content: some View {
+        if !entry.hasAccess {
+            lockScreenNoAccess
+        } else if let snap = entry.snapshot, let next = snap.next {
+            lockScreenHasEvent(next: next, after: snap.second, now: entry.date)
+        } else {
+            lockScreenNoEvents
+        }
+    }
+    
     private var lockScreenNoAccess: some View {
         switch family {
         case .accessoryInline:
             return AnyView(Text("Enable Calendar access"))
-
+            
         case .accessoryCircular:
             return AnyView(
                 VStack(spacing: 2) {
@@ -359,7 +362,7 @@ struct WidgetWeaverLockScreenNextUpView: View {
                         .font(.caption2)
                 }
             )
-
+            
         default:
             return AnyView(
                 Label("Enable Calendar", systemImage: "calendar.badge.exclamationmark")
@@ -367,12 +370,12 @@ struct WidgetWeaverLockScreenNextUpView: View {
             )
         }
     }
-
+    
     private var lockScreenNoEvents: some View {
         switch family {
         case .accessoryInline:
             return AnyView(Text("No upcoming events"))
-
+            
         case .accessoryCircular:
             return AnyView(
                 VStack(spacing: 2) {
@@ -381,7 +384,7 @@ struct WidgetWeaverLockScreenNextUpView: View {
                         .font(.caption2)
                 }
             )
-
+            
         default:
             return AnyView(
                 Label("No events", systemImage: "calendar")
@@ -389,17 +392,15 @@ struct WidgetWeaverLockScreenNextUpView: View {
             )
         }
     }
-
+    
     private func lockScreenHasEvent(next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?, now: Date) -> some View {
-        let short = wwCalendarShortCountdownValue(now: now, start: next.startDate, end: next.endDate)
-        let label = wwCalendarCountdownLabel(now: now, start: next.startDate, end: next.endDate)
-
+        let short = calendarShortCountdownValue(from: now, to: next.startDate, end: next.endDate)
+        let label = calendarCountdownLabel(from: now, to: next.startDate, end: next.endDate)
+        
         switch family {
         case .accessoryInline:
-            return AnyView(
-                Text("\(next.title) \(label)")
-            )
-
+            return AnyView(Text("\(next.title) \(label)"))
+            
         case .accessoryCircular:
             return AnyView(
                 VStack(spacing: 2) {
@@ -412,28 +413,28 @@ struct WidgetWeaverLockScreenNextUpView: View {
                         .foregroundStyle(.secondary)
                 }
             )
-
+            
         case .accessoryRectangular:
             return AnyView(
                 VStack(alignment: .leading, spacing: 3) {
                     Text(next.title)
                         .font(.headline)
                         .lineLimit(1)
-
+                    
                     Text(label)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-
-                    if let loc = next.location {
+                    
+                    if let loc = next.location, !loc.isEmpty {
                         Text(loc)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-
+                    
                     if let after {
-                        let afterLabel = wwCalendarCountdownLabel(now: now, start: after.startDate, end: after.endDate)
+                        let afterLabel = calendarCountdownLabel(from: now, to: after.startDate, end: after.endDate)
                         Text("After: \(after.title) (\(afterLabel))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -442,13 +443,55 @@ struct WidgetWeaverLockScreenNextUpView: View {
                     }
                 }
             )
-
+            
         default:
             return AnyView(
                 Text("\(next.title) \(label)")
                     .font(.caption2)
             )
         }
+    }
+    
+    private func calendarShortCountdownValue(from now: Date, to start: Date, end: Date) -> String {
+        if start <= now, end > now {
+            return compactIntervalString(seconds: end.timeIntervalSince(now))
+        }
+        if start > now {
+            return compactIntervalString(seconds: start.timeIntervalSince(now))
+        }
+        return "Now"
+    }
+    
+    private func calendarCountdownLabel(from now: Date, to start: Date, end: Date) -> String {
+        if start <= now, end > now {
+            return "ends in \(compactIntervalString(seconds: end.timeIntervalSince(now)))"
+        }
+        if start > now {
+            return "in \(compactIntervalString(seconds: start.timeIntervalSince(now)))"
+        }
+        return "now"
+    }
+    
+    private func compactIntervalString(seconds: TimeInterval) -> String {
+        let s = max(0, seconds)
+        let minutes = Int(ceil(s / 60.0))
+        
+        if minutes < 60 {
+            return "\(minutes)m"
+        }
+        
+        let hours = minutes / 60
+        let remM = minutes % 60
+        
+        if hours < 24 {
+            if remM == 0 { return "\(hours)h" }
+            return "\(hours)h \(remM)m"
+        }
+        
+        let days = hours / 24
+        let remH = hours % 24
+        if remH == 0 { return "\(days)d" }
+        return "\(days)d \(remH)h"
     }
 }
 
