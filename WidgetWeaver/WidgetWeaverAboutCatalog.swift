@@ -6,167 +6,130 @@
 //
 
 import Foundation
+import SwiftUI
+import WidgetKit
 
 extension WidgetWeaverAboutView {
-    static let featuredWeatherTemplateID: String = "starter-weather"
-    static let featuredCalendarTemplateID: String = "starter-calendar-nextup"
 
-    static var featuredWeatherTemplate: WidgetWeaverAboutTemplate {
-        starterTemplates.first(where: { $0.id == featuredWeatherTemplateID })
-        ?? WidgetWeaverAboutTemplate(
-            id: featuredWeatherTemplateID,
+    static let featuredWeatherTemplateID = "starter-weather"
+    static let featuredCalendarTemplateID = "starter-calendar-nextup"
+
+    static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredWeatherTemplateID })!
+    static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredCalendarTemplateID })!
+
+    static let starterTemplates: [WidgetWeaverAboutTemplate] = [
+        WidgetWeaverAboutTemplate(
+            id: "starter-focus",
+            title: "Focus",
+            subtitle: "Daily priority",
+            description: "A calm “one thing” widget with a warm gradient and a soft accent glow.",
+            tags: ["Daily", "Focus", "Glow"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specFocus()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-countdown",
+            title: "Countdown",
+            subtitle: "Timebox / deadline",
+            description: "A bold hero-style countdown with a colourful background and strong accent bar.",
+            tags: ["Timer", "Countdown", "Hero"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specCountdown()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-quote",
+            title: "Quote",
+            subtitle: "Motivation",
+            description: "A simple quote layout with a sunset gradient and a clean typography stack.",
+            tags: ["Quote", "Motivation", "Gradient"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specQuote()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-list",
+            title: "List",
+            subtitle: "Checklist",
+            description: "A checklist-style widget with a vibrant background and a green accent bar.",
+            tags: ["Checklist", "Lists", "Clean"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specList()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reading",
+            title: "Reading",
+            subtitle: "Progress",
+            description: "Track a small goal (pages, minutes, chapters) with a calm indigo glow.",
+            tags: ["Reading", "Progress", "Calm"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specReading()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-weather",
             title: "Weather",
             subtitle: "Rain-first nowcast",
-            description: "A rain-first layout with glass panels and adaptive small/medium/large composition.",
-            tags: ["Weather", "Rain chart", "Dynamic", "Glass"],
+            description: "Rain-first Weather template with a blue accent, glass panels, and an hourly strip.",
+            tags: ["Rain", "Nowcast", "Hourly"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specWeather()
-        )
-    }
-
-    static var featuredCalendarTemplate: WidgetWeaverAboutTemplate {
-        starterTemplates.first(where: { $0.id == featuredCalendarTemplateID })
-        ?? WidgetWeaverAboutTemplate(
-            id: featuredCalendarTemplateID,
-            title: "Calendar",
-            subtitle: "Next Up",
-            description: "Upcoming events from your calendars. Requires Calendar access.",
-            tags: ["Calendar", "Next up", "Events"],
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-calendar-nextup",
+            title: "Next Up",
+            subtitle: "Calendar events",
+            description: "Upcoming events from Apple Calendar (on-device). Requires Calendar permission.",
+            tags: ["Next Up", "Events", "On-device"],
             requiresPro: false,
             triggersCalendarPermission: true,
             spec: specNextUpCalendar()
-        )
-    }
+        ),
+    ]
 
-    static var promptIdeas: [String] {
-        [
-            "minimal focus widget, teal accent, no symbol, short text",
-            "bold countdown widget, centred layout, purple accent, bigger title",
-            "quote card, subtle material background, grey accent, no secondary text",
-            "shopping list reminder, green accent, checklist icon",
-            "reading progress widget, blue accent, book icon, short secondary text",
-            "workout routine widget, red accent, strong title, simple layout",
-            "note widget, horizontal layout, orange accent, minimal styling",
-            "habit streak widget, orange accent, uses {{streak|0}} and {{last_done|Never|relative}}, with interactive buttons",
-            "weather widget, glass look, strong accent, rain-first"
-        ]
-    }
+    static let proTemplates: [WidgetWeaverAboutTemplate] = [
+        WidgetWeaverAboutTemplate(
+            id: "pro-habit-streak",
+            title: "Habit Streak",
+            subtitle: "Buttons + variables",
+            description: "A streak counter powered by variables, with a “Done” button and a +1 button.",
+            tags: ["Streak", "Buttons", "Variables"],
+            requiresPro: true,
+            triggersCalendarPermission: false,
+            spec: specHabitStreak()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "pro-counter",
+            title: "Counter",
+            subtitle: "+1 / -1 buttons",
+            description: "A colourful counter with two interactive buttons to update a shared variable.",
+            tags: ["Counter", "Buttons", "Variables"],
+            requiresPro: true,
+            triggersCalendarPermission: false,
+            spec: specCounter()
+        ),
+    ]
 
-    static var patchIdeas: [String] {
-        [
-            "more minimal",
-            "bigger title",
-            "change accent to teal",
-            "switch to horizontal layout",
-            "centre the layout",
-            "remove the symbol",
-            "remove secondary text",
-            "add interactive buttons"
-        ]
-    }
+    static let promptIdeas: [String] = [
+        "Make a daily focus widget with a teal accent, a soft glow, and one clear sentence.",
+        "Create a quote widget with a warm gradient background and a subtle icon.",
+        "Design a checklist widget with an accent bar and a tidy stacked layout.",
+        "Build a countdown widget in a bold hero style with an accent glow.",
+        "Make a reading progress widget that feels calm and minimal, using indigo.",
+    ]
 
-    static var starterTemplates: [WidgetWeaverAboutTemplate] {
-        [
-            WidgetWeaverAboutTemplate(
-                id: "starter-focus",
-                title: "Focus",
-                subtitle: "Minimal daily focus card",
-                description: "A clean, glanceable widget for a single priority.",
-                tags: ["Text"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specFocus()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: "starter-countdown",
-                title: "Countdown",
-                subtitle: "Bold countdown styling",
-                description: "A simple countdown layout with a larger primary line.",
-                tags: ["Text"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specCountdown()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: "starter-quote",
-                title: "Quote",
-                subtitle: "Quote / affirmation card",
-                description: "Good for short quotes, affirmations, or reminders.",
-                tags: ["Text"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specQuote()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: "starter-list",
-                title: "List",
-                subtitle: "Shopping / checklist style",
-                description: "A compact list-style widget using a single text line.",
-                tags: ["Text"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specList()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: "starter-reading",
-                title: "Reading",
-                subtitle: "Progress cue",
-                description: "A reading prompt with a clear next-step.",
-                tags: ["Text"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specReading()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: featuredWeatherTemplateID,
-                title: "Weather",
-                subtitle: "Rain-first nowcast",
-                description: "Weather template with cached snapshot rendering in widgets.",
-                tags: ["Weather"],
-                requiresPro: false,
-                triggersCalendarPermission: false,
-                spec: specWeather()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: featuredCalendarTemplateID,
-                title: "Calendar",
-                subtitle: "Next Up",
-                description: "Upcoming events from your calendars. Requires Calendar access.",
-                tags: ["Calendar"],
-                requiresPro: false,
-                triggersCalendarPermission: true,
-                spec: specNextUpCalendar()
-            )
-        ]
-    }
+    static let patchIdeas: [String] = [
+        "Change the accent colour to teal and enable the background glow.",
+        "Switch the background to Sunset and increase corner radius slightly.",
+        "Turn on the accent bar and shorten the secondary text.",
+        "Use Hero template and increase primary font size one step.",
+        "Make the design more vibrant: add a background overlay at ~10% opacity.",
+    ]
 
-    static var proTemplates: [WidgetWeaverAboutTemplate] {
-        [
-            WidgetWeaverAboutTemplate(
-                id: "pro-habit-streak",
-                title: "Habit Streak",
-                subtitle: "Variables + buttons (Pro)",
-                description: "A variable-driven streak template (pairs well with interactive buttons).",
-                tags: ["Variables", "Buttons"],
-                requiresPro: true,
-                triggersCalendarPermission: false,
-                spec: specHabitStreak()
-            ),
-            WidgetWeaverAboutTemplate(
-                id: "pro-counter",
-                title: "Counter",
-                subtitle: "Tap to update (Pro)",
-                description: "A simple counter template (pairs well with +1 / -1 buttons).",
-                tags: ["Variables", "Buttons"],
-                requiresPro: true,
-                triggersCalendarPermission: false,
-                spec: specCounter()
-            )
-        ]
-    }
-
-    // MARK: - Spec builders (simple, safe defaults)
+    // MARK: - Template specs (colourful defaults)
 
     static func specFocus() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
@@ -174,42 +137,127 @@ extension WidgetWeaverAboutView {
         spec.primaryText = "Today’s focus"
         spec.secondaryText = "One thing that matters."
         spec.layout.template = .classic
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .teal
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.12
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "scope",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
         return spec.normalised()
     }
 
     static func specCountdown() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Countdown"
-        spec.primaryText = "10 days"
-        spec.secondaryText = "Until the thing."
+        spec.primaryText = "7 days"
+        spec.secondaryText = "Until the big day."
         spec.layout.template = .hero
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .purple
+        spec.style.background = .accentGlow
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "timer",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
         return spec.normalised()
     }
 
     static func specQuote() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Quote"
-        spec.primaryText = "“Do the work.”"
-        spec.secondaryText = "Small steps, daily."
+        spec.primaryText = "Make it simple."
+        spec.secondaryText = "Do the next right thing."
         spec.layout.template = .classic
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .pink
+        spec.style.background = .sunset
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        spec.symbol = SymbolSpec(
+            name: "quote.opening",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
         return spec.normalised()
     }
 
     static func specList() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "List"
-        spec.primaryText = "• Milk  • Eggs  • Coffee"
-        spec.secondaryText = "Tap to edit in the app."
+        spec.primaryText = "Shopping"
+        spec.secondaryText = "• Milk\n• Eggs\n• Coffee"
         spec.layout.template = .classic
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .green
+        spec.style.background = .sunset
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.22
+        spec.style.backgroundGlowEnabled = false
+
+        spec.symbol = SymbolSpec(
+            name: "checklist",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
         return spec.normalised()
     }
 
     static func specReading() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Reading"
-        spec.primaryText = "Next: Chapter 7"
-        spec.secondaryText = "Progress: {{progress|0|bar:10}}"
+        spec.primaryText = "12 / 30 pages"
+        spec.secondaryText = "Tonight: 20 mins"
         spec.layout.template = .classic
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .indigo
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.08
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "book.closed",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
         return spec.normalised()
     }
 
@@ -219,6 +267,16 @@ extension WidgetWeaverAboutView {
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .weather
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .blue
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+        spec.style.weatherScale = 1.0
+
+        spec.symbol = nil
         return spec.normalised()
     }
 
@@ -228,6 +286,15 @@ extension WidgetWeaverAboutView {
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .nextUpCalendar
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .green
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        spec.symbol = nil
         return spec.normalised()
     }
 
@@ -236,16 +303,94 @@ extension WidgetWeaverAboutView {
         spec.name = "Habit Streak"
         spec.primaryText = "Streak: {{streak|0}} days"
         spec.secondaryText = "Last: {{last_done|Never|relative}}"
-        spec.layout.template = .hero
+        spec.layout.template = .classic
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .orange
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "flame.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        spec.actionBar = WidgetActionBarSpec(
+            actions: [
+                WidgetActionSpec(
+                    title: "Done",
+                    systemImage: "checkmark.circle.fill",
+                    kind: .setVariableToNow,
+                    variableKey: "last_done",
+                    incrementAmount: 1,
+                    nowFormat: .iso8601
+                ),
+                WidgetActionSpec(
+                    title: "+1",
+                    systemImage: "plus.circle.fill",
+                    kind: .incrementVariable,
+                    variableKey: "streak",
+                    incrementAmount: 1,
+                    nowFormat: .iso8601
+                ),
+            ],
+            style: .prominent
+        )
+
         return spec.normalised()
     }
 
     static func specCounter() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Counter"
-        spec.primaryText = "{{count|0}}"
+        spec.primaryText = "Count: {{count|0}}"
         spec.secondaryText = "Tap buttons to update"
         spec.layout.template = .hero
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .red
+        spec.style.background = .accentGlow
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.12
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "plusminus.circle",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        spec.actionBar = WidgetActionBarSpec(
+            actions: [
+                WidgetActionSpec(
+                    title: "+1",
+                    systemImage: "plus.circle.fill",
+                    kind: .incrementVariable,
+                    variableKey: "count",
+                    incrementAmount: 1,
+                    nowFormat: .iso8601
+                ),
+                WidgetActionSpec(
+                    title: "-1",
+                    systemImage: "minus.circle.fill",
+                    kind: .incrementVariable,
+                    variableKey: "count",
+                    incrementAmount: -1,
+                    nowFormat: .iso8601
+                ),
+            ],
+            style: .prominent
+        )
+
         return spec.normalised()
     }
 }

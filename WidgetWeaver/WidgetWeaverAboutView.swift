@@ -37,25 +37,39 @@ struct WidgetWeaverAboutView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                aboutHeaderSection
-                featuredWeatherSection
-                featuredCalendarSection
-                capabilitiesSection
-                starterTemplatesSection
-                proTemplatesSection
-                interactiveButtonsSection
-                variablesSection
-                aiSection
-                sharingSection
-                proSection
-                diagnosticsSection
+            ZStack {
+                WidgetWeaverAboutBackground()
+
+                List {
+                    aboutHeaderSection
+                    featuredWeatherSection
+                    featuredCalendarSection
+                    capabilitiesSection
+                    starterTemplatesSection
+                    proTemplatesSection
+                    interactiveButtonsSection
+                    variablesSection
+                    aiSection
+                    sharingSection
+                    proSection
+                    diagnosticsSection
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
+                .listSectionSeparator(.hidden)
             }
             .navigationTitle("About")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(WidgetWeaverAboutTheme.pageTint)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Close", systemImage: "xmark.circle.fill")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityLabel("Close")
                 }
             }
             .onAppear { refreshDesignCount() }
