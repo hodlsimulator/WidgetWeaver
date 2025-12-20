@@ -64,7 +64,6 @@ struct WeatherTemplateView: View {
         let snapshot = store.snapshotForRender(context: context)
         let location = store.loadLocation()
         let unit = store.resolvedUnitTemperature()
-
         let metrics = WeatherMetrics(
             family: family,
             style: spec.style,
@@ -186,7 +185,6 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
-
             case .systemMedium:
                 WeatherMediumRainLayout(
                     snapshot: snapshot,
@@ -196,7 +194,6 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
-
             default:
                 WeatherLargeRainLayout(
                     snapshot: snapshot,
@@ -279,7 +276,7 @@ private struct WeatherSmallRainLayout: View {
                     .foregroundStyle(.primary)
 
                 if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                    Text("H \(wwTempString(hi, unit: unit))  L \(wwTempString(lo, unit: unit))")
+                    Text("H \(wwTempString(hi, unit: unit)) L \(wwTempString(lo, unit: unit))")
                         .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -353,6 +350,7 @@ private struct WeatherMediumRainLayout: View {
 
             // Leaves room at the bottom for the pinned footer overlays.
             Spacer(minLength: 0)
+                .frame(height: 18)
         }
     }
 }
@@ -371,7 +369,7 @@ private struct WeatherLargeRainLayout: View {
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(snapshot.locationName)
                         .font(.system(size: metrics.locationFontSizeLarge, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -381,99 +379,103 @@ private struct WeatherLargeRainLayout: View {
                         .font(.system(size: metrics.nowcastPrimaryFontSizeLarge, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .minimumScaleFactor(0.8)
 
                     if let secondary = nowcast.secondaryText {
                         Text(secondary)
                             .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.9)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
                     }
                 }
 
                 Spacer(minLength: 0)
 
-                Text(wwTempString(snapshot.temperatureC, unit: unit))
-                    .font(.system(size: metrics.temperatureFontSizeLarge, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-            }
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(wwTempString(snapshot.temperatureC, unit: unit))
+                        .font(.system(size: metrics.temperatureFontSizeLarge, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
 
-            WeatherSectionCard(metrics: metrics) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("Next hour")
-                            .font(.system(size: metrics.sectionTitleFontSize, weight: .semibold, design: .rounded))
+                    if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
+                        Text("H \(wwTempString(hi, unit: unit))  L \(wwTempString(lo, unit: unit))")
+                            .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
-
-                        Spacer(minLength: 0)
-
-                        if let start = nowcast.startTimeText {
-                            Text(start)
-                                .font(.system(size: metrics.sectionTitleFontSize, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
-
-                    WeatherNowcastChart(
-                        buckets: nowcast.buckets(for: .systemLarge),
-                        maxIntensityMMPerHour: nowcast.peakIntensityMMPerHour,
-                        accent: accent,
-                        showAxisLabels: true
-                    )
-                    .frame(height: metrics.nowcastChartHeightLarge)
-
-                    WeatherNowcastDetailsRow(nowcast: nowcast, metrics: metrics)
                 }
             }
 
-            if !later.hourlyPoints.isEmpty {
+            WeatherNowcastChart(
+                buckets: nowcast.buckets(for: .systemLarge),
+                maxIntensityMMPerHour: max(0.6, nowcast.peakIntensityMMPerHour),
+                accent: accent,
+                showAxisLabels: true
+            )
+            .frame(height: metrics.nowcastChartHeightLarge)
+
+            HStack(alignment: .top, spacing: metrics.sectionSpacing) {
                 WeatherSectionCard(metrics: metrics) {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Later today")
-                            .font(.system(size: metrics.sectionTitleFontSize, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
+                        Text("Later")
+                            .font(.system(size: metrics.sectionTitleFontSize, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
 
-                        WeatherHourlyRainStrip(
-                            points: later.hourlyPoints,
-                            unit: unit,
-                            accent: accent,
-                            fontSize: metrics.hourlyStripFontSizeLarge
-                        )
-                    }
-                }
-            }
-
-            if let tomorrow {
-                WeatherSectionCard(metrics: metrics) {
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Tomorrow")
-                                .font(.system(size: metrics.sectionTitleFontSize, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.secondary)
-
-                            Text(tomorrow.summaryText)
-                                .font(.system(size: metrics.detailsFontSizeLarge, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                        }
-
-                        Spacer(minLength: 0)
-
-                        if let hiLo = tomorrow.hiLoText(unit: unit) {
-                            Text(hiLo)
+                        if !later.hourlyPoints.isEmpty {
+                            WeatherHourlyRainStrip(
+                                points: later.hourlyPoints,
+                                unit: unit,
+                                accent: accent,
+                                fontSize: metrics.hourlyStripFontSizeLarge
+                            )
+                        } else {
+                            Text("—")
                                 .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        }
+                    }
+                }
+
+                WeatherSectionCard(metrics: metrics) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Tomorrow")
+                            .font(.system(size: metrics.sectionTitleFontSize, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+
+                        if let tomorrow {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: tomorrow.day.symbolName)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(accent)
+                                    .opacity(0.9)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(tomorrow.summaryText)
+                                        .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.9)
+
+                                    if let hilo = tomorrow.hiLoText(unit: unit) {
+                                        Text(hilo)
+                                            .font(.system(size: metrics.detailsFontSizeLarge, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.9)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("—")
+                                .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
 
-            Spacer(minLength: 0)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
                 WeatherAttributionLink(accent: accent)
 
                 Spacer(minLength: 0)
@@ -482,13 +484,12 @@ private struct WeatherLargeRainLayout: View {
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
         }
     }
 }
 
-// MARK: - Empty State
+// MARK: - Empty
 
 private struct WeatherEmptyStateView: View {
     let location: WidgetWeaverWeatherLocation?
@@ -543,6 +544,10 @@ private struct WeatherNowcastBucket: Identifiable, Hashable {
     var id: Int
     var intensityMMPerHour: Double
     var chance01: Double
+
+    /// A 0...1 cue for how uncertain the next-hour rain forecast is for this bucket.
+    /// This is used purely for rendering a faint "envelope" around bars (Dark Sky style).
+    var rainUncertainty01: Double
 }
 
 private struct WeatherNowcast: Hashable {
@@ -623,25 +628,22 @@ private struct WeatherNowcast: Hashable {
             let maxIntensity = sliceI.max() ?? 0.0
             let maxChance = sliceC.max() ?? 0.0
 
-            out.append(.init(id: bucketId, intensityMMPerHour: maxIntensity, chance01: maxChance))
+            let meanChance = sliceC.reduce(0.0, +) / Double(max(1, sliceC.count))
+            let chanceUncertainty01 = Self.clamp01(1.0 - abs(meanChance - 0.5) * 2.0)
+
+            let minIntensity = sliceI.min() ?? 0.0
+            let intensityRange = max(0.0, maxIntensity - minIntensity)
+            let intensityUncertainty01 = (maxIntensity > 0.0) ? Self.clamp01(intensityRange / maxIntensity) : 0.0
+
+            let rainUncertainty01 = Self.clamp01(0.75 * chanceUncertainty01 + 0.25 * intensityUncertainty01)
+
+            out.append(.init(id: bucketId, intensityMMPerHour: maxIntensity, chance01: maxChance, rainUncertainty01: rainUncertainty01))
 
             bucketId += 1
             idx += bucketSize
         }
 
         return out
-    }
-
-    var startMinutesText: String? {
-        guard let startOffsetMinutes else { return nil }
-        if startOffsetMinutes <= 0 { return "Now" }
-        return "In \(startOffsetMinutes)m"
-    }
-
-    var endMinutesText: String? {
-        guard let endOffsetMinutes else { return nil }
-        if endOffsetMinutes <= 0 { return "Now" }
-        return "In \(endOffsetMinutes)m"
     }
 
     // MARK: Analysis
@@ -758,8 +760,9 @@ private struct WeatherNowcast: Hashable {
             if endOffset < 55 {
                 secondary = "Stopping in \(endOffset)m"
             } else {
-                secondary = "For at least an hour"
+                secondary = "Continuing for ~\(endOffset)m"
             }
+
             return Analysis(
                 startOffsetMinutes: 0,
                 endOffsetMinutes: endOffset,
@@ -769,20 +772,18 @@ private struct WeatherNowcast: Hashable {
                 secondaryText: secondary,
                 startTimeText: startTimeText
             )
-        } else {
+        }
+
+        if startOffset < 55 {
             // Starts later.
             let primary = "\(descriptor) rain in \(startOffset)m"
             let secondary: String?
-            if endOffset > startOffset {
-                let dur = endOffset - startOffset
-                if dur >= 5 && dur <= 55 {
-                    secondary = "Lasting ~\(dur)m"
-                } else {
-                    secondary = nil
-                }
+            if endOffset < 55 {
+                secondary = "Ending in \(endOffset)m"
             } else {
-                secondary = nil
+                secondary = "Likely within the hour"
             }
+
             return Analysis(
                 startOffsetMinutes: startOffset,
                 endOffsetMinutes: endOffset,
@@ -793,12 +794,25 @@ private struct WeatherNowcast: Hashable {
                 startTimeText: startTimeText
             )
         }
+
+        // Edge: only at the end.
+        let primary = "Light rain later"
+        return Analysis(
+            startOffsetMinutes: startOffset,
+            endOffsetMinutes: endOffset,
+            peakIntensityMMPerHour: peakIntensity,
+            peakChance01: peakChance,
+            primaryText: primary,
+            secondaryText: nil,
+            startTimeText: startTimeText
+        )
     }
 
-    private static func intensityDescriptor(_ mmPerHour: Double) -> String {
-        if mmPerHour < 0.4 { return "Light" }
-        if mmPerHour < 2.5 { return "Moderate" }
-        return "Heavy"
+    private static func intensityDescriptor(_ intensity: Double) -> String {
+        if intensity < 0.25 { return "Light" }
+        if intensity < 1.20 { return "Moderate" }
+        if intensity < 3.50 { return "Heavy" }
+        return "Very heavy"
     }
 
     private static func clamp01(_ v: Double) -> Double {
@@ -806,72 +820,7 @@ private struct WeatherNowcast: Hashable {
     }
 }
 
-private struct WeatherNowcastDetailsRow: View {
-    let nowcast: WeatherNowcast
-    let metrics: WeatherMetrics
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            WeatherDetailPill(
-                title: "Peak",
-                value: nowcast.peakIntensityMMPerHour > 0 ? String(format: "%.1f mm/h", nowcast.peakIntensityMMPerHour) : "—",
-                metrics: metrics
-            )
-
-            WeatherDetailPill(
-                title: "Chance",
-                value: percentText(nowcast.peakChance01),
-                metrics: metrics
-            )
-
-            if let start = nowcast.startMinutesText {
-                WeatherDetailPill(
-                    title: "Start",
-                    value: start,
-                    metrics: metrics
-                )
-            }
-
-            Spacer(minLength: 0)
-
-            if let end = nowcast.endMinutesText {
-                Text("End \(end)")
-                    .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    private func percentText(_ chance01: Double) -> String {
-        let pct = Int((chance01 * 100.0).rounded())
-        return "\(pct)%"
-    }
-}
-
-private struct WeatherDetailPill: View {
-    let title: String
-    let value: String
-    let metrics: WeatherMetrics
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: metrics.pillTitleFontSize, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-
-            Text(value)
-                .font(.system(size: metrics.pillValueFontSize, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-// MARK: - Later Today Model
+// MARK: - Later Today
 
 private struct WeatherLaterToday: Hashable {
     let hourlyPoints: [WidgetWeaverWeatherHourlyPoint]
@@ -956,10 +905,21 @@ private struct WeatherNowcastChart: View {
                             let frac: CGFloat = (maxIntensityMMPerHour > 0) ? CGFloat(intensity / maxIntensityMMPerHour) : 0
                             let barHeight = max(1, h * frac)
 
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(accent)
-                                .opacity(0.25 + 0.75 * chance)
-                                .frame(width: barWidth, height: barHeight)
+                            let rainUncertainty = max(0.0, min(1.0, b.rainUncertainty01))
+
+                            ZStack(alignment: .bottom) {
+                                // Static uncertainty “envelope” (Dark Sky-ish): thickness/opacity grows with rainUncertainty.
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .stroke(accent, lineWidth: 0.6 + 3.2 * rainUncertainty)
+                                    .opacity(0.06 + 0.18 * rainUncertainty)
+                                    .blur(radius: 0.2 + 1.2 * rainUncertainty)
+                                    .frame(width: barWidth, height: barHeight)
+
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(accent)
+                                    .opacity(0.25 + 0.75 * chance)
+                                    .frame(width: barWidth, height: barHeight)
+                            }
                         }
                     }
                     .padding(.horizontal, 10)
@@ -1081,12 +1041,11 @@ private struct WeatherAttributionLink: View {
         if let url = store.attributionLegalURL() {
             Link(destination: url) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(accent)
                     .padding(6)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background(Color.black.opacity(0.20), in: Capsule())
             }
-            .buttonStyle(.plain)
             .accessibilityLabel("Weather attribution")
         } else {
             EmptyView()
@@ -1153,9 +1112,6 @@ private struct WeatherMetrics {
     var temperatureFontSizeLarge: CGFloat { 34 * scale }
 
     var sectionTitleFontSize: CGFloat { 12 * scale }
-
-    var pillTitleFontSize: CGFloat { 11 * scale }
-    var pillValueFontSize: CGFloat { 12 * scale }
 
     // Chart heights
     var nowcastChartHeightSmall: CGFloat { 54 * scale }
@@ -1229,45 +1185,33 @@ private struct WeatherBackdropView: View {
 
     private var glowSize: CGFloat {
         switch family {
-        case .systemSmall:
-            return 110
-        case .systemMedium:
-            return 150
-        default:
-            return 220
+        case .systemSmall: return 110
+        case .systemMedium: return 150
+        default: return 220
         }
     }
 
     private var glowBlur: CGFloat {
         switch family {
-        case .systemSmall:
-            return 28
-        case .systemMedium:
-            return 34
-        default:
-            return 44
+        case .systemSmall: return 28
+        case .systemMedium: return 34
+        default: return 44
         }
     }
 
     private var glowOffsetX: CGFloat {
         switch family {
-        case .systemSmall:
-            return 45
-        case .systemMedium:
-            return 85
-        default:
-            return 110
+        case .systemSmall: return 45
+        case .systemMedium: return 85
+        default: return 110
         }
     }
 
     private var glowOffsetY: CGFloat {
         switch family {
-        case .systemSmall:
-            return -35
-        case .systemMedium:
-            return -40
-        default:
-            return -55
+        case .systemSmall: return -30
+        case .systemMedium: return -46
+        default: return -65
         }
     }
 }

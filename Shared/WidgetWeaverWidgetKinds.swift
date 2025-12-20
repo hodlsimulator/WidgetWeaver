@@ -7,4 +7,5 @@
 
 public enum WidgetWeaverWidgetKinds {
     public static let main = "WidgetWeaverWidget"
+    public static let lockScreenWeather = "WidgetWeaverLockScreenWeatherWidget"
 }
