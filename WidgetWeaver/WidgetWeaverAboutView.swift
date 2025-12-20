@@ -24,7 +24,6 @@ struct WidgetWeaverAboutView: View {
     let onShowWidgetHelp: @MainActor () -> Void
 
     @Environment(\.dismiss) private var dismiss
-
     @State private var designCount: Int = 0
     @State private var statusMessage: String = ""
 
@@ -32,6 +31,7 @@ struct WidgetWeaverAboutView: View {
         NavigationStack {
             List {
                 aboutHeaderSection
+                featuredWeatherSection
                 capabilitiesSection
                 starterTemplatesSection
                 proTemplatesSection
@@ -61,9 +61,7 @@ struct WidgetWeaverAboutView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("WidgetWeaver")
                         .font(.title2.weight(.semibold))
-
                     Spacer(minLength: 0)
-
                     Text(appVersionString)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -72,8 +70,7 @@ struct WidgetWeaverAboutView: View {
                 Text(
                     """
                     Build WidgetKit widgets from a typed design spec.
-                    Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons.
-                    Designs are saved locally and rendered by the widget extension.
+                    Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons. Designs are saved locally and rendered by the widget extension.
                     """
                 )
                 .font(.subheadline)
@@ -101,6 +98,123 @@ struct WidgetWeaverAboutView: View {
         }
     }
 
+    // MARK: - Featured Weather
+
+    private var featuredWeatherSection: some View {
+        let template = Self.featuredWeatherTemplate
+
+        return Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Weather")
+                            .font(.headline)
+                        Text("WeatherKit • rain-first nowcast • glass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Menu {
+                        Button {
+                            handleAdd(template: template, makeDefault: false)
+                        } label: {
+                            Label("Add to library", systemImage: "plus")
+                        }
+
+                        Button {
+                            handleAdd(template: template, makeDefault: true)
+                        } label: {
+                            Label("Add & Make Default", systemImage: "star.fill")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus.circle.fill")
+                    }
+                    .controlSize(.small)
+                }
+
+                Text(
+                    """
+                    A premium Weather layout template that focuses on the next-hour rain chart (Dark Sky style), with an hourly strip and daily highs/lows when available.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if !template.tags.isEmpty {
+                    FlowTags(tags: template.tags)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        PreviewLabeled(familyLabel: "Small") {
+                            WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86)
+                        }
+                        PreviewLabeled(familyLabel: "Medium") {
+                            WidgetPreviewThumbnail(spec: template.spec, family: .systemMedium, height: 86)
+                        }
+                        PreviewLabeled(familyLabel: "Large") {
+                            WidgetPreviewThumbnail(spec: template.spec, family: .systemLarge, height: 86)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                Divider()
+
+                Text("Setup")
+                    .font(.subheadline.weight(.semibold))
+
+                BulletList(items: [
+                    "In the app: … → Weather → choose a location (Current Location or search).",
+                    "Add the Weather template to your library (optionally make it Default).",
+                    "Add a WidgetWeaver widget to your Home Screen."
+                ])
+
+                NavigationLink {
+                    WidgetWeaverWeatherSettingsView()
+                } label: {
+                    Label("Open Weather settings", systemImage: "cloud.sun.fill")
+                }
+                .controlSize(.small)
+
+                Divider()
+
+                Text("Built-in weather keys (work in any text field)")
+                    .font(.subheadline.weight(.semibold))
+
+                CodeBlock(
+                    """
+                    {{__weather_location|Set location}}
+                    {{__weather_temp|--}}°
+                    {{__weather_condition|Updating…}}
+                    {{__weather_precip|0}}%
+                    """
+                )
+
+                Button {
+                    copyToPasteboard(
+                        """
+                        Weather: {{__weather_temp|--}}° • {{__weather_condition|Updating…}}
+                        Chance: {{__weather_precip|0}}% • Humidity: {{__weather_humidity|0}}%
+                        """
+                    )
+                } label: {
+                    Label("Copy weather example", systemImage: "doc.on.doc")
+                }
+                .controlSize(.small)
+            }
+            .padding(.vertical, 6)
+        } header: {
+            Text("Featured")
+        } footer: {
+            Text("Weather data is provided by Weather. WidgetKit refresh limits still apply; use Weather → Update now to refresh the cached snapshot.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Capabilities + Examples
 
     private var capabilitiesSection: some View {
@@ -117,7 +231,12 @@ struct WidgetWeaverAboutView: View {
 
             FeatureRow(
                 title: "Layout templates",
-                subtitle: "Classic / Hero / Poster presets, plus axis, alignment, spacing, and line limits."
+                subtitle: "Classic / Hero / Poster / Weather presets, plus axis, alignment, spacing, and line limits."
+            )
+
+            FeatureRow(
+                title: "Built-in Weather template",
+                subtitle: "A rain-first WeatherKit layout with glass panels and adaptive Small/Medium/Large composition."
             )
 
             FeatureRow(
@@ -151,8 +270,8 @@ struct WidgetWeaverAboutView: View {
             )
 
             FeatureRow(
-                title: "Variables + Shortcuts (Pro)",
-                subtitle: "{{key}} templates with number/date/relative formatting, updated in-app or via Shortcuts."
+                title: "Template variables",
+                subtitle: "{{key}} templates with number/date/relative formatting, plus built-in time + weather keys."
             )
 
             FeatureRow(
@@ -188,6 +307,7 @@ struct WidgetWeaverAboutView: View {
                     .foregroundStyle(.secondary)
 
                 BulletList(items: [
+                    "Weather (rain-first nowcast + forecast) via the built-in Weather template",
                     "Habit tracker / streak counter (with Variables + interactive buttons in Pro)",
                     "Counter widget (tap +1 / -1 in Pro)",
                     "Countdown widget (manual or variable-driven)",
@@ -207,7 +327,7 @@ struct WidgetWeaverAboutView: View {
 
     private var starterTemplatesSection: some View {
         Section {
-            ForEach(Self.starterTemplates) { template in
+            ForEach(Self.starterTemplates.filter { $0.id != Self.featuredWeatherTemplateID }) { template in
                 TemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
@@ -270,10 +390,7 @@ struct WidgetWeaverAboutView: View {
         }
 
         onAddTemplate(template.spec, makeDefault)
-        statusMessage = makeDefault
-            ? "Added “\(template.title)” and set as default."
-            : "Added “\(template.title)”."
-
+        statusMessage = makeDefault ? "Added “\(template.title)” and set as default." : "Added “\(template.title)”."
         refreshDesignCount()
     }
 
@@ -313,7 +430,7 @@ struct WidgetWeaverAboutView: View {
         } header: {
             Text("Interactive Buttons")
         } footer: {
-            Text("Buttons only appear in the widget. Configure them in the editor under Actions.")
+            Text("Buttons only appear in the widget.\nConfigure them in the editor under Actions.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -325,9 +442,8 @@ struct WidgetWeaverAboutView: View {
         Section {
             Text(
                 """
-                Variables let text fields pull values updated via Shortcuts actions.
-                They can also be updated by interactive widget buttons (Pro).
-                Variable rendering happens at widget render time.
+                Template variables let text fields pull values at render time.
+                Some keys are built-in (time/date + weather). Pro unlocks a shared variable store that can be updated via Shortcuts and interactive widget buttons.
                 """
             )
             .font(.subheadline)
@@ -347,6 +463,8 @@ struct WidgetWeaverAboutView: View {
                         {{last_done|Never|relative}}
                         {{progress|0|bar:10}}
                         {{__now||date:HH:mm}}
+                        {{__weather_temp|--}}°
+                        {{__weather_condition|Updating…}}
                         {{=done/total*100|0|number:0}}%
                         """
                     )
@@ -354,17 +472,31 @@ struct WidgetWeaverAboutView: View {
 
                 Spacer(minLength: 0)
 
-                Button {
-                    copyToPasteboard(
-                        """
-                        Streak: {{streak|0}} days
-                        Last done: {{last_done|Never|relative}}
-                        """
-                    )
-                } label: {
-                    Label("Copy example", systemImage: "doc.on.doc")
+                VStack(alignment: .trailing, spacing: 8) {
+                    Button {
+                        copyToPasteboard(
+                            """
+                            Weather: {{__weather_temp|--}}° • {{__weather_condition|Updating…}}
+                            Location: {{__weather_location|Set location}}
+                            """
+                        )
+                    } label: {
+                        Label("Copy weather", systemImage: "doc.on.doc")
+                    }
+                    .controlSize(.small)
+
+                    Button {
+                        copyToPasteboard(
+                            """
+                            Streak: {{streak|0}} days
+                            Last done: {{last_done|Never|relative}}
+                            """
+                        )
+                    } label: {
+                        Label("Copy Pro example", systemImage: "doc.on.doc")
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
             }
 
             Divider()
@@ -381,7 +513,7 @@ struct WidgetWeaverAboutView: View {
             ])
 
             if !proManager.isProUnlocked {
-                Label("Variables are a Pro feature.", systemImage: "lock.fill")
+                Label("Stored variables + Shortcuts actions are a Pro feature.", systemImage: "lock.fill")
                     .foregroundStyle(.secondary)
 
                 Button { onShowPro() } label: {
@@ -392,7 +524,7 @@ struct WidgetWeaverAboutView: View {
         } header: {
             Text("Variables + Shortcuts")
         } footer: {
-            Text("Keys are canonicalised (trimmed, lowercased, internal whitespace collapsed).")
+            Text("Keys are canonicalised (trimmed, lowercased, internal whitespace collapsed). Weather keys use the cached snapshot from Weather settings.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -448,12 +580,10 @@ struct WidgetWeaverAboutView: View {
                 title: "Share one design or the whole library",
                 subtitle: "Exports are JSON and can embed images when available."
             )
-
             FeatureRow(
                 title: "Import safely",
                 subtitle: "Imported designs are duplicated with new IDs to avoid overwriting existing work."
             )
-
             FeatureRow(
                 title: "Offline-friendly",
                 subtitle: "Images are stored in the App Group container and rendered without a network dependency."
@@ -508,6 +638,7 @@ struct WidgetWeaverAboutView: View {
                 "Designs: JSON in App Group UserDefaults",
                 "Images: files in App Group container (WidgetWeaverImages/)",
                 "Variables: JSON dictionary in App Group UserDefaults (Pro)",
+                "Weather: location + cached snapshot + attribution in App Group UserDefaults",
                 "Action bars: stored in the design spec; buttons run App Intents (iOS 17+)"
             ])
         } header: {
@@ -560,7 +691,6 @@ private struct TemplateRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(template.title)
                         .font(.headline)
-
                     Text(template.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -578,7 +708,6 @@ private struct TemplateRow: View {
                         Button { onAdd(false) } label: {
                             Label("Add to library", systemImage: "plus")
                         }
-
                         Button { onAdd(true) } label: {
                             Label("Add & Make Default", systemImage: "star.fill")
                         }
@@ -602,11 +731,9 @@ private struct TemplateRow: View {
                     PreviewLabeled(familyLabel: "S") {
                         WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 62)
                     }
-
                     PreviewLabeled(familyLabel: "M") {
                         WidgetPreviewThumbnail(spec: template.spec, family: .systemMedium, height: 62)
                     }
-
                     PreviewLabeled(familyLabel: "L") {
                         WidgetPreviewThumbnail(spec: template.spec, family: .systemLarge, height: 62)
                     }
@@ -625,7 +752,6 @@ private struct PreviewLabeled<Content: View>: View {
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
             content
-
             Text(familyLabel)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -669,7 +795,6 @@ private struct FeatureRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-
             Text(subtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -687,7 +812,6 @@ private struct BulletList: View {
                 HStack(alignment: .top, spacing: 8) {
                     Text("•")
                         .foregroundStyle(.secondary)
-
                     Text(item)
                         .foregroundStyle(.secondary)
                 }
@@ -732,7 +856,6 @@ private struct FlowTags: View {
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial, in: Capsule())
             }
-
             Spacer(minLength: 0)
         }
     }
@@ -741,6 +864,21 @@ private struct FlowTags: View {
 // MARK: - Catalog
 
 private extension WidgetWeaverAboutView {
+    static let featuredWeatherTemplateID: String = "starter-weather"
+
+    static var featuredWeatherTemplate: AboutTemplate {
+        starterTemplates.first(where: { $0.id == featuredWeatherTemplateID })
+        ?? AboutTemplate(
+            id: featuredWeatherTemplateID,
+            title: "Weather",
+            subtitle: "WeatherKit rain-first nowcast",
+            description: "A premium WeatherKit layout with glass panels, glow, and adaptive small/medium/large composition.",
+            tags: ["Weather", "WeatherKit", "Dynamic", "Glass"],
+            requiresPro: false,
+            spec: specWeather()
+        )
+    }
+
     static var promptIdeas: [String] {
         [
             "minimal focus widget, teal accent, no symbol, short text",
@@ -750,7 +888,8 @@ private extension WidgetWeaverAboutView {
             "reading progress widget, blue accent, book icon, short secondary text",
             "workout routine widget, red accent, strong title, simple layout",
             "note widget, horizontal layout, orange accent, minimal styling",
-            "habit streak widget, orange accent, uses {{streak|0}} and {{last_done|Never|relative}}, with interactive buttons"
+            "habit streak widget, orange accent, uses {{streak|0}} and {{last_done|Never|relative}}, with interactive buttons",
+            "weather widget, glass look, strong accent, rain-first"
         ]
     }
 
@@ -814,15 +953,18 @@ private extension WidgetWeaverAboutView {
                 requiresPro: false,
                 spec: specReading()
             ),
+
+            // Featured separately at the top of About.
             AboutTemplate(
                 id: "starter-weather",
                 title: "Weather",
-                subtitle: "Forecast, but make it art",
-                description: "A premium Weather layout with glass panels, glow, and adaptive small/medium/large composition.",
-                tags: ["Weather", "Dynamic", "Glass"],
+                subtitle: "WeatherKit • rain-first nowcast",
+                description: "A premium WeatherKit layout with glass panels, glow, and adaptive small/medium/large composition.",
+                tags: ["Weather", "WeatherKit", "Dynamic", "Glass"],
                 requiresPro: false,
                 spec: specWeather()
             ),
+
             AboutTemplate(
                 id: "starter-workout",
                 title: "Workout",
@@ -1119,13 +1261,13 @@ private extension WidgetWeaverAboutView {
         )
         .normalised()
     }
-    
+
     static func specWeather() -> WidgetSpec {
         let layout = LayoutSpec(
-            template: .classic,
+            template: .weather,
             axis: .vertical,
-            alignment: .center,
-            spacing: 4,
+            alignment: .leading,
+            spacing: 10,
             primaryLineLimitSmall: 1,
             primaryLineLimit: 1,
             secondaryLineLimitSmall: 1,
@@ -1143,13 +1285,14 @@ private extension WidgetWeaverAboutView {
             nameTextStyle: .caption2,
             primaryTextStyle: .headline,
             secondaryTextStyle: .caption,
-            symbolSize: 42
+            symbolSize: 42,
+            weatherScale: 1.05
         )
 
         return WidgetSpec(
-            name: "Weather Now",
-            primaryText: "{{weather_temp}}",
-            secondaryText: "{{weather_summary|Loading...}}",
+            name: "Weather",
+            primaryText: "{{__weather_temp|--}}°",
+            secondaryText: "{{__weather_location|Set location}} • {{__weather_condition|Updating…}}",
             updatedAt: Date(),
             symbol: nil,
             image: nil,
@@ -1157,6 +1300,7 @@ private extension WidgetWeaverAboutView {
             style: style,
             matchedSet: nil
         )
+        .normalised()
     }
 
     static func specWorkout() -> WidgetSpec {
