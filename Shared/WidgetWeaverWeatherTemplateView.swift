@@ -560,6 +560,8 @@ private struct WeatherNowcast: Hashable {
     let startTimeText: String?
 
     init(snapshot: WidgetWeaverWeatherSnapshot, now: Date) {
+        let hasMinuteData = snapshot.minute != nil
+
         let raw = snapshot.minute ?? []
         let filtered = raw
             .filter { $0.date >= now.addingTimeInterval(-30) }
@@ -569,7 +571,12 @@ private struct WeatherNowcast: Hashable {
         let forward = filtered.filter { $0.date >= now }.prefix(60)
         self.points = Array(forward)
 
-        let analysis = WeatherNowcast.analyse(points: self.points, now: now)
+        let analysis = WeatherNowcast.analyse(
+            points: self.points,
+            now: now,
+            hasMinuteData: hasMinuteData,
+            isRainingNow: WeatherNowcast.isRainingNow(snapshot: snapshot)
+        )
 
         self.startOffsetMinutes = analysis.startOffsetMinutes
         self.endOffsetMinutes = analysis.endOffsetMinutes
@@ -578,6 +585,11 @@ private struct WeatherNowcast: Hashable {
         self.primaryText = analysis.primaryText
         self.secondaryText = analysis.secondaryText
         self.startTimeText = analysis.startTimeText
+    }
+
+    private static func isRainingNow(snapshot: WidgetWeaverWeatherSnapshot) -> Bool {
+        let s = snapshot.symbolName.lowercased()
+        return s.contains("rain") || s.contains("drizzle") || s.contains("thunderstorm")
     }
 
     func buckets(for family: WidgetFamily) -> [WeatherNowcastBucket] {
@@ -644,8 +656,37 @@ private struct WeatherNowcast: Hashable {
         var startTimeText: String?
     }
 
-    private static func analyse(points: [WidgetWeaverWeatherMinutePoint], now: Date) -> Analysis {
+    private static func analyse(
+        points: [WidgetWeaverWeatherMinutePoint],
+        now: Date,
+        hasMinuteData: Bool,
+        isRainingNow: Bool
+    ) -> Analysis {
         guard !points.isEmpty else {
+            if !hasMinuteData {
+                if isRainingNow {
+                    return Analysis(
+                        startOffsetMinutes: 0,
+                        endOffsetMinutes: nil,
+                        peakIntensityMMPerHour: 0,
+                        peakChance01: 0,
+                        primaryText: "Rain now",
+                        secondaryText: "Next-hour rain unavailable",
+                        startTimeText: "Now"
+                    )
+                }
+
+                return Analysis(
+                    startOffsetMinutes: nil,
+                    endOffsetMinutes: nil,
+                    peakIntensityMMPerHour: 0,
+                    peakChance01: 0,
+                    primaryText: "Next-hour rain unavailable",
+                    secondaryText: nil,
+                    startTimeText: nil
+                )
+            }
+
             return Analysis(
                 startOffsetMinutes: nil,
                 endOffsetMinutes: nil,

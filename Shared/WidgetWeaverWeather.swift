@@ -637,13 +637,22 @@ public actor WidgetWeaverWeatherEngine {
 
         #if canImport(WeatherKit)
         do {
-            async let weatherTask = WeatherService.shared.weather(for: location.clLocation)
+            async let wxTask = WeatherService.shared.weather(
+                for: location.clLocation,
+                including: .current, .minute, .hourly, .daily
+            )
             async let attributionTask = WeatherService.shared.attribution
 
-            let weather = try await weatherTask
+            let (current, minute, hourly, daily) = try await wxTask
             let attribution = try await attributionTask
 
-            let snap = Self.makeSnapshot(weather: weather, location: location)
+            let snap = Self.makeSnapshot(
+                current: current,
+                minuteForecast: minute,
+                hourlyForecast: hourly,
+                dailyForecast: daily,
+                location: location
+            )
             let attr = WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
 
             store.saveSnapshot(snap)
@@ -684,9 +693,14 @@ public actor WidgetWeaverWeatherEngine {
     }
 
     #if canImport(WeatherKit)
-    private static func makeSnapshot(weather: Weather, location: WidgetWeaverWeatherLocation) -> WidgetWeaverWeatherSnapshot {
+    private static func makeSnapshot(
+        current: CurrentWeather,
+        minuteForecast: Forecast<MinuteWeather>?,
+        hourlyForecast: Forecast<HourWeather>,
+        dailyForecast: Forecast<DayWeather>,
+        location: WidgetWeaverWeatherLocation
+    ) -> WidgetWeaverWeatherSnapshot {
         let now = Date()
-        let current = weather.currentWeather
 
         @inline(__always)
         func mmPerHour(_ intensity: Measurement<UnitSpeed>) -> Double {
@@ -701,22 +715,20 @@ public actor WidgetWeaverWeatherEngine {
             // Treat the amount as "mm in that hour" → mm/hour.
             amount.converted(to: .millimeters).value
         }
-        
-        
-        let minute: [WidgetWeaverWeatherMinutePoint] = {
-            guard let mf = weather.minuteForecast else { return [] }
-            return mf.forecast.prefix(60).map { m in
+
+        let minute: [WidgetWeaverWeatherMinutePoint]? = minuteForecast.map { mf in
+            mf.forecast.prefix(60).map { m in
                 WidgetWeaverWeatherMinutePoint(
                     date: m.date,
                     precipitationChance01: m.precipitationChance,
                     precipitationIntensityMMPerHour: mmPerHour(m.precipitationIntensity)
                 )
             }
-        }()
+        }
 
-        let precipChance01 = weather.hourlyForecast.forecast.first?.precipitationChance
+        let precipChance01 = hourlyForecast.forecast.first?.precipitationChance
 
-        let today = weather.dailyForecast.forecast.first.map { day -> WidgetWeaverWeatherDailyPoint in
+        let today = dailyForecast.forecast.first.map { day -> WidgetWeaverWeatherDailyPoint in
             WidgetWeaverWeatherDailyPoint(
                 date: day.date,
                 highTemperatureC: day.highTemperature.converted(to: .celsius).value,
@@ -726,7 +738,7 @@ public actor WidgetWeaverWeatherEngine {
             )
         }
 
-        let hourly: [WidgetWeaverWeatherHourlyPoint] = weather.hourlyForecast.forecast.prefix(8).map { h in
+        let hourly: [WidgetWeaverWeatherHourlyPoint] = hourlyForecast.forecast.prefix(8).map { h in
             WidgetWeaverWeatherHourlyPoint(
                 date: h.date,
                 temperatureC: h.temperature.converted(to: .celsius).value,
@@ -736,7 +748,7 @@ public actor WidgetWeaverWeatherEngine {
             )
         }
 
-        let daily: [WidgetWeaverWeatherDailyPoint] = weather.dailyForecast.forecast.prefix(6).map { d in
+        let daily: [WidgetWeaverWeatherDailyPoint] = dailyForecast.forecast.prefix(6).map { d in
             WidgetWeaverWeatherDailyPoint(
                 date: d.date,
                 highTemperatureC: d.highTemperature.converted(to: .celsius).value,
