@@ -28,7 +28,9 @@ struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Widget Design")
     }
 
-    static var defaultQuery: WidgetWeaverSpecEntityQuery { WidgetWeaverSpecEntityQuery() }
+    static var defaultQuery: WidgetWeaverSpecEntityQuery {
+        WidgetWeaverSpecEntityQuery()
+    }
 
     var id: String
     var name: String
@@ -49,8 +51,7 @@ struct WidgetWeaverSpecEntityQuery: EntityQuery {
                 continue
             }
 
-            if let uuid = UUID(uuidString: ident),
-               let spec = store.load(id: uuid) {
+            if let uuid = UUID(uuidString: ident), let spec = store.load(id: uuid) {
                 out.append(WidgetWeaverSpecEntity(id: spec.id.uuidString, name: spec.name))
             }
         }
@@ -99,18 +100,16 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let spec = loadSpec(for: configuration)
-
         if needsWeatherUpdate(for: spec) {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
-
         return Entry(date: Date(), spec: spec)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
-
         let needsWeather = needsWeatherUpdate(for: spec)
+
         if needsWeather {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
@@ -128,9 +127,42 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             refreshSeconds = min(refreshSeconds, 60 * 5)
         }
 
-        let entry = Entry(date: Date(), spec: spec)
-        let next = Date().addingTimeInterval(refreshSeconds)
-        return Timeline(entries: [entry], policy: .after(next))
+        let now = Date()
+        let nextReload = now.addingTimeInterval(refreshSeconds)
+
+        // Minute-tick rendering:
+        // - Weather designs often need "Rain in Xm" / nowcast-like text to stay current.
+        // - Time-dependent templates (relative, minutesuntil, __time, etc.) look broken if they only move every 5–15 min.
+        //
+        // The snapshot fetch cadence remains governed by refreshSeconds + updateIfNeeded().
+        let wantsMinuteEntries = needsWeather || spec.usesTimeDependentRendering()
+
+        if wantsMinuteEntries {
+            let calendar = Calendar.current
+            let nextMinute = calendar.nextDate(
+                after: now,
+                matching: DateComponents(second: 0),
+                matchingPolicy: .strict,
+                direction: .forward
+            ) ?? now.addingTimeInterval(60)
+
+            let bufferMinutes = 60
+
+            var entries: [Entry] = []
+            entries.reserveCapacity(bufferMinutes + 1)
+            entries.append(Entry(date: now, spec: spec))
+
+            for offset in 0..<bufferMinutes {
+                if let d = calendar.date(byAdding: .minute, value: offset, to: nextMinute) {
+                    entries.append(Entry(date: d, spec: spec))
+                }
+            }
+
+            return Timeline(entries: entries, policy: .after(nextReload))
+        } else {
+            let entry = Entry(date: now, spec: spec)
+            return Timeline(entries: [entry], policy: .after(nextReload))
+        }
     }
 
     private func loadSpec(for configuration: Intent) -> WidgetSpec {
@@ -140,9 +172,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             if selected.id == WidgetWeaverSpecEntityIDs.appDefault {
                 return store.loadDefault()
             }
-
-            if let uuid = UUID(uuidString: selected.id),
-               let spec = store.load(id: uuid) {
+            if let uuid = UUID(uuidString: selected.id), let spec = store.load(id: uuid) {
                 return spec
             }
         }
@@ -242,9 +272,33 @@ struct WidgetWeaverLockScreenWeatherProvider: AppIntentTimelineProvider {
             refreshSeconds = min(refreshSeconds, 60 * 2)
         }
 
-        let entry = Entry(date: Date(), snapshot: snap)
-        let next = Date().addingTimeInterval(refreshSeconds)
-        return Timeline(entries: [entry], policy: .after(next))
+        let now = Date()
+        let nextReload = now.addingTimeInterval(refreshSeconds)
+
+        // Critical bit:
+        // Generate per-minute entries so "Rain in Xm" updates smoothly on the Lock Screen.
+        // This does NOT fetch every minute — it re-renders using the cached minute forecast.
+        let calendar = Calendar.current
+        let nextMinute = calendar.nextDate(
+            after: now,
+            matching: DateComponents(second: 0),
+            matchingPolicy: .strict,
+            direction: .forward
+        ) ?? now.addingTimeInterval(60)
+
+        let bufferMinutes = 60
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(bufferMinutes + 1)
+        entries.append(Entry(date: now, snapshot: snap))
+
+        for offset in 0..<bufferMinutes {
+            if let d = calendar.date(byAdding: .minute, value: offset, to: nextMinute) {
+                entries.append(Entry(date: d, snapshot: snap))
+            }
+        }
+
+        return Timeline(entries: entries, policy: .after(nextReload))
     }
 }
 
@@ -264,8 +318,8 @@ private struct WidgetWeaverLockScreenWeatherView: View {
                 rectangularView
             }
         }
-        // iOS 17+ requires a widget container background. Without this,
-        // the system can display "Please adopt containerBackground API" and remove the widget.
+        // iOS 17+ requires a widget container background.
+        // Without this, the system can display "Please adopt containerBackground API" and remove the widget.
         .containerBackground(for: .widget) { Color.clear }
     }
 
@@ -299,11 +353,9 @@ private struct WidgetWeaverLockScreenWeatherView: View {
 
                 HStack(spacing: 6) {
                     Text("\(temperatureString(s.temperatureC, unit: unit))°")
-
                     if let pct = sum.peakChancePercentText {
                         Text(pct)
                     }
-
                     if let hi = s.highTemperatureC, let lo = s.lowTemperatureC {
                         Text("H \(temperatureString(hi, unit: unit))° L \(temperatureString(lo, unit: unit))°")
                     }
@@ -426,7 +478,9 @@ private struct WidgetWeaverLockScreenWeatherView: View {
     }
 
     private func symbolName(for snapshot: WidgetWeaverWeatherSnapshot, summary: NowcastSummary) -> String {
-        if summary.peakChance01 >= 0.35 { return "cloud.rain.fill" }
+        if summary.peakChance01 >= 0.35 {
+            return "cloud.rain.fill"
+        }
         let name = snapshot.symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "cloud" : name
     }
