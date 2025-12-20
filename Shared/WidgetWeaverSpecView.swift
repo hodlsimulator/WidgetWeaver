@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 import UIKit
+import AppIntents
 
 public enum WidgetWeaverRenderContext: String, Codable, Sendable {
     case widget
@@ -50,12 +51,16 @@ public struct WidgetWeaverSpecView: View {
                 switch layout.template {
                 case .classic:
                     classicTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+
                 case .hero:
                     heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+
                 case .poster:
                     posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+
                 case .weather:
                     weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+
                 case .nextUpCalendar:
                     nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
                 }
@@ -78,9 +83,13 @@ public struct WidgetWeaverSpecView: View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
             contentStackClassic(spec: spec, layout: layout, style: style)
+
             if let symbol = spec.symbol {
                 imageRowClassic(symbol: symbol, style: style, accent: accent)
             }
+
+            actionBarIfNeeded(spec: spec, accent: accent)
+
             if layout.showsAccentBar {
                 accentBar(accent: accent, style: style)
             }
@@ -90,9 +99,11 @@ public struct WidgetWeaverSpecView: View {
     private func heroTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
+
             HStack(alignment: .top, spacing: layout.spacing) {
                 VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
                     contentStackHero(spec: spec, layout: layout, style: style)
+
                     if layout.showsAccentBar {
                         accentBar(accent: accent, style: style)
                     }
@@ -106,6 +117,8 @@ public struct WidgetWeaverSpecView: View {
                         .opacity(0.85)
                 }
             }
+
+            actionBarIfNeeded(spec: spec, accent: accent)
         }
         .padding(style.padding)
     }
@@ -113,6 +126,7 @@ public struct WidgetWeaverSpecView: View {
     private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 0)
+
             VStack(alignment: .leading, spacing: 10) {
                 if !spec.name.isEmpty {
                     Text(spec.name)
@@ -191,6 +205,7 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
+
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font(fallback: .caption2))
@@ -209,6 +224,7 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
+
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font)
@@ -222,6 +238,7 @@ public struct WidgetWeaverSpecView: View {
     private func imageRowClassic(symbol: WidgetSymbol, style: StyleSpec, accent: Color) -> some View {
         HStack {
             Spacer(minLength: 0)
+
             Image(systemName: symbol.name)
                 .font(.system(size: style.symbolSize))
                 .foregroundStyle(accent)
@@ -234,6 +251,86 @@ public struct WidgetWeaverSpecView: View {
             .fill(accent)
             .frame(height: 5)
             .opacity(0.9)
+    }
+
+    // MARK: - Quick Actions (interactive widget buttons)
+
+    private func actionBarIfNeeded(spec: WidgetSpec, accent: Color) -> some View {
+        Group {
+            if WidgetWeaverEntitlements.isProUnlocked,
+               let bar = spec.actionBar,
+               !bar.actions.isEmpty {
+                actionBar(bar: bar, accent: accent)
+                    .allowsHitTesting(context == .widget)
+                    .opacity(context == .widget ? 1.0 : 0.85)
+            }
+        }
+    }
+
+    private func actionBar(bar: WidgetActionBarSpec, accent: Color) -> some View {
+        HStack(spacing: 10) {
+            ForEach(bar.actions) { action in
+                widgetActionButton(action: action, barStyle: bar.style, accent: accent)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, 10)
+    }
+
+    @ViewBuilder
+    private func widgetActionButton(action: WidgetActionSpec, barStyle: WidgetActionButtonStyleToken, accent: Color) -> some View {
+        switch action.kind {
+        case .incrementVariable:
+            Button(intent: WidgetWeaverIncrementVariableIntent(key: action.variableKey, amount: action.incrementAmount)) {
+                actionButtonLabel(action: action, barStyle: barStyle, accent: accent)
+            }
+            .buttonStyle(.plain)
+
+        case .setVariableToNow:
+            Button(intent: WidgetWeaverSetVariableToNowIntent(key: action.variableKey, format: mapNowFormat(action.nowFormat))) {
+                actionButtonLabel(action: action, barStyle: barStyle, accent: accent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func mapNowFormat(_ token: WidgetNowFormatToken) -> WidgetWeaverNowValueFormat {
+        switch token {
+        case .iso8601: return .iso8601
+        case .unixSeconds: return .unixSeconds
+        case .unixMilliseconds: return .unixSeconds
+        case .dateOnly: return .dateOnly
+        case .timeOnly: return .timeOnly
+        }
+    }
+
+    private func actionButtonLabel(action: WidgetActionSpec, barStyle: WidgetActionButtonStyleToken, accent: Color) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+        let backgroundOpacity: Double = (barStyle == .prominent) ? 0.20 : 0.12
+        let borderOpacity: Double = (barStyle == .prominent) ? 0.30 : 0.16
+        let minHeight: CGFloat = 44
+
+        return HStack(spacing: 8) {
+            if let systemImage = action.systemImage?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !systemImage.isEmpty {
+                Image(systemName: systemImage)
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(accent)
+            }
+
+            Text(action.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, minHeight: minHeight)
+        .padding(.horizontal, 12)
+        .background { shape.fill(accent.opacity(backgroundOpacity)) }
+        .overlay { shape.strokeBorder(accent.opacity(borderOpacity), lineWidth: 1) }
+        .contentShape(shape)
     }
 
     // MARK: - Background

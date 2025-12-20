@@ -10,6 +10,7 @@
 
 import AppIntents
 import Foundation
+import WidgetKit
 
 struct WidgetWeaverSetVariableIntent: AppIntent {
     static var title: LocalizedStringResource { "Set WidgetWeaver Variable" }
@@ -30,6 +31,13 @@ struct WidgetWeaverSetVariableIntent: AppIntent {
         Summary("Set \(\.$key) to \(\.$value)")
     }
 
+    init() {}
+
+    init(key: String, value: String) {
+        self.key = key
+        self.value = value
+    }
+
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(dialog: "WidgetWeaver Pro is required for variables.")
@@ -41,6 +49,8 @@ struct WidgetWeaverSetVariableIntent: AppIntent {
         }
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
+        WidgetCenter.shared.reloadAllTimelines()
+
         return .result(dialog: "Set \(canonical) to \(value).")
     }
 }
@@ -57,7 +67,13 @@ struct WidgetWeaverGetVariableIntent: AppIntent {
         Summary("Get \(\.$key)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+    init() {}
+
+    init(key: String) {
+        self.key = key
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -84,6 +100,12 @@ struct WidgetWeaverRemoveVariableIntent: AppIntent {
         Summary("Remove \(\.$key)")
     }
 
+    init() {}
+
+    init(key: String) {
+        self.key = key
+    }
+
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(dialog: "WidgetWeaver Pro is required for variables.")
@@ -95,6 +117,8 @@ struct WidgetWeaverRemoveVariableIntent: AppIntent {
         }
 
         WidgetWeaverVariableStore.shared.removeValue(for: canonical)
+        WidgetCenter.shared.reloadAllTimelines()
+
         return .result(dialog: "Removed \(canonical).")
     }
 }
@@ -116,7 +140,14 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         Summary("Increment \(\.$key) by \(\.$amount)")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+    init() {}
+
+    init(key: String, amount: Int) {
+        self.key = key
+        self.amount = amount
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "0", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -130,13 +161,15 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         let existingRaw = store.value(for: canonical) ?? "0"
         let existing = Int(existingRaw.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         let newValue = existing + amount
+
         store.setValue(String(newValue), for: canonical)
+        WidgetCenter.shared.reloadAllTimelines()
 
         return .result(value: String(newValue), dialog: "Updated \(canonical) to \(newValue).")
     }
 }
 
-// MARK: - New: Set variable to Now (great with |relative and |date:...)
+// MARK: - Set variable to Now (pairs with |relative and |date:...)
 
 enum WidgetWeaverNowValueFormat: String, AppEnum {
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
@@ -177,7 +210,14 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
         Summary("Set \(\.$key) to Now (\(\.$format))")
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+    init() {}
+
+    init(key: String, format: WidgetWeaverNowValueFormat) {
+        self.key = key
+        self.format = format
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -213,6 +253,8 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
         }()
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
+        WidgetCenter.shared.reloadAllTimelines()
+
         return .result(value: value, dialog: "Set \(canonical) to \(value).")
     }
 }
