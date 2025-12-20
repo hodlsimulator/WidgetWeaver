@@ -6,6 +6,7 @@
 //
 
 import Foundation
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -20,12 +21,10 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var primaryText: String
     public var secondaryText: String?
     public var updatedAt: Date
-
     public var symbol: SymbolSpec?
     public var image: ImageSpec?
     public var layout: LayoutSpec
     public var style: StyleSpec
-
     public var actionBar: WidgetActionBarSpec?
 
     /// Optional per-size overrides.
@@ -85,14 +84,15 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public func normalised() -> WidgetSpec {
         var s = self
-
         s.version = max(WidgetSpec.currentVersion, s.version)
 
         let trimmedName = s.name.trimmingCharacters(in: .whitespacesAndNewlines)
         s.name = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
 
         let trimmedPrimary = s.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.layout.template == .weather {
+
+        // Weather + NextUp templates may legitimately ignore primaryText.
+        if s.layout.template == .weather || s.layout.template == .nextUpCalendar {
             s.primaryText = trimmedPrimary
         } else {
             s.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
@@ -149,11 +149,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     /// Milestone 8: Matched sets are Pro-only. Without Pro, matched variants are ignored.
     public func resolved(for family: WidgetFamily) -> WidgetSpec {
         let base = self.normalised()
-
-        guard
-            WidgetWeaverEntitlements.isProUnlocked,
-            let variant = base.matchedSet?.variant(for: family)?.normalised()
-        else {
+        guard WidgetWeaverEntitlements.isProUnlocked,
+              let variant = base.matchedSet?.variant(for: family)?.normalised() else {
             var out = base
             out.matchedSet = nil
             return out
@@ -187,7 +184,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-
         let version = (try? c.decode(Int.self, forKey: .version)) ?? 1
         let id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
         let name = (try? c.decode(String.self, forKey: .name)) ?? "WidgetWeaver"
@@ -219,7 +215,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-
         try c.encode(version, forKey: .version)
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
@@ -235,7 +230,6 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     }
 }
 
-
 // MARK: - Quick Actions
 
 /// A lightweight spec for interactive widget buttons.
@@ -245,27 +239,19 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 /// - Actions currently target the Pro variable store (App Group).
 public struct WidgetActionBarSpec: Codable, Hashable, Sendable {
     public static let maxActions: Int = 2
-
     public var actions: [WidgetActionSpec]
     public var style: WidgetActionButtonStyleToken
 
-    public init(
-        actions: [WidgetActionSpec] = [],
-        style: WidgetActionButtonStyleToken = .prominent
-    ) {
+    public init(actions: [WidgetActionSpec] = [], style: WidgetActionButtonStyleToken = .prominent) {
         self.actions = actions
         self.style = style
     }
 
     public func normalisedOrNil() -> WidgetActionBarSpec? {
         var out = self
-
         let cleaned = out.actions.compactMap { $0.normalisedOrNil() }
         out.actions = Array(cleaned.prefix(Self.maxActions))
-
-        if out.actions.isEmpty {
-            return nil
-        }
+        if out.actions.isEmpty { return nil }
         return out
     }
 }
@@ -303,7 +289,6 @@ public struct WidgetActionSpec: Codable, Hashable, Identifiable, Sendable {
 
     public func normalisedOrNil() -> WidgetActionSpec? {
         var a = self
-
         let key = WidgetWeaverVariableStore.canonicalKey(a.variableKey)
         guard !key.isEmpty else { return nil }
         a.variableKey = key
@@ -311,10 +296,8 @@ public struct WidgetActionSpec: Codable, Hashable, Identifiable, Sendable {
         let t = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.isEmpty {
             switch a.kind {
-            case .incrementVariable:
-                a.title = "+1"
-            case .setVariableToNow:
-                a.title = "Done"
+            case .incrementVariable: a.title = "+1"
+            case .setVariableToNow: a.title = "Done"
             }
         } else {
             a.title = String(t.prefix(24))
@@ -327,10 +310,7 @@ public struct WidgetActionSpec: Codable, Hashable, Identifiable, Sendable {
         }
 
         a.incrementAmount = a.incrementAmount.clamped(to: -99...99)
-        if a.incrementAmount == 0 {
-            a.incrementAmount = 1
-        }
-
+        if a.incrementAmount == 0 { a.incrementAmount = 1 }
         return a
     }
 }
@@ -390,11 +370,7 @@ public struct WidgetSpecMatchedSet: Codable, Hashable {
     public var medium: WidgetSpecVariant?
     public var large: WidgetSpecVariant?
 
-    public init(
-        small: WidgetSpecVariant? = nil,
-        medium: WidgetSpecVariant? = nil,
-        large: WidgetSpecVariant? = nil
-    ) {
+    public init(small: WidgetSpecVariant? = nil, medium: WidgetSpecVariant? = nil, large: WidgetSpecVariant? = nil) {
         self.small = small
         self.medium = medium
         self.large = large
@@ -405,24 +381,17 @@ public struct WidgetSpecMatchedSet: Codable, Hashable {
         m.small = m.small?.normalised()
         m.medium = m.medium?.normalised()
         m.large = m.large?.normalised()
-
-        if m.small == nil && m.medium == nil && m.large == nil {
-            return nil
-        }
+        if m.small == nil && m.medium == nil && m.large == nil { return nil }
         return m
     }
 
     #if canImport(WidgetKit)
     public func variant(for family: WidgetFamily) -> WidgetSpecVariant? {
         switch family {
-        case .systemSmall:
-            return small
-        case .systemMedium:
-            return medium
-        case .systemLarge:
-            return large
-        default:
-            return medium ?? small ?? large
+        case .systemSmall: return small
+        case .systemMedium: return medium
+        case .systemLarge: return large
+        default: return medium ?? small ?? large
         }
     }
     #endif
@@ -435,13 +404,7 @@ public struct WidgetSpecVariant: Codable, Hashable {
     public var image: ImageSpec?
     public var layout: LayoutSpec
 
-    public init(
-        primaryText: String,
-        secondaryText: String?,
-        symbol: SymbolSpec?,
-        image: ImageSpec?,
-        layout: LayoutSpec
-    ) {
+    public init(primaryText: String, secondaryText: String?, symbol: SymbolSpec?, image: ImageSpec?, layout: LayoutSpec) {
         self.primaryText = primaryText
         self.secondaryText = secondaryText
         self.symbol = symbol
@@ -462,9 +425,9 @@ public struct WidgetSpecVariant: Codable, Hashable {
 
     public func normalised() -> WidgetSpecVariant {
         var v = self
-
         let trimmedPrimary = v.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if v.layout.template == .weather {
+
+        if v.layout.template == .weather || v.layout.template == .nextUpCalendar {
             v.primaryText = trimmedPrimary
         } else {
             v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary

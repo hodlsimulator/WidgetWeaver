@@ -24,6 +24,8 @@
 		E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
 		E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
 		E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
+		E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
+		E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
 		E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
@@ -78,6 +80,7 @@
 		E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateModels.swift; sourceTree = "<group>"; };
 		E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
 		E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateComponents.swift; sourceTree = "<group>"; };
+		E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverCalendar.swift; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
 		E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
 		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,6 +98,7 @@
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Info.plist,
 				README.md,
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
@@ -187,6 +191,7 @@
 				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
 				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
+				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
 				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
 				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
 				E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */,
@@ -318,6 +323,7 @@
 				E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 				E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
 				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
+				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -336,6 +342,7 @@
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
 				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
 				E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
+				E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
 				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
@@ -366,7 +373,10 @@
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WidgetWeaver/Info.plist;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;
@@ -385,7 +395,10 @@
 				CURRENT_PROJECT_VERSION = 9;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WidgetWeaver/Info.plist;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;

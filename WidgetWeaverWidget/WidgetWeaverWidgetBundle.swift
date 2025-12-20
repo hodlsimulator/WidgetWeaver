@@ -13,5 +13,6 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
     var body: some Widget {
         WidgetWeaverWidget()
         WidgetWeaverLockScreenWeatherWidget()
+        WidgetWeaverLockScreenNextUpWidget()
     }
 }

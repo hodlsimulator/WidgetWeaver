@@ -41,7 +41,6 @@ public struct WidgetWeaverSpecView: View {
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
-
         let frameAlignment: Alignment = layout.alignment.swiftUIAlignment
 
         ZStack(alignment: .topLeading) {
@@ -57,6 +56,8 @@ public struct WidgetWeaverSpecView: View {
                     posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
                 case .weather:
                     weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+                case .nextUpCalendar:
+                    nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
                 }
             }
             .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
@@ -76,13 +77,10 @@ public struct WidgetWeaverSpecView: View {
     private func classicTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
-
             contentStackClassic(spec: spec, layout: layout, style: style)
-
             if let symbol = spec.symbol {
                 imageRowClassic(symbol: symbol, style: style, accent: accent)
             }
-
             if layout.showsAccentBar {
                 accentBar(accent: accent, style: style)
             }
@@ -92,11 +90,9 @@ public struct WidgetWeaverSpecView: View {
     private func heroTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
-
             HStack(alignment: .top, spacing: layout.spacing) {
                 VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
                     contentStackHero(spec: spec, layout: layout, style: style)
-
                     if layout.showsAccentBar {
                         accentBar(accent: accent, style: style)
                     }
@@ -117,7 +113,6 @@ public struct WidgetWeaverSpecView: View {
     private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 0)
-
             VStack(alignment: .leading, spacing: 10) {
                 if !spec.name.isEmpty {
                     Text(spec.name)
@@ -147,7 +142,7 @@ public struct WidgetWeaverSpecView: View {
                     colors: [
                         Color.black.opacity(0.55),
                         Color.black.opacity(0.10),
-                        Color.clear
+                        Color.clear,
                     ],
                     startPoint: .bottom,
                     endPoint: .top
@@ -165,6 +160,15 @@ public struct WidgetWeaverSpecView: View {
         )
     }
 
+    private func nextUpCalendarTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        NextUpCalendarTemplateView(
+            spec: spec,
+            family: family,
+            context: context,
+            accent: accent
+        )
+    }
+
     // MARK: - Building Blocks
 
     private func headerRow(spec: WidgetSpec, style: StyleSpec, accent: Color) -> some View {
@@ -175,7 +179,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-
             Spacer(minLength: 0)
         }
     }
@@ -188,7 +191,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
-
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font(fallback: .caption2))
@@ -207,7 +209,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
-
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font)
@@ -294,17 +295,17 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
     let context: WidgetWeaverRenderContext
 
     func body(content: Content) -> some View {
-        // iOS controls the outer widget mask. Widget designs cannot change the widget’s shape.
+        // iOS controls the outer widget mask.
+        // Widget designs cannot change the widget’s shape.
         // The preview uses a stable approximation for the outer mask so sliders do not appear
         // to change the widget’s outer corners.
+
         let outerCornerRadius = Self.systemWidgetCornerRadius()
 
         switch context {
         case .widget:
             content
-                .containerBackground(for: .widget) {
-                    Color.clear
-                }
+                .containerBackground(for: .widget) { Color.clear }
                 .clipShape(ContainerRelativeShape())
 
         case .preview, .simulator:
@@ -316,10 +317,7 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
     private static func systemWidgetCornerRadius() -> CGFloat {
         // The system widget corner radius is not exposed publicly.
         // Values are tuned to look close to iOS on iPhone and iPad.
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            return 24
-        }
-
+        if UIDevice.current.userInterfaceIdiom == .pad { return 24 }
         return 22
     }
 }

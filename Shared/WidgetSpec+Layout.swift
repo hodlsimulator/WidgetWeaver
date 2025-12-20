@@ -57,19 +57,15 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
 
     public func normalised() -> LayoutSpec {
         var l = self
-
         l.spacing = l.spacing.clamped(to: 0...32)
-
         l.primaryLineLimitSmall = l.primaryLineLimitSmall.clamped(to: 1...8)
         l.primaryLineLimit = l.primaryLineLimit.clamped(to: 1...10)
-
         l.secondaryLineLimitSmall = l.secondaryLineLimitSmall.clamped(to: 1...8)
         l.secondaryLineLimit = l.secondaryLineLimit.clamped(to: 1...10)
 
         // Small limits should not exceed the corresponding non-small limits.
         l.primaryLineLimitSmall = min(l.primaryLineLimitSmall, l.primaryLineLimit)
         l.secondaryLineLimitSmall = min(l.secondaryLineLimitSmall, l.secondaryLineLimit)
-
         return l
     }
 
@@ -89,13 +85,11 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-
         self.template = (try? c.decode(LayoutTemplateToken.self, forKey: .template)) ?? .classic
         self.showsAccentBar = (try? c.decode(Bool.self, forKey: .showsAccentBar)) ?? true
         self.axis = (try? c.decode(LayoutAxisToken.self, forKey: .axis)) ?? .vertical
         self.alignment = (try? c.decode(LayoutAlignmentToken.self, forKey: .alignment)) ?? .leading
         self.spacing = (try? c.decode(Double.self, forKey: .spacing)) ?? 8
-
         self.primaryLineLimitSmall = (try? c.decode(Int.self, forKey: .primaryLineLimitSmall)) ?? 1
         self.primaryLineLimit = (try? c.decode(Int.self, forKey: .primaryLineLimit)) ?? 2
 
@@ -129,6 +123,9 @@ public enum LayoutTemplateToken: String, Codable, CaseIterable, Hashable, Identi
     case poster
     case weather
 
+    // NEW:
+    case nextUpCalendar
+
     public var id: String { rawValue }
 
     public var displayName: String {
@@ -137,6 +134,7 @@ public enum LayoutTemplateToken: String, Codable, CaseIterable, Hashable, Identi
         case .hero: return "Hero"
         case .poster: return "Poster"
         case .weather: return "Weather"
+        case .nextUpCalendar: return "Next Up (Calendar)"
         }
     }
 }
@@ -192,16 +190,11 @@ public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Ident
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         let raw = (try? c.decode(String.self)) ?? LayoutAlignmentToken.leading.rawValue
-
         switch raw.lowercased() {
-        case "leading":
-            self = .leading
-        case "centre", "center":
-            self = .centre
-        case "trailing":
-            self = .trailing
-        default:
-            self = .leading
+        case "leading": self = .leading
+        case "centre", "center": self = .centre
+        case "trailing": self = .trailing
+        default: self = .leading
         }
     }
 
