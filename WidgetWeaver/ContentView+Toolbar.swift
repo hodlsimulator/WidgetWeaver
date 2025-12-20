@@ -11,6 +11,12 @@ extension ContentView {
 
     var toolbarMenu: some View {
         Menu {
+            Button { activeSheet = .weather } label: {
+                Label("Weather", systemImage: "cloud.sun.fill")
+            }
+
+            Divider()
+
             Button { activeSheet = .about } label: {
                 Label("About", systemImage: "info.circle")
             }
@@ -101,13 +107,6 @@ extension ContentView {
             Button(role: .destructive) { showDeleteConfirmation = true } label: {
                 Label("Delete Design", systemImage: "trash")
             }
-            
-            Divider()
-            
-            Button { activeSheet = .weather } label: {
-                Label("Weather", systemImage: "cloud.sun.fill")
-            }
-
             .disabled(savedSpecs.count <= 1)
 
         } label: {

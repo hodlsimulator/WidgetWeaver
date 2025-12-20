@@ -36,22 +36,23 @@ extension ContentView {
 
     var editorForm: some View {
         Form {
+            statusSection
             designsSection
-            proSection
-            variablesManagerSection
-            sharingSection
-            matchedSetSection
             widgetWorkflowSection
 
+            layoutSection
             textSection
             symbolSection
             imageSection
-            layoutSection
             styleSection
             typographySection
             actionsSection
+
+            matchedSetSection
+            variablesManagerSection
+            sharingSection
             aiSection
-            statusSection
+            proSection
         }
         .font(.subheadline)
         .controlSize(.small)
