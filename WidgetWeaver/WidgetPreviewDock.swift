@@ -236,7 +236,19 @@ struct WidgetPreviewDock: View {
         case .sidebar:
             return 420
         case .dock:
-            return (verticalSizeClass == .compact) ? 150 : 260
+            if verticalSizeClass == .compact {
+                return 150
+            }
+
+            // Small and Medium occupy the same Home Screen row height.
+            // Using the same preview height avoids the preview changing depth between S/M.
+            if family == .systemLarge {
+                return 260
+            }
+
+            // Medium is typically width-limited in the dock. Lowering this height reduces
+            // wasted vertical space without making the widget itself smaller.
+            return 200
         }
     }
 
@@ -298,29 +310,29 @@ struct WidgetPreview: View {
         .clipped()
     }
 
+    private static func sizingReferenceFamily(for family: WidgetFamily) -> WidgetFamily {
+        switch family {
+        case .systemSmall, .systemMedium:
+            return .systemMedium
+        case .systemLarge:
+            return .systemLarge
+        default:
+            return .systemMedium
+        }
+    }
+
     private var previewBody: some View {
         GeometryReader { proxy in
-            // Keep the preview's *physical* widget dimensions stable.
-            //
-            // Widgets have fixed sizes per family (Small/Medium share the same height on iOS).
-            // The old approach scaled each family independently to fill the available box, which
-            // made Small appear "deeper" than Medium (and caused noticeable resizing/jitter when
-            // switching families or editing).
-            //
-            // Instead, compute a single scale factor based on the largest system widget size for
-            // the current device, and render all families using that same scale.
-            let small = Self.widgetSize(for: .systemSmall)
-            let medium = Self.widgetSize(for: .systemMedium)
-            let large = Self.widgetSize(for: .systemLarge)
-
-            let maxBaseWidth = max(small.width, max(medium.width, large.width))
-            let maxBaseHeight = max(small.height, max(medium.height, large.height))
-
-            let scaleX = proxy.size.width / maxBaseWidth
-            let scaleY = proxy.size.height / maxBaseHeight
-            let scale = min(scaleX, scaleY)
-
             let base = Self.widgetSize(for: family)
+
+            // Small and Medium occupy the same Home Screen row height.
+            // Scaling both against the Medium base keeps the preview height stable
+            // between Small and Medium.
+            let sizingBase = Self.widgetSize(for: Self.sizingReferenceFamily(for: family))
+
+            let scaleX = proxy.size.width / sizingBase.width
+            let scaleY = proxy.size.height / sizingBase.height
+            let scale = min(scaleX, scaleY)
 
             WidgetWeaverSpecView(
                 spec: spec,

@@ -445,12 +445,19 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
-                Text("Corner radius")
-                Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
-                Text("\(Int(styleDraft.cornerRadius))")
-                    .monospacedDigit()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Corner radius")
+                    Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
+                    Text("\(Int(styleDraft.cornerRadius))")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if currentFamilyDraft().template == .weather {
@@ -462,7 +469,6 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
             }
-
 
             Picker("Background", selection: $styleDraft.background) {
                 ForEach(BackgroundToken.allCases) { token in

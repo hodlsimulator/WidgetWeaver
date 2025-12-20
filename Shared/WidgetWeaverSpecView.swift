@@ -294,17 +294,32 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
     let context: WidgetWeaverRenderContext
 
     func body(content: Content) -> some View {
+        // iOS controls the outer widget mask. Widget designs cannot change the widget’s shape.
+        // The preview uses a stable approximation for the outer mask so sliders do not appear
+        // to change the widget’s outer corners.
+        let outerCornerRadius = Self.systemWidgetCornerRadius()
+
         switch context {
         case .widget:
             content
                 .containerBackground(for: .widget) {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color.clear)
+                    Color.clear
                 }
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .clipShape(ContainerRelativeShape())
+
         case .preview, .simulator:
             content
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
         }
+    }
+
+    private static func systemWidgetCornerRadius() -> CGFloat {
+        // The system widget corner radius is not exposed publicly.
+        // Values are tuned to look close to iOS on iPhone and iPad.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return 24
+        }
+
+        return 22
     }
 }
