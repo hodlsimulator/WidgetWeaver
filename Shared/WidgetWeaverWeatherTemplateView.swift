@@ -68,6 +68,12 @@ struct WeatherTemplateView: View {
                 )
             }
         }
+        // The template draws a dark backdrop and relies on semantic foreground styles
+        // (.primary / .secondary). In Light Mode those resolve to dark colours, which
+        // makes the text effectively disappear against the dark background.
+        //
+        // Force Dark Mode semantics for the template so the text remains readable.
+        .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: Date()))
     }
