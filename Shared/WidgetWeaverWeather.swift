@@ -695,6 +695,14 @@ public actor WidgetWeaverWeatherEngine {
             return mps * 3_600_000.0
         }
 
+        @inline(__always)
+        func mmPerHourFromHourAmount(_ amount: Measurement<UnitLength>) -> Double {
+            // HourWeather exposes a per-hour precipitation amount (length), not an intensity.
+            // Treat the amount as "mm in that hour" → mm/hour.
+            amount.converted(to: .millimeters).value
+        }
+        
+        
         let minute: [WidgetWeaverWeatherMinutePoint] = {
             guard let mf = weather.minuteForecast else { return [] }
             return mf.forecast.prefix(60).map { m in
@@ -724,7 +732,7 @@ public actor WidgetWeaverWeatherEngine {
                 temperatureC: h.temperature.converted(to: .celsius).value,
                 symbolName: h.symbolName,
                 precipitationChance01: h.precipitationChance,
-                precipitationIntensityMMPerHour: mmPerHour(h.precipitationIntensity)
+                precipitationIntensityMMPerHour: mmPerHourFromHourAmount(h.precipitationAmount)
             )
         }
 

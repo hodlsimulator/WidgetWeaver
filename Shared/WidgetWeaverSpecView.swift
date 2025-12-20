@@ -42,13 +42,7 @@ public struct WidgetWeaverSpecView: View {
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
 
-        let frameAlignment: Alignment = {
-            switch layout.alignment {
-            case .leading: return .topLeading
-            case .center: return .top
-            case .trailing: return .topTrailing
-            }
-        }()
+        let frameAlignment: Alignment = layout.alignment.swiftUIAlignment
 
         ZStack(alignment: .topLeading) {
             backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
@@ -163,21 +157,11 @@ public struct WidgetWeaverSpecView: View {
     }
 
     private func weatherTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        let store = WidgetWeaverWeatherStore.shared
-        let snapshot = store.snapshotForRender(context: context)
-        let unit = store.resolvedUnitTemperature()
-        let attributionURL = store.attributionLegalURL()
-
-        return WeatherTemplateView(
+        WeatherTemplateView(
             spec: spec,
             family: family,
             context: context,
-            layout: layout,
-            style: style,
-            accent: accent,
-            snapshot: snapshot,
-            unit: unit,
-            attributionURL: attributionURL
+            accent: accent
         )
     }
 
@@ -258,11 +242,7 @@ public struct WidgetWeaverSpecView: View {
             Color(uiColor: .systemBackground)
 
             if layout.template == .weather {
-                WeatherBackdropView(
-                    snapshot: WidgetWeaverWeatherStore.shared.snapshotForRender(context: context),
-                    accent: accent,
-                    fallbackToken: style.background
-                )
+                Color.clear
             } else if layout.template == .poster,
                       let image = spec.image,
                       let uiImage = image.loadUIImageFromAppGroup() {

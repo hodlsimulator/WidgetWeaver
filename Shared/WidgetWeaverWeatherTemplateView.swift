@@ -5,11 +5,29 @@
 //  Created by . . on 12/20/25.
 //
 
+import Foundation
 import SwiftUI
 
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
+
+@inline(__always)
+private func wwTempString(_ celsius: Double, unit: UnitTemperature) -> String {
+    let m = Measurement(value: celsius, unit: UnitTemperature.celsius).converted(to: unit)
+    return String(Int(round(m.value)))
+}
+
+@inline(__always)
+private func wwHourString(_ date: Date) -> String {
+    let hour = Calendar.current.component(.hour, from: date)
+    return String(format: "%02d", hour)
+}
+
+@inline(__always)
+private func wwShortTimeString(_ date: Date) -> String {
+    date.formatted(date: .omitted, time: .shortened)
+}
 
 // MARK: - Weather Template
 
@@ -78,7 +96,6 @@ struct WeatherTemplateView: View {
                 )
             }
         }
-        .widgetURL(WidgetWeaverDeepLinks.weatherURL())
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: Date()))
     }
@@ -96,7 +113,7 @@ struct WeatherTemplateView: View {
             return "Weather. Updating."
         }
 
-        let temp = WidgetWeaverWeatherStore.temperatureString(snapshot.temperatureC, unit: unit).value
+        let temp = wwTempString(snapshot.temperatureC, unit: unit)
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let headline = nowcast.primaryText
         return "Weather. \(snapshot.locationName). \(headline). Temperature \(temp)."
@@ -165,6 +182,7 @@ private struct WeatherFilledStateView: View {
                     snapshot: snapshot,
                     unit: unit,
                     now: now,
+                    family: family,
                     metrics: metrics,
                     accent: accent
                 )
@@ -174,6 +192,7 @@ private struct WeatherFilledStateView: View {
                     snapshot: snapshot,
                     unit: unit,
                     now: now,
+                    family: family,
                     metrics: metrics,
                     accent: accent
                 )
@@ -201,6 +220,7 @@ private struct WeatherSmallRainLayout: View {
     let snapshot: WidgetWeaverWeatherSnapshot
     let unit: UnitTemperature
     let now: Date
+    let family: WidgetFamily
     let metrics: WeatherMetrics
     let accent: Color
 
@@ -236,12 +256,12 @@ private struct WeatherSmallRainLayout: View {
             Spacer(minLength: 0)
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(WidgetWeaverWeatherStore.temperatureString(snapshot.temperatureC, unit: unit).value)
+                Text(wwTempString(snapshot.temperatureC, unit: unit))
                     .font(.system(size: metrics.temperatureFontSizeSmall, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                    Text("H \(WidgetWeaverWeatherStore.temperatureString(hi, unit: unit).value)  L \(WidgetWeaverWeatherStore.temperatureString(lo, unit: unit).value)")
+                    Text("H \(wwTempString(hi, unit: unit))  L \(wwTempString(lo, unit: unit))")
                         .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -258,6 +278,7 @@ private struct WeatherMediumRainLayout: View {
     let snapshot: WidgetWeaverWeatherSnapshot
     let unit: UnitTemperature
     let now: Date
+    let family: WidgetFamily
     let metrics: WeatherMetrics
     let accent: Color
 
@@ -290,7 +311,7 @@ private struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text(WidgetWeaverWeatherStore.temperatureString(snapshot.temperatureC, unit: unit).value)
+                Text(wwTempString(snapshot.temperatureC, unit: unit))
                     .font(.system(size: metrics.temperatureFontSizeMedium, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
             }
@@ -319,7 +340,7 @@ private struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(WidgetWeaverWeatherStore.isoTimeString(snapshot.fetchedAt))")
+                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -366,7 +387,7 @@ private struct WeatherLargeRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text(WidgetWeaverWeatherStore.temperatureString(snapshot.temperatureC, unit: unit).value)
+                Text(wwTempString(snapshot.temperatureC, unit: unit))
                     .font(.system(size: metrics.temperatureFontSizeLarge, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
             }
@@ -450,7 +471,7 @@ private struct WeatherLargeRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(WidgetWeaverWeatherStore.isoTimeString(snapshot.fetchedAt))")
+                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -506,7 +527,6 @@ private struct WeatherEmptyStateView: View {
                 }
             }
         }
-        .widgetURL(location == nil ? WidgetWeaverDeepLinks.settingsURL() : WidgetWeaverDeepLinks.weatherURL())
     }
 }
 
@@ -835,8 +855,8 @@ private struct WeatherTomorrow: Hashable {
 
     func hiLoText(unit: UnitTemperature) -> String? {
         guard let hi = day.highTemperatureC, let lo = day.lowTemperatureC else { return nil }
-        let hiText = WidgetWeaverWeatherStore.temperatureString(hi, unit: unit).value
-        let loText = WidgetWeaverWeatherStore.temperatureString(lo, unit: unit).value
+        let hiText = wwTempString(hi, unit: unit)
+        let loText = wwTempString(lo, unit: unit)
         return "H \(hiText)  L \(loText)"
     }
 
@@ -932,7 +952,7 @@ private struct WeatherHourlyRainStrip: View {
         HStack(alignment: .center, spacing: 10) {
             ForEach(points.prefix(8)) { p in
                 VStack(spacing: 4) {
-                    Text(WidgetWeaverWeatherStore.hourString(p.date))
+                    Text(wwHourString(p.date))
                         .font(.system(size: fontSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -943,7 +963,7 @@ private struct WeatherHourlyRainStrip: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
 
-                    Text(WidgetWeaverWeatherStore.temperatureString(p.temperatureC, unit: unit).value)
+                    Text(wwTempString(p.temperatureC, unit: unit))
                         .font(.system(size: fontSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
