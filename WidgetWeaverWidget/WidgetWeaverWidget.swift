@@ -10,6 +10,8 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
+// MARK: - Main Design Widget Entry
+
 struct WidgetWeaverEntry: TimelineEntry {
     let date: Date
     let spec: WidgetSpec
@@ -26,9 +28,7 @@ struct WidgetWeaverSpecEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Widget Design")
     }
 
-    static var defaultQuery: WidgetWeaverSpecEntityQuery {
-        WidgetWeaverSpecEntityQuery()
-    }
+    static var defaultQuery: WidgetWeaverSpecEntityQuery { WidgetWeaverSpecEntityQuery() }
 
     var id: String
     var name: String
@@ -79,7 +79,8 @@ struct WidgetWeaverConfigurationIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "WidgetWeaver Design"
     static let description = IntentDescription("Select which saved design this widget should use.")
 
-    @Parameter(title: "Design") var spec: WidgetWeaverSpecEntity?
+    @Parameter(title: "Design")
+    var spec: WidgetWeaverSpecEntity?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Show \(\.$spec)")
@@ -108,8 +109,8 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let spec = loadSpec(for: configuration)
-        let needsWeather = needsWeatherUpdate(for: spec)
 
+        let needsWeather = needsWeatherUpdate(for: spec)
         if needsWeather {
             _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
         }
@@ -139,6 +140,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             if selected.id == WidgetWeaverSpecEntityIDs.appDefault {
                 return store.loadDefault()
             }
+
             if let uuid = UUID(uuidString: selected.id),
                let spec = store.load(id: uuid) {
                 return spec
@@ -157,6 +159,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
 struct WidgetWeaverWidgetView: View {
     let entry: WidgetWeaverProvider.Entry
+
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
@@ -164,7 +167,7 @@ struct WidgetWeaverWidgetView: View {
     }
 }
 
-// MARK: - Widget
+// MARK: - Main Widget
 
 struct WidgetWeaverWidget: Widget {
     var body: some WidgetConfiguration {
@@ -187,7 +190,6 @@ struct WidgetWeaverWidget: Widget {
 } timeline: {
     WidgetWeaverEntry(date: Date(), spec: .defaultSpec())
 }
-
 
 // MARK: - Lock Screen Weather Widget (AppIntent-based to avoid 'sending' closure errors)
 
@@ -221,6 +223,7 @@ struct WidgetWeaverLockScreenWeatherProvider: AppIntentTimelineProvider {
         }
 
         let snap = store.loadSnapshot()
+
         if context.isPreview && snap == nil {
             return Entry(date: Date(), snapshot: .sampleSunny())
         }
@@ -232,7 +235,6 @@ struct WidgetWeaverLockScreenWeatherProvider: AppIntentTimelineProvider {
         let store = WidgetWeaverWeatherStore.shared
 
         _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded()
-
         let snap = store.loadSnapshot()
 
         var refreshSeconds = store.recommendedRefreshIntervalSeconds()
@@ -248,17 +250,23 @@ struct WidgetWeaverLockScreenWeatherProvider: AppIntentTimelineProvider {
 
 private struct WidgetWeaverLockScreenWeatherView: View {
     let entry: WidgetWeaverLockScreenWeatherEntry
+
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        switch family {
-        case .accessoryInline:
-            Text(inlineText)
-        case .accessoryCircular:
-            circularView
-        default:
-            rectangularView
+        Group {
+            switch family {
+            case .accessoryInline:
+                Text(inlineText)
+            case .accessoryCircular:
+                circularView
+            default:
+                rectangularView
+            }
         }
+        // iOS 17+ requires a widget container background. Without this,
+        // the system can display "Please adopt containerBackground API" and remove the widget.
+        .containerBackground(for: .widget) { Color.clear }
     }
 
     private var inlineText: String {
@@ -369,7 +377,7 @@ private struct WidgetWeaverLockScreenWeatherView: View {
 
         if arr.isEmpty {
             let chance = snapshot.precipitationChance01 ?? (snapshot.hourly.first?.precipitationChance01 ?? 0.0)
-            let text = chance > 0.25 ? "Possible rain" : "Dry next hour"
+            let text = (chance > 0.25) ? "Possible rain" : "Dry next hour"
             return NowcastSummary(primaryText: text, peakChance01: chance, peakIntensityMMPerHour: 0.0)
         }
 
@@ -379,8 +387,7 @@ private struct WidgetWeaverLockScreenWeatherView: View {
             var chance: Double
         }
 
-        @inline(__always)
-        func clamp01(_ v: Double) -> Double { max(0.0, min(1.0, v)) }
+        @inline(__always) func clamp01(_ v: Double) -> Double { max(0.0, min(1.0, v)) }
 
         let samples: [Sample] = arr.map { p in
             let intensity = max(0.0, p.precipitationIntensityMMPerHour ?? 0.0)
@@ -392,16 +399,14 @@ private struct WidgetWeaverLockScreenWeatherView: View {
         let peakChance = samples.map { $0.chance }.max() ?? 0.0
         let peakIntensity = samples.map { $0.intensity }.max() ?? 0.0
 
-        // Expected intensity is used to decide if it's meaningfully wet.
         let wetThreshold: Double = 0.08
-
         let wetIndices: [Int] = samples.enumerated().compactMap { (i, s) in
             let expected = s.intensity * s.chance
-            return expected >= wetThreshold ? i : nil
+            return (expected >= wetThreshold) ? i : nil
         }
 
         if wetIndices.isEmpty {
-            let text = peakChance > 0.25 ? "Low chance showers" : "No rain next hour"
+            let text = (peakChance > 0.25) ? "Low chance showers" : "No rain next hour"
             return NowcastSummary(primaryText: text, peakChance01: peakChance, peakIntensityMMPerHour: peakIntensity)
         }
 
@@ -421,9 +426,7 @@ private struct WidgetWeaverLockScreenWeatherView: View {
     }
 
     private func symbolName(for snapshot: WidgetWeaverWeatherSnapshot, summary: NowcastSummary) -> String {
-        if summary.peakChance01 >= 0.35 {
-            return "cloud.rain.fill"
-        }
+        if summary.peakChance01 >= 0.35 { return "cloud.rain.fill" }
         let name = snapshot.symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "cloud" : name
     }
