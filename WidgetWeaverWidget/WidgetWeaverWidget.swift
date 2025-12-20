@@ -2,7 +2,7 @@
 //  WidgetWeaverWidget.swift
 //  WidgetWeaverWidget
 //
-//  Created by Conor on 12/17/25.
+//  Created by . . on 12/17/25.
 //
 
 import WidgetKit
@@ -148,18 +148,9 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     }
 
     private func needsWeatherUpdate(for spec: WidgetSpec) -> Bool {
-        // Weather template always needs it.
-        if spec.layout.template == .weather { return true }
-
-        // Any design can reference weather variables.
-        let primary = spec.primaryText
-        let secondary = spec.secondaryText ?? ""
-
-        if primary.localizedCaseInsensitiveContains("__weather_") { return true }
-        if secondary.localizedCaseInsensitiveContains("__weather_") { return true }
-
-        return false
+        spec.usesWeatherRendering()
     }
+
 }
 
 // MARK: - Widget view

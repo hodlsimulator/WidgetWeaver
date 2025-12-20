@@ -18,6 +18,8 @@
 		8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
 		E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
+		E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
+		E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
 		E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676902EF232180098B095 /* WidgetKit.framework */; };
 		E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676922EF232180098B095 /* SwiftUI.framework */; };
 		E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -65,6 +67,7 @@
 		C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Image.swift"; sourceTree = "<group>"; };
 		CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Style.swift"; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
+		E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
 		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetWeaverWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E18676902EF232180098B095 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -170,6 +173,7 @@
 				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
 				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
 				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
+				E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */,
 				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
 				F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */,
 				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
@@ -287,6 +291,7 @@
 				E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */,
 				21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
+				E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
 				E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
@@ -302,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+				E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
@@ -332,7 +338,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -352,7 +358,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
@@ -370,7 +376,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -388,7 +394,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;

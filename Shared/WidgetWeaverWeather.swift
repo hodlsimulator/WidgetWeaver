@@ -70,17 +70,21 @@ public struct WidgetWeaverWeatherHourlyPoint: Codable, Hashable, Sendable, Ident
     public var temperatureC: Double
     public var symbolName: String
     public var precipitationChance01: Double?
+    /// Precipitation intensity in **mm/hour**.
+    public var precipitationIntensityMMPerHour: Double?
 
     public init(
         date: Date,
         temperatureC: Double,
         symbolName: String,
-        precipitationChance01: Double?
+        precipitationChance01: Double?,
+        precipitationIntensityMMPerHour: Double? = nil
     ) {
         self.date = date
         self.temperatureC = temperatureC
         self.symbolName = symbolName
         self.precipitationChance01 = precipitationChance01
+        self.precipitationIntensityMMPerHour = precipitationIntensityMMPerHour
     }
 }
 
@@ -107,6 +111,24 @@ public struct WidgetWeaverWeatherDailyPoint: Codable, Hashable, Sendable, Identi
     }
 }
 
+public struct WidgetWeaverWeatherMinutePoint: Codable, Hashable, Sendable, Identifiable {
+    public var id: Date { date }
+    public var date: Date
+    public var precipitationChance01: Double?
+    /// Precipitation intensity in **mm/hour**.
+    public var precipitationIntensityMMPerHour: Double?
+
+    public init(
+        date: Date,
+        precipitationChance01: Double?,
+        precipitationIntensityMMPerHour: Double?
+    ) {
+        self.date = date
+        self.precipitationChance01 = precipitationChance01
+        self.precipitationIntensityMMPerHour = precipitationIntensityMMPerHour
+    }
+}
+
 public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
     public var fetchedAt: Date
     public var locationName: String
@@ -121,6 +143,8 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
     public var humidity01: Double?
     public var highTemperatureC: Double?
     public var lowTemperatureC: Double?
+    /// Minute-by-minute precipitation points for the next ~hour when available.
+    public var minute: [WidgetWeaverWeatherMinutePoint]?
     public var hourly: [WidgetWeaverWeatherHourlyPoint]
     public var daily: [WidgetWeaverWeatherDailyPoint]
 
@@ -138,6 +162,7 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
         humidity01: Double?,
         highTemperatureC: Double?,
         lowTemperatureC: Double?,
+        minute: [WidgetWeaverWeatherMinutePoint]? = nil,
         hourly: [WidgetWeaverWeatherHourlyPoint],
         daily: [WidgetWeaverWeatherDailyPoint]
     ) {
@@ -154,6 +179,7 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
         self.humidity01 = humidity01
         self.highTemperatureC = highTemperatureC
         self.lowTemperatureC = lowTemperatureC
+        self.minute = minute
         self.hourly = hourly
         self.daily = daily
     }
@@ -161,6 +187,43 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
     public static func sampleSunny(now: Date = Date()) -> WidgetWeaverWeatherSnapshot {
         let cal = Calendar.current
         let base = cal.dateInterval(of: .hour, for: now)?.start ?? now
+
+        let minuteBase = cal.dateInterval(of: .minute, for: now)?.start ?? now
+
+        let minute: [WidgetWeaverWeatherMinutePoint] = (0..<60).compactMap { i in
+            guard let d = cal.date(byAdding: .minute, value: i, to: minuteBase) else { return nil }
+
+            // A simple "rain comes and goes" pattern so previews show the nowcast chart.
+            let intensity: Double
+            let chance: Double
+
+            switch i {
+            case 0..<10:
+                intensity = 0.0
+                chance = 0.08
+            case 10..<20:
+                intensity = 0.25
+                chance = 0.35
+            case 20..<35:
+                intensity = 0.90
+                chance = 0.75
+            case 35..<45:
+                intensity = 1.60
+                chance = 0.85
+            case 45..<55:
+                intensity = 0.55
+                chance = 0.55
+            default:
+                intensity = 0.0
+                chance = 0.15
+            }
+
+            return WidgetWeaverWeatherMinutePoint(
+                date: d,
+                precipitationChance01: chance,
+                precipitationIntensityMMPerHour: intensity
+            )
+        }
 
         let hourly: [WidgetWeaverWeatherHourlyPoint] = (0..<8).compactMap { i in
             guard let d = cal.date(byAdding: .hour, value: i, to: base) else { return nil }
@@ -198,6 +261,7 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
             humidity01: 0.55,
             highTemperatureC: 23.0,
             lowTemperatureC: 14.0,
+            minute: minute,
             hourly: hourly,
             daily: daily
         )
@@ -396,7 +460,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Rendering helpers
 
     public func recommendedRefreshIntervalSeconds() -> TimeInterval {
-        60 * 30
+        60 * 10
     }
 
     public func snapshotForRender(context: WidgetWeaverRenderContext) -> WidgetWeaverWeatherSnapshot? {
@@ -538,7 +602,7 @@ public actor WidgetWeaverWeatherEngine {
         }
     }
 
-    public var minimumUpdateInterval: TimeInterval = 60 * 20
+    public var minimumUpdateInterval: TimeInterval = 60 * 10
     private var inFlight: Task<Result, Never>?
 
     public func updateIfNeeded(force: Bool = false) async -> Result {
@@ -624,6 +688,24 @@ public actor WidgetWeaverWeatherEngine {
         let now = Date()
         let current = weather.currentWeather
 
+        @inline(__always)
+        func mmPerHour(_ intensity: Measurement<UnitSpeed>) -> Double {
+            // Convert to m/s first (always available), then to mm/hour.
+            let mps = intensity.converted(to: .metersPerSecond).value
+            return mps * 3_600_000.0
+        }
+
+        let minute: [WidgetWeaverWeatherMinutePoint] = {
+            guard let mf = weather.minuteForecast else { return [] }
+            return mf.forecast.prefix(60).map { m in
+                WidgetWeaverWeatherMinutePoint(
+                    date: m.date,
+                    precipitationChance01: m.precipitationChance,
+                    precipitationIntensityMMPerHour: mmPerHour(m.precipitationIntensity)
+                )
+            }
+        }()
+
         let precipChance01 = weather.hourlyForecast.forecast.first?.precipitationChance
 
         let today = weather.dailyForecast.forecast.first.map { day -> WidgetWeaverWeatherDailyPoint in
@@ -641,7 +723,8 @@ public actor WidgetWeaverWeatherEngine {
                 date: h.date,
                 temperatureC: h.temperature.converted(to: .celsius).value,
                 symbolName: h.symbolName,
-                precipitationChance01: h.precipitationChance
+                precipitationChance01: h.precipitationChance,
+                precipitationIntensityMMPerHour: mmPerHour(h.precipitationIntensity)
             )
         }
 
@@ -669,6 +752,7 @@ public actor WidgetWeaverWeatherEngine {
             humidity01: current.humidity,
             highTemperatureC: today?.highTemperatureC,
             lowTemperatureC: today?.lowTemperatureC,
+            minute: minute,
             hourly: hourly,
             daily: daily
         )
