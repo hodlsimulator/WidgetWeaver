@@ -207,6 +207,7 @@ struct WidgetWeaverWeatherSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshLocationAuthStatus()
         }
+        .tint(.blue)
     }
 
     private var currentLocationButtonTitle: String {
