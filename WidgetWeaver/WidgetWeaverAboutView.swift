@@ -2,6 +2,8 @@
 //  WidgetWeaverAboutView.swift
 //  WidgetWeaver
 //
+//  Created by . . on 12/18/25.
+//
 
 import Foundation
 import SwiftUI
@@ -24,9 +26,9 @@ struct WidgetWeaverAboutView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var designCount: Int = 0
-    @State private var statusMessage: String = ""
-    @State private var showWeatherSettings: Bool = false
+    @State var designCount: Int = 0
+    @State var statusMessage: String = ""
+    @State var showWeatherSettings: Bool = false
 
     @State private var showCalendarAccessExplainer: Bool = false
     @State private var showCalendarDeniedAlert: Bool = false
@@ -129,7 +131,7 @@ struct WidgetWeaverAboutView: View {
     }
 
     @MainActor
-    private func presentCalendarPermissionFlow() {
+    func presentCalendarPermissionFlow() {
         switch calendarPermissionState() {
         case .granted:
             Task {
