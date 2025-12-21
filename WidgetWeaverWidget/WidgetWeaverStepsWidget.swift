@@ -49,8 +49,8 @@ struct WidgetWeaverLockScreenStepsProvider: TimelineProvider {
         }
 
         let store = WidgetWeaverStepsStore.shared
-        let hasAccess = (WidgetWeaverStepsEngine.shared.authorisationStatus() == .authorised)
         let snap = store.snapshotForToday()
+        let hasAccess = (snap != nil)
         completion(Entry(date: Date(), hasAccess: hasAccess, snapshot: snap, goalSteps: store.loadGoalSteps()))
     }
 
@@ -65,8 +65,8 @@ struct WidgetWeaverLockScreenStepsProvider: TimelineProvider {
 
             let store = WidgetWeaverStepsStore.shared
             let now = Date()
-            let hasAccess = isPreview ? true : (WidgetWeaverStepsEngine.shared.authorisationStatus() == .authorised)
             let snap = isPreview ? WidgetWeaverStepsSnapshot.sample(now: now, steps: 7345) : store.snapshotForToday(now: now)
+            let hasAccess = isPreview ? true : (snap != nil)
             let goal = store.loadGoalSteps()
 
             let refresh = store.recommendedRefreshIntervalSeconds()
@@ -85,12 +85,10 @@ struct WidgetWeaverLockScreenStepsView: View {
 
     var body: some View {
         Group {
-            if !entry.hasAccess {
-                accessOffView
-            } else if let snap = entry.snapshot {
+            if let snap = entry.snapshot {
                 stepsView(steps: snap.stepsToday, goal: entry.goalSteps)
             } else {
-                updatingView
+                accessOffView
             }
         }
         .containerBackground(for: .widget) { Color.clear }
@@ -102,14 +100,14 @@ struct WidgetWeaverLockScreenStepsView: View {
         case .accessoryInline:
             HStack(spacing: 4) {
                 Image(systemName: "figure.walk")
-                Text("Steps off")
+                Text("Open app")
             }
 
         case .accessoryCircular:
             VStack(spacing: 2) {
                 Image(systemName: "figure.walk")
                     .font(.headline)
-                Text("Off")
+                Text("Open")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -118,45 +116,14 @@ struct WidgetWeaverLockScreenStepsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Steps")
                     .font(.headline)
-                Text("Open the app to enable Health access.")
+                Text("Open the app to enable Health access and fetch steps once.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
 
         default:
-            Text("Steps off")
-        }
-    }
-
-    @ViewBuilder
-    private var updatingView: some View {
-        switch family {
-        case .accessoryInline:
-            HStack(spacing: 4) {
-                Image(systemName: "figure.walk")
-                Text("Updating…")
-            }
-
-        case .accessoryCircular:
-            VStack(spacing: 2) {
-                ProgressView()
-                Image(systemName: "figure.walk")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-        case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Steps")
-                    .font(.headline)
-                Text("Updating…")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-        default:
-            Text("Updating…")
+            Text("Open app")
         }
     }
 
