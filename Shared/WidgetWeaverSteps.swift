@@ -8,9 +8,6 @@
 //
 
 import Foundation
-#if canImport(WidgetKit)
-import WidgetKit
-#endif
 #if canImport(HealthKit)
 @preconcurrency import HealthKit
 #endif
@@ -120,6 +117,24 @@ public struct WidgetWeaverStepsUpdateResult: Sendable {
     }
 }
 
+#if canImport(HealthKit)
+public enum WidgetWeaverStepsProbeFailure: Error, Sendable {
+    case notDetermined
+    case denied
+    case unavailable
+    case unknown
+
+    public var status: WidgetWeaverStepsAuthorisationStatus {
+        switch self {
+        case .notDetermined: return .notDetermined
+        case .denied: return .denied
+        case .unavailable: return .unavailable
+        case .unknown: return .denied
+        }
+    }
+}
+#endif
+
 public final class WidgetWeaverStepsEngine: @unchecked Sendable {
     public static let shared = WidgetWeaverStepsEngine()
 
@@ -130,20 +145,31 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
 
     private init() {}
 
+    // Synchronous hint only. For real read access, use readAuthorisationStatus().
     public func authorisationStatus() -> WidgetWeaverStepsAuthorisationStatus {
         #if canImport(HealthKit)
         guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
         guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return .unavailable }
 
-        switch healthStore.authorizationStatus(for: stepType) {
-        case .notDetermined:
-            return .notDetermined
-        case .sharingDenied:
-            return .denied
-        case .sharingAuthorized:
+        let shareStatus = healthStore.authorizationStatus(for: stepType)
+        if shareStatus == .notDetermined { return .notDetermined }
+        return .authorised
+        #else
+        return .unavailable
+        #endif
+    }
+
+    public func readAuthorisationStatus() async -> WidgetWeaverStepsAuthorisationStatus {
+        #if canImport(HealthKit)
+        guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
+        guard HKQuantityType.quantityType(forIdentifier: .stepCount) != nil else { return .unavailable }
+
+        let now = Date()
+        switch await probeTodayStepCount(now: now) {
+        case .success:
             return .authorised
-        @unknown default:
-            return .unavailable
+        case .failure(let failure):
+            return failure.status
         }
         #else
         return .unavailable
@@ -169,13 +195,6 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
         let now = Date()
         let refreshWindow = store.recommendedRefreshIntervalSeconds()
 
-        if authorisationStatus() != .authorised {
-            return WidgetWeaverStepsUpdateResult(
-                snapshot: store.snapshotForToday(now: now),
-                errorDescription: "Steps access is not authorised."
-            )
-        }
-
         if !force, let existing = store.snapshotForToday(now: now) {
             let age = now.timeIntervalSince(existing.fetchedAt)
             if age >= 0, age < refreshWindow {
@@ -183,8 +202,9 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             }
         }
 
-        do {
-            let steps = try await queryTodayStepCount(now: now)
+        #if canImport(HealthKit)
+        switch await probeTodayStepCount(now: now) {
+        case .success(let steps):
             let calendar = Calendar.autoupdatingCurrent
             let snap = WidgetWeaverStepsSnapshot(
                 stepsToday: steps,
@@ -193,15 +213,53 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             )
             store.saveSnapshot(snap)
             return WidgetWeaverStepsUpdateResult(snapshot: snap)
-        } catch {
+
+        case .failure(let failure):
+            let status = failure.status
+            let message: String = {
+                switch status {
+                case .unavailable:
+                    return "Health data is unavailable."
+                case .notDetermined:
+                    return "Steps access has not been enabled yet."
+                case .denied:
+                    return "Steps access is denied."
+                case .authorised:
+                    return "Unknown steps access state."
+                }
+            }()
             return WidgetWeaverStepsUpdateResult(
                 snapshot: store.snapshotForToday(now: now),
-                errorDescription: String(describing: error)
+                errorDescription: message
             )
         }
+        #else
+        return WidgetWeaverStepsUpdateResult(
+            snapshot: store.snapshotForToday(now: now),
+            errorDescription: "Health data is unavailable."
+        )
+        #endif
     }
 
     #if canImport(HealthKit)
+    private func probeTodayStepCount(now: Date) async -> Result<Int, WidgetWeaverStepsProbeFailure> {
+        do {
+            let steps = try await queryTodayStepCount(now: now)
+            return .success(steps)
+        } catch {
+            let ns = error as NSError
+            if ns.domain == HKErrorDomain {
+                if ns.code == HKError.errorAuthorizationNotDetermined.rawValue {
+                    return .failure(.notDetermined)
+                }
+                if ns.code == HKError.errorAuthorizationDenied.rawValue {
+                    return .failure(.denied)
+                }
+            }
+            return .failure(.unknown)
+        }
+    }
+
     private func queryTodayStepCount(now: Date) async throws -> Int {
         guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return 0 }
 

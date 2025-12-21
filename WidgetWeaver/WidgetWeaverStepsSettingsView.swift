@@ -17,7 +17,7 @@ struct WidgetWeaverStepsSettingsView: View {
     @State private var isWorking: Bool = false
     @State private var statusText: String? = nil
 
-    @State private var authStatus: WidgetWeaverStepsAuthorisationStatus = WidgetWeaverStepsEngine.shared.authorisationStatus()
+    @State private var authStatus: WidgetWeaverStepsAuthorisationStatus = .notDetermined
     @State private var snapshot: WidgetWeaverStepsSnapshot? = WidgetWeaverStepsStore.shared.snapshotForToday()
     @State private var goalSteps: Int = WidgetWeaverStepsStore.shared.loadGoalSteps()
 
@@ -55,7 +55,7 @@ struct WidgetWeaverStepsSettingsView: View {
                     Spacer()
 
                     Button("Refresh") {
-                        refreshLocalState()
+                        Task { await refreshLocalState() }
                     }
                     .disabled(isWorking)
                 }
@@ -86,11 +86,16 @@ struct WidgetWeaverStepsSettingsView: View {
             }
 
             Section("Goal") {
-                Stepper("Daily goal: \(goalSteps.formatted(.number.grouping(.automatic)))", value: $goalSteps, in: 500...200_000, step: 500)
-                    .onChange(of: goalSteps) { _, newValue in
-                        store.saveGoalSteps(newValue)
-                        reloadWidgets()
-                    }
+                Stepper(
+                    "Daily goal: \(goalSteps.formatted(.number.grouping(.automatic)))",
+                    value: $goalSteps,
+                    in: 500...200_000,
+                    step: 500
+                )
+                .onChange(of: goalSteps) { _, newValue in
+                    store.saveGoalSteps(newValue)
+                    reloadWidgets()
+                }
 
                 Text("The circular widget shows progress towards this goal.")
                     .font(.caption)
@@ -117,11 +122,11 @@ struct WidgetWeaverStepsSettingsView: View {
                 } label: {
                     Label("Update now", systemImage: "arrow.clockwise")
                 }
-                .disabled(isWorking || authStatus != .authorised)
+                .disabled(isWorking)
 
                 Button(role: .destructive) {
                     store.clearSnapshot()
-                    refreshLocalState()
+                    Task { await refreshLocalState() }
                     reloadWidgets()
                 } label: {
                     Label("Clear cached steps", systemImage: "trash")
@@ -146,7 +151,7 @@ struct WidgetWeaverStepsSettingsView: View {
             }
         }
         .onAppear {
-            refreshLocalState()
+            Task { await refreshLocalState() }
         }
     }
 
@@ -190,10 +195,16 @@ struct WidgetWeaverStepsSettingsView: View {
         }
     }
 
-    private func refreshLocalState() {
-        authStatus = engine.authorisationStatus()
-        snapshot = store.snapshotForToday()
-        goalSteps = store.loadGoalSteps()
+    private func refreshLocalState() async {
+        let status = await engine.readAuthorisationStatus()
+        let snap = store.snapshotForToday()
+        let goal = store.loadGoalSteps()
+
+        await MainActor.run {
+            authStatus = status
+            snapshot = snap
+            goalSteps = goal
+        }
     }
 
     private func reloadWidgets() {
@@ -201,22 +212,16 @@ struct WidgetWeaverStepsSettingsView: View {
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenSteps)
             WidgetCenter.shared.reloadAllTimelines()
-            if #available(iOS 17.0, *) {
-                WidgetCenter.shared.invalidateConfigurationRecommendations()
-            }
         }
     }
 
     private func requestAccess() async {
         isWorking = true
         statusText = nil
-        defer {
-            isWorking = false
-            refreshLocalState()
-        }
+        defer { isWorking = false }
 
         let ok = await engine.requestReadAuthorisation()
-        refreshLocalState()
+        await refreshLocalState()
 
         if ok, authStatus == .authorised {
             statusText = "Steps access enabled."
@@ -229,17 +234,14 @@ struct WidgetWeaverStepsSettingsView: View {
     private func updateNow(force: Bool) async {
         isWorking = true
         statusText = nil
-        defer {
-            isWorking = false
-            refreshLocalState()
-        }
+        defer { isWorking = false }
 
         let result = await engine.updateIfNeeded(force: force)
-        refreshLocalState()
+        await refreshLocalState()
         reloadWidgets()
 
         if let err = result.errorDescription {
-            statusText = "Update finished with an issue: \(err)"
+            statusText = err
         } else {
             statusText = "Updated."
         }
