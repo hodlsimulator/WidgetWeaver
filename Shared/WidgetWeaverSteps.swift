@@ -107,6 +107,16 @@ public enum WidgetWeaverStepsAuthorisationStatus: Sendable, Equatable {
     case authorised
 }
 
+public struct WidgetWeaverStepsReadProbe: Sendable, Equatable {
+    public let status: WidgetWeaverStepsAuthorisationStatus
+    public let debug: String?
+
+    public init(status: WidgetWeaverStepsAuthorisationStatus, debug: String?) {
+        self.status = status
+        self.debug = debug
+    }
+}
+
 public struct WidgetWeaverStepsUpdateResult: Sendable {
     public let snapshot: WidgetWeaverStepsSnapshot?
     public let errorDescription: String?
@@ -118,19 +128,13 @@ public struct WidgetWeaverStepsUpdateResult: Sendable {
 }
 
 #if canImport(HealthKit)
-public enum WidgetWeaverStepsProbeFailure: Error, Sendable {
-    case notDetermined
-    case denied
-    case unavailable
-    case unknown
+public struct WidgetWeaverStepsProbeFailure: Error, Sendable, Equatable {
+    public let status: WidgetWeaverStepsAuthorisationStatus
+    public let debugMessage: String
 
-    public var status: WidgetWeaverStepsAuthorisationStatus {
-        switch self {
-        case .notDetermined: return .notDetermined
-        case .denied: return .denied
-        case .unavailable: return .unavailable
-        case .unknown: return .denied
-        }
+    public init(status: WidgetWeaverStepsAuthorisationStatus, debugMessage: String) {
+        self.status = status
+        self.debugMessage = debugMessage
     }
 }
 #endif
@@ -145,37 +149,6 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
 
     private init() {}
 
-    // Synchronous hint only. For real read access, use readAuthorisationStatus().
-    public func authorisationStatus() -> WidgetWeaverStepsAuthorisationStatus {
-        #if canImport(HealthKit)
-        guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
-        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return .unavailable }
-
-        let shareStatus = healthStore.authorizationStatus(for: stepType)
-        if shareStatus == .notDetermined { return .notDetermined }
-        return .authorised
-        #else
-        return .unavailable
-        #endif
-    }
-
-    public func readAuthorisationStatus() async -> WidgetWeaverStepsAuthorisationStatus {
-        #if canImport(HealthKit)
-        guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
-        guard HKQuantityType.quantityType(forIdentifier: .stepCount) != nil else { return .unavailable }
-
-        let now = Date()
-        switch await probeTodayStepCount(now: now) {
-        case .success:
-            return .authorised
-        case .failure(let failure):
-            return failure.status
-        }
-        #else
-        return .unavailable
-        #endif
-    }
-
     public func requestReadAuthorisation() async -> Bool {
         #if canImport(HealthKit)
         guard HKHealthStore.isHealthDataAvailable() else { return false }
@@ -188,6 +161,27 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
         }
         #else
         return false
+        #endif
+    }
+
+    public func readAuthorisationProbe() async -> WidgetWeaverStepsReadProbe {
+        #if canImport(HealthKit)
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return WidgetWeaverStepsReadProbe(status: .unavailable, debug: "Health data unavailable on this device.")
+        }
+        guard HKQuantityType.quantityType(forIdentifier: .stepCount) != nil else {
+            return WidgetWeaverStepsReadProbe(status: .unavailable, debug: "StepCount quantity type unavailable.")
+        }
+
+        let now = Date()
+        switch await probeTodayStepCount(now: now) {
+        case .success:
+            return WidgetWeaverStepsReadProbe(status: .authorised, debug: nil)
+        case .failure(let failure):
+            return WidgetWeaverStepsReadProbe(status: failure.status, debug: failure.debugMessage)
+        }
+        #else
+        return WidgetWeaverStepsReadProbe(status: .unavailable, debug: "HealthKit not available.")
         #endif
     }
 
@@ -215,28 +209,23 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             return WidgetWeaverStepsUpdateResult(snapshot: snap)
 
         case .failure(let failure):
-            let status = failure.status
-            let message: String = {
-                switch status {
-                case .unavailable:
-                    return "Health data is unavailable."
-                case .notDetermined:
-                    return "Steps access has not been enabled yet."
-                case .denied:
-                    return "Steps access is denied."
-                case .authorised:
-                    return "Unknown steps access state."
+            let headline: String = {
+                switch failure.status {
+                case .authorised: return "Steps authorised."
+                case .notDetermined: return "Steps access not enabled yet."
+                case .denied: return "Steps access denied."
+                case .unavailable: return "Health data unavailable."
                 }
             }()
             return WidgetWeaverStepsUpdateResult(
                 snapshot: store.snapshotForToday(now: now),
-                errorDescription: message
+                errorDescription: "\(headline)\n\(failure.debugMessage)"
             )
         }
         #else
         return WidgetWeaverStepsUpdateResult(
             snapshot: store.snapshotForToday(now: now),
-            errorDescription: "Health data is unavailable."
+            errorDescription: "HealthKit not available."
         )
         #endif
     }
@@ -248,15 +237,25 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             return .success(steps)
         } catch {
             let ns = error as NSError
+
+            var debug = "\(ns.domain) (\(ns.code)): \(ns.localizedDescription)"
+            if let reason = ns.userInfo[NSLocalizedFailureReasonErrorKey] as? String, !reason.isEmpty {
+                debug += " — \(reason)"
+            }
+
             if ns.domain == HKErrorDomain {
                 if ns.code == HKError.errorAuthorizationNotDetermined.rawValue {
-                    return .failure(.notDetermined)
+                    return .failure(WidgetWeaverStepsProbeFailure(status: .notDetermined, debugMessage: debug))
                 }
                 if ns.code == HKError.errorAuthorizationDenied.rawValue {
-                    return .failure(.denied)
+                    return .failure(WidgetWeaverStepsProbeFailure(status: .denied, debugMessage: debug))
+                }
+                if ns.code == HKError.errorHealthDataUnavailable.rawValue {
+                    return .failure(WidgetWeaverStepsProbeFailure(status: .unavailable, debugMessage: debug))
                 }
             }
-            return .failure(.unknown)
+
+            return .failure(WidgetWeaverStepsProbeFailure(status: .denied, debugMessage: debug))
         }
     }
 
