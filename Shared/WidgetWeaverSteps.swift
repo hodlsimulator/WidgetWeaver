@@ -728,13 +728,13 @@ public actor WidgetWeaverStepsEngine {
         } catch {
             let ns = error as NSError
 
-            if isAuthorisationNotDeterminedError(ns) {
+            if Self.isAuthorisationNotDeterminedError(ns) {
                 store.saveLastAccess(.notDetermined)
                 store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
                 return Result(snapshot: store.snapshotForToday(), access: .notDetermined, errorDescription: store.loadLastError())
             }
 
-            if isAuthorisationDeniedError(ns) {
+            if Self.isAuthorisationDeniedError(ns) {
                 store.saveLastAccess(.denied)
                 store.saveLastError("Steps access is denied. Enable it in the Health app (Sharing → Apps → WidgetWeaver).")
                 return Result(snapshot: store.snapshotForToday(), access: .denied, errorDescription: store.loadLastError())
@@ -812,13 +812,13 @@ public actor WidgetWeaverStepsEngine {
         } catch {
             let ns = error as NSError
 
-            if isAuthorisationNotDeterminedError(ns) {
+            if Self.isAuthorisationNotDeterminedError(ns) {
                 store.saveLastAccess(.notDetermined)
                 store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
                 return store.loadHistory()
             }
 
-            if isAuthorisationDeniedError(ns) {
+            if Self.isAuthorisationDeniedError(ns) {
                 store.saveLastAccess(.denied)
                 store.saveLastError("Steps access is denied. Enable it in the Health app (Sharing → Apps → WidgetWeaver).")
                 return store.loadHistory()
@@ -844,14 +844,14 @@ public actor WidgetWeaverStepsEngine {
         }
     }
 
-    private func isHealthKitDomain(_ domain: String) -> Bool {
+    nonisolated private static func isHealthKitDomain(_ domain: String) -> Bool {
         if domain == HKErrorDomain { return true }
         if domain == "com.apple.healthkit" { return true }
         return false
     }
 
-    private func isNoDataAvailableError(_ ns: NSError) -> Bool {
-        if isHealthKitDomain(ns.domain) && ns.code == 11 { return true }
+    nonisolated private static func isNoDataAvailableError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 11 { return true }
         let d = ns.localizedDescription.lowercased()
         if d.contains("no data available") { return true }
         let r = (ns.userInfo[NSLocalizedFailureReasonErrorKey] as? String)?.lowercased() ?? ""
@@ -859,16 +859,16 @@ public actor WidgetWeaverStepsEngine {
         return false
     }
 
-    private func isAuthorisationNotDeterminedError(_ ns: NSError) -> Bool {
-        if isHealthKitDomain(ns.domain) && ns.code == 5 { return true }
+    nonisolated private static func isAuthorisationNotDeterminedError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 5 { return true }
         let d = ns.localizedDescription.lowercased()
         if d.contains("authorization not determined") { return true }
         if d.contains("authorisation not determined") { return true }
         return false
     }
 
-    private func isAuthorisationDeniedError(_ ns: NSError) -> Bool {
-        if isHealthKitDomain(ns.domain) && ns.code == 4 { return true }
+    nonisolated private static func isAuthorisationDeniedError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 4 { return true }
         let d = ns.localizedDescription.lowercased()
         if d.contains("authorization denied") { return true }
         if d.contains("authorisation denied") { return true }
@@ -888,7 +888,7 @@ public actor WidgetWeaverStepsEngine {
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKStatisticsQuery(quantityType: stepsType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
                 if let error = error as NSError? {
-                    if self.isNoDataAvailableError(error) {
+                    if Self.isNoDataAvailableError(error) {
                         let snap = WidgetWeaverStepsSnapshot(fetchedAt: now, startOfDay: start, steps: 0)
                         continuation.resume(returning: snap)
                         return
@@ -914,7 +914,7 @@ public actor WidgetWeaverStepsEngine {
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
             let query = HKSampleQuery(sampleType: stepsType, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, error in
                 if let error = error as NSError? {
-                    if self.isNoDataAvailableError(error) {
+                    if Self.isNoDataAvailableError(error) {
                         continuation.resume(returning: nil)
                         return
                     }
@@ -927,7 +927,12 @@ public actor WidgetWeaverStepsEngine {
         }
     }
 
-    private func fetchDailySteps(healthStore: HKHealthStore, stepsType: HKQuantityType, startDay: Date, endDay: Date) async throws -> [WidgetWeaverStepsDayPoint] {
+    private func fetchDailySteps(
+        healthStore: HKHealthStore,
+        stepsType: HKQuantityType,
+        startDay: Date,
+        endDay: Date
+    ) async throws -> [WidgetWeaverStepsDayPoint] {
         let cal = Calendar.autoupdatingCurrent
 
         let start = cal.startOfDay(for: startDay)
@@ -948,7 +953,7 @@ public actor WidgetWeaverStepsEngine {
 
             query.initialResultsHandler = { _, results, error in
                 if let error = error as NSError? {
-                    if self.isNoDataAvailableError(error) {
+                    if Self.isNoDataAvailableError(error) {
                         continuation.resume(returning: [])
                         return
                     }
