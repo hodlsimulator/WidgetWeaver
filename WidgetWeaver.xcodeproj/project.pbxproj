@@ -384,6 +384,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;
@@ -407,6 +408,7 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;
