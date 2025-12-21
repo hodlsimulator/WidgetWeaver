@@ -15,5 +15,6 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverLockScreenWeatherWidget()
         WidgetWeaverLockScreenNextUpWidget()
         WidgetWeaverLockScreenStepsWidget()
+        WidgetWeaverHomeScreenStepsWidget()
     }
 }

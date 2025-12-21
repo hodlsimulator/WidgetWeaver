@@ -1,32 +1,26 @@
 //
 //  WidgetWeaverStepsWidget.swift
-//  WidgetWeaver
+//  WidgetWeaverWidget
 //
-//  Created by . . on 12/21/25.
+//  Created by . . on 12/19/25.
 //
 
 import WidgetKit
 import SwiftUI
-import Foundation
 
-private final class WidgetWeaverCompletionBox<T>: @unchecked Sendable {
-    let handler: (T) -> Void
-    init(_ handler: @escaping (T) -> Void) {
-        self.handler = handler
-    }
-}
+// MARK: - Lock Screen Steps
 
 public struct WidgetWeaverLockScreenStepsEntry: TimelineEntry {
     public let date: Date
-    public let hasAccess: Bool
+    public let access: WidgetWeaverStepsAccess
     public let snapshot: WidgetWeaverStepsSnapshot?
-    public let goalSteps: Int
+    public let goal: Int
 
-    public init(date: Date, hasAccess: Bool, snapshot: WidgetWeaverStepsSnapshot?, goalSteps: Int) {
+    public init(date: Date, access: WidgetWeaverStepsAccess, snapshot: WidgetWeaverStepsSnapshot?, goal: Int) {
         self.date = date
-        self.hasAccess = hasAccess
+        self.access = access
         self.snapshot = snapshot
-        self.goalSteps = goalSteps
+        self.goal = goal
     }
 }
 
@@ -34,155 +28,128 @@ struct WidgetWeaverLockScreenStepsProvider: TimelineProvider {
     typealias Entry = WidgetWeaverLockScreenStepsEntry
 
     func placeholder(in context: Context) -> Entry {
-        Entry(
-            date: Date(),
-            hasAccess: true,
-            snapshot: .sample(steps: 7345),
-            goalSteps: 10_000
-        )
+        Entry(date: Date(), access: .authorised, snapshot: .sample(), goal: 10_000)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        if context.isPreview {
-            completion(placeholder(in: context))
-            return
-        }
-
         let store = WidgetWeaverStepsStore.shared
-        let snap = store.snapshotForToday()
-        let hasAccess = (snap != nil)
-        completion(Entry(date: Date(), hasAccess: hasAccess, snapshot: snap, goalSteps: store.loadGoalSteps()))
+        let goal = store.loadGoalSteps()
+        let access: WidgetWeaverStepsAccess = context.isPreview ? .authorised : store.loadLastAccess()
+        let snap = context.isPreview ? WidgetWeaverStepsSnapshot.sample() : store.snapshotForToday()
+        completion(Entry(date: Date(), access: access, snapshot: snap, goal: goal))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        let isPreview = context.isPreview
-        let completionBox = WidgetWeaverCompletionBox(completion)
-
-        Task {
-            if !isPreview {
+        if !context.isPreview {
+            Task.detached(priority: .utility) {
                 _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
             }
-
-            let store = WidgetWeaverStepsStore.shared
-            let now = Date()
-            let snap = isPreview ? WidgetWeaverStepsSnapshot.sample(now: now, steps: 7345) : store.snapshotForToday(now: now)
-            let hasAccess = isPreview ? true : (snap != nil)
-            let goal = store.loadGoalSteps()
-
-            let refresh = store.recommendedRefreshIntervalSeconds()
-            let entry = Entry(date: now, hasAccess: hasAccess, snapshot: snap, goalSteps: goal)
-            let timeline = Timeline(entries: [entry], policy: .after(now.addingTimeInterval(refresh)))
-
-            completionBox.handler(timeline)
         }
+
+        let store = WidgetWeaverStepsStore.shared
+        let goal = store.loadGoalSteps()
+        let access: WidgetWeaverStepsAccess = context.isPreview ? .authorised : store.loadLastAccess()
+        let snap = context.isPreview ? WidgetWeaverStepsSnapshot.sample() : store.snapshotForToday()
+
+        let now = Date()
+        let refresh = max(60, store.recommendedRefreshIntervalSeconds())
+        let next = now.addingTimeInterval(refresh)
+
+        let entry = Entry(date: now, access: access, snapshot: snap, goal: goal)
+        completion(Timeline(entries: [entry], policy: .after(next)))
     }
 }
 
 struct WidgetWeaverLockScreenStepsView: View {
     let entry: WidgetWeaverLockScreenStepsEntry
-
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
         Group {
-            if let snap = entry.snapshot {
-                stepsView(steps: snap.stepsToday, goal: entry.goalSteps)
-            } else {
-                accessOffView
+            switch entry.access {
+            case .denied, .notDetermined, .notAvailable:
+                lockedView
+            case .unknown, .authorised:
+                contentView
             }
         }
-        .containerBackground(for: .widget) { Color.clear }
+        .wwWidgetContainerBackground()
     }
 
     @ViewBuilder
-    private var accessOffView: some View {
+    private var lockedView: some View {
         switch family {
         case .accessoryInline:
-            HStack(spacing: 4) {
-                Image(systemName: "figure.walk")
-                Text("Open app")
-            }
-
+            Text("Steps: Open app")
         case .accessoryCircular:
             VStack(spacing: 2) {
-                Image(systemName: "figure.walk")
+                Text("—")
                     .font(.headline)
-                Text("Open")
+                Image(systemName: "figure.walk")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-
-        case .accessoryRectangular:
+        default:
             VStack(alignment: .leading, spacing: 3) {
                 Text("Steps")
                     .font(.headline)
-                Text("Open the app to enable Health access and fetch steps once.")
+                Text(entry.access == .denied ? "Denied" : "Open app to enable")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
-
-        default:
-            Text("Open app")
         }
     }
 
     @ViewBuilder
-    private func stepsView(steps: Int, goal: Int) -> some View {
-        let stepsText = steps.formatted(.number.grouping(.automatic))
-        let goalValue = max(1, goal)
-        let fraction = min(1.0, Double(max(0, steps)) / Double(goalValue))
-        let pct = Int((fraction * 100.0).rounded())
+    private var contentView: some View {
+        let goal = max(0, entry.goal)
+        let steps = entry.snapshot?.steps ?? 0
+        let fraction = (goal > 0) ? min(1.0, Double(steps) / Double(goal)) : 0.0
 
         switch family {
         case .accessoryInline:
-            HStack(spacing: 4) {
-                Image(systemName: "figure.walk")
-                Text(stepsText)
-            }
+            Text("\(formatSteps(steps)) steps")
 
         case .accessoryCircular:
-            Gauge(value: Double(min(steps, goalValue)), in: 0...Double(goalValue)) {
-                Image(systemName: "figure.walk")
-            } currentValueLabel: {
-                Text(compactSteps(steps))
-            }
-            .gaugeStyle(.accessoryCircular)
-
-        case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 4) {
-                Text(stepsText)
+            ZStack {
+                StepsRing(fraction: fraction, lineWidth: 6)
+                Text(shortSteps(steps))
                     .font(.headline)
-                    .bold()
-
-                Text("steps today")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                Text("Goal \(goalValue.formatted(.number.grouping(.automatic))) • \(pct)%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .minimumScaleFactor(0.6)
                     .lineLimit(1)
             }
 
         default:
-            Text("\(stepsText) steps")
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(formatSteps(steps))")
+                    .font(.headline)
+                    .bold()
+                if goal > 0 {
+                    Text("Goal \(formatSteps(goal))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Steps today")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
-    private func compactSteps(_ steps: Int) -> String {
-        let n = max(0, steps)
-        if n < 1000 { return "\(n)" }
-        if n < 10_000 {
-            let v = Double(n) / 1000.0
-            return String(format: "%.1fk", v)
+    private func formatSteps(_ n: Int) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .decimal
+        nf.usesGroupingSeparator = true
+        return nf.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    private func shortSteps(_ n: Int) -> String {
+        if n >= 10_000 {
+            let k = Double(n) / 1000.0
+            return String(format: "%.0fk", k)
         }
-        if n < 1_000_000 {
-            let v = Double(n) / 1000.0
-            return String(format: "%.0fk", v)
-        }
-        let v = Double(n) / 1_000_000.0
-        return String(format: "%.1fM", v)
+        return "\(n)"
     }
 }
 
@@ -194,7 +161,229 @@ struct WidgetWeaverLockScreenStepsWidget: Widget {
             WidgetWeaverLockScreenStepsView(entry: entry)
         }
         .configurationDisplayName("Steps (WidgetWeaver)")
-        .description("Today’s step count with an optional goal gauge.")
+        .description("Today’s steps with goal progress.")
         .supportedFamilies([.accessoryInline, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+// MARK: - Home Screen Steps
+
+public struct WidgetWeaverHomeScreenStepsEntry: TimelineEntry {
+    public let date: Date
+    public let access: WidgetWeaverStepsAccess
+    public let snapshot: WidgetWeaverStepsSnapshot?
+    public let goal: Int
+
+    public init(date: Date, access: WidgetWeaverStepsAccess, snapshot: WidgetWeaverStepsSnapshot?, goal: Int) {
+        self.date = date
+        self.access = access
+        self.snapshot = snapshot
+        self.goal = goal
+    }
+}
+
+struct WidgetWeaverHomeScreenStepsProvider: TimelineProvider {
+    typealias Entry = WidgetWeaverHomeScreenStepsEntry
+
+    func placeholder(in context: Context) -> Entry {
+        Entry(date: Date(), access: .authorised, snapshot: .sample(), goal: 10_000)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
+        let store = WidgetWeaverStepsStore.shared
+        let goal = store.loadGoalSteps()
+        let access: WidgetWeaverStepsAccess = context.isPreview ? .authorised : store.loadLastAccess()
+        let snap = context.isPreview ? WidgetWeaverStepsSnapshot.sample() : store.snapshotForToday()
+        completion(Entry(date: Date(), access: access, snapshot: snap, goal: goal))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
+        if !context.isPreview {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
+            }
+        }
+
+        let store = WidgetWeaverStepsStore.shared
+        let goal = store.loadGoalSteps()
+        let access: WidgetWeaverStepsAccess = context.isPreview ? .authorised : store.loadLastAccess()
+        let snap = context.isPreview ? WidgetWeaverStepsSnapshot.sample() : store.snapshotForToday()
+
+        let now = Date()
+        let refresh = max(60, store.recommendedRefreshIntervalSeconds())
+        let next = now.addingTimeInterval(refresh)
+
+        let entry = Entry(date: now, access: access, snapshot: snap, goal: goal)
+        completion(Timeline(entries: [entry], policy: .after(next)))
+    }
+}
+
+struct WidgetWeaverHomeScreenStepsView: View {
+    let entry: WidgetWeaverHomeScreenStepsEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        let goal = max(0, entry.goal)
+        let steps = entry.snapshot?.steps ?? 0
+        let fraction = (goal > 0) ? min(1.0, Double(steps) / Double(goal)) : 0.0
+        let pct = Int((fraction * 100.0).rounded())
+
+        ZStack {
+            switch entry.access {
+            case .denied, .notDetermined, .notAvailable:
+                locked
+            case .unknown, .authorised:
+                content(goal: goal, steps: steps, fraction: fraction, pct: pct)
+            }
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private var locked: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "figure.walk")
+                Text("Steps")
+                    .font(.headline)
+                    .bold()
+                Spacer()
+            }
+            Text("Open the app to enable Steps.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func content(goal: Int, steps: Int, fraction: Double, pct: Int) -> some View {
+        switch family {
+        case .systemSmall:
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    StepsRing(fraction: fraction, lineWidth: 10)
+                        .frame(width: 44, height: 44)
+                    Spacer()
+                }
+                Text(formatSteps(steps))
+                    .font(.system(.title2, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                Text(goal > 0 ? "today • \(pct)%" : "today")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+        case .systemMedium:
+            HStack(spacing: 14) {
+                StepsRing(fraction: fraction, lineWidth: 12)
+                    .frame(width: 54, height: 54)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Steps today")
+                        .font(.headline)
+                        .bold()
+                    Text(formatSteps(steps))
+                        .font(.system(.title2, design: .rounded).weight(.bold))
+                        .monospacedDigit()
+                    if goal > 0 {
+                        Text("Goal \(formatSteps(goal)) • \(pct)%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+
+        default: // .systemLarge
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    StepsRing(fraction: fraction, lineWidth: 12)
+                        .frame(width: 56, height: 56)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Steps today")
+                            .font(.headline)
+                            .bold()
+                        Text(formatSteps(steps))
+                            .font(.system(.title, design: .rounded).weight(.bold))
+                            .monospacedDigit()
+                        if goal > 0 {
+                            Text("Goal \(formatSteps(goal)) • \(pct)%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+
+                if let updated = entry.snapshot?.fetchedAt {
+                    Text("Updated \(formatTime(updated))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+        }
+    }
+
+    private func formatSteps(_ n: Int) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .decimal
+        nf.usesGroupingSeparator = true
+        return nf.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    private func formatTime(_ d: Date) -> String {
+        let df = DateFormatter()
+        df.locale = Locale.autoupdatingCurrent
+        df.timeZone = Calendar.autoupdatingCurrent.timeZone
+        df.dateStyle = .none
+        df.timeStyle = .short
+        return df.string(from: d)
+    }
+}
+
+struct WidgetWeaverHomeScreenStepsWidget: Widget {
+    let kind: String = WidgetWeaverWidgetKinds.homeScreenSteps
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WidgetWeaverHomeScreenStepsProvider()) { entry in
+            WidgetWeaverHomeScreenStepsView(entry: entry)
+        }
+        .configurationDisplayName("Steps (Home)")
+        .description("Today’s steps with a clean goal ring.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
+    }
+}
+
+// MARK: - Shared ring + background
+
+private struct StepsRing: View {
+    let fraction: Double
+    let lineWidth: CGFloat
+
+    var body: some View {
+        let clamped = min(1.0, max(0.0, fraction))
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.18), style: StrokeStyle(lineWidth: lineWidth))
+            Circle()
+                .trim(from: 0, to: clamped)
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func wwWidgetContainerBackground() -> some View {
+        if #available(iOS 17.0, *) {
+            self.containerBackground(for: .widget) { Color.clear }
+        } else {
+            self
+        }
     }
 }
