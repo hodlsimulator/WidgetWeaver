@@ -1,614 +1,582 @@
+//  WidgetWeaver.xcodeproj/project.pbxproj
 // !$*UTF8*$!
 {
-	archiveVersion = 1;
-	classes = {
-	};
-	objectVersion = 77;
-	objects = {
+    archiveVersion = 1;
+    classes = {
+    };
+    objectVersion = 77;
+    objects = {
 
 /* Begin PBXBuildFile section */
-		21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
-		2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
-		4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
-		5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
-		68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
-		6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
-		745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
-		7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
-		8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
-		E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
-		E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
-		E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
-		E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
-		E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
-		E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
-		E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
-		E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
-		E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
-		E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
-		E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
-		E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
-		E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
-		E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
-		E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
-		E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
-		E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676902EF232180098B095 /* WidgetKit.framework */; };
-		E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676922EF232180098B095 /* SwiftUI.framework */; };
-		E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		E18676A82EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
-		E18676A92EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
-		E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
-		E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
-		E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
-		E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
-		E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
-		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
-		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
-		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
-		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
+        21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
+        2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
+        4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
+        5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
+        68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */; };
+        6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */; };
+        745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
+        7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
+        8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
+        E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
+        E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
+        E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
+        E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
+        E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
+        E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */; };
+        E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
+        E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
+        E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
+        E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
+        E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
+        E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
+        E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
+        E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
+        E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
+        E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
+        E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676902EF232180098B095 /* WidgetKit.framework */; };
+        E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E18676922EF232180098B095 /* SwiftUI.framework */; };
+        E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+        E18676A82EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
+        E18676A92EF240B30098B095 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676A72EF240A70098B095 /* AppGroup.swift */; };
+        E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
+        E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */; };
+        E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
+        E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
+        E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
+        E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
+        F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
+        F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
+        FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		E186769C2EF2321A0098B095 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = E18676702EF227C20098B095 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E186768D2EF232180098B095;
-			remoteInfo = WidgetWeaverWidgetExtension;
-		};
+        E186769C2EF2321A0098B095 /* PBXContainerItemProxy */ = {
+            isa = PBXContainerItemProxy;
+            containerPortal = E18676702EF227C20098B095 /* Project object */;
+            proxyType = 1;
+            remoteGlobalIDString = E186768D2EF232180098B095;
+            remoteInfo = WidgetWeaverWidgetExtension;
+        };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		E18676A32EF2321A0098B095 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+        E18676A32EF2321A0098B095 /* Embed Foundation Extensions */ = {
+            isa = PBXCopyFilesBuildPhase;
+            buildActionMask = 2147483647;
+            dstPath = "";
+            dstSubfolderSpec = 13;
+            files = (
+                E186769E2EF2321A0098B095 /* WidgetWeaverWidgetExtension.appex in Embed Foundation Extensions */,
+            );
+            name = "Embed Foundation Extensions";
+            runOnlyForDeploymentPostprocessing = 0;
+        };
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Symbol.swift"; sourceTree = "<group>"; };
-		28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSpecView.swift; sourceTree = "<group>"; };
-		77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Utilities.swift"; sourceTree = "<group>"; };
-		C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Image.swift"; sourceTree = "<group>"; };
-		CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Style.swift"; sourceTree = "<group>"; };
-		E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateHelpers.swift; sourceTree = "<group>"; };
-		E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateModels.swift; sourceTree = "<group>"; };
-		E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
-		E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateComponents.swift; sourceTree = "<group>"; };
-		E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverCalendar.swift; sourceTree = "<group>"; };
-		E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSteps.swift; sourceTree = "<group>"; };
-		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
-		E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
-		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetWeaverWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		E18676902EF232180098B095 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
-		E18676922EF232180098B095 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		E18676A72EF240A70098B095 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
-		E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetKinds.swift; sourceTree = "<group>"; };
-		E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
-		E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
-		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
+        209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Symbol.swift"; sourceTree = "<group>"; };
+        28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSpecView.swift; sourceTree = "<group>"; };
+        77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Utilities.swift"; sourceTree = "<group>"; };
+        C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Image.swift"; sourceTree = "<group>"; };
+        CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Style.swift"; sourceTree = "<group>"; };
+        E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateHelpers.swift; sourceTree = "<group>"; };
+        E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateModels.swift; sourceTree = "<group>"; };
+        E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
+        E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateComponents.swift; sourceTree = "<group>"; };
+        E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverCalendar.swift; sourceTree = "<group>"; };
+        E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSteps.swift; sourceTree = "<group>"; };
+        E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
+        E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
+        E18676752EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
+        E18676792EF227C80098B095 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+        E186767B2EF227C80098B095 /* WidgetWeaverApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverApp.swift; sourceTree = "<group>"; };
+        E186767D2EF227C80098B095 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+        E186767F2EF227C80098B095 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+        E18676802EF227C80098B095 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+        E18676842EF227C80098B095 /* WidgetWeaver.storekit */ = {isa = PBXFileReference; lastKnownFileType = file.storekit; path = WidgetWeaver.storekit; sourceTree = "<group>"; };
+        E18676862EF227C80098B095 /* WidgetWeaver.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WidgetWeaver.entitlements; sourceTree = "<group>"; };
+        E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = WidgetWeaverWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+        E18676902EF232180098B095 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+        E18676922EF232180098B095 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+        E18676952EF232180098B095 /* WidgetWeaverWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidget.swift; sourceTree = "<group>"; };
+        E18676972EF232180098B095 /* WidgetWeaverWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetBundle.swift; sourceTree = "<group>"; };
+        E18676982EF232180098B095 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+        E18676A72EF240A70098B095 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
+        E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetKinds.swift; sourceTree = "<group>"; };
+        E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
+        E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
+        F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-				README.md,
-			);
-			target = E18676772EF227C30098B095 /* WidgetWeaver */;
-		};
-		E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		E186767A2EF227C30098B095 /* WidgetWeaver */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */,
-			);
-			path = WidgetWeaver;
-			sourceTree = "<group>";
-		};
-		E18676942EF232180098B095 /* WidgetWeaverWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
-			);
-			path = WidgetWeaverWidget;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
-		E18676752EF227C30098B095 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E186768B2EF232180098B095 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */,
-				E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+        E186768B2EF227C80098B095 /* Frameworks */ = {
+            isa = PBXFrameworksBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+        E186768C2EF232180098B095 /* Frameworks */ = {
+            isa = PBXFrameworksBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+                E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */,
+                E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */,
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		E186766E2EF227C20098B095 = {
-			isa = PBXGroup;
-			children = (
-				E186767A2EF227C30098B095 /* WidgetWeaver */,
-				E18676942EF232180098B095 /* WidgetWeaverWidget */,
-				E18676A62EF240690098B095 /* Shared */,
-				E18676792EF227C30098B095 /* Products */,
-				E186768F2EF232180098B095 /* Frameworks */,
-			);
-			sourceTree = "<group>";
-		};
-		E18676792EF227C30098B095 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				E18676782EF227C30098B095 /* WidgetWeaver.app */,
-				E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		E186768F2EF232180098B095 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				E18676902EF232180098B095 /* WidgetKit.framework */,
-				E18676922EF232180098B095 /* SwiftUI.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		E18676A62EF240690098B095 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				E18676A72EF240A70098B095 /* AppGroup.swift */,
-				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
-				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
-				F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */,
-				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
-				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
-				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
-				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
-				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
-				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
-				E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */,
-				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
-				E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */,
-				E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */,
-				E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */,
-				E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */,
-				E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */,
-				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
+        E186766F2EF227C20098B095 = {
+            isa = PBXGroup;
+            children = (
+                E18676772EF227C80098B095 /* WidgetWeaver */,
+                E18676942EF232180098B095 /* WidgetWeaverWidget */,
+                E18676762EF227C80098B095 /* Products */,
+                E186768F2EF232180098B095 /* Frameworks */,
+            );
+            sourceTree = "<group>";
+        };
+        E18676762EF227C80098B095 /* Products */ = {
+            isa = PBXGroup;
+            children = (
+                E18676752EF227C30098B095 /* WidgetWeaver.app */,
+                E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */,
+            );
+            name = Products;
+            sourceTree = "<group>";
+        };
+        E18676772EF227C80098B095 /* WidgetWeaver */ = {
+            isa = PBXGroup;
+            children = (
+                E186767B2EF227C80098B095 /* WidgetWeaverApp.swift */,
+                E186767D2EF227C80098B095 /* ContentView.swift */,
+                E186767F2EF227C80098B095 /* Assets.xcassets */,
+                E18676792EF227C80098B095 /* LaunchScreen.storyboard */,
+                E18676802EF227C80098B095 /* Info.plist */,
+                E18676862EF227C80098B095 /* WidgetWeaver.entitlements */,
+                E18676842EF227C80098B095 /* WidgetWeaver.storekit */,
+            );
+            path = WidgetWeaver;
+            sourceTree = "<group>";
+        };
+        E18676942EF232180098B095 /* WidgetWeaverWidget */ = {
+            isa = PBXGroup;
+            children = (
+                E18676952EF232180098B095 /* WidgetWeaverWidget.swift */,
+                E18676972EF232180098B095 /* WidgetWeaverWidgetBundle.swift */,
+                E18676982EF232180098B095 /* Info.plist */,
+            );
+            path = WidgetWeaverWidget;
+            sourceTree = "<group>";
+        };
+        E186768F2EF232180098B095 /* Frameworks */ = {
+            isa = PBXGroup;
+            children = (
+                E18676902EF232180098B095 /* WidgetKit.framework */,
+                E18676922EF232180098B095 /* SwiftUI.framework */,
+            );
+            name = Frameworks;
+            sourceTree = "<group>";
+        };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		E18676772EF227C30098B095 /* WidgetWeaver */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E18676832EF227C80098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaver" */;
-			buildPhases = (
-				E18676742EF227C30098B095 /* Sources */,
-				E18676752EF227C30098B095 /* Frameworks */,
-				E18676762EF227C30098B095 /* Resources */,
-				E18676A32EF2321A0098B095 /* Embed Foundation Extensions */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				E186769D2EF2321A0098B095 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				E186767A2EF227C30098B095 /* WidgetWeaver */,
-			);
-			name = WidgetWeaver;
-			productName = WidgetWeaver;
-			productReference = E18676782EF227C30098B095 /* WidgetWeaver.app */;
-			productType = "com.apple.product-type.application";
-		};
-		E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */;
-			buildPhases = (
-				E186768A2EF232180098B095 /* Sources */,
-				E186768B2EF232180098B095 /* Frameworks */,
-				E186768C2EF232180098B095 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				E18676942EF232180098B095 /* WidgetWeaverWidget */,
-			);
-			name = WidgetWeaverWidgetExtension;
-			productName = WidgetWeaverWidgetExtension;
-			productReference = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
+        E18676742EF227C30098B095 /* WidgetWeaver */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = E18676832EF227C80098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaver" */;
+            buildPhases = (
+                E18676882EF227C80098B095 /* Sources */,
+                E186768B2EF227C80098B095 /* Frameworks */,
+                E18676892EF227C80098B095 /* Resources */,
+                E18676A32EF2321A0098B095 /* Embed Foundation Extensions */,
+            );
+            buildRules = (
+            );
+            dependencies = (
+                E186769D2EF2321A0098B095 /* PBXTargetDependency */,
+            );
+            name = WidgetWeaver;
+            productName = WidgetWeaver;
+            productReference = E18676752EF227C30098B095 /* WidgetWeaver.app */;
+            productType = "com.apple.product-type.application";
+        };
+        E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */;
+            buildPhases = (
+                E186768A2EF232180098B095 /* Sources */,
+                E186768C2EF232180098B095 /* Frameworks */,
+                E186768D2EF232180098B095 /* Resources */,
+            );
+            buildRules = (
+            );
+            dependencies = (
+            );
+            name = WidgetWeaverWidgetExtension;
+            productName = WidgetWeaverWidgetExtension;
+            productReference = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */;
+            productType = "com.apple.product-type.app-extension";
+        };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		E18676702EF227C20098B095 /* Project object */ = {
-			isa = PBXProject;
-			attributes = {
-				BuildIndependentTargetsInParallel = YES;
-				LastSwiftUpdateCheck = 1620;
-				LastUpgradeCheck = 2600;
-				TargetAttributes = {
-					E18676772EF227C30098B095 = {
-						CreatedOnToolsVersion = 16.2;
-					};
-					E186768D2EF232180098B095 = {
-						CreatedOnToolsVersion = 16.2;
-					};
-				};
-			};
-			buildConfigurationList = E18676732EF227C30098B095 /* Build configuration list for PBXProject "WidgetWeaver" */;
-			developmentRegion = en;
-			hasScannedForEncodings = 0;
-			knownRegions = (
-				en,
-				Base,
-			);
-			mainGroup = E186766E2EF227C20098B095;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = E18676792EF227C30098B095 /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
-			targets = (
-				E18676772EF227C30098B095 /* WidgetWeaver */,
-				E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */,
-			);
-		};
+        E18676702EF227C20098B095 /* Project object */ = {
+            isa = PBXProject;
+            attributes = {
+                BuildIndependentTargetsInParallel = 1;
+                LastSwiftUpdateCheck = 1600;
+                LastUpgradeCheck = 1600;
+                TargetAttributes = {
+                    E18676742EF227C30098B095 = {
+                        CreatedOnToolsVersion = 16.0;
+                    };
+                    E186768D2EF232180098B095 = {
+                        CreatedOnToolsVersion = 16.0;
+                    };
+                };
+            };
+            buildConfigurationList = E18676732EF227C30098B095 /* Build configuration list for PBXProject "WidgetWeaver" */;
+            compatibilityVersion = "Xcode 16.0";
+            developmentRegion = en;
+            hasScannedForEncodings = 0;
+            knownRegions = (
+                en,
+                Base,
+            );
+            mainGroup = E186766F2EF227C20098B095;
+            productRefGroup = E18676762EF227C80098B095 /* Products */;
+            projectDirPath = "";
+            projectRoot = "";
+            targets = (
+                E18676742EF227C30098B095 /* WidgetWeaver */,
+                E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */,
+            );
+        };
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		E18676762EF227C30098B095 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E186768C2EF232180098B095 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+        E18676892EF227C80098B095 /* Resources */ = {
+            isa = PBXResourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+        E186768D2EF232180098B095 /* Resources */ = {
+            isa = PBXResourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		E18676742EF227C30098B095 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E18676A82EF240B30098B095 /* AppGroup.swift in Sources */,
-				E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
-				F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */,
-				21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
-				E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
-				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
-				E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
-				E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
-				FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
-				7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */,
-				68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */,
-				E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */,
-				E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
-				E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
-				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
-				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
-				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
-				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E186768A2EF232180098B095 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
-				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
-				E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
-				E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
-				E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
-				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
-				E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
-				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
-				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
-				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
-				E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
-				E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
-				5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
-				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
-				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
-				4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
-				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
-				E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+        E18676882EF227C80098B095 /* Sources */ = {
+            isa = PBXSourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+                E18676A82EF240B30098B095 /* AppGroup.swift in Sources */,
+                E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
+                E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+                E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */,
+                E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
+                E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
+                E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
+                E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
+                E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
+                E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
+                E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
+                E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
+                4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
+                745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
+                5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
+                2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
+                F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
+                6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+        E186768A2EF232180098B095 /* Sources */ = {
+            isa = PBXSourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+                E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+                E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
+                E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
+                E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
+                E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
+                E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
+                E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
+                E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
+                E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
+                E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
+                E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
+                E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
+                68303C519E3D4EF3B280502E /* WidgetWeaverSpecView.swift in Sources */,
+                F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */,
+                FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
+                8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
+                7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */,
+                21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		E186769D2EF2321A0098B095 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
-			targetProxy = E186769C2EF2321A0098B095 /* PBXContainerItemProxy */;
-		};
+        E186769D2EF2321A0098B095 /* PBXTargetDependency */ = {
+            isa = PBXTargetDependency;
+            target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
+            targetProxy = E186769C2EF2321A0098B095 /* PBXContainerItemProxy */;
+        };
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		E1785D0C2EF341EF00F7D707 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = WidgetWeaver/Info.plist;
-				INFOPLIST_KEY_CFBundleIconName = AppIcon;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
-				PRODUCT_NAME = WidgetWeaver;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		E1785D0D2EF341EF00F7D707 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = WidgetWeaver/Info.plist;
-				INFOPLIST_KEY_CFBundleIconName = AppIcon;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
-				PRODUCT_NAME = WidgetWeaver;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		E1785D0E2EF341EF00F7D707 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
-				INFOPLIST_OUTPUT_FORMAT = xml;
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
-				PRODUCT_NAME = WidgetWeaverWidgetExtension;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		E1785D0F2EF341EF00F7D707 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
-				INFOPLIST_OUTPUT_FORMAT = xml;
-				MARKETING_VERSION = 0.9.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
-				PRODUCT_NAME = WidgetWeaverWidgetExtension;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		E18676812EF227C80098B095 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MTL_ENABLE_DEBUG_INFO = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = Debug;
-		};
-		E18676822EF227C80098B095 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 92HEPEJ42Z;
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
+        E1785D0C2EF341EF00F7D707 /* Debug */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+                CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
+                COPY_PHASE_STRIP = NO;
+                CURRENT_PROJECT_VERSION = 13;
+                GCC_DYNAMIC_NO_PIC = NO;
+                GCC_OPTIMIZATION_LEVEL = 0;
+                GENERATE_INFOPLIST_FILE = YES;
+                INFOPLIST_FILE = WidgetWeaver/Info.plist;
+                INFOPLIST_KEY_CFBundleIconName = AppIcon;
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+                INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+                INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
+                INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
+                INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+                MARKETING_VERSION = 0.9.4;
+                PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
+                PRODUCT_NAME = WidgetWeaver;
+                SWIFT_VERSION = 6.0;
+            };
+            name = Debug;
+        };
+        E1785D0D2EF341EF00F7D707 /* Release */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+                CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
+                COPY_PHASE_STRIP = NO;
+                CURRENT_PROJECT_VERSION = 13;
+                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                GENERATE_INFOPLIST_FILE = YES;
+                INFOPLIST_FILE = WidgetWeaver/Info.plist;
+                INFOPLIST_KEY_CFBundleIconName = AppIcon;
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+                INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+                INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
+                INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
+                INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+                MARKETING_VERSION = 0.9.4;
+                PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
+                PRODUCT_NAME = WidgetWeaver;
+                SWIFT_VERSION = 6.0;
+            };
+            name = Release;
+        };
+        E1785D0E2EF341EF00F7D707 /* Debug */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
+                COPY_PHASE_STRIP = NO;
+                CURRENT_PROJECT_VERSION = 13;
+                GCC_DYNAMIC_NO_PIC = NO;
+                GCC_OPTIMIZATION_LEVEL = 0;
+                GENERATE_INFOPLIST_FILE = NO;
+                INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
+                INFOPLIST_OUTPUT_FORMAT = xml;
+                MARKETING_VERSION = 0.9.4;
+                PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
+                PRODUCT_NAME = WidgetWeaverWidgetExtension;
+                SWIFT_VERSION = 6.0;
+            };
+            name = Debug;
+        };
+        E1785D0F2EF341EF00F7D707 /* Release */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
+                COPY_PHASE_STRIP = NO;
+                CURRENT_PROJECT_VERSION = 13;
+                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                GENERATE_INFOPLIST_FILE = NO;
+                INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
+                INFOPLIST_OUTPUT_FORMAT = xml;
+                MARKETING_VERSION = 0.9.4;
+                PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
+                PRODUCT_NAME = WidgetWeaverWidgetExtension;
+                SWIFT_VERSION = 6.0;
+            };
+            name = Release;
+        };
+        E18676812EF227C80098B095 /* Debug */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                ALWAYS_SEARCH_USER_PATHS = NO;
+                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+                CLANG_ANALYZER_NONNULL = YES;
+                CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+                CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+                CLANG_ENABLE_MODULES = YES;
+                CLANG_ENABLE_OBJC_ARC = YES;
+                CLANG_ENABLE_OBJC_WEAK = YES;
+                CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+                CLANG_WARN_BOOL_CONVERSION = YES;
+                CLANG_WARN_COMMA = YES;
+                CLANG_WARN_CONSTANT_CONVERSION = YES;
+                CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+                CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+                CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+                CLANG_WARN_EMPTY_BODY = YES;
+                CLANG_WARN_ENUM_CONVERSION = YES;
+                CLANG_WARN_INFINITE_RECURSION = YES;
+                CLANG_WARN_INT_CONVERSION = YES;
+                CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+                CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+                CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+                CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+                CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+                CLANG_WARN_STRICT_PROTOTYPES = YES;
+                CLANG_WARN_SUSPICIOUS_MOVE = YES;
+                CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+                CLANG_WARN_UNREACHABLE_CODE = YES;
+                CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+                COPY_PHASE_STRIP = NO;
+                DEBUG_INFORMATION_FORMAT = dwarf;
+                DEVELOPMENT_TEAM = 92HEPEJ42Z;
+                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                ENABLE_TESTABILITY = YES;
+                ENABLE_USER_SCRIPT_SANDBOXING = YES;
+                GCC_C_LANGUAGE_STANDARD = gnu17;
+                GCC_DYNAMIC_NO_PIC = NO;
+                GCC_NO_COMMON_BLOCKS = YES;
+                GCC_OPTIMIZATION_LEVEL = 0;
+                GCC_PREPROCESSOR_DEFINITIONS = (
+                    "DEBUG=1",
+                    "$(inherited)",
+                );
+                GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+                GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+                GCC_WARN_UNDECLARED_SELECTOR = YES;
+                GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+                GCC_WARN_UNUSED_FUNCTION = YES;
+                GCC_WARN_UNUSED_VARIABLE = YES;
+                IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+                LD_RUNPATH_SEARCH_PATHS = (
+                    "$(inherited)",
+                    "@executable_path/Frameworks",
+                );
+                MTL_ENABLE_DEBUG_INFO = YES;
+                ONLY_ACTIVE_ARCH = YES;
+                SDKROOT = iphoneos;
+                STRING_CATALOG_GENERATE_SYMBOLS = YES;
+                SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+                SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+            };
+            name = Debug;
+        };
+        E18676822EF227C80098B095 /* Release */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                ALWAYS_SEARCH_USER_PATHS = NO;
+                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+                CLANG_ANALYZER_NONNULL = YES;
+                CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+                CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+                CLANG_ENABLE_MODULES = YES;
+                CLANG_ENABLE_OBJC_ARC = YES;
+                CLANG_ENABLE_OBJC_WEAK = YES;
+                CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+                CLANG_WARN_BOOL_CONVERSION = YES;
+                CLANG_WARN_COMMA = YES;
+                CLANG_WARN_CONSTANT_CONVERSION = YES;
+                CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+                CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+                CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+                CLANG_WARN_EMPTY_BODY = YES;
+                CLANG_WARN_ENUM_CONVERSION = YES;
+                CLANG_WARN_INFINITE_RECURSION = YES;
+                CLANG_WARN_INT_CONVERSION = YES;
+                CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+                CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+                CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+                CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+                CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+                CLANG_WARN_STRICT_PROTOTYPES = YES;
+                CLANG_WARN_SUSPICIOUS_MOVE = YES;
+                CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+                CLANG_WARN_UNREACHABLE_CODE = YES;
+                CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+                COPY_PHASE_STRIP = NO;
+                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                DEVELOPMENT_TEAM = 92HEPEJ42Z;
+                ENABLE_NS_ASSERTIONS = NO;
+                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                ENABLE_USER_SCRIPT_SANDBOXING = YES;
+                GCC_C_LANGUAGE_STANDARD = gnu17;
+                GCC_NO_COMMON_BLOCKS = YES;
+                GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+                GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+                GCC_WARN_UNDECLARED_SELECTOR = YES;
+                GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+                GCC_WARN_UNUSED_FUNCTION = YES;
+                GCC_WARN_UNUSED_VARIABLE = YES;
+                IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+                LD_RUNPATH_SEARCH_PATHS = (
+                    "$(inherited)",
+                    "@executable_path/Frameworks",
+                );
+                SDKROOT = iphoneos;
+                STRING_CATALOG_GENERATE_SYMBOLS = YES;
+                SWIFT_COMPILATION_MODE = wholemodule;
+                SWIFT_OPTIMIZATION_LEVEL = "-O";
+                VALIDATE_PRODUCT = YES;
+            };
+            name = Release;
+        };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		E18676732EF227C30098B095 /* Build configuration list for PBXProject "WidgetWeaver" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E18676812EF227C80098B095 /* Debug */,
-				E18676822EF227C80098B095 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E18676832EF227C80098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaver" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E1785D0C2EF341EF00F7D707 /* Debug */,
-				E1785D0D2EF341EF00F7D707 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E1785D0E2EF341EF00F7D707 /* Debug */,
-				E1785D0F2EF341EF00F7D707 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
+        E18676732EF227C30098B095 /* Build configuration list for PBXProject "WidgetWeaver" */ = {
+            isa = XCConfigurationList;
+            buildConfigurations = (
+                E18676812EF227C80098B095 /* Debug */,
+                E18676822EF227C80098B095 /* Release */,
+            );
+            defaultConfigurationIsVisible = 0;
+            defaultConfigurationName = Release;
+        };
+        E18676832EF227C80098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaver" */ = {
+            isa = XCConfigurationList;
+            buildConfigurations = (
+                E1785D0C2EF341EF00F7D707 /* Debug */,
+                E1785D0D2EF341EF00F7D707 /* Release */,
+            );
+            defaultConfigurationIsVisible = 0;
+            defaultConfigurationName = Release;
+        };
+        E18676992EF232180098B095 /* Build configuration list for PBXNativeTarget "WidgetWeaverWidgetExtension" */ = {
+            isa = XCConfigurationList;
+            buildConfigurations = (
+                E1785D0E2EF341EF00F7D707 /* Debug */,
+                E1785D0F2EF341EF00F7D707 /* Release */,
+            );
+            defaultConfigurationIsVisible = 0;
+            defaultConfigurationName = Release;
+        };
 /* End XCConfigurationList section */
-	};
-	rootObject = E18676702EF227C20098B095 /* Project object */;
+    };
+    rootObject = E18676702EF227C20098B095 /* Project object */;
 }
