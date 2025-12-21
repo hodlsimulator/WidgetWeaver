@@ -69,34 +69,40 @@ Notes:
 WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widgets:
 
 - Today’s step count snapshot (offline-friendly for widgets)
-- Optional daily goal (rings show progress)
+- **Goal schedule** (weekday / weekend goals, with optional rest days)
+- **Streak rules** that feel fair:
+  - “Fair” rule avoids showing the streak as broken early in the day
+  - Rest days (goal = 0) can be skipped without breaking
 - **Full-history timeline in-app**: loads daily step totals back to the earliest available step sample (years if available)
-- Timeline filters (All / 1Y / 90D / 30D / 7D), goal-hit filter, and quick year jumping
-- Insights (best day, 7/30-day averages, goal streak, “On this day” history when available)
+- **Monthly calendar view** with goal-hit dots (tap a day → jump to that day in the timeline)
+- **Year heatmap view** (GitHub-style grid) with year picker + “best week / most consistent month”
+- “Pin this day” action from history (creates a saved design highlight for that day)
+- **Steps built-in variables** (`__steps_*`) usable in any design text field once Steps is set up
 - Lock Screen companion widget: **Steps (WidgetWeaver)** (inline / circular / rectangular)
 - Home Screen companion widget: **Steps (Home)** (Small / Medium / Large)
 
 ### Steps setup
 
 1. In the app, open `…` → **Steps**.
-2. Tap **Request Steps Access** (Health permission prompt).
-3. Tap **Refresh Today** to cache today’s steps for widgets.
-4. (Optional) Set a daily goal.
-5. Open **Timeline & Insights**, then tap **Refresh** to fetch full history back to your first step sample.
-6. Add widgets:
+2. Grant Health access for Step Count when prompted (widgets cannot request permission).
+3. Refresh Steps in-app to cache:
+   - Today’s steps snapshot (for widgets and `__steps_today`), and
+   - Full history (for streak / averages / heatmap / calendar)
+4. (Optional) Set weekday/weekend goals and pick a streak rule.
+5. Add widgets:
    - Lock Screen: **Steps (WidgetWeaver)**
    - Home Screen: **Steps (Home)**
+   - Or: use `__steps_*` variables inside any normal **WidgetWeaver** design
 
 Notes:
 
-- Widgets cannot request Health permission; access must be granted in the app (or in the Health app).
 - If you see **0 steps**, that can be normal (early in the day) or it can mean no step samples are being recorded.
 - Check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking** is enabled.
 - If you see **Denied**, enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver).
 
 ---
 
-## Current status (0.9.4 (13))
+## Current status (0.9.4 (14))
 
 ### App
 
@@ -109,8 +115,8 @@ Notes:
 - ✅ Optional on-device AI (generate + patch)
 - ✅ Weather screen (location + units + cached snapshot + attribution)
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
-- ✅ Steps screen (HealthKit permission + cached step snapshot + daily goal)
-- ✅ Steps Timeline & Insights (full-history daily steps back to earliest sample, filters, year jumping, insights)
+- ✅ Steps screen (HealthKit access + cached today snapshot + goal schedule + streak rules)
+- ✅ Steps History (timeline + monthly calendar + year heatmap) + insights + “Pin this day”
 - ✅ Inspector sheet (resolved spec + JSON + quick checks)
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
 
@@ -125,6 +131,8 @@ Notes:
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
 - ✅ Steps widgets render from a cached “today” snapshot stored in the App Group
+- ✅ `__weather_*` built-in variables available in any design (free)
+- ✅ `__steps_*` built-in variables available in any design once Steps is set up (free)
 - ✅ Time-sensitive designs can attempt minute-level timelines (still subject to WidgetKit throttling)
 
 ### Layout + style
@@ -143,7 +151,7 @@ Notes:
 - ✅ Variable template engine: `WidgetWeaverVariableTemplate` (stored vars are Pro-only)
 - ✅ WeatherKit integration: `WidgetWeaverWeatherEngine`, `WidgetWeaverWeatherStore`, Weather template renderer
 - ✅ Calendar integration: `WidgetWeaverCalendarEngine`, `WidgetWeaverCalendarStore`, Next Up template renderer
-- ✅ HealthKit steps integration: `WidgetWeaverStepsEngine`, `WidgetWeaverStepsStore`, Steps settings + timeline + widgets
+- ✅ HealthKit steps integration: `WidgetWeaverStepsEngine`, `WidgetWeaverStepsStore`, Steps settings + history + widgets + built-in vars
 - ✅ App Group store: `WidgetSpecStore`, `WidgetWeaverVariableStore`, `AppGroup`
 
 ---
@@ -174,8 +182,7 @@ If using Steps:
 
 - Add the **HealthKit** capability to both targets (app + widget extension)
 - Add `NSHealthShareUsageDescription` to the app Info.plist
-- In the app: `…` → **Steps** → request access → refresh today
-- For full history: **Timeline & Insights** → refresh
+- In the app: `…` → **Steps** → grant access → refresh today + (optional) load full history
 
 Add widgets:
 
@@ -213,9 +220,7 @@ The app can extract a simple “image theme” from a chosen photo (to help pick
 
 ### Remix
 
-Remix generates several deterministic variants of a design by perturbing layout/style tokens.
-
-It’s intended as a fast way to explore alternatives without losing the original.
+Remix generates several deterministic variants of a design by perturbing layout/style tokens. It’s intended as a fast way to explore alternatives without losing the original.
 
 ### Interactive actions (Pro)
 
@@ -229,22 +234,22 @@ Designs can include an action bar with up to 2 buttons:
 
 The About sheet includes a built-in template catalogue.
 
-- **Starter templates** are free.
-- **Pro templates** can include matched sets, variables, and interactive buttons.
-- Templates are designed to be offline-friendly (shared App Group storage).
-- Weather and Next Up (Calendar) use cached snapshots (widgets do not fetch directly).
+- Starter templates are free
+- Pro templates can include matched sets, variables, and interactive buttons
+- Templates are designed to be offline-friendly (shared App Group storage)
+- Weather and Next Up (Calendar) use cached snapshots (widgets do not fetch directly)
 
 ### Sharing
 
-Designs can be exported as JSON, optionally embedding images.
-
-Imports duplicate designs with new IDs to avoid overwriting existing ones.
+Designs can be exported as JSON, optionally embedding images. Imports duplicate designs with new IDs to avoid overwriting existing ones.
 
 ### Inspector
 
 Inspector shows the current spec JSON and allows quick checks while tuning the renderer.
 
-### Variables + App Intents
+---
+
+## Variables + App Intents
 
 WidgetWeaver supports template variables in text fields:
 
@@ -254,14 +259,14 @@ WidgetWeaver supports template variables in text fields:
 - `{{last_done|Never|relative}}`
 - Inline maths: `{{=done/total*100|0|number:0}}`
 
-#### Built-in keys (available to everyone)
+### Built-in keys (available to everyone)
 
 - `__now`, `__now_unix`
 - `__today`
 - `__time`
 - `__weekday`
 
-#### Weather built-in keys (available to everyone)
+### Weather built-in keys (available to everyone)
 
 Once a Weather location is set (and a snapshot is cached), these are available in any text field:
 
@@ -284,7 +289,43 @@ Example:
 
 - `Weather: {{__weather_temp|--}}° • {{__weather_condition|Updating…}}`
 
-#### Stored variables (Pro)
+### Steps built-in keys (available to everyone)
+
+Once Steps access is granted and the app has cached steps, these become available in any text field:
+
+Today snapshot keys:
+
+- `__steps_today`
+- `__steps_goal_today`
+- `__steps_today_percent`
+- `__steps_today_fraction`
+- `__steps_goal_hit_today`
+- `__steps_updated_iso`
+
+Goal schedule + behaviour:
+
+- `__steps_goal_weekday`
+- `__steps_goal_weekend`
+- `__steps_streak_rule`
+
+History-derived keys (require history cache):
+
+- `__steps_streak`
+- `__steps_avg_7`, `__steps_avg_7_exact`
+- `__steps_avg_30`, `__steps_avg_30_exact`
+- `__steps_best_day`
+- `__steps_best_day_date`
+- `__steps_best_day_date_iso`
+
+Access/debug:
+
+- `__steps_access`
+
+Example:
+
+- `Steps: {{__steps_today|--}} • Streak {{__steps_streak|0}}d`
+
+### Stored variables (Pro)
 
 The shared variable store is Pro-only and can be updated in-app or via widget buttons (App Intents).
 
@@ -305,8 +346,9 @@ AI features are designed to run on-device to generate or patch the design spec. 
   - Weather: location + cached snapshot + attribution in App Group `UserDefaults`
   - Calendar: cached “next/second event” snapshot in App Group `UserDefaults`
   - Steps:
-    - cached “today steps” snapshot + goal in App Group `UserDefaults`
-    - cached full-history daily steps snapshot (for the in-app Timeline & Insights)
+    - cached “today steps” snapshot in App Group `UserDefaults`
+    - goal schedule + streak rule in App Group `UserDefaults`
+    - cached full-history daily steps snapshot (for timeline/month/year views and `__steps_*` history vars)
 - Widgets render using `WidgetWeaverSpecView` (for Home Screen designs) or lightweight dedicated views (for dedicated widgets like Rain / Next Up / Steps).
 
 ---
@@ -318,7 +360,12 @@ AI features are designed to run on-device to generate or patch the design spec. 
 - Pro: matched sets + variables + actions
 - Weather template + WeatherKit caching (+ Lock Screen Rain widget)
 - Next Up (Calendar) template + calendar snapshot caching (+ Lock Screen Next Up widget)
-- Steps mini-app: HealthKit permission + today snapshot + full-history timeline (+ Lock Screen Steps widget + Home Screen Steps widget)
+- Steps mini-app:
+  - HealthKit access + today snapshot
+  - full-history timeline + month calendar + year heatmap
+  - built-in `__steps_*` variables usable in any design
+  - “Pin this day” highlights
+  - (+ Lock Screen Steps widget + Home Screen Steps widget)
 - Optional on-device AI
 
 ---
@@ -340,10 +387,12 @@ AI features are designed to run on-device to generate or patch the design spec. 
   - Open the app and use `…` → **Refresh Widgets** to force a widget timeline reload
 - **Steps shows “Open app” / “No cached steps yet”**
   - Open the app → `…` → **Steps**
-  - Request Health access, then tap **Refresh Today**
+  - Grant Health access, then refresh Steps to cache today
 - **Steps history is empty**
-  - Open the app → `…` → **Steps** → **Timeline & Insights**
-  - Tap **Refresh** to fetch full history back to your first step sample (then it will be cached)
+  - Open the app → `…` → **Steps** → open **History**
+  - Refresh to fetch full history back to your first step sample (then it will be cached)
+- **Steps streak looks “broken” early in the day**
+  - In **Steps**, switch streak rules to the “Fair” option so today doesn’t break the streak before you hit goal
 - **Steps shows “Denied”**
   - Enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver)
   - Return to WidgetWeaver → **Steps** → refresh
