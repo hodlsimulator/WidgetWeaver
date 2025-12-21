@@ -33,6 +33,7 @@ struct WidgetPreviewDock: View {
     let presentation: Presentation
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     @SceneStorage("widgetPreviewDock.isExpanded") private var isExpanded: Bool = false
     @SceneStorage("widgetPreviewDock.isLive") private var isLive: Bool = false
 
@@ -173,9 +174,7 @@ struct WidgetPreviewDock: View {
         .background(.regularMaterial, in: cardShape)
         .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
         .contentShape(cardShape)
-        .onTapGesture {
-            setExpanded(true)
-        }
+        .onTapGesture { setExpanded(true) }
     }
 
     private var grabber: some View {
@@ -184,9 +183,7 @@ struct WidgetPreviewDock: View {
             .frame(width: 36, height: 5)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
-            .onTapGesture {
-                toggleExpanded()
-            }
+            .onTapGesture { toggleExpanded() }
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(isExpanded ? "Collapse preview" : "Expand preview")
     }
@@ -236,15 +233,11 @@ struct WidgetPreviewDock: View {
         case .sidebar:
             return 420
         case .dock:
-            if verticalSizeClass == .compact {
-                return 150
-            }
+            if verticalSizeClass == .compact { return 150 }
 
             // Small and Medium occupy the same Home Screen row height.
             // Using the same preview height avoids the preview changing depth between S/M.
-            if family == .systemLarge {
-                return 260
-            }
+            if family == .systemLarge { return 260 }
 
             // Medium is typically width-limited in the dock. Lowering this height reduces
             // wasted vertical space without making the widget itself smaller.
@@ -282,6 +275,8 @@ struct WidgetPreviewDock: View {
     }
 }
 
+// MARK: - Live Preview
+
 @MainActor
 struct WidgetPreview: View {
     let spec: WidgetSpec
@@ -290,8 +285,7 @@ struct WidgetPreview: View {
     var isLive: Bool = false
 
     // Forces a re-render when variables change in-app (including via AppIntent buttons).
-    @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults)
-    private var variablesData: Data = Data()
+    @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults) private var variablesData: Data = Data()
 
     var body: some View {
         let _ = variablesData
@@ -329,7 +323,6 @@ struct WidgetPreview: View {
             // Scaling both against the Medium base keeps the preview height stable
             // between Small and Medium.
             let sizingBase = Self.widgetSize(for: Self.sizingReferenceFamily(for: family))
-
             let scaleX = proxy.size.width / sizingBase.width
             let scaleY = proxy.size.height / sizingBase.height
             let scale = min(scaleX, scaleY)
@@ -452,67 +445,56 @@ struct WidgetPreview: View {
 
         private static let knownSizesByNativeResolution: [String: Sizes] = [
             // MARK: - iPhone
-
             "1170x2532": Sizes(
                 small: CGSize(width: 158, height: 158),
                 medium: CGSize(width: 338, height: 158),
                 large: CGSize(width: 338, height: 354)
-            ), // 12/13/14/15 (non‑Pro 6.1")
-
+            ), // 12/13/14/15 (non-Pro 6.1")
             "1179x2556": Sizes(
                 small: CGSize(width: 158, height: 158),
                 medium: CGSize(width: 338, height: 158),
                 large: CGSize(width: 338, height: 354)
             ), // 14/15 Pro (6.1")
-
             "1080x2340": Sizes(
                 small: CGSize(width: 155, height: 155),
                 medium: CGSize(width: 329, height: 155),
                 large: CGSize(width: 329, height: 345)
             ), // 12/13 mini
-
             "1284x2778": Sizes(
                 small: CGSize(width: 170, height: 170),
                 medium: CGSize(width: 364, height: 170),
                 large: CGSize(width: 364, height: 382)
             ), // 12/13 Pro Max
-
             "1290x2796": Sizes(
                 small: CGSize(width: 170, height: 170),
                 medium: CGSize(width: 364, height: 170),
                 large: CGSize(width: 364, height: 382)
             ), // 14/15 Pro Max
-
             "828x1792": Sizes(
                 small: CGSize(width: 169, height: 169),
                 medium: CGSize(width: 360, height: 169),
                 large: CGSize(width: 360, height: 379)
             ), // XR / 11
-
             "1125x2436": Sizes(
                 small: CGSize(width: 155, height: 155),
                 medium: CGSize(width: 329, height: 155),
                 large: CGSize(width: 329, height: 345)
             ), // X / XS / 11 Pro
-
             "1242x2688": Sizes(
                 small: CGSize(width: 169, height: 169),
                 medium: CGSize(width: 360, height: 169),
                 large: CGSize(width: 360, height: 379)
             ), // XS Max / 11 Pro Max
-
             "750x1334": Sizes(
                 small: CGSize(width: 148, height: 148),
                 medium: CGSize(width: 321, height: 148),
                 large: CGSize(width: 321, height: 324)
             ), // 6/7/8/SE2/SE3
-
             "1080x1920": Sizes(
                 small: CGSize(width: 157, height: 157),
                 medium: CGSize(width: 348, height: 157),
                 large: CGSize(width: 348, height: 351)
             ), // Plus
-
             "640x1136": Sizes(
                 small: CGSize(width: 141, height: 141),
                 medium: CGSize(width: 292, height: 141),
@@ -520,43 +502,36 @@ struct WidgetPreview: View {
             ), // SE 1st gen
 
             // MARK: - iPad
-
             "2732x2048": Sizes(
                 small: CGSize(width: 170, height: 170),
                 medium: CGSize(width: 379, height: 170),
                 large: CGSize(width: 379, height: 379)
             ), // 12.9" iPad Pro
-
             "2388x1668": Sizes(
                 small: CGSize(width: 155, height: 155),
                 medium: CGSize(width: 342, height: 155),
                 large: CGSize(width: 342, height: 342)
             ), // 11" iPad Pro
-
             "2360x1640": Sizes(
                 small: CGSize(width: 155, height: 155),
                 medium: CGSize(width: 342, height: 155),
                 large: CGSize(width: 342, height: 342)
             ), // iPad Air 4/5
-
             "2266x1488": Sizes(
                 small: CGSize(width: 141, height: 141),
                 medium: CGSize(width: 306, height: 141),
                 large: CGSize(width: 306, height: 306)
             ), // iPad mini 6
-
             "2224x1668": Sizes(
                 small: CGSize(width: 150, height: 150),
                 medium: CGSize(width: 328, height: 150),
                 large: CGSize(width: 328, height: 328)
             ), // iPad Pro 10.5"
-
             "2160x1620": Sizes(
                 small: CGSize(width: 146, height: 146),
                 medium: CGSize(width: 321, height: 146),
                 large: CGSize(width: 321, height: 321)
             ), // iPad 7/8/9
-
             "2048x1536": Sizes(
                 small: CGSize(width: 141, height: 141),
                 medium: CGSize(width: 306, height: 141),
@@ -566,18 +541,161 @@ struct WidgetPreview: View {
     }
 }
 
+// MARK: - Thumbnail raster cache (smooth scrolling)
+
+@MainActor
+private final class WidgetPreviewThumbnailRasterCache {
+    static let shared = WidgetPreviewThumbnailRasterCache()
+
+    private let cache: NSCache<NSString, UIImage>
+
+    private init() {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 96
+        self.cache = c
+    }
+
+    func cachedImage(forKey key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    func store(_ image: UIImage, forKey key: String) {
+        cache.setObject(image, forKey: key as NSString)
+    }
+
+    func makeKey(
+        spec: WidgetSpec,
+        family: WidgetFamily,
+        size: CGSize,
+        colorScheme: ColorScheme,
+        screenScale: CGFloat
+    ) -> String {
+        let updatedMs = Int(spec.updatedAt.timeIntervalSince1970 * 1000.0)
+        let w = Int((size.width * 10.0).rounded())
+        let h = Int((size.height * 10.0).rounded())
+        let s = Int((screenScale * 10.0).rounded())
+        let scheme = (colorScheme == .dark) ? "dark" : "light"
+        return "\(spec.id.uuidString)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
+    }
+
+    func renderThumbnail(
+        spec: WidgetSpec,
+        family: WidgetFamily,
+        baseSize: CGSize,
+        scale: CGFloat,
+        thumbnailSize: CGSize,
+        colorScheme: ColorScheme,
+        rendererScale: CGFloat
+    ) -> UIImage? {
+        guard #available(iOS 16.0, *) else { return nil }
+
+        let cornerRadius: CGFloat = 12
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        let content = WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+            .frame(width: baseSize.width, height: baseSize.height)
+            .scaleEffect(scale, anchor: .center)
+            .frame(width: thumbnailSize.width, height: thumbnailSize.height, alignment: .center)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            .clipped()
+            .environment(\.colorScheme, colorScheme)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.proposedSize = ProposedViewSize(thumbnailSize)
+        renderer.scale = rendererScale
+        return renderer.uiImage
+    }
+}
+
+// MARK: - Preview thumbnail
+
 @MainActor
 struct WidgetPreviewThumbnail: View {
     let spec: WidgetSpec
     let family: WidgetFamily
     var height: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
+
+    @State private var image: UIImage? = nil
+
     var body: some View {
+        // iOS 16+ path: rasterised + cached thumbnails for smooth list scrolling.
+        if #available(iOS 16.0, *) {
+            rasterisedBody
+        } else {
+            // Fallback: live render (older OS support).
+            liveBody
+        }
+    }
+
+    @available(iOS 16.0, *)
+    private var rasterisedBody: some View {
+        let base = WidgetPreview.widgetSize(for: family)
+        let scale = height / base.height
+        let scaledWidth = base.width * scale
+        let thumbSize = CGSize(width: scaledWidth, height: height)
+
+        let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
+            spec: spec,
+            family: family,
+            size: thumbSize,
+            colorScheme: colorScheme,
+            screenScale: displayScale
+        )
+
+        return Group {
+            if let img = image ?? WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
+                Image(uiImage: img)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .frame(width: thumbSize.width, height: thumbSize.height, alignment: .center)
+                    .accessibilityHidden(true)
+            } else {
+                placeholder(size: thumbSize)
+            }
+        }
+        .task(id: key) {
+            image = nil
+
+            if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
+                image = cached
+                return
+            }
+
+            // Small delay avoids doing expensive raster work during fast flick-scrolling.
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard !Task.isCancelled else { return }
+
+            if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
+                image = cached
+                return
+            }
+
+            if let rendered = WidgetPreviewThumbnailRasterCache.shared.renderThumbnail(
+                spec: spec,
+                family: family,
+                baseSize: base,
+                scale: scale,
+                thumbnailSize: thumbSize,
+                colorScheme: colorScheme,
+                rendererScale: displayScale
+            ) {
+                WidgetPreviewThumbnailRasterCache.shared.store(rendered, forKey: key)
+                image = rendered
+            }
+        }
+    }
+
+    private var liveBody: some View {
         let base = WidgetPreview.widgetSize(for: family)
         let scale = height / base.height
         let scaledWidth = base.width * scale
 
-        WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+        return WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
             .frame(width: base.width, height: base.height)
             .scaleEffect(scale, anchor: .center)
             .frame(width: scaledWidth, height: height, alignment: .center)
@@ -587,5 +705,21 @@ struct WidgetPreviewThumbnail: View {
                     .strokeBorder(.primary.opacity(0.10))
             )
             .clipped()
+    }
+
+    private func placeholder(size: CGSize) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
+        return ZStack {
+            shape
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.05))
+
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary.opacity(0.7))
+        }
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+        .frame(width: size.width, height: size.height, alignment: .center)
+        .accessibilityHidden(true)
     }
 }
