@@ -10,12 +10,13 @@ import SwiftUI
 import WidgetKit
 
 extension WidgetWeaverAboutView {
-
     static let featuredWeatherTemplateID = "starter-weather"
     static let featuredCalendarTemplateID = "starter-calendar-nextup"
+    static let featuredStepsTemplateID = "starter-steps"
 
     static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredWeatherTemplateID })!
     static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredCalendarTemplateID })!
+    static let featuredStepsTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredStepsTemplateID })!
 
     static let starterTemplates: [WidgetWeaverAboutTemplate] = [
         WidgetWeaverAboutTemplate(
@@ -72,7 +73,7 @@ extension WidgetWeaverAboutView {
             id: "starter-steps",
             title: "Steps",
             subtitle: "Today + goal progress",
-            description: "A simple Steps widget powered by built-in __steps_* keys. Enable Health access in the app first.",
+            description: "A simple Steps widget powered by built-in __steps_* keys.\nEnable Health access in the app first.",
             tags: ["Steps", "Health", "Goal"],
             requiresPro: false,
             triggersCalendarPermission: false,
@@ -92,7 +93,7 @@ extension WidgetWeaverAboutView {
             id: "starter-calendar-nextup",
             title: "Next Up",
             subtitle: "Calendar events",
-            description: "Upcoming events from Apple Calendar (on-device). Requires Calendar permission.",
+            description: "Upcoming events from Apple Calendar (on-device).\nRequires Calendar permission.",
             tags: ["Next Up", "Events", "On-device"],
             requiresPro: false,
             triggersCalendarPermission: true,
@@ -148,13 +149,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "One thing that matters."
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .teal
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.12
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "scope",
             size: 18,
@@ -163,7 +162,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -174,13 +172,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Until the big day."
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .purple
         spec.style.background = .accentGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "timer",
             size: 18,
@@ -189,7 +185,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -200,13 +195,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Do the next right thing."
         spec.layout.template = .classic
         spec.layout.showsAccentBar = false
-
         spec.style.accent = .pink
         spec.style.background = .sunset
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
-
         spec.symbol = SymbolSpec(
             name: "quote.opening",
             size: 18,
@@ -215,7 +208,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -226,13 +218,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "• Milk\n• Eggs\n• Coffee"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .green
         spec.style.background = .sunset
         spec.style.backgroundOverlay = .radialGlow
         spec.style.backgroundOverlayOpacity = 0.22
         spec.style.backgroundGlowEnabled = false
-
         spec.symbol = SymbolSpec(
             name: "checklist",
             size: 18,
@@ -241,7 +231,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -252,13 +241,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Tonight: 20 mins"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = false
-
         spec.style.accent = .indigo
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.08
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "book.closed",
             size: 18,
@@ -267,7 +254,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -278,13 +264,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Goal {{__steps_goal_today|--|number:0}} • {{__steps_today_fraction|0|percent:0}}"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .green
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "figure.walk",
             size: 18,
@@ -293,7 +277,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         return spec.normalised()
     }
 
@@ -304,14 +287,12 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = nil
         spec.layout.template = .weather
         spec.layout.showsAccentBar = false
-
         spec.style.accent = .blue
         spec.style.background = .plain
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
         spec.style.weatherScale = 1.0
-
         spec.symbol = nil
         return spec.normalised()
     }
@@ -323,13 +304,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = nil
         spec.layout.template = .nextUpCalendar
         spec.layout.showsAccentBar = false
-
         spec.style.accent = .green
         spec.style.background = .plain
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
-
         spec.symbol = nil
         return spec.normalised()
     }
@@ -341,13 +320,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Last: {{last_done|Never|relative}}"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .orange
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "flame.fill",
             size: 18,
@@ -356,7 +333,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         spec.actionBar = WidgetActionBarSpec(
             actions: [
                 WidgetActionSpec(
@@ -378,7 +354,6 @@ extension WidgetWeaverAboutView {
             ],
             style: .prominent
         )
-
         return spec.normalised()
     }
 
@@ -389,13 +364,11 @@ extension WidgetWeaverAboutView {
         spec.secondaryText = "Tap buttons to update"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
-
         spec.style.accent = .red
         spec.style.background = .accentGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.12
         spec.style.backgroundGlowEnabled = true
-
         spec.symbol = SymbolSpec(
             name: "plusminus.circle",
             size: 18,
@@ -404,7 +377,6 @@ extension WidgetWeaverAboutView {
             tint: .accent,
             placement: .beforeName
         )
-
         spec.actionBar = WidgetActionBarSpec(
             actions: [
                 WidgetActionSpec(
@@ -426,7 +398,6 @@ extension WidgetWeaverAboutView {
             ],
             style: .prominent
         )
-
         return spec.normalised()
     }
 }

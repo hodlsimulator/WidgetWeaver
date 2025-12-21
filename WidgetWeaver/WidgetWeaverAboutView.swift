@@ -24,11 +24,17 @@ struct WidgetWeaverAboutView: View {
     /// Switches the sheet to widget help UI.
     let onShowWidgetHelp: @MainActor () -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    /// Opens Weather settings (sheet owned by ContentView).
+    let onOpenWeatherSettings: @MainActor () -> Void
+
+    /// Opens Steps settings (sheet owned by ContentView).
+    let onOpenStepsSettings: @MainActor () -> Void
+
+    /// Jumps to Library tab.
+    let onGoToLibrary: @MainActor () -> Void
 
     @State var designCount: Int = 0
     @State var statusMessage: String = ""
-    @State var showWeatherSettings: Bool = false
 
     @State private var showCalendarAccessExplainer: Bool = false
     @State private var showCalendarDeniedAlert: Bool = false
@@ -36,68 +42,54 @@ struct WidgetWeaverAboutView: View {
     @State private var calendarPromptSourceTitle: String = "Calendar"
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                WidgetWeaverAboutBackground()
+        ZStack {
+            WidgetWeaverAboutBackground()
 
-                List {
-                    aboutHeaderSection
-                    featuredWeatherSection
-                    featuredCalendarSection
-                    capabilitiesSection
-                    starterTemplatesSection
-                    proTemplatesSection
-                    interactiveButtonsSection
-                    variablesSection
-                    aiSection
-                    sharingSection
-                    proSection
-                    diagnosticsSection
-                }
-                .scrollContentBackground(.hidden)
-                .listStyle(.insetGrouped)
-                .listSectionSeparator(.hidden)
-            }
-            .navigationTitle("About")
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(WidgetWeaverAboutTheme.pageTint)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Label("Close", systemImage: "xmark.circle.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .accessibilityLabel("Close")
-                }
-            }
-            .onAppear {
-                refreshDesignCount()
-            }
-            .navigationDestination(isPresented: $showWeatherSettings) {
-                WidgetWeaverWeatherSettingsView()
-            }
-            .alert("Enable Calendar access?", isPresented: $showCalendarAccessExplainer) {
-                Button("Not now", role: .cancel) { }
+            List {
+                aboutHeaderSection
 
-                Button(calendarAccessInFlight ? "Requesting…" : "Continue") {
-                    requestCalendarAccess()
-                }
+                featuredWeatherSection
+                featuredCalendarSection
+                featuredStepsSection
+
+                starterTemplatesSection
+                proTemplatesSection
+
+                capabilitiesSection
+                interactiveButtonsSection
+                variablesSection
+                aiSection
+                privacySection
+
+                sharingSection
+                proSection
+                diagnosticsSection
+                supportSection
+            }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
+            .listSectionSeparator(.hidden)
+        }
+        .navigationTitle("Explore")
+        .navigationBarTitleDisplayMode(.large)
+        .tint(WidgetWeaverAboutTheme.pageTint)
+        .onAppear { refreshDesignCount() }
+        .alert("Enable Calendar access?", isPresented: $showCalendarAccessExplainer) {
+            Button("Not now", role: .cancel) { }
+            Button(calendarAccessInFlight ? "Requesting…" : "Continue") { requestCalendarAccess() }
                 .disabled(calendarAccessInFlight)
-            } message: {
-                Text("“\(calendarPromptSourceTitle)” uses Calendar access to show your upcoming events in the widget.\nEvents stay on-device.")
-            }
-            .alert("Calendar access is off", isPresented: $showCalendarDeniedAlert) {
-                Button("OK", role: .cancel) { }
-                Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
+        } message: {
+            Text("“\(calendarPromptSourceTitle)” uses Calendar access to show your upcoming events in the widget.\nEvents stay on-device.")
+        }
+        .alert("Calendar access is off", isPresented: $showCalendarDeniedAlert) {
+            Button("OK", role: .cancel) { }
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
                 }
-            } message: {
-                Text("Enable Calendar access in Settings to show upcoming events in the Calendar template.")
             }
+        } message: {
+            Text("Enable Calendar access in Settings to show upcoming events in the Calendar template.")
         }
     }
 
@@ -112,7 +104,6 @@ struct WidgetWeaverAboutView: View {
         }
 
         onAddTemplate(template.spec, makeDefault)
-
         statusMessage = makeDefault ? "Added “\(template.title)” and set as default." : "Added “\(template.title)”."
         refreshDesignCount()
 
@@ -148,13 +139,9 @@ struct WidgetWeaverAboutView: View {
     func presentCalendarPermissionFlow() {
         switch calendarPermissionState() {
         case .granted:
-            Task {
-                _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
-            }
-
+            Task { _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true) }
         case .notDetermined:
             showCalendarAccessExplainer = true
-
         case .denied:
             showCalendarDeniedAlert = true
         }
@@ -163,11 +150,11 @@ struct WidgetWeaverAboutView: View {
     @MainActor
     private func requestCalendarAccess() {
         guard !calendarAccessInFlight else { return }
+
         calendarAccessInFlight = true
 
         Task {
             let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
-
             if granted {
                 _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
                 await MainActor.run {
@@ -200,14 +187,14 @@ struct WidgetWeaverAboutView: View {
         UIPasteboard.general.string = string
         statusMessage = "Copied to clipboard."
     }
-    
+
     // MARK: - Sharing
 
     var sharingSection: some View {
         Section {
             WidgetWeaverAboutCard(accent: .mint) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Share a design as a small package (JSON + image). Others can import it into their library.")
+                    Text("Share a design as a small package (JSON + image).\nOthers can import it into their library.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -257,9 +244,7 @@ struct WidgetWeaverAboutView: View {
                             "More saved designs"
                         ])
 
-                        Button {
-                            onShowPro()
-                        } label: {
+                        Button { onShowPro() } label: {
                             Label("Upgrade to Pro", systemImage: "crown.fill")
                         }
                         .buttonStyle(.borderedProminent)

@@ -10,7 +10,6 @@ import SwiftUI
 import WidgetKit
 
 extension WidgetWeaverAboutView {
-
     // MARK: - Header
 
     var aboutHeaderSection: some View {
@@ -33,25 +32,25 @@ extension WidgetWeaverAboutView {
 
                     Text(
                         """
-                        Build Home Screen widgets from simple templates.
-                        Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons.
-                        Designs are saved on your device and shown on your Home Screen.
+                        Explore curated templates, then customise layout + style in the Editor.
+                        Featured starters include Weather, Next Up (Calendar), and Steps.
                         """
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
                     HStack(spacing: 12) {
-                        Button {
-                            onShowWidgetHelp()
-                        } label: {
+                        Button { onGoToLibrary() } label: {
+                            Label("Library", systemImage: "square.grid.2x2")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button { onShowWidgetHelp() } label: {
                             Label("Widget Help", systemImage: "questionmark.circle")
                         }
                         .buttonStyle(.bordered)
 
-                        Button {
-                            onShowPro()
-                        } label: {
+                        Button { onShowPro() } label: {
                             if proManager.isProUnlocked {
                                 Label("Pro (Unlocked)", systemImage: "checkmark.seal.fill")
                             } else {
@@ -66,7 +65,6 @@ extension WidgetWeaverAboutView {
                         HStack(spacing: 8) {
                             Image(systemName: "info.circle")
                                 .foregroundStyle(WidgetWeaverAboutTheme.pageTint)
-
                             Text(statusMessage)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -100,15 +98,10 @@ extension WidgetWeaverAboutView {
                         Spacer(minLength: 0)
 
                         Menu {
-                            Button {
-                                handleAdd(template: template, makeDefault: false)
-                            } label: {
+                            Button { handleAdd(template: template, makeDefault: false) } label: {
                                 Label("Add to library", systemImage: "plus")
                             }
-
-                            Button {
-                                handleAdd(template: template, makeDefault: true)
-                            } label: {
+                            Button { handleAdd(template: template, makeDefault: true) } label: {
                                 Label("Add & Make Default", systemImage: "star.fill")
                             }
                         } label: {
@@ -151,14 +144,12 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "In the app: … → Weather → choose a location (Current Location or search).",
+                        "Open Weather settings and choose a location (Current Location or search).",
                         "Add the Weather template to your library (optionally make it Default).",
                         "Add a WidgetWeaver widget to your Home Screen.",
                     ])
 
-                    Button {
-                        showWeatherSettings = true
-                    } label: {
+                    Button { onOpenWeatherSettings() } label: {
                         Label("Open Weather settings", systemImage: "cloud.rain")
                     }
                     .buttonStyle(.bordered)
@@ -172,7 +163,8 @@ extension WidgetWeaverAboutView {
                     WidgetWeaverAboutCodeBlock(
                         """
                         {{__weather_location|Set location}}
-                        {{__weather_temp|--}}° {{__weather_condition|Updating…}}
+                        {{__weather_temp|--}}°
+                        {{__weather_condition|Updating…}}
                         {{__weather_precip|0}}%
                         """,
                         accent: .blue
@@ -208,7 +200,7 @@ extension WidgetWeaverAboutView {
         }
     }
 
-    // MARK: - Featured Calendar
+    // MARK: - Featured Calendar (Next Up)
 
     var featuredCalendarSection: some View {
         let template = Self.featuredCalendarTemplate
@@ -219,9 +211,9 @@ extension WidgetWeaverAboutView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Calendar")
+                            Text("Next Up")
                                 .font(.headline)
-                            Text("Next Up • upcoming events")
+                            Text("Calendar events • on-device")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -229,15 +221,10 @@ extension WidgetWeaverAboutView {
                         Spacer(minLength: 0)
 
                         Menu {
-                            Button {
-                                handleAdd(template: template, makeDefault: false)
-                            } label: {
+                            Button { handleAdd(template: template, makeDefault: false) } label: {
                                 Label("Add to library", systemImage: "plus")
                             }
-
-                            Button {
-                                handleAdd(template: template, makeDefault: true)
-                            } label: {
+                            Button { handleAdd(template: template, makeDefault: true) } label: {
                                 Label("Add & Make Default", systemImage: "star.fill")
                             }
                         } label: {
@@ -261,9 +248,7 @@ extension WidgetWeaverAboutView {
 
                         Spacer(minLength: 0)
 
-                        Button {
-                            presentCalendarPermissionFlow()
-                        } label: {
+                        Button { presentCalendarPermissionFlow() } label: {
                             Label(
                                 canRead ? "Refresh now" : "Enable access",
                                 systemImage: canRead ? "arrow.clockwise" : "checkmark.circle.fill"
@@ -298,7 +283,7 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Add the Calendar template to your library.",
+                        "Add the Next Up template to your library.",
                         "When prompted, allow Calendar access.",
                         "Add a WidgetWeaver widget to your Home Screen.",
                     ])
@@ -307,7 +292,7 @@ extension WidgetWeaverAboutView {
             .tint(.green)
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Calendar", systemImage: "calendar", accent: .green)
+            WidgetWeaverAboutSectionHeader("Next Up", systemImage: "calendar", accent: .green)
         } footer: {
             Text(
                 """
@@ -317,6 +302,120 @@ extension WidgetWeaverAboutView {
             )
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Featured Steps
+
+    var featuredStepsSection: some View {
+        let template = Self.featuredStepsTemplate
+        let access = WidgetWeaverStepsStore.shared.loadLastAccess()
+
+        let accessLabel: String = {
+            switch access {
+            case .authorised: return "Access: On"
+            case .denied: return "Access: Off"
+            case .notDetermined: return "Access: Not set"
+            case .notAvailable: return "Access: Not available"
+            case .unknown: return "Access: Unknown"
+            }
+        }()
+
+        let accessIcon: String = {
+            switch access {
+            case .authorised: return "checkmark.seal.fill"
+            case .denied: return "heart.slash"
+            case .notDetermined: return "heart.circle"
+            case .notAvailable: return "exclamationmark.triangle.fill"
+            case .unknown: return "questionmark.circle"
+            }
+        }()
+
+        return Section {
+            WidgetWeaverAboutCard(accent: .green) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Steps")
+                                .font(.headline)
+                            Text("Today • goal • streak-ready")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Menu {
+                            Button { handleAdd(template: template, makeDefault: false) } label: {
+                                Label("Add to library", systemImage: "plus")
+                            }
+                            Button { handleAdd(template: template, makeDefault: true) } label: {
+                                Label("Add & Make Default", systemImage: "star.fill")
+                            }
+                        } label: {
+                            Label("Add", systemImage: "plus.circle.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Text("Uses built-in __steps_* keys. Requires Health permission so the app can cache today’s snapshot for widgets.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Label(accessLabel, systemImage: accessIcon)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Spacer(minLength: 0)
+
+                        Button { onOpenStepsSettings() } label: {
+                            Label("Open Steps settings", systemImage: "heart")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    if !template.tags.isEmpty {
+                        WidgetWeaverAboutFlowTags(tags: template.tags)
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Small", accent: .green) {
+                                WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86)
+                            }
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Medium", accent: .green) {
+                                WidgetPreviewThumbnail(spec: template.spec, family: .systemMedium, height: 86)
+                            }
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Large", accent: .green) {
+                                WidgetPreviewThumbnail(spec: template.spec, family: .systemLarge, height: 86)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    Divider()
+
+                    Text("Setup")
+                        .font(.subheadline.weight(.semibold))
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Open Steps settings and enable Health access.",
+                        "Add the Steps template to your library.",
+                        "Add a WidgetWeaver widget to your Home Screen.",
+                    ])
+                }
+            }
+            .tint(.green)
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Steps", systemImage: "figure.walk", accent: .green)
+        } footer: {
+            Text("Steps are cached in the App Group so widgets can render quickly.\nRefresh limits still apply, so opening the app helps keep snapshots current.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -338,7 +437,7 @@ extension WidgetWeaverAboutView {
                     Divider()
                     WidgetWeaverAboutFeatureRow(
                         title: "Layout templates",
-                        subtitle: "Classic / Hero / Poster / Weather / Calendar presets, plus a starter Steps template, plus axis, alignment, spacing, and line limits."
+                        subtitle: "Classic / Hero / Poster / Weather / Next Up, plus axis, alignment, spacing, and line limits."
                     )
                     Divider()
                     WidgetWeaverAboutFeatureRow(
@@ -360,19 +459,18 @@ extension WidgetWeaverAboutView {
                         title: "Interactive buttons (Pro)",
                         subtitle: "Add an action bar to the widget (iOS 17+) to update variables without opening the app."
                     )
-
                     Divider()
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Examples of widgets that fit the current renderer:")
+                        Text("Examples that fit the current renderer:")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         WidgetWeaverAboutBulletList(items: [
-                            "Weather (rain-first nowcast + forecast) via the built-in Weather template",
-                            "Next Up calendar widget (upcoming events) via the Calendar template",
-                            "Steps widget (Health) via the Steps template",
-                            "Habit tracker / streak counter (with Variables + interactive buttons in Pro)",
+                            "Weather (rain-first nowcast + forecast) via Weather template",
+                            "Next Up calendar widget (upcoming events) via Next Up template",
+                            "Steps widget (Health) via Steps starter design",
+                            "Habit tracker / streak counter (Variables + interactive buttons in Pro)",
                             "Countdown widget (manual or variable-driven)",
                             "Daily focus / top task",
                             "Shopping list / reminder",
@@ -384,7 +482,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Capabilities", systemImage: "wand.and.stars", accent: .purple)
         } footer: {
-            Text("Each design renders into Small/Medium/Large with size-aware layout rules.\nSome presets (Weather/Calendar) are special layouts.")
+            Text("Each design renders into Small/Medium/Large with size-aware layout rules.\nSome presets (Weather/Next Up) are special layouts.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -394,16 +492,16 @@ extension WidgetWeaverAboutView {
 
     var starterTemplatesSection: some View {
         Section {
-            ForEach(Self.starterTemplates.filter { $0.id != Self.featuredWeatherTemplateID && $0.id != Self.featuredCalendarTemplateID }) { template in
+            ForEach(Self.starterTemplates.filter {
+                $0.id != Self.featuredWeatherTemplateID &&
+                $0.id != Self.featuredCalendarTemplateID &&
+                $0.id != Self.featuredStepsTemplateID
+            }) { template in
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
-                    onAdd: { makeDefault in
-                        handleAdd(template: template, makeDefault: makeDefault)
-                    },
-                    onShowPro: {
-                        onShowPro()
-                    }
+                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                    onShowPro: { onShowPro() }
                 )
             }
         } header: {
@@ -429,12 +527,8 @@ extension WidgetWeaverAboutView {
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
-                    onAdd: { makeDefault in
-                        handleAdd(template: template, makeDefault: makeDefault)
-                    },
-                    onShowPro: {
-                        onShowPro()
-                    }
+                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                    onShowPro: { onShowPro() }
                 )
             }
         } header: {
@@ -476,9 +570,7 @@ extension WidgetWeaverAboutView {
                         Label("Interactive buttons are a Pro feature.", systemImage: "lock.fill")
                             .foregroundStyle(.secondary)
 
-                        Button {
-                            onShowPro()
-                        } label: {
+                        Button { onShowPro() } label: {
                             Label("Unlock Pro", systemImage: "crown.fill")
                         }
                         .buttonStyle(.borderedProminent)
@@ -505,7 +597,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         Template variables let text fields pull values at render time.
-                        Some keys are built-in (time/date + weather). Pro unlocks a shared variable store that can be updated via Shortcuts and interactive widget buttons.
+                        Some keys are built-in (time/date + weather + steps). Pro unlocks a shared variable store that can be updated via Shortcuts and interactive widget buttons.
                         """
                     )
                     .font(.subheadline)
@@ -527,6 +619,7 @@ extension WidgetWeaverAboutView {
                                 {{__now||date:HH:mm}}
                                 {{__weather_temp|--}}
                                 {{__weather_condition|Updating…}}
+                                {{__steps_today|--|number:0}}
                                 {{=done/total*100|0|number:0}}%
                                 """,
                                 accent: .teal
@@ -624,7 +717,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         WidgetWeaver stores designs and caches locally on your device.
-                        Weather and calendar data is read on-device and saved into the App Group cache for widgets to render offline.
+                        Weather, calendar, and steps snapshots are read on-device and saved into the App Group cache for widgets to render offline.
                         """
                     )
                     .font(.subheadline)
@@ -643,7 +736,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Privacy", systemImage: "hand.raised.fill", accent: .gray)
         } footer: {
-            Text("No accounts. No servers. No tracking.")
+            Text("No accounts.\nNo servers. No tracking.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -655,17 +748,13 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .pink) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        """
-                        This is a prototype app for exploring widget layouts and spec-driven rendering.
-                        """
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text("This is a prototype app for exploring widget layouts and spec-driven rendering.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "If widgets look stale, use … → Refresh Widgets.",
-                        "If Weather looks stale, use Weather → Update now.",
+                        "If widgets look stale, use Editor → Widgets → Refresh Widgets.",
+                        "If Weather looks stale, open Weather settings and Update now.",
                         "Steps widgets require opening the app to grant Health permission and cache today.",
                     ])
                 }

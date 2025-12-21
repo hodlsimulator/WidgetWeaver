@@ -1,129 +1,76 @@
 //
-//  ContentView+Model.swift
+//  ContentView+Layout.swift
 //  WidgetWeaver
 //
 //  Created by . . on 12/18/25.
 //
 
-import Foundation
+import SwiftUI
 import WidgetKit
 
 extension ContentView {
+    @ViewBuilder
+    var editorLayout: some View {
+        if horizontalSizeClass == .regular {
+            HStack(alignment: .top, spacing: 16) {
+                previewDock(presentation: .sidebar)
+                    .frame(width: 420)
+                    .padding(.top, 8)
 
-    // MARK: - Derived helpers
-
-    var defaultName: String? {
-        guard let defaultSpecID else { return nil }
-        return savedSpecs.first(where: { $0.id == defaultSpecID })?.name ?? store.loadDefault().name
-    }
-
-    func specDisplayName(_ spec: WidgetSpec) -> String {
-        if spec.id == defaultSpecID {
-            return "\(spec.name) (Default)"
-        }
-        return spec.name
-    }
-
-    var hasUnsavedChanges: Bool {
-        guard let saved = store.load(id: selectedSpecID) else { return false }
-        let draft = draftSpec(id: selectedSpecID)
-        return comparableSpec(draft) != comparableSpec(saved)
-    }
-
-    private func comparableSpec(_ spec: WidgetSpec) -> WidgetSpec {
-        var s = spec.normalised()
-        s.updatedAt = Date(timeIntervalSince1970: 0)
-        return s
-    }
-
-    // MARK: - Model glue
-
-    func bootstrap() {
-        refreshSavedSpecs(preservingSelection: false)
-        loadSelected()
-    }
-
-    func refreshSavedSpecs(preservingSelection: Bool = true) {
-        let specs = store
-            .loadAll()
-            .sorted { $0.updatedAt > $1.updatedAt }
-
-        savedSpecs = specs
-        defaultSpecID = store.defaultSpecID()
-
-        if preservingSelection, specs.contains(where: { $0.id == selectedSpecID }) {
-            return
-        }
-
-        let fallback = store.loadDefault()
-        selectedSpecID = defaultSpecID ?? fallback.id
-    }
-
-    func applySpec(_ spec: WidgetSpec) {
-        let n = spec.normalised()
-
-        designName = n.name
-        styleDraft = StyleDraft(from: n.style)
-        actionBarDraft = ActionBarDraft(from: n.actionBar)
-        lastSavedAt = n.updatedAt
-
-        if n.matchedSet != nil {
-            matchedSetEnabled = true
-
-            let smallFlat = n.resolved(for: .systemSmall)
-            let mediumFlat = n.resolved(for: .systemMedium)
-            let largeFlat = n.resolved(for: .systemLarge)
-
-            matchedDrafts = MatchedDrafts(
-                small: FamilyDraft(from: smallFlat),
-                medium: FamilyDraft(from: mediumFlat),
-                large: FamilyDraft(from: largeFlat)
-            )
-
-            baseDraft = matchedDrafts.medium
+                editorForm
+            }
+            .padding(.horizontal, 16)
         } else {
-            matchedSetEnabled = false
-
-            baseDraft = FamilyDraft(from: n)
-            matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+            editorForm
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    Color.clear
+                        .frame(height: WidgetPreviewDock.reservedInsetHeight(verticalSizeClass: verticalSizeClass))
+                }
+                .overlay(alignment: .bottom) {
+                    previewDock(presentation: .dock)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                }
         }
     }
 
-    func draftSpec(id: UUID) -> WidgetSpec {
-        let trimmedName = designName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalName = trimmedName.isEmpty ? "WidgetWeaver" : trimmedName
+    var editorForm: some View {
+        Form {
+            statusSection
+            widgetWorkflowSection
 
-        let style = styleDraft.toStyleSpec()
+            // New: clearer separation of “what it is” vs “how it’s laid out”
+            contentSection
+            layoutSection
 
-        if matchedSetEnabled {
-            let base = matchedDrafts.medium
+            textSection
+            symbolSection
+            imageSection
 
-            let baseSpec = base.toFlatSpec(
-                id: id,
-                name: finalName,
-                style: style,
-                updatedAt: lastSavedAt ?? Date()
-            )
+            styleSection
+            typographySection
 
-            let matched = WidgetSpecMatchedSet(
-                small: matchedDrafts.small.toVariantSpec(),
-                medium: nil,
-                large: matchedDrafts.large.toVariantSpec()
-            )
+            actionsSection
+            matchedSetSection
 
-            var out = baseSpec
-            out.actionBar = actionBarDraft.toActionBarSpec()
-            out.matchedSet = matched
-            return out.normalised()
-        } else {
-            var out = baseDraft.toFlatSpec(
-                id: id,
-                name: finalName,
-                style: style,
-                updatedAt: lastSavedAt ?? Date()
-            )
-            out.actionBar = actionBarDraft.toActionBarSpec()
-            return out.normalised()
+            variablesManagerSection
+            sharingSection
+
+            aiSection
+            proSection
         }
+        .font(.subheadline)
+        .controlSize(.small)
+        .environment(\.defaultMinListRowHeight, 36)
+        .scrollDismissesKeyboard(.interactively)
+        .scrollContentBackground(.hidden)
+    }
+
+    func previewDock(presentation: WidgetPreviewDock.Presentation) -> some View {
+        WidgetPreviewDock(
+            spec: draftSpec(id: selectedSpecID),
+            family: $previewFamily,
+            presentation: presentation
+        )
     }
 }
