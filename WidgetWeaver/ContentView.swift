@@ -26,9 +26,7 @@ struct ContentView: View {
 
     @State var designName: String = "WidgetWeaver"
     @State var styleDraft: StyleDraft = .defaultDraft
-
     @State var actionBarDraft: ActionBarDraft = .defaultDraft
-
     @State var baseDraft: FamilyDraft = .defaultDraft
 
     @State var matchedSetEnabled: Bool = false
@@ -39,7 +37,6 @@ struct ContentView: View {
     )
 
     @State var pickedPhoto: PhotosPickerItem?
-
     @State var lastImageThemeFileName: String = ""
     @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
 
@@ -54,7 +51,6 @@ struct ContentView: View {
 
     @State var lastSavedAt: Date?
     @State var lastWidgetRefreshAt: Date?
-
     @State var saveStatusMessage: String = ""
 
     @State var showDeleteConfirmation: Bool = false
@@ -69,6 +65,7 @@ struct ContentView: View {
         case inspector
         case remix
         case weather
+        case steps
 
         var id: Int {
             switch self {
@@ -79,13 +76,12 @@ struct ContentView: View {
             case .weather: return 5
             case .inspector: return 6
             case .remix: return 7
-            
+            case .steps: return 8
             }
         }
     }
 
     @State var activeSheet: ActiveSheet?
-
     @State var showImportPicker: Bool = false
     @State var importInProgress: Bool = false
 
@@ -104,14 +100,8 @@ struct ContentView: View {
             .navigationTitle("WidgetWeaver")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    remixToolbarButton
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    toolbarMenu
-                }
-
+                ToolbarItem(placement: .topBarTrailing) { remixToolbarButton }
+                ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("Done") { Keyboard.dismiss() }
@@ -161,12 +151,8 @@ struct ContentView: View {
                         onAddTemplate: { spec, makeDefault in
                             addTemplateDesign(spec, makeDefault: makeDefault)
                         },
-                        onShowPro: {
-                            activeSheet = .pro
-                        },
-                        onShowWidgetHelp: {
-                            activeSheet = .widgetHelp
-                        }
+                        onShowPro: { activeSheet = .pro },
+                        onShowWidgetHelp: { activeSheet = .widgetHelp }
                     )
 
                 case .variables:
@@ -185,20 +171,19 @@ struct ContentView: View {
                     WidgetWeaverRemixSheet(
                         variants: remixVariants,
                         family: previewFamily,
-                        onApply: { spec in
-                            applyRemixVariant(spec)
-                        },
-                        onAgain: {
-                            remixAgain()
-                        },
-                        onClose: {
-                            activeSheet = nil
-                        }
+                        onApply: { spec in applyRemixVariant(spec) },
+                        onAgain: { remixAgain() },
+                        onClose: { activeSheet = nil }
                     )
-                    
+
                 case .weather:
                     NavigationStack {
                         WidgetWeaverWeatherSettingsView(onClose: { activeSheet = nil })
+                    }
+
+                case .steps:
+                    NavigationStack {
+                        WidgetWeaverStepsSettingsView(onClose: { activeSheet = nil })
                     }
                 }
             }
@@ -218,9 +203,7 @@ struct ContentView: View {
                 }
             }
             .onAppear { bootstrap() }
-            .onChange(of: selectedSpecID) { _, _ in
-                loadSelected()
-            }
+            .onChange(of: selectedSpecID) { _, _ in loadSelected() }
             .onChange(of: pickedPhoto) { _, newItem in
                 guard let newItem else { return }
                 Task { await importPickedImage(newItem) }

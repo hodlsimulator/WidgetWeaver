@@ -10,7 +10,6 @@ import Foundation
 public enum WidgetWeaverWidgetKinds {
     public static let main = "WidgetWeaverWidget"
     public static let lockScreenWeather = "WidgetWeaverLockScreenWeatherWidget"
-
-    // NEW:
     public static let lockScreenNextUp = "WidgetWeaverLockScreenNextUpWidget"
+    public static let lockScreenSteps = "WidgetWeaverLockScreenStepsWidget"
 }

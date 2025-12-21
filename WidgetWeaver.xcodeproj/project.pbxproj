@@ -26,6 +26,8 @@
 		E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */; };
 		E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
 		E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */; };
+		E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
+		E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */; };
 		E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */; };
 		E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */; };
@@ -81,6 +83,7 @@
 		E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
 		E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateComponents.swift; sourceTree = "<group>"; };
 		E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverCalendar.swift; sourceTree = "<group>"; };
+		E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverSteps.swift; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
 		E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateView.swift; sourceTree = "<group>"; };
 		E18676782EF227C30098B095 /* WidgetWeaver.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WidgetWeaver.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -193,6 +196,7 @@
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
 				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
 				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
+				E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */,
 				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
 				E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */,
 				E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */,
@@ -325,6 +329,7 @@
 				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
+				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,6 +341,7 @@
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
 				E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
+				E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
 				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
@@ -377,6 +383,7 @@
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;
@@ -399,6 +406,7 @@
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "WidgetWeaver shows your next calendar event in the Next Up widget.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "WidgetWeaver reads your step count to show steps in widgets.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				MARKETING_VERSION = 0.9.4;

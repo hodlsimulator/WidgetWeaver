@@ -8,11 +8,14 @@
 import SwiftUI
 
 extension ContentView {
-
     var toolbarMenu: some View {
         Menu {
             Button { activeSheet = .weather } label: {
                 Label("Weather", systemImage: "cloud.sun.fill")
+            }
+
+            Button { activeSheet = .steps } label: {
+                Label("Steps", systemImage: "figure.walk")
             }
 
             Divider()
@@ -108,7 +111,6 @@ extension ContentView {
                 Label("Delete Design", systemImage: "trash")
             }
             .disabled(savedSpecs.count <= 1)
-
         } label: {
             Image(systemName: "ellipsis.circle")
         }

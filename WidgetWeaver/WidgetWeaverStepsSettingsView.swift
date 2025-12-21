@@ -1,0 +1,247 @@
+//
+//  WidgetWeaverStepsSettingsView.swift
+//  WidgetWeaver
+//
+//  Created by . . on 12/21/25.
+//
+
+import SwiftUI
+import WidgetKit
+import UIKit
+
+struct WidgetWeaverStepsSettingsView: View {
+    var onClose: (() -> Void)? = nil
+
+    @Environment(\.openURL) private var openURL
+
+    @State private var isWorking: Bool = false
+    @State private var statusText: String? = nil
+
+    @State private var authStatus: WidgetWeaverStepsAuthorisationStatus = WidgetWeaverStepsEngine.shared.authorisationStatus()
+    @State private var snapshot: WidgetWeaverStepsSnapshot? = WidgetWeaverStepsStore.shared.snapshotForToday()
+    @State private var goalSteps: Int = WidgetWeaverStepsStore.shared.loadGoalSteps()
+
+    private let store = WidgetWeaverStepsStore.shared
+    private let engine = WidgetWeaverStepsEngine.shared
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Steps")
+                            .font(.headline)
+
+                        Spacer()
+
+                        if let onClose {
+                            Button("Done") { onClose() }
+                                .font(.headline)
+                        }
+                    }
+
+                    Text("Used by the Steps lock screen widget.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("Access") {
+                HStack {
+                    Label(accessStatusTitle, systemImage: accessStatusSymbol)
+                        .foregroundStyle(accessStatusTint)
+
+                    Spacer()
+
+                    Button("Refresh") {
+                        refreshLocalState()
+                    }
+                    .disabled(isWorking)
+                }
+
+                if authStatus == .notDetermined {
+                    Button {
+                        Task { await requestAccess() }
+                    } label: {
+                        Label("Enable Steps Access", systemImage: "checkmark.shield")
+                    }
+                    .disabled(isWorking)
+                }
+
+                if authStatus == .denied {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open Settings", systemImage: "gear")
+                    }
+                    .disabled(isWorking)
+                }
+
+                Text(accessStatusHelpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Goal") {
+                Stepper("Daily goal: \(goalSteps.formatted(.number.grouping(.automatic)))", value: $goalSteps, in: 500...200_000, step: 500)
+                    .onChange(of: goalSteps) { _, newValue in
+                        store.saveGoalSteps(newValue)
+                        reloadWidgets()
+                    }
+
+                Text("The circular widget shows progress towards this goal.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Today") {
+                if let snap = snapshot {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(snap.stepsToday.formatted(.number.grouping(.automatic))) steps")
+                            .font(.headline)
+
+                        Text("Updated \(snap.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No cached steps yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    Task { await updateNow(force: true) }
+                } label: {
+                    Label("Update now", systemImage: "arrow.clockwise")
+                }
+                .disabled(isWorking || authStatus != .authorised)
+
+                Button(role: .destructive) {
+                    store.clearSnapshot()
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Clear cached steps", systemImage: "trash")
+                }
+                .disabled(snapshot == nil)
+            }
+
+            if let statusText {
+                Section {
+                    Text(statusText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Steps")
+        .overlay {
+            if isWorking {
+                ProgressView()
+                    .padding(14)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+        .onAppear {
+            refreshLocalState()
+        }
+    }
+
+    private var accessStatusTitle: String {
+        switch authStatus {
+        case .authorised: return "Authorised"
+        case .notDetermined: return "Not enabled"
+        case .denied: return "Denied"
+        case .unavailable: return "Unavailable"
+        }
+    }
+
+    private var accessStatusSymbol: String {
+        switch authStatus {
+        case .authorised: return "checkmark.circle.fill"
+        case .notDetermined: return "questionmark.circle"
+        case .denied: return "xmark.octagon.fill"
+        case .unavailable: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var accessStatusTint: Color {
+        switch authStatus {
+        case .authorised: return .green
+        case .notDetermined: return .secondary
+        case .denied: return .orange
+        case .unavailable: return .secondary
+        }
+    }
+
+    private var accessStatusHelpText: String {
+        switch authStatus {
+        case .authorised:
+            return "Steps can be read from Health."
+        case .notDetermined:
+            return "Tap “Enable Steps Access” to grant read access to step count."
+        case .denied:
+            return "Enable Health access for WidgetWeaver in Settings."
+        case .unavailable:
+            return "Health data is not available on this device."
+        }
+    }
+
+    private func refreshLocalState() {
+        authStatus = engine.authorisationStatus()
+        snapshot = store.snapshotForToday()
+        goalSteps = store.loadGoalSteps()
+    }
+
+    private func reloadWidgets() {
+        AppGroup.userDefaults.synchronize()
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenSteps)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+    }
+
+    private func requestAccess() async {
+        isWorking = true
+        statusText = nil
+        defer {
+            isWorking = false
+            refreshLocalState()
+        }
+
+        let ok = await engine.requestReadAuthorisation()
+        refreshLocalState()
+
+        if ok, authStatus == .authorised {
+            statusText = "Steps access enabled."
+            await updateNow(force: true)
+        } else {
+            statusText = "Steps access was not enabled."
+        }
+    }
+
+    private func updateNow(force: Bool) async {
+        isWorking = true
+        statusText = nil
+        defer {
+            isWorking = false
+            refreshLocalState()
+        }
+
+        let result = await engine.updateIfNeeded(force: force)
+        refreshLocalState()
+        reloadWidgets()
+
+        if let err = result.errorDescription {
+            statusText = "Update finished with an issue: \(err)"
+        } else {
+            statusText = "Updated."
+        }
+    }
+}
