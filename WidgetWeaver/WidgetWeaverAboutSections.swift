@@ -39,27 +39,8 @@ extension WidgetWeaverAboutView {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                    HStack(spacing: 12) {
-                        Button { onGoToLibrary() } label: {
-                            Label("Library", systemImage: "square.grid.2x2")
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button { onShowWidgetHelp() } label: {
-                            Label("Widget Help", systemImage: "questionmark.circle")
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button { onShowPro() } label: {
-                            if proManager.isProUnlocked {
-                                Label("Pro (Unlocked)", systemImage: "checkmark.seal.fill")
-                            } else {
-                                Label("Upgrade to Pro", systemImage: "crown.fill")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .controlSize(.regular)
+                    aboutHeaderActions
+                        .controlSize(.regular)
 
                     if !statusMessage.isEmpty {
                         HStack(spacing: 8) {
@@ -78,6 +59,86 @@ extension WidgetWeaverAboutView {
         }
     }
 
+
+
+    // MARK: - Header actions (adaptive)
+
+    @ViewBuilder
+    private var aboutHeaderActions: some View {
+        ViewThatFits(in: .horizontal) {
+            aboutHeaderActionsSingleRow
+            aboutHeaderActionsTwoRows
+        }
+    }
+
+    private var aboutHeaderActionsSingleRow: some View {
+        HStack(spacing: 12) {
+            Button { onGoToLibrary() } label: {
+                aboutHeaderButtonContent("Library", systemImage: "square.grid.2x2", fixedSize: true)
+            }
+            .buttonStyle(.bordered)
+
+            Button { onShowWidgetHelp() } label: {
+                aboutHeaderButtonContent("Widget Help", systemImage: "questionmark.circle", fixedSize: true)
+            }
+            .buttonStyle(.bordered)
+
+            Button { onShowPro() } label: {
+                aboutHeaderProContent(fixedSize: true)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var aboutHeaderActionsTwoRows: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Button { onGoToLibrary() } label: {
+                    aboutHeaderButtonContent("Library", systemImage: "square.grid.2x2", fixedSize: false)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+
+                Button { onShowWidgetHelp() } label: {
+                    aboutHeaderButtonContent("Widget Help", systemImage: "questionmark.circle", fixedSize: false)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+            }
+
+            Button { onShowPro() } label: {
+                aboutHeaderProContent(fixedSize: false)
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func aboutHeaderButtonContent(_ title: String, systemImage: String, fixedSize: Bool) -> some View {
+        let content = HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .allowsTightening(true)
+        }
+
+        if fixedSize {
+            content.fixedSize(horizontal: true, vertical: false)
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private func aboutHeaderProContent(fixedSize: Bool) -> some View {
+        if proManager.isProUnlocked {
+            aboutHeaderButtonContent("Pro (Unlocked)", systemImage: "checkmark.seal.fill", fixedSize: fixedSize)
+        } else {
+            aboutHeaderButtonContent("Upgrade to Pro", systemImage: "crown.fill", fixedSize: fixedSize)
+        }
+    }
     // MARK: - Featured Weather
 
     var featuredWeatherSection: some View {

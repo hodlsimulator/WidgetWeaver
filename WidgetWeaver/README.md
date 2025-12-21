@@ -6,11 +6,23 @@ It’s intended as a playground for exploring:
 
 - A simple typed JSON-ish design spec (`WidgetSpec`)
 - Deterministic SwiftUI rendering in a WidgetKit extension (`WidgetWeaverSpecView`)
-- A lightweight template catalogue (About sheet) for seeding designs
+- A lightweight template catalogue (the **Explore** tab) for seeding designs
 - Pro features (matched sets + variables + interactive buttons)
 - Optional on-device AI for spec generation and patch edits
 
 The app and widget extension communicate via an App Group (UserDefaults + shared files) so widgets can render offline.
+
+---
+
+## App structure
+
+WidgetWeaver has three tabs:
+
+- **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps)
+- **Library**: your saved designs (set Default, duplicate, delete)
+- **Editor**: edit the currently selected design, then **Save** to push changes to widgets
+
+Tip: widgets refresh when you **Save** a design. If something looks stale, use **Editor → … → Refresh Widgets**.
 
 ---
 
@@ -27,8 +39,9 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
 
 ### Weather setup
 
-1. In the app, open the toolbar menu (`…`) → **Weather**, then choose a location (Current Location or search).
-2. Open `…` → **About** and add the **Weather** template (optionally “Add & Make Default”).
+1. Open **Explore** → **Weather**, then choose a location (Current Location or search), and tap **Update now**.
+   - (Alternative) **Editor → … → Weather settings**
+2. In **Explore**, add the **Weather** template (optionally “Add & Make Default”).
 3. Add widgets:
    - Home Screen: **WidgetWeaver** (pick a Weather design), and/or
    - Lock Screen: **Rain (WidgetWeaver)**
@@ -52,7 +65,7 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
 
 ### Next Up (Calendar) setup
 
-1. In the app, open `…` → **About** and add the **Next Up (Calendar)** template.
+1. In **Explore**, add the **Next Up (Calendar)** template.
 2. When prompted, allow Calendar access (the app will refresh the cached snapshot after permission is granted).
 3. Add widgets:
    - Home Screen: **WidgetWeaver** (pick a Next Up design), and/or
@@ -60,7 +73,9 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
 
 Notes:
 
-- Calendar widgets render from a cache; if the widget looks stale, open the app and use `…` → **Refresh Widgets**.
+- Calendar widgets render from a cache; if the widget looks stale:
+  - open **Editor → … → Next Up: refresh Calendar**, then
+  - **Editor → … → Refresh Widgets**.
 
 ---
 
@@ -83,7 +98,7 @@ WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widge
 
 ### Steps setup
 
-1. In the app, open `…` → **Steps**.
+1. Open **Explore** → **Steps** (or **Editor → … → Steps settings**).
 2. Grant Health access for Step Count when prompted (widgets cannot request permission).
 3. Refresh Steps in-app to cache:
    - Today’s steps snapshot (for widgets and `__steps_today`), and
@@ -102,20 +117,21 @@ Notes:
 
 ---
 
-## Current status (0.9.4 (14))
+## Current status (0.9.4 (15))
 
 ### App
 
-- ✅ Local editor for `WidgetSpec`
+- ✅ Explore tab: featured widgets + template catalogue (add templates into the Library)
 - ✅ Library of saved specs + Default selection
+- ✅ Editor for `WidgetSpec`
 - ✅ Free tier: up to `WidgetWeaverEntitlements.maxFreeDesigns` saved designs
 - ✅ Pro: unlimited saved designs
 - ✅ Pro: matched sets (S/M/L) share style tokens
 - ✅ Share/export/import JSON (optionally embedding images)
 - ✅ Optional on-device AI (generate + patch)
-- ✅ Weather screen (location + units + cached snapshot + attribution)
+- ✅ Weather setup + cached snapshot + attribution
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
-- ✅ Steps screen (HealthKit access + cached today snapshot + goal schedule + streak rules)
+- ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
 - ✅ Steps History (timeline + monthly calendar + year heatmap) + insights + “Pin this day”
 - ✅ Inspector sheet (resolved spec + JSON + quick checks)
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
@@ -168,21 +184,22 @@ Notes:
     - `WidgetWeaver/WidgetWeaver.entitlements`
     - `WidgetWeaverWidgetExtension.entitlements`
 - Run the app
-- Use the toolbar menu → **About** to add templates
+- In **Explore**, add a starter template (or create a blank design from Library)
+- Edit in **Editor**, then **Save** (widgets refresh after Save)
 
 If using Weather:
 
-- toolbar menu → **Weather** to pick a location and cache a snapshot
+- **Explore → Weather** to pick a location and cache a snapshot (or **Editor → … → Weather settings**)
 
 If using Next Up (Calendar):
 
-- add the template from **About**, then grant Calendar access when prompted
+- Add the template from **Explore**, then grant Calendar access when prompted
 
 If using Steps:
 
 - Add the **HealthKit** capability to both targets (app + widget extension)
 - Add `NSHealthShareUsageDescription` to the app Info.plist
-- In the app: `…` → **Steps** → grant access → refresh today + (optional) load full history
+- In the app: **Explore → Steps** → grant access → refresh today + (optional) load full history
 
 Add widgets:
 
@@ -204,7 +221,7 @@ For Pro features:
 - **Poster**: photo-first with a gradient overlay for text
 - **Weather**: WeatherKit-powered, rain-first nowcast layout with glass panels and adaptive S/M/L layouts
 - **Next Up (Calendar)**: next event + countdown (optionally “Then” on Medium/Large)
-- **Steps (Starter)**: a ready-made Steps design using built-in `__steps_*` keys (choose it from About → Templates)
+- **Steps (Starter)**: a ready-made Steps design using built-in `__steps_*` keys (choose it from Explore → Templates)
 
 The layout is controlled via `LayoutSpec` (template + axis + alignment + spacing + line limits).
 
@@ -231,9 +248,9 @@ Designs can include an action bar with up to 2 buttons:
 - Designed for quick “tap to update” workflows (increment a counter, set a timestamp)
 - No Shortcuts app setup required for end users
 
-### About page + templates
+### Templates
 
-The About sheet includes a built-in template catalogue.
+Templates live in **Explore**:
 
 - Starter templates are free
 - Pro templates can include matched sets, variables, and interactive buttons
@@ -374,23 +391,22 @@ AI features are designed to run on-device to generate or patch the design spec. 
 ## Troubleshooting
 
 - **Weather shows “Set a location”**
-  - Open toolbar menu (`…`) → **Weather**
+  - Open **Explore → Weather**
   - Choose a location, then tap **Update now**
 - **Weather isn’t updating**
   - Weather updates are cached; WidgetKit may throttle refreshes
   - Use **Weather → Update now**
   - Check Location permissions if using Current Location
 - **Next Up shows “Calendar access off”**
-  - Open the app → `…` → **About** → add **Next Up (Calendar)** (or re-add it)
-  - Grant Calendar access when prompted (or enable it in Settings)
+  - Add **Next Up (Calendar)** from **Explore**, then grant Calendar access when prompted (or enable it in Settings)
 - **Next Up shows “No upcoming events”**
   - Confirm there’s an event ahead of the current time
-  - Open the app and use `…` → **Refresh Widgets** to force a widget timeline reload
+  - Open **Editor → … → Next Up: refresh Calendar**, then **Refresh Widgets**
 - **Steps shows “Open app” / “No cached steps yet”**
-  - Open the app → `…` → **Steps**
+  - Open **Explore → Steps**
   - Grant Health access, then refresh Steps to cache today
 - **Steps history is empty**
-  - Open the app → `…` → **Steps** → open **History**
+  - Open **Explore → Steps → History**
   - Refresh to fetch full history back to your first step sample (then it will be cached)
 - **Steps streak looks “broken” early in the day**
   - In **Steps**, switch streak rules to the “Fair” option so today doesn’t break the streak before you hit goal
@@ -402,7 +418,7 @@ AI features are designed to run on-device to generate or patch the design spec. 
   - If you expect steps but always get 0, check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking**
 - **Widgets don’t reflect edits**
   - Make sure the design is saved
-  - Use toolbar menu → **Refresh Widgets** (or remove/re-add the widget)
+  - Use **Editor → … → Refresh Widgets** (or remove/re-add the widget)
 - **Images don’t appear**
   - Ensure the banner image is saved to the App Group container (the app handles this)
   - Try **Clean Up Unused Images** then re-add the image
