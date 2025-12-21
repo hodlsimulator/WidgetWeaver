@@ -237,6 +237,7 @@ struct WidgetWeaverHomeScreenStepsView: View {
             }
         }
         .padding(12)
+        .wwWidgetContainerBackground() // ✅ fixes “Please adopt container background API”
     }
 
     @ViewBuilder
@@ -378,12 +379,8 @@ private struct StepsRing: View {
 }
 
 private extension View {
-    @ViewBuilder
     func wwWidgetContainerBackground() -> some View {
-        if #available(iOS 17.0, *) {
-            self.containerBackground(for: .widget) { Color.clear }
-        } else {
-            self
-        }
+        // iOS 26-only: always adopt the widget container background API.
+        self.containerBackground(.fill.tertiary, for: .widget)
     }
 }
