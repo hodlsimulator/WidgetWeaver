@@ -55,7 +55,7 @@ struct WidgetWeaverStepsSettingsView: View {
                     Spacer()
 
                     Button("Refresh") {
-                        Task { await refreshLocalState() }
+                        Task { await refreshLocalState(showDebug: true) }
                     }
                     .disabled(isWorking)
                 }
@@ -83,6 +83,13 @@ struct WidgetWeaverStepsSettingsView: View {
                 Text(accessStatusHelpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if let statusText {
+                    Text(statusText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
 
             Section("Goal") {
@@ -126,20 +133,12 @@ struct WidgetWeaverStepsSettingsView: View {
 
                 Button(role: .destructive) {
                     store.clearSnapshot()
-                    Task { await refreshLocalState() }
+                    Task { await refreshLocalState(showDebug: false) }
                     reloadWidgets()
                 } label: {
                     Label("Clear cached steps", systemImage: "trash")
                 }
                 .disabled(snapshot == nil)
-            }
-
-            if let statusText {
-                Section {
-                    Text(statusText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .navigationTitle("Steps")
@@ -151,7 +150,7 @@ struct WidgetWeaverStepsSettingsView: View {
             }
         }
         .onAppear {
-            Task { await refreshLocalState() }
+            Task { await refreshLocalState(showDebug: false) }
         }
     }
 
@@ -195,15 +194,20 @@ struct WidgetWeaverStepsSettingsView: View {
         }
     }
 
-    private func refreshLocalState() async {
-        let status = await engine.readAuthorisationStatus()
+    private func refreshLocalState(showDebug: Bool) async {
+        let probe = await engine.readAuthorisationProbe()
         let snap = store.snapshotForToday()
         let goal = store.loadGoalSteps()
 
         await MainActor.run {
-            authStatus = status
+            authStatus = probe.status
             snapshot = snap
             goalSteps = goal
+            if showDebug {
+                statusText = probe.debug
+            } else if probe.status == .authorised {
+                statusText = nil
+            }
         }
     }
 
@@ -220,15 +224,8 @@ struct WidgetWeaverStepsSettingsView: View {
         statusText = nil
         defer { isWorking = false }
 
-        let ok = await engine.requestReadAuthorisation()
-        await refreshLocalState()
-
-        if ok, authStatus == .authorised {
-            statusText = "Steps access enabled."
-            await updateNow(force: true)
-        } else {
-            statusText = "Steps access was not enabled."
-        }
+        _ = await engine.requestReadAuthorisation()
+        await refreshLocalState(showDebug: true)
     }
 
     private func updateNow(force: Bool) async {
@@ -237,13 +234,11 @@ struct WidgetWeaverStepsSettingsView: View {
         defer { isWorking = false }
 
         let result = await engine.updateIfNeeded(force: force)
-        await refreshLocalState()
+        await refreshLocalState(showDebug: false)
         reloadWidgets()
 
-        if let err = result.errorDescription {
-            statusText = err
-        } else {
-            statusText = "Updated."
+        await MainActor.run {
+            statusText = result.errorDescription ?? "Updated."
         }
     }
 }
