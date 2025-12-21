@@ -618,15 +618,14 @@ struct WidgetPreviewThumbnail: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
 
     @State private var image: UIImage? = nil
 
     var body: some View {
-        // iOS 16+ path: rasterised + cached thumbnails for smooth list scrolling.
         if #available(iOS 16.0, *) {
             rasterisedBody
         } else {
-            // Fallback: live render (older OS support).
             liveBody
         }
     }
@@ -638,13 +637,17 @@ struct WidgetPreviewThumbnail: View {
         let scaledWidth = base.width * scale
         let thumbSize = CGSize(width: scaledWidth, height: height)
 
+        let rendererScale = min(displayScale, 2.0)
+
         let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
             spec: spec,
             family: family,
             size: thumbSize,
             colorScheme: colorScheme,
-            screenScale: displayScale
+            screenScale: rendererScale
         )
+
+        let taskID = "\(key)|\(thumbnailRenderingEnabled ? 1 : 0)"
 
         return Group {
             if let img = image ?? WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
@@ -658,7 +661,9 @@ struct WidgetPreviewThumbnail: View {
                 placeholder(size: thumbSize)
             }
         }
-        .task(id: key) {
+        .task(id: taskID) {
+            guard thumbnailRenderingEnabled else { return }
+
             image = nil
 
             if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
@@ -666,8 +671,7 @@ struct WidgetPreviewThumbnail: View {
                 return
             }
 
-            // Small delay avoids doing expensive raster work during fast flick-scrolling.
-            try? await Task.sleep(nanoseconds: 140_000_000)
+            try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled else { return }
 
             if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
@@ -682,7 +686,7 @@ struct WidgetPreviewThumbnail: View {
                 scale: scale,
                 thumbnailSize: thumbSize,
                 colorScheme: colorScheme,
-                rendererScale: displayScale
+                rendererScale: rendererScale
             ) {
                 WidgetPreviewThumbnailRasterCache.shared.store(rendered, forKey: key)
                 image = rendered

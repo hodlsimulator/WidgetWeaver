@@ -36,6 +36,8 @@ struct WidgetWeaverAboutView: View {
     @State var designCount: Int = 0
     @State var statusMessage: String = ""
 
+    @State private var isListScrolling: Bool = false
+
     @State private var showCalendarAccessExplainer: Bool = false
     @State private var showCalendarDeniedAlert: Bool = false
     @State private var calendarAccessInFlight: Bool = false
@@ -45,30 +47,7 @@ struct WidgetWeaverAboutView: View {
         ZStack {
             WidgetWeaverAboutBackground()
 
-            List {
-                aboutHeaderSection
-
-                featuredWeatherSection
-                featuredCalendarSection
-                featuredStepsSection
-
-                starterTemplatesSection
-                proTemplatesSection
-
-                capabilitiesSection
-                interactiveButtonsSection
-                variablesSection
-                aiSection
-                privacySection
-
-                sharingSection
-                proSection
-                diagnosticsSection
-                supportSection
-            }
-            .scrollContentBackground(.hidden)
-            .listStyle(.insetGrouped)
-            .listSectionSeparator(.hidden)
+            aboutList
         }
         .navigationTitle("Explore")
         .navigationBarTitleDisplayMode(.large)
@@ -90,6 +69,59 @@ struct WidgetWeaverAboutView: View {
             }
         } message: {
             Text("Enable Calendar access in Settings to show upcoming events in the Calendar template.")
+        }
+    }
+
+    @ViewBuilder
+    private var aboutList: some View {
+        let list = List {
+            aboutHeaderSection
+
+            featuredWeatherSection
+            featuredCalendarSection
+            featuredStepsSection
+
+            starterTemplatesSection
+            proTemplatesSection
+
+            capabilitiesSection
+            interactiveButtonsSection
+            variablesSection
+            aiSection
+            privacySection
+
+            sharingSection
+            proSection
+            diagnosticsSection
+            supportSection
+        }
+        .scrollContentBackground(.hidden)
+        .listStyle(.insetGrouped)
+        .listSectionSeparator(.hidden)
+        .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
+
+        if #available(iOS 17.0, *) {
+            list
+                .onScrollPhaseChange { _, newPhase in
+                    isListScrolling = newPhase.isScrolling
+                }
+        } else {
+            list
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { _ in
+                            isListScrolling = true
+                        }
+                        .onEnded { _ in
+                            // In iOS 16 and earlier, this is a best-effort signal.
+                            // Rendering is re-enabled after a small delay to avoid
+                            // doing heavy work during deceleration.
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 250_000_000)
+                                isListScrolling = false
+                            }
+                        }
+                )
         }
     }
 
