@@ -31,6 +31,7 @@ struct WidgetWeaverStepsSettingsView: View {
     @State private var snapshot: WidgetWeaverStepsSnapshot?
     @State private var access: WidgetWeaverStepsAccess = .unknown
     @State private var lastError: String?
+    @State private var statusMessage: String?
 
     private var schedule: WidgetWeaverStepsGoalSchedule {
         WidgetWeaverStepsGoalSchedule(
@@ -127,6 +128,16 @@ struct WidgetWeaverStepsSettingsView: View {
                     Text(lastError)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if access == .notDetermined || access == .denied || access == .unknown {
+                    Button {
+                        Task { await requestAccessAndRefresh() }
+                    } label: {
+                        Label("Request Steps Access", systemImage: "hand.raised.fill")
+                    }
+                    .disabled(isRefreshing)
                 }
 
                 Button {
@@ -138,6 +149,18 @@ struct WidgetWeaverStepsSettingsView: View {
                     }
                 }
                 .disabled(isRefreshing)
+
+                if access == .denied {
+                    Text("If access was denied, enable it in the Health app: Sharing → Apps → WidgetWeaver, then allow Steps.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let statusMessage, !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
 
                 Text("Steps are read from Health. Refreshing here keeps widgets snappy.")
                     .font(.footnote)
@@ -186,6 +209,13 @@ struct WidgetWeaverStepsSettingsView: View {
         await refresh(force: false)
     }
 
+    private func requestAccessAndRefresh() async {
+        statusMessage = nil
+        let ok = await WidgetWeaverStepsEngine.shared.requestReadAuthorisation()
+        await refresh(force: true)
+        statusMessage = ok ? "Access request completed." : "Access request failed."
+    }
+
     private func refresh(force: Bool) async {
         if isRefreshing { return }
         isRefreshing = true
@@ -194,12 +224,8 @@ struct WidgetWeaverStepsSettingsView: View {
         let result = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: force)
         snapshot = result.snapshot
         access = result.access
-
-        if let e = result.errorDescription, !e.isEmpty {
-            lastError = e
-        } else {
-            lastError = WidgetWeaverStepsStore.shared.loadLastError()
-        }
+        lastError = WidgetWeaverStepsStore.shared.loadLastError()
+        statusMessage = nil
 
         WidgetSpecStore.shared.reloadWidgets()
     }
@@ -328,9 +354,7 @@ private struct WidgetWeaverStepsHistoryView: View {
             }
         }
         .padding(.vertical, 10)
-        .onAppear {
-            seedCursorsIfNeeded(history)
-        }
+        .onAppear { seedCursorsIfNeeded(history) }
     }
 
     private var empty: some View {
@@ -558,9 +582,7 @@ private struct StepsDayRow: View {
         }
         .contentShape(Rectangle())
         .contextMenu {
-            Button {
-                onPin()
-            } label: {
+            Button { onPin() } label: {
                 Label("Pin this day", systemImage: "pin")
             }
             Button {
@@ -641,9 +663,7 @@ private struct StepsMonthCalendarView: View {
         let hit = (goal > 0) ? (steps >= goal) : false
         let isToday = cal.isDateInToday(dayStart)
 
-        Button {
-            onSelectDay(dayStart)
-        } label: {
+        Button { onSelectDay(dayStart) } label: {
             VStack(spacing: 4) {
                 Text("\(cal.component(.day, from: dayStart))")
                     .font(.system(.subheadline, design: .rounded).weight(isToday ? .bold : .regular))
@@ -1057,7 +1077,7 @@ private struct StepsTodayCard: View {
     private var secondary: String {
         switch access {
         case .denied, .notDetermined:
-            return "Open the app to enable access."
+            return "Tap Request Steps Access."
         case .notAvailable:
             return "HealthKit isn’t available on this device."
         case .unknown, .authorised:
