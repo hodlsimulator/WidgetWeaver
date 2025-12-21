@@ -1113,6 +1113,13 @@ public extension WidgetSpec {
             vars[k] = v
         }
 
+        // Steps variables behave like built-ins (not Pro-gated).
+        // These intentionally override any existing keys to keep the widget truthful.
+        let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
+        for (k, v) in stepsVars {
+            vars[k] = v
+        }
+
         return resolvingVariables(using: vars)
     }
 
@@ -1176,6 +1183,13 @@ public extension WidgetSpec {
             if t.localizedCaseInsensitiveContains("{{weather") { return true }
         }
 
+        return false
+    }
+    
+    func usesStepsRendering() -> Bool {
+        for t in allTemplateStrings() {
+            if t.localizedCaseInsensitiveContains("__steps") { return true }
+        }
         return false
     }
 

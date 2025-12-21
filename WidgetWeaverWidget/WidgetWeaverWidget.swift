@@ -105,24 +105,43 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let usesWeather = spec.usesWeatherRendering()
         let usesTime = spec.usesTimeDependentRendering()
         let usesCalendar = (spec.layout.template == .nextUpCalendar)
+        let usesSteps = spec.usesStepsRendering()
 
-        if usesCalendar {
-            let _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
+        if !context.isPreview {
+            if usesWeather {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+                }
+            }
+
+            if usesCalendar {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
+                }
+            }
+
+            if usesSteps {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
+                    _ = await WidgetWeaverStepsEngine.shared.updateHistoryFromBeginningIfNeeded(force: false)
+                }
+            }
         }
 
         let now = Date()
 
-        let refreshSeconds: TimeInterval
-        if usesWeather {
-            if usesTime {
-                refreshSeconds = 60
-            } else {
-                refreshSeconds = max(60, WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds())
-            }
-        } else if usesCalendar {
-            refreshSeconds = 60
-        } else {
-            refreshSeconds = usesTime ? 60 : (60 * 60)
+        var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
+
+        if usesWeather && !usesTime {
+            refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds()))
+        }
+
+        if usesCalendar {
+            refreshSeconds = min(refreshSeconds, 60)
+        }
+
+        if usesSteps && !usesTime {
+            refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
         let count = max(2, Int((60 * 60) / refreshSeconds))

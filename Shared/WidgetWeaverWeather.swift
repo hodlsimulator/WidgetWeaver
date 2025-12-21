@@ -511,6 +511,10 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
                 vars["__weather_humidity_fraction"] = String(h)
             }
 
+            // Steps built-ins (so any design can use __steps_today, __steps_avg_7, __steps_streak, etc.)
+            let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
+            for (k, v) in stepsVars { vars[k] = v }
+
             return vars
         }
 
