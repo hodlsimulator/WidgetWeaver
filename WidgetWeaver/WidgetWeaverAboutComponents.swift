@@ -212,6 +212,8 @@ struct WidgetWeaverAboutTemplateRow: View {
             return "checklist"
         case "starter-reading":
             return "book.closed"
+        case "starter-steps":
+            return "figure.walk"
         case "starter-weather":
             return "cloud.rain"
         case "starter-calendar-nextup":
@@ -495,6 +497,10 @@ struct WidgetWeaverAboutFlowTags: View {
             return .blue
         }
         if t.contains("calendar") || t.contains("events") {
+            return .green
+        }
+
+        if t.contains("steps") || t.contains("health") {
             return .green
         }
         if t.contains("buttons") {

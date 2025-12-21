@@ -69,6 +69,16 @@ extension WidgetWeaverAboutView {
             spec: specReading()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-steps",
+            title: "Steps",
+            subtitle: "Today + goal progress",
+            description: "A simple Steps widget powered by built-in __steps_* keys. Enable Health access in the app first.",
+            tags: ["Steps", "Health", "Goal"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specSteps()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-weather",
             title: "Weather",
             subtitle: "Rain-first nowcast",
@@ -251,6 +261,32 @@ extension WidgetWeaverAboutView {
 
         spec.symbol = SymbolSpec(
             name: "book.closed",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+
+        return spec.normalised()
+    }
+
+    static func specSteps() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Steps"
+        spec.primaryText = "{{__steps_today|--|number:0}}"
+        spec.secondaryText = "Goal {{__steps_goal_today|--|number:0}} • {{__steps_today_fraction|0|percent:0}}"
+        spec.layout.template = .hero
+        spec.layout.showsAccentBar = true
+
+        spec.style.accent = .green
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = true
+
+        spec.symbol = SymbolSpec(
+            name: "figure.walk",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,

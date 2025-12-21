@@ -72,18 +72,21 @@ struct WidgetWeaverAboutView: View {
                     .accessibilityLabel("Close")
                 }
             }
-            .onAppear { refreshDesignCount() }
+            .onAppear {
+                refreshDesignCount()
+            }
             .navigationDestination(isPresented: $showWeatherSettings) {
                 WidgetWeaverWeatherSettingsView()
             }
             .alert("Enable Calendar access?", isPresented: $showCalendarAccessExplainer) {
                 Button("Not now", role: .cancel) { }
+
                 Button(calendarAccessInFlight ? "Requesting…" : "Continue") {
                     requestCalendarAccess()
                 }
                 .disabled(calendarAccessInFlight)
             } message: {
-                Text("“\(calendarPromptSourceTitle)” uses Calendar access to show your upcoming events in the widget. Events stay on-device.")
+                Text("“\(calendarPromptSourceTitle)” uses Calendar access to show your upcoming events in the widget.\nEvents stay on-device.")
             }
             .alert("Calendar access is off", isPresented: $showCalendarDeniedAlert) {
                 Button("OK", role: .cancel) { }
@@ -110,10 +113,7 @@ struct WidgetWeaverAboutView: View {
 
         onAddTemplate(template.spec, makeDefault)
 
-        statusMessage = makeDefault
-            ? "Added “\(template.title)” and set as default."
-            : "Added “\(template.title)”."
-
+        statusMessage = makeDefault ? "Added “\(template.title)” and set as default." : "Added “\(template.title)”."
         refreshDesignCount()
 
         if template.triggersCalendarPermission {
@@ -151,8 +151,10 @@ struct WidgetWeaverAboutView: View {
             Task {
                 _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
             }
+
         case .notDetermined:
             showCalendarAccessExplainer = true
+
         case .denied:
             showCalendarDeniedAlert = true
         }
@@ -165,6 +167,7 @@ struct WidgetWeaverAboutView: View {
 
         Task {
             let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
+
             if granted {
                 _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
                 await MainActor.run {
