@@ -137,7 +137,7 @@ Notes:
 
 ### Layout + style
 
-- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up (Calendar)
+- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up (Calendar) (includes a starter Steps design via `__steps_*` keys)
 - ✅ Axis: vertical/horizontal; alignment; spacing; line limits
 - ✅ Accent bar toggle
 - ✅ Style tokens: padding, corner radius, background token, overlay, glow, accent
@@ -204,6 +204,7 @@ For Pro features:
 - **Poster**: photo-first with a gradient overlay for text
 - **Weather**: WeatherKit-powered, rain-first nowcast layout with glass panels and adaptive S/M/L layouts
 - **Next Up (Calendar)**: next event + countdown (optionally “Then” on Medium/Large)
+- **Steps (Starter)**: a ready-made Steps design using built-in `__steps_*` keys (choose it from About → Templates)
 
 The layout is controlled via `LayoutSpec` (template + axis + alignment + spacing + line limits).
 

@@ -23,7 +23,6 @@ extension WidgetWeaverAboutView {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("WidgetWeaver")
                                 .font(.title3.weight(.semibold))
-
                             Text(appVersionString)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -35,7 +34,8 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         Build Home Screen widgets from simple templates.
-                        Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons. Designs are saved on your device and shown on your Home Screen.
+                        Start from templates, customise layout + style, and (in Pro) add variables and interactive buttons.
+                        Designs are saved on your device and shown on your Home Screen.
                         """
                     )
                     .font(.subheadline)
@@ -66,6 +66,7 @@ extension WidgetWeaverAboutView {
                         HStack(spacing: 8) {
                             Image(systemName: "info.circle")
                                 .foregroundStyle(WidgetWeaverAboutTheme.pageTint)
+
                             Text(statusMessage)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -91,7 +92,6 @@ extension WidgetWeaverAboutView {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Weather")
                                 .font(.headline)
-
                             Text("Rain-first nowcast • glass")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -153,7 +153,7 @@ extension WidgetWeaverAboutView {
                     WidgetWeaverAboutBulletList(items: [
                         "In the app: … → Weather → choose a location (Current Location or search).",
                         "Add the Weather template to your library (optionally make it Default).",
-                        "Add a WidgetWeaver widget to your Home Screen."
+                        "Add a WidgetWeaver widget to your Home Screen.",
                     ])
 
                     Button {
@@ -172,8 +172,7 @@ extension WidgetWeaverAboutView {
                     WidgetWeaverAboutCodeBlock(
                         """
                         {{__weather_location|Set location}}
-                        {{__weather_temp|--}}°
-                        {{__weather_condition|Updating…}}
+                        {{__weather_temp|--}}° {{__weather_condition|Updating…}}
                         {{__weather_precip|0}}%
                         """,
                         accent: .blue
@@ -198,9 +197,14 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Featured", systemImage: "sparkles", accent: .blue)
         } footer: {
-            Text("Weather data is provided by Weather. iOS widget refresh limits still apply; use Weather → Update now to refresh the cached snapshot.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                """
+                Weather data is provided by Weather.
+                iOS widget refresh limits still apply; use Weather → Update now to refresh the cached snapshot.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -296,7 +300,7 @@ extension WidgetWeaverAboutView {
                     WidgetWeaverAboutBulletList(items: [
                         "Add the Calendar template to your library.",
                         "When prompted, allow Calendar access.",
-                        "Add a WidgetWeaver widget to your Home Screen."
+                        "Add a WidgetWeaver widget to your Home Screen.",
                     ])
                 }
             }
@@ -305,9 +309,14 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Calendar", systemImage: "calendar", accent: .green)
         } footer: {
-            Text("Calendar data is read on-device from Apple Calendar (EventKit). No events are uploaded by WidgetWeaver.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                """
+                Calendar data is read on-device from Apple Calendar (EventKit).
+                No events are uploaded by WidgetWeaver.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -329,7 +338,7 @@ extension WidgetWeaverAboutView {
                     Divider()
                     WidgetWeaverAboutFeatureRow(
                         title: "Layout templates",
-                        subtitle: "Classic / Hero / Poster / Weather / Calendar presets, plus axis, alignment, spacing, and line limits."
+                        subtitle: "Classic / Hero / Poster / Weather / Calendar presets, plus a starter Steps template, plus axis, alignment, spacing, and line limits."
                     )
                     Divider()
                     WidgetWeaverAboutFeatureRow(
@@ -366,7 +375,7 @@ extension WidgetWeaverAboutView {
                             "Habit tracker / streak counter (with Variables + interactive buttons in Pro)",
                             "Countdown widget (manual or variable-driven)",
                             "Daily focus / top task",
-                            "Shopping list / reminder"
+                            "Shopping list / reminder",
                         ])
                     }
                 }
@@ -375,7 +384,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Capabilities", systemImage: "wand.and.stars", accent: .purple)
         } footer: {
-            Text("Each design renders into Small/Medium/Large with size-aware layout rules. Some presets (Weather/Calendar) are special layouts.")
+            Text("Each design renders into Small/Medium/Large with size-aware layout rules.\nSome presets (Weather/Calendar) are special layouts.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -385,9 +394,7 @@ extension WidgetWeaverAboutView {
 
     var starterTemplatesSection: some View {
         Section {
-            ForEach(Self.starterTemplates.filter {
-                $0.id != Self.featuredWeatherTemplateID && $0.id != Self.featuredCalendarTemplateID
-            }) { template in
+            ForEach(Self.starterTemplates.filter { $0.id != Self.featuredWeatherTemplateID && $0.id != Self.featuredCalendarTemplateID }) { template in
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
@@ -458,7 +465,7 @@ extension WidgetWeaverAboutView {
                         "Up to \(WidgetActionBarSpec.maxActions) buttons per widget.",
                         "Actions: Increment Variable, Set Variable to Now.",
                         "Buttons can include a title and optional SF Symbol.",
-                        "Pairs with templates like {{count|0}} or {{last_done|Never|relative}}."
+                        "Pairs with templates like {{count|0}} or {{last_done|Never|relative}}.",
                     ])
 
                     if proManager.isProUnlocked {
@@ -562,7 +569,7 @@ extension WidgetWeaverAboutView {
                         "Get WidgetWeaver Variable",
                         "Remove WidgetWeaver Variable",
                         "Increment WidgetWeaver Variable",
-                        "Set WidgetWeaver Variable to Now"
+                        "Set WidgetWeaver Variable to Now",
                     ])
                 }
             }
@@ -570,7 +577,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Variables", systemImage: "curlybraces", accent: .teal)
         } footer: {
-            Text("Variables render at widget refresh time. Weather + Steps behave like built-ins and are not Pro-gated.")
+            Text("Variables render at widget refresh time.\nUse built-in keys (weather/steps) or Pro variables for interactive widgets.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -582,147 +589,92 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .indigo) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Use AI to generate a new design prompt, or patch the current design.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        """
+                        AI features are optional and run on-device.
+                        They can generate or patch your WidgetSpec, but they never generate images.
+                        """
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Generate a new design with a single sentence.",
-                        "Patch existing designs: colours, spacing, typography.",
-                        "AI edits are always editable—nothing is locked."
-                    ])
-
-                    Text("Prompt ideas:")
-                        .font(.subheadline.weight(.semibold))
-
-                    ForEach(Self.promptIdeas.prefix(3), id: \.self) { p in
-                        WidgetWeaverAboutPromptRow(
-                            text: p,
-                            copyLabel: "Copy prompt",
-                            onCopy: { copyToPasteboard(p) }
-                        )
-                    }
-
-                    Text("Patch ideas:")
-                        .font(.subheadline.weight(.semibold))
-
-                    ForEach(Self.patchIdeas.prefix(3), id: \.self) { p in
-                        WidgetWeaverAboutPromptRow(
-                            text: p,
-                            copyLabel: "Copy patch",
-                            onCopy: { copyToPasteboard(p) }
-                        )
-                    }
-                }
-            }
-            .wwAboutListRow()
-        } header: {
-            WidgetWeaverAboutSectionHeader("AI", systemImage: "sparkles", accent: .indigo)
-        } footer: {
-            Text("AI is optional. WidgetWeaver keeps design files on-device.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Sharing
-
-    var sharingSection: some View {
-        Section {
-            WidgetWeaverAboutCard(accent: .mint) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Share a design as a small package (JSON + image). Others can import it into their library.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    WidgetWeaverAboutBulletList(items: [
-                        "Share from the editor: Share → Package.",
-                        "Import by opening the package in WidgetWeaver.",
-                        "Packages do not include personal data."
+                        "Generate a design spec from a prompt.",
+                        "Patch edits: “make it more minimal”, “turn accent to teal”, etc.",
+                        "Results are validated and clamped to safe ranges.",
                     ])
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Sharing", systemImage: "square.and.arrow.up", accent: .mint)
+            WidgetWeaverAboutSectionHeader("AI (Optional)", systemImage: "sparkles", accent: .indigo)
         } footer: {
-            Text("Packages contain only the widget spec and preview image.")
+            Text("AI is currently intended as a prototype helper for spec exploration.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Pro
+    // MARK: - Privacy
 
-    var proSection: some View {
-        Section {
-            WidgetWeaverAboutCard(accent: .yellow) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if proManager.isProUnlocked {
-                        Label("Pro is unlocked on this device.", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.secondary)
-
-                        WidgetWeaverAboutBulletList(items: [
-                            "Matched Sets",
-                            "Variables + Shortcuts",
-                            "Interactive buttons (iOS 17+)",
-                            "More saved designs",
-                            "Remix + AI features"
-                        ])
-                    } else {
-                        Text("Pro unlocks advanced features for power users.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        WidgetWeaverAboutBulletList(items: [
-                            "Matched Sets (Small/Medium/Large overrides)",
-                            "Variables store + Shortcuts",
-                            "Interactive buttons (iOS 17+)",
-                            "More saved designs"
-                        ])
-
-                        Button {
-                            onShowPro()
-                        } label: {
-                            Label("Upgrade to Pro", systemImage: "crown.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.regular)
-                    }
-                }
-            }
-            .wwAboutListRow()
-        } header: {
-            WidgetWeaverAboutSectionHeader("Pro", systemImage: "crown.fill", accent: .yellow)
-        } footer: {
-            Text("Purchases are handled by the App Store.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Diagnostics
-
-    var diagnosticsSection: some View {
+    var privacySection: some View {
         Section {
             WidgetWeaverAboutCard(accent: .gray) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Useful for debugging widget refresh + configuration.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(
+                        """
+                        WidgetWeaver stores designs and caches locally on your device.
+                        Weather and calendar data is read on-device and saved into the App Group cache for widgets to render offline.
+                        """
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Design count: \(designCount)",
-                        "Pro: \(proManager.isProUnlocked ? "Unlocked" : "Locked")",
-                        "Widgets reload when you Save a design."
+                        "Designs: saved locally in the App Group.",
+                        "Images: stored locally in the App Group container.",
+                        "Weather: cached snapshot + attribution stored locally.",
+                        "Calendar: cached upcoming events stored locally.",
+                        "Steps: cached today snapshot and (optionally) cached history stored locally.",
                     ])
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Diagnostics", systemImage: "stethoscope", accent: .gray)
+            WidgetWeaverAboutSectionHeader("Privacy", systemImage: "hand.raised.fill", accent: .gray)
         } footer: {
-            Text("If widgets don’t update: open the app, Save the design again, and wait a moment for WidgetKit refresh.")
+            Text("No accounts. No servers. No tracking.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Support
+
+    var supportSection: some View {
+        Section {
+            WidgetWeaverAboutCard(accent: .pink) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(
+                        """
+                        This is a prototype app for exploring widget layouts and spec-driven rendering.
+                        """
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "If widgets look stale, use … → Refresh Widgets.",
+                        "If Weather looks stale, use Weather → Update now.",
+                        "Steps widgets require opening the app to grant Health permission and cache today.",
+                    ])
+                }
+            }
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Support", systemImage: "lifepreserver", accent: .pink)
+        } footer: {
+            Text("Thanks for testing WidgetWeaver.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
