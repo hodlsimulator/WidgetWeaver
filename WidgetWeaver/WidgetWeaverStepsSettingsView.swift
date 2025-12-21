@@ -12,6 +12,12 @@ import UIKit
 // MARK: - Steps settings
 
 struct WidgetWeaverStepsSettingsView: View {
+    let onClose: (() -> Void)?
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
+
     @AppStorage(WidgetWeaverStepsStore.Keys.weekdayGoalSteps, store: AppGroup.userDefaults)
     private var weekdayGoalSteps: Int = 10_000
 
@@ -154,6 +160,13 @@ struct WidgetWeaverStepsSettingsView: View {
         }
         .navigationTitle("Steps")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let onClose {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { onClose() }
+                }
+            }
+        }
         .task { await load() }
     }
 
@@ -165,7 +178,6 @@ struct WidgetWeaverStepsSettingsView: View {
         access = store.loadLastAccess()
         lastError = store.loadLastError()
 
-        // Sync UI with any migration.
         let s = store.loadGoalSchedule()
         weekdayGoalSteps = s.weekdayGoalSteps
         weekendGoalSteps = s.weekendGoalSteps
@@ -355,7 +367,6 @@ private struct WidgetWeaverStepsHistoryView: View {
         isLoading = true
         defer { isLoading = false }
 
-        // Keep snapshot fresh too.
         _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
 
         let updated = await WidgetWeaverStepsEngine.shared.updateHistoryFromBeginningIfNeeded(force: force)
@@ -774,8 +785,6 @@ private struct StepsYearHeatmapView: View {
         default: return 0.85
         }
     }
-
-    // MARK: - Helpers
 
     private func stepsMap() -> [Date: Int] {
         var dict: [Date: Int] = [:]
