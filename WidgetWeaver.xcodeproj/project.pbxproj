@@ -16,6 +16,10 @@
 		745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		7F22E328D5B04386BEA69389 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */; };
+		E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12EAD562EF85ABE00A0E994 /* WidgetWeaverStepsAnalytics.swift */; };
+		E12EAD582EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12EAD562EF85ABE00A0E994 /* WidgetWeaverStepsAnalytics.swift */; };
+		E12EAD5A2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12EAD592EF85AE800A0E994 /* WidgetWeaverStepsEngine.swift */; };
+		E12EAD5B2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12EAD592EF85AE800A0E994 /* WidgetWeaverStepsEngine.swift */; };
 		E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
 		E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */; };
 		E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */; };
@@ -78,6 +82,8 @@
 		77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Utilities.swift"; sourceTree = "<group>"; };
 		C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Image.swift"; sourceTree = "<group>"; };
 		CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Style.swift"; sourceTree = "<group>"; };
+		E12EAD562EF85ABE00A0E994 /* WidgetWeaverStepsAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverStepsAnalytics.swift; sourceTree = "<group>"; };
+		E12EAD592EF85AE800A0E994 /* WidgetWeaverStepsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverStepsEngine.swift; sourceTree = "<group>"; };
 		E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateHelpers.swift; sourceTree = "<group>"; };
 		E15B0BAC2EF6CCC700760C03 /* WidgetWeaverWeatherTemplateModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateModels.swift; sourceTree = "<group>"; };
 		E15B0BAF2EF6CCE700760C03 /* WidgetWeaverWeatherTemplateLayouts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherTemplateLayouts.swift; sourceTree = "<group>"; };
@@ -197,6 +203,8 @@
 				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
 				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
 				E15B0BC12EF78BE900760C03 /* WidgetWeaverSteps.swift */,
+				E12EAD562EF85ABE00A0E994 /* WidgetWeaverStepsAnalytics.swift */,
+				E12EAD592EF85AE800A0E994 /* WidgetWeaverStepsEngine.swift */,
 				E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */,
 				E15B0BB22EF6CD0500760C03 /* WidgetWeaverWeatherTemplateComponents.swift */,
 				E15B0BA92EF6CC8100760C03 /* WidgetWeaverWeatherTemplateHelpers.swift */,
@@ -318,6 +326,7 @@
 				21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
 				E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
+				E12EAD5A2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */,
 				E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
 				FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */,
@@ -329,6 +338,7 @@
 				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
+				E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -345,12 +355,14 @@
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
 				745588A395DC40D993E87409 /* WidgetSpec+Utilities.swift in Sources */,
+				E12EAD5B2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */,
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
 				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
 				E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
 				E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
 				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
+				E12EAD582EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
 				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
 				4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
 				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,

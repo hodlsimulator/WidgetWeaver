@@ -4,16 +4,10 @@
 //
 //  Created by . . on 12/21/25.
 //
-//  Shared Steps models + storage + HealthKit engine.
+//  Shared Steps models + storage.
 //
 
 import Foundation
-#if canImport(WidgetKit)
-import WidgetKit
-#endif
-#if canImport(HealthKit)
-@preconcurrency import HealthKit
-#endif
 
 // MARK: - Snapshot models
 
@@ -25,27 +19,29 @@ public struct WidgetWeaverStepsSnapshot: Codable, Hashable, Sendable {
     public init(fetchedAt: Date, startOfDay: Date, steps: Int) {
         self.fetchedAt = fetchedAt
         self.startOfDay = startOfDay
-        self.steps = max(0, steps)
+        self.steps = steps
     }
 
-    public static func sample(now: Date = Date(), steps: Int = 7_423) -> WidgetWeaverStepsSnapshot {
+    public static func sample() -> WidgetWeaverStepsSnapshot {
         let cal = Calendar.autoupdatingCurrent
+        let now = Date()
         return WidgetWeaverStepsSnapshot(
             fetchedAt: now,
             startOfDay: cal.startOfDay(for: now),
-            steps: steps
+            steps: 7_532
         )
     }
 }
 
 public struct WidgetWeaverStepsDayPoint: Codable, Hashable, Sendable, Identifiable {
-    public var id: Date { dayStart }
     public var dayStart: Date
     public var steps: Int
 
+    public var id: Date { dayStart }
+
     public init(dayStart: Date, steps: Int) {
         self.dayStart = dayStart
-        self.steps = max(0, steps)
+        self.steps = steps
     }
 }
 
@@ -59,44 +55,41 @@ public struct WidgetWeaverStepsHistorySnapshot: Codable, Hashable, Sendable {
         self.fetchedAt = fetchedAt
         self.earliestDay = earliestDay
         self.latestDay = latestDay
-        self.days = days.sorted(by: { $0.dayStart < $1.dayStart })
+        self.days = days
     }
 
-    public var dayCount: Int { days.count }
-
-    public static func sample(now: Date = Date()) -> WidgetWeaverStepsHistorySnapshot {
+    public static func sample() -> WidgetWeaverStepsHistorySnapshot {
         let cal = Calendar.autoupdatingCurrent
-        let start = cal.date(byAdding: .day, value: -30, to: cal.startOfDay(for: now)) ?? cal.startOfDay(for: now)
-        let end = cal.startOfDay(for: now)
-        var days: [WidgetWeaverStepsDayPoint] = []
-        var d = start
-        while d <= end {
-            let steps = Int(4_000 + (Double(abs(d.timeIntervalSince1970).truncatingRemainder(dividingBy: 6_000))))
-            days.append(WidgetWeaverStepsDayPoint(dayStart: d, steps: steps))
-            d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86_400)
+        let now = Date()
+        let today = cal.startOfDay(for: now)
+        let start = cal.date(byAdding: .day, value: -120, to: today) ?? today.addingTimeInterval(-120 * 86_400)
+
+        var points: [WidgetWeaverStepsDayPoint] = []
+        points.reserveCapacity(121)
+        for i in 0...120 {
+            let d = cal.date(byAdding: .day, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 86_400)
+            let steps = 2_500 + (i * 35 % 9_000)
+            points.append(WidgetWeaverStepsDayPoint(dayStart: cal.startOfDay(for: d), steps: steps))
         }
+
         return WidgetWeaverStepsHistorySnapshot(
             fetchedAt: now,
             earliestDay: start,
-            latestDay: end,
-            days: days
+            latestDay: today,
+            days: points
         )
     }
 }
 
-// MARK: - Access
+// MARK: - Access + goals
 
-public enum WidgetWeaverStepsAccess: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+public enum WidgetWeaverStepsAccess: String, Codable, Hashable, Sendable {
     case unknown
     case notAvailable
     case notDetermined
     case authorised
     case denied
-
-    public var id: String { rawValue }
 }
-
-// MARK: - Goal schedule + streak rules
 
 public struct WidgetWeaverStepsGoalSchedule: Codable, Hashable, Sendable {
     public var weekdayGoalSteps: Int
@@ -107,23 +100,20 @@ public struct WidgetWeaverStepsGoalSchedule: Codable, Hashable, Sendable {
         self.weekendGoalSteps = Self.clampGoal(weekendGoalSteps)
     }
 
-    public static func uniform(_ goalSteps: Int) -> WidgetWeaverStepsGoalSchedule {
-        let g = clampGoal(goalSteps)
-        return WidgetWeaverStepsGoalSchedule(weekdayGoalSteps: g, weekendGoalSteps: g)
+    public static func clampGoal(_ v: Int) -> Int {
+        if v < 0 { return 0 }
+        if v > 200_000 { return 200_000 }
+        return v
     }
 
     public func goalSteps(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> Int {
-        let day = calendar.startOfDay(for: date)
-        let isWeekend = calendar.isDateInWeekend(day)
+        let weekday = calendar.component(.weekday, from: date)
+        let isWeekend = weekday == 1 || weekday == 7
         return isWeekend ? weekendGoalSteps : weekdayGoalSteps
-    }
-
-    public static func clampGoal(_ value: Int) -> Int {
-        return max(0, min(200_000, value))
     }
 }
 
-public enum WidgetWeaverStepsStreakRule: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+public enum WidgetWeaverStepsStreakRule: String, Codable, Hashable, Sendable, CaseIterable, Identifiable {
     case strict
     case completeDaysOnly
 
@@ -139,9 +129,9 @@ public enum WidgetWeaverStepsStreakRule: String, Codable, CaseIterable, Hashable
     public var helpText: String {
         switch self {
         case .strict:
-            return "Counts today. If today isn't at goal yet, the streak looks broken."
+            return "Strict counts today. If today is below goal so far, the streak is 0."
         case .completeDaysOnly:
-            return "Counts completed days. Today won't break your streak early. Days with a goal of 0 are skipped."
+            return "Fair doesn’t count today until it’s complete. If today is below goal so far, it doesn’t break the streak."
         }
     }
 }
@@ -152,108 +142,115 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
     public static let shared = WidgetWeaverStepsStore()
 
     public enum Keys {
-        public static let goalSteps = "widgetweaver.steps.goalSteps.v1"
+        public static let snapshotData = "ww.steps.snapshot.data"
+        public static let snapshotStartOfDay = "ww.steps.snapshot.startOfDay"
+        public static let lastAccess = "ww.steps.lastAccess"
+        public static let lastError = "ww.steps.lastError"
 
-        public static let weekdayGoalSteps = "widgetweaver.steps.goalSteps.weekday.v1"
-        public static let weekendGoalSteps = "widgetweaver.steps.goalSteps.weekend.v1"
-        public static let streakRule = "widgetweaver.steps.streakRule.v1"
+        public static let goalSteps = "ww.steps.goalSteps" // legacy single goal
+        public static let weekdayGoalSteps = "ww.steps.goalSteps.weekday"
+        public static let weekendGoalSteps = "ww.steps.goalSteps.weekend"
+        public static let streakRule = "ww.steps.streakRule"
 
-        public static let snapshotData = "widgetweaver.steps.snapshot.v1"
-        public static let historyData = "widgetweaver.steps.history.v1"
-        public static let lastError = "widgetweaver.steps.lastError.v1"
-        public static let lastAccess = "widgetweaver.steps.lastAccess.v1"
+        public static let historyData = "ww.steps.history.data"
     }
 
-    private let defaults: UserDefaults
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+    private let defaults = AppGroup.userDefaults
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
 
-    @inline(__always) private func sync() {
-        defaults.synchronize()
-        UserDefaults.standard.synchronize()
-    }
-
-    private init(defaults: UserDefaults = AppGroup.userDefaults) {
-        self.defaults = defaults
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
-        self.encoder.dateEncodingStrategy = .iso8601
-        self.decoder.dateDecodingStrategy = .iso8601
+    private init() {
         migrateGoalScheduleIfNeeded()
     }
 
-    // MARK: - Goal schedule
-
-    public func loadGoalSteps(default fallback: Int = 10_000, now: Date = Date()) -> Int {
-        let schedule = loadGoalSchedule(default: fallback)
-        return schedule.goalSteps(for: now)
+    public func sync() {
+        defaults.synchronize()
     }
 
-    public func saveGoalSteps(_ steps: Int) {
-        let g = WidgetWeaverStepsGoalSchedule.clampGoal(steps)
-        saveGoalSchedule(WidgetWeaverStepsGoalSchedule(weekdayGoalSteps: g, weekendGoalSteps: g), writeLegacyKey: true)
+    public func saveSnapshot(_ snap: WidgetWeaverStepsSnapshot) {
+        do {
+            let data = try encoder.encode(snap)
+            defaults.set(data, forKey: Keys.snapshotData)
+            defaults.set(snap.startOfDay, forKey: Keys.snapshotStartOfDay)
+            sync()
+        } catch {
+            defaults.set("Failed to encode snapshot: \(error.localizedDescription)", forKey: Keys.lastError)
+        }
     }
 
-    public func loadGoalSchedule(default fallback: Int = 10_000) -> WidgetWeaverStepsGoalSchedule {
+    public func snapshotForToday(now: Date = Date()) -> WidgetWeaverStepsSnapshot? {
+        guard let data = defaults.data(forKey: Keys.snapshotData) else { return nil }
+        guard let snap = try? decoder.decode(WidgetWeaverStepsSnapshot.self, from: data) else { return nil }
+        let cal = Calendar.autoupdatingCurrent
+        let today = cal.startOfDay(for: now)
+        guard cal.isDate(snap.startOfDay, inSameDayAs: today) else { return nil }
+        return snap
+    }
+
+    public func saveHistory(_ history: WidgetWeaverStepsHistorySnapshot) {
+        do {
+            let data = try encoder.encode(history)
+            defaults.set(data, forKey: Keys.historyData)
+            sync()
+        } catch {
+            defaults.set("Failed to encode history: \(error.localizedDescription)", forKey: Keys.lastError)
+        }
+    }
+
+    public func loadHistory() -> WidgetWeaverStepsHistorySnapshot? {
+        guard let data = defaults.data(forKey: Keys.historyData) else { return nil }
+        return try? decoder.decode(WidgetWeaverStepsHistorySnapshot.self, from: data)
+    }
+
+    public func saveLastAccess(_ access: WidgetWeaverStepsAccess) {
+        defaults.set(access.rawValue, forKey: Keys.lastAccess)
         sync()
-
-        let legacy = loadIntPresence(key: Keys.goalSteps)
-        let weekday = loadIntPresence(key: Keys.weekdayGoalSteps)
-        let weekend = loadIntPresence(key: Keys.weekendGoalSteps)
-
-        var weekdayValue: Int
-        var weekendValue: Int
-
-        if weekday.present {
-            weekdayValue = WidgetWeaverStepsGoalSchedule.clampGoal(weekday.value)
-        } else if legacy.present {
-            weekdayValue = WidgetWeaverStepsGoalSchedule.clampGoal(legacy.value)
-        } else {
-            weekdayValue = WidgetWeaverStepsGoalSchedule.clampGoal(fallback)
-        }
-
-        if weekend.present {
-            weekendValue = WidgetWeaverStepsGoalSchedule.clampGoal(weekend.value)
-        } else if legacy.present {
-            weekendValue = WidgetWeaverStepsGoalSchedule.clampGoal(legacy.value)
-        } else if weekday.present || legacy.present {
-            weekendValue = weekdayValue
-        } else {
-            weekendValue = WidgetWeaverStepsGoalSchedule.clampGoal(fallback)
-        }
-
-        if !weekday.present {
-            setInt(weekdayValue, key: Keys.weekdayGoalSteps, toStandard: true)
-        }
-        if !weekend.present {
-            setInt(weekendValue, key: Keys.weekendGoalSteps, toStandard: true)
-        }
-
-        sync()
-        return WidgetWeaverStepsGoalSchedule(weekdayGoalSteps: weekdayValue, weekendGoalSteps: weekendValue)
     }
 
-    public func saveGoalSchedule(_ schedule: WidgetWeaverStepsGoalSchedule, writeLegacyKey: Bool = false) {
-        setInt(schedule.weekdayGoalSteps, key: Keys.weekdayGoalSteps, toStandard: true)
-        setInt(schedule.weekendGoalSteps, key: Keys.weekendGoalSteps, toStandard: true)
+    public func loadLastAccess() -> WidgetWeaverStepsAccess {
+        let raw = defaults.string(forKey: Keys.lastAccess) ?? WidgetWeaverStepsAccess.unknown.rawValue
+        return WidgetWeaverStepsAccess(rawValue: raw) ?? .unknown
+    }
+
+    public func saveLastError(_ message: String?) {
+        if let message, !message.isEmpty {
+            defaults.set(message, forKey: Keys.lastError)
+        } else {
+            defaults.removeObject(forKey: Keys.lastError)
+        }
+        sync()
+    }
+
+    public func loadLastError() -> String? {
+        defaults.string(forKey: Keys.lastError)
+    }
+
+    public func saveGoalSchedule(_ schedule: WidgetWeaverStepsGoalSchedule, writeLegacyKey: Bool) {
+        defaults.set(schedule.weekdayGoalSteps, forKey: Keys.weekdayGoalSteps)
+        defaults.set(schedule.weekendGoalSteps, forKey: Keys.weekendGoalSteps)
+
         if writeLegacyKey {
-            setInt(schedule.weekdayGoalSteps, key: Keys.goalSteps, toStandard: true)
+            let maxGoal = max(schedule.weekdayGoalSteps, schedule.weekendGoalSteps)
+            defaults.set(maxGoal, forKey: Keys.goalSteps)
+            UserDefaults.standard.set(maxGoal, forKey: Keys.goalSteps)
         }
+
+        UserDefaults.standard.set(schedule.weekdayGoalSteps, forKey: Keys.weekdayGoalSteps)
+        UserDefaults.standard.set(schedule.weekendGoalSteps, forKey: Keys.weekendGoalSteps)
+
         sync()
     }
 
-    public func goalSteps(for date: Date, default fallback: Int = 10_000) -> Int {
-        loadGoalSchedule(default: fallback).goalSteps(for: date)
-    }
+    public func loadGoalSchedule() -> WidgetWeaverStepsGoalSchedule {
+        migrateGoalScheduleIfNeeded()
 
-    // MARK: - Streak rule
+        let weekday = defaults.integer(forKey: Keys.weekdayGoalSteps)
+        let weekend = defaults.integer(forKey: Keys.weekendGoalSteps)
 
-    public func loadStreakRule() -> WidgetWeaverStepsStreakRule {
-        sync()
-        let raw = defaults.string(forKey: Keys.streakRule)
-            ?? UserDefaults.standard.string(forKey: Keys.streakRule)
-            ?? WidgetWeaverStepsStreakRule.completeDaysOnly.rawValue
-        return WidgetWeaverStepsStreakRule(rawValue: raw) ?? .completeDaysOnly
+        let weekdayValue = (defaults.object(forKey: Keys.weekdayGoalSteps) != nil) ? weekday : 10_000
+        let weekendValue = (defaults.object(forKey: Keys.weekendGoalSteps) != nil) ? weekend : 10_000
+
+        return WidgetWeaverStepsGoalSchedule(weekdayGoalSteps: weekdayValue, weekendGoalSteps: weekendValue)
     }
 
     public func saveStreakRule(_ rule: WidgetWeaverStepsStreakRule) {
@@ -262,135 +259,33 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
         sync()
     }
 
-    // MARK: - Snapshot (today)
-
-    public func loadSnapshot() -> WidgetWeaverStepsSnapshot? {
-        sync()
-        if let data = defaults.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverStepsSnapshot.self, from: data) {
-            return snap
-        }
-        if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverStepsSnapshot.self, from: data) {
-            if let healed = try? encoder.encode(snap) {
-                defaults.set(healed, forKey: Keys.snapshotData)
-            }
-            sync()
-            return snap
-        }
-        return nil
+    public func loadStreakRule() -> WidgetWeaverStepsStreakRule {
+        let raw = defaults.string(forKey: Keys.streakRule)
+            ?? UserDefaults.standard.string(forKey: Keys.streakRule)
+            ?? WidgetWeaverStepsStreakRule.completeDaysOnly.rawValue
+        let rule = WidgetWeaverStepsStreakRule(rawValue: raw) ?? .completeDaysOnly
+        defaults.set(rule.rawValue, forKey: Keys.streakRule)
+        return rule
     }
 
-    public func saveSnapshot(_ snapshot: WidgetWeaverStepsSnapshot?) {
-        if let snapshot, let data = try? encoder.encode(snapshot) {
-            defaults.set(data, forKey: Keys.snapshotData)
-            UserDefaults.standard.set(data, forKey: Keys.snapshotData)
-        } else {
-            defaults.removeObject(forKey: Keys.snapshotData)
-            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
-        }
-        sync()
-    }
-
-    public func snapshotForToday(now: Date = Date()) -> WidgetWeaverStepsSnapshot? {
-        guard let snap = loadSnapshot() else { return nil }
-        let cal = Calendar.autoupdatingCurrent
-        let today = cal.startOfDay(for: now)
-        return cal.isDate(snap.startOfDay, inSameDayAs: today) ? snap : nil
-    }
-
-    // MARK: - History (daily totals)
-
-    public func loadHistory() -> WidgetWeaverStepsHistorySnapshot? {
-        sync()
-        if let data = defaults.data(forKey: Keys.historyData),
-           let snap = try? decoder.decode(WidgetWeaverStepsHistorySnapshot.self, from: data) {
-            return snap
-        }
-        if let data = UserDefaults.standard.data(forKey: Keys.historyData),
-           let snap = try? decoder.decode(WidgetWeaverStepsHistorySnapshot.self, from: data) {
-            if let healed = try? encoder.encode(snap) {
-                defaults.set(healed, forKey: Keys.historyData)
-            }
-            sync()
-            return snap
-        }
-        return nil
-    }
-
-    public func saveHistory(_ history: WidgetWeaverStepsHistorySnapshot?) {
-        if let history, let data = try? encoder.encode(history) {
-            defaults.set(data, forKey: Keys.historyData)
-            UserDefaults.standard.set(data, forKey: Keys.historyData)
-        } else {
-            defaults.removeObject(forKey: Keys.historyData)
-            UserDefaults.standard.removeObject(forKey: Keys.historyData)
-        }
-        sync()
-    }
-
-    // MARK: - Last access + errors
-
-    public func loadLastAccess() -> WidgetWeaverStepsAccess {
-        sync()
-        let raw = defaults.string(forKey: Keys.lastAccess)
-            ?? UserDefaults.standard.string(forKey: Keys.lastAccess)
-            ?? WidgetWeaverStepsAccess.unknown.rawValue
-        return WidgetWeaverStepsAccess(rawValue: raw) ?? .unknown
-    }
-
-    public func saveLastAccess(_ access: WidgetWeaverStepsAccess) {
-        defaults.set(access.rawValue, forKey: Keys.lastAccess)
-        UserDefaults.standard.set(access.rawValue, forKey: Keys.lastAccess)
-        sync()
-    }
-
-    public func loadLastError() -> String? {
-        sync()
-        if let s = defaults.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? nil : t
-        }
-        if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty {
-                defaults.set(t, forKey: Keys.lastError)
-                sync()
-                return t
-            }
-        }
-        return nil
-    }
-
-    public func saveLastError(_ error: String?) {
-        let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmed, !trimmed.isEmpty {
-            defaults.set(trimmed, forKey: Keys.lastError)
-            UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
-        } else {
-            defaults.removeObject(forKey: Keys.lastError)
-            UserDefaults.standard.removeObject(forKey: Keys.lastError)
-        }
-        sync()
-    }
-
-    public func recommendedRefreshIntervalSeconds() -> TimeInterval {
-        60 * 15
-    }
+    // MARK: - Variable templates
 
     public func variablesDictionary(now: Date = Date()) -> [String: String] {
-        let cal = Calendar.autoupdatingCurrent
+        var vars: [String: String] = [:]
+        vars.reserveCapacity(64)
+
+        migrateGoalScheduleIfNeeded()
+
         let schedule = loadGoalSchedule()
         let rule = loadStreakRule()
 
+        let cal = Calendar.autoupdatingCurrent
         let today = cal.startOfDay(for: now)
-        let goalToday = schedule.goalSteps(for: today, calendar: cal)
 
-        var vars: [String: String] = [:]
+        let goalToday = schedule.goalSteps(for: today, calendar: cal)
+        vars["__steps_goal_today"] = String(goalToday)
         vars["__steps_goal_weekday"] = String(schedule.weekdayGoalSteps)
         vars["__steps_goal_weekend"] = String(schedule.weekendGoalSteps)
-        vars["__steps_goal_today"] = String(goalToday)
-        vars["__steps_streak_rule"] = rule.rawValue
 
         if let snap = snapshotForToday(now: now) {
             vars["__steps_today"] = String(snap.steps)
@@ -484,497 +379,7 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
     }
 }
 
-// MARK: - Analytics
+// MARK: - Modularised files
 
-public struct WidgetWeaverStepsAnalytics: Hashable, Sendable {
-    public var history: WidgetWeaverStepsHistorySnapshot
-    public var schedule: WidgetWeaverStepsGoalSchedule
-    public var streakRule: WidgetWeaverStepsStreakRule
-    public var now: Date
-
-    public init(
-        history: WidgetWeaverStepsHistorySnapshot,
-        schedule: WidgetWeaverStepsGoalSchedule,
-        streakRule: WidgetWeaverStepsStreakRule,
-        now: Date = Date()
-    ) {
-        self.history = history
-        self.schedule = schedule
-        self.streakRule = streakRule
-        self.now = now
-    }
-
-    private var calendar: Calendar { .autoupdatingCurrent }
-
-    private func stepsMap() -> [Date: Int] {
-        var dict: [Date: Int] = [:]
-        dict.reserveCapacity(history.days.count)
-        for p in history.days { dict[p.dayStart] = p.steps }
-        return dict
-    }
-
-    public var bestDay: WidgetWeaverStepsDayPoint? {
-        history.days.max(by: { $0.steps < $1.steps })
-    }
-
-    public var currentStreakDays: Int {
-        let cal = calendar
-        let byDay = stepsMap()
-        let today = cal.startOfDay(for: now)
-
-        var cursor = today
-
-        switch streakRule {
-        case .strict:
-            break
-        case .completeDaysOnly:
-            let goalToday = schedule.goalSteps(for: today, calendar: cal)
-            if goalToday <= 0 {
-                cursor = cal.date(byAdding: .day, value: -1, to: cursor) ?? cursor.addingTimeInterval(-86_400)
-            } else {
-                let stepsToday = byDay[today] ?? 0
-                if stepsToday < goalToday {
-                    cursor = cal.date(byAdding: .day, value: -1, to: cursor) ?? cursor.addingTimeInterval(-86_400)
-                }
-            }
-        }
-
-        var streak = 0
-        var safety = 0
-
-        while safety < 10_000 {
-            safety += 1
-
-            let goal = schedule.goalSteps(for: cursor, calendar: cal)
-            if goal <= 0 {
-                cursor = cal.date(byAdding: .day, value: -1, to: cursor) ?? cursor.addingTimeInterval(-86_400)
-                continue
-            }
-
-            guard let steps = byDay[cursor] else { break }
-            if steps >= goal {
-                streak += 1
-                cursor = cal.date(byAdding: .day, value: -1, to: cursor) ?? cursor.addingTimeInterval(-86_400)
-                continue
-            }
-            break
-        }
-
-        return streak
-    }
-
-    public func averageSteps(days: Int) -> Double {
-        let cal = calendar
-        let n = max(1, days)
-        let end = cal.startOfDay(for: now)
-        let start = cal.date(byAdding: .day, value: -(n - 1), to: end) ?? end.addingTimeInterval(-Double(n - 1) * 86_400)
-
-        let slice = history.days.filter { $0.dayStart >= start && $0.dayStart <= end }
-        guard !slice.isEmpty else { return 0 }
-        let total = slice.reduce(0) { $0 + $1.steps }
-        return Double(total) / Double(slice.count)
-    }
-}
-
-// MARK: - Engine
-
-public actor WidgetWeaverStepsEngine {
-    public static let shared = WidgetWeaverStepsEngine()
-
-    public struct Result: Sendable {
-        public var snapshot: WidgetWeaverStepsSnapshot?
-        public var access: WidgetWeaverStepsAccess
-        public var errorDescription: String?
-
-        public init(snapshot: WidgetWeaverStepsSnapshot?, access: WidgetWeaverStepsAccess, errorDescription: String?) {
-            self.snapshot = snapshot
-            self.access = access
-            self.errorDescription = errorDescription
-        }
-    }
-
-    public var minimumUpdateInterval: TimeInterval = 60 * 15
-
-    private var inFlightSnapshot: Task<Result, Never>?
-    private var inFlightHistory: Task<WidgetWeaverStepsHistorySnapshot?, Never>?
-
-    // MARK: - Permission (59f13ec pattern)
-
-    public func requestReadAuthorisation() async -> Bool {
-        let store = WidgetWeaverStepsStore.shared
-
-        #if !canImport(HealthKit)
-        store.saveLastAccess(.notAvailable)
-        store.saveLastError("HealthKit unavailable")
-        return false
-        #else
-
-        #if targetEnvironment(simulator)
-        store.saveLastAccess(.authorised)
-        store.saveLastError(nil)
-        return true
-        #else
-
-        guard HKHealthStore.isHealthDataAvailable() else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Health data is not available on this device.")
-            return false
-        }
-
-        guard let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Step Count is not available.")
-            return false
-        }
-
-        let healthStore = HKHealthStore()
-        return await withCheckedContinuation { cont in
-            healthStore.requestAuthorization(toShare: [], read: [stepType]) { success, error in
-                if let error {
-                    store.saveLastError(error.localizedDescription)
-                } else {
-                    store.saveLastError(nil)
-                }
-                cont.resume(returning: success)
-            }
-        }
-
-        #endif
-        #endif
-    }
-
-    // MARK: - Public updates
-
-    public func updateIfNeeded(force: Bool = false) async -> Result {
-        if let inFlightSnapshot {
-            return await inFlightSnapshot.value
-        }
-        let task = Task { () -> Result in
-            await self.updateSnapshot(force: force)
-        }
-        inFlightSnapshot = task
-        let out = await task.value
-        inFlightSnapshot = nil
-        return out
-    }
-
-    public func updateHistoryFromBeginningIfNeeded(force: Bool = false) async -> WidgetWeaverStepsHistorySnapshot? {
-        if let inFlightHistory {
-            return await inFlightHistory.value
-        }
-        let task = Task { () -> WidgetWeaverStepsHistorySnapshot? in
-            await self.updateHistory(force: force)
-        }
-        inFlightHistory = task
-        let out = await task.value
-        inFlightHistory = nil
-        return out
-    }
-
-    // MARK: - Internals
-
-    private func updateSnapshot(force: Bool) async -> Result {
-        let store = WidgetWeaverStepsStore.shared
-
-        #if !canImport(HealthKit)
-        store.saveLastAccess(.notAvailable)
-        store.saveLastError("HealthKit unavailable")
-        return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
-        #else
-
-        #if targetEnvironment(simulator)
-        let snap = WidgetWeaverStepsSnapshot.sample()
-        store.saveSnapshot(snap)
-        store.saveLastAccess(.authorised)
-        store.saveLastError(nil)
-        return Result(snapshot: snap, access: .authorised, errorDescription: nil)
-        #else
-
-        guard HKHealthStore.isHealthDataAvailable() else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Health data is not available on this device.")
-            return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
-        }
-
-        if !force, let existing = store.snapshotForToday() {
-            let age = Date().timeIntervalSince(existing.fetchedAt)
-            if age < minimumUpdateInterval {
-                store.saveLastError(nil)
-                return Result(snapshot: existing, access: store.loadLastAccess(), errorDescription: nil)
-            }
-        }
-
-        let healthStore = HKHealthStore()
-        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Step Count is not available.")
-            return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
-        }
-
-        // 59f13ec fix: gate reads behind request-status (prevents com.apple.healthkit Code=5).
-        let req = await requestStatusForRead(healthStore: healthStore, stepType: stepType)
-        if req == .shouldRequest {
-            store.saveLastAccess(.notDetermined)
-            store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
-            return Result(snapshot: store.snapshotForToday(), access: .notDetermined, errorDescription: store.loadLastError())
-        }
-
-        do {
-            let snap = try await fetchStepsForToday(healthStore: healthStore, stepsType: stepType)
-            store.saveSnapshot(snap)
-            store.saveLastAccess(.authorised)
-            store.saveLastError(nil)
-            return Result(snapshot: snap, access: .authorised, errorDescription: nil)
-        } catch {
-            let ns = error as NSError
-
-            if Self.isAuthorisationNotDeterminedError(ns) {
-                store.saveLastAccess(.notDetermined)
-                store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
-                return Result(snapshot: store.snapshotForToday(), access: .notDetermined, errorDescription: store.loadLastError())
-            }
-
-            if Self.isAuthorisationDeniedError(ns) {
-                store.saveLastAccess(.denied)
-                store.saveLastError("Steps access is denied. Enable it in the Health app (Sharing → Apps → WidgetWeaver).")
-                return Result(snapshot: store.snapshotForToday(), access: .denied, errorDescription: store.loadLastError())
-            }
-
-            store.saveLastAccess(.unknown)
-            store.saveLastError("\(ns.domain) (\(ns.code)): \(ns.localizedDescription)")
-            return Result(snapshot: store.snapshotForToday(), access: store.loadLastAccess(), errorDescription: store.loadLastError())
-        }
-
-        #endif
-        #endif
-    }
-
-    private func updateHistory(force: Bool) async -> WidgetWeaverStepsHistorySnapshot? {
-        let store = WidgetWeaverStepsStore.shared
-
-        #if !canImport(HealthKit)
-        store.saveLastAccess(.notAvailable)
-        store.saveLastError("HealthKit unavailable")
-        return nil
-        #else
-
-        #if targetEnvironment(simulator)
-        let sample = WidgetWeaverStepsHistorySnapshot.sample()
-        store.saveHistory(sample)
-        store.saveLastAccess(.authorised)
-        store.saveLastError(nil)
-        return sample
-        #else
-
-        guard HKHealthStore.isHealthDataAvailable() else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Health data is not available on this device.")
-            return nil
-        }
-
-        let healthStore = HKHealthStore()
-        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
-            store.saveLastAccess(.notAvailable)
-            store.saveLastError("Step Count is not available.")
-            return nil
-        }
-
-        let req = await requestStatusForRead(healthStore: healthStore, stepType: stepType)
-        if req == .shouldRequest {
-            store.saveLastAccess(.notDetermined)
-            store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
-            return nil
-        }
-
-        let now = Date()
-        let cal = Calendar.autoupdatingCurrent
-        let today = cal.startOfDay(for: now)
-
-        if !force, let existing = store.loadHistory() {
-            let age = now.timeIntervalSince(existing.fetchedAt)
-            if age < minimumUpdateInterval, cal.isDate(existing.latestDay, inSameDayAs: today) {
-                store.saveLastError(nil)
-                store.saveLastAccess(.authorised)
-                return existing
-            }
-        }
-
-        do {
-            let earliest = try await fetchEarliestStepSampleDay(healthStore: healthStore, stepsType: stepType) ?? today
-            let start = cal.startOfDay(for: earliest)
-            let end = today
-            let days = try await fetchDailySteps(healthStore: healthStore, stepsType: stepType, startDay: start, endDay: end)
-            let out = WidgetWeaverStepsHistorySnapshot(fetchedAt: now, earliestDay: start, latestDay: end, days: days)
-            store.saveHistory(out)
-            store.saveLastAccess(.authorised)
-            store.saveLastError(nil)
-            return out
-        } catch {
-            let ns = error as NSError
-
-            if Self.isAuthorisationNotDeterminedError(ns) {
-                store.saveLastAccess(.notDetermined)
-                store.saveLastError("Steps access isn’t enabled yet. Tap “Request Steps Access”.")
-                return store.loadHistory()
-            }
-
-            if Self.isAuthorisationDeniedError(ns) {
-                store.saveLastAccess(.denied)
-                store.saveLastError("Steps access is denied. Enable it in the Health app (Sharing → Apps → WidgetWeaver).")
-                return store.loadHistory()
-            }
-
-            store.saveLastAccess(.unknown)
-            store.saveLastError("\(ns.domain) (\(ns.code)): \(ns.localizedDescription)")
-            return store.loadHistory()
-        }
-
-        #endif
-        #endif
-    }
-
-    // MARK: - HealthKit helpers
-
-    #if canImport(HealthKit)
-    private func requestStatusForRead(healthStore: HKHealthStore, stepType: HKObjectType) async -> HKAuthorizationRequestStatus {
-        await withCheckedContinuation { cont in
-            healthStore.getRequestStatusForAuthorization(toShare: [], read: [stepType]) { status, _ in
-                cont.resume(returning: status)
-            }
-        }
-    }
-
-    nonisolated private static func isHealthKitDomain(_ domain: String) -> Bool {
-        if domain == HKErrorDomain { return true }
-        if domain == "com.apple.healthkit" { return true }
-        return false
-    }
-
-    nonisolated private static func isNoDataAvailableError(_ ns: NSError) -> Bool {
-        if Self.isHealthKitDomain(ns.domain) && ns.code == 11 { return true }
-        let d = ns.localizedDescription.lowercased()
-        if d.contains("no data available") { return true }
-        let r = (ns.userInfo[NSLocalizedFailureReasonErrorKey] as? String)?.lowercased() ?? ""
-        if r.contains("no data available") { return true }
-        return false
-    }
-
-    nonisolated private static func isAuthorisationNotDeterminedError(_ ns: NSError) -> Bool {
-        if Self.isHealthKitDomain(ns.domain) && ns.code == 5 { return true }
-        let d = ns.localizedDescription.lowercased()
-        if d.contains("authorization not determined") { return true }
-        if d.contains("authorisation not determined") { return true }
-        return false
-    }
-
-    nonisolated private static func isAuthorisationDeniedError(_ ns: NSError) -> Bool {
-        if Self.isHealthKitDomain(ns.domain) && ns.code == 4 { return true }
-        let d = ns.localizedDescription.lowercased()
-        if d.contains("authorization denied") { return true }
-        if d.contains("authorisation denied") { return true }
-        if d.contains("not authorized") { return true }
-        if d.contains("not authorised") { return true }
-        return false
-    }
-
-    private func fetchStepsForToday(healthStore: HKHealthStore, stepsType: HKQuantityType) async throws -> WidgetWeaverStepsSnapshot {
-        let cal = Calendar.autoupdatingCurrent
-        let now = Date()
-        let start = cal.startOfDay(for: now)
-        let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
-
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsQuery(quantityType: stepsType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
-                if let error = error as NSError? {
-                    if Self.isNoDataAvailableError(error) {
-                        let snap = WidgetWeaverStepsSnapshot(fetchedAt: now, startOfDay: start, steps: 0)
-                        continuation.resume(returning: snap)
-                        return
-                    }
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                let sum = stats?.sumQuantity()?.doubleValue(for: .count()) ?? 0
-                let snap = WidgetWeaverStepsSnapshot(
-                    fetchedAt: now,
-                    startOfDay: start,
-                    steps: Int(sum.rounded())
-                )
-                continuation.resume(returning: snap)
-            }
-            healthStore.execute(query)
-        }
-    }
-
-    private func fetchEarliestStepSampleDay(healthStore: HKHealthStore, stepsType: HKQuantityType) async throws -> Date? {
-        return try await withCheckedThrowingContinuation { continuation in
-            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-            let query = HKSampleQuery(sampleType: stepsType, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, error in
-                if let error = error as NSError? {
-                    if Self.isNoDataAvailableError(error) {
-                        continuation.resume(returning: nil)
-                        return
-                    }
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: samples?.first?.startDate)
-            }
-            healthStore.execute(query)
-        }
-    }
-
-    private func fetchDailySteps(
-        healthStore: HKHealthStore,
-        stepsType: HKQuantityType,
-        startDay: Date,
-        endDay: Date
-    ) async throws -> [WidgetWeaverStepsDayPoint] {
-        let cal = Calendar.autoupdatingCurrent
-
-        let start = cal.startOfDay(for: startDay)
-        let end = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: endDay)) ?? cal.startOfDay(for: endDay).addingTimeInterval(86_400)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-
-        var interval = DateComponents()
-        interval.day = 1
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsCollectionQuery(
-                quantityType: stepsType,
-                quantitySamplePredicate: predicate,
-                options: .cumulativeSum,
-                anchorDate: start,
-                intervalComponents: interval
-            )
-
-            query.initialResultsHandler = { _, results, error in
-                if let error = error as NSError? {
-                    if Self.isNoDataAvailableError(error) {
-                        continuation.resume(returning: [])
-                        return
-                    }
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                var out: [WidgetWeaverStepsDayPoint] = []
-                out.reserveCapacity(400)
-
-                results?.enumerateStatistics(from: start, to: end) { stat, _ in
-                    let dayStart = cal.startOfDay(for: stat.startDate)
-                    let sum = stat.sumQuantity()?.doubleValue(for: .count()) ?? 0
-                    out.append(WidgetWeaverStepsDayPoint(dayStart: dayStart, steps: Int(sum.rounded())))
-                }
-
-                continuation.resume(returning: out.sorted(by: { $0.dayStart < $1.dayStart }))
-            }
-
-            healthStore.execute(query)
-        }
-    }
-    #endif
-}
+// WidgetWeaverStepsAnalytics and WidgetWeaverStepsEngine live in separate files to keep
+// this file focused on snapshot models, goal schedule, streak rules, and storage.
