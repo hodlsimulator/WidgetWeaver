@@ -64,6 +64,31 @@ Notes:
 
 ---
 
+## Featured — Steps (Pedometer)
+
+WidgetWeaver includes a built-in **HealthKit-powered Steps snapshot + Lock Screen widget**:
+
+- Shows today’s step count
+- Optional daily goal (the circular widget shows progress)
+- Offline-friendly: widgets render from a cached snapshot stored in the App Group
+- Includes a Lock Screen companion widget: **Steps (WidgetWeaver)** (inline / circular / rectangular)
+
+### Steps setup
+
+1. In the app, open `…` → **Steps**.
+2. Tap **Enable Steps Access** (Health permission prompt).
+3. Tap **Update now** to cache today’s steps for widgets.
+4. Add the Lock Screen widget: **Steps (WidgetWeaver)**.
+
+Notes:
+
+- Widgets cannot request Health permission; access must be granted in the app (or in the Health app).
+- If you see **0 steps**, that can be normal (early in the day) or it can mean no step samples are being recorded.
+  - Check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking** is enabled.
+- If you see **Denied**, enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver).
+
+---
+
 ## Current status (0.9.4 (13))
 
 ### App
@@ -76,6 +101,7 @@ Notes:
 - ✅ Optional on-device AI (generate + patch)
 - ✅ Weather screen (location + units + cached snapshot + attribution)
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
+- ✅ Steps screen (HealthKit permission + cached step snapshot + daily goal)
 - ✅ Inspector sheet (resolved spec + JSON + quick checks)
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
 
@@ -83,9 +109,11 @@ Notes:
 - ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
 - ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
+- ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ Per-widget configuration (Home Screen widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
+- ✅ Steps widget renders from a cached step snapshot stored in the App Group
 - ✅ Time-sensitive designs can attempt minute-level timelines (still subject to WidgetKit throttling)
 
 ### Layout + style
@@ -102,6 +130,7 @@ Notes:
 - ✅ Variable template engine: `WidgetWeaverVariableTemplate` (stored vars are Pro-only)
 - ✅ WeatherKit integration: `WidgetWeaverWeatherEngine`, `WidgetWeaverWeatherStore`, Weather template renderer
 - ✅ Calendar integration: `WidgetWeaverCalendarEngine`, `WidgetWeaverCalendarStore`, Next Up template renderer
+- ✅ HealthKit steps integration: `WidgetWeaverStepsEngine`, `WidgetWeaverStepsStore`, Steps settings + Lock Screen widget
 - ✅ App Group store: `WidgetSpecStore`, `WidgetWeaverVariableStore`, `AppGroup`
 
 ---
@@ -121,9 +150,13 @@ Notes:
 - Use the toolbar menu → **About** to add templates
 - If using Weather: toolbar menu → **Weather** to pick a location and cache a snapshot
 - If using Next Up (Calendar): add the template from **About**, then grant Calendar access when prompted
+- If using Steps:
+  - Add the **HealthKit** capability to both targets (app + widget extension)
+  - Add `NSHealthShareUsageDescription` to the app Info.plist
+  - In the app: `…` → **Steps** → enable access → **Update now**
 - Add widgets:
   - Home Screen: **WidgetWeaver**
-  - Lock Screen: **Rain (WidgetWeaver)** and/or **Next Up (WidgetWeaver)**
+  - Lock Screen: **Rain (WidgetWeaver)** and/or **Next Up (WidgetWeaver)** and/or **Steps (WidgetWeaver)**
 - For Pro features: unlock Pro, then use **Variables** + **Actions** in the editor
 
 ---
@@ -242,6 +275,7 @@ AI features are designed to run on-device to generate or patch the design spec. 
   - Variables (Pro): JSON dictionary in App Group `UserDefaults`
   - Weather: location + cached snapshot + attribution in App Group `UserDefaults`
   - Calendar: cached “next/second event” snapshot in App Group `UserDefaults`
+  - Steps: cached “today steps” snapshot + goal in App Group `UserDefaults`
 - Widgets render using `WidgetWeaverSpecView` (for Home Screen designs) or lightweight dedicated views (for Lock Screen widgets).
 
 ---
@@ -253,6 +287,7 @@ AI features are designed to run on-device to generate or patch the design spec. 
 - Pro: matched sets + variables + actions
 - Weather template + WeatherKit caching (+ Lock Screen Rain widget)
 - Next Up (Calendar) template + calendar snapshot caching (+ Lock Screen Next Up widget)
+- Steps snapshot + HealthKit permission flow (+ Lock Screen Steps widget)
 - Optional on-device AI
 
 ---
@@ -275,6 +310,18 @@ AI features are designed to run on-device to generate or patch the design spec. 
 - **Next Up shows “No upcoming events”**
   - Confirm there’s an event ahead of the current time
   - Open the app and use `…` → **Refresh Widgets** to force a widget timeline reload
+
+- **Steps shows “Open app” / “No cached steps yet”**
+  - Open the app → `…` → **Steps**
+  - Enable Health access, then tap **Update now**
+
+- **Steps shows “Denied”**
+  - Enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver)
+  - Return to WidgetWeaver → **Steps** → **Refresh** / **Update now**
+
+- **Steps shows 0**
+  - This can be normal (especially early in the day)
+  - If you expect steps but always get 0, check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking**
 
 - **Widgets don’t reflect edits**
   - Make sure the design is saved
