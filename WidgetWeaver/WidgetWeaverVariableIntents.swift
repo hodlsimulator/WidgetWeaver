@@ -4,8 +4,8 @@
 //
 //  Created by . . on 12/18/25.
 //
-// Variables + Shortcuts (Milestone 6)
-// Milestone 8: Variables are Pro-only.
+//  Variables + Shortcuts (Milestone 6)
+//  Milestone 8: Variables are Pro-only.
 //
 
 import AppIntents
@@ -73,7 +73,7 @@ struct WidgetWeaverGetVariableIntent: AppIntent {
         self.key = key
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -147,7 +147,7 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         self.amount = amount
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "0", dialog: "WidgetWeaver Pro is required for variables.")
         }
@@ -217,7 +217,7 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
         self.format = format
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard WidgetWeaverEntitlements.isProUnlocked else {
             return .result(value: "", dialog: "WidgetWeaver Pro is required for variables.")
         }
