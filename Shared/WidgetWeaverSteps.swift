@@ -420,13 +420,12 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             return nil
         }
 
-        let status = healthStore.authorizationStatus(for: stepType)
-        if status == .sharingDenied {
-            store.saveLastAccess(.denied)
-            store.saveLastError(WidgetWeaverStepsError.denied.localizedDescription)
-            return nil
-        }
-        if status == .notDetermined {
+        // IMPORTANT:
+        // authorizationStatus(for:) reports *share/write* permission.
+        // For read-only data, HealthKit intentionally does not expose “denied” vs “allowed”.
+        // Use request-status to know if we should prompt, then run the query and treat “no data” as 0.
+        let req = await requestStatusForRead(stepType: stepType)
+        if req == .shouldRequest {
             store.saveLastAccess(.notDetermined)
             store.saveLastError(WidgetWeaverStepsError.notDetermined.localizedDescription)
             return nil
@@ -442,8 +441,9 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             store.saveLastError(nil)
             return snap
         } catch {
+            let ns = error as NSError
             store.saveLastAccess(.unknown)
-            store.saveLastError(error.localizedDescription)
+            store.saveLastError("\(ns.domain) (\(ns.code)): \(ns.localizedDescription)")
             return store.snapshotForToday(now: now)
         }
         #else
@@ -489,13 +489,8 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
             return nil
         }
 
-        let status = healthStore.authorizationStatus(for: stepType)
-        if status == .sharingDenied {
-            store.saveLastAccess(.denied)
-            store.saveLastError(WidgetWeaverStepsError.denied.localizedDescription)
-            return nil
-        }
-        if status == .notDetermined {
+        let req = await requestStatusForRead(stepType: stepType)
+        if req == .shouldRequest {
             store.saveLastAccess(.notDetermined)
             store.saveLastError(WidgetWeaverStepsError.notDetermined.localizedDescription)
             return nil
@@ -535,12 +530,8 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
                 var byDay: [Date: Int] = [:]
                 byDay.reserveCapacity(merged.days.count + appended.count)
 
-                for p in merged.days {
-                    byDay[cal.startOfDay(for: p.dayStart)] = p.steps
-                }
-                for p in appended {
-                    byDay[cal.startOfDay(for: p.dayStart)] = p.steps
-                }
+                for p in merged.days { byDay[cal.startOfDay(for: p.dayStart)] = p.steps }
+                for p in appended { byDay[cal.startOfDay(for: p.dayStart)] = p.steps }
 
                 let mergedDays = byDay
                     .map { WidgetWeaverStepsDayPoint(dayStart: $0.key, steps: $0.value) }
@@ -571,7 +562,9 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
                 return hist
             }
         } catch {
-            store.saveLastError(error.localizedDescription)
+            let ns = error as NSError
+            store.saveLastAccess(.unknown)
+            store.saveLastError("\(ns.domain) (\(ns.code)): \(ns.localizedDescription)")
             return store.loadHistory()
         }
         #else
@@ -588,6 +581,14 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
     // MARK: HealthKit helpers
 
     #if canImport(HealthKit)
+    private func requestStatusForRead(stepType: HKObjectType) async -> HKAuthorizationRequestStatus {
+        await withCheckedContinuation { cont in
+            healthStore.getRequestStatusForAuthorization(toShare: [], read: [stepType]) { status, _ in
+                cont.resume(returning: status)
+            }
+        }
+    }
+
     private func isNoDataAvailableError(_ ns: NSError) -> Bool {
         if ns.domain == HKErrorDomain && ns.code == 11 {
             return true
