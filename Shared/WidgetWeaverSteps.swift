@@ -238,6 +238,12 @@ public final class WidgetWeaverStepsEngine: @unchecked Sendable {
         } catch {
             let ns = error as NSError
 
+            // HealthKit “No data available…” should not be treated as denied.
+            // It simply means there are no step samples matching the predicate (often 0 steps today).
+            if ns.domain == HKErrorDomain, ns.code == 11 {
+                return .success(0)
+            }
+
             var debug = "\(ns.domain) (\(ns.code)): \(ns.localizedDescription)"
             if let reason = ns.userInfo[NSLocalizedFailureReasonErrorKey] as? String, !reason.isEmpty {
                 debug += " — \(reason)"
