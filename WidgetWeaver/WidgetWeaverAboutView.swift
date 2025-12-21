@@ -200,4 +200,107 @@ struct WidgetWeaverAboutView: View {
         UIPasteboard.general.string = string
         statusMessage = "Copied to clipboard."
     }
+    
+    // MARK: - Sharing
+
+    var sharingSection: some View {
+        Section {
+            WidgetWeaverAboutCard(accent: .mint) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Share a design as a small package (JSON + image). Others can import it into their library.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Share from the editor: Share → Package.",
+                        "Import by opening the package in WidgetWeaver.",
+                        "Packages do not include personal data."
+                    ])
+                }
+            }
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Sharing", systemImage: "square.and.arrow.up", accent: .mint)
+        } footer: {
+            Text("Packages contain only the widget spec and preview image.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Pro
+
+    var proSection: some View {
+        Section {
+            WidgetWeaverAboutCard(accent: .yellow) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if proManager.isProUnlocked {
+                        Label("Pro is unlocked on this device.", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.secondary)
+
+                        WidgetWeaverAboutBulletList(items: [
+                            "Matched Sets",
+                            "Variables + Shortcuts",
+                            "Interactive buttons (iOS 17+)",
+                            "More saved designs",
+                            "Remix + AI features"
+                        ])
+                    } else {
+                        Text("Pro unlocks advanced features for power users.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        WidgetWeaverAboutBulletList(items: [
+                            "Matched Sets (Small/Medium/Large overrides)",
+                            "Variables store + Shortcuts",
+                            "Interactive buttons (iOS 17+)",
+                            "More saved designs"
+                        ])
+
+                        Button {
+                            onShowPro()
+                        } label: {
+                            Label("Upgrade to Pro", systemImage: "crown.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                    }
+                }
+            }
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Pro", systemImage: "crown.fill", accent: .yellow)
+        } footer: {
+            Text("Purchases are handled by the App Store.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Diagnostics
+
+    var diagnosticsSection: some View {
+        Section {
+            WidgetWeaverAboutCard(accent: .gray) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Useful for debugging widget refresh + configuration.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Design count: \(designCount)",
+                        "Pro: \(proManager.isProUnlocked ? "Unlocked" : "Locked")",
+                        "Widgets reload when you Save a design."
+                    ])
+                }
+            }
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Diagnostics", systemImage: "stethoscope", accent: .gray)
+        } footer: {
+            Text("If widgets don’t update: open the app, Save the design again, and wait a moment for WidgetKit refresh.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 }
