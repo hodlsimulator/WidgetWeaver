@@ -388,6 +388,24 @@ extension ContentView {
                 }
             }
 
+            Menu {
+                Button {
+                    applyStepsStarterPreset(copyToAllSizes: false)
+                } label: {
+                    Label("Apply to this size (\(editingFamilyLabel))", systemImage: "figure.walk")
+                }
+
+                if matchedSetEnabled {
+                    Button {
+                        applyStepsStarterPreset(copyToAllSizes: true)
+                    } label: {
+                        Label("Apply to all sizes", systemImage: "square.on.square")
+                    }
+                }
+            } label: {
+                Label("Steps preset", systemImage: "figure.walk")
+            }
+
             Toggle("Accent bar", isOn: binding(\.showsAccentBar))
 
             Picker("Axis", selection: binding(\.axis)) {

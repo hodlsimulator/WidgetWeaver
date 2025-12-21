@@ -71,4 +71,34 @@ extension ContentView {
         matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
         saveStatusMessage = "Copied \(editingFamilyLabel) settings to Small/Medium/Large (draft only)."
     }
+    
+    func applyStepsStarterPreset(copyToAllSizes: Bool) {
+        var d = currentFamilyDraft()
+
+        d.primaryText = "{{__steps_today|--|number:0}}"
+        d.secondaryText = "Goal {{__steps_goal_today|--|number:0}} • {{__steps_today_fraction|0|percent:0}}"
+
+        d.template = .hero
+        d.showsAccentBar = true
+
+        d.symbolName = "figure.walk"
+        d.symbolPlacement = .beforeName
+        d.symbolSize = 18
+        d.symbolWeight = .semibold
+        d.symbolRenderingMode = .hierarchical
+        d.symbolTint = .accent
+
+        setCurrentFamilyDraft(d)
+
+        if matchedSetEnabled && copyToAllSizes {
+            matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
+        }
+
+        styleDraft.accent = .green
+        styleDraft.background = .radialGlow
+
+        saveStatusMessage = (matchedSetEnabled && copyToAllSizes)
+            ? "Applied Steps preset to Small/Medium/Large (draft only)."
+            : "Applied Steps preset (draft only)."
+    }
 }
