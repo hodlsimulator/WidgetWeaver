@@ -49,8 +49,7 @@ struct WeatherNowcast: Hashable {
             points: self.points,
             now: now,
             hasMinuteData: hasMinuteData,
-            isRainingNow: WeatherNowcast.isRainingNow(snapshot: snapshot),
-            snapshotSymbolName: snapshot.symbolName
+            isRainingNow: WeatherNowcast.isRainingNow(snapshot: snapshot)
         )
 
         self.startOffsetMinutes = analysis.startOffsetMinutes
@@ -146,19 +145,17 @@ struct WeatherNowcast: Hashable {
         points: [WidgetWeaverWeatherMinutePoint],
         now: Date,
         hasMinuteData: Bool,
-        isRainingNow: Bool,
-        snapshotSymbolName: String
+        isRainingNow: Bool
     ) -> Analysis {
         guard !points.isEmpty else {
             if !hasMinuteData {
                 if isRainingNow {
-                    let nowPhrase = nowPrecipPhrase(fromSymbolName: snapshotSymbolName)
                     return Analysis(
                         startOffsetMinutes: 0,
                         endOffsetMinutes: nil,
                         peakIntensityMMPerHour: 0,
                         peakChance01: 0,
-                        primaryText: "\(nowPhrase) now",
+                        primaryText: "Rain now",
                         secondaryText: "Next-hour rain unavailable",
                         startTimeText: "Now"
                     )
@@ -200,9 +197,7 @@ struct WeatherNowcast: Hashable {
         }
 
         // Use expected intensity to decide if it's meaningfully wet.
-        // Lower = more sensitive.
-        // Units: mm/hour of expected precip (intensity * chance).
-        let wetThreshold: Double = 0.001
+        let wetThreshold: Double = 0.08
         let wetIdx: [Int] = samples.enumerated().compactMap { (i, s) in
             let expected = s.intensity * s.chance
             return (expected >= wetThreshold) ? i : nil
@@ -231,7 +226,7 @@ struct WeatherNowcast: Hashable {
         let peakIntensity = wetIdx.map { samples[$0].intensity }.max() ?? 0
         let peakChance = wetIdx.map { samples[$0].chance }.max() ?? 0
 
-        let phrase = precipitationPhrase(peakIntensity)
+        let descriptor = intensityDescriptor(peakIntensity)
 
         let startTimeText: String?
         if startOffset <= 0 {
@@ -242,7 +237,7 @@ struct WeatherNowcast: Hashable {
 
         if startOffset <= 0 {
             // Raining now.
-            let primary = "\(phrase) now"
+            let primary = "\(descriptor) rain now"
             let secondary: String?
             if endOffset < 55 {
                 secondary = "Stopping in \(endOffset)m"
@@ -263,7 +258,7 @@ struct WeatherNowcast: Hashable {
 
         if startOffset < 55 {
             // Starts later.
-            let primary = "\(phrase) in \(startOffset)m"
+            let primary = "\(descriptor) rain in \(startOffset)m"
             let secondary: String?
             if endOffset < 55 {
                 secondary = "Ending in \(endOffset)m"
@@ -288,26 +283,17 @@ struct WeatherNowcast: Hashable {
             endOffsetMinutes: endOffset,
             peakIntensityMMPerHour: peakIntensity,
             peakChance01: peakChance,
-            primaryText: "\(phrase) later",
+            primaryText: "Light rain later",
             secondaryText: nil,
             startTimeText: startTimeText
         )
     }
 
-    private static func nowPrecipPhrase(fromSymbolName symbolName: String) -> String {
-        let s = symbolName.lowercased()
-        if s.contains("drizzle") { return "Drizzle" }
-        return "Rain"
-    }
-
-    private static func precipitationPhrase(_ intensity: Double) -> String {
-        // Intensities are mm/hour.
-        if intensity < 0.08 { return "Light drizzle" }
-        if intensity < 0.25 { return "Drizzle" }
-        if intensity < 1.20 { return "Light rain" }
-        if intensity < 3.50 { return "Moderate rain" }
-        if intensity < 7.00 { return "Heavy rain" }
-        return "Very heavy rain"
+    private static func intensityDescriptor(_ intensity: Double) -> String {
+        if intensity < 0.25 { return "Light" }
+        if intensity < 1.20 { return "Moderate" }
+        if intensity < 3.50 { return "Heavy" }
+        return "Very heavy"
     }
 
     private static func clamp01(_ v: Double) -> Double {
