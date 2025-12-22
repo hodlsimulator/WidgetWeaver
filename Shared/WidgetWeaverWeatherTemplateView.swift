@@ -13,7 +13,6 @@ import WidgetKit
 #endif
 
 // MARK: - Weather Template
-
 /// The weather template is opinionated and rain-first:
 /// - Next hour precipitation is the primary focus (Dark Sky style).
 /// - Temperature is secondary.
@@ -46,49 +45,49 @@ struct WeatherTemplateView: View {
         Group {
             switch context {
             case .widget:
-                // In a real widget, WidgetKit may pre-render future entries.
-                // Using Date() here causes every entry to look identical (blink-only).
-                //
-                // Use the entry date injected via WidgetWeaverRenderClock as the base, then tick
-                // inside that entry so time-based visuals (chart + “Updated …”) advance even if
-                // WidgetKit throttles timeline swaps.
-                let baseNow = Calendar.current.dateInterval(of: .minute, for: WidgetWeaverRenderClock.now)?.start
-                    ?? WidgetWeaverRenderClock.now
-
-                TimelineView(.periodic(from: baseNow, by: 60)) { timeline in
-                    let minuteID = Int(timeline.date.timeIntervalSince1970 / 60.0)
+                // WidgetKit can pre-render future entries. The render clock supplies the entry date.
+                // A live TimelineView drives minute-by-minute updates, but the effective "now" never
+                // goes earlier than the entry date (so pre-rendered future entries remain distinct).
+                let entryNow = floorToMinute(WidgetWeaverRenderClock.now)
+                let scheduleStart = floorToMinute(Date())
+                TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                    let liveNow = floorToMinute(timeline.date)
+                    let now = maxDate(entryNow, liveNow)
+                    let minuteID = Int(now.timeIntervalSince1970 / 60.0)
 
                     WeatherTemplateContent(
                         snapshot: snapshot,
                         location: location,
                         unit: unit,
-                        now: timeline.date,
+                        now: now,
                         family: family,
                         metrics: metrics,
                         accent: accent
                     )
                     .id(minuteID)
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
                 }
 
             case .simulator:
                 // Simulator-only: live ticking inside the running app.
-                TimelineView(.periodic(from: Date(), by: 60)) { timeline in
-                    let minuteID = Int(timeline.date.timeIntervalSince1970 / 60.0)
+                let scheduleStart = floorToMinute(Date())
+                TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                    let now = floorToMinute(timeline.date)
+                    let minuteID = Int(now.timeIntervalSince1970 / 60.0)
 
                     WeatherTemplateContent(
                         snapshot: snapshot,
                         location: location,
                         unit: unit,
-                        now: timeline.date,
+                        now: now,
                         family: family,
                         metrics: metrics,
                         accent: accent
                     )
                     .id(minuteID)
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
                 }
 
             case .preview:
@@ -129,6 +128,14 @@ struct WeatherTemplateView: View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let headline = nowcast.primaryText
         return "Weather. \(snapshot.locationName). \(headline). Temperature \(temp)."
+    }
+
+    private func floorToMinute(_ date: Date) -> Date {
+        Calendar.current.dateInterval(of: .minute, for: date)?.start ?? date
+    }
+
+    private func maxDate(_ a: Date, _ b: Date) -> Date {
+        (a > b) ? a : b
     }
 }
 
@@ -177,7 +184,6 @@ private struct WeatherTemplateContent: View {
 }
 
 // MARK: - Layout Switching
-
 private struct WeatherFilledStateView: View {
     let snapshot: WidgetWeaverWeatherSnapshot
     let unit: UnitTemperature
@@ -217,27 +223,10 @@ private struct WeatherFilledStateView: View {
                 )
             }
         }
-        // Small: attribution button only.
+        // Small: attribution only.
         .overlay(alignment: .bottomTrailing) {
             if family == .systemSmall {
                 WeatherAttributionLink(accent: accent)
-                    .padding(metrics.contentPadding)
-            }
-        }
-        // Medium: pin footer items as overlays so they never get pushed off-screen.
-        .overlay(alignment: .bottomLeading) {
-            if family == .systemMedium {
-                WeatherAttributionLink(accent: accent)
-                    .padding(metrics.contentPadding)
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if family == .systemMedium {
-                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
                     .padding(metrics.contentPadding)
             }
         }
@@ -245,7 +234,6 @@ private struct WeatherFilledStateView: View {
 }
 
 // MARK: - Empty State
-
 private struct WeatherEmptyStateView: View {
     let location: WidgetWeaverWeatherLocation?
     let metrics: WeatherMetrics

@@ -25,6 +25,7 @@ struct WeatherNowcastChart: View {
             let w = geo.size.width
             let h = geo.size.height
             let count = buckets.count
+
             let spacing: CGFloat = (count > 24) ? 1 : 2
             let totalSpacing = spacing * CGFloat(max(0, count - 1))
             let barWidth = (count > 0) ? max(1, (w - totalSpacing) / CGFloat(count)) : 0
@@ -47,7 +48,8 @@ struct WeatherNowcastChart: View {
                             let rainUncertainty = max(0.0, min(1.0, b.rainUncertainty01))
 
                             ZStack(alignment: .bottom) {
-                                // Static uncertainty “envelope” (Dark Sky-ish): thickness/opacity grows with rainUncertainty.
+                                // Static uncertainty “envelope” (Dark Sky-ish):
+                                // thickness/opacity grows with rainUncertainty.
                                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                                     .stroke(accent, lineWidth: 0.6 + 3.2 * rainUncertainty)
                                     .opacity(0.06 + 0.18 * rainUncertainty)
@@ -71,9 +73,7 @@ struct WeatherNowcastChart: View {
                                 Text("Now")
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
                                     .foregroundStyle(.secondary)
-
                                 Spacer(minLength: 0)
-
                                 Text("60m")
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
                                     .foregroundStyle(.secondary)
@@ -186,18 +186,18 @@ struct WeatherAttributionLink: View {
 
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
-
         if let url = store.attributionLegalURL() {
             Link(destination: url) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 14, weight: .semibold))
+                // Removes the redundant info icon and stays out of the “Now” axis label area.
+                Text("Weather")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(accent)
-                    .padding(6)
-                    .background(Color.black.opacity(0.20), in: Capsule())
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.18), in: Capsule())
             }
-            .accessibilityLabel("Weather attribution")
-        } else {
-            EmptyView()
+            .accessibilityLabel("Apple Weather attribution")
         }
     }
 }
@@ -209,20 +209,18 @@ struct WeatherMetrics {
     let style: StyleSpec
     let layout: LayoutSpec
 
-    var scale: CGFloat { max(0.85, min(1.35, CGFloat(style.weatherScale))) }
+    var scale: CGFloat {
+        max(0.85, min(1.35, CGFloat(style.weatherScale)))
+    }
 
     var contentPadding: CGFloat {
         let base = CGFloat(style.padding)
         let familyMultiplier: CGFloat
         switch family {
-        case .systemSmall:
-            familyMultiplier = 0.85
-        case .systemMedium:
-            familyMultiplier = 0.90
-        default:
-            familyMultiplier = 1.00
+        case .systemSmall: familyMultiplier = 0.85
+        case .systemMedium: familyMultiplier = 0.90
+        default: familyMultiplier = 1.00
         }
-
         return max(10, min(18, base * familyMultiplier)) * scale
     }
 
@@ -234,20 +232,15 @@ struct WeatherMetrics {
     // Font sizes
     var locationFontSize: CGFloat { 12 * scale }
     var locationFontSizeLarge: CGFloat { 13 * scale }
-
     var nowcastPrimaryFontSizeSmall: CGFloat { 16 * scale }
     var nowcastPrimaryFontSizeMedium: CGFloat { 18 * scale }
     var nowcastPrimaryFontSizeLarge: CGFloat { 20 * scale }
-
     var detailsFontSize: CGFloat { 12 * scale }
     var detailsFontSizeLarge: CGFloat { 13 * scale }
-
     var updatedFontSize: CGFloat { 11 * scale }
-
     var temperatureFontSizeSmall: CGFloat { 28 * scale }
     var temperatureFontSizeMedium: CGFloat { 30 * scale }
     var temperatureFontSizeLarge: CGFloat { 34 * scale }
-
     var sectionTitleFontSize: CGFloat { 12 * scale }
 
     // Chart heights
@@ -280,7 +273,6 @@ struct WeatherPalette: Hashable {
     static func forSnapshot(_ snapshot: WidgetWeaverWeatherSnapshot, now: Date, accent: Color) -> WeatherPalette {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let hasRain = (nowcast.peakIntensityMMPerHour > 0.05) || ((nowcast.startOffsetMinutes ?? 999) <= 60)
-
         if hasRain {
             return WeatherPalette(
                 top: Color.black.opacity(0.40),
@@ -322,45 +314,33 @@ struct WeatherBackdropView: View {
 
     private var glowSize: CGFloat {
         switch family {
-        case .systemSmall:
-            return 110
-        case .systemMedium:
-            return 150
-        default:
-            return 220
+        case .systemSmall: return 110
+        case .systemMedium: return 150
+        default: return 220
         }
     }
 
     private var glowBlur: CGFloat {
         switch family {
-        case .systemSmall:
-            return 28
-        case .systemMedium:
-            return 34
-        default:
-            return 44
+        case .systemSmall: return 28
+        case .systemMedium: return 34
+        default: return 44
         }
     }
 
     private var glowOffsetX: CGFloat {
         switch family {
-        case .systemSmall:
-            return 45
-        case .systemMedium:
-            return 85
-        default:
-            return 110
+        case .systemSmall: return 45
+        case .systemMedium: return 85
+        default: return 110
         }
     }
 
     private var glowOffsetY: CGFloat {
         switch family {
-        case .systemSmall:
-            return -30
-        case .systemMedium:
-            return -46
-        default:
-            return -65
+        case .systemSmall: return -30
+        case .systemMedium: return -46
+        default: return -65
         }
     }
 }

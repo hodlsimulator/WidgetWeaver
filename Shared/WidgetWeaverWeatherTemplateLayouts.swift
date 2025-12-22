@@ -39,7 +39,6 @@ struct WeatherSmallRainLayout: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                 }
-
                 Spacer(minLength: 0)
             }
 
@@ -122,9 +121,18 @@ struct WeatherMediumRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightMedium)
 
-            // Leaves room at the bottom for the pinned footer overlays.
-            Spacer(minLength: 0)
-                .frame(height: 18)
+            // Footer row (keeps attribution out of the chart so it can’t block “Now”).
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                WeatherAttributionLink(accent: accent)
+
+                Spacer(minLength: 0)
+
+                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
+                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
     }
 }
@@ -190,7 +198,9 @@ struct WeatherLargeRainLayout: View {
 
             HStack(alignment: .firstTextBaseline) {
                 WeatherAttributionLink(accent: accent)
+
                 Spacer(minLength: 0)
+
                 Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
