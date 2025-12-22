@@ -4,10 +4,11 @@
 //
 //  Created by . . on 12/20/25.
 //
+//  Layouts for the rain-first weather template.
+//
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -24,6 +25,7 @@ struct WeatherSmallRainLayout: View {
 
     var body: some View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
+        let visualMax = WeatherNowcast.visualMaxIntensityMMPerHour(forPeak: nowcast.peakIntensityMMPerHour)
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -39,12 +41,13 @@ struct WeatherSmallRainLayout: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                 }
+
                 Spacer(minLength: 0)
             }
 
             WeatherNowcastChart(
                 buckets: nowcast.buckets(for: family),
-                maxIntensityMMPerHour: nowcast.peakIntensityMMPerHour,
+                maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: false
             )
@@ -81,6 +84,7 @@ struct WeatherMediumRainLayout: View {
 
     var body: some View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
+        let visualMax = WeatherNowcast.visualMaxIntensityMMPerHour(forPeak: nowcast.peakIntensityMMPerHour)
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .top, spacing: 12) {
@@ -114,7 +118,7 @@ struct WeatherMediumRainLayout: View {
 
             WeatherNowcastChart(
                 buckets: nowcast.buckets(for: family),
-                maxIntensityMMPerHour: nowcast.peakIntensityMMPerHour,
+                maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: true
             )
@@ -127,11 +131,7 @@ struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
     }
@@ -146,6 +146,7 @@ struct WeatherLargeRainLayout: View {
 
     var body: some View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
+        let visualMax = WeatherNowcast.visualMaxIntensityMMPerHour(forPeak: nowcast.peakIntensityMMPerHour)
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .top, spacing: 12) {
@@ -189,7 +190,7 @@ struct WeatherLargeRainLayout: View {
 
             WeatherNowcastChart(
                 buckets: nowcast.buckets(for: .systemLarge),
-                maxIntensityMMPerHour: max(0.6, nowcast.peakIntensityMMPerHour),
+                maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: true
             )
@@ -201,11 +202,28 @@ struct WeatherLargeRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
+    }
+}
+
+// MARK: - Updated label (dynamic)
+
+private struct WeatherUpdatedLabel: View {
+    let fetchedAt: Date
+    let fontSize: CGFloat
+
+    var body: some View {
+        // `Text(date, style: .relative)` is a system-supported dynamic date style that tends to keep
+        // ticking without requiring string recomputation.
+        HStack(spacing: 4) {
+            Text("Updated")
+            Text(fetchedAt, style: .relative)
+        }
+        .font(.system(size: fontSize, weight: .medium, design: .rounded))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
     }
 }

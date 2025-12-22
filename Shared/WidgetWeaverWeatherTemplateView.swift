@@ -4,15 +4,29 @@
 //
 //  Created by . . on 12/20/25.
 //
+//  Rain-first weather template.
+//
+//  MINUTE-BY-MINUTE UPDATE CONTRACT
+//  -------------------------------
+//  The template is expected to tick every minute so the following stay accurate:
+//  - Nowcast headline offsets (“…in 46m” / “Stopping in …m”)
+//  - Chart window alignment (“Now” and the next 60 minutes)
+//  - Updated-at label
+//
+//  The minute tick is implemented with a TimelineView(.periodic(..., by: 60)) and a `.id(minuteID)`
+//  derived from the floored minute.
+//  Removing the `.id`, widening the interval, or moving time-sensitive computation outside the TimelineView
+//  can cause subtle staleness where some text appears live but other parts lag.
+//
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
 
 // MARK: - Weather Template
+
 /// The weather template is opinionated and rain-first:
 /// - Next hour precipitation is the primary focus (Dark Sky style).
 /// - Temperature is secondary.
@@ -45,11 +59,14 @@ struct WeatherTemplateView: View {
         Group {
             switch context {
             case .widget:
-                // WidgetKit can pre-render future entries. The render clock supplies the entry date.
+                // WidgetKit can pre-render future entries.
+                // The render clock supplies the entry date.
+                //
                 // A live TimelineView drives minute-by-minute updates, but the effective "now" never
                 // goes earlier than the entry date (so pre-rendered future entries remain distinct).
                 let entryNow = floorToMinute(WidgetWeaverRenderClock.now)
                 let scheduleStart = floorToMinute(Date())
+
                 TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
                     let liveNow = floorToMinute(timeline.date)
                     let now = maxDate(entryNow, liveNow)
@@ -72,6 +89,7 @@ struct WeatherTemplateView: View {
             case .simulator:
                 // Simulator-only: live ticking inside the running app.
                 let scheduleStart = floorToMinute(Date())
+
                 TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
                     let now = floorToMinute(timeline.date)
                     let minuteID = Int(now.timeIntervalSince1970 / 60.0)
@@ -120,13 +138,16 @@ struct WeatherTemplateView: View {
         now: Date
     ) -> String {
         guard let snapshot else {
-            if location == nil { return "Weather. No location selected." }
+            if location == nil {
+                return "Weather. No location selected."
+            }
             return "Weather. Updating."
         }
 
         let temp = wwTempString(snapshot.temperatureC, unit: unit)
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let headline = nowcast.primaryText
+
         return "Weather. \(snapshot.locationName). \(headline). Temperature \(temp)."
     }
 
@@ -184,6 +205,7 @@ private struct WeatherTemplateContent: View {
 }
 
 // MARK: - Layout Switching
+
 private struct WeatherFilledStateView: View {
     let snapshot: WidgetWeaverWeatherSnapshot
     let unit: UnitTemperature
@@ -204,6 +226,7 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
+
             case .systemMedium:
                 WeatherMediumRainLayout(
                     snapshot: snapshot,
@@ -213,6 +236,7 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
+
             default:
                 WeatherLargeRainLayout(
                     snapshot: snapshot,
@@ -234,6 +258,7 @@ private struct WeatherFilledStateView: View {
 }
 
 // MARK: - Empty State
+
 private struct WeatherEmptyStateView: View {
     let location: WidgetWeaverWeatherLocation?
     let metrics: WeatherMetrics

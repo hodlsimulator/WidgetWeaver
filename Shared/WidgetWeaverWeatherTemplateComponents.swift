@@ -4,10 +4,17 @@
 //
 //  Created by . . on 12/20/25.
 //
+//  UI components for the weather template.
+//
+//  NOTE ABOUT MINUTE-BY-MINUTE CONSISTENCY
+//  --------------------------------------
+//  The chart must not invent “wet” pixels when the nowcast model says it is dry.
+//  Rendering must be driven by `WeatherNowcast.isWet(...)` to keep the chart aligned
+//  with the headline text as the widget ticks every minute.
+//
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -25,7 +32,6 @@ struct WeatherNowcastChart: View {
             let w = geo.size.width
             let h = geo.size.height
             let count = buckets.count
-
             let spacing: CGFloat = (count > 24) ? 1 : 2
             let totalSpacing = spacing * CGFloat(max(0, count - 1))
             let barWidth = (count > 0) ? max(1, (w - totalSpacing) / CGFloat(count)) : 0
@@ -43,44 +49,57 @@ struct WeatherNowcastChart: View {
                         ForEach(buckets) { b in
                             let intensity = max(0.0, b.intensityMMPerHour)
                             let chance = max(0.0, min(1.0, b.chance01))
-                            let frac: CGFloat = (maxIntensityMMPerHour > 0) ? CGFloat(intensity / maxIntensityMMPerHour) : 0
-                            let barHeight = max(1, h * frac)
+                            let isWet = WeatherNowcast.isWet(intensityMMPerHour: intensity)
+
+                            let frac: CGFloat = (maxIntensityMMPerHour > 0)
+                                ? CGFloat(intensity / maxIntensityMMPerHour)
+                                : 0
+
+                            let barHeight: CGFloat = isWet ? max(1, h * frac) : 0
                             let rainUncertainty = max(0.0, min(1.0, b.rainUncertainty01))
 
                             ZStack(alignment: .bottom) {
-                                // Static uncertainty “envelope” (Dark Sky-ish):
-                                // thickness/opacity grows with rainUncertainty.
-                                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .stroke(accent, lineWidth: 0.6 + 3.2 * rainUncertainty)
-                                    .opacity(0.06 + 0.18 * rainUncertainty)
-                                    .blur(radius: 0.2 + 1.2 * rainUncertainty)
-                                    .frame(width: barWidth, height: barHeight)
+                                if isWet {
+                                    // Static uncertainty “envelope” (Dark Sky-ish):
+                                    // thickness/opacity grows with rainUncertainty.
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .stroke(accent, lineWidth: 0.6 + 3.2 * rainUncertainty)
+                                        .opacity(0.06 + 0.18 * rainUncertainty)
+                                        .blur(radius: 0.2 + 1.2 * rainUncertainty)
+                                        .frame(width: barWidth, height: barHeight)
 
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .fill(accent)
-                                    .opacity(0.25 + 0.75 * chance)
-                                    .frame(width: barWidth, height: barHeight)
+                                    // Bar:
+                                    // Opacity is still influenced by chance, but the presence of a bar is driven
+                                    // only by intensity via `isWet` (prevents false “dry” for mist/drizzle).
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(accent)
+                                        .opacity(0.08 + 0.92 * chance)
+                                        .frame(width: barWidth, height: barHeight)
+                                }
                             }
+                            .frame(width: barWidth, height: h, alignment: .bottom)
                         }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 10)
+                }
 
-                    if showAxisLabels {
-                        VStack {
+                if showAxisLabels {
+                    VStack {
+                        Spacer(minLength: 0)
+                        HStack {
+                            Text("Now")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+
                             Spacer(minLength: 0)
-                            HStack {
-                                Text("Now")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                Spacer(minLength: 0)
-                                Text("60m")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 6)
+
+                            Text("60m")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
                     }
                 }
             }
@@ -209,17 +228,18 @@ struct WeatherMetrics {
     let style: StyleSpec
     let layout: LayoutSpec
 
-    var scale: CGFloat {
-        max(0.85, min(1.35, CGFloat(style.weatherScale)))
-    }
+    var scale: CGFloat { max(0.85, min(1.35, CGFloat(style.weatherScale))) }
 
     var contentPadding: CGFloat {
         let base = CGFloat(style.padding)
         let familyMultiplier: CGFloat
         switch family {
-        case .systemSmall: familyMultiplier = 0.85
-        case .systemMedium: familyMultiplier = 0.90
-        default: familyMultiplier = 1.00
+        case .systemSmall:
+            familyMultiplier = 0.85
+        case .systemMedium:
+            familyMultiplier = 0.90
+        default:
+            familyMultiplier = 1.00
         }
         return max(10, min(18, base * familyMultiplier)) * scale
     }
@@ -232,15 +252,20 @@ struct WeatherMetrics {
     // Font sizes
     var locationFontSize: CGFloat { 12 * scale }
     var locationFontSizeLarge: CGFloat { 13 * scale }
+
     var nowcastPrimaryFontSizeSmall: CGFloat { 16 * scale }
     var nowcastPrimaryFontSizeMedium: CGFloat { 18 * scale }
     var nowcastPrimaryFontSizeLarge: CGFloat { 20 * scale }
+
     var detailsFontSize: CGFloat { 12 * scale }
     var detailsFontSizeLarge: CGFloat { 13 * scale }
+
     var updatedFontSize: CGFloat { 11 * scale }
+
     var temperatureFontSizeSmall: CGFloat { 28 * scale }
     var temperatureFontSizeMedium: CGFloat { 30 * scale }
     var temperatureFontSizeLarge: CGFloat { 34 * scale }
+
     var sectionTitleFontSize: CGFloat { 12 * scale }
 
     // Chart heights
@@ -272,7 +297,9 @@ struct WeatherPalette: Hashable {
 
     static func forSnapshot(_ snapshot: WidgetWeaverWeatherSnapshot, now: Date, accent: Color) -> WeatherPalette {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
-        let hasRain = (nowcast.peakIntensityMMPerHour > 0.05) || ((nowcast.startOffsetMinutes ?? 999) <= 60)
+        let hasRain = (nowcast.peakIntensityMMPerHour >= WeatherNowcast.wetIntensityThresholdMMPerHour)
+            || ((nowcast.startOffsetMinutes ?? 999) <= 60)
+
         if hasRain {
             return WeatherPalette(
                 top: Color.black.opacity(0.40),
