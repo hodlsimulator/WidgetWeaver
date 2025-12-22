@@ -4,6 +4,8 @@
 //
 //  Created by . . on 12/20/25.
 //
+//  Layouts tuned so the rain graphic is the dominant element on Medium.
+//
 
 import Foundation
 import SwiftUI
@@ -12,200 +14,209 @@ import SwiftUI
 import WidgetKit
 #endif
 
-// MARK: - Layouts
-
 struct WeatherSmallRainLayout: View {
     let snapshot: WidgetWeaverWeatherSnapshot
-    let unit: UnitTemperature
-    let now: Date
-    let family: WidgetFamily
-    let metrics: WeatherMetrics
+    let nowcast: WeatherNowcast
+
+    let attributionURL: URL?
     let accent: Color
+    let metrics: WeatherMetrics
+
+    let nowMinute: Date
+    let nowExact: Date
 
     var body: some View {
-        let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
-
-        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snapshot.locationName)
-                        .font(.system(size: metrics.locationFontSize, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                Text(snapshot.locationName)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
+                Spacer(minLength: 6)
+
+                Text(metrics.temperatureText(fromCelsius: snapshot.temperatureC))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
+
+            HStack(alignment: .center, spacing: 10) {
+                WeatherConditionIcon(symbolName: snapshot.symbolName, accent: accent)
+                    .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text(nowcast.primaryText)
-                        .font(.system(size: metrics.nowcastPrimaryFontSizeSmall, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+
+                    if let secondary = nowcast.secondaryText {
+                        Text(secondary)
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
+
                 Spacer(minLength: 0)
             }
 
-            WeatherNowcastChart(
-                buckets: nowcast.buckets(for: family),
-                maxIntensityMMPerHour: nowcast.peakIntensityMMPerHour,
-                accent: accent,
-                showAxisLabels: false
-            )
-            .frame(height: metrics.nowcastChartHeightSmall)
+            // Minimal strip to hint at upcoming rain without clutter.
+            if !nowcast.buckets(for: .systemSmall).isEmpty {
+                WeatherNowcastChart(
+                    buckets: nowcast.buckets(for: .systemSmall),
+                    accent: accent,
+                    metrics: metrics,
+                    axis: .none
+                )
+                .frame(height: metrics.smallGraphHeight)
+            }
 
             Spacer(minLength: 0)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(wwTempString(snapshot.temperatureC, unit: unit))
-                    .font(.system(size: metrics.temperatureFontSizeSmall, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-
-                if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                    Text("H \(wwTempString(hi, unit: unit)) L \(wwTempString(lo, unit: unit))")
-                        .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 0)
-            }
         }
+        .padding(metrics.innerPadding)
     }
 }
 
 struct WeatherMediumRainLayout: View {
     let snapshot: WidgetWeaverWeatherSnapshot
-    let unit: UnitTemperature
-    let now: Date
-    let family: WidgetFamily
-    let metrics: WeatherMetrics
+    let nowcast: WeatherNowcast
+
+    let attributionURL: URL?
     let accent: Color
+    let metrics: WeatherMetrics
+
+    let nowMinute: Date
+    let nowExact: Date
 
     var body: some View {
-        let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
+        VStack(alignment: .leading, spacing: 10) {
+            // Header: location + updated (keeps ticking each minute)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(snapshot.locationName)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
-        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(snapshot.locationName)
-                        .font(.system(size: metrics.locationFontSize, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                Spacer(minLength: 6)
 
+                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: nowExact))")
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            // Compact condition row (keeps visual dominance on the chart)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(nowcast.primaryText)
-                        .font(.system(size: metrics.nowcastPrimaryFontSizeMedium, weight: .bold, design: .rounded))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.8)
 
                     if let secondary = nowcast.secondaryText {
                         Text(secondary)
-                            .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.85)
                     }
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
 
-                Text(wwTempString(snapshot.temperatureC, unit: unit))
-                    .font(.system(size: metrics.temperatureFontSizeMedium, weight: .bold, design: .rounded))
+                Text(metrics.temperatureText(fromCelsius: snapshot.temperatureC))
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
+                    .monospacedDigit()
             }
 
+            // Main element: rain chart (intensity + certainty + uncertainty)
             WeatherNowcastChart(
-                buckets: nowcast.buckets(for: family),
-                maxIntensityMMPerHour: nowcast.peakIntensityMMPerHour,
+                buckets: nowcast.buckets(for: .systemMedium),
                 accent: accent,
-                showAxisLabels: true
+                metrics: metrics,
+                axis: .nowTo60m
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(minHeight: metrics.nowcastChartHeightMedium)
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.mediumGraphHeight)
 
-            // Footer row (keeps attribution out of the chart so it can’t block “Now”).
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                WeatherAttributionLink(accent: accent)
-
+            // Minimal footer (keeps clutter down)
+            HStack(spacing: 8) {
+                WeatherAttributionBadge(attributionURL: attributionURL)
                 Spacer(minLength: 0)
-
-                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
+            .padding(.top, 2)
+
+            Spacer(minLength: 0)
         }
+        .padding(metrics.innerPadding)
     }
 }
 
 struct WeatherLargeRainLayout: View {
     let snapshot: WidgetWeaverWeatherSnapshot
-    let unit: UnitTemperature
-    let now: Date
-    let metrics: WeatherMetrics
+    let nowcast: WeatherNowcast
+
+    let attributionURL: URL?
     let accent: Color
+    let metrics: WeatherMetrics
+
+    let nowMinute: Date
+    let nowExact: Date
 
     var body: some View {
-        let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
-
-        VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(snapshot.locationName)
-                        .font(.system(size: metrics.locationFontSizeLarge, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     Text(nowcast.primaryText)
-                        .font(.system(size: metrics.nowcastPrimaryFontSizeLarge, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-
-                    if let secondary = nowcast.secondaryText {
-                        Text(secondary)
-                            .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.85)
-                    }
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(wwTempString(snapshot.temperatureC, unit: unit))
-                        .font(.system(size: metrics.temperatureFontSizeLarge, weight: .bold, design: .rounded))
+                    Text(metrics.temperatureText(fromCelsius: snapshot.temperatureC))
+                        .font(.system(size: 26, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
+                        .monospacedDigit()
 
-                    if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                        Text("H \(wwTempString(hi, unit: unit)) L \(wwTempString(lo, unit: unit))")
-                            .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
+                    Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: nowExact))")
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
 
             WeatherNowcastChart(
                 buckets: nowcast.buckets(for: .systemLarge),
-                maxIntensityMMPerHour: max(0.6, nowcast.peakIntensityMMPerHour),
                 accent: accent,
-                showAxisLabels: true
+                metrics: metrics,
+                axis: .nowTo60m
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(minHeight: metrics.nowcastChartHeightLarge)
+            .frame(height: metrics.largeGraphHeight)
 
-            HStack(alignment: .firstTextBaseline) {
-                WeatherAttributionLink(accent: accent)
-
-                Spacer(minLength: 0)
-
-                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
-                    .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+            if let summary = nowcast.longerSummaryText {
+                Text(summary)
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
+
+            HStack(spacing: 8) {
+                WeatherAttributionBadge(attributionURL: attributionURL)
+                Spacer(minLength: 0)
+            }
+
+            Spacer(minLength: 0)
         }
+        .padding(metrics.innerPadding)
     }
 }

@@ -19,7 +19,7 @@ struct WeatherNowcastBucket: Identifiable, Hashable {
     var chance01: Double
 
     /// A 0...1 cue for how uncertain the next-hour rain forecast is for this bucket.
-    /// This is used purely for rendering a faint "envelope" around bars (Dark Sky style).
+    /// Used for rendering a faint static "envelope" around bars (Dark Sky style).
     var rainUncertainty01: Double
 }
 
@@ -62,6 +62,40 @@ struct WeatherNowcast: Hashable {
         self.startTimeText = analysis.startTimeText
     }
 
+    var isRainingNow: Bool {
+        startOffsetMinutes == 0
+    }
+
+    /// 0...1 scalar for how "wet" the next hour is expected to be (used for background/glow tuning).
+    var raininess01: Double {
+        if points.isEmpty {
+            return isRainingNow ? 0.6 : 0.0
+        }
+        let expectedPeak = peakIntensityMMPerHour * peakChance01
+        return Self.clamp01(expectedPeak / 5.0)
+    }
+
+    /// Optional long-form summary used by the Large layout (kept minimal).
+    var longerSummaryText: String? {
+        guard startOffsetMinutes != nil else { return nil }
+
+        let pct = Int((peakChance01 * 100).rounded())
+        let intensityText = WeatherNowcast.precipitationPhrase(peakIntensityMMPerHour).lowercased()
+
+        if isRainingNow {
+            if let end = endOffsetMinutes {
+                return "Peak chance \(pct)% • Up to \(intensityText) • Ends in ~\(end)m"
+            }
+            return "Peak chance \(pct)% • Up to \(intensityText)"
+        }
+
+        if let start = startOffsetMinutes {
+            return "Starts in ~\(start)m • Peak chance \(pct)% • Up to \(intensityText)"
+        }
+
+        return nil
+    }
+
     private static func isRainingNow(snapshot: WidgetWeaverWeatherSnapshot) -> Bool {
         let s = snapshot.symbolName.lowercased()
         return s.contains("rain") || s.contains("drizzle") || s.contains("thunderstorm")
@@ -81,7 +115,7 @@ struct WeatherNowcast: Hashable {
         }
 
         let intensities = points.map { max(0.0, $0.precipitationIntensityMMPerHour ?? 0.0) }
-        let chances = points.map { WeatherNowcast.clamp01($0.precipitationChance01 ?? 0.0) }
+        let chances = points.map { Self.clamp01($0.precipitationChance01 ?? 0.0) }
 
         var out: [WeatherNowcastBucket] = []
         out.reserveCapacity(Int((Double(points.count) / Double(bucketSize)).rounded(.up)))
@@ -95,9 +129,7 @@ struct WeatherNowcast: Hashable {
             let sliceI = intensities[idx..<end]
             let sliceC = chances[idx..<end]
 
-            // Bucket values are averaged (rather than max) so the chart changes smoothly as `now` advances.
-            // Using max-values here can make small/medium widgets appear “stuck” for several minutes
-            // because each bar covers multiple minutes.
+            // Averaging keeps the chart changing smoothly as `now` advances.
             let n = Double(sliceI.count)
 
             let avgIntensity = (n > 0) ? (sliceI.reduce(0.0, +) / n) : 0.0
@@ -199,10 +231,9 @@ struct WeatherNowcast: Hashable {
             return Sample(offsetM: offsetM, intensity: intensity, chance: chance)
         }
 
-        // Use expected intensity to decide if it's meaningfully wet.
-        // Lower = more sensitive.
-        // Units: mm/hour of expected precip (intensity * chance).
+        // Expected intensity threshold (intensity * chance). Lower = more sensitive.
         let wetThreshold: Double = 0.001
+
         let wetIdx: [Int] = samples.enumerated().compactMap { (i, s) in
             let expected = s.intensity * s.chance
             return (expected >= wetThreshold) ? i : nil
@@ -241,7 +272,6 @@ struct WeatherNowcast: Hashable {
         }
 
         if startOffset <= 0 {
-            // Raining now.
             let primary = "\(phrase) now"
             let secondary: String?
             if endOffset < 55 {
@@ -262,7 +292,6 @@ struct WeatherNowcast: Hashable {
         }
 
         if startOffset < 55 {
-            // Starts later.
             let primary = "\(phrase) in \(startOffset)m"
             let secondary: String?
             if endOffset < 55 {
@@ -282,7 +311,6 @@ struct WeatherNowcast: Hashable {
             )
         }
 
-        // Edge: only at the end.
         return Analysis(
             startOffsetMinutes: startOffset,
             endOffsetMinutes: endOffset,
@@ -302,9 +330,11 @@ struct WeatherNowcast: Hashable {
 
     private static func precipitationPhrase(_ intensity: Double) -> String {
         // Intensities are mm/hour.
+        if intensity < 0.03 { return "Sprinkles" }
         if intensity < 0.08 { return "Light drizzle" }
         if intensity < 0.25 { return "Drizzle" }
-        if intensity < 1.20 { return "Light rain" }
+        if intensity < 0.70 { return "Light rain" }
+        if intensity < 1.80 { return "Rain" }
         if intensity < 3.50 { return "Moderate rain" }
         if intensity < 7.00 { return "Heavy rain" }
         return "Very heavy rain"
