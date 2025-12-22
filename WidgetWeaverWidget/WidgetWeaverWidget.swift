@@ -192,13 +192,13 @@ struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: kind,
-            intent: WidgetWeaverDesignSelectionIntent.self,
-            provider: WidgetWeaverProvider()
-        ) { entry in
-            WidgetWeaverSpecView(spec: entry.spec, family: entry.family, context: .widget)
-                .id(entry.date)
+        AppIntentConfiguration(kind: WidgetWeaverWidgetKinds.main,
+                               intent: WidgetWeaverDesignSelectionIntent.self,
+                               provider: WidgetWeaverProvider()) { entry in
+            WidgetWeaverRenderClock.withNow(entry.date) {
+                WidgetWeaverSpecView(spec: entry.spec, family: entry.family, context: .widget)
+            }
+            .id(entry.date)
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")

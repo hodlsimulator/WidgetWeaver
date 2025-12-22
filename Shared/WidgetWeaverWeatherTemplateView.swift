@@ -44,7 +44,25 @@ struct WeatherTemplateView: View {
         let metrics = WeatherMetrics(family: family, style: spec.style, layout: spec.layout)
 
         Group {
-            if context == .widget || context == .simulator {
+            switch context {
+            case .widget:
+                // In a real widget, WidgetKit may pre-render future entries.
+                // Using Date() here causes every entry to look identical (blink-only).
+                let now = WidgetWeaverRenderClock.now
+                WeatherTemplateContent(
+                    snapshot: snapshot,
+                    location: location,
+                    unit: unit,
+                    now: now,
+                    family: family,
+                    metrics: metrics,
+                    accent: accent
+                )
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
+
+            case .simulator:
+                // Simulator-only: live ticking inside the running app.
                 TimelineView(.periodic(from: Date(), by: 60)) { timeline in
                     WeatherTemplateContent(
                         snapshot: snapshot,
@@ -55,17 +73,23 @@ struct WeatherTemplateView: View {
                         metrics: metrics,
                         accent: accent
                     )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
                 }
-            } else {
+
+            case .preview:
+                let now = Date()
                 WeatherTemplateContent(
                     snapshot: snapshot,
                     location: location,
                     unit: unit,
-                    now: Date(),
+                    now: now,
                     family: family,
                     metrics: metrics,
                     accent: accent
                 )
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
             }
         }
         // The template draws a dark backdrop and relies on semantic foreground styles
@@ -74,8 +98,6 @@ struct WeatherTemplateView: View {
         //
         // Force Dark Mode semantics for the template so the text remains readable.
         .environment(\.colorScheme, .dark)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: Date()))
     }
 
     private func accessibilityLabel(

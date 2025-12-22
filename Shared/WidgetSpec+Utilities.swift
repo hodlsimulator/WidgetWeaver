@@ -1096,19 +1096,24 @@ private enum WidgetWeaverExpression {
 
 // MARK: - Apply variables to a spec at render time
 
+// MARK: - Apply variables to a spec at render time
 public extension WidgetSpec {
     func resolvingVariables(using store: WidgetWeaverVariableStore = .shared) -> WidgetSpec {
+        // Use the widget entry’s date (when available) so WidgetKit can pre-render
+        // future entries and still get the correct “now” for each entry.
+        let now = WidgetWeaverRenderClock.now
+
         // Custom variables are Pro-gated, built-ins are always present.
         var vars: [String: String] = WidgetWeaverEntitlements.isProUnlocked ? store.loadAll() : [:]
-        let builtIns = WidgetWeaverVariableTemplate.builtInVariables(now: Date())
 
+        let builtIns = WidgetWeaverVariableTemplate.builtInVariables(now: now)
         for (k, v) in builtIns where vars[k] == nil {
             vars[k] = v
         }
 
         // Weather variables behave like built-ins (not Pro-gated).
         // These intentionally override any existing keys to keep the widget truthful.
-        let weatherVars = WidgetWeaverWeatherStore.shared.variablesDictionary()
+        let weatherVars = WidgetWeaverWeatherStore.shared.variablesDictionary(now: now)
         for (k, v) in weatherVars {
             vars[k] = v
         }
@@ -1120,37 +1125,49 @@ public extension WidgetSpec {
             vars[k] = v
         }
 
-        return resolvingVariables(using: vars)
+        return resolvingVariables(using: vars, now: now)
     }
 
     func resolvingVariables(using vars: [String: String]) -> WidgetSpec {
+        resolvingVariables(using: vars, now: WidgetWeaverRenderClock.now)
+    }
+
+    func resolvingVariables(using vars: [String: String], now: Date) -> WidgetSpec {
         var out = self
 
-        out.name = WidgetWeaverVariableTemplate.render(out.name, variables: vars)
-        out.primaryText = WidgetWeaverVariableTemplate.render(out.primaryText, variables: vars)
-        out.secondaryText = out.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
+        out.name = WidgetWeaverVariableTemplate.render(out.name, variables: vars, now: now, maxPasses: 3)
+        out.primaryText = WidgetWeaverVariableTemplate.render(out.primaryText, variables: vars, now: now, maxPasses: 3)
+        out.secondaryText = out.secondaryText.map {
+            WidgetWeaverVariableTemplate.render($0, variables: vars, now: now, maxPasses: 3)
+        }
 
         if let m = out.matchedSet {
             var mm = m
 
             if let s = mm.small {
                 var ss = s
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
-                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars, now: now, maxPasses: 3)
+                ss.secondaryText = ss.secondaryText.map {
+                    WidgetWeaverVariableTemplate.render($0, variables: vars, now: now, maxPasses: 3)
+                }
                 mm.small = ss
             }
 
             if let s = mm.medium {
                 var ss = s
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
-                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars, now: now, maxPasses: 3)
+                ss.secondaryText = ss.secondaryText.map {
+                    WidgetWeaverVariableTemplate.render($0, variables: vars, now: now, maxPasses: 3)
+                }
                 mm.medium = ss
             }
 
             if let s = mm.large {
                 var ss = s
-                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars)
-                ss.secondaryText = ss.secondaryText.map { WidgetWeaverVariableTemplate.render($0, variables: vars) }
+                ss.primaryText = WidgetWeaverVariableTemplate.render(ss.primaryText, variables: vars, now: now, maxPasses: 3)
+                ss.secondaryText = ss.secondaryText.map {
+                    WidgetWeaverVariableTemplate.render($0, variables: vars, now: now, maxPasses: 3)
+                }
                 mm.large = ss
             }
 
@@ -1168,27 +1185,26 @@ public extension WidgetSpec {
         }
         return false
     }
-    
+
     func usesWeatherRendering() -> Bool {
         if layout.template == .weather { return true }
-
         if let m = matchedSet {
             if m.small?.layout.template == .weather { return true }
             if m.medium?.layout.template == .weather { return true }
             if m.large?.layout.template == .weather { return true }
         }
-
         for t in allTemplateStrings() {
             if t.localizedCaseInsensitiveContains("__weather") { return true }
             if t.localizedCaseInsensitiveContains("{{weather") { return true }
         }
-
         return false
     }
-    
+
     func usesStepsRendering() -> Bool {
         for t in allTemplateStrings() {
-            if t.localizedCaseInsensitiveContains("__steps") { return true }
+            if t.localizedCaseInsensitiveContains("__steps") {
+                return true
+            }
         }
         return false
     }
