@@ -27,9 +27,24 @@ func wwShortTimeString(_ date: Date) -> String {
 @inline(__always)
 func wwUpdatedAgoString(from fetchedAt: Date, now: Date) -> String {
     let seconds = max(0.0, now.timeIntervalSince(fetchedAt))
-    let minutes = Int(floor(seconds / 60.0))
 
-    if minutes <= 0 { return "now" }
-    if minutes == 1 { return "1 min ago" }
-    return "\(minutes) mins ago"
+    // Seconds are intentionally not shown.
+    // Anything under a minute reads as "now".
+    if seconds < 60 { return "now" }
+
+    let minutes = Int(floor(seconds / 60.0))
+    if minutes < 60 {
+        if minutes == 1 { return "1 min ago" }
+        return "\(minutes) mins ago"
+    }
+
+    let hours = Int(floor(Double(minutes) / 60.0))
+    if hours < 24 {
+        if hours == 1 { return "1 hr ago" }
+        return "\(hours) hrs ago"
+    }
+
+    let days = Int(floor(Double(hours) / 24.0))
+    if days == 1 { return "1 day ago" }
+    return "\(days) days ago"
 }

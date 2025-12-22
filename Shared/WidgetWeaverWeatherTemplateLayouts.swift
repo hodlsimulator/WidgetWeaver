@@ -129,7 +129,6 @@ struct WeatherMediumRainLayout: View {
             // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-                Spacer(minLength: 0)
                 WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, now: now, fontSize: metrics.updatedFontSize)
             }
         }
@@ -198,7 +197,6 @@ struct WeatherLargeRainLayout: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-                Spacer(minLength: 0)
                 WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, now: now, fontSize: metrics.updatedFontSize)
             }
         }
@@ -213,14 +211,23 @@ private struct WeatherUpdatedLabel: View {
     let fontSize: CGFloat
 
     var body: some View {
+        let store = WidgetWeaverWeatherStore.shared
+        let freshWindowSeconds = store.recommendedDataRefreshIntervalSeconds()
+        let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
+
+        // The footer is meant to confirm the widget is staying current, without noisy seconds.
+        // While the snapshot is still within the expected refresh window, keep the label at “now”.
+        let value = (ageSeconds < freshWindowSeconds) ? "now" : wwUpdatedAgoString(from: fetchedAt, now: now)
+
         HStack(spacing: 4) {
             Text("Updated")
-            Text(wwUpdatedAgoString(from: fetchedAt, now: now))
+            Text(value)
         }
         .font(.system(size: fontSize, weight: .medium, design: .rounded))
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .multilineTextAlignment(.trailing)
     }
 }
