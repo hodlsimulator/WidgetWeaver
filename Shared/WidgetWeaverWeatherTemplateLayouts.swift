@@ -127,7 +127,7 @@ struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Data: \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
+                (Text("updated ") + Text(snapshot.fetchedAt, style: .relative))
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -201,7 +201,7 @@ struct WeatherLargeRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("Data: \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
+                (Text("updated ") + Text(snapshot.fetchedAt, style: .relative))
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
