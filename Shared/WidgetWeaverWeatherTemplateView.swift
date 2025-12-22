@@ -4,9 +4,6 @@
 //
 //  Created by . . on 12/20/25.
 //
-//  Weather template root view.
-//  Preserves minute-by-minute refresh for both graphics and text.
-//
 
 import Foundation
 import SwiftUI
@@ -15,56 +12,126 @@ import SwiftUI
 import WidgetKit
 #endif
 
+// MARK: - Weather Template
+/// The weather template is opinionated and rain-first:
+/// - Next hour precipitation is the primary focus (Dark Sky style).
+/// - Temperature is secondary.
+/// - Everything else is de-emphasised.
 struct WeatherTemplateView: View {
     let spec: WidgetSpec
     let family: WidgetFamily
     let context: WidgetWeaverRenderContext
+    let accent: Color
+
+    init(
+        spec: WidgetSpec,
+        family: WidgetFamily,
+        context: WidgetWeaverRenderContext,
+        accent: Color
+    ) {
+        self.spec = spec
+        self.family = family
+        self.context = context
+        self.accent = accent
+    }
 
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
         let snapshot = store.snapshotForRender(context: context)
-        let attributionURL = store.attributionLegalURL()
+        let location = store.loadLocation()
+        let unit = store.resolvedUnitTemperature()
+        let metrics = WeatherMetrics(family: family, style: spec.style, layout: spec.layout)
 
-        let accent = spec.style.accent.swiftUIColor
+        Group {
+            switch context {
+            case .widget:
+                // WidgetKit can pre-render future entries. The render clock supplies the entry date.
+                // A live TimelineView drives minute-by-minute updates, but the effective "now" never
+                // goes earlier than the entry date (so pre-rendered future entries remain distinct).
+                let entryNow = floorToMinute(WidgetWeaverRenderClock.now)
+                let scheduleStart = floorToMinute(Date())
+                TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                    let liveNow = floorToMinute(timeline.date)
+                    let now = maxDate(entryNow, liveNow)
+                    let minuteID = Int(now.timeIntervalSince1970 / 60.0)
 
-        // WidgetKit can pre-render future timeline entries.
-        // The render clock supplies the entry date for each entry render.
-        // A live TimelineView drives per-minute updates when the system keeps the view live.
-        // The effective "now" never goes earlier than the entry date.
-        let entryNowExact = WidgetWeaverRenderClock.now
-        let scheduleStart = Date()
+                    WeatherTemplateContent(
+                        snapshot: snapshot,
+                        location: location,
+                        unit: unit,
+                        now: now,
+                        family: family,
+                        metrics: metrics,
+                        accent: accent
+                    )
+                    .id(minuteID)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
+                }
 
-        TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
-            let liveNowExact = timeline.date
-            let nowExact = maxDate(entryNowExact, liveNowExact)
+            case .simulator:
+                // Simulator-only: live ticking inside the running app.
+                let scheduleStart = floorToMinute(Date())
+                TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                    let now = floorToMinute(timeline.date)
+                    let minuteID = Int(now.timeIntervalSince1970 / 60.0)
 
-            // Minute-aligned time is used for bucketing and to avoid sub-minute jitter in the chart.
-            let nowMinute = floorToMinute(nowExact)
+                    WeatherTemplateContent(
+                        snapshot: snapshot,
+                        location: location,
+                        unit: unit,
+                        now: now,
+                        family: family,
+                        metrics: metrics,
+                        accent: accent
+                    )
+                    .id(minuteID)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
+                }
 
-            // Forces a full recompute once per minute (chart + "Updated …" label).
-            let minuteID = Int(nowMinute.timeIntervalSince1970 / 60)
-
-            WeatherTemplateContent(
-                spec: spec,
-                family: family,
-                context: context,
-                snapshot: snapshot,
-                attributionURL: attributionURL,
-                accent: accent,
-                nowMinute: nowMinute,
-                nowExact: nowExact
-            )
-            .id(minuteID)
+            case .preview:
+                let now = Date()
+                WeatherTemplateContent(
+                    snapshot: snapshot,
+                    location: location,
+                    unit: unit,
+                    now: now,
+                    family: family,
+                    metrics: metrics,
+                    accent: accent
+                )
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
+            }
         }
-        // The flagship weather card is designed for a dark presentation.
-        // Backgrounds are editable, but the typography + materials are tuned for dark.
+        // The template draws a dark backdrop and relies on semantic foreground styles
+        // (.primary / .secondary). In Light Mode those resolve to dark colours, which
+        // makes the text effectively disappear against the dark background.
+        //
+        // Force Dark Mode semantics for the template so the text remains readable.
         .environment(\.colorScheme, .dark)
     }
 
+    private func accessibilityLabel(
+        snapshot: WidgetWeaverWeatherSnapshot?,
+        location: WidgetWeaverWeatherLocation?,
+        unit: UnitTemperature,
+        now: Date
+    ) -> String {
+        guard let snapshot else {
+            if location == nil { return "Weather. No location selected." }
+            return "Weather. Updating."
+        }
+
+        let temp = wwTempString(snapshot.temperatureC, unit: unit)
+        let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
+        let headline = nowcast.primaryText
+        return "Weather. \(snapshot.locationName). \(headline). Temperature \(temp)."
+    }
+
     private func floorToMinute(_ date: Date) -> Date {
-        let time = date.timeIntervalSince1970
-        let floored = floor(time / 60.0) * 60.0
-        return Date(timeIntervalSince1970: floored)
+        Calendar.current.dateInterval(of: .minute, for: date)?.start ?? date
     }
 
     private func maxDate(_ a: Date, _ b: Date) -> Date {
@@ -73,131 +140,141 @@ struct WeatherTemplateView: View {
 }
 
 private struct WeatherTemplateContent: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-
     let snapshot: WidgetWeaverWeatherSnapshot?
-    let attributionURL: URL?
-
+    let location: WidgetWeaverWeatherLocation?
+    let unit: UnitTemperature
+    let now: Date
+    let family: WidgetFamily
+    let metrics: WeatherMetrics
     let accent: Color
 
-    let nowMinute: Date
-    let nowExact: Date
-
     var body: some View {
-        if let snapshot {
-            WeatherFilledStateView(
-                spec: spec,
-                family: family,
-                snapshot: snapshot,
-                attributionURL: attributionURL,
-                accent: accent,
-                nowMinute: nowMinute,
-                nowExact: nowExact
-            )
-        } else {
-            WeatherEmptyStateView(
-                spec: spec,
-                family: family,
-                accent: accent
-            )
+        ZStack(alignment: .topLeading) {
+            if let snapshot {
+                WeatherBackdropView(
+                    palette: WeatherPalette.forSnapshot(snapshot, now: now, accent: accent),
+                    family: family
+                )
+            } else {
+                WeatherBackdropView(
+                    palette: WeatherPalette.fallback(accent: accent),
+                    family: family
+                )
+            }
+
+            if let snapshot {
+                WeatherFilledStateView(
+                    snapshot: snapshot,
+                    unit: unit,
+                    now: now,
+                    family: family,
+                    metrics: metrics,
+                    accent: accent
+                )
+            } else {
+                WeatherEmptyStateView(
+                    location: location,
+                    metrics: metrics,
+                    accent: accent
+                )
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
+// MARK: - Layout Switching
 private struct WeatherFilledStateView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-
     let snapshot: WidgetWeaverWeatherSnapshot
-    let attributionURL: URL?
-
+    let unit: UnitTemperature
+    let now: Date
+    let family: WidgetFamily
+    let metrics: WeatherMetrics
     let accent: Color
 
-    let nowMinute: Date
-    let nowExact: Date
-
     var body: some View {
-        let metrics = WeatherMetrics(style: spec.style, family: family)
-        let nowcast = WeatherNowcast(snapshot: snapshot, now: nowMinute)
-
-        WeatherCardContainer(
-            metrics: metrics,
-            style: spec.style,
-            accent: accent,
-            nowcast: nowcast
-        ) {
+        WeatherGlassContainer(metrics: metrics) {
             switch family {
             case .systemSmall:
                 WeatherSmallRainLayout(
                     snapshot: snapshot,
-                    nowcast: nowcast,
-                    attributionURL: attributionURL,
-                    accent: accent,
+                    unit: unit,
+                    now: now,
+                    family: family,
                     metrics: metrics,
-                    nowMinute: nowMinute,
-                    nowExact: nowExact
+                    accent: accent
                 )
             case .systemMedium:
                 WeatherMediumRainLayout(
                     snapshot: snapshot,
-                    nowcast: nowcast,
-                    attributionURL: attributionURL,
-                    accent: accent,
+                    unit: unit,
+                    now: now,
+                    family: family,
                     metrics: metrics,
-                    nowMinute: nowMinute,
-                    nowExact: nowExact
+                    accent: accent
                 )
             default:
                 WeatherLargeRainLayout(
                     snapshot: snapshot,
-                    nowcast: nowcast,
-                    attributionURL: attributionURL,
-                    accent: accent,
+                    unit: unit,
+                    now: now,
                     metrics: metrics,
-                    nowMinute: nowMinute,
-                    nowExact: nowExact
+                    accent: accent
                 )
             }
         }
-        .padding(metrics.outerPadding)
+        // Small: attribution only.
+        .overlay(alignment: .bottomTrailing) {
+            if family == .systemSmall {
+                WeatherAttributionLink(accent: accent)
+                    .padding(metrics.contentPadding)
+            }
+        }
     }
 }
 
+// MARK: - Empty State
 private struct WeatherEmptyStateView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
+    let location: WidgetWeaverWeatherLocation?
+    let metrics: WeatherMetrics
     let accent: Color
 
     var body: some View {
-        let metrics = WeatherMetrics(style: spec.style, family: family)
-
-        WeatherCardContainer(
-            metrics: metrics,
-            style: spec.style,
-            accent: accent,
-            nowcast: nil
-        ) {
-            VStack(spacing: 10) {
-                Image(systemName: "location.slash")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    .foregroundStyle(accent.opacity(0.85))
-
-                Text("Weather needs a location")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+        WeatherGlassContainer(metrics: metrics) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Rain")
+                    .font(.system(size: metrics.nowcastPrimaryFontSizeMedium, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
 
-                Text("Open the app and choose a place for Weather.")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
+                if location == nil {
+                    Text("Set a location in the app.")
+                        .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    Text("Tap to open settings")
+                        .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(accent)
+                } else {
+                    Text("Updating weather…")
+                        .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+
+                    Text("Tap to refresh")
+                        .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(accent)
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    WeatherAttributionLink(accent: accent)
+                    Spacer(minLength: 0)
+                    Text("WidgetWeaver")
+                        .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(metrics.innerPadding)
         }
-        .padding(metrics.outerPadding)
     }
 }
