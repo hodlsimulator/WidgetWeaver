@@ -132,7 +132,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
 
-        if usesWeather && !usesTime {
+        if usesWeather {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
@@ -144,17 +144,31 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
+        let base: Date
+        if refreshSeconds <= 60 {
+            base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
+        } else {
+            base = now
+        }
+
         let count = max(2, Int((60 * 60) / refreshSeconds))
 
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let t = now.addingTimeInterval(TimeInterval(i) * refreshSeconds)
+            let t = base.addingTimeInterval(TimeInterval(i) * refreshSeconds)
             entries.append(Entry(date: t, family: context.family, spec: spec))
         }
 
-        return Timeline(entries: entries, policy: .atEnd)
+        let policy: TimelineReloadPolicy
+        if usesWeather {
+            policy = .after(now.addingTimeInterval(WidgetWeaverWeatherStore.shared.recommendedDataRefreshIntervalSeconds()))
+        } else {
+            policy = .atEnd
+        }
+
+        return Timeline(entries: entries, policy: policy)
     }
 
     private func resolveSpec(for configuration: Intent) -> WidgetSpec {
@@ -241,7 +255,14 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
             entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
         }
 
-        completion(Timeline(entries: entries, policy: .atEnd))
+        let policy: TimelineReloadPolicy
+        if context.isPreview {
+            policy = .atEnd
+        } else {
+            policy = .after(now.addingTimeInterval(store.recommendedDataRefreshIntervalSeconds()))
+        }
+
+        completion(Timeline(entries: entries, policy: policy))
     }
 }
 

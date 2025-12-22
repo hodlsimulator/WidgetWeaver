@@ -460,6 +460,12 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Rendering helpers
 
     public func recommendedRefreshIntervalSeconds() -> TimeInterval {
+        60
+    }
+
+    /// Recommended cadence to refresh the cached WeatherKit snapshot.
+    /// This is distinct from the widget UI's minute-level timeline tick.
+    public func recommendedDataRefreshIntervalSeconds() -> TimeInterval {
         60 * 10
     }
 
@@ -510,6 +516,32 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
                 vars["__weather_humidity"] = percentString(fromChance01: h)
                 vars["__weather_humidity_fraction"] = String(h)
             }
+
+            let nowcast = WeatherNowcast(snapshot: snap, now: now)
+            vars["__weather_nowcast"] = nowcast.primaryText
+
+            if let s = nowcast.secondaryText {
+                vars["__weather_nowcast_secondary"] = s
+            }
+
+            if let startM = nowcast.startOffsetMinutes {
+                vars["__weather_rain_start_min"] = String(startM)
+            }
+
+            if let endM = nowcast.endOffsetMinutes {
+                vars["__weather_rain_end_min"] = String(endM)
+            }
+
+            if let startText = nowcast.startTimeText {
+                vars["__weather_rain_start"] = startText
+            }
+
+            @inline(__always)
+            func oneDecimal(_ x: Double) -> String { String(format: "%.1f", x) }
+
+            vars["__weather_rain_peak_intensity_mmh"] = oneDecimal(nowcast.peakIntensityMMPerHour)
+            vars["__weather_rain_peak_chance"] = percentString(fromChance01: nowcast.peakChance01)
+            vars["__weather_rain_peak_chance_fraction"] = String(nowcast.peakChance01)
 
             // Steps built-ins (so any design can use __steps_today, __steps_avg_7, __steps_streak, etc.)
             let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
