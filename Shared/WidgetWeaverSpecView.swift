@@ -169,8 +169,7 @@ public struct WidgetWeaverSpecView: View {
         WeatherTemplateView(
             spec: spec,
             family: family,
-            context: context,
-            accent: accent
+            context: context
         )
     }
 
