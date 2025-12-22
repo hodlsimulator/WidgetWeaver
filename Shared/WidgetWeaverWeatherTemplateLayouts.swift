@@ -121,18 +121,17 @@ struct WeatherMediumRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightMedium)
 
+            // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(snapshot.fetchedAt, style: .relative)")
+                Text(verbatim: "Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -197,17 +196,15 @@ struct WeatherLargeRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightLarge)
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
                 WeatherAttributionLink(accent: accent)
 
                 Spacer(minLength: 0)
 
-                Text("Updated \(snapshot.fetchedAt, style: .relative)")
+                Text(verbatim: "Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
