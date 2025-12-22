@@ -104,7 +104,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         let usesWeather = spec.usesWeatherRendering()
         let usesTime = spec.usesTimeDependentRendering()
-        let usesCalendar = (spec.layout.template == .nextUpCalendar)
+        let usesCalendar = (spec.layout.template == LayoutTemplateToken.nextUpCalendar)
         let usesSteps = spec.usesStepsRendering()
 
         if !context.isPreview {
@@ -132,8 +132,9 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
 
+        // Weather (template or variables) should tick every minute for live nowcast text.
         if usesWeather {
-            refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverWeatherStore.shared.recommendedRefreshIntervalSeconds()))
+            refreshSeconds = 60
         }
 
         if usesCalendar {
@@ -151,7 +152,8 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             base = now
         }
 
-        let count = max(2, Int((60 * 60) / refreshSeconds))
+        let horizon: TimeInterval = 60 * 60
+        let count = max(2, Int(horizon / refreshSeconds) + 1)
 
         var entries: [Entry] = []
         entries.reserveCapacity(count)
@@ -163,7 +165,8 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         let policy: TimelineReloadPolicy
         if usesWeather {
-            policy = .after(now.addingTimeInterval(WidgetWeaverWeatherStore.shared.recommendedDataRefreshIntervalSeconds()))
+            // Pull a fresh WeatherKit snapshot periodically so the next-hour window stays accurate.
+            policy = .after(now.addingTimeInterval(60 * 10))
         } else {
             policy = .atEnd
         }
@@ -195,6 +198,7 @@ struct WidgetWeaverWidget: Widget {
             provider: WidgetWeaverProvider()
         ) { entry in
             WidgetWeaverSpecView(spec: entry.spec, family: entry.family, context: .widget)
+                .id(entry.date)
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")
@@ -255,14 +259,7 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
             entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
         }
 
-        let policy: TimelineReloadPolicy
-        if context.isPreview {
-            policy = .atEnd
-        } else {
-            policy = .after(now.addingTimeInterval(store.recommendedDataRefreshIntervalSeconds()))
-        }
-
-        completion(Timeline(entries: entries, policy: policy))
+        completion(Timeline(entries: entries, policy: .atEnd))
     }
 }
 

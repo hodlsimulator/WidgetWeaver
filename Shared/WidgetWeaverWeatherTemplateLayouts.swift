@@ -82,7 +82,6 @@ struct WeatherMediumRainLayout: View {
 
     var body: some View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
-        let later = WeatherLaterToday(snapshot: snapshot, now: now)
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .top, spacing: 12) {
@@ -120,16 +119,8 @@ struct WeatherMediumRainLayout: View {
                 accent: accent,
                 showAxisLabels: true
             )
-            .frame(height: metrics.nowcastChartHeightMedium)
-
-            if !later.hourlyPoints.isEmpty {
-                WeatherHourlyRainStrip(
-                    points: later.hourlyPoints,
-                    unit: unit,
-                    accent: accent,
-                    fontSize: metrics.hourlyStripFontSize
-                )
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: metrics.nowcastChartHeightMedium)
 
             // Leaves room at the bottom for the pinned footer overlays.
             Spacer(minLength: 0)
@@ -147,8 +138,6 @@ struct WeatherLargeRainLayout: View {
 
     var body: some View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
-        let later = WeatherLaterToday(snapshot: snapshot, now: now)
-        let tomorrow = WeatherTomorrow(snapshot: snapshot, now: now)
 
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .top, spacing: 12) {
@@ -196,67 +185,8 @@ struct WeatherLargeRainLayout: View {
                 accent: accent,
                 showAxisLabels: true
             )
-            .frame(height: metrics.nowcastChartHeightLarge)
-
-            HStack(alignment: .top, spacing: metrics.sectionSpacing) {
-                WeatherSectionCard(metrics: metrics) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Later")
-                            .font(.system(size: metrics.sectionTitleFontSize, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-
-                        if !later.hourlyPoints.isEmpty {
-                            WeatherHourlyRainStrip(
-                                points: later.hourlyPoints,
-                                unit: unit,
-                                accent: accent,
-                                fontSize: metrics.hourlyStripFontSizeLarge
-                            )
-                        } else {
-                            Text("—")
-                                .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                WeatherSectionCard(metrics: metrics) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Tomorrow")
-                            .font(.system(size: metrics.sectionTitleFontSize, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-
-                        if let tomorrow {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: tomorrow.day.symbolName)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(accent)
-                                    .opacity(0.9)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(tomorrow.summaryText)
-                                        .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                        .minimumScaleFactor(0.9)
-
-                                    if let hilo = tomorrow.hiLoText(unit: unit) {
-                                        Text(hilo)
-                                            .font(.system(size: metrics.detailsFontSizeLarge, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.9)
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("—")
-                                .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: metrics.nowcastChartHeightLarge)
 
             HStack(alignment: .firstTextBaseline) {
                 WeatherAttributionLink(accent: accent)
