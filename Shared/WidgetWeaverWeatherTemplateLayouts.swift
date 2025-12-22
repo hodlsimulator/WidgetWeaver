@@ -121,13 +121,12 @@ struct WeatherMediumRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightMedium)
 
-            // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
 
                 Spacer(minLength: 0)
 
-                (Text("updated ") + Text(snapshot.fetchedAt, style: .relative))
+                Text("updated \(snapshot.fetchedAt, style: .relative)")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -201,7 +200,7 @@ struct WeatherLargeRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                (Text("updated ") + Text(snapshot.fetchedAt, style: .relative))
+                Text("updated \(snapshot.fetchedAt, style: .relative)")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
