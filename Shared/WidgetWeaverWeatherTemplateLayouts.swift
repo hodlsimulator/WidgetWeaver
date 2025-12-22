@@ -129,7 +129,7 @@ struct WeatherMediumRainLayout: View {
             // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-                WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, now: now, fontSize: metrics.updatedFontSize)
+                WeatherUpdatedLabel(now: now, fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
     }
@@ -197,37 +197,37 @@ struct WeatherLargeRainLayout: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-                WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, now: now, fontSize: metrics.updatedFontSize)
+                WeatherUpdatedLabel(now: now, fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
     }
 }
 
-// MARK: - Updated label (dynamic)
+// MARK: - Footer status
 
 private struct WeatherUpdatedLabel: View {
-    let fetchedAt: Date
     let now: Date
+    let fetchedAt: Date
     let fontSize: CGFloat
 
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
-        let freshWindowSeconds = store.recommendedDataRefreshIntervalSeconds()
+        let cadenceSeconds = store.recommendedDataRefreshIntervalSeconds()
+        let staleThresholdSeconds = cadenceSeconds * 2
         let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
 
-        // The footer is meant to confirm the widget is staying current, without noisy seconds.
-        // While the snapshot is still within the expected refresh window, keep the label at “now”.
-        let value = (ageSeconds < freshWindowSeconds) ? "now" : wwUpdatedAgoString(from: fetchedAt, now: now)
+        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds)
+            ? wwUpdatedAgoString(from: fetchedAt, now: now)
+            : nil
 
-        HStack(spacing: 4) {
-            Text("Updated")
-            Text(value)
-        }
-        .font(.system(size: fontSize, weight: .medium, design: .rounded))
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .multilineTextAlignment(.trailing)
+        let text = dataAgeText.map { "Refreshed now · Data \($0)" } ?? "Refreshed now"
+
+        return Text(text)
+            .font(.system(size: fontSize, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .multilineTextAlignment(.trailing)
     }
 }

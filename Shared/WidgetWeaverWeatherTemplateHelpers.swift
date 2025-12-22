@@ -28,8 +28,7 @@ func wwShortTimeString(_ date: Date) -> String {
 func wwUpdatedAgoString(from fetchedAt: Date, now: Date) -> String {
     let seconds = max(0.0, now.timeIntervalSince(fetchedAt))
 
-    // Seconds are intentionally not shown.
-    // Anything under a minute reads as "now".
+    // No seconds in the UI.
     if seconds < 60 { return "now" }
 
     let minutes = Int(floor(seconds / 60.0))
