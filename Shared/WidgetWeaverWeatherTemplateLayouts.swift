@@ -126,11 +126,13 @@ struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text("updated \(snapshot.fetchedAt, style: .relative)")
+                Text("Updated \(snapshot.fetchedAt, style: .relative)")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -195,15 +197,17 @@ struct WeatherLargeRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightLarge)
 
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
 
                 Spacer(minLength: 0)
 
-                Text("updated \(snapshot.fetchedAt, style: .relative)")
+                Text("Updated \(snapshot.fetchedAt, style: .relative)")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
