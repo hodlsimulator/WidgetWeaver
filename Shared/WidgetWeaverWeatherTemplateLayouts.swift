@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftUI
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -46,7 +47,7 @@ struct WeatherSmallRainLayout: View {
             }
 
             WeatherNowcastChart(
-                buckets: nowcast.buckets(for: family),
+                points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: false
@@ -117,7 +118,7 @@ struct WeatherMediumRainLayout: View {
             }
 
             WeatherNowcastChart(
-                buckets: nowcast.buckets(for: family),
+                points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: true
@@ -128,9 +129,6 @@ struct WeatherMediumRainLayout: View {
             // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-
-                Spacer(minLength: 0)
-
                 WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
@@ -189,7 +187,7 @@ struct WeatherLargeRainLayout: View {
             }
 
             WeatherNowcastChart(
-                buckets: nowcast.buckets(for: .systemLarge),
+                points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
                 showAxisLabels: true
@@ -197,11 +195,8 @@ struct WeatherLargeRainLayout: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightLarge)
 
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
-
-                Spacer(minLength: 0)
-
                 WeatherUpdatedLabel(fetchedAt: snapshot.fetchedAt, fontSize: metrics.updatedFontSize)
             }
         }
@@ -225,5 +220,7 @@ private struct WeatherUpdatedLabel: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .multilineTextAlignment(.trailing)
     }
 }

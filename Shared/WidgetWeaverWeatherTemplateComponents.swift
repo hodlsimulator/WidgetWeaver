@@ -15,97 +15,385 @@
 
 import Foundation
 import SwiftUI
+
 #if canImport(WidgetKit)
 import WidgetKit
+#endif
+
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(AppKit)
+import AppKit
 #endif
 
 // MARK: - Chart
 
 struct WeatherNowcastChart: View {
-    let buckets: [WeatherNowcastBucket]
+    let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
     let showAxisLabels: Bool
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let count = buckets.count
-            let spacing: CGFloat = (count > 24) ? 1 : 2
-            let totalSpacing = spacing * CGFloat(max(0, count - 1))
-            let barWidth = (count > 0) ? max(1, (w - totalSpacing) / CGFloat(count)) : 0
+        GeometryReader { _ in
+            let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.ultraThinMaterial)
 
-                if count == 0 {
+                if points.isEmpty {
                     Text("—")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 } else {
-                    HStack(alignment: .bottom, spacing: spacing) {
-                        ForEach(buckets) { b in
-                            let intensity = max(0.0, b.intensityMMPerHour)
-                            let chance = max(0.0, min(1.0, b.chance01))
-                            let isWet = WeatherNowcast.isWet(intensityMMPerHour: intensity)
-
-                            let frac: CGFloat = (maxIntensityMMPerHour > 0)
-                                ? CGFloat(intensity / maxIntensityMMPerHour)
-                                : 0
-
-                            let barHeight: CGFloat = isWet ? max(1, h * frac) : 0
-                            let rainUncertainty = max(0.0, min(1.0, b.rainUncertainty01))
-
-                            ZStack(alignment: .bottom) {
-                                if isWet {
-                                    // Static uncertainty “envelope” (Dark Sky-ish):
-                                    // thickness/opacity grows with rainUncertainty.
-                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .stroke(accent, lineWidth: 0.6 + 3.2 * rainUncertainty)
-                                        .opacity(0.06 + 0.18 * rainUncertainty)
-                                        .blur(radius: 0.2 + 1.2 * rainUncertainty)
-                                        .frame(width: barWidth, height: barHeight)
-
-                                    // Bar:
-                                    // Opacity is still influenced by chance, but the presence of a bar is driven
-                                    // only by intensity via `isWet` (prevents false “dry” for mist/drizzle).
-                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                        .fill(accent)
-                                        .opacity(0.08 + 0.92 * chance)
-                                        .frame(width: barWidth, height: barHeight)
-                                }
-                            }
-                            .frame(width: barWidth, height: h, alignment: .bottom)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 10)
+                    WeatherNowcastBandPlot(
+                        samples: WeatherNowcastBandPlot.samples(from: points, targetMinutes: 60),
+                        maxIntensityMMPerHour: maxIntensityMMPerHour,
+                        accent: accent
+                    )
+                    .padding(.horizontal, plotInset)
+                    .padding(.vertical, plotInset)
                 }
 
                 if showAxisLabels {
-                    VStack {
-                        Spacer(minLength: 0)
-                        HStack {
-                            Text("Now")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-
-                            Spacer(minLength: 0)
-
-                            Text("60m")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 6)
-                    }
+                    WeatherNowcastAxisLabels()
                 }
             }
         }
     }
 }
+
+private struct WeatherNowcastAxisLabels: View {
+    var body: some View {
+        VStack {
+            Spacer(minLength: 0)
+            HStack {
+                Text("Now")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Text("60m")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+        }
+    }
+}
+
+private struct WeatherNowcastBandPlot: View {
+    /// One sample per minute (target: 60). Wet/dry is still driven only by intensity via `WeatherNowcast.isWet`.
+    struct Sample: Hashable {
+        var intensityMMPerHour: Double
+        var chance01: Double
+    }
+
+    let samples: [Sample] // exactly 60 samples, padded
+    let maxIntensityMMPerHour: Double
+    let accent: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = max(1, geo.size.width)
+            let h = max(1, geo.size.height)
+
+            let wetMask: [Bool] = samples.map { WeatherNowcast.isWet(intensityMMPerHour: $0.intensityMMPerHour) }
+            let hasAnyWet = wetMask.contains(true)
+
+            let coreHalfHeights = coreHalfHeights(
+                plotHeight: h,
+                wetMask: wetMask
+            )
+
+            let haloHalfHeights = haloHalfHeights(
+                plotHeight: h,
+                wetMask: wetMask,
+                coreHalfHeights: coreHalfHeights
+            )
+
+            let coreStops = gradientStops(
+                wetMask: wetMask,
+                colourForIndex: { i in
+                    let s = samples[i]
+                    return coreColour(
+                        accent: accent,
+                        intensityFraction01: intensityFraction(for: s),
+                        chance01: s.chance01,
+                        uncertainty01: uncertainty01(forChance: s.chance01)
+                    )
+                }
+            )
+
+            let haloStops = gradientStops(
+                wetMask: wetMask,
+                colourForIndex: { i in
+                    let s = samples[i]
+                    return haloColour(
+                        accent: accent,
+                        intensityFraction01: intensityFraction(for: s),
+                        chance01: s.chance01,
+                        uncertainty01: uncertainty01(forChance: s.chance01)
+                    )
+                }
+            )
+
+            let coreGradient = LinearGradient(
+                gradient: Gradient(stops: coreStops),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            let haloGradient = LinearGradient(
+                gradient: Gradient(stops: haloStops),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            ZStack {
+                // Baseline “dry” guide (always present).
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: h / 2))
+                    p.addLine(to: CGPoint(x: w, y: h / 2))
+                }
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+
+                // “Now” marker (subtle, left edge).
+                Path { p in
+                    let lineH = h * 0.72
+                    let y0 = (h - lineH) / 2
+                    p.move(to: CGPoint(x: 0.5, y: y0))
+                    p.addLine(to: CGPoint(x: 0.5, y: y0 + lineH))
+                }
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+
+                if hasAnyWet {
+                    // Halo: uncertainty envelope (grey drift + blur).
+                    bandPath(size: geo.size, halfHeights: haloHalfHeights)
+                        .fill(haloGradient)
+                        .opacity(0.55)
+                        .blur(radius: 6.5)
+
+                    // Core: expected intensity.
+                    bandPath(size: geo.size, halfHeights: coreHalfHeights)
+                        .fill(coreGradient)
+                        .opacity(0.95)
+                        .blur(radius: 0.8)
+
+                    // Soft centre highlight to keep it readable at a glance.
+                    Path { p in
+                        p.move(to: CGPoint(x: 0, y: h / 2))
+                        p.addLine(to: CGPoint(x: w, y: h / 2))
+                    }
+                    .stroke(Color.white.opacity(0.06), lineWidth: 2)
+                }
+            }
+            .compositingGroup()
+        }
+    }
+
+    // MARK: - Data shaping
+
+    static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
+        let clipped = Array(points.prefix(targetMinutes))
+
+        var out: [Sample] = []
+        out.reserveCapacity(targetMinutes)
+
+        for p in clipped {
+            out.append(
+                Sample(
+                    intensityMMPerHour: max(0.0, p.precipitationIntensityMMPerHour ?? 0.0),
+                    chance01: clamp01(p.precipitationChance01 ?? 0.0)
+                )
+            )
+        }
+
+        if out.count < targetMinutes {
+            let missing = targetMinutes - out.count
+            for _ in 0..<missing {
+                out.append(Sample(intensityMMPerHour: 0.0, chance01: 0.0))
+            }
+        }
+
+        return out
+    }
+
+    // MARK: - Geometry / scaling
+
+    private func intensityFraction(for sample: Sample) -> Double {
+        guard maxIntensityMMPerHour > 0 else { return 0.0 }
+        return clamp01(sample.intensityMMPerHour / maxIntensityMMPerHour)
+    }
+
+    private func coreHalfHeights(plotHeight: CGFloat, wetMask: [Bool]) -> [CGFloat] {
+        let h = max(1, plotHeight)
+        let hardCap = (h / 2) - 1
+
+        // Tuning knobs:
+        let minHalf = max(1, h * 0.045)     // drizzle visibility floor
+        let maxHalf = min(hardCap, h * 0.38) // intensity ceiling
+
+        return samples.enumerated().map { (i, s) in
+            guard wetMask[i] else { return 0 }
+            let frac = CGFloat(intensityFraction(for: s))
+            let core = minHalf + frac * (maxHalf - minHalf)
+            return min(core, hardCap)
+        }
+    }
+
+    private func haloHalfHeights(plotHeight: CGFloat, wetMask: [Bool], coreHalfHeights: [CGFloat]) -> [CGFloat] {
+        let h = max(1, plotHeight)
+        let hardCap = (h / 2) - 1
+
+        // Tuning knobs:
+        let maxExtra = h * 0.18
+
+        return coreHalfHeights.indices.map { i in
+            guard wetMask[i] else { return 0 }
+            let u = CGFloat(uncertainty01(forChance: samples[i].chance01))
+            let extra = u * maxExtra
+            return min(coreHalfHeights[i] + extra, hardCap)
+        }
+    }
+
+    // MARK: - Colour encoding
+
+    private func uncertainty01(forChance chance01: Double) -> Double {
+        // Interpret “confidence” as chance, and “uncertainty” as the inverse.
+        // Used only for halo/grey drift; wet/dry is still driven by intensity alone.
+        clamp01(1.0 - chance01)
+    }
+
+    private func coreColour(
+        accent: Color,
+        intensityFraction01: Double,
+        chance01: Double,
+        uncertainty01: Double
+    ) -> Color {
+        // Intensity: darker → brighter
+        // Uncertainty: drift towards grey
+        // Chance: influences alpha only (does not create/erase wet pixels)
+
+        let i = clamp01(intensityFraction01)
+        let u = clamp01(uncertainty01)
+        let c = clamp01(chance01)
+
+        let darken = CGFloat(0.65 * (1.0 - i))
+        let desaturate = CGFloat(0.18 * (1.0 - i))
+        let driftGrey = CGFloat(0.55 * u)
+        let lighten = CGFloat(0.12 * i)
+
+        var colour = accent
+            .wwBlended(with: .black, amount: darken)
+            .wwBlended(with: .gray, amount: desaturate)
+            .wwBlended(with: .gray, amount: driftGrey)
+            .wwBlended(with: .white, amount: lighten)
+
+        let alpha = 0.22 + 0.78 * c
+        colour = colour.opacity(alpha)
+
+        return colour
+    }
+
+    private func haloColour(
+        accent: Color,
+        intensityFraction01: Double,
+        chance01: Double,
+        uncertainty01: Double
+    ) -> Color {
+        let i = clamp01(intensityFraction01)
+        let u = clamp01(uncertainty01)
+        let c = clamp01(chance01)
+
+        let darken = CGFloat(0.75 * (1.0 - i))
+        let driftGrey = CGFloat(0.75 * u)
+        let lighten = CGFloat(0.08 * i)
+
+        var colour = accent
+            .wwBlended(with: .black, amount: darken)
+            .wwBlended(with: .gray, amount: driftGrey)
+            .wwBlended(with: .white, amount: lighten)
+
+        let alpha = (0.10 + 0.35 * c) * (0.35 + 0.65 * (1.0 - u))
+        colour = colour.opacity(alpha)
+
+        return colour
+    }
+
+    private func gradientStops(wetMask: [Bool], colourForIndex: (Int) -> Color) -> [Gradient.Stop] {
+        let n = max(1, samples.count)
+        if n == 1 {
+            return [.init(color: colourForIndex(0), location: 0)]
+        }
+
+        return (0..<n).map { i in
+            let isWet = wetMask[i]
+            let base = colourForIndex(i)
+            let colour = isWet ? base : base.opacity(0.0)
+            return Gradient.Stop(color: colour, location: Double(i) / Double(n - 1))
+        }
+    }
+
+    // MARK: - Path (step per minute)
+
+    private func bandPath(size: CGSize, halfHeights: [CGFloat]) -> Path {
+        Path { p in
+            let n = halfHeights.count
+            guard n >= 2 else { return }
+
+            let w = max(1, size.width)
+            let h = max(1, size.height)
+            let midY = h / 2
+
+            // One minute = one step.
+            let stepX = w / CGFloat(n)
+
+            // Top edge (step function).
+            p.move(to: CGPoint(x: 0, y: midY - halfHeights[0]))
+
+            for i in 0..<n {
+                let x1 = CGFloat(i + 1) * stepX
+                p.addLine(to: CGPoint(x: x1, y: midY - halfHeights[i]))
+
+                if i + 1 < n {
+                    p.addLine(to: CGPoint(x: x1, y: midY - halfHeights[i + 1]))
+                }
+            }
+
+            // Bottom edge (reverse).
+            p.addLine(to: CGPoint(x: w, y: midY + halfHeights[n - 1]))
+
+            for i in stride(from: n - 1, through: 0, by: -1) {
+                let x0 = CGFloat(i) * stepX
+                p.addLine(to: CGPoint(x: x0, y: midY + halfHeights[i]))
+
+                if i > 0 {
+                    p.addLine(to: CGPoint(x: x0, y: midY + halfHeights[i - 1]))
+                }
+            }
+
+            p.closeSubpath()
+        }
+    }
+
+    // MARK: - Utils
+
+    private static func clamp01(_ v: Double) -> Double {
+        max(0.0, min(1.0, v))
+    }
+
+    private func clamp01(_ v: Double) -> Double {
+        max(0.0, min(1.0, v))
+    }
+}
+
+// MARK: - Hourly strip
 
 struct WeatherHourlyRainStrip: View {
     let points: [WidgetWeaverWeatherHourlyPoint]
@@ -234,18 +522,16 @@ struct WeatherMetrics {
         let base = CGFloat(style.padding)
         let familyMultiplier: CGFloat
         switch family {
-        case .systemSmall:
-            familyMultiplier = 0.85
-        case .systemMedium:
-            familyMultiplier = 0.90
-        default:
-            familyMultiplier = 1.00
+        case .systemSmall: familyMultiplier = 0.85
+        case .systemMedium: familyMultiplier = 0.90
+        default: familyMultiplier = 1.00
         }
         return max(10, min(18, base * familyMultiplier)) * scale
     }
 
     var containerCornerRadius: CGFloat { max(14, min(26, CGFloat(style.cornerRadius))) }
     var sectionCornerRadius: CGFloat { max(12, min(22, CGFloat(style.cornerRadius) - 4)) }
+
     var sectionPadding: CGFloat { max(10, min(16, CGFloat(style.padding) * 0.75)) * scale }
     var sectionSpacing: CGFloat { max(8, min(14, CGFloat(layout.spacing))) * scale }
 
@@ -369,5 +655,56 @@ struct WeatherBackdropView: View {
         case .systemMedium: return -46
         default: return -65
         }
+    }
+}
+
+// MARK: - Colour blending helpers
+
+private extension Color {
+    func wwBlended(with other: Color, amount: CGFloat) -> Color {
+        let t = max(0, min(1, amount))
+        guard t > 0 else { return self }
+
+        guard let a = wwRGBA(), let b = other.wwRGBA() else {
+            return self
+        }
+
+        let r = a.r + (b.r - a.r) * t
+        let g = a.g + (b.g - a.g) * t
+        let bl = a.b + (b.b - a.b) * t
+        let al = a.a + (b.a - a.a) * t
+
+        return Color(red: Double(r), green: Double(g), blue: Double(bl), opacity: Double(al))
+    }
+
+    func wwRGBA() -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)? {
+        #if canImport(UIKit)
+        let ui = UIColor(self)
+
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+
+        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
+            return (r, g, b, a)
+        }
+
+        if let cs = CGColorSpace(name: CGColorSpace.sRGB),
+           let cg = ui.cgColor.converted(to: cs, intent: .defaultIntent, options: nil),
+           let comps = cg.components
+        {
+            if comps.count >= 4 { return (comps[0], comps[1], comps[2], comps[3]) }
+            if comps.count == 2 { return (comps[0], comps[0], comps[0], comps[1]) }
+        }
+
+        return nil
+        #elseif canImport(AppKit)
+        let ns = NSColor(self)
+        guard let rgb = ns.usingColorSpace(.sRGB) else { return nil }
+        return (rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent)
+        #else
+        return nil
+        #endif
     }
 }
