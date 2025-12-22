@@ -56,6 +56,8 @@ struct WeatherTemplateView: View {
                     ?? WidgetWeaverRenderClock.now
 
                 TimelineView(.periodic(from: baseNow, by: 60)) { timeline in
+                    let minuteID = Int(timeline.date.timeIntervalSince1970 / 60.0)
+
                     WeatherTemplateContent(
                         snapshot: snapshot,
                         location: location,
@@ -65,6 +67,7 @@ struct WeatherTemplateView: View {
                         metrics: metrics,
                         accent: accent
                     )
+                    .id(minuteID)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
                 }
@@ -72,6 +75,8 @@ struct WeatherTemplateView: View {
             case .simulator:
                 // Simulator-only: live ticking inside the running app.
                 TimelineView(.periodic(from: Date(), by: 60)) { timeline in
+                    let minuteID = Int(timeline.date.timeIntervalSince1970 / 60.0)
+
                     WeatherTemplateContent(
                         snapshot: snapshot,
                         location: location,
@@ -81,6 +86,7 @@ struct WeatherTemplateView: View {
                         metrics: metrics,
                         accent: accent
                     )
+                    .id(minuteID)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
                 }

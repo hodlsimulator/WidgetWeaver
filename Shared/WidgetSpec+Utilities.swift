@@ -201,7 +201,7 @@ public enum WidgetWeaverVariableTemplate {
     }
 
     public static func render(_ template: String, variables: [String: String]) -> String {
-        render(template, variables: variables, now: Date(), maxPasses: 3)
+        render(template, variables: variables, now: WidgetWeaverRenderClock.now, maxPasses: 3)
     }
 
     public static func render(
@@ -229,10 +229,20 @@ public enum WidgetWeaverVariableTemplate {
         guard template.contains("{{") else { return false }
         let s = template.lowercased()
 
-        if s.contains("__now") || s.contains("__today") || s.contains("__time") { return true }
+        // Built-in time keys.
+        if s.contains("__now") || s.contains("__today") || s.contains("__time") {
+            return true
+        }
+
+        // Relative/time filters.
         if s.contains("|relative") { return true }
         if s.contains("|daysuntil") || s.contains("|hoursuntil") || s.contains("|minutesuntil") { return true }
         if s.contains("|sincedays") || s.contains("|sincehours") || s.contains("|sinceminutes") { return true }
+
+        // Weather nowcast keys are time-dependent because they change as "now" moves,
+        // even when the underlying snapshot stays the same.
+        if s.contains("__weather_nowcast") { return true }
+        if s.contains("__weather_rain_") { return true }
 
         return false
     }

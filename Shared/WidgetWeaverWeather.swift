@@ -479,7 +479,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
     /// Weather variables are treated as “built-in” keys.
     /// If there is no snapshot yet, the location key still resolves so the widget stops showing the “set a location” prompt.
-    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+    public func variablesDictionary(now: Date = WidgetWeaverRenderClock.now) -> [String: String] {
         if let snap = loadSnapshot() {
             var vars: [String: String] = [:]
             let unit = resolvedUnitTemperature()
