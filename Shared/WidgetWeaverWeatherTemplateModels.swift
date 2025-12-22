@@ -94,6 +94,14 @@ struct WeatherNowcast: Hashable {
             let sliceI = intensities[idx..<end]
             let sliceC = chances[idx..<end]
 
+            // Bucket values are averaged (rather than max) so the chart changes smoothly as `now` advances.
+            // Using max-values here can make small/medium widgets appear “stuck” for several minutes
+            // because each bar covers multiple minutes.
+            let n = Double(sliceI.count)
+
+            let avgIntensity = (n > 0) ? (sliceI.reduce(0.0, +) / n) : 0.0
+            let avgChance = (n > 0) ? (sliceC.reduce(0.0, +) / n) : 0.0
+
             let maxIntensity = sliceI.max() ?? 0.0
             let minIntensity = sliceI.min() ?? 0.0
             let intensityRange = max(0.0, maxIntensity - minIntensity)
@@ -109,8 +117,8 @@ struct WeatherNowcast: Hashable {
 
             out.append(.init(
                 id: bucketId,
-                intensityMMPerHour: maxIntensity,
-                chance01: maxChance,
+                intensityMMPerHour: avgIntensity,
+                chance01: avgChance,
                 rainUncertainty01: rainUncertainty01
             ))
 
