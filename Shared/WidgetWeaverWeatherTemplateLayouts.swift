@@ -191,7 +191,7 @@ struct WeatherLargeRainLayout: View {
             HStack(alignment: .firstTextBaseline) {
                 WeatherAttributionLink(accent: accent)
                 Spacer(minLength: 0)
-                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
+                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

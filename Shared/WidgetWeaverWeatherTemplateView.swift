@@ -48,18 +48,26 @@ struct WeatherTemplateView: View {
             case .widget:
                 // In a real widget, WidgetKit may pre-render future entries.
                 // Using Date() here causes every entry to look identical (blink-only).
-                let now = WidgetWeaverRenderClock.now
-                WeatherTemplateContent(
-                    snapshot: snapshot,
-                    location: location,
-                    unit: unit,
-                    now: now,
-                    family: family,
-                    metrics: metrics,
-                    accent: accent
-                )
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
+                //
+                // Use the entry date injected via WidgetWeaverRenderClock as the base, then tick
+                // inside that entry so time-based visuals (chart + “Updated …”) advance even if
+                // WidgetKit throttles timeline swaps.
+                let baseNow = Calendar.current.dateInterval(of: .minute, for: WidgetWeaverRenderClock.now)?.start
+                    ?? WidgetWeaverRenderClock.now
+
+                TimelineView(.periodic(from: baseNow, by: 60)) { timeline in
+                    WeatherTemplateContent(
+                        snapshot: snapshot,
+                        location: location,
+                        unit: unit,
+                        now: timeline.date,
+                        family: family,
+                        metrics: metrics,
+                        accent: accent
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: timeline.date))
+                }
 
             case .simulator:
                 // Simulator-only: live ticking inside the running app.
@@ -219,7 +227,7 @@ private struct WeatherFilledStateView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if family == .systemMedium {
-                Text("Updated \(wwShortTimeString(snapshot.fetchedAt))")
+                Text("Updated \(wwUpdatedAgoString(from: snapshot.fetchedAt, now: now))")
                     .font(.system(size: metrics.updatedFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
