@@ -21,7 +21,7 @@ struct WeatherNowcastChart: View {
             let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
-                // Temporary “black stage” so the surface read matches the mockups.
+                // Black stage for matching the mockups.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.black.opacity(1.0))
                     .overlay(
@@ -85,64 +85,69 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        // Enforce wet definition: dry intensities render nothing above the baseline.
+        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // chance01 is treated as certainty (1 = very certain, 0 = very uncertain).
+        // chance01 treated as certainty (1 = very certain, 0 = very uncertain).
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Tuned to read like the first mockup (no streak texture):
-        // - Black background
-        // - Matte body gradient
-        // - Wide diffusion when uncertain, tight when certain
-        // - Baseline is a faint accent line
-        // - Tight inward glow near ridge
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
             backgroundOpacity: 1.0,
 
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
-
             intensityEasingPower: 0.75,
             minVisibleHeightFraction: 0.030,
 
             baselineYFraction: 0.82,
-            edgeInsetFraction: 0.025,
+            edgeInsetFraction: 0.00,
 
             baselineColor: accent,
-            baselineOpacity: 0.18,
+            baselineOpacity: 0.14,               // reduced ~20% from previous
             baselineLineWidth: onePixel,
+            baselineInsetPoints: 5.0,            // aligns better with internal padding
+            baselineSoftWidthMultiplier: 2.6,    // atmospheric softness without a true blur
+            baselineSoftOpacityMultiplier: 0.35,
 
             fillBottomColor: accent,
             fillTopColor: accent,
             fillBottomOpacity: 0.18,
             fillTopOpacity: 0.92,
 
-            diffusionMinRadiusPoints: 2.0,
-            diffusionMaxRadiusPoints: 22.0,
-            diffusionMinRadiusFractionOfHeight: 0.035,
-            diffusionMaxRadiusFractionOfHeight: 0.40,
+            startEaseMinutes: 3,
+            endFadeMinutes: 10,
+            endFadeFloor: 0.20,                  // keep a trace so 60m never looks “empty”
+
+            diffusionMinRadiusPoints: 1.6,
+            diffusionMaxRadiusPoints: 18.0,
+            diffusionMinRadiusFractionOfHeight: 0.030,
+            diffusionMaxRadiusFractionOfHeight: 0.34,
             diffusionLayers: 32,
             diffusionMaxAlpha: 1.0,
-            diffusionFalloffPower: 2.25,
-            diffusionUncertaintyAlphaFloor: 0.02,
+            diffusionBandFalloffPower: 2.10,
+            diffusionEdgeAlphaFloor: 0.02,
+
+            diffusionRadiusUncertaintyPower: 1.4,
+            diffusionStrengthUncertaintyPower: 1.2,
+            diffusionStrengthMinMultiplier: 0.25,
+            diffusionStrengthMaxMultiplier: 1.0,
 
             glowEnabled: true,
             glowColor: accent,
-            glowMaxRadiusPoints: 3.0,
-            glowMaxRadiusFractionOfHeight: 0.08,
+            glowMaxRadiusPoints: 2.8,
+            glowMaxRadiusFractionOfHeight: 0.075,
             glowLayers: 6,
-            glowMaxAlpha: 0.16,
+            glowMaxAlpha: 0.14,
             glowFalloffPower: 1.75,
-            glowCertaintyPower: 1.15
+            glowCertaintyPower: 1.6
         )
 
         RainForecastSurfaceView(
