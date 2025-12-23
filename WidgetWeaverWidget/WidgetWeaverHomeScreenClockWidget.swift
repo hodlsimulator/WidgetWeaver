@@ -17,6 +17,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
     case ocean
     case mint
     case orchid
+    case sunset
     case ember
     case graphite
 
@@ -30,13 +31,10 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .ocean: DisplayRepresentation(title: "Ocean"),
             .mint: DisplayRepresentation(title: "Mint"),
             .orchid: DisplayRepresentation(title: "Orchid"),
+            .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: ODisplayRepresentation()
+            .graphite: DisplayRepresentation(title: "Graphite"),
         ]
-    }
-
-    private static func ODisplayRepresentation() -> DisplayRepresentation {
-        DisplayRepresentation(title: "Graphite")
     }
 }
 
@@ -44,11 +42,11 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
     public static var title: LocalizedStringResource { "Clock" }
 
     public static var description: IntentDescription {
-        IntentDescription("A small analogue clock styled like the mockups.")
+        IntentDescription("Select the colour scheme for the clock widget.")
     }
 
     @Parameter(title: "Colour Scheme")
-    public var colourScheme: WidgetWeaverClockColourScheme
+    public var colourScheme: WidgetWeaverClockColourScheme?
 
     public init() {
         self.colourScheme = .classic
@@ -71,13 +69,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
-        Entry(date: Date(), colourScheme: configuration.colourScheme)
+        Entry(date: Date(), colourScheme: configuration.colourScheme ?? .classic)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let entry = Entry(date: now, colourScheme: configuration.colourScheme)
-
+        let entry = Entry(date: now, colourScheme: configuration.colourScheme ?? .classic)
         return Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60)))
     }
 }
@@ -170,12 +167,15 @@ private struct WidgetWeaverClockPalette {
                 return isDark ? wwColor(0x7EFCD8) : wwColor(0x43E0C2)
             case .orchid:
                 return isDark ? wwColor(0xC9A0FF) : wwColor(0xB684FF)
+            case .sunset:
+                return isDark ? wwColor(0xFF9B6B) : wwColor(0xFF7C4D)
             case .ember:
                 return isDark ? wwColor(0xFF5E5E) : wwColor(0xFF3B3B)
             case .graphite:
                 return isDark ? wwColor(0xB8BBC0) : wwColor(0x8A8D92)
             }
         }()
+    ()
 
         if isDark {
             return WidgetWeaverClockPalette(
