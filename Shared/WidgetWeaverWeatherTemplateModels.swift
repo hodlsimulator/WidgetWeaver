@@ -30,7 +30,7 @@ struct WeatherNowcastBucket: Identifiable, Hashable {
     var chance01: Double
 
     /// A 0...1 cue for how uncertain the next-hour rain forecast is for this bucket.
-    /// Used only for rendering a faint "envelope" around bars (Dark Sky style).
+    /// Used only for rendering a faint halo around the ribbon (Dark Sky style).
     var rainUncertainty01: Double
 }
 
@@ -46,7 +46,7 @@ struct WeatherNowcast: Hashable {
     static let wetIntensityThresholdMMPerHour: Double = 0.005
 
     /// Chance threshold used only for wording (“possible”) when rain starts in the future.
-    /// The chart still renders bars based on intensity alone (using `isWet`).
+    /// The chart still renders the ribbon based on intensity alone (using `isWet`).
     static let lowChanceWordingThreshold01: Double = 0.35
 
     @inline(__always)

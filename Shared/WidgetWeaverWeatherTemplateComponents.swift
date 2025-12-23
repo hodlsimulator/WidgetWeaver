@@ -88,7 +88,14 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastBandPlot: View {
-    /// One sample per minute (target: 60). Wet/dry is still driven only by intensity via `WeatherNowcast.isWet`.
+    /// One sample per minute (target: 60). Wet/dry is driven only by intensity via `WeatherNowcast.isWet`.
+    ///
+    /// One-sided “Core + Halo” ribbon:
+    /// - Baseline = dry reference (always present)
+    /// - Core ribbon = expected intensity (height + saturation/brightness)
+    /// - Halo = uncertainty envelope (extra height + grey drift + blur)
+    ///
+    /// Rendering must never imply “below zero” rain. The ribbon only extends upward from the baseline.
     struct Sample: Hashable {
         var intensityMMPerHour: Double
         var chance01: Double
@@ -100,21 +107,29 @@ private struct WeatherNowcastBandPlot: View {
 
     var body: some View {
         GeometryReader { geo in
+            let n = max(1, samples.count)
             let w = max(1, geo.size.width)
             let h = max(1, geo.size.height)
 
-            let wetMask: [Bool] = samples.map { WeatherNowcast.isWet(intensityMMPerHour: $0.intensityMMPerHour) }
-            let hasAnyWet = wetMask.contains(true)
+            // Place the baseline low so the ribbon reads as “above zero”.
+            let baselineY = h * 0.82
+            let stepX = w / CGFloat(n)
 
-            let coreHalfHeights = coreHalfHeights(
-                plotHeight: h,
+            let wetMask: [Bool] = samples.map { WeatherNowcast.isWet(intensityMMPerHour: $0.intensityMMPerHour) }
+            let wetRanges = wetRanges(from: wetMask)
+            let hasAnyWet = !wetRanges.isEmpty
+
+            let coreHeights = coreHeights(
+                plotSize: geo.size,
+                baselineY: baselineY,
                 wetMask: wetMask
             )
 
-            let haloHalfHeights = haloHalfHeights(
-                plotHeight: h,
+            let haloHeights = haloHeights(
+                plotSize: geo.size,
+                baselineY: baselineY,
                 wetMask: wetMask,
-                coreHalfHeights: coreHalfHeights
+                coreHeights: coreHeights
             )
 
             let coreStops = gradientStops(
@@ -155,46 +170,96 @@ private struct WeatherNowcastBandPlot: View {
                 endPoint: .trailing
             )
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
+                if hasAnyWet {
+                    // Halo: uncertainty envelope (grey drift + blur).
+                    ForEach(wetRanges, id: \.self) { r in
+                        let x0 = CGFloat(r.lowerBound) * stepX
+                        let x1 = CGFloat(r.upperBound) * stepX
+
+                        Rectangle()
+                            .fill(haloGradient)
+                            .mask(
+                                ribbonPath(
+                                    size: geo.size,
+                                    baselineY: baselineY,
+                                    heights: haloHeights,
+                                    range: r
+                                )
+                                .fill(Color.white)
+                            )
+                            .opacity(0.55)
+                            .blur(radius: 6.5)
+                            .mask(rangeMask(x0: x0, x1: x1, baselineY: baselineY))
+                    }
+
+                    // Core: expected intensity.
+                    ForEach(wetRanges, id: \.self) { r in
+                        let x0 = CGFloat(r.lowerBound) * stepX
+                        let x1 = CGFloat(r.upperBound) * stepX
+
+                        Rectangle()
+                            .fill(coreGradient)
+                            .mask(
+                                ribbonPath(
+                                    size: geo.size,
+                                    baselineY: baselineY,
+                                    heights: coreHeights,
+                                    range: r
+                                )
+                                .fill(Color.white)
+                            )
+                            .opacity(0.95)
+                            .blur(radius: 0.8)
+                            .mask(rangeMask(x0: x0, x1: x1, baselineY: baselineY))
+                    }
+
+                    // Subtle top-edge highlight to keep it readable at a glance.
+                    ForEach(wetRanges, id: \.self) { r in
+                        let x0 = CGFloat(r.lowerBound) * stepX
+                        let x1 = CGFloat(r.upperBound) * stepX
+
+                        topEdgePath(
+                            size: geo.size,
+                            baselineY: baselineY,
+                            heights: coreHeights,
+                            range: r
+                        )
+                        .stroke(
+                            Color.white.opacity(0.08),
+                            style: StrokeStyle(
+                                lineWidth: 1,
+                                lineCap: .round,
+                                lineJoin: .round
+                            )
+                        )
+                        .mask(rangeMask(x0: x0, x1: x1, baselineY: baselineY))
+                    }
+                }
+
                 // Baseline “dry” guide (always present).
                 Path { p in
-                    p.move(to: CGPoint(x: 0, y: h / 2))
-                    p.addLine(to: CGPoint(x: w, y: h / 2))
+                    p.move(to: CGPoint(x: 0, y: baselineY))
+                    p.addLine(to: CGPoint(x: w, y: baselineY))
                 }
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
 
                 // “Now” marker (subtle, left edge).
                 Path { p in
-                    let lineH = h * 0.72
-                    let y0 = (h - lineH) / 2
-                    p.move(to: CGPoint(x: 0.5, y: y0))
-                    p.addLine(to: CGPoint(x: 0.5, y: y0 + lineH))
+                    let lineTop = max(0, baselineY - (h * 0.72))
+                    p.move(to: CGPoint(x: 0.5, y: lineTop))
+                    p.addLine(to: CGPoint(x: 0.5, y: baselineY))
                 }
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
-
-                if hasAnyWet {
-                    // Halo: uncertainty envelope (grey drift + blur).
-                    bandPath(size: geo.size, halfHeights: haloHalfHeights)
-                        .fill(haloGradient)
-                        .opacity(0.55)
-                        .blur(radius: 6.5)
-
-                    // Core: expected intensity.
-                    bandPath(size: geo.size, halfHeights: coreHalfHeights)
-                        .fill(coreGradient)
-                        .opacity(0.95)
-                        .blur(radius: 0.8)
-
-                    // Soft centre highlight to keep it readable at a glance.
-                    Path { p in
-                        p.move(to: CGPoint(x: 0, y: h / 2))
-                        p.addLine(to: CGPoint(x: w, y: h / 2))
-                    }
-                    .stroke(Color.white.opacity(0.06), lineWidth: 2)
-                }
             }
             .compositingGroup()
         }
+    }
+
+    private func rangeMask(x0: CGFloat, x1: CGFloat, baselineY: CGFloat) -> some View {
+        Rectangle()
+            .frame(width: max(0, x1 - x0), height: max(0, baselineY))
+            .offset(x: x0, y: 0)
     }
 
     // MARK: - Data shaping
@@ -231,35 +296,64 @@ private struct WeatherNowcastBandPlot: View {
         return clamp01(sample.intensityMMPerHour / maxIntensityMMPerHour)
     }
 
-    private func coreHalfHeights(plotHeight: CGFloat, wetMask: [Bool]) -> [CGFloat] {
-        let h = max(1, plotHeight)
-        let hardCap = (h / 2) - 1
+    private func coreHeights(plotSize: CGSize, baselineY: CGFloat, wetMask: [Bool]) -> [CGFloat] {
+        let h = max(1, plotSize.height)
+        let available = max(1, baselineY - 2)
 
         // Tuning knobs:
-        let minHalf = max(1, h * 0.045)     // drizzle visibility floor
-        let maxHalf = min(hardCap, h * 0.38) // intensity ceiling
+        let minH = max(1, h * 0.065)             // drizzle visibility floor
+        let maxH = min(available, h * 0.62)      // intensity ceiling
 
         return samples.enumerated().map { (i, s) in
             guard wetMask[i] else { return 0 }
             let frac = CGFloat(intensityFraction(for: s))
-            let core = minHalf + frac * (maxHalf - minHalf)
-            return min(core, hardCap)
+            let core = minH + frac * (maxH - minH)
+            return min(core, available)
         }
     }
 
-    private func haloHalfHeights(plotHeight: CGFloat, wetMask: [Bool], coreHalfHeights: [CGFloat]) -> [CGFloat] {
-        let h = max(1, plotHeight)
-        let hardCap = (h / 2) - 1
+    private func haloHeights(
+        plotSize: CGSize,
+        baselineY: CGFloat,
+        wetMask: [Bool],
+        coreHeights: [CGFloat]
+    ) -> [CGFloat] {
+        let h = max(1, plotSize.height)
+        let available = max(1, baselineY - 2)
 
         // Tuning knobs:
-        let maxExtra = h * 0.18
+        let maxExtra = min(available * 0.35, h * 0.26)
 
-        return coreHalfHeights.indices.map { i in
+        return coreHeights.indices.map { i in
             guard wetMask[i] else { return 0 }
             let u = CGFloat(uncertainty01(forChance: samples[i].chance01))
             let extra = u * maxExtra
-            return min(coreHalfHeights[i] + extra, hardCap)
+            return min(coreHeights[i] + extra, available)
         }
+    }
+
+    private func wetRanges(from wetMask: [Bool]) -> [Range<Int>] {
+        guard !wetMask.isEmpty else { return [] }
+
+        var ranges: [Range<Int>] = []
+        var currentStart: Int? = nil
+
+        for i in wetMask.indices {
+            if wetMask[i] {
+                if currentStart == nil { currentStart = i }
+            } else {
+                if let s = currentStart {
+                    ranges.append(s..<i)
+                    currentStart = nil
+                }
+            }
+        }
+
+        if let s = currentStart {
+            ranges.append(s..<wetMask.endIndex)
+        }
+
+        return ranges.filter { !$0.isEmpty }
     }
 
     // MARK: - Colour encoding
@@ -340,46 +434,100 @@ private struct WeatherNowcastBandPlot: View {
         }
     }
 
-    // MARK: - Path (step per minute)
+    // MARK: - Path (smoothed ribbon)
 
-    private func bandPath(size: CGSize, halfHeights: [CGFloat]) -> Path {
+    private func ribbonPath(size: CGSize, baselineY: CGFloat, heights: [CGFloat], range: Range<Int>) -> Path {
+        let n = max(1, heights.count)
+        let w = max(1, size.width)
+        let stepX = w / CGFloat(n)
+
+        let clampedLower = max(0, min(n - 1, range.lowerBound))
+        let clampedUpper = max(clampedLower + 1, min(n, range.upperBound))
+
+        let xStart = CGFloat(clampedLower) * stepX
+        let xEnd = CGFloat(clampedUpper) * stepX
+
+        // Curve points: start/end touch the baseline, samples are in the middle of each minute cell.
+        var pts: [CGPoint] = []
+        pts.reserveCapacity((clampedUpper - clampedLower) + 2)
+
+        pts.append(CGPoint(x: xStart, y: baselineY))
+
+        for i in clampedLower..<clampedUpper {
+            let xMid = (CGFloat(i) + 0.5) * stepX
+            let y = baselineY - max(0, heights[i])
+            pts.append(CGPoint(x: xMid, y: y))
+        }
+
+        pts.append(CGPoint(x: xEnd, y: baselineY))
+
+        return ribbonFillPath(from: pts, baselineY: baselineY, xStart: xStart, xEnd: xEnd)
+    }
+
+    private func topEdgePath(size: CGSize, baselineY: CGFloat, heights: [CGFloat], range: Range<Int>) -> Path {
+        let n = max(1, heights.count)
+        let w = max(1, size.width)
+        let stepX = w / CGFloat(n)
+
+        let clampedLower = max(0, min(n - 1, range.lowerBound))
+        let clampedUpper = max(clampedLower + 1, min(n, range.upperBound))
+
+        let xStart = CGFloat(clampedLower) * stepX
+        let xEnd = CGFloat(clampedUpper) * stepX
+
+        var pts: [CGPoint] = []
+        pts.reserveCapacity((clampedUpper - clampedLower) + 2)
+
+        pts.append(CGPoint(x: xStart, y: baselineY))
+
+        for i in clampedLower..<clampedUpper {
+            let xMid = (CGFloat(i) + 0.5) * stepX
+            let y = baselineY - max(0, heights[i])
+            pts.append(CGPoint(x: xMid, y: y))
+        }
+
+        pts.append(CGPoint(x: xEnd, y: baselineY))
+
+        return Path { p in
+            addSmoothedTopEdge(&p, points: pts)
+        }
+    }
+
+    private func ribbonFillPath(from topPoints: [CGPoint], baselineY: CGFloat, xStart: CGFloat, xEnd: CGFloat) -> Path {
         Path { p in
-            let n = halfHeights.count
-            guard n >= 2 else { return }
+            guard topPoints.count >= 2 else { return }
 
-            let w = max(1, size.width)
-            let h = max(1, size.height)
-            let midY = h / 2
+            addSmoothedTopEdge(&p, points: topPoints)
 
-            // One minute = one step.
-            let stepX = w / CGFloat(n)
-
-            // Top edge (step function).
-            p.move(to: CGPoint(x: 0, y: midY - halfHeights[0]))
-
-            for i in 0..<n {
-                let x1 = CGFloat(i + 1) * stepX
-                p.addLine(to: CGPoint(x: x1, y: midY - halfHeights[i]))
-
-                if i + 1 < n {
-                    p.addLine(to: CGPoint(x: x1, y: midY - halfHeights[i + 1]))
-                }
-            }
-
-            // Bottom edge (reverse).
-            p.addLine(to: CGPoint(x: w, y: midY + halfHeights[n - 1]))
-
-            for i in stride(from: n - 1, through: 0, by: -1) {
-                let x0 = CGFloat(i) * stepX
-                p.addLine(to: CGPoint(x: x0, y: midY + halfHeights[i]))
-
-                if i > 0 {
-                    p.addLine(to: CGPoint(x: x0, y: midY + halfHeights[i - 1]))
-                }
-            }
-
+            // Bottom edge (baseline back to start).
+            p.addLine(to: CGPoint(x: xEnd, y: baselineY))
+            p.addLine(to: CGPoint(x: xStart, y: baselineY))
             p.closeSubpath()
         }
+    }
+
+    private func addSmoothedTopEdge(_ p: inout Path, points: [CGPoint]) {
+        guard points.count >= 2 else { return }
+
+        p.move(to: points[0])
+
+        if points.count == 2 {
+            p.addLine(to: points[1])
+            return
+        }
+
+        // Quadratic smoothing: reads as a flowing band (not bins).
+        for i in 1..<(points.count - 1) {
+            let current = points[i]
+            let next = points[i + 1]
+            let mid = CGPoint(
+                x: (current.x + next.x) * 0.5,
+                y: (current.y + next.y) * 0.5
+            )
+            p.addQuadCurve(to: mid, control: current)
+        }
+
+        p.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
     }
 
     // MARK: - Utils
