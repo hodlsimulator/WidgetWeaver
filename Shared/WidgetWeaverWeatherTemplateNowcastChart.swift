@@ -7,13 +7,6 @@
 //  Nowcast chart using RainForecastSurfaceView.
 //
 
-//
-//  WidgetWeaverWeatherTemplateNowcastChart.swift
-//  WidgetWeaver
-//
-//  Nowcast chart using RainForecastSurfaceView.
-//
-
 import Foundation
 import SwiftUI
 
@@ -104,10 +97,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Target look:
-        // - no internal streaks
-        // - fuzziness expresses uncertainty (1 - chance)
-        // - glow is tight and additive
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
             backgroundOpacity: 0.0,
