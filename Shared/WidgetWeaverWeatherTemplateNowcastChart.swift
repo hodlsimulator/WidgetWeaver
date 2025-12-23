@@ -21,7 +21,6 @@ struct WeatherNowcastChart: View {
             let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
-                // Black stage for mockup matching.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.black.opacity(1.0))
                     .overlay(
@@ -55,6 +54,7 @@ private struct WeatherNowcastAxisLabels: View {
     var body: some View {
         VStack {
             Spacer(minLength: 0)
+
             HStack {
                 Text("Now")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -91,27 +91,29 @@ private struct WeatherNowcastSurfacePlot: View {
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // chance01 treated as certainty (1 = very certain, 0 = very uncertain).
+        // chance01 is treated as certainty for fuzz:
+        // - certainty 1.0 => minimal fuzz
+        // - certainty 0.0 => maximum fuzz
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Key “feel” targets:
-        // - fuzziness returns via plusLighter diffusion band (top zone)
-        // - no hard cut-in at Now (startEaseMinutes 6)
-        // - no hard crop at 60m (endFadeMinutes 10)
-        // - drizzle is calm: diffusion gated by intensity + light-rain restraint
-        // - glow is a little stronger but stays inward (never a stroke)
+        // Tuning targets vs mock:
+        // - stronger internal streak texture
+        // - fuzz/spray above the top edge scales with (1 - chance)
+        // - glow remains tight (no “stroke” outline)
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
-            backgroundOpacity: 0.0, // stage already draws black
+            backgroundOpacity: 0.0,
 
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
             intensityEasingPower: 0.75,
             minVisibleHeightFraction: 0.030,
+
+            geometrySmoothingPasses: 1,
 
             baselineYFraction: 0.82,
             edgeInsetFraction: 0.00,
@@ -132,38 +134,56 @@ private struct WeatherNowcastSurfacePlot: View {
             endFadeMinutes: 10,
             endFadeFloor: 0.0,
 
-            diffusionLayers: 24,
+            diffusionLayers: 30,
             diffusionFalloffPower: 2.2,
 
-            diffusionMinRadiusPoints: 1.5,
-            diffusionMaxRadiusPoints: 18.0,
+            diffusionMinRadiusPoints: 1.8,
+            diffusionMaxRadiusPoints: 24.0,
             diffusionMinRadiusFractionOfHeight: 0.030,
-            diffusionMaxRadiusFractionOfHeight: 0.34,
-            diffusionRadiusUncertaintyPower: 1.35,
+            diffusionMaxRadiusFractionOfHeight: 0.40,
+            diffusionRadiusUncertaintyPower: 1.25,
 
-            diffusionStrengthMax: 0.60,           // increase if needed: 0.64, 0.68
-            diffusionStrengthMinUncertainTerm: 0.30,
-            diffusionStrengthUncertaintyPower: 1.15,
+            diffusionStrengthMax: 0.78,
+            diffusionStrengthMinUncertainTerm: 0.32,
+            diffusionStrengthUncertaintyPower: 1.10,
 
             diffusionDrizzleThreshold: 0.10,
             diffusionLowIntensityGateMin: 0.55,
 
             diffusionLightRainMeanThreshold: 0.18,
-            diffusionLightRainMaxRadiusScale: 0.80,
-            diffusionLightRainStrengthScale: 0.85,
+            diffusionLightRainMaxRadiusScale: 0.85,
+            diffusionLightRainStrengthScale: 0.90,
 
             diffusionStopStride: 2,
             diffusionJitterAmplitudePoints: 0.35,
             diffusionEdgeSofteningWidth: 0.08,
 
+            textureEnabled: true,
+            textureMaxAlpha: 0.26,
+            textureMinAlpha: 0.05,
+            textureIntensityPower: 0.70,
+            textureUncertaintyAlphaBoost: 0.45,
+            textureStreaksMin: 1,
+            textureStreaksMax: 3,
+            textureLineWidthMultiplier: 0.70,
+            textureBlurRadiusPoints: 0.65,
+            textureTopInsetFractionOfHeight: 0.02,
+
+            fuzzEnabled: true,
+            fuzzGlobalBlurRadiusPoints: 1.15,
+            fuzzLineWidthMultiplier: 0.70,
+            fuzzLengthMultiplier: 1.20,
+            fuzzDotsEnabled: true,
+            fuzzDotsPerSampleMax: 3,
+
             glowEnabled: true,
             glowColor: accent,
             glowLayers: 6,
-            glowMaxAlpha: 0.22,
+            glowMaxAlpha: 0.24,
             glowFalloffPower: 1.75,
             glowCertaintyPower: 1.6,
-            glowMaxRadiusPoints: 3.8,
-            glowMaxRadiusFractionOfHeight: 0.075
+            glowMaxRadiusPoints: 4.0,
+            glowMaxRadiusFractionOfHeight: 0.085
         )
 
         RainForecastSurfaceView(
@@ -198,7 +218,7 @@ private struct WeatherNowcastSurfacePlot: View {
         return out
     }
 
-    private static func clamp01(_ v: Double) -> Double {
+    static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
     }
 }
