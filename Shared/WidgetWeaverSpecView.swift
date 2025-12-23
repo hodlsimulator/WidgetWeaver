@@ -56,48 +56,38 @@ public struct WidgetWeaverSpecView: View {
         let accent = style.accent.swiftUIColor
         let frameAlignment: Alignment = layout.alignment.swiftUIAlignment
 
-        ZStack(alignment: .topLeading) {
-            backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
+        let background = backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
 
-            VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
-                switch layout.template {
-                case .classic:
-                    classicTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-                case .hero:
-                    heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-                case .poster:
-                    posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-                case .weather:
-                    weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-                case .nextUpCalendar:
-                    nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-                }
+        let content = VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            switch layout.template {
+            case .classic:
+                classicTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+            case .hero:
+                heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+            case .poster:
+                posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+            case .weather:
+                weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+            case .nextUpCalendar:
+                nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             }
-            .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
         }
-        .modifier(
-            WidgetWeaverBackgroundModifier(
-                cornerRadius: layout.template == .poster ? 0 : style.cornerRadius,
-                family: family,
-                context: context
-            )
-        )
+        .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
+
+        return content
+            .modifier(WidgetWeaverBackgroundModifier(family: family, context: context, background: background))
     }
 
     // MARK: - Templates
-
     private func classicTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
             contentStackClassic(spec: spec, layout: layout, style: style)
-
             if let symbol = spec.symbol {
                 imageRowClassic(symbol: symbol, style: style, accent: accent)
             }
-
             actionBarIfNeeded(spec: spec, accent: accent)
-
             if layout.showsAccentBar {
                 accentBar(accent: accent, style: style)
             }
@@ -107,16 +97,13 @@ public struct WidgetWeaverSpecView: View {
     private func heroTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             headerRow(spec: spec, style: style, accent: accent)
-
             HStack(alignment: .top, spacing: layout.spacing) {
                 VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
                     contentStackHero(spec: spec, layout: layout, style: style)
-
                     if layout.showsAccentBar {
                         accentBar(accent: accent, style: style)
                     }
                 }
-
                 if let symbol = spec.symbol {
                     Image(systemName: symbol.name)
                         .font(.system(size: style.symbolSize))
@@ -125,7 +112,6 @@ public struct WidgetWeaverSpecView: View {
                         .opacity(0.85)
                 }
             }
-
             actionBarIfNeeded(spec: spec, accent: accent)
         }
         .padding(style.padding)
@@ -134,7 +120,6 @@ public struct WidgetWeaverSpecView: View {
     private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 0)
-
             VStack(alignment: .leading, spacing: 10) {
                 if !spec.name.isEmpty {
                     Text(spec.name)
@@ -142,14 +127,12 @@ public struct WidgetWeaverSpecView: View {
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                 }
-
                 if !spec.primaryText.isEmpty {
                     Text(spec.primaryText)
                         .font(style.primaryTextStyle.font(fallback: .title3))
                         .foregroundStyle(.white)
                         .lineLimit(layout.primaryLineLimit)
                 }
-
                 if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                     Text(secondaryText)
                         .font(style.secondaryTextStyle.font(fallback: .caption2))
@@ -174,25 +157,14 @@ public struct WidgetWeaverSpecView: View {
     }
 
     private func weatherTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        WeatherTemplateView(
-            spec: spec,
-            family: family,
-            context: context,
-            accent: accent
-        )
+        WeatherTemplateView(spec: spec, family: family, context: context, accent: accent)
     }
 
     private func nextUpCalendarTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        NextUpCalendarTemplateView(
-            spec: spec,
-            family: family,
-            context: context,
-            accent: accent
-        )
+        NextUpCalendarTemplateView(spec: spec, family: family, context: context, accent: accent)
     }
 
     // MARK: - Building Blocks
-
     private func headerRow(spec: WidgetSpec, style: StyleSpec, accent: Color) -> some View {
         HStack(alignment: .firstTextBaseline) {
             if !spec.name.isEmpty {
@@ -201,7 +173,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
-
             Spacer(minLength: 0)
         }
     }
@@ -214,7 +185,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
-
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font(fallback: .caption2))
@@ -236,7 +206,6 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(family == .systemSmall ? layout.primaryLineLimitSmall : layout.primaryLineLimit)
             }
-
             if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                 Text(secondaryText)
                     .font(style.secondaryTextStyle.font)
@@ -253,7 +222,6 @@ public struct WidgetWeaverSpecView: View {
     private func imageRowClassic(symbol: WidgetSymbol, style: StyleSpec, accent: Color) -> some View {
         HStack {
             Spacer(minLength: 0)
-
             Image(systemName: symbol.name)
                 .font(.system(size: style.symbolSize))
                 .foregroundStyle(accent)
@@ -269,7 +237,6 @@ public struct WidgetWeaverSpecView: View {
     }
 
     // MARK: - Quick Actions (interactive widget buttons)
-
     private func actionBarIfNeeded(spec: WidgetSpec, accent: Color) -> some View {
         Group {
             if WidgetWeaverEntitlements.isProUnlocked,
@@ -300,7 +267,6 @@ public struct WidgetWeaverSpecView: View {
                 actionButtonLabel(action: action, barStyle: barStyle, accent: accent)
             }
             .buttonStyle(.plain)
-
         case .setVariableToNow:
             Button(intent: WidgetWeaverSetVariableToNowIntent(key: action.variableKey, format: mapNowFormat(action.nowFormat))) {
                 actionButtonLabel(action: action, barStyle: barStyle, accent: accent)
@@ -311,16 +277,11 @@ public struct WidgetWeaverSpecView: View {
 
     private func mapNowFormat(_ token: WidgetNowFormatToken) -> WidgetWeaverNowValueFormat {
         switch token {
-        case .iso8601:
-            return .iso8601
-        case .unixSeconds:
-            return .unixSeconds
-        case .unixMilliseconds:
-            return .unixSeconds
-        case .dateOnly:
-            return .dateOnly
-        case .timeOnly:
-            return .timeOnly
+        case .iso8601: return .iso8601
+        case .unixSeconds: return .unixSeconds
+        case .unixMilliseconds: return .unixSeconds
+        case .dateOnly: return .dateOnly
+        case .timeOnly: return .timeOnly
         }
     }
 
@@ -338,7 +299,6 @@ public struct WidgetWeaverSpecView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(accent)
             }
-
             Text(action.title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -353,35 +313,61 @@ public struct WidgetWeaverSpecView: View {
     }
 
     // MARK: - Background
-
+    @ViewBuilder
     private func backgroundView(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         ZStack {
-            Color(uiColor: .systemBackground)
-
             if layout.template == .weather {
-                Color.clear
+                weatherBackground(style: style, accent: accent)
             } else if layout.template == .poster,
                       let image = spec.image,
                       let uiImage = image.loadUIImageFromAppGroup() {
+                Color(uiColor: .systemBackground)
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
                     .clipped()
-
                 Rectangle()
                     .fill(style.backgroundOverlay.shapeStyle(accent: accent))
                     .opacity(style.backgroundOverlayOpacity)
             } else {
+                Color(uiColor: .systemBackground)
                 Rectangle()
                     .fill(style.background.shapeStyle(accent: accent))
-
                 Rectangle()
                     .fill(style.backgroundOverlay.shapeStyle(accent: accent))
                     .opacity(style.backgroundOverlayOpacity)
-
                 backgroundEffects(style: style, accent: accent)
             }
         }
+    }
+
+    /// Weather uses `Material` heavily (glass cards, chart background).
+    /// On the Home Screen, `Material` composites against the widget's container background.
+    /// Providing the weather backdrop here prevents the widget from falling back to a black base.
+    @ViewBuilder
+    private func weatherBackground(style: StyleSpec, accent: Color) -> some View {
+        let store = WidgetWeaverWeatherStore.shared
+        let now = WidgetWeaverRenderClock.now
+        let palette: WeatherPalette = {
+            if let snapshot = store.snapshotForRender(context: context) {
+                return WeatherPalette.forSnapshot(snapshot, now: now, accent: accent)
+            }
+            return WeatherPalette.fallback(accent: accent)
+        }()
+
+        if style.background == .subtleMaterial {
+            WeatherBackdropView(palette: palette, family: family)
+        } else {
+            Color(uiColor: .systemBackground)
+            Rectangle()
+                .fill(style.background.shapeStyle(accent: accent))
+        }
+
+        Rectangle()
+            .fill(style.backgroundOverlay.shapeStyle(accent: accent))
+            .opacity(style.backgroundOverlayOpacity)
+
+        backgroundEffects(style: style, accent: accent)
     }
 
     private func backgroundEffects(style: StyleSpec, accent: Color) -> some View {
@@ -392,7 +378,6 @@ public struct WidgetWeaverSpecView: View {
                     .blur(radius: 70)
                     .opacity(0.18)
                     .offset(x: -120, y: -120)
-
                 Circle()
                     .fill(accent)
                     .blur(radius: 90)
@@ -404,11 +389,10 @@ public struct WidgetWeaverSpecView: View {
 }
 
 // MARK: - Background Modifier
-
-private struct WidgetWeaverBackgroundModifier: ViewModifier {
-    let cornerRadius: Double
+private struct WidgetWeaverBackgroundModifier<Background: View>: ViewModifier {
     let family: WidgetFamily
     let context: WidgetWeaverRenderContext
+    let background: Background
 
     func body(content: Content) -> some View {
         // iOS controls the outer widget mask.
@@ -419,11 +403,21 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
 
         switch context {
         case .widget:
-            content
-                .containerBackground(for: .widget) { Color.clear }
-                .clipShape(ContainerRelativeShape())
+            if #available(iOS 17.0, *) {
+                content
+                    .containerBackground(for: .widget) {
+                        background.ignoresSafeArea()
+                    }
+                    .clipShape(ContainerRelativeShape())
+            } else {
+                content
+                    .background(background)
+                    .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
+            }
+
         case .preview, .simulator:
             content
+                .background(background)
                 .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
         }
     }
