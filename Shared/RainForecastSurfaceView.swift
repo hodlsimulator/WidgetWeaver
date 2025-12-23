@@ -6,7 +6,7 @@
 //
 //  Programmatic “forecast surface” renderer:
 //  - Single filled ribbon above a subtle baseline
-//  - Uncertainty shown as an inward, soft diffusion near the top edge (no second band, no stroke)
+//  - Uncertainty shown as an inward, soft diffusion at the top edge
 //  - Deterministic (no randomness / no animation)
 //
 
@@ -38,7 +38,17 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fillTopOpacity: Double
 
     // Top-edge diffusion (inward)
-    var diffusionColor: Color
+    //
+    // The ribbon is rendered as:
+    // - Body fill: from baseline up to (top contour + diffusionRadius)
+    // - Diffusion cap: the remaining top zone is filled using stacked alpha bands
+    //
+    // diffusionMaxAlpha:
+    // - Alpha multiplier at the inner boundary of the cap (typically 1.0)
+    //
+    // diffusionUncertaintyAlphaFloor:
+    // - Alpha multiplier at the very top edge of the cap (0...diffusionMaxAlpha).
+    //   Higher values make the edge more “crisp”; lower values make it more “misty”.
     var diffusionMinRadiusPoints: CGFloat
     var diffusionMaxRadiusPoints: CGFloat
     var diffusionMinRadiusFractionOfHeight: CGFloat
@@ -147,134 +157,96 @@ struct RainForecastSurfaceView: View {
                 return
             }
 
-            // Core ribbon gradient (vertical).
-            let fillGradient = Gradient(stops: [
-                .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
-                .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0),
-            ])
+            // Base gradient (vertical), used for both body and cap.
+            func scaledFillShading(multiplier: Double) -> GraphicsContext.Shading {
+                let m = max(0.0, multiplier)
+                let g = Gradient(stops: [
+                    .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity * m), location: 0.0),
+                    .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity * m), location: 1.0),
+                ])
+                return .linearGradient(
+                    g,
+                    startPoint: CGPoint(x: plotRect.midX, y: baselineY),
+                    endPoint: CGPoint(x: plotRect.midX, y: rect.minY)
+                )
+            }
 
-            let fillShading = GraphicsContext.Shading.linearGradient(
-                fillGradient,
-                startPoint: CGPoint(x: plotRect.midX, y: baselineY),
-                endPoint: CGPoint(x: plotRect.midX, y: rect.minY)
-            )
+            let bodyShading = scaledFillShading(multiplier: 1.0)
 
             for range in wetRanges {
                 let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
                 let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
 
-                var outerPoints: [CGPoint] = []
-                outerPoints.reserveCapacity(range.count + 2)
+                // Top contour points (including baseline end caps).
+                var topPoints: [CGPoint] = []
+                topPoints.reserveCapacity(range.count + 2)
 
                 var perPointRadius: [CGFloat] = []
                 perPointRadius.reserveCapacity(range.count + 2)
 
-                // End caps at baseline.
-                outerPoints.append(CGPoint(x: startEdgeX, y: baselineY))
+                // Baseline end caps.
+                topPoints.append(CGPoint(x: startEdgeX, y: baselineY))
                 perPointRadius.append(0)
 
                 for i in range {
                     let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
                     let y = baselineY - heights[i]
-                    outerPoints.append(CGPoint(x: x, y: y))
+                    topPoints.append(CGPoint(x: x, y: y))
                     perPointRadius.append(radii[i])
                 }
 
-                outerPoints.append(CGPoint(x: endEdgeX, y: baselineY))
+                topPoints.append(CGPoint(x: endEdgeX, y: baselineY))
                 perPointRadius.append(0)
 
-                // Core filled ribbon.
-                var ribbonPath = Path()
-                Self.addSmoothQuadSegments(&ribbonPath, points: outerPoints, moveToFirst: true)
-                ribbonPath.addLine(to: outerPoints.first ?? CGPoint(x: startEdgeX, y: baselineY))
-                ribbonPath.closeSubpath()
-                context.fill(ribbonPath, with: fillShading)
+                let segmentMaxRadius = perPointRadius.max() ?? 0
 
-                // Top-edge diffusion: stacked inward strips (no blur filter).
-                let diffusionLayers = max(1, configuration.diffusionLayers)
-                for k in 0..<diffusionLayers {
-                    let t0 = CGFloat(k) / CGFloat(diffusionLayers)
-                    let t1 = CGFloat(k + 1) / CGFloat(diffusionLayers)
-                    let tMid = (t0 + t1) * 0.5
-
-                    let falloff = pow(1.0 - Double(tMid), configuration.diffusionFalloffPower)
-                    let alphaBase = configuration.diffusionMaxAlpha * falloff
-
-                    var contourA: [CGPoint] = []
-                    var contourB: [CGPoint] = []
-                    contourA.reserveCapacity(outerPoints.count)
-                    contourB.reserveCapacity(outerPoints.count)
-
-                    for j in 0..<outerPoints.count {
-                        let p = outerPoints[j]
+                // Body contour (top pushed downward by diffusion radius).
+                var bodyTopPoints = topPoints
+                if segmentMaxRadius > 0 {
+                    for j in 0..<bodyTopPoints.count {
+                        let p = topPoints[j]
                         let r = perPointRadius[j]
-                        let yA = min(baselineY, p.y + r * t0)
-                        let yB = min(baselineY, p.y + r * t1)
-                        contourA.append(CGPoint(x: p.x, y: yA))
-                        contourB.append(CGPoint(x: p.x, y: yB))
+                        bodyTopPoints[j] = CGPoint(x: p.x, y: min(baselineY, p.y + r))
                     }
-
-                    var strip = Path()
-                    Self.addSmoothQuadSegments(&strip, points: contourA, moveToFirst: true)
-                    strip.addLine(to: contourB.last ?? contourA.last ?? CGPoint(x: endEdgeX, y: baselineY))
-                    Self.addSmoothQuadSegments(&strip, points: contourB.reversed(), moveToFirst: false)
-                    strip.closeSubpath()
-
-                    var stops: [Gradient.Stop] = []
-                    stops.reserveCapacity(outerPoints.count)
-
-                    for j in 0..<outerPoints.count {
-                        let p = outerPoints[j]
-                        let loc = Self.safeLocation01(x: p.x, minX: plotRect.minX, maxX: plotRect.maxX)
-
-                        let sampleIndex: Int
-                        if j == 0 {
-                            sampleIndex = range.lowerBound
-                        } else if j == outerPoints.count - 1 {
-                            sampleIndex = max(range.lowerBound, range.upperBound - 1)
-                        } else {
-                            sampleIndex = range.lowerBound + (j - 1)
-                        }
-
-                        let c = certainty01[sampleIndex]
-                        let u = 1.0 - c
-                        let scale = configuration.diffusionUncertaintyAlphaFloor + (1.0 - configuration.diffusionUncertaintyAlphaFloor) * u
-                        let a = max(0, min(1.0, alphaBase * scale))
-
-                        stops.append(.init(color: configuration.diffusionColor.opacity(a), location: loc))
-                    }
-
-                    let grad = Gradient(stops: stops)
-                    let shading = GraphicsContext.Shading.linearGradient(
-                        grad,
-                        startPoint: CGPoint(x: plotRect.minX, y: 0),
-                        endPoint: CGPoint(x: plotRect.maxX, y: 0)
-                    )
-
-                    context.fill(strip, with: shading)
                 }
 
-                // Optional tight glow (inward only), strongest where certainty is high.
-                if configuration.glowEnabled, configuration.glowMaxAlpha > 0 {
-                    let glowRadiusMax = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
-                    let glowLayers = max(1, configuration.glowLayers)
+                // BODY: fills up to the inner boundary of the diffusion cap.
+                do {
+                    var bodyPath = Path()
+                    Self.addSmoothQuadSegments(&bodyPath, points: bodyTopPoints, moveToFirst: true)
+                    bodyPath.addLine(to: bodyTopPoints.first ?? CGPoint(x: startEdgeX, y: baselineY))
+                    bodyPath.closeSubpath()
+                    context.fill(bodyPath, with: bodyShading)
+                }
 
-                    for k in 0..<glowLayers {
-                        let t0 = CGFloat(k) / CGFloat(glowLayers)
-                        let t1 = CGFloat(k + 1) / CGFloat(glowLayers)
+                // CAP: stacked alpha bands from the top contour down to the body contour.
+                //
+                // This is the key part that makes the silhouette look diffused:
+                // the top edge itself is not solid fill; it ramps inward.
+                if segmentMaxRadius > 0, configuration.diffusionLayers > 0, configuration.diffusionMaxAlpha > 0 {
+                    let layers = max(1, configuration.diffusionLayers)
+
+                    let edgeFloor = max(0.0, min(configuration.diffusionUncertaintyAlphaFloor, configuration.diffusionMaxAlpha))
+                    let maxA = max(edgeFloor, configuration.diffusionMaxAlpha)
+
+                    for k in 0..<layers {
+                        let t0 = CGFloat(k) / CGFloat(layers)
+                        let t1 = CGFloat(k + 1) / CGFloat(layers)
                         let tMid = (t0 + t1) * 0.5
 
-                        let falloff = pow(1.0 - Double(tMid), configuration.glowFalloffPower)
-                        let alphaBase = configuration.glowMaxAlpha * falloff
+                        // Alpha increases from edgeFloor at the very top (t=0)
+                        // to maxA at the inner boundary (t=1).
+                        let ramp = pow(Double(tMid), configuration.diffusionFalloffPower)
+                        let bandMultiplier = edgeFloor + (maxA - edgeFloor) * ramp
 
                         var contourA: [CGPoint] = []
                         var contourB: [CGPoint] = []
-                        contourA.reserveCapacity(outerPoints.count)
-                        contourB.reserveCapacity(outerPoints.count)
+                        contourA.reserveCapacity(topPoints.count)
+                        contourB.reserveCapacity(topPoints.count)
 
-                        for j in 0..<outerPoints.count {
-                            let p = outerPoints[j]
-                            let r = min(perPointRadius[j], glowRadiusMax)
+                        for j in 0..<topPoints.count {
+                            let p = topPoints[j]
+                            let r = perPointRadius[j]
                             let yA = min(baselineY, p.y + r * t0)
                             let yB = min(baselineY, p.y + r * t1)
                             contourA.append(CGPoint(x: p.x, y: yA))
@@ -287,17 +259,73 @@ struct RainForecastSurfaceView: View {
                         Self.addSmoothQuadSegments(&strip, points: contourB.reversed(), moveToFirst: false)
                         strip.closeSubpath()
 
-                        var stops: [Gradient.Stop] = []
-                        stops.reserveCapacity(outerPoints.count)
+                        context.fill(strip, with: scaledFillShading(multiplier: bandMultiplier))
+                    }
+                }
 
-                        for j in 0..<outerPoints.count {
-                            let p = outerPoints[j]
+                // Optional tight glow (inward only), strongest where certainty is high.
+                if configuration.glowEnabled, configuration.glowMaxAlpha > 0 {
+                    let glowRadiusMax = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
+                    let glowLayers = max(1, configuration.glowLayers)
+
+                    // Glow is drawn as inward bands close to the top contour, with alpha varying per-x by certainty.
+                    for k in 0..<glowLayers {
+                        let t0 = CGFloat(k) / CGFloat(glowLayers)
+                        let t1 = CGFloat(k + 1) / CGFloat(glowLayers)
+                        let tMid = (t0 + t1) * 0.5
+
+                        let falloff = pow(1.0 - Double(tMid), configuration.glowFalloffPower)
+                        let alphaBase = configuration.glowMaxAlpha * falloff
+
+                        var contourA: [CGPoint] = []
+                        var contourB: [CGPoint] = []
+                        contourA.reserveCapacity(topPoints.count)
+                        contourB.reserveCapacity(topPoints.count)
+
+                        for j in 0..<topPoints.count {
+                            let p = topPoints[j]
+
+                            // Map point index back to a sample for certainty and height clamping.
+                            let sampleIndex: Int
+                            if j == 0 {
+                                sampleIndex = range.lowerBound
+                            } else if j == topPoints.count - 1 {
+                                sampleIndex = max(range.lowerBound, range.upperBound - 1)
+                            } else {
+                                sampleIndex = range.lowerBound + (j - 1)
+                            }
+
+                            let c = certainty01[sampleIndex]
+                            let certaintyBoost = pow(max(0.0, min(1.0, c)), configuration.glowCertaintyPower)
+
+                            let h = heights[sampleIndex]
+                            let rMaxByHeight = min(glowRadiusMax, h * 0.75)
+                            let r = max(0, rMaxByHeight * CGFloat(certaintyBoost))
+
+                            let yA = min(baselineY, p.y + r * t0)
+                            let yB = min(baselineY, p.y + r * t1)
+                            contourA.append(CGPoint(x: p.x, y: yA))
+                            contourB.append(CGPoint(x: p.x, y: yB))
+                        }
+
+                        var strip = Path()
+                        Self.addSmoothQuadSegments(&strip, points: contourA, moveToFirst: true)
+                        strip.addLine(to: contourB.last ?? contourA.last ?? CGPoint(x: endEdgeX, y: baselineY))
+                        Self.addSmoothQuadSegments(&strip, points: contourB.reversed(), moveToFirst: false)
+                        strip.closeSubpath()
+
+                        // Horizontal gradient so glow intensity follows certainty per-x.
+                        var stops: [Gradient.Stop] = []
+                        stops.reserveCapacity(topPoints.count)
+
+                        for j in 0..<topPoints.count {
+                            let p = topPoints[j]
                             let loc = Self.safeLocation01(x: p.x, minX: plotRect.minX, maxX: plotRect.maxX)
 
                             let sampleIndex: Int
                             if j == 0 {
                                 sampleIndex = range.lowerBound
-                            } else if j == outerPoints.count - 1 {
+                            } else if j == topPoints.count - 1 {
                                 sampleIndex = max(range.lowerBound, range.upperBound - 1)
                             } else {
                                 sampleIndex = range.lowerBound + (j - 1)
@@ -336,7 +364,6 @@ struct RainForecastSurfaceView: View {
 // MARK: - Helpers
 
 private extension RainForecastSurfaceView {
-
     static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
     }

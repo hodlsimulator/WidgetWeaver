@@ -4,11 +4,7 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Modularised out of WidgetWeaverWeatherTemplateComponents.swift
-//  Replaced “Core + Halo + Stroke” with a single forecast-surface ribbon:
-//  - One filled band
-//  - Inward diffusion near the top edge controlled by uncertainty
-//  - No halo envelope, no top stroke
+//  Nowcast chart using RainForecastSurfaceView (filled ribbon + inward diffused top edge).
 //
 
 import Foundation
@@ -71,40 +67,34 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastSurfacePlot: View {
-    /// One sample per minute (target: 60).
-    /// Wet/dry is driven only by intensity via `WeatherNowcast.isWet`.
     struct Sample: Hashable {
         var intensityMMPerHour: Double
         var chance01: Double
     }
 
-    let samples: [Sample] // exactly 60 samples, padded
+    let samples: [Sample]
     let maxIntensityMMPerHour: Double
     let accent: Color
 
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        // Enforce the “wet definition contract”:
-        // if intensity is considered dry, force it to 0 so the renderer cannot draw wet pixels.
+        // Enforce wet definition: dry intensities render nothing above the baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // Treat chance as a 0...1 certainty input:
-        // 1 = very certain rain, 0 = very uncertain rain.
+        // chance01 is treated as certainty (1 = very certain, 0 = very uncertain).
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Tuned to make the “surface” read like the mockups:
-        // - Matte core fill
-        // - Visible but tight diffusion when certainty is high
-        // - Thick, soft diffusion where certainty is low
-        // - Subtle inward glow where certainty is high (never a stroke)
+        // Tuned for a visibly diffused top edge:
+        // - diffusionMaxAlpha is 1.0 because the cap is part of the fill (not an overlay).
+        // - diffusionUncertaintyAlphaFloor controls how “present” the very top edge is.
         let cfg = RainForecastSurfaceConfiguration(
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
@@ -122,17 +112,16 @@ private struct WeatherNowcastSurfacePlot: View {
             fillBottomColor: accent,
             fillTopColor: accent,
             fillBottomOpacity: 0.14,
-            fillTopOpacity: 0.58,
+            fillTopOpacity: 0.62,
 
-            diffusionColor: accent,
             diffusionMinRadiusPoints: 3.0,
             diffusionMaxRadiusPoints: 18.0,
             diffusionMinRadiusFractionOfHeight: 0.04,
             diffusionMaxRadiusFractionOfHeight: 0.35,
-            diffusionLayers: 18,
-            diffusionMaxAlpha: 0.30,
-            diffusionFalloffPower: 2.15,
-            diffusionUncertaintyAlphaFloor: 0.22,
+            diffusionLayers: 24,
+            diffusionMaxAlpha: 1.0,
+            diffusionFalloffPower: 1.75,
+            diffusionUncertaintyAlphaFloor: 0.10,
 
             glowEnabled: true,
             glowColor: accent,
@@ -150,8 +139,6 @@ private struct WeatherNowcastSurfacePlot: View {
             configuration: cfg
         )
     }
-
-    // MARK: - Data shaping
 
     static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
         let clipped = Array(points.prefix(targetMinutes))
