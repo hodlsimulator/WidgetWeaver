@@ -571,11 +571,17 @@ private final class WidgetPreviewThumbnailRasterCache {
         screenScale: CGFloat
     ) -> String {
         let updatedMs = Int(spec.updatedAt.timeIntervalSince1970 * 1000.0)
+
+        // Include a content-derived value so draft edits change the cache key,
+        // even when `updatedAt` is unchanged (i.e. before Save).
+        let specHash = String(UInt64(bitPattern: Int64(spec.hashValue)), radix: 16)
+
         let w = Int((size.width * 10.0).rounded())
         let h = Int((size.height * 10.0).rounded())
         let s = Int((screenScale * 10.0).rounded())
         let scheme = (colorScheme == .dark) ? "dark" : "light"
-        return "\(spec.id.uuidString)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
+
+        return "\(spec.id.uuidString)|\(updatedMs)|\(specHash)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
     }
 
     func renderThumbnail(

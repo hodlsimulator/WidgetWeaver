@@ -196,7 +196,11 @@ struct WidgetWeaverWidget: Widget {
                                intent: WidgetWeaverDesignSelectionIntent.self,
                                provider: WidgetWeaverProvider()) { entry in
             WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverSpecView(spec: entry.spec, family: entry.family, context: .widget)
+                // Load the latest saved spec at render-time so Home Screen widgets pick up
+                // edits immediately after saving (even if the system is still displaying a
+                // previously generated timeline entry).
+                let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
+                WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
             }
             .id(entry.date)
         }
