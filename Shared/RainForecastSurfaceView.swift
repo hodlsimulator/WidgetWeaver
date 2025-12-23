@@ -66,6 +66,8 @@ struct RainForecastSurfaceView: View {
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
 
+    @Environment(\.displayScale) private var displayScale
+
     init(
         intensities: [Double],
         certainties: [Double],
@@ -87,7 +89,9 @@ struct RainForecastSurfaceView: View {
 
             guard plotRect.width > 0, plotRect.height > 0 else { return }
 
-            let baselineY = rect.minY + rect.height * configuration.baselineYFraction
+            var baselineY = rect.minY + rect.height * configuration.baselineYFraction
+            baselineY = Self.alignToPixelCenter(baselineY, displayScale: displayScale)
+
             let maxHeight = max(0, baselineY - rect.minY)
             let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
 
@@ -332,6 +336,7 @@ struct RainForecastSurfaceView: View {
 // MARK: - Helpers
 
 private extension RainForecastSurfaceView {
+
     static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
     }
@@ -400,5 +405,10 @@ private extension RainForecastSurfaceView {
             with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)),
             style: stroke
         )
+    }
+
+    static func alignToPixelCenter(_ value: CGFloat, displayScale: CGFloat) -> CGFloat {
+        guard displayScale > 0 else { return value }
+        return (floor(value * displayScale) + 0.5) / displayScale
     }
 }

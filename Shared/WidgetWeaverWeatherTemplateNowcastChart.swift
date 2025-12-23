@@ -82,6 +82,8 @@ private struct WeatherNowcastSurfacePlot: View {
     let maxIntensityMMPerHour: Double
     let accent: Color
 
+    @Environment(\.displayScale) private var displayScale
+
     var body: some View {
         // Enforce the “wet definition contract”:
         // if intensity is considered dry, force it to 0 so the renderer cannot draw wet pixels.
@@ -90,10 +92,19 @@ private struct WeatherNowcastSurfacePlot: View {
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
+        // Treat chance as a 0...1 certainty input:
+        // 1 = very certain rain, 0 = very uncertain rain.
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
 
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
+
+        // Tuned to make the “surface” read like the mockups:
+        // - Matte core fill
+        // - Visible but tight diffusion when certainty is high
+        // - Thick, soft diffusion where certainty is low
+        // - Subtle inward glow where certainty is high (never a stroke)
         let cfg = RainForecastSurfaceConfiguration(
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
@@ -106,30 +117,30 @@ private struct WeatherNowcastSurfacePlot: View {
 
             baselineColor: .white,
             baselineOpacity: 0.12,
-            baselineLineWidth: 1,
+            baselineLineWidth: onePixel,
 
             fillBottomColor: accent,
             fillTopColor: accent,
-            fillBottomOpacity: 0.18,
-            fillTopOpacity: 0.72,
+            fillBottomOpacity: 0.14,
+            fillTopOpacity: 0.58,
 
             diffusionColor: accent,
-            diffusionMinRadiusPoints: 1.5,
+            diffusionMinRadiusPoints: 3.0,
             diffusionMaxRadiusPoints: 18.0,
-            diffusionMinRadiusFractionOfHeight: 0.02,
-            diffusionMaxRadiusFractionOfHeight: 0.30,
-            diffusionLayers: 12,
-            diffusionMaxAlpha: 0.22,
-            diffusionFalloffPower: 2.0,
-            diffusionUncertaintyAlphaFloor: 0.15,
+            diffusionMinRadiusFractionOfHeight: 0.04,
+            diffusionMaxRadiusFractionOfHeight: 0.35,
+            diffusionLayers: 18,
+            diffusionMaxAlpha: 0.30,
+            diffusionFalloffPower: 2.15,
+            diffusionUncertaintyAlphaFloor: 0.22,
 
             glowEnabled: true,
             glowColor: accent,
-            glowMaxRadiusPoints: 2.75,
+            glowMaxRadiusPoints: 2.6,
             glowMaxRadiusFractionOfHeight: 0.06,
             glowLayers: 4,
-            glowMaxAlpha: 0.08,
-            glowFalloffPower: 1.7,
+            glowMaxAlpha: 0.10,
+            glowFalloffPower: 1.65,
             glowCertaintyPower: 1.25
         )
 
