@@ -145,12 +145,9 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
-        let base: Date
-        if refreshSeconds <= 60 {
-            base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
-        } else {
-            base = now
-        }
+        // Important: use `now` as the base so a timeline reload inside the same minute
+        // produces a new entry date and forces a redraw on the Home Screen.
+        let base: Date = now
 
         let horizon: TimeInterval = 60 * 60
         let count = max(2, Int(horizon / refreshSeconds) + 1)
@@ -252,7 +249,7 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
         let snap = context.isPreview ? store.snapshotForRender(context: .preview) : store.loadSnapshot()
 
         let now = Date()
-        let base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
+        let base = now
 
         let count = 60
         var entries: [Entry] = []
@@ -372,7 +369,7 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
         let snap: WidgetWeaverCalendarSnapshot? = context.isPreview ? .sample() : store.loadSnapshot()
 
         let now = Date()
-        let base = Calendar.current.dateInterval(of: .minute, for: now)?.start ?? now
+        let base = now
 
         let count = 60
         var entries: [Entry] = []
