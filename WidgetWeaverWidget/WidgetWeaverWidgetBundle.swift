@@ -12,6 +12,7 @@ import SwiftUI
 struct WidgetWeaverWidgetBundle: WidgetBundle {
     var body: some Widget {
         WidgetWeaverWidget()
+        WidgetWeaverHomeScreenClockWidget()
         WidgetWeaverLockScreenWeatherWidget()
         WidgetWeaverLockScreenNextUpWidget()
         WidgetWeaverLockScreenStepsWidget()

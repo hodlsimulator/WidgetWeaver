@@ -10,6 +10,7 @@
 import SwiftUI
 
 enum RainSurfaceGeometry {
+
     static func wetRanges(from mask: [Bool]) -> [Range<Int>] {
         guard !mask.isEmpty else { return [] }
 
@@ -17,12 +18,15 @@ enum RainSurfaceGeometry {
         ranges.reserveCapacity(6)
 
         var start: Int? = nil
+
         for i in 0..<mask.count {
             if mask[i] {
                 if start == nil { start = i }
-            } else if let s = start {
-                ranges.append(s..<i)
-                start = nil
+            } else {
+                if let s = start {
+                    ranges.append(s..<i)
+                    start = nil
+                }
             }
         }
 
@@ -43,20 +47,21 @@ enum RainSurfaceGeometry {
         let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
         let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
 
-        var topPoints: [CGPoint] = []
-        topPoints.reserveCapacity(range.count + 2)
-        topPoints.append(CGPoint(x: startEdgeX, y: baselineY))
+        var points: [CGPoint] = []
+        points.reserveCapacity(range.count + 2)
+
+        points.append(CGPoint(x: startEdgeX, y: baselineY))
 
         for i in range {
             let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
             let y = baselineY - heights[i]
-            topPoints.append(CGPoint(x: x, y: y))
+            points.append(CGPoint(x: x, y: y))
         }
 
-        topPoints.append(CGPoint(x: endEdgeX, y: baselineY))
+        points.append(CGPoint(x: endEdgeX, y: baselineY))
 
         var path = Path()
-        addSmoothQuadSegments(&path, points: topPoints, moveToFirst: true)
+        addSmoothQuadSegments(&path, points: points, moveToFirst: true)
         path.closeSubpath()
         return path
     }
@@ -69,8 +74,8 @@ enum RainSurfaceGeometry {
         heights: [CGFloat]
     ) -> Path {
         guard let first = range.first else { return Path() }
-
         let last = max(first, range.upperBound - 1)
+
         let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
         let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
 
@@ -92,10 +97,16 @@ enum RainSurfaceGeometry {
         return path
     }
 
-    static func addSmoothQuadSegments(_ path: inout Path, points: [CGPoint], moveToFirst: Bool) {
+    static func addSmoothQuadSegments(
+        _ path: inout Path,
+        points: [CGPoint],
+        moveToFirst: Bool
+    ) {
         guard points.count >= 2 else { return }
 
-        if moveToFirst { path.move(to: points[0]) }
+        if moveToFirst {
+            path.move(to: points[0])
+        }
 
         if points.count == 2 {
             path.addLine(to: points[1])
@@ -112,7 +123,11 @@ enum RainSurfaceGeometry {
         path.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
     }
 
-    static func makeOutsideMaskPath(plotRect: CGRect, surfacePath: Path, padding: CGFloat) -> Path {
+    static func makeOutsideMaskPath(
+        plotRect: CGRect,
+        surfacePath: Path,
+        padding: CGFloat
+    ) -> Path {
         let pad = max(0, padding)
         var p = Path()
         p.addRect(plotRect.insetBy(dx: -pad, dy: -pad))

@@ -15,8 +15,8 @@ import Foundation
 import SwiftUI
 
 // MARK: - Configuration
-
 struct RainForecastSurfaceConfiguration: Hashable {
+
     // Background (usually handled by the chart stage view; kept here for flexibility)
     var backgroundColor: Color = .clear
     var backgroundOpacity: Double = 0.0
@@ -124,7 +124,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
 }
 
 // MARK: - View
-
 struct RainForecastSurfaceView: View {
     let intensities: [Double]
     let certainties: [Double]

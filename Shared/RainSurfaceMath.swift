@@ -11,7 +11,10 @@ import Foundation
 import SwiftUI
 
 enum RainSurfaceMath {
-    static func clamp01(_ v: Double) -> Double { max(0.0, min(1.0, v)) }
+
+    static func clamp01(_ v: Double) -> Double {
+        max(0.0, min(1.0, v))
+    }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
         let tt = max(0.0, min(1.0, t))
@@ -46,9 +49,11 @@ enum RainSurfaceMath {
 
         for i in 0..<sampleCount {
             let startEase: Double
-            if startN <= 1 {
+            if startN <= 0 {
                 startEase = 1.0
             } else if i >= startN {
+                startEase = 1.0
+            } else if startN == 1 {
                 startEase = 1.0
             } else {
                 let u = Double(i) / Double(max(1, startN - 1))
@@ -84,14 +89,17 @@ enum RainSurfaceMath {
         var tmp = values
 
         for _ in 0..<passes {
-            tmp[0] = out[0]
-            tmp[values.count - 1] = out[values.count - 1]
+            tmp = out
 
-            for i in 1..<(values.count - 1) {
-                tmp[i] = (out[i - 1] + out[i] + out[i + 1]) / 3.0
+            let last = tmp.count - 1
+            out[0] = (tmp[0] + tmp[1]) * 0.5
+            out[last] = (tmp[last - 1] + tmp[last]) * 0.5
+
+            if last >= 2 {
+                for i in 1..<(last) {
+                    out[i] = (tmp[i - 1] + tmp[i] + tmp[i + 1]) / 3.0
+                }
             }
-
-            out = tmp
         }
 
         return out

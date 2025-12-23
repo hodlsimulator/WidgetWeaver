@@ -31,7 +31,10 @@ struct RainForecastSurfaceRenderer {
         if configuration.backgroundOpacity > 0 {
             var bg = Path()
             bg.addRect(rect)
-            context.fill(bg, with: .color(configuration.backgroundColor.opacity(configuration.backgroundOpacity)))
+            context.fill(
+                bg,
+                with: .color(configuration.backgroundColor.opacity(configuration.backgroundOpacity))
+            )
         }
 
         let insetX = max(0, rect.width * configuration.edgeInsetFraction)
@@ -46,6 +49,7 @@ struct RainForecastSurfaceRenderer {
 
         let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
         let intensityCap = max(configuration.intensityCap, 0.000_001)
+
         let stepX = plotRect.width / CGFloat(n)
 
         let edgeFactors = RainSurfaceMath.edgeFactors(
@@ -61,24 +65,27 @@ struct RainForecastSurfaceRenderer {
         var certainty = [Double](repeating: 0, count: n)
 
         for i in 0..<n {
-            let rawI = max(0.0, intensities[i])
             let c = RainSurfaceMath.clamp01(certainties[i])
             certainty[i] = c
 
-            let isWet = rawI > configuration.wetThreshold
+            let rawI = max(0.0, intensities[i])
+            let edge = edgeFactors[i]
+
+            let isWet = (rawI > configuration.wetThreshold) && (edge > 0.000_01)
             wetMask[i] = isWet
+
             guard isWet else { continue }
 
             let frac = min(rawI / intensityCap, 1.0)
             let eased = pow(frac, configuration.intensityEasingPower)
-            let edge = edgeFactors[i]
 
             intensityNorm[i] = eased * edge
 
             var h = CGFloat(eased) * maxHeight
-            if h > 0 { h = max(h, minVisibleHeight) }
+            if h > 0 {
+                h = max(h, minVisibleHeight)
+            }
             h *= CGFloat(edge)
-
             heights[i] = h
         }
 
@@ -86,42 +93,65 @@ struct RainForecastSurfaceRenderer {
             heights = RainSurfaceMath.smooth(heights, passes: configuration.geometrySmoothingPasses)
         }
 
-        for i in 0..<n {
-            if heights[i] <= 0.000_01 {
-                wetMask[i] = false
-                intensityNorm[i] = 0.0
-            }
-        }
+        let wetRanges = RainSurfaceGeometry.wetRanges(from: wetMask)
+        var segments: [WetSegment] = []
+        segments.reserveCapacity(wetRanges.count)
 
-        let ranges = RainSurfaceGeometry.wetRanges(from: wetMask)
-        guard !ranges.isEmpty else {
-            RainSurfaceDrawing.drawBaseline(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-            return
-        }
-
-        let segments: [WetSegment] = ranges.map { range in
-            let surfacePath = RainSurfaceGeometry.makeSurfacePath(
-                for: range,
+        for r in wetRanges {
+            let surface = RainSurfaceGeometry.makeSurfacePath(
+                for: r,
                 plotRect: plotRect,
                 baselineY: baselineY,
                 stepX: stepX,
                 heights: heights
             )
-            let topEdgePath = RainSurfaceGeometry.makeTopEdgePath(
-                for: range,
+
+            let top = RainSurfaceGeometry.makeTopEdgePath(
+                for: r,
                 plotRect: plotRect,
                 baselineY: baselineY,
                 stepX: stepX,
                 heights: heights
             )
-            return WetSegment(range: range, surfacePath: surfacePath, topEdgePath: topEdgePath)
+
+            segments.append(.init(range: r, surfacePath: surface, topEdgePath: top))
         }
+
+        RainSurfaceDrawing.drawFill(
+            in: &context,
+            rect: plotRect,
+            baselineY: baselineY,
+            segments: segments,
+            configuration: configuration
+        )
+
+        RainSurfaceDrawing.drawInternalGrainIfEnabled(
+            in: &context,
+            plotRect: plotRect,
+            baselineY: baselineY,
+            stepX: stepX,
+            segments: segments,
+            heights: heights,
+            intensityNorm: intensityNorm,
+            certainty: certainty,
+            edgeFactors: edgeFactors,
+            configuration: configuration,
+            displayScale: displayScale
+        )
+
+        RainSurfaceDrawing.drawFuzzAndGlowIfEnabled(
+            in: &context,
+            plotRect: plotRect,
+            baselineY: baselineY,
+            stepX: stepX,
+            segments: segments,
+            heights: heights,
+            intensityNorm: intensityNorm,
+            certainty: certainty,
+            edgeFactors: edgeFactors,
+            configuration: configuration,
+            displayScale: displayScale
+        )
 
         RainSurfaceDrawing.drawBaseline(
             in: &context,
@@ -130,57 +160,5 @@ struct RainForecastSurfaceRenderer {
             configuration: configuration,
             displayScale: displayScale
         )
-
-        RainSurfaceDrawing.drawFill(
-            in: &context,
-            rect: rect,
-            baselineY: baselineY,
-            segments: segments,
-            configuration: configuration
-        )
-
-        if configuration.textureEnabled {
-            RainSurfaceDrawing.drawInternalGrainIfEnabled(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                stepX: stepX,
-                segments: segments,
-                heights: heights,
-                intensityNorm: intensityNorm,
-                certainty: certainty,
-                edgeFactors: edgeFactors,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-        }
-
-        if configuration.fuzzEnabled {
-            RainSurfaceDrawing.drawUncertaintyMist(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                stepX: stepX,
-                segments: segments,
-                heights: heights,
-                intensityNorm: intensityNorm,
-                certainty: certainty,
-                edgeFactors: edgeFactors,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-        }
-
-        if configuration.glowEnabled {
-            RainSurfaceDrawing.drawGlow(
-                in: &context,
-                maxHeight: maxHeight,
-                segments: segments,
-                intensityNorm: intensityNorm,
-                certainty: certainty,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-        }
     }
 }
