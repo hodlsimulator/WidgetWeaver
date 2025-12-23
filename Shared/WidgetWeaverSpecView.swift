@@ -28,6 +28,10 @@ public struct WidgetWeaverSpecView: View {
     @AppStorage(WidgetWeaverWeatherStore.Keys.attributionData, store: AppGroup.userDefaults)
     private var weatherAttributionData: Data = Data()
 
+    // Forces a re-render when the saved spec store changes (so Home Screen widgets update).
+    @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults)
+    private var specsData: Data = Data()
+
     public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext) {
         self.spec = spec
         self.family = family
@@ -37,8 +41,16 @@ public struct WidgetWeaverSpecView: View {
     public var body: some View {
         let _ = weatherSnapshotData
         let _ = weatherAttributionData
+        let _ = specsData
 
-        let resolved = spec.resolved(for: family).resolvingVariables()
+        let baseSpec: WidgetSpec = {
+            guard context == .widget else { return spec }
+            // Prefer the latest saved version of the same design ID when rendering in WidgetKit.
+            // This prevents stale timeline entries from keeping an old design on the Home Screen.
+            return WidgetSpecStore.shared.load(id: spec.id) ?? spec
+        }()
+
+        let resolved = baseSpec.resolved(for: family).resolvingVariables()
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
@@ -51,16 +63,12 @@ public struct WidgetWeaverSpecView: View {
                 switch layout.template {
                 case .classic:
                     classicTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-
                 case .hero:
                     heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-
                 case .poster:
                     posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-
                 case .weather:
                     weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
-
                 case .nextUpCalendar:
                     nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
                 }
@@ -193,6 +201,7 @@ public struct WidgetWeaverSpecView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
+
             Spacer(minLength: 0)
         }
     }
@@ -213,7 +222,10 @@ public struct WidgetWeaverSpecView: View {
                     .lineLimit(family == .systemSmall ? layout.secondaryLineLimitSmall : layout.secondaryLineLimit)
             }
         }
-        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: layout.alignment.alignment, vertical: .top))
+        .frame(
+            maxWidth: .infinity,
+            alignment: Alignment(horizontal: layout.alignment.alignment, vertical: .top)
+        )
     }
 
     private func contentStackHero(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec) -> some View {
@@ -232,7 +244,10 @@ public struct WidgetWeaverSpecView: View {
                     .lineLimit(family == .systemSmall ? layout.secondaryLineLimitSmall : layout.secondaryLineLimit)
             }
         }
-        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: layout.alignment.alignment, vertical: .top))
+        .frame(
+            maxWidth: .infinity,
+            alignment: Alignment(horizontal: layout.alignment.alignment, vertical: .top)
+        )
     }
 
     private func imageRowClassic(symbol: WidgetSymbol, style: StyleSpec, accent: Color) -> some View {
@@ -296,17 +311,21 @@ public struct WidgetWeaverSpecView: View {
 
     private func mapNowFormat(_ token: WidgetNowFormatToken) -> WidgetWeaverNowValueFormat {
         switch token {
-        case .iso8601: return .iso8601
-        case .unixSeconds: return .unixSeconds
-        case .unixMilliseconds: return .unixSeconds
-        case .dateOnly: return .dateOnly
-        case .timeOnly: return .timeOnly
+        case .iso8601:
+            return .iso8601
+        case .unixSeconds:
+            return .unixSeconds
+        case .unixMilliseconds:
+            return .unixSeconds
+        case .dateOnly:
+            return .dateOnly
+        case .timeOnly:
+            return .timeOnly
         }
     }
 
     private func actionButtonLabel(action: WidgetActionSpec, barStyle: WidgetActionButtonStyleToken, accent: Color) -> some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-
         let backgroundOpacity: Double = (barStyle == .prominent) ? 0.20 : 0.12
         let borderOpacity: Double = (barStyle == .prominent) ? 0.30 : 0.16
         let minHeight: CGFloat = 44
@@ -396,7 +415,6 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
         // Widget designs cannot change the widget’s shape.
         // The preview uses a stable approximation for the outer mask so sliders do not appear
         // to change the widget’s outer corners.
-
         let outerCornerRadius = Self.systemWidgetCornerRadius()
 
         switch context {
@@ -404,7 +422,6 @@ private struct WidgetWeaverBackgroundModifier: ViewModifier {
             content
                 .containerBackground(for: .widget) { Color.clear }
                 .clipShape(ContainerRelativeShape())
-
         case .preview, .simulator:
             content
                 .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))

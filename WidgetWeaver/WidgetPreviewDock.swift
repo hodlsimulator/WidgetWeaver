@@ -190,9 +190,15 @@ struct WidgetPreviewDock: View {
 
     private var familyMenu: some View {
         Menu {
-            Button { family = .systemSmall } label: { Label("Small", systemImage: "square") }
-            Button { family = .systemMedium } label: { Label("Medium", systemImage: "rectangle") }
-            Button { family = .systemLarge } label: { Label("Large", systemImage: "rectangle.portrait") }
+            Button { family = .systemSmall } label: {
+                Label("Small", systemImage: "square")
+            }
+            Button { family = .systemMedium } label: {
+                Label("Medium", systemImage: "rectangle")
+            }
+            Button { family = .systemLarge } label: {
+                Label("Large", systemImage: "rectangle.portrait")
+            }
         } label: {
             Text(familyAbbreviation)
                 .font(.caption.weight(.semibold))
@@ -563,6 +569,7 @@ private final class WidgetPreviewThumbnailRasterCache {
         cache.setObject(image, forKey: key as NSString)
     }
 
+    /// Cache key changes whenever the spec content changes (even if `updatedAt` is not bumped yet).
     func makeKey(
         spec: WidgetSpec,
         family: WidgetFamily,
@@ -570,18 +577,15 @@ private final class WidgetPreviewThumbnailRasterCache {
         colorScheme: ColorScheme,
         screenScale: CGFloat
     ) -> String {
+        let fingerprint = Self.contentFingerprint(for: spec)
+
         let updatedMs = Int(spec.updatedAt.timeIntervalSince1970 * 1000.0)
-
-        // Include a content-derived value so draft edits change the cache key,
-        // even when `updatedAt` is unchanged (i.e. before Save).
-        let specHash = String(UInt64(bitPattern: Int64(spec.hashValue)), radix: 16)
-
         let w = Int((size.width * 10.0).rounded())
         let h = Int((size.height * 10.0).rounded())
         let s = Int((screenScale * 10.0).rounded())
         let scheme = (colorScheme == .dark) ? "dark" : "light"
 
-        return "\(spec.id.uuidString)|\(updatedMs)|\(specHash)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
+        return "\(spec.id.uuidString)|\(fingerprint)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
     }
 
     func renderThumbnail(
@@ -610,7 +614,29 @@ private final class WidgetPreviewThumbnailRasterCache {
         let renderer = ImageRenderer(content: content)
         renderer.proposedSize = ProposedViewSize(thumbnailSize)
         renderer.scale = rendererScale
+
         return renderer.uiImage
+    }
+
+    private static func contentFingerprint(for spec: WidgetSpec) -> String {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(spec.normalised())
+            return fnv1a64Hex(data)
+        } catch {
+            return "0000000000000000"
+        }
+    }
+
+    private static func fnv1a64Hex(_ data: Data) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for b in data {
+            hash ^= UInt64(b)
+            hash &*= 1099511628211
+        }
+        return String(format: "%016llx", hash)
     }
 }
 
@@ -627,6 +653,7 @@ struct WidgetPreviewThumbnail: View {
     @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
 
     @State private var image: UIImage? = nil
+    @State private var imageKey: String? = nil
 
     var body: some View {
         if #available(iOS 16.0, *) {
@@ -642,7 +669,6 @@ struct WidgetPreviewThumbnail: View {
         let scale = height / base.height
         let scaledWidth = base.width * scale
         let thumbSize = CGSize(width: scaledWidth, height: height)
-
         let rendererScale = min(displayScale, 2.0)
 
         let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
@@ -656,8 +682,15 @@ struct WidgetPreviewThumbnail: View {
         let taskID = "\(key)|\(thumbnailRenderingEnabled ? 1 : 0)"
 
         return Group {
-            if let img = image ?? WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
+            if let img = image, imageKey == key {
                 Image(uiImage: img)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .frame(width: thumbSize.width, height: thumbSize.height, alignment: .center)
+                    .accessibilityHidden(true)
+            } else if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
+                Image(uiImage: cached)
                     .resizable()
                     .interpolation(.high)
                     .antialiased(true)
@@ -668,12 +701,17 @@ struct WidgetPreviewThumbnail: View {
             }
         }
         .task(id: taskID) {
-            guard thumbnailRenderingEnabled else { return }
+            // Always drop any stale in-memory image when the key changes.
+            if imageKey != key {
+                image = nil
+                imageKey = nil
+            }
 
-            image = nil
+            guard thumbnailRenderingEnabled else { return }
 
             if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
                 image = cached
+                imageKey = key
                 return
             }
 
@@ -682,6 +720,7 @@ struct WidgetPreviewThumbnail: View {
 
             if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
                 image = cached
+                imageKey = key
                 return
             }
 
@@ -696,6 +735,7 @@ struct WidgetPreviewThumbnail: View {
             ) {
                 WidgetPreviewThumbnailRasterCache.shared.store(rendered, forKey: key)
                 image = rendered
+                imageKey = key
             }
         }
     }
