@@ -85,20 +85,28 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
+        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
+        // chance01 treated as certainty (1 = very certain, 0 = very uncertain).
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
+        // Tuned to match the “forecast surface” mockups:
+        // - startEaseMinutes 6 to avoid sharp Now cut-in (diffusion/glow only)
+        // - endFadeMinutes 10 to make 60m crop intentional (diffusion/glow only)
+        // - diffusion restored: higher base alpha + enough layers to avoid banding
+        // - intensity gating that suppresses drizzle noise but keeps fuzz present
+        // - slightly stronger glow (still inward; never a stroke)
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
-            backgroundOpacity: 1.0,
+            backgroundOpacity: 0.0, // stage already draws black
 
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
@@ -109,44 +117,52 @@ private struct WeatherNowcastSurfacePlot: View {
             edgeInsetFraction: 0.00,
 
             baselineColor: accent,
-            baselineOpacity: 0.11,                // dropped vs previous
+            baselineOpacity: 0.095,
             baselineLineWidth: onePixel,
-            baselineInsetPoints: 6.0,             // aligns with internal padding
+            baselineInsetPoints: 6.0,
             baselineSoftWidthMultiplier: 2.6,
-            baselineSoftOpacityMultiplier: 0.32,
+            baselineSoftOpacityMultiplier: 0.28,
 
             fillBottomColor: accent,
             fillTopColor: accent,
             fillBottomOpacity: 0.18,
             fillTopOpacity: 0.92,
 
-            startEaseMinutes: 3,
+            startEaseMinutes: 6,
             endFadeMinutes: 10,
-            endFadeFloor: 0.20,
+            endFadeFloor: 0.0,
 
-            diffusionMinRadiusPoints: 1.6,
-            diffusionMaxRadiusPoints: 18.0,
+            diffusionLayers: 24,
+            diffusionFalloffPower: 2.2,
+
+            diffusionMinRadiusPoints: 1.5,
+            diffusionMaxRadiusPoints: 16.0,
             diffusionMinRadiusFractionOfHeight: 0.030,
             diffusionMaxRadiusFractionOfHeight: 0.34,
-            diffusionLayers: 24,                  // lighter than 32 for widget reliability
+            diffusionRadiusUncertaintyPower: 1.35,
 
-            diffusionMaxAlpha: 1.0,
-            diffusionBandFalloffPower: 2.10,
-            diffusionEdgeAlphaFloor: 0.02,
+            diffusionStrengthMaxMultiplier: 0.52, // baseDiffusionAlpha
+            diffusionStrengthMinMultiplier: 0.30,
+            diffusionStrengthUncertaintyPower: 1.15,
 
-            diffusionRadiusUncertaintyPower: 1.4,
-            diffusionStrengthUncertaintyPower: 1.2,
-            diffusionStrengthMinMultiplier: 0.25,
-            diffusionStrengthMaxMultiplier: 1.0,
+            diffusionDrizzleThreshold: 0.10,
+            diffusionLowIntensityGateMin: 0.55,
+
+            diffusionLightRainMeanThreshold: 0.18,
+            diffusionLightRainMaxRadiusScale: 0.80,
+            diffusionLightRainStrengthScale: 0.85,
+
+            diffusionStopStride: 2,
+            diffusionJitterAmplitudePoints: 0.35,
 
             glowEnabled: true,
             glowColor: accent,
-            glowMaxRadiusPoints: 2.8,
-            glowMaxRadiusFractionOfHeight: 0.075,
-            glowLayers: 5,
-            glowMaxAlpha: 0.14,
+            glowLayers: 6,
+            glowMaxAlpha: 0.18,
             glowFalloffPower: 1.75,
-            glowCertaintyPower: 1.6
+            glowCertaintyPower: 1.6,
+            glowMaxRadiusPoints: 3.2,
+            glowMaxRadiusFractionOfHeight: 0.075
         )
 
         RainForecastSurfaceView(
