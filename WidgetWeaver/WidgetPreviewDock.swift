@@ -569,13 +569,15 @@ private final class WidgetPreviewThumbnailRasterCache {
         cache.setObject(image, forKey: key as NSString)
     }
 
-    /// Cache key changes whenever the spec content changes (even if `updatedAt` is not bumped yet).
+    /// Cache key changes whenever the spec content changes (even if `updatedAt` is not bumped yet),
+    /// or when external rendering dependencies change (weather snapshot, variables, etc.).
     func makeKey(
         spec: WidgetSpec,
         family: WidgetFamily,
         size: CGSize,
         colorScheme: ColorScheme,
-        screenScale: CGFloat
+        screenScale: CGFloat,
+        dependencyFingerprint: String
     ) -> String {
         let fingerprint = Self.contentFingerprint(for: spec)
 
@@ -585,7 +587,7 @@ private final class WidgetPreviewThumbnailRasterCache {
         let s = Int((screenScale * 10.0).rounded())
         let scheme = (colorScheme == .dark) ? "dark" : "light"
 
-        return "\(spec.id.uuidString)|\(fingerprint)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)"
+        return "\(spec.id.uuidString)|\(fingerprint)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)|\(dependencyFingerprint)"
     }
 
     func renderThumbnail(
@@ -652,6 +654,17 @@ struct WidgetPreviewThumbnail: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
 
+    // These are inputs that can affect the rendered output without changing the WidgetSpec.
+    // Including them in the raster cache key prevents the collapsed preview from showing stale thumbnails.
+    @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults) private var variablesData: Data = Data()
+    @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults) private var specsData: Data = Data()
+
+    @AppStorage(WidgetWeaverWeatherStore.Keys.locationData, store: AppGroup.userDefaults) private var weatherLocationData: Data = Data()
+    @AppStorage(WidgetWeaverWeatherStore.Keys.snapshotData, store: AppGroup.userDefaults) private var weatherSnapshotData: Data = Data()
+    @AppStorage(WidgetWeaverWeatherStore.Keys.attributionData, store: AppGroup.userDefaults) private var weatherAttributionData: Data = Data()
+    @AppStorage(WidgetWeaverWeatherStore.Keys.unitPreference, store: AppGroup.userDefaults) private var weatherUnitPreferenceRaw: String = ""
+    @AppStorage(WidgetWeaverWeatherStore.Keys.lastError, store: AppGroup.userDefaults) private var weatherLastError: String = ""
+
     @State private var image: UIImage? = nil
     @State private var imageKey: String? = nil
 
@@ -671,12 +684,15 @@ struct WidgetPreviewThumbnail: View {
         let thumbSize = CGSize(width: scaledWidth, height: height)
         let rendererScale = min(displayScale, 2.0)
 
+        let dependencyFingerprint = buildDependencyFingerprint()
+
         let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
             spec: spec,
             family: family,
             size: thumbSize,
             colorScheme: colorScheme,
-            screenScale: rendererScale
+            screenScale: rendererScale,
+            dependencyFingerprint: dependencyFingerprint
         )
 
         let taskID = "\(key)|\(thumbnailRenderingEnabled ? 1 : 0)"
@@ -771,5 +787,32 @@ struct WidgetPreviewThumbnail: View {
         .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
         .frame(width: size.width, height: size.height, alignment: .center)
         .accessibilityHidden(true)
+    }
+
+    private func buildDependencyFingerprint() -> String {
+        let usesWeather = spec.normalised().usesWeatherRendering()
+
+        var parts: [String] = []
+        parts.append(fnv1a64Hex(variablesData))
+        parts.append(fnv1a64Hex(specsData))
+
+        if usesWeather {
+            parts.append(fnv1a64Hex(weatherLocationData))
+            parts.append(fnv1a64Hex(weatherSnapshotData))
+            parts.append(fnv1a64Hex(weatherAttributionData))
+            parts.append(fnv1a64Hex(Data(weatherUnitPreferenceRaw.utf8)))
+            parts.append(fnv1a64Hex(Data(weatherLastError.utf8)))
+        }
+
+        return parts.joined(separator: ".")
+    }
+
+    private func fnv1a64Hex(_ data: Data) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for b in data {
+            hash ^= UInt64(b)
+            hash &*= 1099511628211
+        }
+        return String(format: "%016llx", hash)
     }
 }

@@ -306,6 +306,19 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         UserDefaults.standard.synchronize()
     }
 
+    private func notifyWidgetsWeatherUpdated() {
+        #if canImport(WidgetKit)
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+        #endif
+    }
+
     private init(defaults: UserDefaults = AppGroup.userDefaults) {
         self.defaults = defaults
         self.encoder = JSONEncoder()
@@ -347,6 +360,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
             UserDefaults.standard.removeObject(forKey: Keys.locationData)
         }
         sync()
+        notifyWidgetsWeatherUpdated()
     }
 
     public func preferredCLLocation() -> CLLocation? {
@@ -390,6 +404,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         defaults.removeObject(forKey: Keys.snapshotData)
         UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         sync()
+        notifyWidgetsWeatherUpdated()
     }
 
     // MARK: Units
@@ -406,6 +421,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         defaults.set(preference.rawValue, forKey: Keys.unitPreference)
         UserDefaults.standard.set(preference.rawValue, forKey: Keys.unitPreference)
         sync()
+        notifyWidgetsWeatherUpdated()
     }
 
     public func resolvedUnitTemperature() -> UnitTemperature {
@@ -573,7 +589,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         let pct = Int(round(chance * 100.0))
         return String(pct)
     }
-    
+
     // MARK: Last error
 
     public func loadLastError() -> String? {
