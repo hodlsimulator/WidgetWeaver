@@ -98,12 +98,12 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Tuned to match the “forecast surface” mockups:
-        // - startEaseMinutes 6 to avoid sharp Now cut-in (diffusion/glow only)
-        // - endFadeMinutes 10 to make 60m crop intentional (diffusion/glow only)
-        // - diffusion restored: higher base alpha + enough layers to avoid banding
-        // - intensity gating that suppresses drizzle noise but keeps fuzz present
-        // - slightly stronger glow (still inward; never a stroke)
+        // Key “feel” targets:
+        // - fuzziness returns via plusLighter diffusion band (top zone)
+        // - no hard cut-in at Now (startEaseMinutes 6)
+        // - no hard crop at 60m (endFadeMinutes 10)
+        // - drizzle is calm: diffusion gated by intensity + light-rain restraint
+        // - glow is a little stronger but stays inward (never a stroke)
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
             backgroundOpacity: 0.0, // stage already draws black
@@ -117,11 +117,11 @@ private struct WeatherNowcastSurfacePlot: View {
             edgeInsetFraction: 0.00,
 
             baselineColor: accent,
-            baselineOpacity: 0.095,
+            baselineOpacity: 0.085,
             baselineLineWidth: onePixel,
             baselineInsetPoints: 6.0,
             baselineSoftWidthMultiplier: 2.6,
-            baselineSoftOpacityMultiplier: 0.28,
+            baselineSoftOpacityMultiplier: 0.26,
 
             fillBottomColor: accent,
             fillTopColor: accent,
@@ -136,13 +136,13 @@ private struct WeatherNowcastSurfacePlot: View {
             diffusionFalloffPower: 2.2,
 
             diffusionMinRadiusPoints: 1.5,
-            diffusionMaxRadiusPoints: 16.0,
+            diffusionMaxRadiusPoints: 18.0,
             diffusionMinRadiusFractionOfHeight: 0.030,
             diffusionMaxRadiusFractionOfHeight: 0.34,
             diffusionRadiusUncertaintyPower: 1.35,
 
-            diffusionStrengthMaxMultiplier: 0.52, // baseDiffusionAlpha
-            diffusionStrengthMinMultiplier: 0.30,
+            diffusionStrengthMax: 0.60,           // increase if needed: 0.64, 0.68
+            diffusionStrengthMinUncertainTerm: 0.30,
             diffusionStrengthUncertaintyPower: 1.15,
 
             diffusionDrizzleThreshold: 0.10,
@@ -154,14 +154,15 @@ private struct WeatherNowcastSurfacePlot: View {
 
             diffusionStopStride: 2,
             diffusionJitterAmplitudePoints: 0.35,
+            diffusionEdgeSofteningWidth: 0.08,
 
             glowEnabled: true,
             glowColor: accent,
             glowLayers: 6,
-            glowMaxAlpha: 0.18,
+            glowMaxAlpha: 0.22,
             glowFalloffPower: 1.75,
             glowCertaintyPower: 1.6,
-            glowMaxRadiusPoints: 3.2,
+            glowMaxRadiusPoints: 3.8,
             glowMaxRadiusFractionOfHeight: 0.075
         )
 

@@ -6,9 +6,9 @@
 //
 //  Forecast surface renderer (WidgetKit-safe):
 //  - One filled ribbon above a subtle baseline
-//  - Uncertainty shown as inward diffusion near the top edge (no outline, no second band)
-//  - Stronger left start-ease + right end-fade applied ONLY to diffusion/glow (not geometry)
-//  - Intensity gating to suppress fuzz in near-drizzle without crushing the effect
+//  - “Fuzziness” is a stacked top diffusion band (continuous contour, no bar columns)
+//  - Diffusion/glow taper at Now + 60m (rendering only; geometry unchanged)
+//  - Diffusion gated by certainty AND intensity (drizzle restraint)
 //  - Deterministic micro-jitter (optional) to break contour banding without flicker
 //
 
@@ -18,7 +18,7 @@ import SwiftUI
 // MARK: - Configuration
 
 struct RainForecastSurfaceConfiguration: Hashable {
-    // Background
+    // Background (usually handled by the chart stage view; keep here for flexibility)
     var backgroundColor: Color = .clear
     var backgroundOpacity: Double = 0.0
 
@@ -34,13 +34,13 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // Baseline (felt, not seen)
     var baselineColor: Color = .white
-    var baselineOpacity: Double = 0.10
+    var baselineOpacity: Double = 0.09
     var baselineLineWidth: CGFloat = 1.0
     var baselineInsetPoints: CGFloat = 6.0
     var baselineSoftWidthMultiplier: CGFloat = 2.6
-    var baselineSoftOpacityMultiplier: Double = 0.30
+    var baselineSoftOpacityMultiplier: Double = 0.28
 
-    // Core ribbon fill
+    // Core ribbon fill (matte)
     var fillBottomColor: Color = .blue
     var fillTopColor: Color = .blue
     var fillBottomOpacity: Double = 0.18
@@ -51,24 +51,24 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    // Diffusion behaviour (top soft zone)
+    // Diffusion band (stacked contours near the top edge)
     var diffusionLayers: Int = 24
     var diffusionFalloffPower: Double = 2.2
 
     // Uncertainty -> diffusion radius
     var diffusionMinRadiusPoints: CGFloat = 1.5
-    var diffusionMaxRadiusPoints: CGFloat = 16.0
+    var diffusionMaxRadiusPoints: CGFloat = 18.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.03
     var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.34
     var diffusionRadiusUncertaintyPower: Double = 1.35
 
     // Uncertainty -> diffusion strength
-    // The max multiplier is treated as baseDiffusionAlpha (recommended ~0.52).
-    var diffusionStrengthMaxMultiplier: Double = 0.52
-    var diffusionStrengthMinMultiplier: Double = 0.30
+    // Interpreted as base diffusion “energy” (works best with plusLighter)
+    var diffusionStrengthMax: Double = 0.60            // baseDiffusionAlpha (try 0.52–0.68)
+    var diffusionStrengthMinUncertainTerm: Double = 0.30 // lerp(0.30, 1.0, pow(u,...))
     var diffusionStrengthUncertaintyPower: Double = 1.15
 
-    // Intensity gating (keeps light rain calm)
+    // Intensity gating (keeps drizzle calm but present)
     var diffusionDrizzleThreshold: Double = 0.10
     var diffusionLowIntensityGateMin: Double = 0.55
 
@@ -77,20 +77,19 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var diffusionLightRainMaxRadiusScale: Double = 0.80
     var diffusionLightRainStrengthScale: Double = 0.85
 
-    // Anti-banding
-    // - stride reduces per-minute stop changes (helps vertical striping)
-    // - jitter breaks contour edge alignment (keep tiny; deterministic)
+    // Anti-banding controls
     var diffusionStopStride: Int = 2
-    var diffusionJitterAmplitudePoints: Double = 0.35   // ±0.175 px max
+    var diffusionJitterAmplitudePoints: Double = 0.35   // total range; per contour uses ±0.175
+    var diffusionEdgeSofteningWidth: Double = 0.08      // pushes diffusion peak slightly inward (avoids “stroke”)
 
-    // Glow (optional; inward concentration, never a stroke)
+    // Glow (optional; tight inward concentration, never a stroke)
     var glowEnabled: Bool = true
     var glowColor: Color = .blue
     var glowLayers: Int = 6
-    var glowMaxAlpha: Double = 0.18
+    var glowMaxAlpha: Double = 0.22
     var glowFalloffPower: Double = 1.75
     var glowCertaintyPower: Double = 1.6
-    var glowMaxRadiusPoints: CGFloat = 3.2
+    var glowMaxRadiusPoints: CGFloat = 3.8
     var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
 }
 
@@ -120,7 +119,6 @@ struct RainForecastSurfaceView: View {
 
             let rect = CGRect(origin: .zero, size: size)
 
-            // Background
             if configuration.backgroundOpacity > 0 {
                 var bg = Path()
                 bg.addRect(rect)
@@ -140,7 +138,6 @@ struct RainForecastSurfaceView: View {
             let intensityCap = max(configuration.intensityCap, 0.000_001)
             let stepX = plotRect.width / CGFloat(n)
 
-            // Boundary modifiers (rendering only)
             let edgeFactors = Self.edgeFactors(
                 sampleCount: n,
                 startEaseMinutes: configuration.startEaseMinutes,
@@ -158,7 +155,7 @@ struct RainForecastSurfaceView: View {
                 certaintyRaw[i] = Self.clamp01(certainties[i])
             }
 
-            // Smooth certainty for diffusion/glow ONLY (reduces vertical striping).
+            // Smooth certainty ONLY for diffusion/glow (reduces banding)
             let certaintySmooth = Self.smooth1D(values: certaintyRaw, passes: 2)
 
             for i in 0..<n {
@@ -183,29 +180,29 @@ struct RainForecastSurfaceView: View {
 
             let wetRanges = Self.wetRanges(from: wetMask)
             guard !wetRanges.isEmpty else {
-                Self.drawBaseline(
-                    in: &context,
-                    plotRect: plotRect,
-                    baselineY: baselineY,
-                    configuration: configuration
-                )
+                Self.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration)
                 return
             }
 
             // Light-rain restraint (summary intensity)
-            let meanIntensityNorm: Double = intensityNorm.reduce(0.0, +) / Double(max(1, n))
-            let lightRainRadiusScale: Double = (meanIntensityNorm < configuration.diffusionLightRainMeanThreshold) ? configuration.diffusionLightRainMaxRadiusScale : 1.0
-            let lightRainStrengthScale: Double = (meanIntensityNorm < configuration.diffusionLightRainMeanThreshold) ? configuration.diffusionLightRainStrengthScale : 1.0
+            let meanIntensityNorm = intensityNorm.reduce(0.0, +) / Double(max(1, n))
+            let isLightOverall = meanIntensityNorm < configuration.diffusionLightRainMeanThreshold
+            let lightRainRadiusScale = isLightOverall ? configuration.diffusionLightRainMaxRadiusScale : 1.0
+            let lightRainStrengthScale = isLightOverall ? configuration.diffusionLightRainStrengthScale : 1.0
 
-            // Diffusion radius bounds (scaled with size, clamped)
+            // Diffusion radius bounds (scaled with size)
             let minRadius = max(configuration.diffusionMinRadiusPoints, rect.height * configuration.diffusionMinRadiusFractionOfHeight)
-            let maxRadiusUnscaled = min(configuration.diffusionMaxRadiusPoints, rect.height * configuration.diffusionMaxRadiusFractionOfHeight)
-            let maxRadius = max(minRadius, maxRadiusUnscaled * CGFloat(lightRainRadiusScale))
 
-            // Per-sample diffusion + glow strengths (rendering only)
+            let sizeScale = Self.clamp(CGFloat(rect.height / 120.0), 0.8, 1.2)
+            let maxRadiusUnscaled = min(configuration.diffusionMaxRadiusPoints, rect.height * configuration.diffusionMaxRadiusFractionOfHeight)
+            let maxRadius = max(minRadius, maxRadiusUnscaled * sizeScale * CGFloat(lightRainRadiusScale))
+
+            // Per-sample diffusion radius/strength and glow strength
             var diffusionRadius = [CGFloat](repeating: 0, count: n)
             var diffusionStrength = [Double](repeating: 0, count: n)
             var glowStrength = [Double](repeating: 0, count: n)
+
+            let drizzleT = max(0.000_001, configuration.diffusionDrizzleThreshold)
 
             for i in 0..<n {
                 guard wetMask[i] else {
@@ -219,8 +216,7 @@ struct RainForecastSurfaceView: View {
                 let u = 1.0 - c
                 let iNorm = max(0.0, min(1.0, intensityNorm[i]))
 
-                // Intensity gate (do not crush fuzz to near-zero)
-                let drizzleT = max(0.000_001, configuration.diffusionDrizzleThreshold)
+                // Intensity gate (softened; never drops below configured min)
                 let diffusionGate: Double
                 if iNorm <= drizzleT {
                     let g = iNorm / drizzleT
@@ -229,26 +225,26 @@ struct RainForecastSurfaceView: View {
                     diffusionGate = 1.0
                 }
 
-                // Radius: lerp(min,max,pow(u,1.35)), then intensity gate
+                // Radius: lerp(min, max, pow(u, 1.35)) * diffusionGate
                 let uR = pow(u, configuration.diffusionRadiusUncertaintyPower)
                 var r = minRadius + (maxRadius - minRadius) * CGFloat(uR)
                 r = r * CGFloat(diffusionGate)
 
-                // Clamp diffusion inside ribbon
+                // Keep diffusion within the ribbon
                 r = min(r, heights[i] * 0.85)
                 diffusionRadius[i] = max(0, r)
 
-                // Strength: baseDiffusionAlpha * lerp(0.30,1,pow(u,1.15))
-                let baseAlpha = max(0.0, min(1.0, configuration.diffusionStrengthMaxMultiplier * lightRainStrengthScale))
+                // Strength: baseDiffusionAlpha * lerp(0.30, 1.0, pow(u, 1.15))
+                let baseAlpha = max(0.0, min(1.0, configuration.diffusionStrengthMax * lightRainStrengthScale))
                 let uS = pow(u, configuration.diffusionStrengthUncertaintyPower)
-                let sTerm = Self.lerp(configuration.diffusionStrengthMinMultiplier, 1.0, uS)
+                let sTerm = Self.lerp(configuration.diffusionStrengthMinUncertainTerm, 1.0, uS)
 
-                // Apply gating + boundary modifiers ONLY to diffusion/glow
+                // Apply boundary modifiers to diffusion only (rendering only)
                 let boundary = edgeFactors[i]
                 let s = baseAlpha * sTerm * diffusionGate * boundary
                 diffusionStrength[i] = max(0.0, min(1.0, s))
 
-                // Glow: glowBase * pow(c,1.6), then boundary modifiers
+                // Glow: glowBase * pow(c, 1.6) * boundary
                 if configuration.glowEnabled {
                     let gBase = max(0.0, min(1.0, configuration.glowMaxAlpha))
                     let gTerm = pow(max(0.0, min(1.0, c)), configuration.glowCertaintyPower)
@@ -262,8 +258,9 @@ struct RainForecastSurfaceView: View {
                 }
             }
 
-            // Additional smoothing for diffusionStrength ONLY (reduces column-like striping)
-            diffusionStrength = Self.smooth1D(values: diffusionStrength, passes: 1, preserveZerosUsing: wetMask)
+            // Smooth diffusion values only (reduces vertical striping)
+            diffusionStrength = Self.smooth1D(values: diffusionStrength, passes: 2, preserveZerosUsing: wetMask)
+            diffusionRadius = Self.smoothRadius(values: diffusionRadius, passes: 1, preserveZerosUsing: wetMask)
 
             // Core ribbon shading (matte vertical gradient)
             let bodyGradient = Gradient(stops: [
@@ -276,7 +273,9 @@ struct RainForecastSurfaceView: View {
                 endPoint: CGPoint(x: plotRect.midX, y: rect.minY)
             )
 
-            // Draw segments
+            // Save and restore blend mode
+            let savedBlendMode = context.blendMode
+
             for range in wetRanges {
                 let segment = Self.buildSegmentPoints(
                     range: range,
@@ -289,7 +288,7 @@ struct RainForecastSurfaceView: View {
                 let topPoints = segment.topPoints
                 let sampleIndexForPoint = segment.sampleIndexForPoint
 
-                // Core ribbon (geometry)
+                // Core ribbon geometry (unchanged)
                 do {
                     var ribbon = Path()
                     Self.addSmoothQuadSegments(&ribbon, points: topPoints, moveToFirst: true)
@@ -298,21 +297,37 @@ struct RainForecastSurfaceView: View {
                     context.fill(ribbon, with: bodyShading)
                 }
 
-                // Diffusion (soft top zone): stacked contour strips inside the ribbon
-                let K = max(14, configuration.diffusionLayers)
-                if K >= 2 {
+                // Segment max radius check
+                var maxSegRadius: CGFloat = 0
+                for si in range {
+                    maxSegRadius = max(maxSegRadius, diffusionRadius[si])
+                }
+
+                // Diffusion band (stacked contour strips)
+                if maxSegRadius > 0, configuration.diffusionLayers >= 2 {
+                    let K = max(14, configuration.diffusionLayers)
                     let pExp = max(1.2, configuration.diffusionFalloffPower)
-                    let jitterAmp = max(0.0, configuration.diffusionJitterAmplitudePoints)
+
+                    let jitterTotal = max(0.0, configuration.diffusionJitterAmplitudePoints)
+                    let jitterHalf = 0.5 * jitterTotal
+
+                    let edgeSoftW = max(0.001, configuration.diffusionEdgeSofteningWidth)
+                    let stride = max(1, configuration.diffusionStopStride)
+
+                    context.blendMode = .plusLighter
 
                     for k in 0..<(K - 1) {
                         let t0 = Double(k) / Double(K - 1)
                         let t1 = Double(k + 1) / Double(K - 1)
                         let tMid = 0.5 * (t0 + t1)
 
-                        // Falloff strongest near the edge; soften immediate edge to avoid a hard "line"
-                        // This keeps fuzz present but avoids reading as a stroke.
-                        let edgeSoftIn = Self.smoothstep01(min(1.0, tMid / 0.10))
-                        let falloff = pow(1.0 - tMid, pExp) * edgeSoftIn
+                        // Alpha profile (strong at top, fades inward): (1 - t)^p
+                        // Edge softening prevents a crisp “stroke” at the absolute top edge.
+                        let inwardFade = pow(1.0 - tMid, pExp)
+                        let edgeSoftIn = Self.smoothstep01(min(1.0, tMid / edgeSoftW))
+                        let layerWeight = inwardFade * edgeSoftIn
+
+                        if layerWeight <= 0.000_01 { continue }
 
                         var contourA: [CGPoint] = []
                         var contourB: [CGPoint] = []
@@ -330,12 +345,13 @@ struct RainForecastSurfaceView: View {
                                 continue
                             }
 
-                            let j0 = (Self.hash01(si * 131 + k * 911) - 0.5) * jitterAmp
-                            let j1 = (Self.hash01(si * 131 + (k + 1) * 911) - 0.5) * jitterAmp
+                            let d0 = (Self.hash01(si * 131 + k * 911) - 0.5) * jitterTotal
+                            let d1 = (Self.hash01(si * 131 + (k + 1) * 911) - 0.5) * jitterTotal
 
-                            var o0 = r * t0 + j0
-                            var o1 = r * t1 + j1
-                            if o1 < o0 { o1 = o0 }
+                            // Tiny deterministic jitter breaks band edges without looking noisy.
+                            let o0 = max(0.0, r * t0 + max(-jitterHalf, min(jitterHalf, d0)))
+                            let o1raw = r * t1 + max(-jitterHalf, min(jitterHalf, d1))
+                            let o1 = max(o0, max(0.0, o1raw))
 
                             contourA.append(CGPoint(x: p.x, y: min(baselineY, p.y + o0)))
                             contourB.append(CGPoint(x: p.x, y: min(baselineY, p.y + o1)))
@@ -347,15 +363,14 @@ struct RainForecastSurfaceView: View {
                         Self.addSmoothQuadSegments(&strip, points: contourB.reversed(), moveToFirst: false)
                         strip.closeSubpath()
 
-                        // Horizontal alpha variation (downsampled to reduce striping)
                         let stops = Self.buildStops(
                             points: topPoints,
                             sampleIndexForPoint: sampleIndexForPoint,
                             plotMinX: plotRect.minX,
                             plotMaxX: plotRect.maxX,
-                            stride: max(1, configuration.diffusionStopStride)
+                            stride: stride
                         ) { si in
-                            let a = diffusionStrength[si] * falloff
+                            let a = diffusionStrength[si] * layerWeight
                             return configuration.fillTopColor.opacity(max(0.0, min(1.0, a)))
                         }
 
@@ -369,14 +384,17 @@ struct RainForecastSurfaceView: View {
                             context.fill(strip, with: shading)
                         }
                     }
+
+                    context.blendMode = savedBlendMode
                 }
 
-                // Glow: tight inward concentration clipped inside the ribbon
-                if configuration.glowEnabled, configuration.glowMaxAlpha > 0 {
-                    let glowLayers = max(3, configuration.glowLayers)
+                // Glow: tight inward concentration, tapered at ends
+                if configuration.glowEnabled, configuration.glowLayers >= 2 {
+                    let glowLayers = max(4, configuration.glowLayers)
 
-                    let glowRadiusMaxUnscaled = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
-                    let glowRadiusMax = max(0.0, glowRadiusMaxUnscaled)
+                    let glowRadiusMax = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
+
+                    context.blendMode = .plusLighter
 
                     for k in 0..<(glowLayers - 1) {
                         let t0 = Double(k) / Double(glowLayers - 1)
@@ -384,6 +402,7 @@ struct RainForecastSurfaceView: View {
                         let tMid = 0.5 * (t0 + t1)
 
                         let falloff = pow(1.0 - tMid, max(1.0, configuration.glowFalloffPower))
+                        if falloff <= 0.000_01 { continue }
 
                         var contourA: [CGPoint] = []
                         var contourB: [CGPoint] = []
@@ -401,9 +420,8 @@ struct RainForecastSurfaceView: View {
                                 continue
                             }
 
-                            // Tight radius, clipped inside ribbon
-                            let rMax = min(Double(glowRadiusMax), h * 0.75)
-                            let r = max(0.0, rMax)
+                            let rMaxByHeight = min(Double(glowRadiusMax), h * 0.75)
+                            let r = max(0.0, rMaxByHeight)
 
                             contourA.append(CGPoint(x: p.x, y: min(baselineY, p.y + r * t0)))
                             contourB.append(CGPoint(x: p.x, y: min(baselineY, p.y + r * t1)))
@@ -436,16 +454,13 @@ struct RainForecastSurfaceView: View {
                             context.fill(strip, with: shading)
                         }
                     }
+
+                    context.blendMode = savedBlendMode
                 }
             }
 
             // Baseline on top
-            Self.drawBaseline(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                configuration: configuration
-            )
+            Self.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration)
         }
     }
 }
@@ -461,6 +476,10 @@ private extension RainForecastSurfaceView {
 
     static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
+    }
+
+    static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+        max(lo, min(hi, v))
     }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
@@ -561,7 +580,6 @@ private extension RainForecastSurfaceView {
         points.reserveCapacity(range.count + 2)
         sampleMap.reserveCapacity(range.count + 2)
 
-        // baseline cap
         points.append(CGPoint(x: startEdgeX, y: baselineY))
         sampleMap.append(range.lowerBound)
 
@@ -572,7 +590,6 @@ private extension RainForecastSurfaceView {
             sampleMap.append(i)
         }
 
-        // baseline cap
         points.append(CGPoint(x: endEdgeX, y: baselineY))
         sampleMap.append(max(range.lowerBound, range.upperBound - 1))
 
@@ -680,7 +697,6 @@ private extension RainForecastSurfaceView {
             }
         }
 
-        // Ensure at least two stops
         if stops.count < 2 {
             let loc0 = safeLocation01(x: points.first!.x, minX: plotMinX, maxX: plotMaxX)
             let loc1 = safeLocation01(x: points.last!.x, minX: plotMinX, maxX: plotMaxX)
@@ -709,8 +725,30 @@ private extension RainForecastSurfaceView {
                 let i1 = i
                 let i2 = min(out.count - 1, i + 1)
 
-                let v = out[i0] * 0.25 + out[i1] * 0.50 + out[i2] * 0.25
-                next[i] = v
+                next[i] = out[i0] * 0.25 + out[i1] * 0.50 + out[i2] * 0.25
+            }
+            out = next
+        }
+        return out
+    }
+
+    static func smoothRadius(values: [CGFloat], passes: Int, preserveZerosUsing mask: [Bool]? = nil) -> [CGFloat] {
+        guard values.count >= 3, passes > 0 else { return values }
+
+        var out = values
+        for _ in 0..<passes {
+            var next = out
+            for i in 0..<out.count {
+                if let m = mask, i < m.count, m[i] == false {
+                    next[i] = 0
+                    continue
+                }
+
+                let i0 = max(0, i - 1)
+                let i1 = i
+                let i2 = min(out.count - 1, i + 1)
+
+                next[i] = out[i0] * 0.25 + out[i1] * 0.50 + out[i2] * 0.25
             }
             out = next
         }
