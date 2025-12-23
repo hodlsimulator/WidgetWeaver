@@ -21,7 +21,13 @@ struct WeatherNowcastChart: View {
             let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
-                WeatherGlassBackground(cornerRadius: 10)
+                // Temporary “black stage” so the surface read matches the mockups.
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.black.opacity(1.0))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
 
                 if points.isEmpty {
                     Text("—")
@@ -92,45 +98,51 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Tuned for a visibly diffused top edge:
-        // - diffusionMaxAlpha is 1.0 because the cap is part of the fill (not an overlay).
-        // - diffusionUncertaintyAlphaFloor controls how “present” the very top edge is.
+        // Tuned to read like the first mockup (no streak texture):
+        // - Black background
+        // - Matte body gradient
+        // - Wide diffusion when uncertain, tight when certain
+        // - Baseline is a faint accent line
+        // - Tight inward glow near ridge
         let cfg = RainForecastSurfaceConfiguration(
+            backgroundColor: .black,
+            backgroundOpacity: 1.0,
+
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
 
             intensityEasingPower: 0.75,
-            minVisibleHeightFraction: 0.065,
+            minVisibleHeightFraction: 0.030,
 
             baselineYFraction: 0.82,
-            edgeInsetFraction: 0.00,
+            edgeInsetFraction: 0.025,
 
-            baselineColor: .white,
-            baselineOpacity: 0.12,
+            baselineColor: accent,
+            baselineOpacity: 0.18,
             baselineLineWidth: onePixel,
 
             fillBottomColor: accent,
             fillTopColor: accent,
-            fillBottomOpacity: 0.14,
-            fillTopOpacity: 0.62,
+            fillBottomOpacity: 0.18,
+            fillTopOpacity: 0.92,
 
-            diffusionMinRadiusPoints: 3.0,
-            diffusionMaxRadiusPoints: 18.0,
-            diffusionMinRadiusFractionOfHeight: 0.04,
-            diffusionMaxRadiusFractionOfHeight: 0.35,
-            diffusionLayers: 24,
+            diffusionMinRadiusPoints: 2.0,
+            diffusionMaxRadiusPoints: 22.0,
+            diffusionMinRadiusFractionOfHeight: 0.035,
+            diffusionMaxRadiusFractionOfHeight: 0.40,
+            diffusionLayers: 32,
             diffusionMaxAlpha: 1.0,
-            diffusionFalloffPower: 1.75,
-            diffusionUncertaintyAlphaFloor: 0.10,
+            diffusionFalloffPower: 2.25,
+            diffusionUncertaintyAlphaFloor: 0.02,
 
             glowEnabled: true,
             glowColor: accent,
-            glowMaxRadiusPoints: 2.6,
-            glowMaxRadiusFractionOfHeight: 0.06,
-            glowLayers: 4,
-            glowMaxAlpha: 0.10,
-            glowFalloffPower: 1.65,
-            glowCertaintyPower: 1.25
+            glowMaxRadiusPoints: 3.0,
+            glowMaxRadiusFractionOfHeight: 0.08,
+            glowLayers: 6,
+            glowMaxAlpha: 0.16,
+            glowFalloffPower: 1.75,
+            glowCertaintyPower: 1.15
         )
 
         RainForecastSurfaceView(
