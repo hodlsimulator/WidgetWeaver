@@ -7,6 +7,13 @@
 //  Nowcast chart using RainForecastSurfaceView.
 //
 
+//
+//  WidgetWeaverWeatherTemplateNowcastChart.swift
+//  WidgetWeaver
+//
+//  Nowcast chart using RainForecastSurfaceView.
+//
+
 import Foundation
 import SwiftUI
 
@@ -54,14 +61,11 @@ private struct WeatherNowcastAxisLabels: View {
     var body: some View {
         VStack {
             Spacer(minLength: 0)
-
             HStack {
                 Text("Now")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
-
                 Spacer(minLength: 0)
-
                 Text("60m")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -91,7 +95,7 @@ private struct WeatherNowcastSurfacePlot: View {
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // chance01 is treated as certainty for fuzz:
+        // chance01 is treated as certainty for uncertainty mist:
         // - certainty 1.0 => minimal fuzz
         // - certainty 0.0 => maximum fuzz
         let certainties: [Double] = samples.map { s in
@@ -100,90 +104,83 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Tuning targets vs mock:
-        // - stronger internal streak texture
-        // - fuzz/spray above the top edge scales with (1 - chance)
-        // - glow remains tight (no “stroke” outline)
+        // Target look:
+        // - no internal streaks
+        // - fuzziness expresses uncertainty (1 - chance)
+        // - glow is tight and additive
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
             backgroundOpacity: 0.0,
-
             intensityCap: max(maxIntensityMMPerHour, 0.000_001),
             wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
             intensityEasingPower: 0.75,
             minVisibleHeightFraction: 0.030,
-
             geometrySmoothingPasses: 1,
-
             baselineYFraction: 0.82,
             edgeInsetFraction: 0.00,
-
             baselineColor: accent,
             baselineOpacity: 0.085,
             baselineLineWidth: onePixel,
             baselineInsetPoints: 6.0,
             baselineSoftWidthMultiplier: 2.6,
             baselineSoftOpacityMultiplier: 0.26,
-
             fillBottomColor: accent,
             fillTopColor: accent,
-            fillBottomOpacity: 0.18,
-            fillTopOpacity: 0.92,
-
+            fillBottomOpacity: 0.16,
+            fillTopOpacity: 0.94,
             startEaseMinutes: 6,
             endFadeMinutes: 10,
             endFadeFloor: 0.0,
 
-            diffusionLayers: 30,
-            diffusionFalloffPower: 2.2,
-
-            diffusionMinRadiusPoints: 1.8,
-            diffusionMaxRadiusPoints: 24.0,
+            // Mist tuning (uncertainty halo)
+            diffusionLayers: 36,
+            diffusionFalloffPower: 2.35,
+            diffusionMinRadiusPoints: 1.6,
+            diffusionMaxRadiusPoints: 28.0,
             diffusionMinRadiusFractionOfHeight: 0.030,
-            diffusionMaxRadiusFractionOfHeight: 0.40,
+            diffusionMaxRadiusFractionOfHeight: 0.46,
             diffusionRadiusUncertaintyPower: 1.25,
-
-            diffusionStrengthMax: 0.78,
-            diffusionStrengthMinUncertainTerm: 0.32,
-            diffusionStrengthUncertaintyPower: 1.10,
-
+            diffusionStrengthMax: 0.90,
+            diffusionStrengthMinUncertainTerm: 0.22,
+            diffusionStrengthUncertaintyPower: 1.20,
             diffusionDrizzleThreshold: 0.10,
             diffusionLowIntensityGateMin: 0.55,
-
             diffusionLightRainMeanThreshold: 0.18,
-            diffusionLightRainMaxRadiusScale: 0.85,
+            diffusionLightRainMaxRadiusScale: 0.88,
             diffusionLightRainStrengthScale: 0.90,
-
             diffusionStopStride: 2,
             diffusionJitterAmplitudePoints: 0.35,
             diffusionEdgeSofteningWidth: 0.08,
 
-            textureEnabled: true,
-            textureMaxAlpha: 0.26,
-            textureMinAlpha: 0.05,
+            // Disable streaks
+            textureEnabled: false,
+            textureMaxAlpha: 0.00,
+            textureMinAlpha: 0.00,
             textureIntensityPower: 0.70,
-            textureUncertaintyAlphaBoost: 0.45,
-            textureStreaksMin: 1,
-            textureStreaksMax: 3,
+            textureUncertaintyAlphaBoost: 0.0,
+            textureStreaksMin: 0,
+            textureStreaksMax: 0,
             textureLineWidthMultiplier: 0.70,
-            textureBlurRadiusPoints: 0.65,
+            textureBlurRadiusPoints: 0.0,
             textureTopInsetFractionOfHeight: 0.02,
 
+            // Mist layer visual
             fuzzEnabled: true,
-            fuzzGlobalBlurRadiusPoints: 1.15,
-            fuzzLineWidthMultiplier: 0.70,
-            fuzzLengthMultiplier: 1.20,
+            fuzzGlobalBlurRadiusPoints: 0.70,
+            fuzzLineWidthMultiplier: 0.95,
+            fuzzLengthMultiplier: 1.10,
             fuzzDotsEnabled: true,
-            fuzzDotsPerSampleMax: 3,
+            fuzzDotsPerSampleMax: 6,
 
+            // Glow
             glowEnabled: true,
             glowColor: accent,
-            glowLayers: 6,
-            glowMaxAlpha: 0.24,
-            glowFalloffPower: 1.75,
-            glowCertaintyPower: 1.6,
-            glowMaxRadiusPoints: 4.0,
-            glowMaxRadiusFractionOfHeight: 0.085
+            glowLayers: 7,
+            glowMaxAlpha: 0.28,
+            glowFalloffPower: 1.70,
+            glowCertaintyPower: 1.55,
+            glowMaxRadiusPoints: 5.0,
+            glowMaxRadiusFractionOfHeight: 0.095
         )
 
         RainForecastSurfaceView(

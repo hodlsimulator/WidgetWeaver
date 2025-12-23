@@ -11,6 +11,18 @@
 //  - Deterministic pseudo-random jitter (stable across renders)
 //
 
+//
+//  RainForecastSurfaceView.swift
+//  WidgetWeaver
+//
+//  Forecast surface renderer (WidgetKit-safe).
+//  Goals:
+//  - One filled ribbon above a subtle baseline
+//  - Uncertainty is expressed as a fuzzy “mist” around the top edge
+//  - Certainty stays smooth/crisp (minimal fuzz)
+//  - Optional tight glow (no hard outline)
+//
+
 import Foundation
 import SwiftUI
 
@@ -83,7 +95,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var diffusionJitterAmplitudePoints: Double = 0.35
     var diffusionEdgeSofteningWidth: Double = 0.08
 
-    // Internal texture (vertical streaks inside the ribbon)
+    // Internal texture (kept for compatibility; can be disabled by callers)
     var textureEnabled: Bool = true
     var textureMaxAlpha: Double = 0.22
     var textureMinAlpha: Double = 0.04
@@ -95,7 +107,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var textureBlurRadiusPoints: CGFloat = 0.6
     var textureTopInsetFractionOfHeight: CGFloat = 0.02
 
-    // Top fuzz/spray (uncertainty / chance)
+    // Top fuzz / uncertainty mist
     var fuzzEnabled: Bool = true
     var fuzzGlobalBlurRadiusPoints: CGFloat = 1.0
     var fuzzLineWidthMultiplier: CGFloat = 0.70
@@ -103,7 +115,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzDotsEnabled: Bool = true
     var fuzzDotsPerSampleMax: Int = 3
 
-    // Glow (optional; tight inward concentration, never a stroke)
+    // Glow (optional; tight inward concentration, never a hard outline)
     var glowEnabled: Bool = true
     var glowColor: Color = .blue
     var glowLayers: Int = 6
@@ -148,13 +160,13 @@ struct RainForecastSurfaceView: View {
 
 // MARK: - Renderer
 
-private struct RainForecastSurfaceRenderer {
+struct RainForecastSurfaceRenderer {
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
     let displayScale: CGFloat
 
-    private struct WetSegment {
+    struct WetSegment {
         let range: Range<Int>
         let surfacePath: Path
         let topEdgePath: Path
@@ -177,15 +189,16 @@ private struct RainForecastSurfaceRenderer {
         guard plotRect.width > 0, plotRect.height > 0 else { return }
 
         var baselineY = rect.minY + rect.height * configuration.baselineYFraction
-        baselineY = Helpers.alignToPixelCenter(baselineY, displayScale: displayScale)
+        baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
 
         let maxHeight = max(0, baselineY - rect.minY)
-        let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
+        guard maxHeight > 0 else { return }
 
+        let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
         let intensityCap = max(configuration.intensityCap, 0.000_001)
         let stepX = plotRect.width / CGFloat(n)
 
-        let edgeFactors = Helpers.edgeFactors(
+        let edgeFactors = RainSurfaceMath.edgeFactors(
             sampleCount: n,
             startEaseMinutes: configuration.startEaseMinutes,
             endFadeMinutes: configuration.endFadeMinutes,
@@ -199,7 +212,7 @@ private struct RainForecastSurfaceRenderer {
 
         for i in 0..<n {
             let rawI = max(0.0, intensities[i])
-            let c = Helpers.clamp01(certainties[i])
+            let c = RainSurfaceMath.clamp01(certainties[i])
             certainty[i] = c
 
             let isWet = rawI > configuration.wetThreshold
@@ -208,186 +221,274 @@ private struct RainForecastSurfaceRenderer {
 
             let frac = min(rawI / intensityCap, 1.0)
             let eased = pow(frac, configuration.intensityEasingPower)
-            intensityNorm[i] = eased
+            let edge = edgeFactors[i]
+
+            intensityNorm[i] = eased * edge
 
             var h = CGFloat(eased) * maxHeight
             if h > 0 { h = max(h, minVisibleHeight) }
+            h *= CGFloat(edge)
+
             heights[i] = h
         }
 
         if configuration.geometrySmoothingPasses > 0 {
-            heights = Helpers.smooth(heights, passes: configuration.geometrySmoothingPasses)
-            for i in 0..<n {
-                if !wetMask[i] {
-                    heights[i] = 0
-                } else {
-                    heights[i] = max(heights[i], minVisibleHeight)
-                }
+            heights = RainSurfaceMath.smooth(heights, passes: configuration.geometrySmoothingPasses)
+        }
+
+        for i in 0..<n {
+            if heights[i] <= 0.000_01 {
+                wetMask[i] = false
+                intensityNorm[i] = 0.0
             }
         }
 
-        let wetRanges = Helpers.wetRanges(from: wetMask)
-        guard !wetRanges.isEmpty else {
-            Helpers.drawBaseline(
+        let ranges = RainSurfaceGeometry.wetRanges(from: wetMask)
+        guard !ranges.isEmpty else {
+            RainSurfaceDrawing.drawBaseline(
                 in: &context,
                 plotRect: plotRect,
                 baselineY: baselineY,
-                configuration: configuration
+                configuration: configuration,
+                displayScale: displayScale
             )
             return
         }
 
-        // Light-rain restraint (summary intensity)
-        let meanIntensityNorm = intensityNorm.reduce(0.0, +) / Double(max(1, n))
-        let isLightOverall = meanIntensityNorm < configuration.diffusionLightRainMeanThreshold
-        let lightRainRadiusScale = isLightOverall ? configuration.diffusionLightRainMaxRadiusScale : 1.0
-        let lightRainStrengthScale = isLightOverall ? configuration.diffusionLightRainStrengthScale : 1.0
-
-        // Diffusion radius bounds (scaled with size)
-        let minRadius = max(configuration.diffusionMinRadiusPoints, rect.height * configuration.diffusionMinRadiusFractionOfHeight)
-        let maxRadiusUnscaled = min(configuration.diffusionMaxRadiusPoints, rect.height * configuration.diffusionMaxRadiusFractionOfHeight)
-        let maxRadius = max(minRadius, maxRadiusUnscaled * CGFloat(lightRainRadiusScale))
-
-        // Per-sample diffusion radius/strength and glow strength
-        var diffusionRadius = [CGFloat](repeating: 0, count: n)
-        var diffusionStrength = [Double](repeating: 0, count: n)
-        var glowStrength = [Double](repeating: 0, count: n)
-
-        let drizzleT = max(0.000_001, configuration.diffusionDrizzleThreshold)
-
-        for i in 0..<n {
-            guard wetMask[i] else { continue }
-
-            let certainty01 = certainty[i]
-            let uncertainty01 = 1.0 - certainty01
-
-            let uRadiusT = pow(uncertainty01, configuration.diffusionRadiusUncertaintyPower)
-            diffusionRadius[i] = CGFloat(Helpers.lerp(Double(minRadius), Double(maxRadius), uRadiusT))
-
-            let uStrengthT = pow(uncertainty01, configuration.diffusionStrengthUncertaintyPower)
-            let uncertainTerm = Helpers.lerp(configuration.diffusionStrengthMinUncertainTerm, 1.0, uStrengthT)
-
-            var strength = configuration.diffusionStrengthMax * uncertainTerm
-
-            let iNorm = intensityNorm[i]
-            if iNorm < drizzleT {
-                let t = iNorm / drizzleT
-                let gate = Helpers.lerp(configuration.diffusionLowIntensityGateMin, 1.0, t)
-                strength *= gate
-            }
-
-            strength *= edgeFactors[i]
-            strength *= lightRainStrengthScale
-            diffusionStrength[i] = max(0.0, strength)
-
-            glowStrength[i] = pow(certainty01, configuration.glowCertaintyPower) * edgeFactors[i]
-        }
-
-        // Build segments once (paths reused by fill + texture + glow)
-        let segments: [WetSegment] = wetRanges.map { range in
-            let surfacePoints = Helpers.surfacePoints(
+        let segments: [WetSegment] = ranges.map { range in
+            let surfacePath = RainSurfaceGeometry.makeSurfacePath(
                 for: range,
                 plotRect: plotRect,
                 baselineY: baselineY,
                 stepX: stepX,
                 heights: heights
             )
-
-            var surfacePath = Path()
-            Helpers.addSmoothQuadSegments(&surfacePath, points: surfacePoints, moveToFirst: true)
-            surfacePath.closeSubpath()
-
-            let topEdgePoints = Helpers.topEdgePoints(
+            let topEdgePath = RainSurfaceGeometry.makeTopEdgePath(
                 for: range,
                 plotRect: plotRect,
                 baselineY: baselineY,
                 stepX: stepX,
                 heights: heights
             )
-
-            var topEdgePath = Path()
-            Helpers.addSmoothQuadSegments(&topEdgePath, points: topEdgePoints, moveToFirst: true)
-
             return WetSegment(range: range, surfacePath: surfacePath, topEdgePath: topEdgePath)
         }
 
-        // Base ribbon fill (matte)
-        drawFill(
-            in: &context,
-            rect: rect,
-            baselineY: baselineY,
-            segments: segments
-        )
-
-        // Internal streak texture clipped to ribbon
-        if configuration.textureEnabled {
-            drawTexture(
-                in: &context,
-                rect: rect,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                stepX: stepX,
-                segments: segments,
-                heights: heights,
-                intensityNorm: intensityNorm,
-                certainty: certainty,
-                diffusionStrength: diffusionStrength,
-                diffusionRadius: diffusionRadius,
-                edgeFactors: edgeFactors
-            )
-        }
-
-        // Top fuzz/spray above the edge (uncertainty-driven)
-        if configuration.fuzzEnabled {
-            drawFuzz(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                stepX: stepX,
-                segments: segments,
-                heights: heights,
-                certainty: certainty,
-                intensityNorm: intensityNorm,
-                diffusionStrength: diffusionStrength,
-                diffusionRadius: diffusionRadius
-            )
-        }
-
-        // Glow on the top edge (tight)
-        if configuration.glowEnabled {
-            drawGlow(
-                in: &context,
-                rect: rect,
-                segments: segments,
-                glowStrength: glowStrength
-            )
-        }
-
-        // Baseline on top
-        Helpers.drawBaseline(
+        RainSurfaceDrawing.drawBaseline(
             in: &context,
             plotRect: plotRect,
             baselineY: baselineY,
+            configuration: configuration,
+            displayScale: displayScale
+        )
+
+        RainSurfaceDrawing.drawFill(
+            in: &context,
+            rect: rect,
+            baselineY: baselineY,
+            segments: segments,
             configuration: configuration
         )
+
+        // Texture path kept for compatibility, but callers can disable.
+        // The nowcast-style “fuzziness” is handled by the uncertainty mist, not streaks.
+        if configuration.textureEnabled {
+            RainSurfaceDrawing.drawLegacyTextureIfEnabled(
+                in: &context,
+                plotRect: plotRect,
+                baselineY: baselineY,
+                stepX: stepX,
+                segments: segments,
+                heights: heights,
+                intensityNorm: intensityNorm,
+                certainty: certainty,
+                edgeFactors: edgeFactors,
+                configuration: configuration,
+                displayScale: displayScale
+            )
+        }
+
+        if configuration.fuzzEnabled {
+            RainSurfaceDrawing.drawUncertaintyMist(
+                in: &context,
+                plotRect: plotRect,
+                baselineY: baselineY,
+                stepX: stepX,
+                segments: segments,
+                heights: heights,
+                intensityNorm: intensityNorm,
+                certainty: certainty,
+                edgeFactors: edgeFactors,
+                configuration: configuration,
+                displayScale: displayScale
+            )
+        }
+
+        if configuration.glowEnabled {
+            RainSurfaceDrawing.drawGlow(
+                in: &context,
+                maxHeight: maxHeight,
+                segments: segments,
+                intensityNorm: intensityNorm,
+                certainty: certainty,
+                configuration: configuration,
+                displayScale: displayScale
+            )
+        }
+    }
+}
+
+// MARK: - Geometry
+
+private enum RainSurfaceGeometry {
+    static func wetRanges(from mask: [Bool]) -> [Range<Int>] {
+        guard !mask.isEmpty else { return [] }
+
+        var ranges: [Range<Int>] = []
+        ranges.reserveCapacity(6)
+
+        var start: Int? = nil
+        for i in 0..<mask.count {
+            if mask[i] {
+                if start == nil { start = i }
+            } else if let s = start {
+                ranges.append(s..<i)
+                start = nil
+            }
+        }
+
+        if let s = start {
+            ranges.append(s..<mask.count)
+        }
+
+        return ranges
     }
 
-    private func drawFill(
+    static func makeSurfacePath(
+        for range: Range<Int>,
+        plotRect: CGRect,
+        baselineY: CGFloat,
+        stepX: CGFloat,
+        heights: [CGFloat]
+    ) -> Path {
+        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
+        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
+
+        var topPoints: [CGPoint] = []
+        topPoints.reserveCapacity(range.count + 2)
+        topPoints.append(CGPoint(x: startEdgeX, y: baselineY))
+
+        for i in range {
+            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
+            let y = baselineY - heights[i]
+            topPoints.append(CGPoint(x: x, y: y))
+        }
+
+        topPoints.append(CGPoint(x: endEdgeX, y: baselineY))
+
+        var path = Path()
+        RainSurfaceGeometry.addSmoothQuadSegments(&path, points: topPoints, moveToFirst: true)
+        path.closeSubpath()
+        return path
+    }
+
+    static func makeTopEdgePath(
+        for range: Range<Int>,
+        plotRect: CGRect,
+        baselineY: CGFloat,
+        stepX: CGFloat,
+        heights: [CGFloat]
+    ) -> Path {
+        guard let first = range.first else { return Path() }
+
+        let last = max(first, range.upperBound - 1)
+        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
+        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
+
+        var points: [CGPoint] = []
+        points.reserveCapacity(range.count + 2)
+
+        points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
+
+        for i in range {
+            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
+            let y = baselineY - heights[i]
+            points.append(CGPoint(x: x, y: y))
+        }
+
+        points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
+
+        var path = Path()
+        RainSurfaceGeometry.addSmoothQuadSegments(&path, points: points, moveToFirst: true)
+        return path
+    }
+
+    static func addSmoothQuadSegments(_ path: inout Path, points: [CGPoint], moveToFirst: Bool) {
+        guard points.count >= 2 else { return }
+
+        if moveToFirst { path.move(to: points[0]) }
+
+        if points.count == 2 {
+            path.addLine(to: points[1])
+            return
+        }
+
+        for i in 1..<(points.count - 1) {
+            let current = points[i]
+            let next = points[i + 1]
+            let mid = CGPoint(x: (current.x + next.x) * 0.5, y: (current.y + next.y) * 0.5)
+            path.addQuadCurve(to: mid, control: current)
+        }
+
+        path.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
+    }
+}
+
+// MARK: - Drawing
+
+private enum RainSurfaceDrawing {
+    static func drawBaseline(
+        in context: inout GraphicsContext,
+        plotRect: CGRect,
+        baselineY: CGFloat,
+        configuration: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
+    ) {
+        let inset = max(0, configuration.baselineInsetPoints)
+        let x0 = plotRect.minX + inset
+        let x1 = plotRect.maxX - inset
+        guard x1 > x0 else { return }
+
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
+
+        var base = Path()
+        base.move(to: CGPoint(x: x0, y: baselineY))
+        base.addLine(to: CGPoint(x: x1, y: baselineY))
+
+        if configuration.baselineSoftOpacityMultiplier > 0, configuration.baselineSoftWidthMultiplier > 1 {
+            let softWidth = max(configuration.baselineLineWidth, configuration.baselineLineWidth * configuration.baselineSoftWidthMultiplier)
+            let softOpacity = max(0.0, min(1.0, configuration.baselineOpacity * configuration.baselineSoftOpacityMultiplier))
+            let softStyle = StrokeStyle(lineWidth: max(onePixel, softWidth), lineCap: .round)
+            context.stroke(base, with: .color(configuration.baselineColor.opacity(softOpacity)), style: softStyle)
+        }
+
+        let stroke = StrokeStyle(lineWidth: max(onePixel, configuration.baselineLineWidth), lineCap: .round)
+        context.stroke(base, with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)), style: stroke)
+    }
+
+    static func drawFill(
         in context: inout GraphicsContext,
         rect: CGRect,
         baselineY: CGFloat,
-        segments: [WetSegment]
+        segments: [RainForecastSurfaceRenderer.WetSegment],
+        configuration: RainForecastSurfaceConfiguration
     ) {
-        let bottom = configuration.fillBottomColor.opacity(configuration.fillBottomOpacity)
-        let top = configuration.fillTopColor.opacity(configuration.fillTopOpacity)
-
-        let grad = Gradient(stops: [
-            .init(color: bottom, location: 0.0),
-            .init(color: top, location: 1.0)
+        let gradient = Gradient(stops: [
+            .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
+            .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0)
         ])
 
         let shading = GraphicsContext.Shading.linearGradient(
-            grad,
+            gradient,
             startPoint: CGPoint(x: rect.midX, y: baselineY),
             endPoint: CGPoint(x: rect.midX, y: rect.minY)
         )
@@ -397,31 +498,29 @@ private struct RainForecastSurfaceRenderer {
         }
     }
 
-    private func drawTexture(
+    // Kept as a compatibility hook.
+    // Current target look does not rely on this texture layer.
+    static func drawLegacyTextureIfEnabled(
         in context: inout GraphicsContext,
-        rect: CGRect,
         plotRect: CGRect,
         baselineY: CGFloat,
         stepX: CGFloat,
-        segments: [WetSegment],
+        segments: [RainForecastSurfaceRenderer.WetSegment],
         heights: [CGFloat],
         intensityNorm: [Double],
         certainty: [Double],
-        diffusionStrength: [Double],
-        diffusionRadius: [CGFloat],
-        edgeFactors: [Double]
+        edgeFactors: [Double],
+        configuration: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
     ) {
+        // If streaks are undesired, set textureEnabled = false in the caller configuration.
+        // A minimal, low-cost grain can be expressed via the uncertainty mist instead.
+        guard configuration.textureMaxAlpha > 0.000_01 else { return }
+
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-        let baseLineWidth = max(0.5, onePixel * configuration.textureLineWidthMultiplier)
-
-        let topInset = max(0, rect.height * configuration.textureTopInsetFractionOfHeight)
-        let colour = configuration.fillTopColor
-
-        let savedBlendMode = context.blendMode
+        let lineWidth = max(onePixel, onePixel * configuration.textureLineWidthMultiplier)
 
         context.drawLayer { layer in
-            layer.blendMode = .plusLighter
-
             if configuration.textureBlurRadiusPoints > 0 {
                 layer.addFilter(.blur(radius: configuration.textureBlurRadiusPoints))
             }
@@ -434,192 +533,155 @@ private struct RainForecastSurfaceRenderer {
                         let h = heights[i]
                         guard h > 0 else { continue }
 
-                        let centreX = plotRect.minX + (CGFloat(i) + 0.5) * stepX
+                        let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
                         let topY = baselineY - h
 
                         let iW = pow(intensityNorm[i], configuration.textureIntensityPower)
                         let u = 1.0 - certainty[i]
                         let uBoost = 1.0 + configuration.textureUncertaintyAlphaBoost * pow(u, 0.85)
 
-                        let alphaBase = Helpers.lerp(configuration.textureMinAlpha, configuration.textureMaxAlpha, iW) * uBoost * edgeFactors[i]
-                        if alphaBase <= 0.000_01 { continue }
+                        let alpha = RainSurfaceMath.lerp(configuration.textureMinAlpha, configuration.textureMaxAlpha, iW) * uBoost * edgeFactors[i]
+                        guard alpha > 0.000_01 else { continue }
 
-                        let streakCount = max(
-                            configuration.textureStreaksMin,
-                            min(
-                                configuration.textureStreaksMax,
-                                Int(round(Helpers.lerp(Double(configuration.textureStreaksMin), Double(configuration.textureStreaksMax), iW)))
-                            )
-                        )
+                        // Draw a very subtle internal vertical “grain” column.
+                        // This is intentionally restrained; the preferred uncertainty look is handled by the mist.
+                        var p = Path()
+                        let insetTop = max(0, h * configuration.textureTopInsetFractionOfHeight)
+                        p.move(to: CGPoint(x: x, y: baselineY - insetTop))
+                        p.addLine(to: CGPoint(x: x, y: topY + insetTop))
 
-                        for k in 0..<streakCount {
-                            let r0 = Helpers.hash01(i, k, seed: 0xA11CE)
-                            let r1 = Helpers.hash01(i, k, seed: 0xBEE5)
-                            let r2 = Helpers.hash01(i, k, seed: 0xC0FFEE)
-
-                            let xJitter = (CGFloat(r0) * 2.0 - 1.0) * 0.45 * stepX
-                            let x = centreX + xJitter
-
-                            let endFrac = CGFloat(0.35 + 0.65 * r1)
-                            var y1 = baselineY - h * endFrac
-                            y1 = max(y1, topY + topInset)
-
-                            let alpha = Helpers.clamp01(alphaBase * (0.65 + 0.35 * r2))
-                            if alpha <= 0.000_01 { continue }
-
-                            let w = baseLineWidth * (0.80 + 0.50 * CGFloat(r2))
-
-                            var p = Path()
-                            p.move(to: CGPoint(x: x, y: baselineY))
-                            p.addLine(to: CGPoint(x: x, y: y1))
-
-                            clipped.stroke(
-                                p,
-                                with: .color(colour.opacity(alpha)),
-                                style: StrokeStyle(lineWidth: w, lineCap: .round)
-                            )
-                        }
-
-                        // Small “mist” specks near the top, tied to uncertainty and radius
-                        let localStrength01 = Helpers.clamp01(diffusionStrength[i] / max(0.000_001, configuration.diffusionStrengthMax))
-                        if localStrength01 > 0.08 {
-                            let dots = min(2, max(0, Int(round(2.0 * localStrength01))))
-                            if dots > 0 {
-                                for d in 0..<dots {
-                                    let rr0 = Helpers.hash01(i, d, seed: 0xD0D0)
-                                    let rr1 = Helpers.hash01(i, d, seed: 0xDADA)
-
-                                    let xJ = (CGFloat(rr0) * 2.0 - 1.0) * 0.42 * stepX
-                                    let x = centreX + xJ
-
-                                    let r = max(0.6, onePixel * (0.8 + 1.2 * CGFloat(rr1)))
-                                    let y = topY + topInset + CGFloat(0.10 + 0.55 * rr1) * min(h, max(1.0, diffusionRadius[i]))
-
-                                    var dot = Path()
-                                    dot.addEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-
-                                    let a = Helpers.clamp01(alphaBase * 0.55 * (0.45 + 0.55 * rr0))
-                                    clipped.fill(dot, with: .color(colour.opacity(a)))
-                                }
-                            }
-                        }
+                        layer.stroke(p, with: .color(configuration.fillTopColor.opacity(alpha)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     }
                 }
             }
         }
-
-        context.blendMode = savedBlendMode
     }
 
-    private func drawFuzz(
+    static func drawUncertaintyMist(
         in context: inout GraphicsContext,
         plotRect: CGRect,
         baselineY: CGFloat,
         stepX: CGFloat,
-        segments: [WetSegment],
+        segments: [RainForecastSurfaceRenderer.WetSegment],
         heights: [CGFloat],
-        certainty: [Double],
         intensityNorm: [Double],
-        diffusionStrength: [Double],
-        diffusionRadius: [CGFloat]
+        certainty: [Double],
+        edgeFactors: [Double],
+        configuration: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
     ) {
+        guard configuration.fuzzDotsEnabled else { return }
+
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-        let colour = configuration.fillTopColor
+        let particleBaseSize = max(onePixel, onePixel * configuration.fuzzLineWidthMultiplier)
+
+        let maxHeight = max(1.0, baselineY - plotRect.minY)
+        let minRadius = max(configuration.diffusionMinRadiusPoints, maxHeight * configuration.diffusionMinRadiusFractionOfHeight)
+        let maxRadius = max(configuration.diffusionMaxRadiusPoints, maxHeight * configuration.diffusionMaxRadiusFractionOfHeight)
+
+        let stride = max(1, configuration.diffusionStopStride)
+
+        // Light-rain restraint
+        let meanIntensity: Double = {
+            var s = 0.0
+            var c = 0.0
+            for v in intensityNorm where v > 0 {
+                s += v
+                c += 1.0
+            }
+            return c > 0 ? (s / c) : 0.0
+        }()
+
+        let lightRainScaleRadius = (meanIntensity < configuration.diffusionLightRainMeanThreshold) ? configuration.diffusionLightRainMaxRadiusScale : 1.0
+        let lightRainScaleStrength = (meanIntensity < configuration.diffusionLightRainMeanThreshold) ? configuration.diffusionLightRainStrengthScale : 1.0
+
+        // Per-sample particle cap is derived from both the explicit per-sample max and the overall “layers” dial.
+        let richness = max(4, configuration.diffusionLayers)
+        let derivedPerSampleMax = max(configuration.fuzzDotsPerSampleMax, min(12, Int(round(Double(richness) / 3.0))))
+        let perSampleMax = max(2, derivedPerSampleMax)
 
         let savedBlendMode = context.blendMode
+        context.blendMode = .plusLighter
 
         context.drawLayer { layer in
-            layer.blendMode = .plusLighter
-
             if configuration.fuzzGlobalBlurRadiusPoints > 0 {
                 layer.addFilter(.blur(radius: configuration.fuzzGlobalBlurRadiusPoints))
             }
 
-            let richnessMax = max(4, configuration.diffusionLayers)
-            let perSampleMax = max(2, min(10, Int(round(Double(richnessMax) / 3.8))))
-
             for seg in segments {
                 for i in seg.range {
+                    if (i % stride) != 0 { continue }
+
                     let h = heights[i]
                     guard h > 0 else { continue }
+
+                    let iW = pow(intensityNorm[i], 0.65)
+                    let edge = edgeFactors[i]
+                    guard edge > 0.000_01 else { continue }
+
+                    let u = 1.0 - RainSurfaceMath.clamp01(certainty[i])
+                    let uPowR = pow(u, configuration.diffusionRadiusUncertaintyPower)
+                    let uPowS = pow(u, configuration.diffusionStrengthUncertaintyPower)
+
+                    // Diffusion radius grows with uncertainty, bounded by view scale.
+                    var radius = RainSurfaceMath.lerp(Double(minRadius), Double(maxRadius), uPowR)
+                    radius *= configuration.fuzzLengthMultiplier
+                    radius *= lightRainScaleRadius
+
+                    // Drizzle gating keeps low intensity calm.
+                    let drizzleGate: Double
+                    if iW <= 0.000_01 {
+                        drizzleGate = configuration.diffusionLowIntensityGateMin
+                    } else if iW < configuration.diffusionDrizzleThreshold {
+                        let t = iW / max(0.000_001, configuration.diffusionDrizzleThreshold)
+                        drizzleGate = RainSurfaceMath.lerp(configuration.diffusionLowIntensityGateMin, 1.0, t)
+                    } else {
+                        drizzleGate = 1.0
+                    }
+
+                    // Diffusion strength grows with uncertainty and is lightly intensity-gated.
+                    var strength = configuration.diffusionStrengthMinUncertainTerm
+                        + uPowS * max(0.0, configuration.diffusionStrengthMax - configuration.diffusionStrengthMinUncertainTerm)
+                    strength *= drizzleGate
+                    strength *= lightRainScaleStrength
+                    strength *= edge
+
+                    let s01 = RainSurfaceMath.clamp01(strength / max(0.000_001, configuration.diffusionStrengthMax))
+                    if s01 <= 0.02 { continue }
 
                     let centreX = plotRect.minX + (CGFloat(i) + 0.5) * stepX
                     let topY = baselineY - h
 
-                    let u = 1.0 - certainty[i]
-                    let iW = pow(intensityNorm[i], 0.65)
+                    // Particle count rises with uncertainty/strength.
+                    let count = max(1, min(perSampleMax, Int(round(RainSurfaceMath.lerp(1.0, Double(perSampleMax), 0.55 * s01 + 0.45 * pow(u, 1.05))))))
 
-                    let strength = diffusionStrength[i]
-                    let s01 = Helpers.clamp01(strength / max(0.000_001, configuration.diffusionStrengthMax))
-                    if s01 <= 0.02 { continue }
+                    var rng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xA13F, saltB: count))
+                    let xSpread = Double(stepX) * 0.95
+                    let jitterAmp = configuration.diffusionJitterAmplitudePoints
 
-                    let radius = diffusionRadius[i]
-                    let lengthBase = radius * configuration.fuzzLengthMultiplier
+                    for pIndex in 0..<count {
+                        let rx = (rng.nextDouble01() - 0.5) * xSpread
+                        let ryBase = pow(rng.nextDouble01(), 0.55) * radius
+                        let ry = -ryBase + (rng.nextDouble01() - 0.5) * radius * 0.18
 
-                    let uExtra = pow(u, 1.05)
-                    let iGate = Helpers.lerp(0.50, 1.0, iW)
+                        let jx = (rng.nextDouble01() - 0.5) * jitterAmp
+                        let jy = (rng.nextDouble01() - 0.5) * jitterAmp
 
-                    let lineCount = max(
-                        1,
-                        min(
-                            perSampleMax,
-                            Int(round(Helpers.lerp(1.0, Double(perSampleMax), 0.55 * s01 + 0.45 * uExtra)))
-                        )
-                    )
+                        let x = Double(centreX) + rx + jx
+                        let y = Double(topY) + ry + jy
 
-                    let lineWidthBase = max(0.5, onePixel * configuration.fuzzLineWidthMultiplier)
+                        // Falloff: closer to the edge is denser.
+                        let dn = RainSurfaceMath.clamp01(abs(ryBase) / max(0.000_001, radius))
+                        let fall = pow(1.0 - dn, configuration.diffusionFalloffPower)
 
-                    for k in 0..<lineCount {
-                        let r0 = Helpers.hash01(i, k, seed: 0xF00D)
-                        let r1 = Helpers.hash01(i, k, seed: 0xFACE)
-                        let r2 = Helpers.hash01(i, k, seed: 0xBADA)
-                        let r3 = Helpers.hash01(i, k, seed: 0xC001)
-
-                        let xJitter = (CGFloat(r0) * 2.0 - 1.0) * 0.48 * stepX
-                        let x = centreX + xJitter
-
-                        let len = lengthBase * CGFloat(0.35 + 0.75 * r1) * CGFloat(iGate)
-                        let y0 = topY - onePixel * CGFloat(0.10 + 0.25 * r2)
-                        let y1 = topY - len
-
-                        let alpha = Helpers.clamp01(strength * (0.22 + 0.48 * r3) * iGate)
+                        let alpha = strength * 0.55 * fall
                         if alpha <= 0.000_01 { continue }
 
-                        let w = lineWidthBase * (0.75 + 0.55 * CGFloat(r2))
+                        let sizeJitter = RainSurfaceMath.lerp(0.75, 1.85, rng.nextDouble01())
+                        let r = particleBaseSize * CGFloat(sizeJitter)
 
-                        var p = Path()
-                        p.move(to: CGPoint(x: x, y: y0))
-                        p.addLine(to: CGPoint(x: x, y: y1))
-
-                        layer.stroke(
-                            p,
-                            with: .color(colour.opacity(alpha)),
-                            style: StrokeStyle(lineWidth: w, lineCap: .round)
-                        )
-                    }
-
-                    if configuration.fuzzDotsEnabled {
-                        let dotCount = max(0, min(configuration.fuzzDotsPerSampleMax, Int(round(Double(lineCount) * 0.55))))
-                        if dotCount > 0 {
-                            for d in 0..<dotCount {
-                                let rr0 = Helpers.hash01(i, d, seed: 0xDADA)
-                                let rr1 = Helpers.hash01(i, d, seed: 0xDEAD)
-                                let rr2 = Helpers.hash01(i, d, seed: 0xFEED)
-
-                                let xJitter = (CGFloat(rr0) * 2.0 - 1.0) * 0.46 * stepX
-                                let x = centreX + xJitter
-
-                                let len = lengthBase * CGFloat(0.30 + 0.85 * rr1) * CGFloat(iGate)
-                                let y = topY - len * CGFloat(0.20 + 0.80 * rr2)
-
-                                let r = max(0.7, onePixel * (0.9 + 1.6 * CGFloat(rr2)))
-                                var dot = Path()
-                                dot.addEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-
-                                let a = Helpers.clamp01(strength * 0.55 * (0.25 + 0.65 * rr0) * iGate)
-                                layer.fill(dot, with: .color(colour.opacity(a)))
-                            }
-                        }
+                        let circle = Path(ellipseIn: CGRect(x: x - Double(r), y: y - Double(r), width: Double(r * 2), height: Double(r * 2)))
+                        layer.fill(circle, with: .color(configuration.fillTopColor.opacity(alpha)))
                     }
                 }
             }
@@ -628,29 +690,37 @@ private struct RainForecastSurfaceRenderer {
         context.blendMode = savedBlendMode
     }
 
-    private func drawGlow(
+    static func drawGlow(
         in context: inout GraphicsContext,
-        rect: CGRect,
-        segments: [WetSegment],
-        glowStrength: [Double]
+        maxHeight: CGFloat,
+        segments: [RainForecastSurfaceRenderer.WetSegment],
+        intensityNorm: [Double],
+        certainty: [Double],
+        configuration: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
     ) {
-        let glowLayers = max(2, configuration.glowLayers)
-        let maxRadius = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
+        let maxRadius = max(
+            configuration.glowMaxRadiusPoints,
+            maxHeight * configuration.glowMaxRadiusFractionOfHeight
+        )
+        guard maxRadius > 0.000_01 else { return }
 
         let meanGlowStrength: Double = {
             var sum = 0.0
             var count = 0.0
-            for g in glowStrength where g > 0 {
-                sum += g
-                count += 1.0
+            for i in 0..<min(intensityNorm.count, certainty.count) {
+                let iW = pow(RainSurfaceMath.clamp01(intensityNorm[i]), 0.85)
+                let cW = pow(RainSurfaceMath.clamp01(certainty[i]), configuration.glowCertaintyPower)
+                let g = iW * cW
+                if g > 0.000_01 {
+                    sum += g
+                    count += 1.0
+                }
             }
-            guard count > 0 else { return 0.0 }
-            return sum / count
+            return count > 0 ? (sum / count) : 0.0
         }()
 
-        if meanGlowStrength <= 0.000_01 || maxRadius <= 0.000_01 {
-            return
-        }
+        guard meanGlowStrength > 0.000_01 else { return }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
         let strokeStyle = StrokeStyle(lineWidth: max(0.5, onePixel), lineCap: .round, lineJoin: .round)
@@ -658,13 +728,24 @@ private struct RainForecastSurfaceRenderer {
         let savedBlendMode = context.blendMode
         context.blendMode = .plusLighter
 
-        for k in 0..<glowLayers {
-            let t = (glowLayers == 1) ? 0.0 : Double(k) / Double(glowLayers - 1)
-            let falloff = pow(1.0 - t, max(1.0, configuration.glowFalloffPower))
-            let alpha = configuration.glowMaxAlpha * falloff * meanGlowStrength
-            if alpha <= 0.000_01 { continue }
+        // Inner ridge highlight (tight, minimal blur)
+        do {
+            let alpha = min(1.0, configuration.glowMaxAlpha * 0.60) * meanGlowStrength
+            if alpha > 0.000_01 {
+                for seg in segments {
+                    context.stroke(seg.topEdgePath, with: .color(configuration.glowColor.opacity(alpha)), style: strokeStyle)
+                }
+            }
+        }
 
-            let radius = maxRadius * CGFloat(1.0 - t)
+        // Outer soft glow layers
+        let layers = max(1, configuration.glowLayers)
+        for k in 0..<layers {
+            let t = (layers <= 1) ? 1.0 : Double(k) / Double(layers - 1)
+            let radius = max(0.0, Double(maxRadius) * pow(t, 1.10))
+            let fall = pow(1.0 - t, configuration.glowFalloffPower)
+            let alpha = configuration.glowMaxAlpha * meanGlowStrength * fall
+            if alpha <= 0.000_01 { continue }
 
             context.drawLayer { layer in
                 if radius > 0.001 {
@@ -680,16 +761,10 @@ private struct RainForecastSurfaceRenderer {
     }
 }
 
-// MARK: - Helpers
+// MARK: - Math
 
-private enum Helpers {
-    static func clamp01(_ v: Double) -> Double {
-        max(0.0, min(1.0, v))
-    }
-
-    static func clamp(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
-        max(lo, min(hi, v))
-    }
+private enum RainSurfaceMath {
+    static func clamp01(_ v: Double) -> Double { max(0.0, min(1.0, v)) }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
         let tt = max(0.0, min(1.0, t))
@@ -755,140 +830,6 @@ private enum Helpers {
         return out
     }
 
-    static func wetRanges(from mask: [Bool]) -> [Range<Int>] {
-        guard !mask.isEmpty else { return [] }
-
-        var ranges: [Range<Int>] = []
-        ranges.reserveCapacity(4)
-
-        var start: Int? = nil
-
-        for i in 0..<mask.count {
-            if mask[i] {
-                if start == nil { start = i }
-            } else if let s = start {
-                ranges.append(s..<i)
-                start = nil
-            }
-        }
-
-        if let s = start {
-            ranges.append(s..<mask.count)
-        }
-
-        return ranges
-    }
-
-    static func surfacePoints(
-        for range: Range<Int>,
-        plotRect: CGRect,
-        baselineY: CGFloat,
-        stepX: CGFloat,
-        heights: [CGFloat]
-    ) -> [CGPoint] {
-        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
-        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
-
-        var points: [CGPoint] = []
-        points.reserveCapacity(range.count + 2)
-
-        points.append(CGPoint(x: startEdgeX, y: baselineY))
-
-        for i in range {
-            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            points.append(CGPoint(x: x, y: y))
-        }
-
-        points.append(CGPoint(x: endEdgeX, y: baselineY))
-        return points
-    }
-
-    static func topEdgePoints(
-        for range: Range<Int>,
-        plotRect: CGRect,
-        baselineY: CGFloat,
-        stepX: CGFloat,
-        heights: [CGFloat]
-    ) -> [CGPoint] {
-        guard let first = range.first else { return [] }
-        let last = max(first, range.upperBound - 1)
-
-        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
-        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
-
-        var points: [CGPoint] = []
-        points.reserveCapacity(range.count + 2)
-
-        points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
-
-        for i in range {
-            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            points.append(CGPoint(x: x, y: y))
-        }
-
-        points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
-        return points
-    }
-
-    static func addSmoothQuadSegments(_ path: inout Path, points: [CGPoint], moveToFirst: Bool) {
-        guard points.count >= 2 else { return }
-
-        if moveToFirst {
-            path.move(to: points[0])
-        }
-
-        if points.count == 2 {
-            path.addLine(to: points[1])
-            return
-        }
-
-        for i in 1..<(points.count - 1) {
-            let current = points[i]
-            let next = points[i + 1]
-            let mid = CGPoint(x: (current.x + next.x) * 0.5, y: (current.y + next.y) * 0.5)
-            path.addQuadCurve(to: mid, control: current)
-        }
-
-        path.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
-    }
-
-    static func drawBaseline(
-        in context: inout GraphicsContext,
-        plotRect: CGRect,
-        baselineY: CGFloat,
-        configuration: RainForecastSurfaceConfiguration
-    ) {
-        let inset = max(0, configuration.baselineInsetPoints)
-        let x0 = plotRect.minX + inset
-        let x1 = plotRect.maxX - inset
-        guard x1 > x0 else { return }
-
-        var base = Path()
-        base.move(to: CGPoint(x: x0, y: baselineY))
-        base.addLine(to: CGPoint(x: x1, y: baselineY))
-
-        if configuration.baselineSoftOpacityMultiplier > 0, configuration.baselineSoftWidthMultiplier > 1 {
-            let softWidth = max(configuration.baselineLineWidth, configuration.baselineLineWidth * configuration.baselineSoftWidthMultiplier)
-            let softOpacity = max(0.0, min(1.0, configuration.baselineOpacity * configuration.baselineSoftOpacityMultiplier))
-            let softStyle = StrokeStyle(lineWidth: softWidth, lineCap: .round)
-
-            context.stroke(
-                base,
-                with: .color(configuration.baselineColor.opacity(softOpacity)),
-                style: softStyle
-            )
-        }
-
-        let stroke = StrokeStyle(lineWidth: configuration.baselineLineWidth, lineCap: .round)
-        context.stroke(
-            base,
-            with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)),
-            style: stroke
-        )
-    }
-
     static func smooth(_ values: [CGFloat], passes: Int) -> [CGFloat] {
         guard values.count >= 3, passes > 0 else { return values }
 
@@ -896,27 +837,48 @@ private enum Helpers {
         var tmp = values
 
         for _ in 0..<passes {
-            tmp = out
+            tmp[0] = out[0]
+            tmp[values.count - 1] = out[values.count - 1]
+
             for i in 1..<(values.count - 1) {
-                out[i] = (tmp[i - 1] + tmp[i] + tmp[i + 1]) / 3.0
+                tmp[i] = (out[i - 1] + out[i] + out[i + 1]) / 3.0
             }
-            out[0] = tmp[0]
-            out[values.count - 1] = tmp[values.count - 1]
+
+            out = tmp
         }
 
         return out
     }
+}
 
-    // Deterministic pseudo-random in [0, 1]
-    static func hash01(_ a: Int, _ b: Int, seed: UInt64) -> Double {
-        var x = UInt64(bitPattern: Int64(a &* 0x1F123BB5 ^ b &* 0x6A09E667))
-        x &+= seed
-        x &+= 0x9E3779B97F4A7C15
+// MARK: - Deterministic PRNG
 
+private struct RainSurfacePRNG {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        self.state = seed == 0 ? 0x9E3779B97F4A7C15 : seed
+    }
+
+    mutating func nextUInt64() -> UInt64 {
+        // SplitMix64
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+
+    mutating func nextDouble01() -> Double {
+        Double(nextUInt64()) / Double(UInt64.max)
+    }
+
+    static func seed(sampleIndex: Int, saltA: Int, saltB: Int = 0) -> UInt64 {
+        let a = UInt64(bitPattern: Int64(sampleIndex &* 0x1F123BB5 ^ saltA &* 0x6A09E667 ^ saltB &* 0x9E3779B9))
+        var x = a &+ 0xD1B54A32D192ED03
         x = (x ^ (x >> 30)) &* 0xBF58476D1CE4E5B9
         x = (x ^ (x >> 27)) &* 0x94D049BB133111EB
         x = x ^ (x >> 31)
-
-        return Double(x) / Double(UInt64.max)
+        return x
     }
 }
