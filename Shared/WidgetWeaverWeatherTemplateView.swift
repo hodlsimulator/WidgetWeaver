@@ -141,6 +141,7 @@ struct WeatherTemplateView: View {
         // Preserve the existing rain-first look by forcing Dark Mode semantics only when the
         // built-in adaptive weather backdrop is active. When a custom editor background is selected,
         // leaving colour scheme alone allows text/materials to remain legible across light/dark themes.
+        .environment(\.wwRenderContext, context)
         .wwApplyIf(style.background == .subtleMaterial) { view in
             view.environment(\.colorScheme, .dark)
         }

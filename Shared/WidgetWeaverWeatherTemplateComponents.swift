@@ -28,6 +28,52 @@ import UIKit
 import AppKit
 #endif
 
+// MARK: - Render context environment
+
+private struct WidgetWeaverRenderContextEnvironmentKey: EnvironmentKey {
+    static let defaultValue: WidgetWeaverRenderContext = .preview
+}
+
+extension EnvironmentValues {
+    var wwRenderContext: WidgetWeaverRenderContext {
+        get { self[WidgetWeaverRenderContextEnvironmentKey.self] }
+        set { self[WidgetWeaverRenderContextEnvironmentKey.self] = newValue }
+    }
+}
+
+// MARK: - Widget-safe “glass” background
+//
+// WidgetKit can render Material as black on the Home Screen (especially after snapshotting).
+// This view uses a stable translucent fill for `.widget` and keeps Material for previews.
+
+private struct WeatherGlassBackground: View {
+    let cornerRadius: CGFloat
+
+    @Environment(\.wwRenderContext) private var renderContext
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        switch renderContext {
+        case .widget:
+            shape.fill(fallbackFill)
+        case .preview, .simulator:
+            shape.fill(.ultraThinMaterial)
+        }
+    }
+
+    private var fallbackFill: Color {
+        // Light mode: a little dark tint.
+        // Dark mode: a little light tint.
+        if colorScheme == .dark {
+            return Color.white.opacity(0.11)
+        } else {
+            return Color.black.opacity(0.07)
+        }
+    }
+}
+
 // MARK: - Chart
 
 struct WeatherNowcastChart: View {
@@ -41,8 +87,7 @@ struct WeatherNowcastChart: View {
             let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                WeatherGlassBackground(cornerRadius: 10)
 
                 if points.isEmpty {
                     Text("—")
@@ -575,7 +620,9 @@ struct WeatherHourlyRainStrip: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background {
+            WeatherGlassBackground(cornerRadius: 14)
+        }
     }
 
     private func precipText(_ chance01: Double?) -> String {
@@ -600,14 +647,13 @@ struct WeatherGlassContainer<Content: View>: View {
         content()
             .padding(metrics.contentPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                .ultraThinMaterial,
-                in: RoundedRectangle(cornerRadius: metrics.containerCornerRadius, style: .continuous)
-            )
-            .overlay(
+            .background {
+                WeatherGlassBackground(cornerRadius: metrics.containerCornerRadius)
+            }
+            .overlay {
                 RoundedRectangle(cornerRadius: metrics.containerCornerRadius, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-            )
+            }
             .compositingGroup()
     }
 }
