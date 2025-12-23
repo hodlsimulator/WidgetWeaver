@@ -1,28 +1,31 @@
 //
-//  WidgetWeaverWeatherTemplateView.swift
-//  WidgetWeaver
+// WidgetWeaverWeatherTemplateView.swift
+// WidgetWeaver
 //
-//  Created by . . on 12/20/25.
+// Created by . . on 12/20/25.
 //
-//  Rain-first weather template.
+// Rain-first weather template.
 //
-//  MINUTE-BY-MINUTE UPDATE CONTRACT
-//  -------------------------------
-//  The template is expected to tick every minute so the following stay accurate:
-//  - Nowcast headline offsets (“…in 46m” / “Stopping in …m”)
-//  - Chart window alignment (“Now” and the next 60 minutes)
-//  - Updated-at label
+// MINUTE-BY-MINUTE UPDATE CONTRACT
+// -------------------------------
+// The template is expected to tick every minute so the following stay accurate:
+// - Nowcast headline offsets (“…in 46m” / “Stopping in …m”)
+// - Chart window alignment (“Now” and the next 60 minutes)
+// - Updated-at label
 //
-//  The minute tick is implemented with a TimelineView(.periodic(..., by: 60)) and a `.id(minuteID)`
-//  derived from the floored minute.
-//  Removing the `.id`, widening the interval, or moving time-sensitive computation outside the TimelineView
-//  can cause subtle staleness where some text appears live but other parts lag.
+// The minute tick is implemented with a TimelineView(.periodic(..., by: 60)) and a `.id(minuteID)`
+// derived from the floored minute.
 //
+// Removing the `.id`, widening the interval, or moving time-sensitive computation outside the TimelineView
+// can cause subtle staleness where some text appears live but other parts lag.
 
 import Foundation
 import SwiftUI
 #if canImport(WidgetKit)
 import WidgetKit
+#endif
+#if canImport(UIKit)
+import UIKit
 #endif
 
 // MARK: - Weather Template
@@ -54,7 +57,12 @@ struct WeatherTemplateView: View {
         let snapshot = store.snapshotForRender(context: context)
         let location = store.loadLocation()
         let unit = store.resolvedUnitTemperature()
-        let metrics = WeatherMetrics(family: family, style: spec.style, layout: spec.layout)
+
+        let trimmedTitle = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmedTitle.isEmpty ? "Rain" : trimmedTitle
+
+        let style = spec.style
+        let metrics = WeatherMetrics(family: family, style: style, layout: spec.layout)
 
         Group {
             switch context {
@@ -79,7 +87,9 @@ struct WeatherTemplateView: View {
                         now: now,
                         family: family,
                         metrics: metrics,
-                        accent: accent
+                        accent: accent,
+                        style: style,
+                        title: title
                     )
                     .id(minuteID)
                     .accessibilityElement(children: .contain)
@@ -101,7 +111,9 @@ struct WeatherTemplateView: View {
                         now: now,
                         family: family,
                         metrics: metrics,
-                        accent: accent
+                        accent: accent,
+                        style: style,
+                        title: title
                     )
                     .id(minuteID)
                     .accessibilityElement(children: .contain)
@@ -110,6 +122,7 @@ struct WeatherTemplateView: View {
 
             case .preview:
                 let now = Date()
+
                 WeatherTemplateContent(
                     snapshot: snapshot,
                     location: location,
@@ -117,18 +130,20 @@ struct WeatherTemplateView: View {
                     now: now,
                     family: family,
                     metrics: metrics,
-                    accent: accent
+                    accent: accent,
+                    style: style,
+                    title: title
                 )
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(accessibilityLabel(snapshot: snapshot, location: location, unit: unit, now: now))
             }
         }
-        // The template draws a dark backdrop and relies on semantic foreground styles
-        // (.primary / .secondary). In Light Mode those resolve to dark colours, which
-        // makes the text effectively disappear against the dark background.
-        //
-        // Force Dark Mode semantics for the template so the text remains readable.
-        .environment(\.colorScheme, .dark)
+        // Preserve the existing rain-first look by forcing Dark Mode semantics only when the
+        // built-in adaptive weather backdrop is active. When a custom editor background is selected,
+        // leaving colour scheme alone allows text/materials to remain legible across light/dark themes.
+        .wwApplyIf(style.background == .subtleMaterial) { view in
+            view.environment(\.colorScheme, .dark)
+        }
     }
 
     private func accessibilityLabel(
@@ -147,7 +162,6 @@ struct WeatherTemplateView: View {
         let temp = wwTempString(snapshot.temperatureC, unit: unit)
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let headline = nowcast.primaryText
-
         return "Weather. \(snapshot.locationName). \(headline). Temperature \(temp)."
     }
 
@@ -168,20 +182,18 @@ private struct WeatherTemplateContent: View {
     let family: WidgetFamily
     let metrics: WeatherMetrics
     let accent: Color
+    let style: StyleSpec
+    let title: String
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if let snapshot {
-                WeatherBackdropView(
-                    palette: WeatherPalette.forSnapshot(snapshot, now: now, accent: accent),
-                    family: family
-                )
-            } else {
-                WeatherBackdropView(
-                    palette: WeatherPalette.fallback(accent: accent),
-                    family: family
-                )
-            }
+            WeatherTemplateBackground(
+                snapshot: snapshot,
+                now: now,
+                family: family,
+                accent: accent,
+                style: style
+            )
 
             if let snapshot {
                 WeatherFilledStateView(
@@ -194,6 +206,7 @@ private struct WeatherTemplateContent: View {
                 )
             } else {
                 WeatherEmptyStateView(
+                    title: title,
                     location: location,
                     metrics: metrics,
                     accent: accent
@@ -201,6 +214,64 @@ private struct WeatherTemplateContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct WeatherTemplateBackground: View {
+    let snapshot: WidgetWeaverWeatherSnapshot?
+    let now: Date
+    let family: WidgetFamily
+    let accent: Color
+    let style: StyleSpec
+
+    var body: some View {
+        ZStack {
+            if style.background == .subtleMaterial {
+                WeatherBackdropView(
+                    palette: palette,
+                    family: family
+                )
+            } else {
+                systemBackground
+                Rectangle()
+                    .fill(style.background.shapeStyle(accent: accent))
+            }
+
+            Rectangle()
+                .fill(style.backgroundOverlay.shapeStyle(accent: accent))
+                .opacity(style.backgroundOverlayOpacity)
+
+            if style.backgroundGlowEnabled {
+                Circle()
+                    .fill(accent)
+                    .blur(radius: 70)
+                    .opacity(0.18)
+                    .offset(x: -120, y: -120)
+
+                Circle()
+                    .fill(accent)
+                    .blur(radius: 90)
+                    .opacity(0.12)
+                    .offset(x: 140, y: 160)
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    private var palette: WeatherPalette {
+        if let snapshot {
+            return WeatherPalette.forSnapshot(snapshot, now: now, accent: accent)
+        }
+        return WeatherPalette.fallback(accent: accent)
+    }
+
+    @ViewBuilder
+    private var systemBackground: some View {
+        #if canImport(UIKit)
+        Color(uiColor: .systemBackground)
+        #else
+        Color.black
+        #endif
     }
 }
 
@@ -226,7 +297,6 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
-
             case .systemMedium:
                 WeatherMediumRainLayout(
                     snapshot: snapshot,
@@ -236,7 +306,6 @@ private struct WeatherFilledStateView: View {
                     metrics: metrics,
                     accent: accent
                 )
-
             default:
                 WeatherLargeRainLayout(
                     snapshot: snapshot,
@@ -260,6 +329,7 @@ private struct WeatherFilledStateView: View {
 // MARK: - Empty State
 
 private struct WeatherEmptyStateView: View {
+    let title: String
     let location: WidgetWeaverWeatherLocation?
     let metrics: WeatherMetrics
     let accent: Color
@@ -267,7 +337,7 @@ private struct WeatherEmptyStateView: View {
     var body: some View {
         WeatherGlassContainer(metrics: metrics) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Rain")
+                Text(title)
                     .font(.system(size: metrics.nowcastPrimaryFontSizeMedium, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
@@ -300,6 +370,20 @@ private struct WeatherEmptyStateView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func wwApplyIf<Transformed: View>(
+        _ condition: Bool,
+        transform: (Self) -> Transformed
+    ) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
         }
     }
 }
