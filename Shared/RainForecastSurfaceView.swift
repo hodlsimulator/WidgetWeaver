@@ -4,10 +4,11 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Programmatic “forecast surface” renderer:
-//  - Single filled ribbon above a subtle baseline
-//  - Uncertainty shown as an inward, soft diffusion at the top edge
+//  Forecast surface renderer:
+//  - One filled ribbon above a subtle baseline
+//  - Uncertainty shown as inward diffusion at the top edge (no second band, no outline)
 //  - Deterministic (no randomness / no animation)
+//  - WidgetKit-safe: no drawLayer masking or blend-mode tricks
 //
 
 import Foundation
@@ -49,22 +50,16 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int
     var endFadeFloor: Double
 
-    // Top-edge diffusion (inward)
-    //
-    // Rendering is split into:
-    // - Body fill: baseline -> (top contour + diffusionRadius)
-    // - Diffusion cap: top contour -> body contour, built from stacked bands
-    //
-    // The cap band opacity is controlled as:
-    // finalMultiplier = 1 - (1 - baseBandMultiplier) * diffusionEffect
-    //
-    // where baseBandMultiplier ramps from diffusionEdgeAlphaFloor -> diffusionMaxAlpha.
-    // diffusionEffect varies by uncertainty and boundary fades (startEase/endFade).
+    // Top-edge diffusion
     var diffusionMinRadiusPoints: CGFloat
     var diffusionMaxRadiusPoints: CGFloat
     var diffusionMinRadiusFractionOfHeight: CGFloat
     var diffusionMaxRadiusFractionOfHeight: CGFloat
     var diffusionLayers: Int
+
+    // Band alpha behaviour
+    // diffusionMaxAlpha is the alpha target at the inner boundary (normally 1.0).
+    // diffusionEdgeAlphaFloor is the alpha at the very top edge when diffusionEffect = 1.
     var diffusionMaxAlpha: Double
     var diffusionBandFalloffPower: Double
     var diffusionEdgeAlphaFloor: Double
@@ -75,7 +70,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var diffusionStrengthMinMultiplier: Double        // e.g. 0.25
     var diffusionStrengthMaxMultiplier: Double        // e.g. 1.0
 
-    // Optional tight glow (inward, never a stroke)
+    // Glow (optional; inward only, never a stroke)
     var glowEnabled: Bool
     var glowColor: Color
     var glowMaxRadiusPoints: CGFloat
@@ -121,7 +116,6 @@ struct RainForecastSurfaceView: View {
 
             let insetX = max(0, rect.width * configuration.edgeInsetFraction)
             let plotRect = rect.insetBy(dx: insetX, dy: 0)
-
             guard plotRect.width > 0, plotRect.height > 0 else { return }
 
             var baselineY = rect.minY + rect.height * configuration.baselineYFraction
@@ -133,7 +127,6 @@ struct RainForecastSurfaceView: View {
             let intensityCap = max(configuration.intensityCap, 0.000_001)
             let stepX = plotRect.width / CGFloat(n)
 
-            // Boundary fades (rendering only)
             let edgeFactors = Self.edgeFactors(
                 sampleCount: n,
                 startEaseMinutes: configuration.startEaseMinutes,
@@ -141,7 +134,6 @@ struct RainForecastSurfaceView: View {
                 endFadeFloor: configuration.endFadeFloor
             )
 
-            // Diffusion radius range (points), scaled by size but clamped.
             let minRadius = max(configuration.diffusionMinRadiusPoints, rect.height * configuration.diffusionMinRadiusFractionOfHeight)
             let maxRadius = min(configuration.diffusionMaxRadiusPoints, rect.height * configuration.diffusionMaxRadiusFractionOfHeight)
 
@@ -171,11 +163,10 @@ struct RainForecastSurfaceView: View {
                 h = max(h, minVisibleHeight)
                 heights[i] = h
 
-                // Radius mapping: pow(u, 1.4)
+                // Radius: lerp(min,max,pow(u,1.4))
                 let u = 1.0 - c
                 let uRadius = pow(u, configuration.diffusionRadiusUncertaintyPower)
                 var r = minRadius + (maxRadius - minRadius) * CGFloat(uRadius)
-
                 r = min(r, h * 0.85)
                 radii[i] = max(0, r)
             }
@@ -191,7 +182,7 @@ struct RainForecastSurfaceView: View {
                 return
             }
 
-            // Light smoothing (keeps shape calm; deterministic)
+            // Light smoothing inside wet ranges
             do {
                 var smoothedHeights = heights
                 var smoothedRadii = radii
@@ -204,15 +195,8 @@ struct RainForecastSurfaceView: View {
                         let i1 = i
                         let i2 = min(range.upperBound - 1, i + 1)
 
-                        let h0 = heights[i0]
-                        let h1 = heights[i1]
-                        let h2 = heights[i2]
-                        smoothedHeights[i] = h0 * 0.25 + h1 * 0.50 + h2 * 0.25
-
-                        let r0 = radii[i0]
-                        let r1 = radii[i1]
-                        let r2 = radii[i2]
-                        smoothedRadii[i] = r0 * 0.25 + r1 * 0.50 + r2 * 0.25
+                        smoothedHeights[i] = heights[i0] * 0.25 + heights[i1] * 0.50 + heights[i2] * 0.25
+                        smoothedRadii[i] = radii[i0] * 0.25 + radii[i1] * 0.50 + radii[i2] * 0.25
                     }
                 }
 
@@ -224,20 +208,16 @@ struct RainForecastSurfaceView: View {
                 }
             }
 
-            // Vertical base gradient used by body + cap
-            func baseFillShading() -> GraphicsContext.Shading {
-                let g = Gradient(stops: [
-                    .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
-                    .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0),
-                ])
-                return .linearGradient(
-                    g,
-                    startPoint: CGPoint(x: plotRect.midX, y: baselineY),
-                    endPoint: CGPoint(x: plotRect.midX, y: rect.minY)
-                )
-            }
-
-            let bodyShading = baseFillShading()
+            // Body gradient
+            let bodyGradient = Gradient(stops: [
+                .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
+                .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0),
+            ])
+            let bodyShading = GraphicsContext.Shading.linearGradient(
+                bodyGradient,
+                startPoint: CGPoint(x: plotRect.midX, y: baselineY),
+                endPoint: CGPoint(x: plotRect.midX, y: rect.minY)
+            )
 
             for range in wetRanges {
                 let segment = Self.buildSegmentTopPoints(
@@ -257,7 +237,7 @@ struct RainForecastSurfaceView: View {
 
                 guard topPoints.count >= 2 else { continue }
 
-                // BODY: top pushed downward by diffusion radius
+                // BODY: stops at (top + radius). Geometry (top contour) stays untouched.
                 var bodyTopPoints = topPoints
                 if segmentMaxRadius > 0 {
                     for j in 0..<bodyTopPoints.count {
@@ -267,7 +247,6 @@ struct RainForecastSurfaceView: View {
                     }
                 }
 
-                // Layer 2: Body fill
                 do {
                     var bodyPath = Path()
                     Self.addSmoothQuadSegments(&bodyPath, points: bodyTopPoints, moveToFirst: true)
@@ -276,25 +255,20 @@ struct RainForecastSurfaceView: View {
                     context.fill(bodyPath, with: bodyShading)
                 }
 
-                // Layer 3: Diffusion cap (stacked bands, per-x fade only affects diffusion)
+                // DIFFUSION CAP: stacked strips from top -> body boundary.
+                // Rendering-only fades (startEase/endFade) applied via per-x alpha.
                 if segmentMaxRadius > 0, configuration.diffusionLayers > 0 {
                     let layers = max(1, configuration.diffusionLayers)
 
-                    // Edge alpha floor at the top-most edge (u-driven strength modulates how much of this transparency is applied).
-                    let edgeFloor = max(0.0, min(1.0, configuration.diffusionEdgeAlphaFloor))
-
-                    // Inner boundary alpha should be 1.0 to avoid a seam against the body.
-                    // diffusionMaxAlpha is still honoured, but clamped to [0,1].
                     let maxA = max(0.0, min(1.0, configuration.diffusionMaxAlpha))
+                    let edgeFloor = max(0.0, min(1.0, configuration.diffusionEdgeAlphaFloor))
 
                     for k in 0..<layers {
                         let t0 = CGFloat(k) / CGFloat(layers)
                         let t1 = CGFloat(k + 1) / CGFloat(layers)
                         let tMid = (t0 + t1) * 0.5
 
-                        // 0..1 ramp from top edge to inner boundary
-                        let ramp = pow(Double(tMid), configuration.diffusionBandFalloffPower)
-                        let baseBand = edgeFloor + (maxA - edgeFloor) * ramp
+                        let bandRamp = pow(Double(tMid), configuration.diffusionBandFalloffPower)
 
                         var contourA: [CGPoint] = []
                         var contourB: [CGPoint] = []
@@ -314,10 +288,9 @@ struct RainForecastSurfaceView: View {
                         Self.addSmoothQuadSegments(&strip, points: contourB.reversed(), moveToFirst: false)
                         strip.closeSubpath()
 
-                        // Per-x diffusion effect based on uncertainty + boundary modifiers:
-                        // diffusionEffect = lerp(0.25, 1.0, pow(u, 1.2)) * startEase * endFade
-                        var maskStops: [Gradient.Stop] = []
-                        maskStops.reserveCapacity(topPoints.count)
+                        // Horizontal gradient carries per-x alpha.
+                        var stops: [Gradient.Stop] = []
+                        stops.reserveCapacity(topPoints.count)
 
                         for j in 0..<topPoints.count {
                             let p = topPoints[j]
@@ -327,40 +300,38 @@ struct RainForecastSurfaceView: View {
                             let c = certainty01[si]
                             let u = 1.0 - c
 
+                            // Strength: lerp(0.25,1.0,pow(u,1.2)) then boundary modifiers.
                             let uStrength = pow(u, configuration.diffusionStrengthUncertaintyPower)
-                            let strength = Self.lerp(
-                                configuration.diffusionStrengthMinMultiplier,
-                                configuration.diffusionStrengthMaxMultiplier,
-                                uStrength
-                            )
+                            let rawStrength = Self.lerp(configuration.diffusionStrengthMinMultiplier,
+                                                       configuration.diffusionStrengthMaxMultiplier,
+                                                       uStrength)
+                            let strength = max(0.0, min(1.0, rawStrength * edgeFactors[si]))
 
-                            let edge = edgeFactors[si]
-                            let diffusionEffect = max(0.0, min(1.0, strength * edge))
+                            // Edge alpha gets closer to 1.0 as strength drops (crisper).
+                            let edgeAlpha = 1.0 - (1.0 - edgeFloor) * strength
 
-                            // Rendering-only fade: reduces the amount of transparency, not the geometry.
-                            // finalMultiplier approaches 1.0 as diffusionEffect -> 0.
-                            let finalMultiplier = 1.0 - (1.0 - baseBand) * diffusionEffect
+                            // Band alpha ramps from edgeAlpha -> maxA as depth increases.
+                            let bandAlpha = edgeAlpha + (maxA - edgeAlpha) * bandRamp
 
-                            maskStops.append(.init(color: Color.white.opacity(finalMultiplier), location: loc))
+                            // Cap colour uses the top fill tone (keeps it cohesive and avoids “axis line” seams).
+                            let a = max(0.0, min(1.0, configuration.fillTopOpacity * bandAlpha))
+                            stops.append(.init(color: configuration.fillTopColor.opacity(a), location: loc))
                         }
 
-                        let maskGradient = Gradient(stops: maskStops)
-                        let maskShading = GraphicsContext.Shading.linearGradient(
-                            maskGradient,
-                            startPoint: CGPoint(x: plotRect.minX, y: 0),
-                            endPoint: CGPoint(x: plotRect.maxX, y: 0)
-                        )
-
-                        // Preserve the vertical shading while applying per-x alpha via destinationIn.
-                        context.drawLayer { layer in
-                            layer.fill(strip, with: bodyShading)
-                            layer.blendMode = .destinationIn
-                            layer.fill(strip, with: maskShading)
+                        // Needs at least 2 stops to render reliably.
+                        if stops.count >= 2 {
+                            let grad = Gradient(stops: stops)
+                            let shading = GraphicsContext.Shading.linearGradient(
+                                grad,
+                                startPoint: CGPoint(x: plotRect.minX, y: 0),
+                                endPoint: CGPoint(x: plotRect.maxX, y: 0)
+                            )
+                            context.fill(strip, with: shading)
                         }
                     }
                 }
 
-                // Layer 4: Tight inward glow (per-x fades applied)
+                // GLOW: tight inward concentration, per-x fades applied.
                 if configuration.glowEnabled, configuration.glowMaxAlpha > 0 {
                     let glowRadiusMax = min(configuration.glowMaxRadiusPoints, rect.height * configuration.glowMaxRadiusFractionOfHeight)
                     let glowLayers = max(1, configuration.glowLayers)
@@ -410,26 +381,27 @@ struct RainForecastSurfaceView: View {
                             let c = certainty01[si]
                             let certaintyBoost = pow(max(0.0, min(1.0, c)), configuration.glowCertaintyPower)
 
-                            // Boundary modifiers (rendering only)
+                            // Rendering-only boundary fades
                             let edge = edgeFactors[si]
 
-                            let a = max(0, min(1.0, alphaBase * certaintyBoost * edge))
+                            let a = max(0.0, min(1.0, alphaBase * certaintyBoost * edge))
                             stops.append(.init(color: configuration.glowColor.opacity(a), location: loc))
                         }
 
-                        let grad = Gradient(stops: stops)
-                        let shading = GraphicsContext.Shading.linearGradient(
-                            grad,
-                            startPoint: CGPoint(x: plotRect.minX, y: 0),
-                            endPoint: CGPoint(x: plotRect.maxX, y: 0)
-                        )
-
-                        context.fill(strip, with: shading)
+                        if stops.count >= 2 {
+                            let grad = Gradient(stops: stops)
+                            let shading = GraphicsContext.Shading.linearGradient(
+                                grad,
+                                startPoint: CGPoint(x: plotRect.minX, y: 0),
+                                endPoint: CGPoint(x: plotRect.maxX, y: 0)
+                            )
+                            context.fill(strip, with: shading)
+                        }
                     }
                 }
             }
 
-            // Layer 1: Baseline (on top)
+            // Layer 1: Baseline on top
             Self.drawBaseline(
                 in: &context,
                 plotRect: plotRect,
@@ -511,8 +483,7 @@ private extension RainForecastSurfaceView {
                 endFade = 1.0 - s
             }
 
-            let endF = max(endFade, floorClamped)
-            out.append(startEase * endF)
+            out.append(startEase * max(endFade, floorClamped))
         }
 
         return out
@@ -556,7 +527,7 @@ private extension RainForecastSurfaceView {
         let startEdgeX = plotRect.minX + CGFloat(first) * stepX
         let endEdgeX = plotRect.minX + CGFloat(last + 1) * stepX
 
-        // Interior-only easing at wet/dry boundaries (not applied at Now or 60m edges)
+        // Interior-only easing at wet/dry boundaries (not at Now or 60m edges)
         let rampXFrac: CGFloat = 0.28
         let rampHFrac: CGFloat = 0.35
         let rampRFrac: CGFloat = 0.40
@@ -661,7 +632,6 @@ private extension RainForecastSurfaceView {
         configuration: RainForecastSurfaceConfiguration
     ) {
         let inset = max(0, configuration.baselineInsetPoints)
-
         let x0 = plotRect.minX + inset
         let x1 = plotRect.maxX - inset
         guard x1 > x0 else { return }
@@ -675,20 +645,12 @@ private extension RainForecastSurfaceView {
             let softWidth = max(configuration.baselineLineWidth, configuration.baselineLineWidth * configuration.baselineSoftWidthMultiplier)
             let softOpacity = max(0.0, min(1.0, configuration.baselineOpacity * configuration.baselineSoftOpacityMultiplier))
             let softStyle = StrokeStyle(lineWidth: softWidth, lineCap: .round)
-            context.stroke(
-                base,
-                with: .color(configuration.baselineColor.opacity(softOpacity)),
-                style: softStyle
-            )
+            context.stroke(base, with: .color(configuration.baselineColor.opacity(softOpacity)), style: softStyle)
         }
 
         // Crisp 1px pass
         let stroke = StrokeStyle(lineWidth: configuration.baselineLineWidth, lineCap: .round)
-        context.stroke(
-            base,
-            with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)),
-            style: stroke
-        )
+        context.stroke(base, with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)), style: stroke)
     }
 
     static func alignToPixelCenter(_ value: CGFloat, displayScale: CGFloat) -> CGFloat {

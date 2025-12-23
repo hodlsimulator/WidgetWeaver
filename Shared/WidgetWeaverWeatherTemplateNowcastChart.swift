@@ -4,7 +4,7 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Nowcast chart using RainForecastSurfaceView (filled ribbon + inward diffused top edge).
+//  Nowcast chart using RainForecastSurfaceView.
 //
 
 import Foundation
@@ -21,7 +21,7 @@ struct WeatherNowcastChart: View {
             let plotInset: CGFloat = 10
 
             ZStack(alignment: .bottomLeading) {
-                // Black stage for matching the mockups.
+                // Black stage for mockup matching.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.black.opacity(1.0))
                     .overlay(
@@ -85,13 +85,11 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // chance01 treated as certainty (1 = very certain, 0 = very uncertain).
         let certainties: [Double] = samples.map { s in
             Self.clamp01(s.chance01)
         }
@@ -111,11 +109,11 @@ private struct WeatherNowcastSurfacePlot: View {
             edgeInsetFraction: 0.00,
 
             baselineColor: accent,
-            baselineOpacity: 0.14,               // reduced ~20% from previous
+            baselineOpacity: 0.11,                // dropped vs previous
             baselineLineWidth: onePixel,
-            baselineInsetPoints: 5.0,            // aligns better with internal padding
-            baselineSoftWidthMultiplier: 2.6,    // atmospheric softness without a true blur
-            baselineSoftOpacityMultiplier: 0.35,
+            baselineInsetPoints: 6.0,             // aligns with internal padding
+            baselineSoftWidthMultiplier: 2.6,
+            baselineSoftOpacityMultiplier: 0.32,
 
             fillBottomColor: accent,
             fillTopColor: accent,
@@ -124,13 +122,14 @@ private struct WeatherNowcastSurfacePlot: View {
 
             startEaseMinutes: 3,
             endFadeMinutes: 10,
-            endFadeFloor: 0.20,                  // keep a trace so 60m never looks “empty”
+            endFadeFloor: 0.20,
 
             diffusionMinRadiusPoints: 1.6,
             diffusionMaxRadiusPoints: 18.0,
             diffusionMinRadiusFractionOfHeight: 0.030,
             diffusionMaxRadiusFractionOfHeight: 0.34,
-            diffusionLayers: 32,
+            diffusionLayers: 24,                  // lighter than 32 for widget reliability
+
             diffusionMaxAlpha: 1.0,
             diffusionBandFalloffPower: 2.10,
             diffusionEdgeAlphaFloor: 0.02,
@@ -144,7 +143,7 @@ private struct WeatherNowcastSurfacePlot: View {
             glowColor: accent,
             glowMaxRadiusPoints: 2.8,
             glowMaxRadiusFractionOfHeight: 0.075,
-            glowLayers: 6,
+            glowLayers: 5,
             glowMaxAlpha: 0.14,
             glowFalloffPower: 1.75,
             glowCertaintyPower: 1.6
