@@ -92,6 +92,7 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let n = samples.count
 
+        // Certainty falloff into the future keeps the far horizon fuzzier (matches Apple’s feel).
         let horizonStart = 0.15
         let horizonEndCertainty = 0.55
 
@@ -107,7 +108,7 @@ private struct WeatherNowcastSurfacePlot: View {
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 28 : 36
+        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 34 : 44
 
         let cfg: RainForecastSurfaceConfiguration = {
             var c = RainForecastSurfaceConfiguration()
@@ -142,35 +143,36 @@ private struct WeatherNowcastSurfacePlot: View {
             c.endFadeMinutes = 10
             c.endFadeFloor = 0.0
 
-            // Diffusion (stacked contours; rendered subtractively via destinationOut)
+            // Diffusion: actually erodes the edge now (destinationOut is fixed).
             c.diffusionLayers = diffusionLayerCount
-            c.diffusionFalloffPower = 2.2
+            c.diffusionFalloffPower = 1.75
             c.diffusionMinRadiusPoints = 1.5
-            c.diffusionMaxRadiusPoints = 48.0
+            c.diffusionMaxRadiusPoints = 86.0
             c.diffusionMinRadiusFractionOfHeight = 0.0
-            c.diffusionMaxRadiusFractionOfHeight = 0.60
+            c.diffusionMaxRadiusFractionOfHeight = 0.58
 
-            // Lower exponents keep diffusion present at high-but-not-absolute certainty.
-            c.diffusionRadiusUncertaintyPower = 0.80
-            c.diffusionStrengthMax = 0.78
+            // Lower power => fuzz appears sooner as certainty drops.
+            c.diffusionRadiusUncertaintyPower = 0.70
 
-            // Key change: keep *some* fuzz even at high certainty, so the surface is not overly smooth.
+            // Stronger diffusion to match the mock’s thick fuzz.
+            c.diffusionStrengthMax = 0.95
+
+            // Important: keeps a small amount of edge softness even at high certainty.
             c.diffusionStrengthMinUncertainTerm = 0.18
 
-            c.diffusionStrengthUncertaintyPower = 0.85
+            c.diffusionStrengthUncertaintyPower = 0.78
             c.diffusionDrizzleThreshold = 0.08
-            c.diffusionLowIntensityGateMin = 0.60
+            c.diffusionLowIntensityGateMin = 0.62
 
-            // Key: remove “streaks” by sampling every point + adding a tiny blur to the diffusion mask.
             c.diffusionStopStride = 1
-            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.0 : 1.25
+            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.35 : 1.55
 
-            // Key change: deterministic micro-jitter that increases with uncertainty.
-            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.2 : 1.6
+            // Texture without streaks
+            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.9 : 2.3
 
             c.diffusionEdgeSofteningWidth = 0.10
 
-            // No internal texture
+            // Internal texture remains off (mist handles the look).
             c.textureEnabled = false
             c.textureMaxAlpha = 0.0
             c.textureMinAlpha = 0.0
@@ -182,23 +184,15 @@ private struct WeatherNowcastSurfacePlot: View {
             c.textureBlurRadiusPoints = 0.0
             c.textureTopInsetFractionOfHeight = 0.02
 
-            // Diffusion enable switch + “spray” dots (blurred circles, no streaks).
+            // Enable dot-based diffusion erosion + mist grain.
             c.fuzzEnabled = true
-            c.fuzzLineWidthMultiplier = 0.0
-            c.fuzzLengthMultiplier = 0.0
-
             c.fuzzDotsEnabled = true
-            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 3 : 4
+            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 7 : 9
 
-            c.fuzzRidgeEnabled = false
-            c.fuzzOutsideOnly = false
-            c.fuzzRidgeCoreRadiusMultiplier = 0.0
-            c.fuzzRidgeCoreAlphaMultiplier = 0.0
-            c.fuzzRidgeFeatherRadiusMultiplier = 0.0
-            c.fuzzRidgeFeatherAlphaMultiplier = 0.0
-            c.fuzzParticleAlphaMultiplier = 0.0
+            // This is the mist/haze strength (screen-blended) used by the new renderer.
+            c.fuzzParticleAlphaMultiplier = WidgetWeaverRuntime.isRunningInAppExtension ? 0.70 : 0.78
 
-            // Glow (kept subtle)
+            // Glow (kept subtle; mist does the heavy lifting)
             c.glowEnabled = true
             c.glowColor = accent
             c.glowLayers = 6

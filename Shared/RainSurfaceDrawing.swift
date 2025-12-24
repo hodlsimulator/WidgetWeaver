@@ -11,6 +11,8 @@ import SwiftUI
 
 enum RainSurfaceDrawing {
 
+    // MARK: - Baseline
+
     static func drawBaseline(
         in context: inout GraphicsContext,
         plotRect: CGRect,
@@ -29,7 +31,7 @@ enum RainSurfaceDrawing {
         base.move(to: CGPoint(x: x0, y: baselineY))
         base.addLine(to: CGPoint(x: x1, y: baselineY))
 
-        // Baseline stays visible even under the filled ribbon.
+        // Baseline stays visible even when the filled ribbon is bright.
         let savedBlend = context.blendMode
         context.blendMode = .screen
 
@@ -48,6 +50,8 @@ enum RainSurfaceDrawing {
 
         context.blendMode = savedBlend
     }
+
+    // MARK: - Fill
 
     static func drawFill(
         in context: inout GraphicsContext,
@@ -74,7 +78,7 @@ enum RainSurfaceDrawing {
         }
     }
 
-    // MARK: - Internal texture (disabled by design)
+    // MARK: - Internal texture (intentionally disabled)
 
     static func drawInternalGrainIfEnabled(
         in context: inout GraphicsContext,
@@ -90,7 +94,6 @@ enum RainSurfaceDrawing {
         displayScale: CGFloat
     ) {
         // Intentionally empty.
-        // No grain, particles, dots, streaks, or noise textures are rendered as an interior fill layer.
         _ = context
         _ = plotRect
         _ = baselineY
@@ -104,7 +107,7 @@ enum RainSurfaceDrawing {
         _ = displayScale
     }
 
-    // MARK: - Layer 3 (Diffusion) + Layer 4 (Glow)
+    // MARK: - Diffusion (destinationOut) + Mist (screen) + Glow (screen)
 
     static func drawFuzzAndGlowIfEnabled(
         in context: inout GraphicsContext,
@@ -119,13 +122,18 @@ enum RainSurfaceDrawing {
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
-        let diffusionEnabled = configuration.fuzzEnabled
-        let glowEnabled = configuration.glowEnabled
+        let diffusionOn = configuration.fuzzEnabled
+            && configuration.diffusionLayers > 1
+            && configuration.diffusionStrengthMax > 0.000_01
 
-        let diffusionOn = diffusionEnabled && configuration.diffusionLayers > 1 && configuration.diffusionStrengthMax > 0.000_01
-        let glowOn = glowEnabled && configuration.glowLayers > 1 && configuration.glowMaxAlpha > 0.000_01
+        let glowOn = configuration.glowEnabled
+            && configuration.glowLayers > 1
+            && configuration.glowMaxAlpha > 0.000_01
 
-        guard diffusionOn || glowOn else { return }
+        // “Mist” haze above the surface edge (this is what the mock shows heavily).
+        let mistOn = configuration.fuzzParticleAlphaMultiplier > 0.000_01
+
+        guard diffusionOn || glowOn || mistOn else { return }
         guard !segments.isEmpty else { return }
 
         let n = min(heights.count, min(intensityNorm.count, min(certainty.count, edgeFactors.count)))
@@ -159,7 +167,10 @@ enum RainSurfaceDrawing {
         var diffusionRadiusBySample = [CGFloat](repeating: 0, count: n)
         var diffusionAlphaBySample = [Double](repeating: 0, count: n)
         var glowAlphaBySample = [Double](repeating: 0, count: n)
-        var uncertaintyBySample = [Double](repeating: 0, count: n)
+
+        // Mist arrays (screen blended)
+        var mistRadiusBySample = [CGFloat](repeating: 0, count: n)
+        var mistAlphaBySample = [Double](repeating: 0, count: n)
 
         let drizzleThreshold = max(0.000_001, configuration.diffusionDrizzleThreshold)
         let gateMin = RainSurfaceMath.clamp01(configuration.diffusionLowIntensityGateMin)
@@ -169,18 +180,18 @@ enum RainSurfaceDrawing {
         let strengthPower = max(0.01, configuration.diffusionStrengthUncertaintyPower)
         let radiusPower = max(0.01, configuration.diffusionRadiusUncertaintyPower)
 
-        // Heavy rain boost: adds surface energy without any line/streak texture.
+        // Heavy rain boost (adds energy without any streak texture).
         let heavyStart = 0.45
         let heavyEnd = 0.85
-        let heavyRadiusBoostMax = 0.25
-        let heavyStrengthBoostMax = 0.20
+        let heavyRadiusBoostMax = 0.35
+        let heavyStrengthBoostMax = 0.25
 
-        // Certainty is smoothed for rendering to avoid banding artifacts in the diffusion mask.
+        // Certainty smoothing avoids banding/striping in the diffusion mask.
         let certaintySmoothed = RainSurfaceMath.smooth(Array(certainty.prefix(n)), passes: 3)
 
-        // Optional jitter in pixel-like units, converted into points.
-        let jitterAmpPx = max(0.0, configuration.diffusionJitterAmplitudePoints)
-        let jitterAmp = CGFloat(jitterAmpPx) / max(1.0, displayScale)
+        // Deterministic jitter (in points) – contributes to fuzz texture without lines.
+        let jitterAmpPoints = max(0.0, configuration.diffusionJitterAmplitudePoints)
+        let jitterAmp = CGFloat(jitterAmpPoints) / max(1.0, displayScale)
 
         let glowCertaintyPower = max(0.01, configuration.glowCertaintyPower)
 
@@ -188,9 +199,8 @@ enum RainSurfaceDrawing {
             let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
             let c = RainSurfaceMath.clamp01(certaintySmoothed[i])
             let u = RainSurfaceMath.clamp01(1.0 - c)
-            uncertaintyBySample[i] = u
 
-            // Light-rain scaling (keeps fuzz tighter for drizzle/light rain).
+            // Light rain scaling keeps fuzz tighter for drizzle/light rain.
             var localMaxRadius = maxRadius
             var localStrengthMax = strengthMax
             if inorm < configuration.diffusionLightRainMeanThreshold {
@@ -198,7 +208,7 @@ enum RainSurfaceDrawing {
                 localStrengthMax = localStrengthMax * configuration.diffusionLightRainStrengthScale
             }
 
-            // Uncertainty-to-radius/strength mapping.
+            // Uncertainty → radius/strength
             let rT = pow(u, radiusPower)
             var radius = minRadius + (localMaxRadius - minRadius) * CGFloat(rT)
 
@@ -206,7 +216,7 @@ enum RainSurfaceDrawing {
             let strengthFactor = strengthMinFactor + (1.0 - strengthMinFactor) * sT
             var strength = localStrengthMax * strengthFactor
 
-            // Low-intensity gating (prevents over-fuzz for near-zero precipitation).
+            // Low-intensity gating (prevents over-fuzz at near-zero precipitation).
             let gate: Double
             if inorm <= drizzleThreshold {
                 gate = gateMin
@@ -225,18 +235,17 @@ enum RainSurfaceDrawing {
             radius *= (1.0 + CGFloat(heavyRadiusBoostMax * heavyW))
             strength *= (1.0 + heavyStrengthBoostMax * heavyW)
 
-            // Deterministic jitter: adds micro-structure without streaks.
+            // Deterministic micro-jitter (no streaks).
             if jitterAmp > 0.000_01, strength > 0.000_01 {
                 var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0x4A17B156, saltB: 0x00C0FFEE))
-                let nR = randTriangle(&prng)     // -1...1, biased towards 0
-                let nA = randSigned(&prng)       // -1...1
+                let jr = randTriangle(&prng)  // -1...1, biased towards 0
+                let ja = randSigned(&prng)    // -1...1
 
-                // Jitter scales with fuzz strength (more certainty => smaller jitter).
                 let fuzziness = RainSurfaceMath.clamp01(strengthFactor)
-                let amp = Double(jitterAmp) * fuzziness
+                let amp = Double(jitterAmp) * (0.35 + 0.65 * fuzziness)
 
-                radius += CGFloat(nR) * CGFloat(amp)
-                strength *= (1.0 + 0.22 * fuzziness * nA)
+                radius += CGFloat(jr) * CGFloat(amp)
+                strength *= (1.0 + 0.20 * fuzziness * ja)
             }
 
             radius = max(onePixel, radius)
@@ -252,132 +261,156 @@ enum RainSurfaceDrawing {
             } else {
                 glowAlphaBySample[i] = 0.0
             }
+
+            // Mist: strong contributor to the mock’s look.
+            // Drives primarily from intensity, then uncertainty; includes a small base for “smooth” cases.
+            let mistBase = 0.14
+            let mistU = 0.86
+            var m = (mistBase + mistU * u) * pow(max(0.0, inorm), 0.62)
+            m *= edgeFactors[i]
+            m *= max(0.0, configuration.fuzzParticleAlphaMultiplier)
+            mistAlphaBySample[i] = RainSurfaceMath.clamp01(m)
+
+            // Mist radius: larger than diffusion radius so haze rises into the black.
+            mistRadiusBySample[i] = max(onePixel, radius * 1.9)
         }
 
-        let dotsOn = configuration.fuzzDotsEnabled && configuration.fuzzDotsPerSampleMax > 0
+        // ---- 1) DIFFUSION: erode the fill edge (destinationOut) ----
+        if diffusionOn {
+            let savedBlend = context.blendMode
+            context.blendMode = .destinationOut
 
-        let radiusSmoothPasses = (jitterAmpPx > 0.000_01 || dotsOn) ? 1 : 2
-        let alphaSmoothPasses = (jitterAmpPx > 0.000_01 || dotsOn) ? 2 : 4
+            let diffusionBlur = max(0, configuration.fuzzGlobalBlurRadiusPoints)
+            let dotsOn = configuration.fuzzDotsEnabled && configuration.fuzzDotsPerSampleMax > 0
 
-        context.drawLayer { inner in
-            if diffusionOn {
-                let savedBlend = inner.blendMode
-                inner.blendMode = .destinationOut
-
-                let diffusionBlur = max(0, configuration.fuzzGlobalBlurRadiusPoints)
-
-                for seg in segments {
+            for seg in segments {
+                context.drawLayer { diffLayer in
                     if diffusionBlur > 0.000_01 {
-                        inner.drawLayer { diffLayer in
-                            diffLayer.addFilter(.blur(radius: diffusionBlur))
-
-                            drawStackedDiffusion(
-                                in: &diffLayer,
-                                plotRect: plotRect,
-                                baselineY: baselineY,
-                                stepX: stepX,
-                                range: seg.range,
-                                heights: heights,
-                                radiusBySample: diffusionRadiusBySample,
-                                alphaBySample: diffusionAlphaBySample,
-                                layers: max(2, configuration.diffusionLayers),
-                                falloffPower: max(0.01, configuration.diffusionFalloffPower),
-                                color: .black,
-                                edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
-                                onePixel: onePixel,
-                                stopStride: max(1, configuration.diffusionStopStride),
-                                radiusSmoothPasses: radiusSmoothPasses,
-                                alphaSmoothPasses: alphaSmoothPasses
-                            )
-
-                            if dotsOn {
-                                drawDiffusionSprayDots(
-                                    in: &diffLayer,
-                                    plotRect: plotRect,
-                                    baselineY: baselineY,
-                                    stepX: stepX,
-                                    range: seg.range,
-                                    heights: heights,
-                                    intensityNorm: intensityNorm,
-                                    uncertainty: uncertaintyBySample,
-                                    radiusBySample: diffusionRadiusBySample,
-                                    alphaBySample: diffusionAlphaBySample,
-                                    maxDotsPerSample: max(0, configuration.fuzzDotsPerSampleMax),
-                                    onePixel: onePixel
-                                )
-                            }
-                        }
-                    } else {
-                        drawStackedDiffusion(
-                            in: &inner,
-                            plotRect: plotRect,
-                            baselineY: baselineY,
-                            stepX: stepX,
-                            range: seg.range,
-                            heights: heights,
-                            radiusBySample: diffusionRadiusBySample,
-                            alphaBySample: diffusionAlphaBySample,
-                            layers: max(2, configuration.diffusionLayers),
-                            falloffPower: max(0.01, configuration.diffusionFalloffPower),
-                            color: .black,
-                            edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
-                            onePixel: onePixel,
-                            stopStride: max(1, configuration.diffusionStopStride),
-                            radiusSmoothPasses: radiusSmoothPasses,
-                            alphaSmoothPasses: alphaSmoothPasses
-                        )
-
-                        if dotsOn {
-                            drawDiffusionSprayDots(
-                                in: &inner,
-                                plotRect: plotRect,
-                                baselineY: baselineY,
-                                stepX: stepX,
-                                range: seg.range,
-                                heights: heights,
-                                intensityNorm: intensityNorm,
-                                uncertainty: uncertaintyBySample,
-                                radiusBySample: diffusionRadiusBySample,
-                                alphaBySample: diffusionAlphaBySample,
-                                maxDotsPerSample: max(0, configuration.fuzzDotsPerSampleMax),
-                                onePixel: onePixel
-                            )
-                        }
+                        diffLayer.addFilter(.blur(radius: diffusionBlur))
                     }
-                }
 
-                inner.blendMode = savedBlend
-            }
-
-            if glowOn, glowRadius > 0.000_01 {
-                let savedBlend = inner.blendMode
-                inner.blendMode = .screen
-
-                for seg in segments {
-                    drawStackedGlow(
-                        in: &inner,
+                    drawStackedDiffusion(
+                        in: &diffLayer,
                         plotRect: plotRect,
                         baselineY: baselineY,
                         stepX: stepX,
                         range: seg.range,
                         heights: heights,
-                        glowRadius: glowRadius,
-                        alphaBySample: glowAlphaBySample,
-                        layers: max(2, configuration.glowLayers),
-                        falloffPower: max(0.01, configuration.glowFalloffPower),
-                        color: configuration.glowColor,
+                        radiusBySample: diffusionRadiusBySample,
+                        alphaBySample: diffusionAlphaBySample,
+                        layers: max(2, configuration.diffusionLayers),
+                        falloffPower: max(0.01, configuration.diffusionFalloffPower),
+                        color: .black,
                         edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
                         onePixel: onePixel,
                         stopStride: max(1, configuration.diffusionStopStride)
                     )
+
+                    if dotsOn {
+                        drawErosionSprayDots(
+                            in: &diffLayer,
+                            plotRect: plotRect,
+                            baselineY: baselineY,
+                            stepX: stepX,
+                            range: seg.range,
+                            heights: heights,
+                            intensityNorm: intensityNorm,
+                            radiusBySample: diffusionRadiusBySample,
+                            alphaBySample: diffusionAlphaBySample,
+                            maxDotsPerSample: max(1, configuration.fuzzDotsPerSampleMax),
+                            onePixel: onePixel
+                        )
+                    }
+                }
+            }
+
+            context.blendMode = savedBlend
+        }
+
+        // ---- 2) MIST: haze above the edge (screen) ----
+        if mistOn {
+            let savedBlend = context.blendMode
+            context.blendMode = .screen
+
+            // Two-pass mist: a soft layer + a grain layer (no streaks).
+            let softBlur = max(3.0, Double(configuration.fuzzGlobalBlurRadiusPoints) * 4.6)
+            let grainBlur = max(0.0, Double(configuration.fuzzGlobalBlurRadiusPoints) * 1.35)
+
+            for seg in segments {
+                let meanAlpha = mean(mistAlphaBySample, in: seg.range)
+                let meanRadius = mean(mistRadiusBySample, in: seg.range)
+
+                if meanAlpha > 0.000_5, meanRadius > onePixel {
+                    // Soft continuous haze along the ridge.
+                    context.drawLayer { hazeLayer in
+                        hazeLayer.addFilter(.blur(radius: CGFloat(softBlur)))
+
+                        let lw = max(onePixel, meanRadius * 2.35)
+                        let style = StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round)
+
+                        hazeLayer.stroke(
+                            seg.topEdgePath,
+                            with: .color(configuration.fillTopColor.opacity(min(1.0, meanAlpha * 0.70))),
+                            style: style
+                        )
+                    }
                 }
 
-                inner.blendMode = savedBlend
+                // Grainy haze dots (adds the “diffuse/fuzzy” texture the mock shows).
+                context.drawLayer { grainLayer in
+                    if grainBlur > 0.000_01 {
+                        grainLayer.addFilter(.blur(radius: CGFloat(grainBlur)))
+                    }
+
+                    drawMistSprayDots(
+                        in: &grainLayer,
+                        plotRect: plotRect,
+                        baselineY: baselineY,
+                        stepX: stepX,
+                        range: seg.range,
+                        heights: heights,
+                        intensityNorm: intensityNorm,
+                        radiusBySample: mistRadiusBySample,
+                        alphaBySample: mistAlphaBySample,
+                        color: configuration.fillTopColor,
+                        maxDotsPerSample: max(2, configuration.fuzzDotsPerSampleMax + 3),
+                        onePixel: onePixel
+                    )
+                }
             }
+
+            context.blendMode = savedBlend
+        }
+
+        // ---- 3) GLOW: subtle (screen) ----
+        if glowOn, glowRadius > 0.000_01 {
+            let savedBlend = context.blendMode
+            context.blendMode = .screen
+
+            for seg in segments {
+                drawStackedGlow(
+                    in: &context,
+                    plotRect: plotRect,
+                    baselineY: baselineY,
+                    stepX: stepX,
+                    range: seg.range,
+                    heights: heights,
+                    glowRadius: glowRadius,
+                    alphaBySample: glowAlphaBySample,
+                    layers: max(2, configuration.glowLayers),
+                    falloffPower: max(0.01, configuration.glowFalloffPower),
+                    color: configuration.glowColor,
+                    edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
+                    onePixel: onePixel,
+                    stopStride: max(1, configuration.diffusionStopStride)
+                )
+            }
+
+            context.blendMode = savedBlend
         }
     }
 
-    // MARK: - Diffusion implementation (multi-contour stacked-alpha)
+    // MARK: - Diffusion implementation (stacked contours, smooth per-sample alpha)
 
     private static func drawStackedDiffusion(
         in context: inout GraphicsContext,
@@ -393,9 +426,7 @@ enum RainSurfaceDrawing {
         color: Color,
         edgeSofteningWidth: Double,
         onePixel: CGFloat,
-        stopStride: Int,
-        radiusSmoothPasses: Int,
-        alphaSmoothPasses: Int
+        stopStride: Int
     ) {
         guard let first = range.first else { return }
         let last = max(first, range.upperBound - 1)
@@ -434,8 +465,9 @@ enum RainSurfaceDrawing {
         let peakRadius = radii.max() ?? 0.0
         guard peakAlpha > 0.000_5, peakRadius > (0.5 * onePixel) else { return }
 
-        radii = RainSurfaceMath.smooth(radii, passes: max(0, radiusSmoothPasses))
-        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: max(0, alphaSmoothPasses))
+        // Smoothing prevents banding; keep mild so the edge still reads “textured” once mist is applied.
+        radii = RainSurfaceMath.smooth(radii, passes: 1)
+        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: 3)
 
         let width = max(0.000_01, plotRect.width)
         let denom = Double(max(1, layers - 1))
@@ -445,6 +477,7 @@ enum RainSurfaceDrawing {
             let t0 = Double(k) / denom
             let t1 = Double(k + 1) / denom
             let tMid = 0.5 * (t0 + t1)
+
             let w = pow(max(0.0, 1.0 - tMid), falloffPower)
             if w <= 0.000_01 { continue }
 
@@ -478,9 +511,9 @@ enum RainSurfaceDrawing {
         }
     }
 
-    // MARK: - Diffusion micro-structure (dot "spray", blurred as part of the diffusion layer)
+    // MARK: - Mist dots (screen)
 
-    private static func drawDiffusionSprayDots(
+    private static func drawMistSprayDots(
         in context: inout GraphicsContext,
         plotRect: CGRect,
         baselineY: CGFloat,
@@ -488,7 +521,75 @@ enum RainSurfaceDrawing {
         range: Range<Int>,
         heights: [CGFloat],
         intensityNorm: [Double],
-        uncertainty: [Double],
+        radiusBySample: [CGFloat],
+        alphaBySample: [Double],
+        color: Color,
+        maxDotsPerSample: Int,
+        onePixel: CGFloat
+    ) {
+        guard maxDotsPerSample > 0 else { return }
+
+        for i in range {
+            let h = heights[i]
+            if h <= 0.000_01 { continue }
+
+            let a0 = alphaBySample[i]
+            if a0 <= 0.000_5 { continue }
+
+            let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
+            if inorm <= 0.000_01 { continue }
+
+            let rBand = max(onePixel, radiusBySample[i])
+
+            // Density: intensity dominates, uncertainty has already been baked into alphaBySample.
+            let density = RainSurfaceMath.clamp01(0.30 + 0.70 * pow(inorm, 0.70))
+            let desired = Double(maxDotsPerSample) * density
+            let dotCount = max(1, Int(desired.rounded(.toNearestOrAwayFromZero)))
+
+            let topY = baselineY - h
+
+            for j in 0..<dotCount {
+                var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xC011D00D, saltB: (j &* 131) &+ 17))
+
+                let rx = prng.nextDouble01()
+                let x = plotRect.minX + (CGFloat(i) + CGFloat(rx)) * stepX
+
+                // Mostly above the ridge, with a small portion slightly inside to avoid a crisp boundary.
+                let ry = prng.nextDouble01()
+                let insideBias = 0.18
+                let y: CGFloat
+                if ry < insideBias {
+                    let t = CGFloat(ry / max(0.000_001, insideBias))
+                    y = topY + t * (rBand * 0.18)
+                } else {
+                    let t = (ry - insideBias) / max(0.000_001, (1.0 - insideBias))
+                    y = topY - CGFloat(pow(t, 1.55)) * rBand
+                }
+
+                let rr = prng.nextDouble01()
+                let dotR = max(onePixel * 0.70, onePixel * (0.90 + 2.60 * rr))
+
+                let ra = prng.nextDouble01()
+                let dotA = RainSurfaceMath.clamp01(a0 * (0.20 + 0.80 * ra))
+
+                if dotA <= 0.000_5 { continue }
+
+                let rect = CGRect(x: x - dotR, y: y - dotR, width: dotR * 2, height: dotR * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(dotA)))
+            }
+        }
+    }
+
+    // MARK: - Erosion dots (destinationOut)
+
+    private static func drawErosionSprayDots(
+        in context: inout GraphicsContext,
+        plotRect: CGRect,
+        baselineY: CGFloat,
+        stepX: CGFloat,
+        range: Range<Int>,
+        heights: [CGFloat],
+        intensityNorm: [Double],
         radiusBySample: [CGFloat],
         alphaBySample: [Double],
         maxDotsPerSample: Int,
@@ -506,40 +607,36 @@ enum RainSurfaceDrawing {
             let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
             if inorm <= 0.000_01 { continue }
 
-            let u = RainSurfaceMath.clamp01(uncertainty[i])
+            let rBand = max(onePixel, radiusBySample[i] * 0.85)
 
-            // Dot density is driven mainly by uncertainty, with intensity providing a smaller boost.
-            let density = RainSurfaceMath.clamp01((u * 0.85) + (inorm * 0.25))
-            let desired = Double(maxDotsPerSample) * pow(density, 0.85)
-
+            // Erosion dots are fewer than mist dots; they exist to break the edge, not destroy the fill.
+            let density = RainSurfaceMath.clamp01(0.18 + 0.82 * pow(inorm, 0.85))
+            let desired = Double(maxDotsPerSample) * 0.62 * density
             let dotCount = Int(desired.rounded(.toNearestOrAwayFromZero))
             if dotCount <= 0 { continue }
 
             let topY = baselineY - h
-            let band = max(onePixel, radiusBySample[i] * 0.85)
 
             for j in 0..<dotCount {
-                var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xD07D07D0, saltB: (j &* 131) &+ 17))
+                var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xD07D07D0, saltB: (j &* 197) &+ 41))
 
                 let rx = prng.nextDouble01()
                 let x = plotRect.minX + (CGFloat(i) + CGFloat(rx)) * stepX
 
-                // Bias Y closer to the top edge, but still inside the fill (destinationOut needs overlap).
+                // Bias inside the fill so destinationOut actually erodes the edge.
                 let ry = prng.nextDouble01()
-                let y = topY + CGFloat(ry * ry) * band
+                let y = topY + CGFloat(pow(ry, 1.20)) * rBand
 
-                // Small circles; blur expands them into a fuzzy edge (no streaks).
                 let rr = prng.nextDouble01()
-                let r = max(onePixel * 0.60, onePixel * (0.75 + 2.10 * rr) * (0.70 + 0.60 * CGFloat(u)))
+                let dotR = max(onePixel * 0.65, onePixel * (0.85 + 2.10 * rr))
 
                 let ra = prng.nextDouble01()
-                let dotAlpha = RainSurfaceMath.clamp01(a0 * (0.22 + 0.38 * u) * (0.45 + 0.55 * ra))
+                let dotA = RainSurfaceMath.clamp01(a0 * (0.10 + 0.32 * ra))
 
-                if dotAlpha <= 0.000_5 { continue }
+                if dotA <= 0.000_5 { continue }
 
-                let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
-                let p = Path(ellipseIn: rect)
-                context.fill(p, with: .color(Color.black.opacity(dotAlpha)))
+                let rect = CGRect(x: x - dotR, y: y - dotR, width: dotR * 2, height: dotR * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(Color.black.opacity(dotA)))
             }
         }
     }
@@ -603,6 +700,7 @@ enum RainSurfaceDrawing {
             let t0 = Double(k) / denom
             let t1 = Double(k + 1) / denom
             let tMid = 0.5 * (t0 + t1)
+
             let w = pow(max(0.0, 1.0 - tMid), falloffPower)
             if w <= 0.000_01 { continue }
 
@@ -693,6 +791,30 @@ enum RainSurfaceDrawing {
         return min(left, right)
     }
 
+    // MARK: - Averages
+
+    private static func mean(_ values: [Double], in range: Range<Int>) -> Double {
+        guard !values.isEmpty, range.lowerBound < range.upperBound else { return 0.0 }
+        let lo = max(0, range.lowerBound)
+        let hi = min(values.count, range.upperBound)
+        if hi <= lo { return 0.0 }
+
+        var sum = 0.0
+        for i in lo..<hi { sum += values[i] }
+        return sum / Double(hi - lo)
+    }
+
+    private static func mean(_ values: [CGFloat], in range: Range<Int>) -> CGFloat {
+        guard !values.isEmpty, range.lowerBound < range.upperBound else { return 0.0 }
+        let lo = max(0, range.lowerBound)
+        let hi = min(values.count, range.upperBound)
+        if hi <= lo { return 0.0 }
+
+        var sum: CGFloat = 0
+        for i in lo..<hi { sum += values[i] }
+        return sum / CGFloat(hi - lo)
+    }
+
     // MARK: - PRNG helpers
 
     private static func randSigned(_ prng: inout RainSurfacePRNG) -> Double {
@@ -700,7 +822,6 @@ enum RainSurfaceDrawing {
     }
 
     private static func randTriangle(_ prng: inout RainSurfacePRNG) -> Double {
-        // Sum of uniforms yields a triangular distribution (more values near 0).
         (prng.nextDouble01() + prng.nextDouble01()) - 1.0
     }
 }
