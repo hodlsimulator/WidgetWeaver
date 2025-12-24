@@ -131,7 +131,7 @@ private struct WeatherNowcastSurfacePlot: View {
             endFadeFloor: 0.0,
 
             // Layer 3: diffusion (stacked alpha)
-            diffusionLayers: 20,                 // raise to 28 if any banding appears
+            diffusionLayers: 28,                 // raise to 28 if any banding appears
             diffusionFalloffPower: 2.2,
 
             diffusionMinRadiusPoints: 1.2,       // treated as px in renderer
