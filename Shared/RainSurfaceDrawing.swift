@@ -314,8 +314,9 @@ enum RainSurfaceDrawing {
     ) {
         guard maxDotsPerSample > 0 else { return }
 
-        // Keeps blur from “sticking” to the very top edge and forming a line.
-        let topMargin = onePixel * 3.0
+        // A real “no-draw” headroom band at the top of the plot (in points).
+        // This prevents blur from being clipped at the plot boundary and forming a line.
+        let topSafetyY: CGFloat = plotRect.minY + 16.0
 
         for i in range {
             let h = heights[i]
@@ -332,23 +333,18 @@ enum RainSurfaceDrawing {
 
             let intensitySupport = 0.40 + 0.60 * pow(inorm, 0.55)
 
-            // Higher density: matches the “foggy” right-side behaviour in the mock.
+            // Density: fuzz-driven, but intensity still helps.
             let desired = Double(maxDotsPerSample) * (0.55 + 2.60 * fa) * intensitySupport
             let dotCount = min(140, max(1, Int(desired.rounded(.toNearestOrAwayFromZero))))
 
-            // Ridge-attached spans.
-            let upSpanRaw = min(h * 0.90, s * (0.65 + 1.10 * CGFloat(fa)))
-            let downSpan = min(h * 0.55, s * (0.60 + 1.35 * CGFloat(fa)))
+            // IMPORTANT:
+            // Outside span should NOT be proportional to height (h * 0.9) – that creates “sky noise”
+            // and causes the top-edge seam. Keep it sigma-based and modest.
+            let upSpanRaw = min(h * 0.30, s * (0.85 + 2.15 * CGFloat(fa)))
+            let downSpan = min(h * 0.55, s * (0.85 + 2.40 * CGFloat(fa)))
 
-            // Prevent outside dots from ever reaching the plot’s top edge.
-            // If there is no headroom, outside dots are disabled for this column.
-            let maxUpAllowed = max(0.0, topY - (plotRect.minY + topMargin))
-            let upSpan = min(upSpanRaw, maxUpAllowed)
-
-            var outsideWeight = RainSurfaceMath.clamp01(0.30 + 0.45 * fa)
-            if upSpan <= onePixel * 0.75 {
-                outsideWeight = 0.0
-            }
+            // More inside dots than before to break the smooth surface.
+            let outsideWeightBase = RainSurfaceMath.clamp01(0.18 + 0.42 * fa)
 
             for j in 0..<dotCount {
                 var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xD07D07D0, saltB: (j &* 173) &+ 19))
@@ -356,31 +352,39 @@ enum RainSurfaceDrawing {
                 let rx = prng.nextDouble01()
                 let x = plotRect.minX + (CGFloat(i) + CGFloat(rx)) * stepX
 
-                let pick = prng.nextDouble01()
-                let y: CGFloat
-                if pick < outsideWeight {
-                    let t = prng.nextDouble01()
-                    let up = CGFloat(pow(t, 1.12)) * upSpan
-                    y = max(plotRect.minY + topMargin, topY - up)
-                } else {
-                    let t = prng.nextDouble01()
-                    let down = CGFloat(pow(t, 1.05)) * max(onePixel, downSpan)
-                    y = min(baselineY, topY + down)
-                }
-
-                // Small dots only.
+                // Sample dot radius FIRST so the safety headroom accounts for dot size.
                 let rr = prng.nextDouble01()
                 let baseR = onePixel * (0.55 + 1.65 * rr)
                 let r = max(onePixel * 0.55, baseR * (0.72 + 0.78 * CGFloat(fa)))
 
-                // Fade with distance from the ridge.
+                // Available headroom for outside dots, leaving a buffer for blur/dot size.
+                let maxUpAllowed = max(0.0, topY - (topSafetyY + r * 1.25))
+                let upSpan = min(upSpanRaw, maxUpAllowed)
+
+                // If there’s no safe headroom, disable outside dots for this dot (no clamping = no seam).
+                let outsideWeight = (upSpan > onePixel * 0.75) ? outsideWeightBase : 0.0
+
+                let pick = prng.nextDouble01()
+                let y: CGFloat
+
+                if pick < outsideWeight {
+                    // Bias strongly towards staying close to the ridge (prevents “clouds”).
+                    let t = prng.nextDouble01()
+                    let up = CGFloat(pow(t, 1.65)) * upSpan
+                    y = topY - up
+                } else {
+                    let t = prng.nextDouble01()
+                    let down = CGFloat(pow(t, 1.10)) * max(onePixel, downSpan)
+                    y = min(baselineY, topY + down)
+                }
+
+                // Fade with distance from ridge.
                 let dy = abs(y - topY)
                 let tFade = RainSurfaceMath.clamp01(Double(dy / max(onePixel, s)))
                 let ridgeFade = pow(1.0 - tFade, 1.35)
 
                 let ra = prng.nextDouble01()
                 let a = RainSurfaceMath.clamp01(fa * (0.060 + 0.190 * ra) * ridgeFade)
-
                 if a <= 0.000_5 { continue }
 
                 let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
