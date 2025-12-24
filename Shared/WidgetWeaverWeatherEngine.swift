@@ -118,10 +118,11 @@ public actor WidgetWeaverWeatherEngine {
 
     private func notifyWidgetsWeatherUpdated() {
         #if canImport(WidgetKit)
-        let kind = WidgetWeaverWidgetKinds.main
         Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
             WidgetCenter.shared.reloadAllTimelines()
+
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }

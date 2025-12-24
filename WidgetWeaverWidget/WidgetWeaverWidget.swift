@@ -26,8 +26,8 @@ public struct WidgetWeaverEntry: TimelineEntry {
 }
 
 // MARK: - Widget Configuration Intent
-
 /// Each widget instance can follow the app’s default design or pick a specific saved design.
+
 public struct WidgetWeaverDesignSelectionIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Design" }
 
@@ -53,7 +53,7 @@ public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable, Senda
         DisplayRepresentation(title: "\(name)")
     }
 
-    // Computed (not stored) to avoid nonisolated global shared mutable state
+    // Computed (not stored) to avoid nonisolated global shared mutable state.
     public static var defaultQuery: Query { Query() }
 
     public struct Query: EntityQuery, Sendable {
@@ -113,13 +113,11 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
                     _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
                 }
             }
-
             if usesCalendar {
                 Task.detached(priority: .utility) {
                     _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
                 }
             }
-
             if usesSteps {
                 Task.detached(priority: .utility) {
                     _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
@@ -129,17 +127,11 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         }
 
         let now = Date()
-
         var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
 
         // Weather (template or variables) should tick every minute for live nowcast text.
-        if usesWeather {
-            refreshSeconds = 60
-        }
-
-        if usesCalendar {
-            refreshSeconds = min(refreshSeconds, 60)
-        }
+        if usesWeather { refreshSeconds = 60 }
+        if usesCalendar { refreshSeconds = min(refreshSeconds, 60) }
 
         if usesSteps && !usesTime {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
@@ -156,26 +148,17 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let t = base.addingTimeInterval(TimeInterval(i) * refreshSeconds)
-            entries.append(Entry(date: t, family: context.family, spec: spec))
+            let d = base.addingTimeInterval(TimeInterval(i) * refreshSeconds)
+            entries.append(Entry(date: d, family: context.family, spec: spec))
         }
 
-        let policy: TimelineReloadPolicy
-        if usesWeather {
-            // Pull a fresh WeatherKit snapshot periodically so the next-hour window stays accurate.
-            policy = .after(now.addingTimeInterval(60 * 10))
-        } else {
-            policy = .atEnd
-        }
-
-        return Timeline(entries: entries, policy: policy)
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     private func resolveSpec(for configuration: Intent) -> WidgetSpec {
-        if
-            let idString = configuration.design?.id,
-            let id = UUID(uuidString: idString),
-            let loaded = WidgetSpecStore.shared.load(id: id)
+        if let idString = configuration.design?.id,
+           let id = UUID(uuidString: idString),
+           let loaded = WidgetSpecStore.shared.load(id: id)
         {
             return loaded
         }
@@ -189,9 +172,11 @@ struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: WidgetWeaverWidgetKinds.main,
-                               intent: WidgetWeaverDesignSelectionIntent.self,
-                               provider: WidgetWeaverProvider()) { entry in
+        AppIntentConfiguration(
+            kind: WidgetWeaverWidgetKinds.main,
+            intent: WidgetWeaverDesignSelectionIntent.self,
+            provider: WidgetWeaverProvider()
+        ) { entry in
             WidgetWeaverRenderClock.withNow(entry.date) {
                 // Load the latest saved spec at render-time so Home Screen widgets pick up
                 // edits immediately after saving (even if the system is still displaying a
@@ -250,13 +235,13 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
 
         let now = Date()
         let base = now
-
         let count = 60
+
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = base.addingTimeInterval(TimeInterval(i) * 60)
+            let d = base.addingTimeInterval(TimeInterval(i) * 60.0)
             entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
         }
 
@@ -268,34 +253,43 @@ struct WidgetWeaverLockScreenWeatherView: View {
     let entry: WidgetWeaverLockScreenWeatherEntry
 
     var body: some View {
-        let now = entry.date
+        let store = WidgetWeaverWeatherStore.shared
 
-        if !entry.hasLocation {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Set a location")
-                    .font(.headline)
-                    .bold()
-                Text("Open WidgetWeaver to choose one.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        } else if let snapshot = entry.snapshot {
-            weatherContent(snapshot: snapshot, now: now)
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Updating…")
-                    .font(.headline)
-                    .bold()
-                Text("Open the app to refresh now.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        let hasLocation: Bool = {
+            if let _ = store.loadLocation() { return true }
+            return entry.hasLocation
+        }()
+
+        let snapshot: WidgetWeaverWeatherSnapshot? = entry.snapshot ?? store.loadSnapshot()
+
+        Group {
+            if !hasLocation {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Weather")
+                        .font(.headline)
+                    Text("Open the app to set a location.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let snapshot {
+                weatherBody(snapshot: snapshot, now: entry.date)
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Weather")
+                        .font(.headline)
+                    Text("Updating…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
 
-    private func weatherContent(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
+    private func weatherBody(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
         let unit = WidgetWeaverWeatherStore.shared.resolvedUnitTemperature()
-        let temp = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius).converted(to: unit).value
+        let temp = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius)
+            .converted(to: unit)
+            .value
         let tempInt = Int(round(temp))
 
         return VStack(alignment: .leading, spacing: 4) {
@@ -370,13 +364,13 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
 
         let now = Date()
         let base = now
-
         let count = 60
+
         var entries: [Entry] = []
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = base.addingTimeInterval(TimeInterval(i) * 60)
+            let d = base.addingTimeInterval(TimeInterval(i) * 60.0)
             entries.append(Entry(date: d, hasAccess: hasAccess, snapshot: snap))
         }
 
@@ -390,25 +384,42 @@ struct WidgetWeaverLockScreenNextUpView: View {
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
+        let store = WidgetWeaverCalendarStore.shared
         let now = entry.date
 
+        let hasAccess: Bool = {
+            if store.canReadEvents() { return true }
+            return entry.hasAccess
+        }()
+
+        let snapshot: WidgetWeaverCalendarSnapshot? = entry.snapshot ?? store.loadSnapshot()
+
         Group {
-            if !entry.hasAccess {
-                Text("Calendar access off")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else if let snap = entry.snapshot, let next = snap.next {
-                content(now: now, next: next, after: snap.second)
+            if !hasAccess {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Calendar")
+                        .font(.headline)
+                    Text("Access is off.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let next = snapshot?.next {
+                let after = snapshot?.second
+                content(next: next, after: after, now: now)
             } else {
-                Text("No upcoming events")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Calendar")
+                        .font(.headline)
+                    Text("No upcoming events.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
 
     @ViewBuilder
-    private func content(now: Date, next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?) -> some View {
+    private func content(next: WidgetWeaverCalendarEvent, after: WidgetWeaverCalendarEvent?, now: Date) -> some View {
         let short = calendarShortCountdownValue(from: now, to: next.startDate, end: next.endDate)
         let label = calendarCountdownLabel(from: now, to: next.startDate, end: next.endDate)
 
@@ -422,7 +433,6 @@ struct WidgetWeaverLockScreenNextUpView: View {
                     .font(.headline)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-
                 Image(systemName: "calendar")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -469,8 +479,12 @@ struct WidgetWeaverLockScreenNextUpView: View {
     }
 
     private func calendarCountdownLabel(from now: Date, to start: Date, end: Date) -> String {
-        if start <= now, end > now { return "ends in \(compactIntervalString(seconds: end.timeIntervalSince(now)))" }
-        if start > now { return "in \(compactIntervalString(seconds: start.timeIntervalSince(now)))" }
+        if start <= now, end > now {
+            return "ends in \(compactIntervalString(seconds: end.timeIntervalSince(now)))"
+        }
+        if start > now {
+            return "in \(compactIntervalString(seconds: start.timeIntervalSince(now)))"
+        }
         return "now"
     }
 
