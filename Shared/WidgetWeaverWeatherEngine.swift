@@ -122,7 +122,6 @@ public actor WidgetWeaverWeatherEngine {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
             WidgetCenter.shared.reloadAllTimelines()
-
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }

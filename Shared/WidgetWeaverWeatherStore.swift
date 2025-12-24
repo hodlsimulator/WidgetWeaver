@@ -3,7 +3,6 @@
 //  WidgetWeaver
 //
 //  Created by . . on 12/23/25.
-//
 //  Split out of WidgetWeaverWeather.swift on 12/23/25.
 //
 
@@ -13,8 +12,6 @@ import CoreLocation
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
-
-// MARK: - Store
 
 public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     public static let shared = WidgetWeaverWeatherStore()
@@ -28,13 +25,22 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     }
 
     private let defaults: UserDefaults
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
+    private let lock = NSLock()
 
-    @inline(__always)
-    private func sync() {
-        defaults.synchronize()
-        UserDefaults.standard.synchronize()
+    private init(defaults: UserDefaults = AppGroup.userDefaults) {
+        self.defaults = defaults
+    }
+
+    private func makeEncoder() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }
+
+    private func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
     }
 
     private func notifyWidgetsWeatherUpdated() {
@@ -50,47 +56,47 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         #endif
     }
 
-    private init(defaults: UserDefaults = AppGroup.userDefaults) {
-        self.defaults = defaults
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
-        self.encoder.dateEncodingStrategy = .iso8601
-        self.decoder.dateDecodingStrategy = .iso8601
-    }
-
     // MARK: Location
 
     public func loadLocation() -> WidgetWeaverWeatherLocation? {
-        sync()
+        lock.withLock {
+            let decoder = makeDecoder()
 
-        if let data = defaults.data(forKey: Keys.locationData),
-           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
-            return loc
-        }
-
-        // Fallback for any legacy/misconfigured container situations.
-        if let data = UserDefaults.standard.data(forKey: Keys.locationData),
-           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
-            // Heal: copy into the App Group store so the widget and app converge.
-            if let healed = try? encoder.encode(loc) {
-                defaults.set(healed, forKey: Keys.locationData)
+            if let data = defaults.data(forKey: Keys.locationData),
+               let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
+                return loc
             }
-            sync()
-            return loc
-        }
 
-        return nil
+            if let data = UserDefaults.standard.data(forKey: Keys.locationData),
+               let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data) {
+                let encoder = makeEncoder()
+                if let healed = try? encoder.encode(loc) {
+                    defaults.set(healed, forKey: Keys.locationData)
+                }
+                return loc
+            }
+
+            return nil
+        }
     }
 
     public func saveLocation(_ location: WidgetWeaverWeatherLocation?) {
-        if let location, let data = try? encoder.encode(location) {
-            defaults.set(data, forKey: Keys.locationData)
-            UserDefaults.standard.set(data, forKey: Keys.locationData)
-        } else {
-            defaults.removeObject(forKey: Keys.locationData)
-            UserDefaults.standard.removeObject(forKey: Keys.locationData)
+        lock.withLock {
+            if let location {
+                let encoder = makeEncoder()
+                if let data = try? encoder.encode(location) {
+                    defaults.set(data, forKey: Keys.locationData)
+                    UserDefaults.standard.set(data, forKey: Keys.locationData)
+                } else {
+                    defaults.removeObject(forKey: Keys.locationData)
+                    UserDefaults.standard.removeObject(forKey: Keys.locationData)
+                }
+            } else {
+                defaults.removeObject(forKey: Keys.locationData)
+                UserDefaults.standard.removeObject(forKey: Keys.locationData)
+            }
         }
-        sync()
+
         notifyWidgetsWeatherUpdated()
     }
 
@@ -101,68 +107,90 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Snapshot
 
     public func loadSnapshot() -> WidgetWeaverWeatherSnapshot? {
-        sync()
+        lock.withLock {
+            let decoder = makeDecoder()
 
-        if let data = defaults.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
-            return snap
-        }
-
-        if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
-            if let healed = try? encoder.encode(snap) {
-                defaults.set(healed, forKey: Keys.snapshotData)
+            if let data = defaults.data(forKey: Keys.snapshotData),
+               let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
+                return snap
             }
-            sync()
-            return snap
-        }
 
-        return nil
+            if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
+               let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data) {
+                let encoder = makeEncoder()
+                if let healed = try? encoder.encode(snap) {
+                    defaults.set(healed, forKey: Keys.snapshotData)
+                }
+                return snap
+            }
+
+            return nil
+        }
     }
 
     public func saveSnapshot(_ snapshot: WidgetWeaverWeatherSnapshot?) {
-        if let snapshot, let data = try? encoder.encode(snapshot) {
-            defaults.set(data, forKey: Keys.snapshotData)
-            UserDefaults.standard.set(data, forKey: Keys.snapshotData)
-        } else {
-            defaults.removeObject(forKey: Keys.snapshotData)
-            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+        lock.withLock {
+            if let snapshot {
+                let encoder = makeEncoder()
+                if let data = try? encoder.encode(snapshot) {
+                    defaults.set(data, forKey: Keys.snapshotData)
+                    UserDefaults.standard.set(data, forKey: Keys.snapshotData)
+                } else {
+                    defaults.removeObject(forKey: Keys.snapshotData)
+                    UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+                }
+            } else {
+                defaults.removeObject(forKey: Keys.snapshotData)
+                UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+            }
         }
-        sync()
+
+        notifyWidgetsWeatherUpdated()
     }
 
     public func clearSnapshot() {
-        defaults.removeObject(forKey: Keys.snapshotData)
-        UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
-        sync()
+        lock.withLock {
+            defaults.removeObject(forKey: Keys.snapshotData)
+            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+        }
+
         notifyWidgetsWeatherUpdated()
     }
 
     // MARK: Units
 
     public func loadUnitPreference() -> WidgetWeaverWeatherUnitPreference {
-        sync()
-        let raw = (defaults.string(forKey: Keys.unitPreference) ??
-                   UserDefaults.standard.string(forKey: Keys.unitPreference) ??
-                   WidgetWeaverWeatherUnitPreference.automatic.rawValue)
-        return WidgetWeaverWeatherUnitPreference(rawValue: raw) ?? .automatic
+        lock.withLock {
+            let raw =
+                defaults.string(forKey: Keys.unitPreference)
+                ?? UserDefaults.standard.string(forKey: Keys.unitPreference)
+                ?? WidgetWeaverWeatherUnitPreference.automatic.rawValue
+
+            return WidgetWeaverWeatherUnitPreference(rawValue: raw) ?? .automatic
+        }
     }
 
     public func saveUnitPreference(_ preference: WidgetWeaverWeatherUnitPreference) {
-        defaults.set(preference.rawValue, forKey: Keys.unitPreference)
-        UserDefaults.standard.set(preference.rawValue, forKey: Keys.unitPreference)
-        sync()
+        lock.withLock {
+            defaults.set(preference.rawValue, forKey: Keys.unitPreference)
+            UserDefaults.standard.set(preference.rawValue, forKey: Keys.unitPreference)
+        }
+
         notifyWidgetsWeatherUpdated()
     }
 
     public func resolvedUnitTemperature() -> UnitTemperature {
         switch loadUnitPreference() {
-        case .celsius: return .celsius
-        case .fahrenheit: return .fahrenheit
+        case .celsius:
+            return .celsius
+        case .fahrenheit:
+            return .fahrenheit
         case .automatic:
             switch Locale.current.measurementSystem {
-            case .us: return .fahrenheit
-            default: return .celsius
+            case .us:
+                return .fahrenheit
+            default:
+                return .celsius
             }
         }
     }
@@ -170,34 +198,45 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Attribution
 
     public func loadAttribution() -> WidgetWeaverWeatherAttribution? {
-        sync()
+        lock.withLock {
+            let decoder = makeDecoder()
 
-        if let data = defaults.data(forKey: Keys.attributionData),
-           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
-            return attr
-        }
-
-        if let data = UserDefaults.standard.data(forKey: Keys.attributionData),
-           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
-            if let healed = try? encoder.encode(attr) {
-                defaults.set(healed, forKey: Keys.attributionData)
+            if let data = defaults.data(forKey: Keys.attributionData),
+               let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
+                return attr
             }
-            sync()
-            return attr
-        }
 
-        return nil
+            if let data = UserDefaults.standard.data(forKey: Keys.attributionData),
+               let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data) {
+                let encoder = makeEncoder()
+                if let healed = try? encoder.encode(attr) {
+                    defaults.set(healed, forKey: Keys.attributionData)
+                }
+                return attr
+            }
+
+            return nil
+        }
     }
 
     public func saveAttribution(_ attribution: WidgetWeaverWeatherAttribution?) {
-        if let attribution, let data = try? encoder.encode(attribution) {
-            defaults.set(data, forKey: Keys.attributionData)
-            UserDefaults.standard.set(data, forKey: Keys.attributionData)
-        } else {
-            defaults.removeObject(forKey: Keys.attributionData)
-            UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+        lock.withLock {
+            if let attribution {
+                let encoder = makeEncoder()
+                if let data = try? encoder.encode(attribution) {
+                    defaults.set(data, forKey: Keys.attributionData)
+                    UserDefaults.standard.set(data, forKey: Keys.attributionData)
+                } else {
+                    defaults.removeObject(forKey: Keys.attributionData)
+                    UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+                }
+            } else {
+                defaults.removeObject(forKey: Keys.attributionData)
+                UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+            }
         }
-        sync()
+
+        notifyWidgetsWeatherUpdated()
     }
 
     public func attributionLegalURL() -> URL? {
@@ -206,26 +245,20 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
     // MARK: Rendering helpers
 
-    public func recommendedRefreshIntervalSeconds() -> TimeInterval {
-        60
-    }
+    public func recommendedRefreshIntervalSeconds() -> TimeInterval { 60 }
 
-    /// Recommended cadence to refresh the cached WeatherKit snapshot.
-    /// This is distinct from the widget UI's minute-level timeline tick.
-    public func recommendedDataRefreshIntervalSeconds() -> TimeInterval {
-        60 * 10
-    }
+    public func recommendedDataRefreshIntervalSeconds() -> TimeInterval { 60 * 10 }
 
     public func snapshotForRender(context: WidgetWeaverRenderContext) -> WidgetWeaverWeatherSnapshot? {
         if let snap = loadSnapshot() { return snap }
         switch context {
-        case .preview, .simulator: return .sampleSunny()
-        case .widget: return nil
+        case .preview, .simulator:
+            return .sampleSunny()
+        case .widget:
+            return nil
         }
     }
 
-    /// Weather variables are treated as “built-in” keys.
-    /// If there is no snapshot yet, the location key still resolves so the widget stops showing the “set a location” prompt.
     public func variablesDictionary(now: Date = WidgetWeaverRenderClock.now) -> [String: String] {
         if let snap = loadSnapshot() {
             var vars: [String: String] = [:]
@@ -258,7 +291,6 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
                 vars["__weather_precip"] = percentString(fromChance01: p)
                 vars["__weather_precip_fraction"] = String(p)
             }
-
             if let h = snap.humidity01 {
                 vars["__weather_humidity"] = percentString(fromChance01: h)
                 vars["__weather_humidity_fraction"] = String(h)
@@ -266,40 +298,23 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
             let nowcast = WeatherNowcast(snapshot: snap, now: now)
             vars["__weather_nowcast"] = nowcast.primaryText
+            if let s = nowcast.secondaryText { vars["__weather_nowcast_secondary"] = s }
+            if let startM = nowcast.startOffsetMinutes { vars["__weather_rain_start_min"] = String(startM) }
+            if let endM = nowcast.endOffsetMinutes { vars["__weather_rain_end_min"] = String(endM) }
+            if let startText = nowcast.startTimeText { vars["__weather_rain_start"] = startText }
 
-            if let s = nowcast.secondaryText {
-                vars["__weather_nowcast_secondary"] = s
-            }
-
-            if let startM = nowcast.startOffsetMinutes {
-                vars["__weather_rain_start_min"] = String(startM)
-            }
-
-            if let endM = nowcast.endOffsetMinutes {
-                vars["__weather_rain_end_min"] = String(endM)
-            }
-
-            if let startText = nowcast.startTimeText {
-                vars["__weather_rain_start"] = startText
-            }
-
-            @inline(__always)
-            func oneDecimal(_ x: Double) -> String { String(format: "%.1f", x) }
-
+            @inline(__always) func oneDecimal(_ x: Double) -> String { String(format: "%.1f", x) }
             vars["__weather_rain_peak_intensity_mmh"] = oneDecimal(nowcast.peakIntensityMMPerHour)
             vars["__weather_rain_peak_chance"] = percentString(fromChance01: nowcast.peakChance01)
             vars["__weather_rain_peak_chance_fraction"] = String(nowcast.peakChance01)
 
-            // Steps built-ins (so any design can use __steps_today, __steps_avg_7, __steps_streak, etc.)
             let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
             for (k, v) in stepsVars { vars[k] = v }
 
             return vars
         }
 
-        // No snapshot yet — still expose the saved location so templates can render immediately.
         guard let loc = loadLocation() else { return [:] }
-
         var vars: [String: String] = [:]
         vars["__weather_location"] = loc.name
         vars["__weather_lat"] = loc.latitudeString
@@ -324,42 +339,53 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Last error
 
     public func loadLastError() -> String? {
-        sync()
-
-        if let s = defaults.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty { return t }
-        }
-
-        if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty {
-                defaults.set(t, forKey: Keys.lastError)
-                sync()
-                return t
+        lock.withLock {
+            if let s = defaults.string(forKey: Keys.lastError) {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { return t }
             }
-        }
 
-        return nil
+            if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty {
+                    defaults.set(t, forKey: Keys.lastError)
+                    return t
+                }
+            }
+
+            return nil
+        }
     }
 
     public func saveLastError(_ error: String?) {
-        let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
+        lock.withLock {
+            let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                defaults.set(trimmed, forKey: Keys.lastError)
+                UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
+            } else {
+                defaults.removeObject(forKey: Keys.lastError)
+                UserDefaults.standard.removeObject(forKey: Keys.lastError)
+            }
+        }
 
-        if let trimmed, !trimmed.isEmpty {
-            defaults.set(trimmed, forKey: Keys.lastError)
-            UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
-        } else {
+        notifyWidgetsWeatherUpdated()
+    }
+
+    public func clearLastError() {
+        lock.withLock {
             defaults.removeObject(forKey: Keys.lastError)
             UserDefaults.standard.removeObject(forKey: Keys.lastError)
         }
 
-        sync()
+        notifyWidgetsWeatherUpdated()
     }
+}
 
-    public func clearLastError() {
-        defaults.removeObject(forKey: Keys.lastError)
-        UserDefaults.standard.removeObject(forKey: Keys.lastError)
-        sync()
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
     }
 }
