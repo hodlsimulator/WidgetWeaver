@@ -74,11 +74,24 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let entry = Entry(date: now, colourScheme: configuration.colourScheme ?? .classic)
+        let scheme = configuration.colourScheme ?? .classic
 
-        // Keep WidgetKit reloads low-frequency (budget-friendly).
-        // The per-second ticking is handled by TimelineView inside the view body.
-        return Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60)))
+        // One timeline entry per second.
+        //
+        // WidgetKit displays each entry at its date, allowing the second hand to advance
+        // without relying on in-view timers.
+        let start = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
+
+        let horizonSeconds: Int = 180
+        var entries: [Entry] = []
+        entries.reserveCapacity(horizonSeconds)
+
+        for i in 0..<horizonSeconds {
+            let date = start.addingTimeInterval(TimeInterval(i))
+            entries.append(Entry(date: date, colourScheme: scheme))
+        }
+
+        return Timeline(entries: entries, policy: .atEnd)
     }
 }
 
@@ -111,17 +124,12 @@ struct WidgetWeaverHomeScreenClockView: View {
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        // Align to a whole second so the tick feels crisp.
-        let alignedStart = Date(timeIntervalSinceReferenceDate: floor(entry.date.timeIntervalSinceReferenceDate))
-
-        TimelineView(.periodic(from: alignedStart, by: 1.0)) { context in
-            WidgetWeaverClockIconView(date: context.date, palette: palette)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .containerBackground(for: .widget) {
-                    WidgetWeaverClockBackgroundView(palette: palette)
-                }
-        }
-        .id(entry.colourScheme.rawValue)
+        WidgetWeaverClockIconView(date: entry.date, palette: palette)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .containerBackground(for: .widget) {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
+            .id(entry.colourScheme.rawValue)
     }
 }
 
@@ -167,7 +175,7 @@ private struct WidgetWeaverClockPalette {
         let accent: Color = {
             switch scheme {
             case .classic:
-                return isDark ? wwColor(0x429FD0) : wwColor(0x7EFCD8) // sampled from mockups
+                return isDark ? wwColor(0x429FD0) : wwColor(0x7EFCD8)
             case .ocean:
                 return isDark ? wwColor(0x4FA9FF) : wwColor(0x4AAEF6)
             case .mint:
@@ -182,7 +190,6 @@ private struct WidgetWeaverClockPalette {
                 return isDark ? wwColor(0xB8BBC0) : wwColor(0x8A8D92)
             }
         }()
-        ()
 
         if isDark {
             return WidgetWeaverClockPalette(
@@ -288,7 +295,7 @@ private struct WidgetWeaverClockBackgroundView: View {
                                 gradient: Gradient(colors: [
                                     Color.white.opacity(0.10),
                                     Color.white.opacity(0.00),
-                                    Color.black.opacity(0.22)
+                                    Color.black.opacity(0.22),
                                 ]),
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -332,7 +339,7 @@ private struct WidgetWeaverClockIconView: View {
                             gradient: Gradient(stops: [
                                 .init(color: palette.bezelHighlight, location: 0.0),
                                 .init(color: palette.bezelMid, location: 0.48),
-                                .init(color: palette.bezelShadow, location: 1.0)
+                                .init(color: palette.bezelShadow, location: 1.0),
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -351,7 +358,7 @@ private struct WidgetWeaverClockIconView: View {
                         RadialGradient(
                             gradient: Gradient(stops: [
                                 .init(color: palette.faceTop, location: 0.0),
-                                .init(color: palette.faceBottom, location: 1.0)
+                                .init(color: palette.faceBottom, location: 1.0),
                             ]),
                             center: .center,
                             startRadius: 0,
@@ -538,8 +545,6 @@ private struct WidgetWeaverClockHandsView: View {
 
     @State private var displayedSecondAngleDegrees: Double = 0
     @State private var hasInitialisedSecond = false
-    @State private var secondHandOpacity: Double = 1.0
-    @State private var catchUpToken: Int = 0
 
     var body: some View {
         let angles = WidgetWeaverClockAngles(date: date)
@@ -565,10 +570,8 @@ private struct WidgetWeaverClockHandsView: View {
                 length: innerRadius * 0.92,
                 angleDegrees: displayedSecondAngleDegrees
             )
-            .opacity(secondHandOpacity)
         }
         .onAppear {
-            secondHandOpacity = 1.0
             setSecondAngle(date: date, animated: false)
             hasInitialisedSecond = true
         }
@@ -576,7 +579,6 @@ private struct WidgetWeaverClockHandsView: View {
             if hasInitialisedSecond {
                 setSecondAngle(date: date, animated: true)
             } else {
-                secondHandOpacity = 1.0
                 setSecondAngle(date: date, animated: false)
                 hasInitialisedSecond = true
             }
@@ -584,41 +586,21 @@ private struct WidgetWeaverClockHandsView: View {
     }
 
     private func setSecondAngle(date: Date, animated: Bool) {
-        // Using absolute seconds since reference date avoids 0°/360° wrap issues.
         let tickSeconds = floor(date.timeIntervalSinceReferenceDate)
         let target = tickSeconds * 6.0
 
         let delta = abs(target - displayedSecondAngleDegrees)
 
-        // Normal case: animate only the 1-second step so the hand "ticks".
-        if animated && delta <= 6.1 {
-            secondHandOpacity = 1.0
-            withAnimation(.linear(duration: 0.18)) {
+        // Only animate the normal 1-second step.
+        // Any missed ticks snap to the correct time, then resume 1-second ticks.
+        let shouldAnimate = animated && (delta <= 6.1)
+
+        if shouldAnimate {
+            withAnimation(.linear(duration: 0.16)) {
                 displayedSecondAngleDegrees = target
-            }
-            return
-        }
-
-        // Catch-up case: missed ticks (widget off-screen, system throttling, etc.).
-        // Snap to the correct second without spinning around the dial.
-        if animated && hasInitialisedSecond && delta > 6.1 {
-            catchUpToken += 1
-            let token = catchUpToken
-
-            withAnimation(.easeOut(duration: 0.08)) {
-                secondHandOpacity = 0.0
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
-                guard token == catchUpToken else { return }
-                displayedSecondAngleDegrees = target
-                withAnimation(.easeIn(duration: 0.12)) {
-                    secondHandOpacity = 1.0
-                }
             }
         } else {
             displayedSecondAngleDegrees = target
-            secondHandOpacity = 1.0
         }
     }
 }

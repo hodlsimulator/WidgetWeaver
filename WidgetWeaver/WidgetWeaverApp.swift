@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import WidgetKit
 
 @main
 struct WidgetWeaverApp: App {
@@ -13,6 +14,9 @@ struct WidgetWeaverApp: App {
         WindowGroup {
             ContentView()
                 .tint(Color("AccentColor"))
+                .task {
+                    WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
+                }
         }
     }
 }
