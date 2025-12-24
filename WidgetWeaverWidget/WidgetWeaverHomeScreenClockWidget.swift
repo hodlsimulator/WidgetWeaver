@@ -75,9 +75,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
-
-        // Keep WidgetKit reloads cheap. The per-second ticking is handled by TimelineView inside the view.
         let entry = Entry(date: now, colourScheme: scheme)
+
         return Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60)))
     }
 }
@@ -106,21 +105,19 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
-
     @Environment(\.colorScheme) private var mode
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
+        let now = Date()
 
-        // Align start to an exact second so the tick cadence is stable.
-        let alignedStart = Date(timeIntervalSinceReferenceDate: floor(Date().timeIntervalSinceReferenceDate))
-
-        TimelineView(.periodic(from: alignedStart, by: 0.5)) { context in
-            WidgetWeaverClockIconView(date: context.date, palette: palette)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .containerBackground(for: .widget) {
-                    WidgetWeaverClockBackgroundView(palette: palette)
-                }
+        ZStack {
+            WidgetWeaverClockIconView(date: now, palette: palette)
+            WidgetWeaverPerSecondInvalidator(startDate: entry.date)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .wwWidgetContainerBackground {
+            WidgetWeaverClockBackgroundView(palette: palette)
         }
         .id(entry.colourScheme.rawValue)
     }
@@ -536,62 +533,31 @@ private struct WidgetWeaverClockHandsView: View {
     let palette: WidgetWeaverClockPalette
     let innerRadius: CGFloat
 
-    @State private var displayedSecondAngleDegrees: Double = 0
-    @State private var hasInitialisedSecond = false
-
     var body: some View {
-        let angles = WidgetWeaverClockAngles(date: date)
+        let tickDate = Date(timeIntervalSinceReferenceDate: floor(date.timeIntervalSinceReferenceDate))
+        let a = WidgetWeaverClockAngles(date: tickDate)
 
         ZStack {
             WidgetWeaverClockHourHandView(
                 palette: palette,
                 width: innerRadius * 0.30,
                 length: innerRadius * 0.56,
-                angle: angles.hour
+                angle: a.hour
             )
 
             WidgetWeaverClockMinuteHandView(
                 palette: palette,
                 width: innerRadius * 0.13,
                 length: innerRadius * 0.86,
-                angle: angles.minute
+                angle: a.minute
             )
 
             WidgetWeaverClockSecondHandView(
                 palette: palette,
                 width: max(1, innerRadius * 0.012),
                 length: innerRadius * 0.92,
-                angleDegrees: displayedSecondAngleDegrees
+                angleDegrees: a.secondDegrees
             )
-        }
-        .onAppear {
-            setSecondAngle(date: date, animated: false)
-            hasInitialisedSecond = true
-        }
-        .onChange(of: Int(date.timeIntervalSinceReferenceDate)) { _, _ in
-            if hasInitialisedSecond {
-                setSecondAngle(date: date, animated: true)
-            } else {
-                setSecondAngle(date: date, animated: false)
-                hasInitialisedSecond = true
-            }
-        }
-    }
-
-    private func setSecondAngle(date: Date, animated: Bool) {
-        let tickSeconds = floor(date.timeIntervalSinceReferenceDate)
-        let target = tickSeconds * 6.0
-
-        let delta = abs(target - displayedSecondAngleDegrees)
-
-        let shouldAnimate = animated && (delta <= 6.1)
-
-        if shouldAnimate {
-            withAnimation(.linear(duration: 0.16)) {
-                displayedSecondAngleDegrees = target
-            }
-        } else {
-            displayedSecondAngleDegrees = target
         }
     }
 }
@@ -599,6 +565,7 @@ private struct WidgetWeaverClockHandsView: View {
 private struct WidgetWeaverClockAngles {
     let hour: Angle
     let minute: Angle
+    let secondDegrees: Double
 
     init(date: Date) {
         let cal = Calendar.current
@@ -613,6 +580,7 @@ private struct WidgetWeaverClockAngles {
 
         self.hour = .degrees((hourValue / 12.0) * 360.0)
         self.minute = .degrees((minuteValue / 60.0) * 360.0)
+        self.secondDegrees = (s / 60.0) * 360.0
     }
 }
 
@@ -733,4 +701,33 @@ private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
     let g = Double((hex >> 8) & 0xFF) / 255.0
     let b = Double(hex & 0xFF) / 255.0
     return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
+}
+
+private struct WidgetWeaverPerSecondInvalidator: View {
+    private let start: Date
+
+    init(startDate: Date) {
+        self.start = Date(timeIntervalSinceReferenceDate: floor(startDate.timeIntervalSinceReferenceDate))
+    }
+
+    var body: some View {
+        Text(start, style: .timer)
+            .font(.system(size: 1, weight: .regular, design: .default))
+            .opacity(0.01)
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func wwWidgetContainerBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
+        if #available(iOS 17.0, *) {
+            self.containerBackground(for: .widget) { background() }
+        } else {
+            self.background(background())
+        }
+    }
 }
