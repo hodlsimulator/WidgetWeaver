@@ -75,16 +75,16 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
 
-        // Tick the second hand by stepping through a dense timeline.
-        // The system may still throttle updates, but providing frequent entries is the only
-        // reliable way to animate non-text content in a Home Screen widget.
+        // Use a coarse timeline and drive the second hand with TimelineView.
+        // This avoids the whole widget cross-fading every second.
         let now = Date()
 
-        let tickSeconds: TimeInterval = 1.0
-        let maxEntries: Int = 360  // ~6 minutes at 1s/tick (keeps the timeline reasonably small)
+        let tickSeconds: TimeInterval = 60.0
+        let maxEntries: Int = 180  // ~3 hours at 1m/tick (keeps the timeline reasonably small)
 
-        // Align to whole seconds so hands don’t “wobble” due to sub-second render timing.
-        let base = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
+        // Align to whole minutes so the hands don’t “wobble” due to sub-second render timing.
+        let baseSeconds = floor(now.timeIntervalSinceReferenceDate / tickSeconds) * tickSeconds
+        let base = Date(timeIntervalSinceReferenceDate: baseSeconds)
 
         var entries: [Entry] = []
         entries.reserveCapacity(maxEntries)
@@ -126,14 +126,19 @@ struct WidgetWeaverHomeScreenClockView: View {
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
-        let now = entry.date
 
-        ZStack {
-            WidgetWeaverClockIconView(date: now, palette: palette)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
+        // Drive the clock hands with TimelineView so the widget doesn’t cross-fade
+        // as a whole every second.
+        TimelineView(.periodic(from: entry.date, by: 1.0)) { context in
+            let now = context.date
+
+            ZStack {
+                WidgetWeaverClockIconView(date: now, palette: palette)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .wwWidgetContainerBackground {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
         }
         .transaction { transaction in
             transaction.animation = nil
@@ -141,7 +146,6 @@ struct WidgetWeaverHomeScreenClockView: View {
         }
     }
 }
-
 
 // MARK: - Palette
 
@@ -222,10 +226,8 @@ private struct WidgetWeaverClockPalette {
 
         let hourHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let hourHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.70) : wwColor(0x172235, 0.74)
-
         let minuteHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let minuteHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.60) : wwColor(0x172235, 0.70)
-
         let handShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.18)
 
         let hubOuter: Color = isDark ? wwColor(0xEAF3FF, 0.80) : wwColor(0xFFFFFF, 0.86)
@@ -562,8 +564,9 @@ private struct WidgetWeaverClockAngles {
         let m = Double(comps.minute ?? 0)
         let s = Double(comps.second ?? 0)
 
-        let hourValue = h + (m / 60.0) + (s / 3600.0)
-        let minuteValue = m + (s / 60.0)
+        // Keep hour/minute stable during the minute so only the second hand changes each second.
+        let hourValue = h + (m / 60.0)
+        let minuteValue = m
 
         self.hour = .degrees((hourValue / 12.0) * 360.0)
         self.minute = .degrees((minuteValue / 60.0) * 360.0)
