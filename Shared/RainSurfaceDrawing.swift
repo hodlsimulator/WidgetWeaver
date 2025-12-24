@@ -136,20 +136,19 @@ enum RainSurfaceDrawing {
 
         let maxHeight = max(1.0, baselineY - plotRect.minY)
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
+
         // Radii are configured in pixel-like units; conversion happens here.
         let heightPx = Double(maxHeight * displayScale)
 
-        // Diffusion max radius scales gently with chart height (clamped),
-        // matching: maxRadiusPx = 20 * sizeScale, sizeScale = clamp(height/120, 0.8, 1.2).
-        let chartHeight = max(1.0, plotRect.height)
-        let sizeScale = RainSurfaceMath.clamp(Double(chartHeight / CGFloat(120.0)), min: 0.8, max: 1.2)
-
         let minRadiusPx = max(0.0, Double(configuration.diffusionMinRadiusPoints))
-        let maxRadiusBasePx = max(minRadiusPx, Double(configuration.diffusionMaxRadiusPoints))
-        let maxRadiusPx = maxRadiusBasePx * sizeScale
-
+        let maxRadiusClampPx = max(minRadiusPx, Double(configuration.diffusionMaxRadiusPoints))
+        let maxRadiusScaledPx = RainSurfaceMath.clamp(
+            heightPx * Double(configuration.diffusionMaxRadiusFractionOfHeight),
+            min: 10.0,
+            max: maxRadiusClampPx
+        )
         let minRadius = CGFloat(minRadiusPx) / displayScale
-        let maxRadius = CGFloat(maxRadiusPx) / displayScale
+        let maxRadius = CGFloat(maxRadiusScaledPx) / displayScale
 
         let glowMaxRadiusPx = max(0.0, Double(configuration.glowMaxRadiusPoints))
         let glowMaxScaledPx = RainSurfaceMath.clamp(
@@ -176,17 +175,19 @@ enum RainSurfaceDrawing {
 
             let c = RainSurfaceMath.clamp01(certainty[i])
             let u = 1.0 - c
-            // Intensity gating (suppresses diffusion only near zero intensity).
+
+            // Intensity gating for drizzle.
             let iNorm = max(0.0, intensityNorm[i])
             let gate: Double
-            if iNorm <= drizzleThreshold {
+            if iNorm <= 0.000_001 {
+                gate = gateMin
+            } else if iNorm < drizzleThreshold {
                 let t = iNorm / drizzleThreshold
                 gate = RainSurfaceMath.lerp(gateMin, 1.0, t)
             } else {
                 gate = 1.0
             }
 
-            // Heavy rain boost (adds extra surface energy even when certainty is moderate).
             let heavyT = RainSurfaceMath.clamp((iNorm - 0.45) / (0.85 - 0.45), min: 0.0, max: 1.0)
             let heavyBoost = RainSurfaceMath.smoothstep01(heavyT)
 

@@ -101,7 +101,7 @@ private struct WeatherNowcastSurfacePlot: View {
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
         // Widgets have tight render budgets; higher diffusion layer counts can cause timeouts/black renders.
-        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 20 : 28
+        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 24 : 32
 
         // Spec-first diffusion tuning:
         // - stacked-alpha inner diffusion (no particles, no blur)
@@ -136,21 +136,21 @@ private struct WeatherNowcastSurfacePlot: View {
             endFadeFloor: 0.0,
 
             // Layer 3: diffusion (stacked alpha)
-            diffusionLayers: diffusionLayerCount,                 // 20 in widgets (budget), 28 in app previews (anti-banding)
+            diffusionLayers: diffusionLayerCount,                 // 24 in widgets (budget), 32 in app previews (anti-banding)
             diffusionFalloffPower: 2.2,
 
-            diffusionMinRadiusPoints: 1.2,       // treated as px in renderer
-            diffusionMaxRadiusPoints: 16.0,      // treated as px in renderer (clamp max)
+            diffusionMinRadiusPoints: 1.5,       // treated as px in renderer
+            diffusionMaxRadiusPoints: 52.0,      // treated as px in renderer (clamp max)
             diffusionMinRadiusFractionOfHeight: 0.0,
-            diffusionMaxRadiusFractionOfHeight: 0.34,
-            diffusionRadiusUncertaintyPower: 1.35,
+            diffusionMaxRadiusFractionOfHeight: 0.42,
+            diffusionRadiusUncertaintyPower: 1.15,
 
-            diffusionStrengthMax: 0.50,
-            diffusionStrengthMinUncertainTerm: 0.25,
-            diffusionStrengthUncertaintyPower: 1.15,
+            diffusionStrengthMax: 0.78,
+            diffusionStrengthMinUncertainTerm: 0.30,
+            diffusionStrengthUncertaintyPower: 1.05,
 
-            diffusionDrizzleThreshold: 0.10,
-            diffusionLowIntensityGateMin: 0.55,
+            diffusionDrizzleThreshold: 0.08,
+            diffusionLowIntensityGateMin: 0.60,
 
             // Legacy/compat fields (unused by diffusion; left stable)
             diffusionLightRainMeanThreshold: 0.18,

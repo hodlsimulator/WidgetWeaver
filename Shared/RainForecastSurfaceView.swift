@@ -40,16 +40,16 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    var diffusionLayers: Int = 24
+    var diffusionLayers: Int = 32
     var diffusionFalloffPower: Double = 2.20
 
     var diffusionMinRadiusPoints: CGFloat = 1.5
-    var diffusionMaxRadiusPoints: CGFloat = 20.0
+    var diffusionMaxRadiusPoints: CGFloat = 52.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.0
-    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.34
+    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.42
     var diffusionRadiusUncertaintyPower: Double = 1.15
 
-    var diffusionStrengthMax: Double = 0.62
+    var diffusionStrengthMax: Double = 0.78
     var diffusionStrengthMinUncertainTerm: Double = 0.30
     var diffusionStrengthUncertaintyPower: Double = 1.05
 
@@ -91,9 +91,9 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glowEnabled: Bool = true
     var glowColor: Color = Color(red: 0.35, green: 0.70, blue: 1.0)
     var glowLayers: Int = 6
-    var glowMaxAlpha: Double = 0.20
+    var glowMaxAlpha: Double = 0.12
     var glowFalloffPower: Double = 1.75
-    var glowCertaintyPower: Double = 1.5
+    var glowCertaintyPower: Double = 1.6
 
     var glowMaxRadiusPoints: CGFloat = 3.8
     var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
