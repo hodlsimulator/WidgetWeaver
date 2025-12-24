@@ -51,8 +51,9 @@ private struct WidgetWeaverRenderClockScope<Content: View>: View {
     let content: Content
 
     var body: some View {
-        WidgetWeaverRenderClock.withNow(now) {
-            content
-        }
+        // This value needs to remain set while SwiftUI evaluates the descendant view tree
+        // for the current render pass.
+        Thread.current.threadDictionary[WidgetWeaverRenderClock.threadDictionaryKey] = now
+        return content
     }
 }
