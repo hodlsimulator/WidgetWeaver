@@ -238,7 +238,7 @@ enum RainSurfaceDrawing {
                     }
 
                     if glowEnabled, glowRadius > 0.000_01 {
-                        var savedBlend = inner.blendMode
+                        let savedBlend = inner.blendMode
                         inner.blendMode = .screen
 
                         drawStackedGlow(
