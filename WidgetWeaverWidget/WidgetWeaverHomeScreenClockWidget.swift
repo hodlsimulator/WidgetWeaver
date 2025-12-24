@@ -73,11 +73,28 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
-        let now = Date()
         let scheme = configuration.colourScheme ?? .classic
-        let entry = Entry(date: now, colourScheme: scheme)
 
-        return Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60)))
+        // Tick the second hand by stepping through a dense timeline.
+        // The system may still throttle updates, but providing frequent entries is the only
+        // reliable way to animate non-text content in a Home Screen widget.
+        let now = Date()
+
+        let tickSeconds: TimeInterval = 2.0
+        let maxEntries: Int = 180  // ~6 minutes at 2s/tick (keeps the timeline reasonably small)
+
+        // Align to whole seconds so hands don’t “wobble” due to sub-second render timing.
+        let base = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(maxEntries)
+
+        for i in 0..<maxEntries {
+            let d = base.addingTimeInterval(TimeInterval(i) * tickSeconds)
+            entries.append(Entry(date: d, colourScheme: scheme))
+        }
+
+        return Timeline(entries: entries, policy: .atEnd)
     }
 }
 
@@ -109,18 +126,22 @@ struct WidgetWeaverHomeScreenClockView: View {
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
-        let now = Date()
+        let now = entry.date
 
         ZStack {
             WidgetWeaverClockIconView(date: now, palette: palette)
-            WidgetWeaverPerSecondInvalidator(startDate: entry.date)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
-        .id(entry.colourScheme.rawValue)
+        .id(WidgetWeaverHomeScreenClockViewIdentity(date: entry.date, colourScheme: entry.colourScheme))
     }
+}
+
+private struct WidgetWeaverHomeScreenClockViewIdentity: Hashable {
+    let date: Date
+    let colourScheme: WidgetWeaverClockColourScheme
 }
 
 // MARK: - Palette
@@ -169,89 +190,74 @@ private struct WidgetWeaverClockPalette {
             case .ocean:
                 return isDark ? wwColor(0x4FA9FF) : wwColor(0x4AAEF6)
             case .mint:
-                return isDark ? wwColor(0x7EFCD8) : wwColor(0x43E0C2)
+                return isDark ? wwColor(0x4BE3B4) : wwColor(0x4BE3B4)
             case .orchid:
-                return isDark ? wwColor(0xC9A0FF) : wwColor(0xB684FF)
+                return isDark ? wwColor(0xB08CFF) : wwColor(0xB08CFF)
             case .sunset:
-                return isDark ? wwColor(0xFF9B6B) : wwColor(0xFF7C4D)
+                return isDark ? wwColor(0xFFAA5C) : wwColor(0xFF9F4E)
             case .ember:
-                return isDark ? wwColor(0xFF5E5E) : wwColor(0xFF3B3B)
+                return isDark ? wwColor(0xFF5A56) : wwColor(0xFF4D4A)
             case .graphite:
-                return isDark ? wwColor(0xB8BBC0) : wwColor(0x8A8D92)
+                return isDark ? wwColor(0xB7C3D6) : wwColor(0x90A0B8)
             }
         }()
 
-        if isDark {
-            return WidgetWeaverClockPalette(
-                accent: accent,
+        let backgroundTop: Color = isDark ? wwColor(0x141A22) : wwColor(0xECF1F8)
+        let backgroundBottom: Color = isDark ? wwColor(0x0B0F15) : wwColor(0xC7D2E5)
 
-                backgroundTop: wwColor(0x2D2E34),
-                backgroundBottom: wwColor(0x050609),
+        let bezelHighlight: Color = isDark ? wwColor(0x2B3340) : wwColor(0xFFFFFF, 0.90)
+        let bezelMid: Color = isDark ? wwColor(0x141B25) : wwColor(0xC9D5E8)
+        let bezelShadow: Color = isDark ? wwColor(0x06090D) : wwColor(0x8A99B6)
 
-                bezelHighlight: wwColor(0xE5E6E9),
-                bezelMid: wwColor(0xC9CBD1),
-                bezelShadow: wwColor(0x6A6D75),
+        let faceTop: Color = isDark ? wwColor(0x1A2230) : wwColor(0xFAFCFF)
+        let faceBottom: Color = isDark ? wwColor(0x0E141E) : wwColor(0xDCE6F6)
 
-                faceTop: wwColor(0x2A2C31),
-                faceBottom: wwColor(0x0A0C11),
+        let numerals: Color = isDark ? wwColor(0xE6EEF9) : wwColor(0x1A2230)
+        let numeralsShadow: Color = isDark ? wwColor(0x000000, 0.55) : wwColor(0x000000, 0.16)
 
-                numerals: wwColor(0xD9DADE),
-                numeralsShadow: wwColor(0x000000, 0.55),
+        let minuteDot: Color = isDark ? wwColor(0x9EB0C8, 0.42) : wwColor(0x203047, 0.20)
 
-                minuteDot: wwColor(0x9EA1A7, 0.85),
+        let tickTop: Color = isDark ? wwColor(0xF5FAFF, 0.82) : wwColor(0x1F2B3E, 0.74)
+        let tickBottom: Color = isDark ? wwColor(0xAFC2DA, 0.36) : wwColor(0x1F2B3E, 0.30)
+        let tickShadow: Color = isDark ? wwColor(0x000000, 0.65) : wwColor(0x000000, 0.18)
 
-                tickTop: wwColor(0xF6F7F8),
-                tickBottom: wwColor(0xC9CBD0),
-                tickShadow: wwColor(0x000000, 0.55),
+        let hourHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
+        let hourHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.70) : wwColor(0x172235, 0.74)
+        let minuteHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
+        let minuteHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.60) : wwColor(0x172235, 0.70)
+        let handShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.18)
 
-                hourHandTop: wwColor(0xFFFFFF),
-                hourHandBottom: wwColor(0xC9CBD0),
-                minuteHandTop: wwColor(0xFFFFFF),
-                minuteHandBottom: wwColor(0xD0D2D6),
-                handShadow: wwColor(0x000000, 0.45),
+        let hubOuter: Color = isDark ? wwColor(0xEAF3FF, 0.80) : wwColor(0xFFFFFF, 0.86)
+        let hubInner: Color = isDark ? wwColor(0x7F98B8, 0.60) : wwColor(0x2A3B55, 0.24)
+        let hubShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.24)
 
-                hubOuter: wwColor(0xD6D8DC),
-                hubInner: wwColor(0x8E9196),
-                hubShadow: wwColor(0x000000, 0.35),
+        let rimInnerShadow: Color = isDark ? wwColor(0x000000, 0.85) : wwColor(0x000000, 0.18)
 
-                rimInnerShadow: wwColor(0x000000, 0.35)
-            )
-        } else {
-            return WidgetWeaverClockPalette(
-                accent: accent,
-
-                backgroundTop: wwColor(0xF4F4F3),
-                backgroundBottom: wwColor(0xD8D8D7),
-
-                bezelHighlight: wwColor(0xFFFFFF),
-                bezelMid: wwColor(0xE1E2E3),
-                bezelShadow: wwColor(0xA6A8AC),
-
-                faceTop: wwColor(0xF9F8F5),
-                faceBottom: wwColor(0xECECE9),
-
-                numerals: wwColor(0xA5AAAF),
-                numeralsShadow: wwColor(0x000000, 0.14),
-
-                minuteDot: wwColor(0xB6B9BE, 0.75),
-
-                tickTop: wwColor(0xFFFFFF),
-                tickBottom: wwColor(0xD3D5D9),
-                tickShadow: wwColor(0x000000, 0.18),
-
-                hourHandTop: wwColor(0xFFFFFF),
-                hourHandBottom: wwColor(0xD6D8DC),
-                minuteHandTop: wwColor(0xFFFFFF),
-                minuteHandBottom: wwColor(0xD6D8DC),
-                handShadow: wwColor(0x000000, 0.18),
-
-                hubOuter: wwColor(0xD6D8DC),
-                hubInner: wwColor(0xB5B8BD),
-                hubShadow: wwColor(0x000000, 0.18),
-
-                rimInnerShadow: wwColor(0x000000, 0.12)
-            )
-        }
+        return WidgetWeaverClockPalette(
+            accent: accent,
+            backgroundTop: backgroundTop,
+            backgroundBottom: backgroundBottom,
+            bezelHighlight: bezelHighlight,
+            bezelMid: bezelMid,
+            bezelShadow: bezelShadow,
+            faceTop: faceTop,
+            faceBottom: faceBottom,
+            numerals: numerals,
+            numeralsShadow: numeralsShadow,
+            minuteDot: minuteDot,
+            tickTop: tickTop,
+            tickBottom: tickBottom,
+            tickShadow: tickShadow,
+            hourHandTop: hourHandTop,
+            hourHandBottom: hourHandBottom,
+            minuteHandTop: minuteHandTop,
+            minuteHandBottom: minuteHandBottom,
+            handShadow: handShadow,
+            hubOuter: hubOuter,
+            hubInner: hubInner,
+            hubShadow: hubShadow,
+            rimInnerShadow: rimInnerShadow
+        )
     }
 }
 
@@ -421,8 +427,6 @@ private struct WidgetWeaverClockIconView: View {
     }
 }
 
-// MARK: - Markers & Numerals
-
 private struct WidgetWeaverClockMinuteDotsView: View {
     let count: Int
     let dotColor: Color
@@ -437,7 +441,6 @@ private struct WidgetWeaverClockMinuteDotsView: View {
                     .frame(width: dotSize, height: dotSize)
                     .offset(y: -radius)
                     .rotationEffect(.degrees((Double(i) / Double(count)) * 360.0))
-                    .opacity(i % 5 == 0 ? 0.35 : 1.0)
             }
         }
     }
@@ -452,35 +455,18 @@ private struct WidgetWeaverClockHourTicksView: View {
     var body: some View {
         ZStack {
             ForEach(0..<12, id: \.self) { i in
-                if i == 0 || i == 3 || i == 6 || i == 9 {
-                    EmptyView()
-                } else {
-                    RoundedRectangle(cornerRadius: tickWidth * 0.35, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [palette.tickTop, palette.tickBottom]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                RoundedRectangle(cornerRadius: tickWidth * 0.45, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [palette.tickTop, palette.tickBottom]),
+                            startPoint: .top,
+                            endPoint: .bottom
                         )
-                        .frame(width: tickWidth, height: tickLength)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: tickWidth * 0.35, style: .continuous)
-                                .stroke(Color.black.opacity(0.10), lineWidth: max(1, tickWidth * 0.08))
-                        )
-                        .overlay(alignment: .top) {
-                            RoundedRectangle(cornerRadius: tickWidth * 0.35, style: .continuous)
-                                .fill(palette.accent)
-                                .frame(width: tickWidth, height: max(1, tickLength * 0.12))
-                                .shadow(color: palette.accent.opacity(0.85), radius: tickWidth * 1.9, x: 0, y: 0)
-                                .opacity(0.85)
-                                .padding(.top, max(1, tickLength * 0.05))
-                                .blendMode(.screen)
-                        }
-                        .shadow(color: palette.tickShadow, radius: tickWidth * 0.70, x: 0, y: tickWidth * 0.35)
-                        .offset(y: -radius)
-                        .rotationEffect(.degrees((Double(i) / 12.0) * 360.0))
-                }
+                    )
+                    .frame(width: tickWidth, height: tickLength)
+                    .shadow(color: palette.tickShadow, radius: tickWidth * 0.70, x: 0, y: tickWidth * 0.35)
+                    .offset(y: -radius)
+                    .rotationEffect(.degrees((Double(i) / 12.0) * 360.0))
             }
         }
     }
