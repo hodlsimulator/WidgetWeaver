@@ -54,11 +54,14 @@ private struct WeatherNowcastAxisLabels: View {
     var body: some View {
         VStack {
             Spacer(minLength: 0)
+
             HStack {
                 Text("Now")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
+
                 Spacer(minLength: 0)
+
                 Text("60m")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -97,6 +100,9 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
+        // Widgets have tight render budgets; higher diffusion layer counts can cause timeouts/black renders.
+        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 20 : 28
+
         // Spec-first diffusion tuning:
         // - stacked-alpha inner diffusion (no particles, no blur)
         // - boundary easing applies to diffusion/glow alpha only
@@ -110,7 +116,6 @@ private struct WeatherNowcastSurfacePlot: View {
             minVisibleHeightFraction: 0.030,
 
             geometrySmoothingPasses: 1,
-
             baselineYFraction: 0.82,
             edgeInsetFraction: 0.00,
 
@@ -131,7 +136,7 @@ private struct WeatherNowcastSurfacePlot: View {
             endFadeFloor: 0.0,
 
             // Layer 3: diffusion (stacked alpha)
-            diffusionLayers: 28,                 // raise to 28 if any banding appears
+            diffusionLayers: diffusionLayerCount,                 // 20 in widgets (budget), 28 in app previews (anti-banding)
             diffusionFalloffPower: 2.2,
 
             diffusionMinRadiusPoints: 1.2,       // treated as px in renderer
@@ -202,6 +207,7 @@ private struct WeatherNowcastSurfacePlot: View {
 
     static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
         let clipped = Array(points.prefix(targetMinutes))
+
         var out: [Sample] = []
         out.reserveCapacity(targetMinutes)
 
@@ -217,7 +223,12 @@ private struct WeatherNowcastSurfacePlot: View {
         if out.count < targetMinutes {
             let missing = targetMinutes - out.count
             for _ in 0..<missing {
-                out.append(Sample(intensityMMPerHour: 0.0, chance01: 0.0))
+                out.append(
+                    Sample(
+                        intensityMMPerHour: 0.0,
+                        chance01: 0.0
+                    )
+                )
             }
         }
 
@@ -228,4 +239,3 @@ private struct WeatherNowcastSurfacePlot: View {
         max(0.0, min(1.0, v))
     }
 }
-    
