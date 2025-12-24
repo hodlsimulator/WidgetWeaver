@@ -125,8 +125,9 @@ enum RainSurfaceDrawing {
         let diffusionEnabled = configuration.fuzzEnabled
         let glowEnabled = configuration.glowEnabled
 
-        guard (diffusionEnabled && configuration.diffusionLayers > 0 && configuration.diffusionStrengthMax > 0.000_01)
-                || (glowEnabled && configuration.glowLayers > 0 && configuration.glowMaxAlpha > 0.000_01)
+        guard
+            (diffusionEnabled && configuration.diffusionLayers > 0 && configuration.diffusionStrengthMax > 0.000_01)
+            || (glowEnabled && configuration.glowLayers > 0 && configuration.glowMaxAlpha > 0.000_01)
         else { return }
 
         guard !segments.isEmpty else { return }
@@ -171,7 +172,7 @@ enum RainSurfaceDrawing {
         let radiusPower = max(0.01, configuration.diffusionRadiusUncertaintyPower)
 
         for i in 0..<n {
-            guard heights[i] > 0 else { continue }
+            guard edgeFactors[i] > 0 else { continue }
 
             let c = RainSurfaceMath.clamp01(certainty[i])
             let u = 1.0 - c
@@ -197,13 +198,13 @@ enum RainSurfaceDrawing {
                 let sT = pow(u, strengthPower)
                 var s = strengthMax * (strengthMinFactor + (1.0 - strengthMinFactor) * sT)
                 s *= gate
-                s *= edgeFactors[i]  // boundary easing is alpha-only
+                s *= edgeFactors[i] // boundary easing is alpha-only
                 diffusionAlphaBySample[i] = s
             }
 
             if glowEnabled {
                 var g = configuration.glowMaxAlpha * pow(c, configuration.glowCertaintyPower)
-                g *= edgeFactors[i]  // boundary easing is alpha-only
+                g *= edgeFactors[i] // boundary easing is alpha-only
                 glowAlphaBySample[i] = g
             }
         }
@@ -220,11 +221,7 @@ enum RainSurfaceDrawing {
                     inner.clip(to: seg.surfacePath)
 
                     if diffusionEnabled {
-                        // Key change: screen blend makes the diffusion visible on top of the core fill
-                        // (without introducing outlines or texture).
-                        let savedBlend = inner.blendMode
-                        inner.blendMode = .screen
-
+                        // Important: keep diffusion on the default blend mode for WidgetKit rasterisation.
                         drawStackedDiffusion(
                             in: &inner,
                             plotRect: plotRect,
@@ -240,14 +237,11 @@ enum RainSurfaceDrawing {
                             edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
                             onePixel: onePixel
                         )
-
-                        inner.blendMode = savedBlend
                     }
 
                     if glowEnabled, glowRadius > 0.000_01 {
                         let savedBlend = inner.blendMode
                         inner.blendMode = .screen
-
                         drawStackedGlow(
                             in: &inner,
                             plotRect: plotRect,
@@ -263,7 +257,6 @@ enum RainSurfaceDrawing {
                             edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
                             onePixel: onePixel
                         )
-
                         inner.blendMode = savedBlend
                     }
                 }
