@@ -74,15 +74,18 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
+
+        // Tick the second hand by stepping through a dense timeline.
+        // Note: WidgetKit may still coalesce updates, but a 1s timeline is the only
+        // public API route for per-second non-text rendering.
         let now = Date()
 
-        // 1-second spacing.
-        // Keep the entry count modest to avoid WidgetKit getting unstable.
         let tickSeconds: TimeInterval = 1.0
-        let maxEntries: Int = 120  // 2 minutes at 1s/tick
+        let maxEntries: Int = 360  // ~6 minutes at 1s/tick (keeps the timeline reasonably small)
 
-        // Start on the NEXT whole second (never in the past).
-        let baseSeconds = ceil(now.timeIntervalSinceReferenceDate)
+        // Start on the *next* whole second so we don’t immediately miss the first tick
+        // (which can lead to the system effectively skipping every other entry).
+        let baseSeconds = floor(now.timeIntervalSinceReferenceDate) + 1.0
         let base = Date(timeIntervalSinceReferenceDate: baseSeconds)
 
         var entries: [Entry] = []
@@ -125,15 +128,16 @@ struct WidgetWeaverHomeScreenClockView: View {
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
+        let now = entry.date
 
         ZStack {
-            WidgetWeaverClockIconView(date: entry.date, palette: palette)
+            WidgetWeaverClockIconView(date: now, palette: palette)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
-        // No forced identity changes (that was the blinking culprit).
+        // Avoid forcing a full view identity change per tick, which looks like “blinking”.
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -220,10 +224,8 @@ private struct WidgetWeaverClockPalette {
 
         let hourHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let hourHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.70) : wwColor(0x172235, 0.74)
-
         let minuteHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let minuteHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.60) : wwColor(0x172235, 0.70)
-
         let handShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.18)
 
         let hubOuter: Color = isDark ? wwColor(0xEAF3FF, 0.80) : wwColor(0xFFFFFF, 0.86)
@@ -519,7 +521,8 @@ private struct WidgetWeaverClockHandsView: View {
     let innerRadius: CGFloat
 
     var body: some View {
-        let a = WidgetWeaverClockAngles(date: date)
+        let tickDate = Date(timeIntervalSinceReferenceDate: floor(date.timeIntervalSinceReferenceDate))
+        let a = WidgetWeaverClockAngles(date: tickDate)
 
         ZStack {
             WidgetWeaverClockHourHandView(
@@ -552,16 +555,21 @@ private struct WidgetWeaverClockAngles {
     let secondDegrees: Double
 
     init(date: Date) {
-        // Continuous, non-wrapping angles based on local time seconds.
-        // This prevents “359° -> 0°” from being interpreted as a backwards spin.
-        let offset = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
-        let localSeconds = date.timeIntervalSinceReferenceDate + offset
+        // Use monotonic angles to avoid the “wrap” at 59 -> 0 causing an animated backwards spin.
+        // Hours/minutes update on whole-minute boundaries; seconds update every second.
+        let nowSeconds = floor(date.timeIntervalSinceReferenceDate)
+        let minuteSeconds = floor(nowSeconds / 60.0) * 60.0
 
-        let wholeSeconds = floor(localSeconds)
+        let minuteDate = Date(timeIntervalSinceReferenceDate: minuteSeconds)
+        let tzOffset = TimeInterval(TimeZone.current.secondsFromGMT(for: minuteDate))
+        let localMinuteSeconds = minuteSeconds + tzOffset
 
-        let hourDegrees = (localSeconds / 3600.0) * 30.0     // 30° per hour
-        let minuteDegrees = (localSeconds / 60.0) * 6.0      // 6° per minute
-        let secondDegrees = wholeSeconds * 6.0               // tick once per second
+        // 12 hours == 43,200 seconds == 360 degrees
+        let hourDegrees = localMinuteSeconds / 120.0
+        // 60 minutes == 3,600 seconds == 360 degrees
+        let minuteDegrees = (minuteSeconds / 60.0) * 6.0
+        // 60 seconds == 360 degrees
+        let secondDegrees = nowSeconds * 6.0
 
         self.hour = .degrees(hourDegrees)
         self.minute = .degrees(minuteDegrees)
@@ -592,7 +600,6 @@ private struct WidgetWeaverClockHourHandView: View {
             .frame(width: width, height: length)
             .rotationEffect(angle, anchor: .bottom)
             .offset(y: -length / 2.0)
-            .animation(nil, value: angle.degrees)
     }
 }
 
@@ -652,7 +659,6 @@ private struct WidgetWeaverClockMinuteHandView: View {
             .frame(width: width, height: length)
             .rotationEffect(angle, anchor: .bottom)
             .offset(y: -length / 2.0)
-            .animation(nil, value: angle.degrees)
     }
 }
 
@@ -678,7 +684,6 @@ private struct WidgetWeaverClockSecondHandView: View {
                 .offset(y: -length)
         }
         .rotationEffect(.degrees(angleDegrees))
-        .animation(nil, value: angleDegrees)
     }
 }
 
@@ -689,6 +694,24 @@ private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
     let g = Double((hex >> 8) & 0xFF) / 255.0
     let b = Double(hex & 0xFF) / 255.0
     return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
+}
+
+private struct WidgetWeaverPerSecondInvalidator: View {
+    private let start: Date
+
+    init(startDate: Date) {
+        self.start = Date(timeIntervalSinceReferenceDate: floor(startDate.timeIntervalSinceReferenceDate))
+    }
+
+    var body: some View {
+        Text(start, style: .timer)
+            .font(.system(size: 1, weight: .regular, design: .default))
+            .opacity(0.01)
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 }
 
 private extension View {
