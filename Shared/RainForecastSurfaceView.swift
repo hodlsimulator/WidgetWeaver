@@ -45,7 +45,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    // Diffusion (rendered subtractively in RainSurfaceDrawing via destinationOut)
+    // Diffusion controls (used to shape the atmospheric uncertainty band)
     var diffusionLayers: Int = 32
     var diffusionFalloffPower: Double = 2.20
     var diffusionMinRadiusPoints: CGFloat = 1.5
@@ -64,7 +64,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // IMPORTANT: Default set to 1 to avoid vertical “streak” artefacts from sparse stops.
     var diffusionStopStride: Int = 1
-
     var diffusionJitterAmplitudePoints: Double = 0.0
     var diffusionEdgeSofteningWidth: Double = 0.08
 
@@ -80,7 +79,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var textureBlurRadiusPoints: CGFloat = 0.0
     var textureTopInsetFractionOfHeight: CGFloat = 0.02
 
-    // “Fuzz” switch (diffusion layer) + optional global blur applied to the diffusion mask
+    // “Fuzz” switch (atmospheric band) + optional blur
     var fuzzEnabled: Bool = true
     var fuzzGlobalBlurRadiusPoints: CGFloat = 0.0
     var fuzzLineWidthMultiplier: CGFloat = 0.0
@@ -104,6 +103,31 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glowCertaintyPower: Double = 1.6
     var glowMaxRadiusPoints: CGFloat = 3.8
     var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
+
+    // MARK: - New knobs (geometry + ridge highlight)
+
+    /// Adds headroom to avoid “blocky plateau” saturation when peaks hit intensityCap.
+    /// Effective cap = intensityCap * (1 + intensityCapHeadroomFraction)
+    var intensityCapHeadroomFraction: Double = 0.0
+
+    /// Scales the surface height within the plot’s available height.
+    /// 1.0 = full height budget, < 1.0 leaves negative space above the crest.
+    var surfaceHeightScale: CGFloat = 1.0
+
+    /// Tapers the first/last samples inside each wet segment so the surface eases into the baseline
+    /// even when rain begins/ends at the chart boundary.
+    var segmentEdgeTaperSamples: Int = 0
+
+    /// Exponent applied to the segment edge taper (higher = more weight towards the interior).
+    var segmentEdgeTaperPower: Double = 1.25
+
+    /// Thin crest highlight near the ridge to add depth without a hard outline.
+    var crestEnabled: Bool = false
+    var crestColor: Color = .white
+    var crestMaxOpacity: Double = 0.0
+    var crestLineWidthPoints: CGFloat = 1.0
+    var crestBlurRadiusPoints: CGFloat = 1.0
+    var crestPeakBoost: Double = 0.35
 }
 
 // MARK: - View

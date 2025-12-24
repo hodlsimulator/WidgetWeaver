@@ -11,14 +11,13 @@ import Foundation
 import SwiftUI
 
 struct RainForecastSurfaceRenderer {
-
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
     let displayScale: CGFloat
 
     struct WetSegment {
-        let range: Range<Int>
+        let range: Swift.Range<Int>
         let surfacePath: Path
         let topEdgePath: Path
     }
@@ -42,16 +41,22 @@ struct RainForecastSurfaceRenderer {
         var baselineY = rect.minY + rect.height * configuration.baselineYFraction
         baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
 
-        let maxHeight = max(0, baselineY - rect.minY)
-        guard maxHeight > 0 else { return }
+        let availableHeight = max(0, baselineY - rect.minY)
+        guard availableHeight > 0 else { return }
+
+        let heightScale = max(0.0, min(1.0, configuration.surfaceHeightScale))
+        let maxHeight = max(0.0, availableHeight * heightScale)
 
         let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
-        let intensityCap = max(configuration.intensityCap, 0.000_001)
+
+        let capBase = max(configuration.intensityCap, 0.000_001)
+        let capHeadroom = max(0.0, configuration.intensityCapHeadroomFraction)
+        let intensityCap = capBase * (1.0 + capHeadroom)
 
         let stepX = plotRect.width / CGFloat(n)
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Rendering-only edge fade (start/end of horizon).
+        // Rendering-only horizon fade
         let edgeFactors = RainSurfaceMath.edgeFactors(
             sampleCount: n,
             startEaseMinutes: configuration.startEaseMinutes,
@@ -59,32 +64,28 @@ struct RainForecastSurfaceRenderer {
             endFadeFloor: configuration.endFadeFloor
         )
 
-        // Raw arrays (before taper / smoothing).
+        // Raw arrays (before taper/smoothing)
         var rawWetMask = [Bool](repeating: false, count: n)
         var rawIntensityNorm = [Double](repeating: 0, count: n)
         var certainty = [Double](repeating: 0, count: n)
 
         for i in 0..<n {
-            let c = RainSurfaceMath.clamp01(certainties[i])
-            certainty[i] = c
-
             let rawI = max(0.0, intensities[i])
+            certainty[i] = RainSurfaceMath.clamp01(certainties[i])
+
             guard rawI > configuration.wetThreshold else { continue }
 
             rawWetMask[i] = true
-
             let frac = min(rawI / intensityCap, 1.0)
             let eased = pow(frac, configuration.intensityEasingPower)
             rawIntensityNorm[i] = eased
         }
 
-        // Segment-aware taper so rain falls to baseline gracefully instead of a vertical cliff.
+        // Segment-aware taper into neighbouring dry minutes so rain falls to baseline gracefully.
         let rawRanges = RainSurfaceGeometry.wetRanges(from: rawWetMask)
-
         var taperedIntensityNorm = rawIntensityNorm
         var taperedCertainty = certainty
 
-        // Longer tails than before (prevents the ugly hard stop).
         let startTaper = max(0, min(14, max(configuration.startEaseMinutes + 4, 10)))
         let endTaper = max(0, min(18, max(configuration.endFadeMinutes + 6, 14)))
 
@@ -95,7 +96,7 @@ struct RainForecastSurfaceRenderer {
                 let startIdx = r.lowerBound
                 let endIdx = max(startIdx, r.upperBound - 1)
 
-                // Leading taper (into earlier dry minutes).
+                // Leading taper (into earlier dry minutes)
                 if startTaper > 0 {
                     let anchorI = taperedIntensityNorm[startIdx]
                     let anchorC = taperedCertainty[startIdx]
@@ -103,17 +104,15 @@ struct RainForecastSurfaceRenderer {
                         for k in 1...startTaper {
                             let idx = startIdx - k
                             if idx < 0 { break }
-
                             let t = Double(k) / Double(startTaper + 1) // 0..1
                             let f = pow(max(0.0, 1.0 - t), 2.15)
-
                             taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
                             taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
                         }
                     }
                 }
 
-                // Trailing taper (into later dry minutes).
+                // Trailing taper (into later dry minutes)
                 if endTaper > 0 {
                     let anchorI = taperedIntensityNorm[endIdx]
                     let anchorC = taperedCertainty[endIdx]
@@ -121,10 +120,8 @@ struct RainForecastSurfaceRenderer {
                         for k in 1...endTaper {
                             let idx = endIdx + k
                             if idx >= n { break }
-
                             let t = Double(k) / Double(endTaper + 1)
                             let f = pow(max(0.0, 1.0 - t), 2.20)
-
                             taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
                             taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
                         }
@@ -133,37 +130,67 @@ struct RainForecastSurfaceRenderer {
             }
         }
 
-        // Mild smoothing after taper to avoid any kinks.
+        // Mild smoothing after taper to avoid kinks.
         let intensitySmoothPasses = max(1, configuration.geometrySmoothingPasses + 1)
         let certaintySmoothPasses = 1
-
         let intensityNorm = RainSurfaceMath.smooth(taperedIntensityNorm, passes: intensitySmoothPasses)
         let certaintySmoothed = RainSurfaceMath.smooth(taperedCertainty, passes: certaintySmoothPasses)
 
-        // Build heights from smoothed intensity.
-        // minVisibleHeight applies only to original wet points so taper tails can reach baseline.
+        // Build heights (minVisibleHeight applies only to original wet points)
         var heights = [CGFloat](repeating: 0, count: n)
         for i in 0..<n {
-            let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
-
-            var h = CGFloat(inorm) * maxHeight
-
-            // Horizon start/end easing affects geometry as well.
-            h *= CGFloat(RainSurfaceMath.clamp01(edgeFactors[i]))
-
+            var h = CGFloat(RainSurfaceMath.clamp01(intensityNorm[i])) * maxHeight
             if rawWetMask[i], h > 0 {
                 h = max(h, minVisibleHeight)
             }
-
             heights[i] = h
         }
 
-        // Determine wet mask from geometry (includes taper).
+        // Determine wet mask from geometry (includes taper)
         let epsilon = max(onePixel * 0.20, maxHeight * 0.0012)
-
         var wetMask = [Bool](repeating: false, count: n)
         for i in 0..<n {
             wetMask[i] = heights[i] > epsilon
+        }
+
+        // New: taper inside each wet segment so there are no hard cliffs at segment boundaries.
+        if configuration.segmentEdgeTaperSamples > 0 {
+            let rangesBefore = RainSurfaceGeometry.wetRanges(from: wetMask)
+            let taperCount = max(0, configuration.segmentEdgeTaperSamples)
+            let taperPower = max(0.25, configuration.segmentEdgeTaperPower)
+
+            if taperCount > 0 {
+                for r in rangesBefore {
+                    let count = r.count
+                    if count <= 1 { continue }
+
+                    let kMax = min(taperCount, max(1, count / 2))
+                    if kMax <= 0 { continue }
+
+                    // Leading
+                    for o in 0..<kMax {
+                        let idx = r.lowerBound + o
+                        if idx < 0 || idx >= n { continue }
+                        let u = Double(o + 1) / Double(kMax + 1) // 0..1
+                        let s = pow(RainSurfaceMath.smoothstep01(u), taperPower)
+                        heights[idx] *= CGFloat(s)
+                    }
+
+                    // Trailing
+                    for o in 0..<kMax {
+                        let idx = (r.upperBound - 1) - o
+                        if idx < 0 || idx >= n { continue }
+                        let u = Double(o + 1) / Double(kMax + 1)
+                        let s = pow(RainSurfaceMath.smoothstep01(u), taperPower)
+                        heights[idx] *= CGFloat(s)
+                    }
+                }
+            }
+
+            // Recompute wetMask after taper
+            for i in 0..<n {
+                wetMask[i] = heights[i] > epsilon
+            }
         }
 
         let wetRanges = RainSurfaceGeometry.wetRanges(from: wetMask)

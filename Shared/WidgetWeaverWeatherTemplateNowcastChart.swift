@@ -72,7 +72,6 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastSurfacePlot: View {
-
     struct Sample: Hashable {
         var intensityMMPerHour: Double
         var chance01: Double
@@ -98,12 +97,10 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let certainties: [Double] = samples.enumerated().map { idx, s in
             let chance = RainSurfaceMath.clamp01(s.chance01)
-
             let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
             let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
             let hs = RainSurfaceMath.smoothstep01(u)
             let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
-
             return RainSurfaceMath.clamp01(chance * horizonFactor)
         }
 
@@ -115,14 +112,23 @@ private struct WeatherNowcastSurfacePlot: View {
             c.backgroundColor = .black
             c.backgroundOpacity = 0.0
 
+            // Leave headroom so peaks do not “hit the ceiling”.
             c.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
+            c.intensityCapHeadroomFraction = 0.18
+
             c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
             c.intensityEasingPower = 0.75
 
+            // Geometry: leave negative space above.
+            c.surfaceHeightScale = 0.78
             c.minVisibleHeightFraction = 0.030
             c.geometrySmoothingPasses = 1
             c.baselineYFraction = 0.82
             c.edgeInsetFraction = 0.00
+
+            // Remove start/end cliffs even when rain begins/ends at chart edges.
+            c.segmentEdgeTaperSamples = 9
+            c.segmentEdgeTaperPower = 1.35
 
             // Baseline
             c.baselineColor = accent
@@ -132,7 +138,7 @@ private struct WeatherNowcastSurfacePlot: View {
             c.baselineSoftWidthMultiplier = 3.0
             c.baselineSoftOpacityMultiplier = 0.34
 
-            // Fill (keep similar to before)
+            // Fill depth (dark base -> bright crest)
             c.fillBottomColor = accent
             c.fillTopColor = accent
             c.fillBottomOpacity = 0.16
@@ -142,47 +148,45 @@ private struct WeatherNowcastSurfacePlot: View {
             c.endFadeMinutes = 10
             c.endFadeFloor = 0.0
 
-            // Diffusion controls (now: silhouette softness)
+            // Atmospheric diffusion band: uncertainty-aware, ridge-attached, fades upward.
             c.fuzzEnabled = true
-
-            // Bands: higher = smoother gradients, but we clamp internally.
             c.diffusionLayers = WidgetWeaverRuntime.isRunningInAppExtension ? 54 : 66
 
-            // Sigma range (how thick the fuzzy boundary can get)
+            // Thickness bounds
             c.diffusionMinRadiusPoints = 1.2
-            c.diffusionMaxRadiusPoints = 78.0
-            c.diffusionMaxRadiusFractionOfHeight = 0.62
+            c.diffusionMaxRadiusPoints = 70.0
+            c.diffusionMaxRadiusFractionOfHeight = 0.52
 
-            // Chance mapping
-            c.diffusionRadiusUncertaintyPower = 0.72
-
-            // Fuzz strength
-            c.diffusionStrengthMax = 1.00
-
-            // Keep other diffusion fields valid (even if unused by the new method)
-            c.diffusionStrengthMinUncertainTerm = 0.18
-            c.diffusionStrengthUncertaintyPower = 0.78
-            c.diffusionDrizzleThreshold = 0.08
-            c.diffusionLowIntensityGateMin = 0.62
-            c.diffusionLightRainMeanThreshold = 0.22
-            c.diffusionLightRainMaxRadiusScale = 0.85
-            c.diffusionLightRainStrengthScale = 0.90
+            // Uncertainty mapping
+            c.diffusionRadiusUncertaintyPower = 0.78
+            c.diffusionStrengthMax = 0.92
+            c.diffusionStrengthMinUncertainTerm = 0.12
+            c.diffusionStrengthUncertaintyPower = 0.92
             c.diffusionFalloffPower = 1.75
-            c.diffusionEdgeSofteningWidth = 0.10
-            c.diffusionStopStride = 1
 
-            // Grain
+            // Edge softening within segments
+            c.diffusionEdgeSofteningWidth = 0.10
+
+            // Jitter adds organic variation without streaks (true 2D noise is from dots)
+            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 2.0 : 2.4
+
+            // Dots are the diffusion texture (no vertical streaking).
             c.fuzzDotsEnabled = true
             c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 18 : 24
-            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 0.90 : 1.05
+            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.00 : 1.15
 
-            // Micro-jitter (adds fuzz texture without streaks)
-            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 2.1 : 2.5
+            // Optional continuous haze body stroke (kept subtle)
+            c.fuzzLineWidthMultiplier = 0.22
 
-            // This is now used as a multiplier for the silhouette fuzz (not as an external haze).
-            c.fuzzParticleAlphaMultiplier = WidgetWeaverRuntime.isRunningInAppExtension ? 1.00 : 1.05
+            // Crest highlight (adds depth without an outline)
+            c.crestEnabled = true
+            c.crestColor = accent
+            c.crestMaxOpacity = 0.22
+            c.crestLineWidthPoints = max(onePixel, onePixel * 1.35)
+            c.crestBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.10 : 1.25
+            c.crestPeakBoost = 0.55
 
-            // Turn off any internal texture
+            // Turn off any legacy internal texture
             c.textureEnabled = false
             c.textureMaxAlpha = 0.0
             c.textureMinAlpha = 0.0
@@ -194,7 +198,7 @@ private struct WeatherNowcastSurfacePlot: View {
             c.textureBlurRadiusPoints = 0.0
             c.textureTopInsetFractionOfHeight = 0.02
 
-            // Glow: keep subtle (can be disabled entirely if desired)
+            // Glow: subtle, ridge-derived, does not create a second silhouette
             c.glowEnabled = true
             c.glowColor = accent
             c.glowLayers = 6
@@ -207,7 +211,11 @@ private struct WeatherNowcastSurfacePlot: View {
             return c
         }()
 
-        return RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
+        return RainForecastSurfaceView(
+            intensities: intensities,
+            certainties: certainties,
+            configuration: cfg
+        )
     }
 
     static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
