@@ -85,27 +85,32 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // chance01 is treated as certainty for uncertainty diffusion:
-        // - certainty 1.0 => minimal diffusion
-        // - certainty 0.0 => maximum diffusion
-        let certainties: [Double] = samples.map { s in
-            Self.clamp01(s.chance01)
+        // Certainty must allow both “smooth” and “fuzzy” regions to coexist.
+        // Chance alone is frequently near-constant during active rain, so a horizon falloff
+        // is applied to create lower certainty further out in time.
+        let n = max(1, samples.count)
+        let horizonStart = 0.10
+        let horizonEndCertainty = 0.45
+
+        let certainties: [Double] = samples.enumerated().map { idx, s in
+            let chance = Self.clamp01(s.chance01)
+            let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
+            let u = Self.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
+            let hs = Self.smoothstep01(u)
+            let horizonFactor = Self.lerp(1.0, horizonEndCertainty, hs)
+            return Self.clamp01(chance * horizonFactor)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Widgets have tight render budgets; higher diffusion layer counts can cause timeouts/black renders.
-        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 24 : 32
+        // Widget budgets are tight; diffusion thickness comes from radius/strength, not just K.
+        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 32 : 44
 
-        // Spec-first diffusion tuning:
-        // - stacked-alpha inner diffusion (no particles, no blur)
-        // - boundary easing applies to diffusion/glow alpha only
         let cfg = RainForecastSurfaceConfiguration(
             backgroundColor: .black,
             backgroundOpacity: 0.0,
@@ -119,48 +124,47 @@ private struct WeatherNowcastSurfacePlot: View {
             baselineYFraction: 0.82,
             edgeInsetFraction: 0.00,
 
+            // Baseline matches mockup: brighter + full width + clean.
             baselineColor: accent,
-            baselineOpacity: 0.085,
+            baselineOpacity: 0.22,
             baselineLineWidth: onePixel,
-            baselineInsetPoints: 6.0,
-            baselineSoftWidthMultiplier: 2.6,
-            baselineSoftOpacityMultiplier: 0.26,
+            baselineInsetPoints: 0.0,
+            baselineSoftWidthMultiplier: 3.0,
+            baselineSoftOpacityMultiplier: 0.45,
 
             fillBottomColor: accent,
             fillTopColor: accent,
-            fillBottomOpacity: 0.16,
+            fillBottomOpacity: 0.14,
             fillTopOpacity: 0.94,
 
             startEaseMinutes: 6,
             endFadeMinutes: 10,
             endFadeFloor: 0.0,
 
-            // Layer 3: diffusion (stacked alpha)
-            diffusionLayers: diffusionLayerCount,                 // 24 in widgets (budget), 32 in app previews (anti-banding)
-            diffusionFalloffPower: 2.2,
+            // Diffusion: extreme, “surface haze” tuning.
+            diffusionLayers: diffusionLayerCount,
+            diffusionFalloffPower: 1.65,
 
-            diffusionMinRadiusPoints: 1.5,       // treated as px in renderer
-            diffusionMaxRadiusPoints: 68.0,      // treated as px in renderer (clamp max)
+            diffusionMinRadiusPoints: 1.0,     // px-like
+            diffusionMaxRadiusPoints: 140.0,   // clamp (px-like)
             diffusionMinRadiusFractionOfHeight: 0.0,
-            diffusionMaxRadiusFractionOfHeight: 0.42,
-            diffusionRadiusUncertaintyPower: 1.15,
+            diffusionMaxRadiusFractionOfHeight: 0.75,
+            diffusionRadiusUncertaintyPower: 0.55,
 
-            diffusionStrengthMax: 0.84,
-            diffusionStrengthMinUncertainTerm: 0.30,
-            diffusionStrengthUncertaintyPower: 1.05,
+            diffusionStrengthMax: 0.92,
+            diffusionStrengthMinUncertainTerm: 0.02,
+            diffusionStrengthUncertaintyPower: 0.65,
 
             diffusionDrizzleThreshold: 0.08,
             diffusionLowIntensityGateMin: 0.60,
 
-            // Legacy/compat fields (unused by diffusion; left stable)
             diffusionLightRainMeanThreshold: 0.18,
             diffusionLightRainMaxRadiusScale: 0.80,
             diffusionLightRainStrengthScale: 0.85,
             diffusionStopStride: 2,
             diffusionJitterAmplitudePoints: 0.0,
-            diffusionEdgeSofteningWidth: 0.08,
+            diffusionEdgeSofteningWidth: 0.10,
 
-            // No internal texture
             textureEnabled: false,
             textureMaxAlpha: 0.0,
             textureMinAlpha: 0.0,
@@ -172,7 +176,6 @@ private struct WeatherNowcastSurfacePlot: View {
             textureBlurRadiusPoints: 0.0,
             textureTopInsetFractionOfHeight: 0.02,
 
-            // Use fuzzEnabled as the diffusion enable switch; no particles/dots
             fuzzEnabled: true,
             fuzzGlobalBlurRadiusPoints: 0.0,
             fuzzLineWidthMultiplier: 0.0,
@@ -187,14 +190,14 @@ private struct WeatherNowcastSurfacePlot: View {
             fuzzRidgeFeatherAlphaMultiplier: 0.0,
             fuzzParticleAlphaMultiplier: 0.0,
 
-            // Layer 4: subtle inward glow
+            // Glow stays subtle and inward.
             glowEnabled: true,
             glowColor: accent,
             glowLayers: 6,
-            glowMaxAlpha: 0.12,
+            glowMaxAlpha: 0.10,
             glowFalloffPower: 1.75,
             glowCertaintyPower: 1.6,
-            glowMaxRadiusPoints: 3.8,            // treated as px in renderer
+            glowMaxRadiusPoints: 3.8,
             glowMaxRadiusFractionOfHeight: 0.075
         )
 
@@ -237,5 +240,15 @@ private struct WeatherNowcastSurfacePlot: View {
 
     private static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
+    }
+
+    private static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        let tt = clamp01(t)
+        return a + (b - a) * tt
+    }
+
+    private static func smoothstep01(_ u: Double) -> Double {
+        let x = clamp01(u)
+        return x * x * (3.0 - 2.0 * x)
     }
 }
