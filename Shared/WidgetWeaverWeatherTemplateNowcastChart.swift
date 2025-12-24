@@ -85,121 +85,126 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
+        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // Certainty must allow both “smooth” and “fuzzy” regions to coexist.
-        // Chance alone is frequently near-constant during active rain, so a horizon falloff
-        // is applied to create lower certainty further out in time.
-        let n = max(1, samples.count)
-        let horizonStart = 0.10
-        let horizonEndCertainty = 0.45
+        // Certainty model:
+        // - base certainty from chance01
+        // - plus a gentle horizon falloff so the chart can show both surfaces (smooth near-term, fuzzy further out)
+        let n = samples.count
+        let horizonStart = 0.15         // start easing certainty down after ~9 minutes
+        let horizonEndCertainty = 0.55  // certainty floor at the horizon
 
         let certainties: [Double] = samples.enumerated().map { idx, s in
-            let chance = Self.clamp01(s.chance01)
+            let chance = RainSurfaceMath.clamp01(s.chance01)
             let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
-            let u = Self.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
-            let hs = Self.smoothstep01(u)
-            let horizonFactor = Self.lerp(1.0, horizonEndCertainty, hs)
-            return Self.clamp01(chance * horizonFactor)
+            let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
+            let hs = RainSurfaceMath.smoothstep01(u)
+            let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
+            return RainSurfaceMath.clamp01(chance * horizonFactor)
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Widget budgets are tight; diffusion thickness comes from radius/strength, not just K.
-        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 32 : 44
+        // Widgets have tight render budgets; avoid extreme layer counts in the extension.
+        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 28 : 36
 
-        let cfg = RainForecastSurfaceConfiguration(
-            backgroundColor: .black,
-            backgroundOpacity: 0.0,
+        // Configuration tuned for:
+        // - one ribbon (no 2nd band)
+        // - fuzzy top only when certainty is low (via destinationOut diffusion)
+        // - baseline visible across the whole chart
+        var cfg = RainForecastSurfaceConfiguration()
 
-            intensityCap: max(maxIntensityMMPerHour, 0.000_001),
-            wetThreshold: WeatherNowcast.wetIntensityThresholdMMPerHour,
-            intensityEasingPower: 0.75,
-            minVisibleHeightFraction: 0.030,
+        cfg.backgroundColor = .black
+        cfg.backgroundOpacity = 0.0
 
-            geometrySmoothingPasses: 1,
-            baselineYFraction: 0.82,
-            edgeInsetFraction: 0.00,
+        cfg.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
+        cfg.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
+        cfg.intensityEasingPower = 0.75
+        cfg.minVisibleHeightFraction = 0.030
 
-            // Baseline matches mockup: brighter + full width + clean.
-            baselineColor: accent,
-            baselineOpacity: 0.22,
-            baselineLineWidth: onePixel,
-            baselineInsetPoints: 0.0,
-            baselineSoftWidthMultiplier: 3.0,
-            baselineSoftOpacityMultiplier: 0.45,
+        cfg.geometrySmoothingPasses = 1
+        cfg.baselineYFraction = 0.82
+        cfg.edgeInsetFraction = 0.00
 
-            fillBottomColor: accent,
-            fillTopColor: accent,
-            fillBottomOpacity: 0.14,
-            fillTopOpacity: 0.94,
+        // Baseline (match mock: thin, clean, visible even under fill)
+        cfg.baselineColor = accent
+        cfg.baselineOpacity = 0.14
+        cfg.baselineLineWidth = onePixel
+        cfg.baselineInsetPoints = 0.0
+        cfg.baselineSoftWidthMultiplier = 3.0
+        cfg.baselineSoftOpacityMultiplier = 0.34
 
-            startEaseMinutes: 6,
-            endFadeMinutes: 10,
-            endFadeFloor: 0.0,
+        // Core ribbon
+        cfg.fillBottomColor = accent
+        cfg.fillTopColor = accent
+        cfg.fillBottomOpacity = 0.16
+        cfg.fillTopOpacity = 0.92
 
-            // Diffusion: extreme, “surface haze” tuning.
-            diffusionLayers: diffusionLayerCount,
-            diffusionFalloffPower: 1.65,
+        cfg.startEaseMinutes = 6
+        cfg.endFadeMinutes = 10
+        cfg.endFadeFloor = 0.0
 
-            diffusionMinRadiusPoints: 1.0,     // px-like
-            diffusionMaxRadiusPoints: 140.0,   // clamp (px-like)
-            diffusionMinRadiusFractionOfHeight: 0.0,
-            diffusionMaxRadiusFractionOfHeight: 0.75,
-            diffusionRadiusUncertaintyPower: 0.55,
+        // Layer 3: diffusion (stacked alpha, but rendered as alpha erosion to black)
+        cfg.diffusionLayers = diffusionLayerCount
+        cfg.diffusionFalloffPower = 2.2
 
-            diffusionStrengthMax: 0.92,
-            diffusionStrengthMinUncertainTerm: 0.02,
-            diffusionStrengthUncertaintyPower: 0.65,
+        cfg.diffusionMinRadiusPoints = 1.5        // treated as px in renderer
+        cfg.diffusionMaxRadiusPoints = 48.0       // treated as px in renderer (clamp max)
+        cfg.diffusionMinRadiusFractionOfHeight = 0.0
+        cfg.diffusionMaxRadiusFractionOfHeight = 0.60
+        cfg.diffusionRadiusUncertaintyPower = 1.15
 
-            diffusionDrizzleThreshold: 0.08,
-            diffusionLowIntensityGateMin: 0.60,
+        cfg.diffusionStrengthMax = 0.78
+        cfg.diffusionStrengthMinUncertainTerm = 0.00
+        cfg.diffusionStrengthUncertaintyPower = 1.05
 
-            diffusionLightRainMeanThreshold: 0.18,
-            diffusionLightRainMaxRadiusScale: 0.80,
-            diffusionLightRainStrengthScale: 0.85,
-            diffusionStopStride: 2,
-            diffusionJitterAmplitudePoints: 0.0,
-            diffusionEdgeSofteningWidth: 0.10,
+        cfg.diffusionDrizzleThreshold = 0.08
+        cfg.diffusionLowIntensityGateMin = 0.60
 
-            textureEnabled: false,
-            textureMaxAlpha: 0.0,
-            textureMinAlpha: 0.0,
-            textureIntensityPower: 0.70,
-            textureUncertaintyAlphaBoost: 0.0,
-            textureStreaksMin: 0,
-            textureStreaksMax: 0,
-            textureLineWidthMultiplier: 0.70,
-            textureBlurRadiusPoints: 0.0,
-            textureTopInsetFractionOfHeight: 0.02,
+        cfg.diffusionStopStride = 2
+        cfg.diffusionJitterAmplitudePoints = 0.0
+        cfg.diffusionEdgeSofteningWidth = 0.10
 
-            fuzzEnabled: true,
-            fuzzGlobalBlurRadiusPoints: 0.0,
-            fuzzLineWidthMultiplier: 0.0,
-            fuzzLengthMultiplier: 0.0,
-            fuzzDotsEnabled: false,
-            fuzzDotsPerSampleMax: 0,
-            fuzzRidgeEnabled: false,
-            fuzzOutsideOnly: false,
-            fuzzRidgeCoreRadiusMultiplier: 0.0,
-            fuzzRidgeCoreAlphaMultiplier: 0.0,
-            fuzzRidgeFeatherRadiusMultiplier: 0.0,
-            fuzzRidgeFeatherAlphaMultiplier: 0.0,
-            fuzzParticleAlphaMultiplier: 0.0,
+        // No internal texture
+        cfg.textureEnabled = false
+        cfg.textureMaxAlpha = 0.0
+        cfg.textureMinAlpha = 0.0
+        cfg.textureIntensityPower = 0.70
+        cfg.textureUncertaintyAlphaBoost = 0.0
+        cfg.textureStreaksMin = 0
+        cfg.textureStreaksMax = 0
+        cfg.textureLineWidthMultiplier = 0.70
+        cfg.textureBlurRadiusPoints = 0.0
+        cfg.textureTopInsetFractionOfHeight = 0.02
 
-            // Glow stays subtle and inward.
-            glowEnabled: true,
-            glowColor: accent,
-            glowLayers: 6,
-            glowMaxAlpha: 0.10,
-            glowFalloffPower: 1.75,
-            glowCertaintyPower: 1.6,
-            glowMaxRadiusPoints: 3.8,
-            glowMaxRadiusFractionOfHeight: 0.075
-        )
+        // Use fuzzEnabled as the diffusion enable switch; no particles/dots
+        cfg.fuzzEnabled = true
+        cfg.fuzzGlobalBlurRadiusPoints = 0.0
+        cfg.fuzzLineWidthMultiplier = 0.0
+        cfg.fuzzLengthMultiplier = 0.0
+        cfg.fuzzDotsEnabled = false
+        cfg.fuzzDotsPerSampleMax = 0
+        cfg.fuzzRidgeEnabled = false
+        cfg.fuzzOutsideOnly = false
+        cfg.fuzzRidgeCoreRadiusMultiplier = 0.0
+        cfg.fuzzRidgeCoreAlphaMultiplier = 0.0
+        cfg.fuzzRidgeFeatherRadiusMultiplier = 0.0
+        cfg.fuzzRidgeFeatherAlphaMultiplier = 0.0
+        cfg.fuzzParticleAlphaMultiplier = 0.0
+
+        // Layer 4: subtle inward glow (kept tight and clipped)
+        cfg.glowEnabled = true
+        cfg.glowColor = accent
+        cfg.glowLayers = 6
+        cfg.glowMaxAlpha = 0.10
+        cfg.glowFalloffPower = 1.75
+        cfg.glowCertaintyPower = 1.5
+        cfg.glowMaxRadiusPoints = 4.5            // treated as px in renderer
+        cfg.glowMaxRadiusFractionOfHeight = 0.075
 
         RainForecastSurfaceView(
             intensities: intensities,
@@ -240,15 +245,5 @@ private struct WeatherNowcastSurfacePlot: View {
 
     private static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
-    }
-
-    private static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
-        let tt = clamp01(t)
-        return a + (b - a) * tt
-    }
-
-    private static func smoothstep01(_ u: Double) -> Double {
-        let x = clamp01(u)
-        return x * x * (3.0 - 2.0 * x)
     }
 }
