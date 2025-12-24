@@ -86,6 +86,13 @@ enum RainSurfaceDrawing {
         let maxFromHeight = max(minSigmaPoints, (maxHeight * fracMax))
         let maxSigmaPoints = min(hardMaxSigmaPoints, maxFromHeight)
 
+        // Chance → fuzz mapping thresholds.
+        // Raising `smoothChanceCutoff` makes more of the ridge diffuse (matches the mock’s right side more).
+        // Raising `fullFuzzChance` makes the fully-diffuse state kick in earlier.
+        let smoothChanceCutoff: Double = 0.94
+        let fullFuzzChance: Double = 0.58
+        let chanceDenom = max(0.000_001, smoothChanceCutoff - fullFuzzChance)
+
         let radiusPower = max(0.01, configuration.diffusionRadiusUncertaintyPower)
         let strengthMax = max(0.0, configuration.diffusionStrengthMax)
 
@@ -95,9 +102,9 @@ enum RainSurfaceDrawing {
         let dotsOn = configuration.fuzzDotsEnabled && configuration.fuzzDotsPerSampleMax > 0
         let maxDots = max(0, configuration.fuzzDotsPerSampleMax)
 
-        // Blur for the fuzz mask. Too big creates a detached cloud.
+        // Lower blur preserves grain. Higher blur makes it glassy-smooth.
         let fuzzBlurBase = CGFloat(max(0.0, configuration.fuzzGlobalBlurRadiusPoints))
-        let fuzzBlur = max(0.0, fuzzBlurBase * 1.20)
+        let fuzzBlur = max(0.0, fuzzBlurBase * 0.70)
 
         var sigma = [CGFloat](repeating: 0, count: n)
         var coreAlpha = [Double](repeating: 0, count: n)
@@ -117,18 +124,29 @@ enum RainSurfaceDrawing {
             }
 
             let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
-            let c = RainSurfaceMath.clamp01(certaintySmoothed[i])
-            let u = RainSurfaceMath.clamp01(1.0 - c)
+            let cRaw = RainSurfaceMath.clamp01(certaintySmoothed[i])
             let edge = RainSurfaceMath.clamp01(edgeFactors[i])
 
-            // Sigma: thicker when certainty is low.
+            // Thresholded uncertainty:
+            // 0 when chance >= smoothChanceCutoff
+            // 1 when chance <= fullFuzzChance
+            let tChance = RainSurfaceMath.clamp01((smoothChanceCutoff - cRaw) / chanceDenom)
+            let u = RainSurfaceMath.smoothstep01(tChance)
+            let uF = CGFloat(u)
+
+            // Sigma grows as uncertainty rises.
             var s = minSigmaPoints + (maxSigmaPoints - minSigmaPoints) * CGFloat(pow(u, radiusPower))
 
-            // Cap sigma by local height so taper tails do not spawn wide haze.
-            let sigmaCap = max(onePixel, min(maxSigmaPoints, (h * (0.34 + 0.96 * CGFloat(u))) + (6.0 / max(1.0, displayScale))))
+            // Cap sigma by local height to keep tails from forming detached haze.
+            let sigmaCap = max(
+                onePixel,
+                min(
+                    maxSigmaPoints,
+                    (h * (0.22 + 1.05 * uF)) + (6.0 / max(1.0, displayScale))
+                )
+            )
             s = min(s, sigmaCap)
 
-            // Micro-jitter: texture without streaks.
             if jitterAmp > 0.000_01, s > 0.000_01 {
                 var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0x51A7E, saltB: 0xC0FFEE))
                 let jr = randTriangle(&prng)
@@ -138,30 +156,31 @@ enum RainSurfaceDrawing {
             s = max(onePixel, s)
             sigma[i] = s
 
-            // Core opacity: high certainty = solid; low certainty = less solid.
-            let core = RainSurfaceMath.clamp01(
-                (0.26 + 0.74 * pow(c, 0.88))
-                * (0.62 + 0.38 * pow(inorm, 0.72))
-                * edge
-            )
-            coreAlpha[i] = core
+            // Fuzz should still exist at low intensity (the mock’s right side).
+            let intensitySupportForFuzz = 0.25 + 0.75 * pow(inorm, 0.55)
 
-            // Fuzz strength: low certainty drives it, intensity supports it.
             let fuzz = RainSurfaceMath.clamp01(
                 strengthMax
-                * pow(u, 0.86)
-                * (0.38 + 0.62 * pow(inorm, 0.62))
+                * pow(u, 0.62)
+                * intensitySupportForFuzz
                 * edge
                 * fuzzMultiplier
             )
             fuzzAlpha[i] = fuzz
 
-            // IMPORTANT: core height is pulled down proportional to fuzz strength
-            // so fuzz becomes the silhouette in low-certainty regions (no smooth edge underneath).
-            let fa = fuzzAlpha[i] // 0...1
-            let cutScale = RainSurfaceMath.clamp(0.25 + 1.90 * fa, min: 0.25, max: 2.15)
-            let cut = min(h - onePixel * 0.25, s * CGFloat(cutScale))
+            // Core fades out as uncertainty rises so the ridge stops looking like a smooth vector path.
+            let baseCore = (0.20 + 0.80 * pow(cRaw, 1.35)) * (0.56 + 0.44 * pow(inorm, 0.85)) * edge
+            let coreFade = max(0.0, 1.0 - 0.88 * u)
+            coreAlpha[i] = RainSurfaceMath.clamp01(baseCore * coreFade)
 
+            // Pull the smooth core down hard as fuzz increases (fuzz becomes the silhouette).
+            let lowI = 1.0 - pow(inorm, 0.55)
+            let cutScale = RainSurfaceMath.clamp(
+                0.18 + 3.10 * u * (0.70 + 0.30 * lowI),
+                min: 0.18,
+                max: 3.60
+            )
+            let cut = min(h - onePixel * 0.25, s * CGFloat(cutScale))
             coreHeights[i] = max(0.0, h - max(0.0, cut))
         }
 
@@ -179,7 +198,6 @@ enum RainSurfaceDrawing {
             let startEdgeX = plotRect.minX + CGFloat(r.lowerBound) * stepX
             let endEdgeX = plotRect.minX + CGFloat(r.upperBound) * stepX
 
-            // Hard clip to segment bounds and never below baseline.
             let clipRect = CGRect(
                 x: startEdgeX,
                 y: plotRect.minY,
@@ -196,7 +214,6 @@ enum RainSurfaceDrawing {
                 heights: coreHeights
             )
 
-            // Horizontal alpha mapping points (include edges).
             let first = r.lowerBound
             let last = max(first, r.upperBound - 1)
 
@@ -236,7 +253,7 @@ enum RainSurfaceDrawing {
             context.drawLayer { layer in
                 layer.clip(to: Path(clipRect))
 
-                // --- MASK STAGE ---
+                // Mask stage
                 layer.fill(corePath, with: coreShading)
 
                 if dotsOn, maxDots > 0 {
@@ -261,7 +278,7 @@ enum RainSurfaceDrawing {
                     }
                 }
 
-                // --- COLOUR STAGE ---
+                // Colour stage
                 let saved = layer.blendMode
                 layer.blendMode = .sourceIn
 
@@ -310,16 +327,18 @@ enum RainSurfaceDrawing {
             let s = max(onePixel, sigma[i])
             let topY = baselineY - h
 
-            // Density: driven by fuzz strength, with intensity support.
-            let density = RainSurfaceMath.clamp01(0.18 + 0.82 * fa)
-            let desired = Double(maxDotsPerSample) * density * (0.55 + 0.45 * pow(inorm, 0.65))
-            let dotCount = max(1, Int(desired.rounded(.toNearestOrAwayFromZero)))
+            let intensitySupport = 0.40 + 0.60 * pow(inorm, 0.55)
 
-            // Keep fuzz ridge-attached: limit vertical span.
-            let upSpan = s * (0.45 + 0.55 * CGFloat(fa))                 // max above ridge
-            let downSpan = min(h * 0.65, s * (0.35 + 0.55 * CGFloat(fa))) // max inside
+            // Higher density than before: this is what makes the right side of the mock feel “foggy”.
+            let desired = Double(maxDotsPerSample) * (0.55 + 2.60 * fa) * intensitySupport
+            let dotCount = min(140, max(1, Int(desired.rounded(.toNearestOrAwayFromZero))))
 
-            let outsideWeight = RainSurfaceMath.clamp01(0.46 + 0.42 * fa)
+            // Ridge-attached spans (caps prevent detached clouds).
+            let upSpan = min(h * 0.90, s * (0.65 + 1.10 * CGFloat(fa)))
+            let downSpan = min(h * 0.55, s * (0.60 + 1.35 * CGFloat(fa)))
+
+            // More inside dots than before so the top doesn’t stay perfectly smooth.
+            let outsideWeight = RainSurfaceMath.clamp01(0.30 + 0.45 * fa)
 
             for j in 0..<dotCount {
                 var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xD07D07D0, saltB: (j &* 173) &+ 19))
@@ -331,27 +350,26 @@ enum RainSurfaceDrawing {
                 let y: CGFloat
                 if pick < outsideWeight {
                     let t = prng.nextDouble01()
-                    let up = CGFloat(pow(t, 1.20)) * upSpan
+                    let up = CGFloat(pow(t, 1.12)) * upSpan
                     y = max(plotRect.minY, topY - up)
                 } else {
                     let t = prng.nextDouble01()
-                    let down = CGFloat(pow(t, 1.10)) * max(onePixel, downSpan)
+                    let down = CGFloat(pow(t, 1.05)) * max(onePixel, downSpan)
                     y = min(baselineY, topY + down)
                 }
 
-                // Small dots only (prevents “cloud blobs”).
+                // Small dots only.
                 let rr = prng.nextDouble01()
-                let baseR = onePixel * (0.60 + 1.85 * rr)
-                let scale = (0.78 + 0.62 * CGFloat(fa))
-                let r = max(onePixel * 0.55, baseR * scale)
+                let baseR = onePixel * (0.55 + 1.65 * rr)
+                let r = max(onePixel * 0.55, baseR * (0.72 + 0.78 * CGFloat(fa)))
 
-                // Fade with distance from ridge.
+                // Fade with distance from the ridge.
                 let dy = abs(y - topY)
                 let tFade = RainSurfaceMath.clamp01(Double(dy / max(onePixel, s)))
-                let ridgeFade = pow(1.0 - tFade, 1.85)
+                let ridgeFade = pow(1.0 - tFade, 1.35)
 
                 let ra = prng.nextDouble01()
-                let a = RainSurfaceMath.clamp01(fa * (0.055 + 0.160 * ra) * ridgeFade)
+                let a = RainSurfaceMath.clamp01(fa * (0.060 + 0.190 * ra) * ridgeFade)
 
                 if a <= 0.000_5 { continue }
 
