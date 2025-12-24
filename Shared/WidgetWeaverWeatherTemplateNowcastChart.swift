@@ -72,6 +72,7 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastSurfacePlot: View {
+
     struct Sample: Hashable {
         var intensityMMPerHour: Double
         var chance01: Double
@@ -90,15 +91,18 @@ private struct WeatherNowcastSurfacePlot: View {
         }
 
         let n = samples.count
+
         let horizonStart = 0.15
         let horizonEndCertainty = 0.55
 
         let certainties: [Double] = samples.enumerated().map { idx, s in
             let chance = RainSurfaceMath.clamp01(s.chance01)
+
             let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
             let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
             let hs = RainSurfaceMath.smoothstep01(u)
             let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
+
             return RainSurfaceMath.clamp01(chance * horizonFactor)
         }
 
@@ -138,7 +142,7 @@ private struct WeatherNowcastSurfacePlot: View {
             c.endFadeMinutes = 10
             c.endFadeFloor = 0.0
 
-            // Diffusion (stacked contours; rendered subtractively in RainSurfaceDrawing via destinationOut)
+            // Diffusion (stacked contours; rendered subtractively via destinationOut)
             c.diffusionLayers = diffusionLayerCount
             c.diffusionFalloffPower = 2.2
             c.diffusionMinRadiusPoints = 1.5
@@ -146,13 +150,14 @@ private struct WeatherNowcastSurfacePlot: View {
             c.diffusionMinRadiusFractionOfHeight = 0.0
             c.diffusionMaxRadiusFractionOfHeight = 0.60
 
-            // Key: keep diffusion present unless certainty is extremely high.
-            // (Lower exponents => more diffusion at high-but-not-absolute certainty.)
+            // Lower exponents keep diffusion present at high-but-not-absolute certainty.
             c.diffusionRadiusUncertaintyPower = 0.80
             c.diffusionStrengthMax = 0.78
-            c.diffusionStrengthMinUncertainTerm = 0.00
-            c.diffusionStrengthUncertaintyPower = 0.85
 
+            // Key change: keep *some* fuzz even at high certainty, so the surface is not overly smooth.
+            c.diffusionStrengthMinUncertainTerm = 0.18
+
+            c.diffusionStrengthUncertaintyPower = 0.85
             c.diffusionDrizzleThreshold = 0.08
             c.diffusionLowIntensityGateMin = 0.60
 
@@ -160,7 +165,9 @@ private struct WeatherNowcastSurfacePlot: View {
             c.diffusionStopStride = 1
             c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.0 : 1.25
 
-            c.diffusionJitterAmplitudePoints = 0.0
+            // Key change: deterministic micro-jitter that increases with uncertainty.
+            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.2 : 1.6
+
             c.diffusionEdgeSofteningWidth = 0.10
 
             // No internal texture
@@ -175,12 +182,14 @@ private struct WeatherNowcastSurfacePlot: View {
             c.textureBlurRadiusPoints = 0.0
             c.textureTopInsetFractionOfHeight = 0.02
 
-            // Diffusion enable switch
+            // Diffusion enable switch + “spray” dots (blurred circles, no streaks).
             c.fuzzEnabled = true
             c.fuzzLineWidthMultiplier = 0.0
             c.fuzzLengthMultiplier = 0.0
-            c.fuzzDotsEnabled = false
-            c.fuzzDotsPerSampleMax = 0
+
+            c.fuzzDotsEnabled = true
+            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 3 : 4
+
             c.fuzzRidgeEnabled = false
             c.fuzzOutsideOnly = false
             c.fuzzRidgeCoreRadiusMultiplier = 0.0
@@ -202,11 +211,12 @@ private struct WeatherNowcastSurfacePlot: View {
             return c
         }()
 
-        RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
+        return RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
     }
 
     static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
         let clipped = Array(points.prefix(targetMinutes))
+
         var out: [Sample] = []
         out.reserveCapacity(targetMinutes)
 

@@ -1,16 +1,17 @@
 //
-// RainSurfaceMath.swift
-// WidgetWeaver
+//  RainSurfaceMath.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Small maths helpers used by the surface renderer.
+//  Small maths helpers used by the surface renderer.
 //
 
 import Foundation
 import SwiftUI
 
 enum RainSurfaceMath {
+
     static func clamp01(_ v: Double) -> Double {
         max(0.0, min(1.0, v))
     }
@@ -35,7 +36,7 @@ enum RainSurfaceMath {
         return (floor(value * displayScale) + 0.5) / displayScale
     }
 
-    /// Rendering-only boundary easing. Intended for diffusion/glow alpha only.
+    /// Rendering-only boundary easing intended for diffusion/glow alpha (not geometry).
     static func edgeFactors(
         sampleCount: Int,
         startEaseMinutes: Int,
@@ -53,33 +54,24 @@ enum RainSurfaceMath {
         out.reserveCapacity(sampleCount)
 
         for i in 0..<sampleCount {
-            let startEase: Double
-            if startN <= 0 {
-                startEase = 1.0
-            } else if startN == 1 {
-                startEase = 1.0
-            } else {
-                let u = Double(i) / Double(max(1, startN - 1))
-                startEase = smoothstep01(u)
+            var f = 1.0
+
+            if startN > 0, i < startN {
+                let t = Double(i) / Double(max(1, startN))
+                f *= smoothstep01(t)
             }
 
-            let endFade: Double
-            if endN <= 0 {
-                endFade = 1.0
-            } else {
-                let startIndex = max(0, sampleCount - endN)
-                if i < startIndex {
-                    endFade = 1.0
-                } else if endN == 1 {
-                    endFade = floorClamped
-                } else {
-                    let u = Double(i - startIndex) / Double(max(1, endN - 1))
-                    let s = smoothstep01(u)
-                    endFade = max(1.0 - s, floorClamped)
+            if endN > 0 {
+                let remaining = (sampleCount - 1) - i
+                if remaining < endN {
+                    let t = Double(remaining) / Double(max(1, endN))
+                    let fade = smoothstep01(t) // 0 at end, 1 at start of fade window
+                    let endFactor = lerp(floorClamped, 1.0, fade)
+                    f *= endFactor
                 }
             }
 
-            out.append(startEase * endFade)
+            out.append(f)
         }
 
         return out
@@ -87,16 +79,22 @@ enum RainSurfaceMath {
 
     static func smooth(_ values: [CGFloat], passes: Int) -> [CGFloat] {
         guard values.count >= 3, passes > 0 else { return values }
+
         var out = values
         var tmp = values
 
         for _ in 0..<passes {
-            tmp = out
-            let last = out.count - 1
-            if last <= 1 { break }
-            for i in 1..<last {
-                out[i] = (tmp[i - 1] + tmp[i] + tmp[i + 1]) / 3.0
+            tmp[0] = out[0]
+            tmp[tmp.count - 1] = out[out.count - 1]
+
+            if out.count > 2 {
+                for i in 1..<(out.count - 1) {
+                    // Mildly weighted 3-tap blur (stable shape, less shrink).
+                    tmp[i] = (out[i - 1] * 0.25) + (out[i] * 0.50) + (out[i + 1] * 0.25)
+                }
             }
+
+            out = tmp
         }
 
         return out
@@ -104,16 +102,21 @@ enum RainSurfaceMath {
 
     static func smooth(_ values: [Double], passes: Int) -> [Double] {
         guard values.count >= 3, passes > 0 else { return values }
+
         var out = values
         var tmp = values
 
         for _ in 0..<passes {
-            tmp = out
-            let last = out.count - 1
-            if last <= 1 { break }
-            for i in 1..<last {
-                out[i] = (tmp[i - 1] + tmp[i] + tmp[i + 1]) / 3.0
+            tmp[0] = out[0]
+            tmp[tmp.count - 1] = out[out.count - 1]
+
+            if out.count > 2 {
+                for i in 1..<(out.count - 1) {
+                    tmp[i] = (out[i - 1] * 0.25) + (out[i] * 0.50) + (out[i + 1] * 0.25)
+                }
             }
+
+            out = tmp
         }
 
         return out

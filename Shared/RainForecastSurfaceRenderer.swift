@@ -1,16 +1,17 @@
 //
-// RainForecastSurfaceRenderer.swift
-// WidgetWeaver
+//  RainForecastSurfaceRenderer.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Forecast surface rendering core (WidgetKit-safe).
+//  Forecast surface rendering core (WidgetKit-safe).
 //
 
 import Foundation
 import SwiftUI
 
 struct RainForecastSurfaceRenderer {
+
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
@@ -46,6 +47,7 @@ struct RainForecastSurfaceRenderer {
 
         let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
         let intensityCap = max(configuration.intensityCap, 0.000_001)
+
         let stepX = plotRect.width / CGFloat(n)
 
         // Edge factors are rendering-only (diffusion/glow alpha). Geometry is not modified by these.
@@ -62,11 +64,12 @@ struct RainForecastSurfaceRenderer {
         var certainty = [Double](repeating: 0, count: n)
 
         for i in 0..<n {
-            let rawI = max(0.0, intensities[i])
             let c = RainSurfaceMath.clamp01(certainties[i])
             certainty[i] = c
 
+            let rawI = max(0.0, intensities[i])
             guard rawI > configuration.wetThreshold else { continue }
+
             wetMask[i] = true
 
             let frac = min(rawI / intensityCap, 1.0)
@@ -85,6 +88,7 @@ struct RainForecastSurfaceRenderer {
         }
 
         let wetRanges = RainSurfaceGeometry.wetRanges(from: wetMask)
+
         var segments: [WetSegment] = []
         segments.reserveCapacity(wetRanges.count)
 

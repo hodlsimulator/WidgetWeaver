@@ -1,15 +1,16 @@
 //
-// RainSurfaceGeometry.swift
-// WidgetWeaver
+//  RainSurfaceGeometry.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Surface path construction helpers.
+//  Surface path construction helpers.
 //
 
 import SwiftUI
 
 enum RainSurfaceGeometry {
+
     static func wetRanges(from mask: [Bool]) -> [Range<Int>] {
         guard !mask.isEmpty else { return [] }
 
@@ -17,6 +18,7 @@ enum RainSurfaceGeometry {
         ranges.reserveCapacity(6)
 
         var start: Int? = nil
+
         for i in 0..<mask.count {
             if mask[i] {
                 if start == nil { start = i }
@@ -49,11 +51,13 @@ enum RainSurfaceGeometry {
         points.reserveCapacity(range.count + 2)
 
         points.append(CGPoint(x: startEdgeX, y: baselineY))
+
         for i in range {
             let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
             let y = baselineY - heights[i]
             points.append(CGPoint(x: x, y: y))
         }
+
         points.append(CGPoint(x: endEdgeX, y: baselineY))
 
         var path = Path()
@@ -79,11 +83,13 @@ enum RainSurfaceGeometry {
         points.reserveCapacity(range.count + 2)
 
         points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
+
         for i in range {
             let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
             let y = baselineY - heights[i]
             points.append(CGPoint(x: x, y: y))
         }
+
         points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
 
         var path = Path()
@@ -114,7 +120,8 @@ enum RainSurfaceGeometry {
         path.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
     }
 
-    /// Useful for effects that must exclude the interior. Not used by the diffusion approach.
+    /// Useful for effects that must exclude the interior.
+    /// Not used by the diffusion approach.
     static func makeOutsideMaskPath(plotRect: CGRect, surfacePath: Path, padding: CGFloat) -> Path {
         let pad = max(0, padding)
         var p = Path()
