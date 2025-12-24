@@ -135,11 +135,13 @@ struct WidgetWeaverHomeScreenClockView: View {
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
-        .transaction { t in
-            t.animation = nil
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 }
+
 
 // MARK: - Palette
 
@@ -195,77 +197,42 @@ private struct WidgetWeaverClockPalette {
             case .ember:
                 return isDark ? wwColor(0xFF5A56) : wwColor(0xFF4D4A)
             case .graphite:
-                return isDark ? wwColor(0xC8C8C8) : wwColor(0xC8C8C8)
+                return isDark ? wwColor(0xB7C3D6) : wwColor(0x90A0B8)
             }
         }()
 
-        let backgroundTop: Color = {
-            switch scheme {
-            case .classic:
-                return isDark ? wwColor(0x0A0F18) : wwColor(0xE8F2FA)
-            case .ocean:
-                return isDark ? wwColor(0x050B12) : wwColor(0xE7F4FF)
-            case .mint:
-                return isDark ? wwColor(0x06120E) : wwColor(0xE6FFF3)
-            case .orchid:
-                return isDark ? wwColor(0x0C0712) : wwColor(0xF3ECFF)
-            case .sunset:
-                return isDark ? wwColor(0x120A05) : wwColor(0xFFF2E8)
-            case .ember:
-                return isDark ? wwColor(0x160707) : wwColor(0xFFF0F0)
-            case .graphite:
-                return isDark ? wwColor(0x0A0A0A) : wwColor(0xF2F2F2)
-            }
-        }()
+        let backgroundTop: Color = isDark ? wwColor(0x141A22) : wwColor(0xECF1F8)
+        let backgroundBottom: Color = isDark ? wwColor(0x0B0F15) : wwColor(0xC7D2E5)
 
-        let backgroundBottom: Color = {
-            switch scheme {
-            case .classic:
-                return isDark ? wwColor(0x1A2433) : wwColor(0xCFE8FF)
-            case .ocean:
-                return isDark ? wwColor(0x0D2238) : wwColor(0xCFEAFF)
-            case .mint:
-                return isDark ? wwColor(0x0D2B20) : wwColor(0xCFFFEA)
-            case .orchid:
-                return isDark ? wwColor(0x241235) : wwColor(0xE6DAFF)
-            case .sunset:
-                return isDark ? wwColor(0x2E1408) : wwColor(0xFFE0C9)
-            case .ember:
-                return isDark ? wwColor(0x2B0C0C) : wwColor(0xFFD7D7)
-            case .graphite:
-                return isDark ? wwColor(0x1B1B1B) : wwColor(0xD9D9D9)
-            }
-        }()
+        let bezelHighlight: Color = isDark ? wwColor(0x2B3340) : wwColor(0xFFFFFF, 0.90)
+        let bezelMid: Color = isDark ? wwColor(0x141B25) : wwColor(0xC9D5E8)
+        let bezelShadow: Color = isDark ? wwColor(0x06090D) : wwColor(0x8A99B6)
 
-        let bezelHighlight = isDark ? wwColor(0xFFFFFF, 0.18) : wwColor(0xFFFFFF, 0.62)
-        let bezelMid = isDark ? wwColor(0xFFFFFF, 0.10) : wwColor(0xFFFFFF, 0.28)
-        let bezelShadow = isDark ? wwColor(0x000000, 0.46) : wwColor(0x000000, 0.18)
+        let faceTop: Color = isDark ? wwColor(0x1A2230) : wwColor(0xFAFCFF)
+        let faceBottom: Color = isDark ? wwColor(0x0E141E) : wwColor(0xDCE6F6)
 
-        let faceTop = isDark ? wwColor(0x10131A) : wwColor(0xFFFFFF)
-        let faceBottom = isDark ? wwColor(0x0A0C10) : wwColor(0xEDEFF6)
+        let numerals: Color = isDark ? wwColor(0xE6EEF9) : wwColor(0x1A2230)
+        let numeralsShadow: Color = isDark ? wwColor(0x000000, 0.55) : wwColor(0x000000, 0.16)
 
-        let numerals = isDark ? wwColor(0xE9EEF8, 0.85) : wwColor(0x1B2230, 0.75)
-        let numeralsShadow = isDark ? wwColor(0x000000, 0.55) : wwColor(0x000000, 0.12)
+        let minuteDot: Color = isDark ? wwColor(0x9EB0C8, 0.42) : wwColor(0x203047, 0.20)
 
-        let minuteDot = isDark ? wwColor(0xFFFFFF, 0.10) : wwColor(0x000000, 0.10)
+        let tickTop: Color = isDark ? wwColor(0xF5FAFF, 0.82) : wwColor(0x1F2B3E, 0.74)
+        let tickBottom: Color = isDark ? wwColor(0xAFC2DA, 0.36) : wwColor(0x1F2B3E, 0.30)
+        let tickShadow: Color = isDark ? wwColor(0x000000, 0.65) : wwColor(0x000000, 0.18)
 
-        let tickTop = isDark ? wwColor(0xFFFFFF, 0.16) : wwColor(0xFFFFFF, 0.70)
-        let tickBottom = isDark ? wwColor(0xFFFFFF, 0.06) : wwColor(0xFFFFFF, 0.30)
-        let tickShadow = isDark ? wwColor(0x000000, 0.55) : wwColor(0x000000, 0.20)
+        let hourHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
+        let hourHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.70) : wwColor(0x172235, 0.74)
 
-        let hourHandTop = isDark ? wwColor(0xFFFFFF, 0.80) : wwColor(0x1E2330, 0.85)
-        let hourHandBottom = isDark ? wwColor(0xFFFFFF, 0.35) : wwColor(0x1E2330, 0.55)
+        let minuteHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
+        let minuteHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.60) : wwColor(0x172235, 0.70)
 
-        let minuteHandTop = isDark ? wwColor(0xFFFFFF, 0.88) : wwColor(0x202738, 0.90)
-        let minuteHandBottom = isDark ? wwColor(0xFFFFFF, 0.44) : wwColor(0x202738, 0.62)
+        let handShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.18)
 
-        let handShadow = isDark ? wwColor(0x000000, 0.62) : wwColor(0x000000, 0.20)
+        let hubOuter: Color = isDark ? wwColor(0xEAF3FF, 0.80) : wwColor(0xFFFFFF, 0.86)
+        let hubInner: Color = isDark ? wwColor(0x7F98B8, 0.60) : wwColor(0x2A3B55, 0.24)
+        let hubShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.24)
 
-        let hubOuter = isDark ? wwColor(0xFFFFFF, 0.22) : wwColor(0xFFFFFF, 0.75)
-        let hubInner = isDark ? wwColor(0xFFFFFF, 0.10) : wwColor(0xFFFFFF, 0.40)
-        let hubShadow = isDark ? wwColor(0x000000, 0.60) : wwColor(0x000000, 0.22)
-
-        let rimInnerShadow = isDark ? wwColor(0x000000, 0.65) : wwColor(0x000000, 0.18)
+        let rimInnerShadow: Color = isDark ? wwColor(0x000000, 0.85) : wwColor(0x000000, 0.18)
 
         return WidgetWeaverClockPalette(
             accent: accent,
@@ -595,8 +562,8 @@ private struct WidgetWeaverClockAngles {
         let m = Double(comps.minute ?? 0)
         let s = Double(comps.second ?? 0)
 
-        let hourValue = h + (m / 60.0)
-        let minuteValue = m
+        let hourValue = h + (m / 60.0) + (s / 3600.0)
+        let minuteValue = m + (s / 60.0)
 
         self.hour = .degrees((hourValue / 12.0) * 360.0)
         self.minute = .degrees((minuteValue / 60.0) * 360.0)
