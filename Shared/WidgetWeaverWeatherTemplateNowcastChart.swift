@@ -1,10 +1,10 @@
 //
-// WidgetWeaverWeatherTemplateNowcastChart.swift
-// WidgetWeaver
+//  WidgetWeaverWeatherTemplateNowcastChart.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Nowcast chart using RainForecastSurfaceView.
+//  Nowcast chart using RainForecastSurfaceView.
 //
 
 import Foundation
@@ -54,7 +54,6 @@ private struct WeatherNowcastAxisLabels: View {
     var body: some View {
         VStack {
             Spacer(minLength: 0)
-
             HStack {
                 Text("Now")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -115,8 +114,8 @@ private struct WeatherNowcastSurfacePlot: View {
             c.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
             c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
             c.intensityEasingPower = 0.75
-            c.minVisibleHeightFraction = 0.030
 
+            c.minVisibleHeightFraction = 0.030
             c.geometrySmoothingPasses = 1
             c.baselineYFraction = 0.82
             c.edgeInsetFraction = 0.00
@@ -142,21 +141,25 @@ private struct WeatherNowcastSurfacePlot: View {
             // Diffusion (stacked contours; rendered subtractively in RainSurfaceDrawing via destinationOut)
             c.diffusionLayers = diffusionLayerCount
             c.diffusionFalloffPower = 2.2
-
             c.diffusionMinRadiusPoints = 1.5
             c.diffusionMaxRadiusPoints = 48.0
             c.diffusionMinRadiusFractionOfHeight = 0.0
             c.diffusionMaxRadiusFractionOfHeight = 0.60
-            c.diffusionRadiusUncertaintyPower = 1.15
 
+            // Key: keep diffusion present unless certainty is extremely high.
+            // (Lower exponents => more diffusion at high-but-not-absolute certainty.)
+            c.diffusionRadiusUncertaintyPower = 0.80
             c.diffusionStrengthMax = 0.78
             c.diffusionStrengthMinUncertainTerm = 0.00
-            c.diffusionStrengthUncertaintyPower = 1.05
+            c.diffusionStrengthUncertaintyPower = 0.85
 
             c.diffusionDrizzleThreshold = 0.08
             c.diffusionLowIntensityGateMin = 0.60
 
-            c.diffusionStopStride = 2
+            // Key: remove “streaks” by sampling every point + adding a tiny blur to the diffusion mask.
+            c.diffusionStopStride = 1
+            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.0 : 1.25
+
             c.diffusionJitterAmplitudePoints = 0.0
             c.diffusionEdgeSofteningWidth = 0.10
 
@@ -174,7 +177,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
             // Diffusion enable switch
             c.fuzzEnabled = true
-            c.fuzzGlobalBlurRadiusPoints = 0.0
             c.fuzzLineWidthMultiplier = 0.0
             c.fuzzLengthMultiplier = 0.0
             c.fuzzDotsEnabled = false
@@ -200,16 +202,11 @@ private struct WeatherNowcastSurfacePlot: View {
             return c
         }()
 
-        RainForecastSurfaceView(
-            intensities: intensities,
-            certainties: certainties,
-            configuration: cfg
-        )
+        RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
     }
 
     static func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [Sample] {
         let clipped = Array(points.prefix(targetMinutes))
-
         var out: [Sample] = []
         out.reserveCapacity(targetMinutes)
 
@@ -225,12 +222,7 @@ private struct WeatherNowcastSurfacePlot: View {
         if out.count < targetMinutes {
             let missing = targetMinutes - out.count
             for _ in 0..<missing {
-                out.append(
-                    Sample(
-                        intensityMMPerHour: 0.0,
-                        chance01: 0.0
-                    )
-                )
+                out.append(Sample(intensityMMPerHour: 0.0, chance01: 0.0))
             }
         }
 

@@ -1,8 +1,8 @@
 //
-// RainForecastSurfaceView.swift
-// WidgetWeaver
+//  RainForecastSurfaceView.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
 
 import Foundation
@@ -11,19 +11,22 @@ import SwiftUI
 // MARK: - Configuration
 
 struct RainForecastSurfaceConfiguration: Hashable {
+    // Background
     var backgroundColor: Color = .clear
     var backgroundOpacity: Double = 0.0
 
+    // Input normalisation
     var intensityCap: Double = 1.0
     var wetThreshold: Double = 0.0
     var intensityEasingPower: Double = 0.75
+
+    // Geometry
     var minVisibleHeightFraction: CGFloat = 0.03
-
     var geometrySmoothingPasses: Int = 1
-
     var baselineYFraction: CGFloat = 0.82
     var edgeInsetFraction: CGFloat = 0.0
 
+    // Baseline styling
     var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
     var baselineOpacity: Double = 0.09
     var baselineLineWidth: CGFloat = 1.0
@@ -31,38 +34,41 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var baselineSoftWidthMultiplier: CGFloat = 2.6
     var baselineSoftOpacityMultiplier: Double = 0.28
 
+    // Fill styling
     var fillBottomColor: Color = Color(red: 0.10, green: 0.20, blue: 0.40)
     var fillTopColor: Color = Color(red: 0.25, green: 0.55, blue: 0.95)
     var fillBottomOpacity: Double = 0.18
     var fillTopOpacity: Double = 0.92
 
+    // Edge easing (rendering only)
     var startEaseMinutes: Int = 6
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
+    // Diffusion (rendered subtractively in RainSurfaceDrawing via destinationOut)
     var diffusionLayers: Int = 32
     var diffusionFalloffPower: Double = 2.20
-
     var diffusionMinRadiusPoints: CGFloat = 1.5
     var diffusionMaxRadiusPoints: CGFloat = 52.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.0
     var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.42
     var diffusionRadiusUncertaintyPower: Double = 1.15
-
     var diffusionStrengthMax: Double = 0.78
     var diffusionStrengthMinUncertainTerm: Double = 0.30
     var diffusionStrengthUncertaintyPower: Double = 1.05
-
     var diffusionDrizzleThreshold: Double = 0.08
     var diffusionLowIntensityGateMin: Double = 0.60
-
     var diffusionLightRainMeanThreshold: Double = 0.18
     var diffusionLightRainMaxRadiusScale: Double = 0.80
     var diffusionLightRainStrengthScale: Double = 0.85
-    var diffusionStopStride: Int = 2
+
+    // IMPORTANT: Default set to 1 to avoid vertical “streak” artefacts from sparse stops.
+    var diffusionStopStride: Int = 1
+
     var diffusionJitterAmplitudePoints: Double = 0.0
     var diffusionEdgeSofteningWidth: Double = 0.08
 
+    // Internal texture (kept off)
     var textureEnabled: Bool = false
     var textureMaxAlpha: Double = 0.0
     var textureMinAlpha: Double = 0.0
@@ -74,6 +80,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var textureBlurRadiusPoints: CGFloat = 0.0
     var textureTopInsetFractionOfHeight: CGFloat = 0.02
 
+    // “Fuzz” switch (diffusion layer) + optional global blur applied to the diffusion mask
     var fuzzEnabled: Bool = true
     var fuzzGlobalBlurRadiusPoints: CGFloat = 0.0
     var fuzzLineWidthMultiplier: CGFloat = 0.0
@@ -88,13 +95,13 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzRidgeFeatherAlphaMultiplier: Double = 0.0
     var fuzzParticleAlphaMultiplier: Double = 0.0
 
+    // Glow (screen blend)
     var glowEnabled: Bool = true
     var glowColor: Color = Color(red: 0.35, green: 0.70, blue: 1.0)
     var glowLayers: Int = 6
     var glowMaxAlpha: Double = 0.12
     var glowFalloffPower: Double = 1.75
     var glowCertaintyPower: Double = 1.6
-
     var glowMaxRadiusPoints: CGFloat = 3.8
     var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
 }

@@ -1,10 +1,10 @@
 //
-// RainSurfaceDrawing.swift
-// WidgetWeaver
+//  RainSurfaceDrawing.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Rendering helpers for the forecast surface.
+//  Rendering helpers for the forecast surface.
 //
 
 import SwiftUI
@@ -41,18 +41,21 @@ enum RainSurfaceDrawing {
                 0.0,
                 min(1.0, configuration.baselineOpacity * configuration.baselineSoftOpacityMultiplier)
             )
-            let softStyle = StrokeStyle(
-                lineWidth: max(onePixel, softWidth),
-                lineCap: .round
+
+            let softStyle = StrokeStyle(lineWidth: max(onePixel, softWidth), lineCap: .round)
+            context.stroke(
+                base,
+                with: .color(configuration.baselineColor.opacity(softOpacity)),
+                style: softStyle
             )
-            context.stroke(base, with: .color(configuration.baselineColor.opacity(softOpacity)), style: softStyle)
         }
 
-        let stroke = StrokeStyle(
-            lineWidth: max(onePixel, configuration.baselineLineWidth),
-            lineCap: .round
+        let stroke = StrokeStyle(lineWidth: max(onePixel, configuration.baselineLineWidth), lineCap: .round)
+        context.stroke(
+            base,
+            with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)),
+            style: stroke
         )
-        context.stroke(base, with: .color(configuration.baselineColor.opacity(configuration.baselineOpacity)), style: stroke)
 
         context.blendMode = savedBlend
     }
@@ -68,7 +71,7 @@ enum RainSurfaceDrawing {
 
         let gradient = Gradient(stops: [
             .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
-            .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0)
+            .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0),
         ])
 
         let shading = GraphicsContext.Shading.linearGradient(
@@ -130,10 +133,10 @@ enum RainSurfaceDrawing {
         let diffusionEnabled = configuration.fuzzEnabled
         let glowEnabled = configuration.glowEnabled
 
-        guard (diffusionEnabled && configuration.diffusionLayers > 1 && configuration.diffusionStrengthMax > 0.000_01)
-                || (glowEnabled && configuration.glowLayers > 1 && configuration.glowMaxAlpha > 0.000_01)
-        else { return }
+        let diffusionOn = diffusionEnabled && configuration.diffusionLayers > 1 && configuration.diffusionStrengthMax > 0.000_01
+        let glowOn = glowEnabled && configuration.glowLayers > 1 && configuration.glowMaxAlpha > 0.000_01
 
+        guard diffusionOn || glowOn else { return }
         guard !segments.isEmpty else { return }
 
         let n = min(heights.count, min(intensityNorm.count, min(certainty.count, edgeFactors.count)))
@@ -144,7 +147,6 @@ enum RainSurfaceDrawing {
 
         // Radii are configured in pixel-like units; conversion happens here.
         let heightPx = Double(maxHeight * displayScale)
-
         let minRadiusPx = max(0.0, Double(configuration.diffusionMinRadiusPoints))
         let maxRadiusClampPx = max(minRadiusPx, Double(configuration.diffusionMaxRadiusPoints))
         let maxRadiusScaledPx = RainSurfaceMath.clamp(
@@ -181,14 +183,17 @@ enum RainSurfaceDrawing {
         let heavyRadiusBoostMax = 0.25
         let heavyStrengthBoostMax = 0.20
 
-        for i in 0..<n {
-            guard heights[i] > 0 else { continue }
+        // Certainty is smoothed for rendering to prevent vertical “streak” cut-outs in the diffusion mask.
+        let certaintySmoothed = RainSurfaceMath.smooth(Array(certainty.prefix(n)), passes: 3)
 
-            let c = RainSurfaceMath.clamp01(certainty[i])
+        for i in 0..<n {
+            if heights[i] <= (0.5 * onePixel) { continue }
+
+            let c = RainSurfaceMath.clamp01(certaintySmoothed[i])
             let u = 1.0 - c
             let iNorm = max(0.0, intensityNorm[i])
 
-            // Intensity gating should only suppress fuzz near zero intensity.
+            // Intensity gating should only suppress diffusion near zero intensity.
             let gate: Double
             if iNorm <= 0.000_001 {
                 gate = gateMin
@@ -206,15 +211,13 @@ enum RainSurfaceDrawing {
             )
             let heavyBoost = RainSurfaceMath.smoothstep01(heavyT)
 
-            if diffusionEnabled {
-                // More aggressive radius mapping (wider diffusion for low certainty).
+            if diffusionOn {
                 let rT = pow(u, radiusPower)
                 var r = CGFloat(RainSurfaceMath.lerp(Double(minRadius), Double(maxRadius), rT))
                 r *= CGFloat(gate)
                 r *= CGFloat(1.0 + heavyRadiusBoostMax * heavyBoost)
                 diffusionRadiusBySample[i] = r
 
-                // More aggressive strength mapping (visible fuzz in heavy rain).
                 let sT = pow(u, strengthPower)
                 var s = strengthMax * (strengthMinFactor + (1.0 - strengthMinFactor) * sT)
                 s *= gate
@@ -223,17 +226,21 @@ enum RainSurfaceDrawing {
                 diffusionAlphaBySample[i] = s
             }
 
-            if glowEnabled {
+            if glowOn {
                 var g = configuration.glowMaxAlpha * pow(c, configuration.glowCertaintyPower)
                 g *= edgeFactors[i] // boundary easing is alpha-only
                 glowAlphaBySample[i] = g
             }
         }
 
-        // Rendering-only smoothing to avoid high-frequency shimmer.
-        diffusionRadiusBySample = RainSurfaceMath.smooth(diffusionRadiusBySample, passes: 1)
-        diffusionAlphaBySample = RainSurfaceMath.smooth(diffusionAlphaBySample, passes: 1)
-        glowAlphaBySample = RainSurfaceMath.smooth(glowAlphaBySample, passes: 1)
+        // Rendering-only smoothing to remove high-frequency shimmer and vertical streak artefacts.
+        diffusionRadiusBySample = RainSurfaceMath.smooth(diffusionRadiusBySample, passes: 2)
+        diffusionAlphaBySample = RainSurfaceMath.smooth(diffusionAlphaBySample, passes: 4)
+        glowAlphaBySample = RainSurfaceMath.smooth(glowAlphaBySample, passes: 2)
+
+        // Optional blur on the diffusion mask (helps the surface read “diffuse” without adding noise).
+        let diffusionBlurPx = max(0.0, Double(configuration.fuzzGlobalBlurRadiusPoints))
+        let diffusionBlur = CGFloat(diffusionBlurPx) / max(1.0, displayScale)
 
         // Clip diffusion/glow inside the ribbon surface.
         context.drawLayer { layer in
@@ -241,34 +248,53 @@ enum RainSurfaceDrawing {
                 layer.drawLayer { inner in
                     inner.clip(to: seg.surfacePath)
 
-                    if diffusionEnabled {
-                        // KEY CHANGE:
-                        // Diffuse blue WITH black by eroding (punching out) alpha at the top.
-                        // This makes the top transition feel probabilistic without adding noise or a second band.
+                    if diffusionOn {
                         let savedBlend = inner.blendMode
                         inner.blendMode = .destinationOut
 
-                        drawStackedDiffusion(
-                            in: &inner,
-                            plotRect: plotRect,
-                            baselineY: baselineY,
-                            stepX: stepX,
-                            range: seg.range,
-                            heights: heights,
-                            radiusBySample: diffusionRadiusBySample,
-                            alphaBySample: diffusionAlphaBySample,
-                            layers: max(2, configuration.diffusionLayers),
-                            falloffPower: max(0.01, configuration.diffusionFalloffPower),
-                            color: .black,
-                            edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
-                            onePixel: onePixel,
-                            stopStride: max(1, configuration.diffusionStopStride)
-                        )
+                        if diffusionBlur > 0.000_01 {
+                            inner.drawLayer { diffLayer in
+                                diffLayer.addFilter(.blur(radius: diffusionBlur))
+                                drawStackedDiffusion(
+                                    in: &diffLayer,
+                                    plotRect: plotRect,
+                                    baselineY: baselineY,
+                                    stepX: stepX,
+                                    range: seg.range,
+                                    heights: heights,
+                                    radiusBySample: diffusionRadiusBySample,
+                                    alphaBySample: diffusionAlphaBySample,
+                                    layers: max(2, configuration.diffusionLayers),
+                                    falloffPower: max(0.01, configuration.diffusionFalloffPower),
+                                    color: .black,
+                                    edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
+                                    onePixel: onePixel,
+                                    stopStride: max(1, configuration.diffusionStopStride)
+                                )
+                            }
+                        } else {
+                            drawStackedDiffusion(
+                                in: &inner,
+                                plotRect: plotRect,
+                                baselineY: baselineY,
+                                stepX: stepX,
+                                range: seg.range,
+                                heights: heights,
+                                radiusBySample: diffusionRadiusBySample,
+                                alphaBySample: diffusionAlphaBySample,
+                                layers: max(2, configuration.diffusionLayers),
+                                falloffPower: max(0.01, configuration.diffusionFalloffPower),
+                                color: .black,
+                                edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
+                                onePixel: onePixel,
+                                stopStride: max(1, configuration.diffusionStopStride)
+                            )
+                        }
 
                         inner.blendMode = savedBlend
                     }
 
-                    if glowEnabled, glowRadius > 0.000_01 {
+                    if glowOn, glowRadius > 0.000_01 {
                         let savedBlend = inner.blendMode
                         inner.blendMode = .screen
 
@@ -329,7 +355,6 @@ enum RainSurfaceDrawing {
         baseAlpha.reserveCapacity(range.count + 2)
 
         let leftSoft = segmentEdgeSofteningFactor(index: first, range: range, widthFraction: edgeSofteningWidth)
-
         points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
         radii.append(radiusBySample[first])
         baseAlpha.append(alphaBySample[first] * leftSoft)
@@ -344,7 +369,6 @@ enum RainSurfaceDrawing {
         }
 
         let rightSoft = segmentEdgeSofteningFactor(index: last, range: range, widthFraction: edgeSofteningWidth)
-
         points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
         radii.append(radiusBySample[last])
         baseAlpha.append(alphaBySample[last] * rightSoft)
@@ -355,20 +379,19 @@ enum RainSurfaceDrawing {
         guard peakAlpha > 0.000_5, peakRadius > (0.5 * onePixel) else { return }
 
         // Smooth per-point radii/alpha (rendering only).
-        radii = RainSurfaceMath.smooth(radii, passes: 1)
-        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: 1)
+        radii = RainSurfaceMath.smooth(radii, passes: 2)
+        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: 4)
 
         let width = max(0.000_01, plotRect.width)
         let denom = Double(max(1, layers - 1))
         let stride = max(1, stopStride)
 
-        // Draw strips between contour(k) and contour(k+1), tiled (no blur, no noise).
+        // Draw strips between contour(k) and contour(k+1).
         for k in 0..<(layers - 1) {
             let t0 = Double(k) / denom
             let t1 = Double(k + 1) / denom
             let tMid = 0.5 * (t0 + t1)
 
-            // Decreasing alpha into the interior.
             let w = pow(max(0.0, 1.0 - tMid), falloffPower)
             if w <= 0.000_01 { continue }
 
@@ -378,7 +401,7 @@ enum RainSurfaceDrawing {
             var band = Path()
             addSmoothBandPath(&band, outer: outer, inner: inner)
 
-            // Horizontal gradient carries per-sample alpha smoothly (no stripes/rects).
+            // Horizontal gradient carries per-sample alpha smoothly.
             var stops: [Gradient.Stop] = []
             stops.reserveCapacity((points.count / stride) + 2)
 
@@ -430,7 +453,6 @@ enum RainSurfaceDrawing {
         baseAlpha.reserveCapacity(range.count + 2)
 
         let leftSoft = segmentEdgeSofteningFactor(index: first, range: range, widthFraction: edgeSofteningWidth)
-
         points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
         baseAlpha.append(alphaBySample[first] * leftSoft)
 
@@ -443,14 +465,13 @@ enum RainSurfaceDrawing {
         }
 
         let rightSoft = segmentEdgeSofteningFactor(index: last, range: range, widthFraction: edgeSofteningWidth)
-
         points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
         baseAlpha.append(alphaBySample[last] * rightSoft)
 
         let peakAlpha = baseAlpha.max() ?? 0.0
         guard peakAlpha > 0.000_5, glowRadius > (0.5 * onePixel) else { return }
 
-        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: 1)
+        baseAlpha = RainSurfaceMath.smooth(baseAlpha, passes: 3)
 
         let width = max(0.000_01, plotRect.width)
         let denom = Double(max(1, layers - 1))
@@ -493,18 +514,28 @@ enum RainSurfaceDrawing {
         }
     }
 
-    private static func insetPointsDown(points: [CGPoint], radii: [CGFloat], baselineY: CGFloat, fraction: CGFloat) -> [CGPoint] {
+    private static func insetPointsDown(
+        points: [CGPoint],
+        radii: [CGFloat],
+        baselineY: CGFloat,
+        fraction: CGFloat
+    ) -> [CGPoint] {
         guard points.count == radii.count else { return points }
         let f = max(0, min(1, fraction))
         var out = points
         for i in 0..<out.count {
-            let dy = radii[i] * f
+            let dy = max(0, radii[i]) * f
             out[i].y = min(baselineY, out[i].y + dy)
         }
         return out
     }
 
-    private static func insetPointsDownConstant(points: [CGPoint], radius: CGFloat, baselineY: CGFloat, fraction: CGFloat) -> [CGPoint] {
+    private static func insetPointsDownConstant(
+        points: [CGPoint],
+        radius: CGFloat,
+        baselineY: CGFloat,
+        fraction: CGFloat
+    ) -> [CGPoint] {
         let f = max(0, min(1, fraction))
         let dy = max(0, radius) * f
         var out = points
