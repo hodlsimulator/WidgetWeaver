@@ -92,7 +92,7 @@ private struct WeatherNowcastSurfacePlot: View {
 
         let n = samples.count
 
-        // Certainty falloff into the future keeps the far horizon fuzzier (matches Apple’s feel).
+        // Horizon certainty falloff.
         let horizonStart = 0.15
         let horizonEndCertainty = 0.55
 
@@ -108,7 +108,6 @@ private struct WeatherNowcastSurfacePlot: View {
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-        let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 34 : 44
 
         let cfg: RainForecastSurfaceConfiguration = {
             var c = RainForecastSurfaceConfiguration()
@@ -125,7 +124,7 @@ private struct WeatherNowcastSurfacePlot: View {
             c.baselineYFraction = 0.82
             c.edgeInsetFraction = 0.00
 
-            // Baseline (mock-like)
+            // Baseline
             c.baselineColor = accent
             c.baselineOpacity = 0.14
             c.baselineLineWidth = onePixel
@@ -133,7 +132,7 @@ private struct WeatherNowcastSurfacePlot: View {
             c.baselineSoftWidthMultiplier = 3.0
             c.baselineSoftOpacityMultiplier = 0.34
 
-            // Core ribbon
+            // Fill (keep similar to before)
             c.fillBottomColor = accent
             c.fillTopColor = accent
             c.fillBottomOpacity = 0.16
@@ -143,36 +142,47 @@ private struct WeatherNowcastSurfacePlot: View {
             c.endFadeMinutes = 10
             c.endFadeFloor = 0.0
 
-            // Diffusion: actually erodes the edge now (destinationOut is fixed).
-            c.diffusionLayers = diffusionLayerCount
-            c.diffusionFalloffPower = 1.75
-            c.diffusionMinRadiusPoints = 1.5
-            c.diffusionMaxRadiusPoints = 86.0
-            c.diffusionMinRadiusFractionOfHeight = 0.0
-            c.diffusionMaxRadiusFractionOfHeight = 0.58
+            // Diffusion controls (now: silhouette softness)
+            c.fuzzEnabled = true
 
-            // Lower power => fuzz appears sooner as certainty drops.
-            c.diffusionRadiusUncertaintyPower = 0.70
+            // Bands: higher = smoother gradients, but we clamp internally.
+            c.diffusionLayers = WidgetWeaverRuntime.isRunningInAppExtension ? 54 : 66
 
-            // Stronger diffusion to match the mock’s thick fuzz.
-            c.diffusionStrengthMax = 0.95
+            // Sigma range (how thick the fuzzy boundary can get)
+            c.diffusionMinRadiusPoints = 1.2
+            c.diffusionMaxRadiusPoints = 78.0
+            c.diffusionMaxRadiusFractionOfHeight = 0.62
 
-            // Important: keeps a small amount of edge softness even at high certainty.
+            // Chance mapping
+            c.diffusionRadiusUncertaintyPower = 0.72
+
+            // Fuzz strength
+            c.diffusionStrengthMax = 1.00
+
+            // Keep other diffusion fields valid (even if unused by the new method)
             c.diffusionStrengthMinUncertainTerm = 0.18
-
             c.diffusionStrengthUncertaintyPower = 0.78
             c.diffusionDrizzleThreshold = 0.08
             c.diffusionLowIntensityGateMin = 0.62
-
-            c.diffusionStopStride = 1
-            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.35 : 1.55
-
-            // Texture without streaks
-            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.9 : 2.3
-
+            c.diffusionLightRainMeanThreshold = 0.22
+            c.diffusionLightRainMaxRadiusScale = 0.85
+            c.diffusionLightRainStrengthScale = 0.90
+            c.diffusionFalloffPower = 1.75
             c.diffusionEdgeSofteningWidth = 0.10
+            c.diffusionStopStride = 1
 
-            // Internal texture remains off (mist handles the look).
+            // Grain
+            c.fuzzDotsEnabled = true
+            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 18 : 24
+            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 0.90 : 1.05
+
+            // Micro-jitter (adds fuzz texture without streaks)
+            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 2.1 : 2.5
+
+            // This is now used as a multiplier for the silhouette fuzz (not as an external haze).
+            c.fuzzParticleAlphaMultiplier = WidgetWeaverRuntime.isRunningInAppExtension ? 1.00 : 1.05
+
+            // Turn off any internal texture
             c.textureEnabled = false
             c.textureMaxAlpha = 0.0
             c.textureMinAlpha = 0.0
@@ -184,19 +194,11 @@ private struct WeatherNowcastSurfacePlot: View {
             c.textureBlurRadiusPoints = 0.0
             c.textureTopInsetFractionOfHeight = 0.02
 
-            // Enable dot-based diffusion erosion + mist grain.
-            c.fuzzEnabled = true
-            c.fuzzDotsEnabled = true
-            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 7 : 9
-
-            // This is the mist/haze strength (screen-blended) used by the new renderer.
-            c.fuzzParticleAlphaMultiplier = WidgetWeaverRuntime.isRunningInAppExtension ? 0.70 : 0.78
-
-            // Glow (kept subtle; mist does the heavy lifting)
+            // Glow: keep subtle (can be disabled entirely if desired)
             c.glowEnabled = true
             c.glowColor = accent
             c.glowLayers = 6
-            c.glowMaxAlpha = 0.10
+            c.glowMaxAlpha = 0.08
             c.glowFalloffPower = 1.75
             c.glowCertaintyPower = 1.5
             c.glowMaxRadiusPoints = 4.5
