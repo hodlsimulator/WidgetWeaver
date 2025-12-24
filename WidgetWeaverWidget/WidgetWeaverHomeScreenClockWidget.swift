@@ -13,10 +13,22 @@ import AppIntents
 // MARK: - Timeline tuning
 
 private enum WWClockTimelineTuning {
-    // On-device you’re effectively seeing a 2s render cadence, so we lean into it.
+    // On-device you’re effectively seeing a ~2s render cadence, so we lean into it.
     // The hands will sweep smoothly across each 2s interval.
     static let tickSeconds: TimeInterval = 2.0
-    static let maxEntries: Int = 180  // ~6 minutes at 2s/tick
+
+    // WidgetKit aggressively budgets timeline refresh. A 2-second WidgetKit timeline tends to run
+    // briefly and then gets throttled, leaving the widget frozen on its last entry.
+    //
+    // Keep the WidgetKit timeline coarse, and drive the fine-grained clock animation with
+    // `TimelineView` inside the widget view hierarchy instead.
+    static let widgetKitRefreshAfter: TimeInterval = 60 * 60 * 6 // 6 hours
+
+    static func alignToTickGrid(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let baseT = floor(t / tickSeconds) * tickSeconds
+        return Date(timeIntervalSinceReferenceDate: baseT)
+    }
 }
 
 // MARK: - Configuration
@@ -85,20 +97,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        // Align to the 2-second grid (avoids tiny timing wobble).
-        let t = now.timeIntervalSinceReferenceDate
-        let baseT = floor(t / WWClockTimelineTuning.tickSeconds) * WWClockTimelineTuning.tickSeconds
-        let base = Date(timeIntervalSinceReferenceDate: baseT)
+        // Keep WidgetKit timeline refresh coarse. Fine-grained animation is driven by `TimelineView`
+        // inside the widget view hierarchy (see `WidgetWeaverClockIconView`).
+        let entry = Entry(date: now, colourScheme: scheme)
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
-
-        for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = base.addingTimeInterval(TimeInterval(i) * WWClockTimelineTuning.tickSeconds)
-            entries.append(Entry(date: d, colourScheme: scheme))
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
+        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.widgetKitRefreshAfter)
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 }
 
@@ -132,7 +136,7 @@ struct WidgetWeaverHomeScreenClockView: View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
         ZStack {
-            WidgetWeaverClockIconView(date: entry.date, palette: palette)
+            WidgetWeaverClockIconView(entryDate: entry.date, palette: palette)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
@@ -307,7 +311,7 @@ private struct WidgetWeaverClockBackgroundView: View {
 // MARK: - Clock Icon
 
 private struct WidgetWeaverClockIconView: View {
-    let date: Date
+    let entryDate: Date
     let palette: WidgetWeaverClockPalette
 
     var body: some View {
@@ -328,6 +332,7 @@ private struct WidgetWeaverClockIconView: View {
             let tickLength = s * 0.112
 
             let hubDiameter = s * 0.085
+            let start = WWClockTimelineTuning.alignToTickGrid(entryDate)
 
             ZStack {
                 Circle()
@@ -396,11 +401,13 @@ private struct WidgetWeaverClockIconView: View {
                     radius: numeralsRadius
                 )
 
-                WidgetWeaverClockHandsView(
-                    date: date,
-                    palette: palette,
-                    innerRadius: innerRadius
-                )
+                TimelineView(.periodic(from: start, by: WWClockTimelineTuning.tickSeconds)) { context in
+                    WidgetWeaverClockHandsView(
+                        date: context.date,
+                        palette: palette,
+                        innerRadius: innerRadius
+                    )
+                }
 
                 ZStack {
                     Circle()
