@@ -78,15 +78,15 @@ struct RainForecastSurfaceRenderer {
             rawIntensityNorm[i] = eased
         }
 
-        // Segment-aware taper so the rain shape falls to baseline gracefully
-        // instead of ending with a vertical cliff.
+        // Segment-aware taper so rain falls to baseline gracefully instead of a vertical cliff.
         let rawRanges = RainSurfaceGeometry.wetRanges(from: rawWetMask)
 
         var taperedIntensityNorm = rawIntensityNorm
         var taperedCertainty = certainty
 
-        let startTaper = max(0, min(6, configuration.startEaseMinutes / 2))
-        let endTaper = max(0, min(8, configuration.endFadeMinutes / 2))
+        // Longer tails than before (prevents the ugly hard stop).
+        let startTaper = max(0, min(14, max(configuration.startEaseMinutes + 4, 10)))
+        let endTaper = max(0, min(18, max(configuration.endFadeMinutes + 6, 14)))
 
         if startTaper > 0 || endTaper > 0 {
             for r in rawRanges {
@@ -105,7 +105,7 @@ struct RainForecastSurfaceRenderer {
                             if idx < 0 { break }
 
                             let t = Double(k) / Double(startTaper + 1) // 0..1
-                            let f = pow(max(0.0, 1.0 - t), 2.05)
+                            let f = pow(max(0.0, 1.0 - t), 2.15)
 
                             taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
                             taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
@@ -123,7 +123,7 @@ struct RainForecastSurfaceRenderer {
                             if idx >= n { break }
 
                             let t = Double(k) / Double(endTaper + 1)
-                            let f = pow(max(0.0, 1.0 - t), 2.10)
+                            let f = pow(max(0.0, 1.0 - t), 2.20)
 
                             taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
                             taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
@@ -133,7 +133,7 @@ struct RainForecastSurfaceRenderer {
             }
         }
 
-        // Mild smoothing after taper to avoid any “kinks”.
+        // Mild smoothing after taper to avoid any kinks.
         let intensitySmoothPasses = max(1, configuration.geometrySmoothingPasses + 1)
         let certaintySmoothPasses = 1
 
@@ -141,15 +141,14 @@ struct RainForecastSurfaceRenderer {
         let certaintySmoothed = RainSurfaceMath.smooth(taperedCertainty, passes: certaintySmoothPasses)
 
         // Build heights from smoothed intensity.
-        // IMPORTANT: minVisibleHeight is applied only to truly-wet source points
-        // so taper tails can fall below it (and reach baseline smoothly).
+        // minVisibleHeight applies only to original wet points so taper tails can reach baseline.
         var heights = [CGFloat](repeating: 0, count: n)
         for i in 0..<n {
             let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
 
             var h = CGFloat(inorm) * maxHeight
 
-            // Horizon start/end easing affects geometry (prevents hard ends at chart edges).
+            // Horizon start/end easing affects geometry as well.
             h *= CGFloat(RainSurfaceMath.clamp01(edgeFactors[i]))
 
             if rawWetMask[i], h > 0 {
@@ -160,8 +159,6 @@ struct RainForecastSurfaceRenderer {
         }
 
         // Determine wet mask from geometry (includes taper).
-        // Threshold is intentionally tiny so the segment ends where the height is ~0,
-        // making the clip edge invisible.
         let epsilon = max(onePixel * 0.20, maxHeight * 0.0012)
 
         var wetMask = [Bool](repeating: false, count: n)
