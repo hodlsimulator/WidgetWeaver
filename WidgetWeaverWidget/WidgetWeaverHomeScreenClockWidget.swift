@@ -1,14 +1,24 @@
 //
-//  WidgetWeaverHomeScreenClockWidget.swift
-//  WidgetWeaverWidget
+// WidgetWeaverHomeScreenClockWidget.swift
+// WidgetWeaverWidget
 //
-//  Created by . . on 12/23/25.
+// Created by . . on 12/23/25.
 //
 
 import Foundation
 import WidgetKit
 import SwiftUI
 import AppIntents
+
+// MARK: - Tuning
+
+/// Home Screen widgets frequently coalesce overly-dense timelines.
+/// In practice, many devices behave like a 2-second minimum cadence for non-text updates.
+/// Scheduling at 2s and animating hands across the whole interval avoids stutter and reduces load.
+private let wwClockTickSeconds: TimeInterval = 2.0
+
+/// ~6 minutes of entries at 2s/tick. Keeps the timeline size reasonable.
+private let wwClockMaxEntries: Int = 180
 
 // MARK: - Configuration
 
@@ -40,7 +50,6 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
 
 public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
-
     public static var description: IntentDescription {
         IntentDescription("Select the colour scheme for the clock widget.")
     }
@@ -74,81 +83,70 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
+
         let now = Date()
 
-        // 1-second ticks.
-        //
-        // IMPORTANT:
-        // Don’t generate hundreds and hundreds of entries here.
-        // WidgetKit has to archive each entry’s view representation; too many entries
-        // can fail archiving and you end up with a frozen / partially rendered widget.
-        let tickSeconds: TimeInterval = 1.0
-
-        // Keep this modest. Old code was 180 entries at 2s (180 frames).
-        // This keeps the *frame count* the same (180 frames), but at 1s tick.
-        let maxEntries: Int = 180 // ~3 minutes of 1Hz ticks
-
-        // Start on the NEXT whole second so the first entry is never in the past.
-        let baseSeconds = floor(now.timeIntervalSinceReferenceDate) + 1.0
-        let base = Date(timeIntervalSinceReferenceDate: baseSeconds)
+        // Align to whole seconds to avoid micro-wobble.
+        let base = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
 
         var entries: [Entry] = []
-        entries.reserveCapacity(maxEntries)
+        entries.reserveCapacity(wwClockMaxEntries)
 
-        for i in 0..<maxEntries {
-            let d = base.addingTimeInterval(TimeInterval(i) * tickSeconds)
+        for i in 0..<wwClockMaxEntries {
+            let d = base.addingTimeInterval(TimeInterval(i) * wwClockTickSeconds)
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
-        return Timeline(entries: entries, policy: .atEnd)
+        // Ask for a new timeline at the end of the run.
+        let reloadAt = base.addingTimeInterval(TimeInterval(wwClockMaxEntries) * wwClockTickSeconds)
+        return Timeline(entries: entries, policy: .after(reloadAt))
     }
 }
 
 // MARK: - Widget
 
-struct WidgetWeaverHomeScreenClockWidget: Widget {
-    let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
+public struct WidgetWeaverHomeScreenClockWidget: Widget {
+    public init() {}
 
-    var body: some WidgetConfiguration {
+    public var body: some WidgetConfiguration {
         AppIntentConfiguration(
-            kind: kind,
+            kind: WidgetWeaverWidgetKinds.homeScreenClock,
             intent: WidgetWeaverClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
-        .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
+        .configurationDisplayName("Clock")
+        .description("An analogue clock with configurable colour schemes.")
         .supportedFamilies([.systemSmall])
-        .contentMarginsDisabled()
     }
 }
 
-// MARK: - View
+// MARK: - Root View
 
-struct WidgetWeaverHomeScreenClockView: View {
+private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
+
     @Environment(\.colorScheme) private var mode
 
     var body: some View {
-        let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
-        let now = entry.date
+        let palette = WidgetWeaverClockPalette.make(scheme: entry.colourScheme, mode: mode)
 
         ZStack {
-            WidgetWeaverClockIconView(date: now, palette: palette)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
+            WidgetWeaverClockIconView(date: entry.date, palette: palette)
+                .padding(10)
         }
-
-        // IMPORTANT:
-        // Removing the `.id(...)` prevents SwiftUI from treating every tick as a brand-new view,
-        // which is what causes the “whole widget blinking” look.
+        // Prevent “whole-widget blink” style implicit animations;
+        // hands are explicitly animated below.
+        .transaction { t in
+            t.animation = nil
+        }
+        .wwWidgetContainerBackground()
     }
 }
 
-// MARK: - Palette
+// MARK: - Palette + Colour Helpers
 
 private struct WidgetWeaverClockPalette {
     let accent: Color
@@ -184,25 +182,18 @@ private struct WidgetWeaverClockPalette {
 
     let rimInnerShadow: Color
 
-    static func resolve(scheme: WidgetWeaverClockColourScheme, mode: ColorScheme) -> WidgetWeaverClockPalette {
+    static func make(scheme: WidgetWeaverClockColourScheme, mode: ColorScheme) -> WidgetWeaverClockPalette {
         let isDark = (mode == .dark)
 
         let accent: Color = {
             switch scheme {
-            case .classic:
-                return isDark ? wwColor(0x429FD0) : wwColor(0x7EFCD8)
-            case .ocean:
-                return isDark ? wwColor(0x4FA9FF) : wwColor(0x4AAEF6)
-            case .mint:
-                return isDark ? wwColor(0x4BE3B4) : wwColor(0x4BE3B4)
-            case .orchid:
-                return isDark ? wwColor(0xB08CFF) : wwColor(0xB08CFF)
-            case .sunset:
-                return isDark ? wwColor(0xFFAA5C) : wwColor(0xFF9F4E)
-            case .ember:
-                return isDark ? wwColor(0xFF5A56) : wwColor(0xFF4D4A)
-            case .graphite:
-                return isDark ? wwColor(0xB7C3D6) : wwColor(0x90A0B8)
+            case .classic:  return isDark ? wwColor(0x429FD0) : wwColor(0x7EFCD8)
+            case .ocean:    return isDark ? wwColor(0x4FA9FF) : wwColor(0x4AAEF6)
+            case .mint:     return isDark ? wwColor(0x4BE3B4) : wwColor(0x4BE3B4)
+            case .orchid:   return isDark ? wwColor(0xB08CFF) : wwColor(0xB08CFF)
+            case .sunset:   return isDark ? wwColor(0xFFAA5C) : wwColor(0xFF9F4E)
+            case .ember:    return isDark ? wwColor(0xFF5A56) : wwColor(0xFF4D4A)
+            case .graphite: return isDark ? wwColor(0xB7C3D6) : wwColor(0x90A0B8)
             }
         }()
 
@@ -227,8 +218,10 @@ private struct WidgetWeaverClockPalette {
 
         let hourHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let hourHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.70) : wwColor(0x172235, 0.74)
+
         let minuteHandTop: Color = isDark ? wwColor(0xEAF3FF, 0.96) : wwColor(0x2A3B55, 0.92)
         let minuteHandBottom: Color = isDark ? wwColor(0xA6BCD7, 0.60) : wwColor(0x172235, 0.70)
+
         let handShadow: Color = isDark ? wwColor(0x000000, 0.70) : wwColor(0x000000, 0.18)
 
         let hubOuter: Color = isDark ? wwColor(0xEAF3FF, 0.80) : wwColor(0xFFFFFF, 0.86)
@@ -263,6 +256,13 @@ private struct WidgetWeaverClockPalette {
             rimInnerShadow: rimInnerShadow
         )
     }
+}
+
+private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
+    let r = Double((hex >> 16) & 0xFF) / 255.0
+    let g = Double((hex >> 8) & 0xFF) / 255.0
+    let b = Double(hex & 0xFF) / 255.0
+    return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
 }
 
 // MARK: - Background
@@ -307,7 +307,7 @@ private struct WidgetWeaverClockBackgroundView: View {
     }
 }
 
-// MARK: - Clock Icon
+// MARK: - Clock Icon (Face + Hands)
 
 private struct WidgetWeaverClockIconView: View {
     let date: Date
@@ -444,7 +444,7 @@ private struct WidgetWeaverClockMinuteDotsView: View {
                     .fill(dotColor)
                     .frame(width: dotSize, height: dotSize)
                     .offset(y: -radius)
-                    .rotationEffect(.degrees((Double(i) / Double(count)) * 360.0))
+                    .rotationEffect(.degrees(Double(i) * (360.0 / Double(count))))
             }
         }
     }
@@ -459,18 +459,25 @@ private struct WidgetWeaverClockHourTicksView: View {
     var body: some View {
         ZStack {
             ForEach(0..<12, id: \.self) { i in
-                RoundedRectangle(cornerRadius: tickWidth * 0.45, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [palette.tickTop, palette.tickBottom]),
-                            startPoint: .top,
-                            endPoint: .bottom
+                ZStack {
+                    RoundedRectangle(cornerRadius: tickWidth * 0.5, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [palette.tickTop, palette.tickBottom]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    .frame(width: tickWidth, height: tickLength)
-                    .shadow(color: palette.tickShadow, radius: tickWidth * 0.70, x: 0, y: tickWidth * 0.35)
-                    .offset(y: -radius)
-                    .rotationEffect(.degrees((Double(i) / 12.0) * 360.0))
+                        .frame(width: tickWidth, height: tickLength)
+                        .shadow(color: palette.tickShadow, radius: tickWidth * 0.35, x: 0, y: tickWidth * 0.20)
+
+                    RoundedRectangle(cornerRadius: tickWidth * 0.5, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: max(1, tickWidth * 0.10))
+                        .frame(width: tickWidth, height: tickLength)
+                        .blendMode(.overlay)
+                }
+                .offset(y: -radius)
+                .rotationEffect(.degrees(Double(i) * 30.0))
             }
         }
     }
@@ -483,15 +490,17 @@ private struct WidgetWeaverClockMajorGlowSquaresView: View {
 
     var body: some View {
         ZStack {
-            ForEach([3, 6, 9], id: \.self) { i in
-                RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
-                    .fill(glowColor)
+            ForEach(0..<12, id: \.self) { i in
+                RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                    .fill(glowColor.opacity(0.55))
                     .frame(width: size, height: size)
-                    .shadow(color: glowColor.opacity(0.85), radius: size * 1.6, x: 0, y: 0)
+                    .shadow(color: glowColor.opacity(0.50), radius: size * 0.65, x: 0, y: 0)
                     .offset(y: -radius)
-                    .rotationEffect(.degrees((Double(i) / 12.0) * 360.0))
+                    .rotationEffect(.degrees(Double(i) * 30.0))
+                    .blendMode(.plusLighter)
             }
         }
+        .opacity(0.60)
     }
 }
 
@@ -503,20 +512,22 @@ private struct WidgetWeaverClockNumeralsView: View {
 
     var body: some View {
         ZStack {
-            Group {
-                Text("12").offset(x: 0, y: -radius)
-                Text("3").offset(x: radius, y: 0)
-                Text("6").offset(x: 0, y: radius)
-                Text("9").offset(x: -radius, y: 0)
-            }
-            .font(.system(size: fontSize, weight: .medium, design: .rounded))
-            .foregroundStyle(color)
-            .shadow(color: shadow, radius: fontSize * 0.05, x: 0, y: fontSize * 0.03)
+            numeral("12").offset(y: -radius)
+            numeral("3").offset(x: radius)
+            numeral("6").offset(y: radius)
+            numeral("9").offset(x: -radius)
         }
+    }
+
+    private func numeral(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: fontSize, weight: .bold, design: .rounded))
+            .foregroundStyle(color)
+            .shadow(color: shadow, radius: fontSize * 0.10, x: 0, y: fontSize * 0.06)
     }
 }
 
-// MARK: - Hands
+// MARK: - Hands (animated across entry transitions)
 
 private struct WidgetWeaverClockHandsView: View {
     let date: Date
@@ -524,190 +535,128 @@ private struct WidgetWeaverClockHandsView: View {
     let innerRadius: CGFloat
 
     var body: some View {
-        let tickDate = Date(timeIntervalSinceReferenceDate: floor(date.timeIntervalSinceReferenceDate))
-        let a = WidgetWeaverClockAngles(date: tickDate)
+        // Monotonic, local-time-based angles:
+        // Using a continuous time base avoids modulo wrap (359° -> 0°) that can trigger backwards spins.
+        let angles = WidgetWeaverClockAngles(date: date)
 
-        return ZStack {
-            WidgetWeaverClockHourHandView(
-                palette: palette,
-                width: innerRadius * 0.30,
-                length: innerRadius * 0.56,
-                angle: a.hour
+        let hourLength = innerRadius * 0.52
+        let minuteLength = innerRadius * 0.72
+        let secondLength = innerRadius * 0.78
+
+        let hourWidth = innerRadius * 0.060
+        let minuteWidth = innerRadius * 0.048
+
+        ZStack {
+            // Hour hand
+            WidgetWeaverClockHandView(
+                length: hourLength,
+                width: hourWidth,
+                top: palette.hourHandTop,
+                bottom: palette.hourHandBottom,
+                shadow: palette.handShadow
             )
+            .rotationEffect(.degrees(angles.hourDegrees), anchor: .bottom)
+            .animation(.linear(duration: wwClockTickSeconds), value: angles.hourDegrees)
 
-            WidgetWeaverClockMinuteHandView(
-                palette: palette,
-                width: innerRadius * 0.13,
-                length: innerRadius * 0.86,
-                angle: a.minute
+            // Minute hand
+            WidgetWeaverClockHandView(
+                length: minuteLength,
+                width: minuteWidth,
+                top: palette.minuteHandTop,
+                bottom: palette.minuteHandBottom,
+                shadow: palette.handShadow
             )
+            .rotationEffect(.degrees(angles.minuteDegrees), anchor: .bottom)
+            .animation(.linear(duration: wwClockTickSeconds), value: angles.minuteDegrees)
 
+            // Second hand (thin accent)
             WidgetWeaverClockSecondHandView(
-                palette: palette,
+                length: secondLength,
                 width: max(1, innerRadius * 0.012),
-                length: innerRadius * 0.92,
-                angleDegrees: a.secondDegrees
+                color: palette.accent,
+                shadow: palette.handShadow
             )
-        }
-        // Prevent the “spin backwards around 12” (and any springy transitions) by disabling animations for hands.
-        .transaction { t in
-            t.animation = nil
-            t.disablesAnimations = true
+            .rotationEffect(.degrees(angles.secondDegrees), anchor: .center)
+            .animation(.linear(duration: wwClockTickSeconds), value: angles.secondDegrees)
         }
     }
 }
 
-private struct WidgetWeaverClockAngles {
-    let hour: Angle
-    let minute: Angle
+private struct WidgetWeaverClockAngles: Equatable {
+    let hourDegrees: Double
+    let minuteDegrees: Double
     let secondDegrees: Double
 
     init(date: Date) {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.hour, .minute, .second], from: date)
+        // Convert to a monotonic “local seconds” timeline so hour/minute match local time.
+        // TimeZone offset can be non-hour (e.g. 30 minutes), so it must be applied.
+        let tz = TimeZone.current.secondsFromGMT(for: date)
+        let localT = date.timeIntervalSinceReferenceDate + TimeInterval(tz)
 
-        let h = Double((comps.hour ?? 0) % 12)
-        let m = Double(comps.minute ?? 0)
-        let s = Double(comps.second ?? 0)
+        // 1 rotation / 60s
+        self.secondDegrees = localT * (360.0 / 60.0)
 
-        let hourValue = h + (m / 60.0) + (s / 3600.0)
-        let minuteValue = m + (s / 60.0)
+        // 1 rotation / 3600s (1 hour)
+        self.minuteDegrees = localT * (360.0 / 3600.0)
 
-        self.hour = .degrees((hourValue / 12.0) * 360.0)
-        self.minute = .degrees((minuteValue / 60.0) * 360.0)
-
-        // Monotonic seconds to avoid wrap-related backwards interpolation even if something re-enables animations.
-        let wholeSeconds = floor(date.timeIntervalSinceReferenceDate)
-        self.secondDegrees = wholeSeconds * 6.0
+        // 1 rotation / 43200s (12 hours)
+        self.hourDegrees = localT * (360.0 / 43200.0)
     }
 }
 
-private struct WidgetWeaverClockHourHandView: View {
-    let palette: WidgetWeaverClockPalette
-    let width: CGFloat
+private struct WidgetWeaverClockHandView: View {
     let length: CGFloat
-    let angle: Angle
+    let width: CGFloat
+    let top: Color
+    let bottom: Color
+    let shadow: Color
 
     var body: some View {
-        WidgetWeaverClockHourHandShape()
+        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
             .fill(
                 LinearGradient(
-                    gradient: Gradient(colors: [palette.hourHandTop, palette.hourHandBottom]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    gradient: Gradient(colors: [top, bottom]),
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
             )
-            .overlay(
-                WidgetWeaverClockHourHandShape()
-                    .stroke(Color.black.opacity(0.16), lineWidth: max(1, width * 0.03))
-            )
-            .shadow(color: palette.handShadow, radius: width * 0.22, x: 0, y: width * 0.12)
             .frame(width: width, height: length)
-            .rotationEffect(angle, anchor: .bottom)
-            .offset(y: -length / 2.0)
-    }
-}
-
-private struct WidgetWeaverClockHourHandShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-
-        let tipWidth = w * 0.72
-        let baseWidth = w
-        let tipInsetY = h * 0.03
-
-        let tipLeft = CGPoint(x: rect.midX - tipWidth * 0.5, y: rect.minY + tipInsetY)
-        let tipRight = CGPoint(x: rect.midX + tipWidth * 0.5, y: rect.minY + tipInsetY)
-        let baseRight = CGPoint(x: rect.midX + baseWidth * 0.5, y: rect.maxY)
-        let baseLeft = CGPoint(x: rect.midX - baseWidth * 0.5, y: rect.maxY)
-
-        var p = Path()
-        p.move(to: baseLeft)
-        p.addLine(to: tipLeft)
-        p.addQuadCurve(to: tipRight, control: CGPoint(x: rect.midX, y: rect.minY - (w * 0.10)))
-        p.addLine(to: baseRight)
-        p.closeSubpath()
-        return p
-    }
-}
-
-private struct WidgetWeaverClockMinuteHandView: View {
-    let palette: WidgetWeaverClockPalette
-    let width: CGFloat
-    let length: CGFloat
-    let angle: Angle
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: width * 0.48, style: .continuous)
-            .fill(
-                LinearGradient(
-                    gradient: Gradient(colors: [palette.minuteHandTop, palette.minuteHandBottom]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .shadow(color: shadow, radius: width * 0.55, x: 0, y: width * 0.35)
             .overlay(
-                RoundedRectangle(cornerRadius: width * 0.48, style: .continuous)
-                    .stroke(Color.black.opacity(0.12), lineWidth: max(1, width * 0.05))
+                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: max(1, width * 0.10))
+                    .blendMode(.overlay)
             )
-            .overlay(alignment: .trailing) {
-                Rectangle()
-                    .fill(palette.accent.opacity(0.95))
-                    .frame(width: max(1, width * 0.12))
-                    .blur(radius: width * 0.22)
-                    .shadow(color: palette.accent.opacity(0.75), radius: width * 1.0, x: 0, y: 0)
-                    .blendMode(.screen)
-            }
-            .shadow(color: palette.handShadow, radius: width * 0.18, x: 0, y: width * 0.12)
-            .shadow(color: palette.accent.opacity(0.30), radius: width * 1.7, x: width * 0.45, y: width * 0.55)
-            .frame(width: width, height: length)
-            .rotationEffect(angle, anchor: .bottom)
-            .offset(y: -length / 2.0)
+            .offset(y: -length * 0.5)
     }
 }
 
 private struct WidgetWeaverClockSecondHandView: View {
-    let palette: WidgetWeaverClockPalette
-    let width: CGFloat
     let length: CGFloat
-    let angleDegrees: Double
+    let width: CGFloat
+    let color: Color
+    let shadow: Color
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: width * 0.60, style: .continuous)
-                .fill(palette.accent.opacity(0.92))
+            RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+                .fill(color)
                 .frame(width: width, height: length)
-                .shadow(color: palette.accent.opacity(0.55), radius: width * 2.5, x: 0, y: 0)
-                .shadow(color: palette.accent.opacity(0.20), radius: width * 6.0, x: 0, y: 0)
-                .offset(y: -length / 2.0)
-
-            RoundedRectangle(cornerRadius: width * 1.2, style: .continuous)
-                .fill(palette.accent)
-                .frame(width: width * 2.4, height: width * 2.4)
-                .shadow(color: palette.accent.opacity(0.85), radius: width * 2.0, x: 0, y: 0)
-                .offset(y: -length)
+                .shadow(color: shadow.opacity(0.55), radius: width * 0.60, x: 0, y: width * 0.35)
         }
-        .rotationEffect(.degrees(angleDegrees))
+        .offset(y: -length * 0.5)
     }
 }
 
-// MARK: - Colour helper
-
-private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
-    let r = Double((hex >> 16) & 0xFF) / 255.0
-    let g = Double((hex >> 8) & 0xFF) / 255.0
-    let b = Double(hex & 0xFF) / 255.0
-    return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
-}
+// MARK: - Widget Background Helper
 
 private extension View {
     @ViewBuilder
-    func wwWidgetContainerBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
+    func wwWidgetContainerBackground() -> some View {
         if #available(iOS 17.0, *) {
-            self.containerBackground(for: .widget) { background() }
+            self.containerBackground(.fill.tertiary, for: .widget)
         } else {
-            self.background(background())
+            self
         }
     }
 }
