@@ -51,8 +51,13 @@ private struct WidgetWeaverRenderClockScope<Content: View>: View {
     let content: Content
 
     var body: some View {
-        // This value needs to remain set while SwiftUI evaluates the descendant view tree
-        // for the current render pass.
+        // WARNING:
+        // `WidgetWeaverRenderClock.withNow(now) { content }` must not be called from within this scope.
+        // Overload resolution can pick the ViewBuilder `withNow` and re-wrap another scope, causing
+        // infinite SwiftUI view recursion and a widget render crash (Home Screen widgets appear black).
+        //
+        // The scope’s job is only to set the threadDictionary key for the current render pass and
+        // return `content` directly.
         Thread.current.threadDictionary[WidgetWeaverRenderClock.threadDictionaryKey] = now
         return content
     }
