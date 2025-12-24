@@ -60,7 +60,8 @@ public actor WidgetWeaverWeatherEngine {
 
         guard let location = store.loadLocation() else {
             store.saveLastError("No location configured")
-            notifyWidgetsWeatherUpdated()
+            // Avoid forcing widget reloads when there is no location; this can create re-entrant
+            // reload/render loops inside the widget extension.
             return Result(snapshot: nil, attribution: store.loadAttribution(), errorDescription: "No location configured")
         }
 
@@ -90,6 +91,7 @@ public actor WidgetWeaverWeatherEngine {
                 dailyForecast: daily,
                 location: location
             )
+
             let attr = WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
 
             store.saveSnapshot(snap)
@@ -102,7 +104,6 @@ public actor WidgetWeaverWeatherEngine {
             let message = String(describing: error)
             store.saveLastError(message)
             notifyWidgetsWeatherUpdated()
-
             return Result(
                 snapshot: store.loadSnapshot(),
                 attribution: store.loadAttribution(),
@@ -118,9 +119,12 @@ public actor WidgetWeaverWeatherEngine {
 
     private func notifyWidgetsWeatherUpdated() {
         #if canImport(WidgetKit)
+        // Avoid re-entrant reload loops while the widget extension is rendering.
+        guard !WidgetWeaverRuntime.isRunningInAppExtension else { return }
+
+        let kind = WidgetWeaverWidgetKinds.main
         Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
             WidgetCenter.shared.reloadAllTimelines()
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()

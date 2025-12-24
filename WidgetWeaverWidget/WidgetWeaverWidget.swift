@@ -109,8 +109,11 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         if !context.isPreview {
             if usesWeather {
-                Task.detached(priority: .utility) {
-                    _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+                let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
+                if hasLocation {
+                    Task.detached(priority: .utility) {
+                        _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+                    }
                 }
             }
             if usesCalendar {
@@ -224,8 +227,11 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         // Fire-and-forget refresh (does not capture `completion`)
         if !context.isPreview {
-            Task.detached(priority: .utility) {
-                _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+            let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
+            if hasLocation {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+                }
             }
         }
 
