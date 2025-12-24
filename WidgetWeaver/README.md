@@ -117,6 +117,35 @@ Notes:
 
 ---
 
+## Featured — Clock (Home Screen)
+
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style sweeping second hand.
+
+### Sweeping second hand (implementation notes)
+
+WidgetKit doesn’t guarantee 1 Hz redraws for non-text content on the Home Screen. On iOS 26 (iPhone 16 Pro), updates often coalesce to ~2 seconds even if a 1-second timeline is provided. To get a smooth sweep without whole-widget blinking or frozen renders, the clock uses:
+
+1. A modest timeline cadence (2 seconds) in `WidgetWeaverHomeScreenClockProvider` (for example: `tickSeconds = 2`, `maxEntries ≈ 180`).
+2. Monotonic angles derived from time (no `mod 360`), using local-time seconds:
+   - `localT = date.timeIntervalSinceReferenceDate + TimeZone.current.secondsFromGMT(for: date)`
+   - `secondDegrees = localT * (360.0 / 60.0)` (and similar for minute/hour).
+3. Explicit linear animations across the full tick interval so the hands move continuously between timeline entries:
+
+        let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
+        let localT = date.timeIntervalSinceReferenceDate + tz
+
+        let secondDegrees = localT * (360.0 / 60.0)
+        SecondHand()
+            .rotationEffect(.degrees(secondDegrees))
+            .animation(.linear(duration: tickSeconds), value: secondDegrees)
+
+4. No `.id(entry.date)` (or other identity churn) on the root view, which prevents the “entire widget flashes each tick” look.
+
+Notes:
+
+- If you prefer hard “ticks” instead of a sweep, quantise `localT` to whole seconds before computing degrees.
+- If the clock ever renders partially or appears stuck while iterating on timelines, remove it from the Home Screen and add it again (WidgetKit can hold onto an archived snapshot from a failed render).
+
 ## Current status (0.9.4 (15))
 
 ### App
@@ -143,6 +172,7 @@ Notes:
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
+- ✅ **Home Screen widget (“Clock (Icon)”)** analogue clock face with a sweeping second hand (Small)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
@@ -416,6 +446,9 @@ AI features are designed to run on-device to generate or patch the design spec. 
 - **Steps shows 0**
   - This can be normal (especially early in the day)
   - If you expect steps but always get 0, check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking**
+- **Clock widget looks frozen / partially rendered**
+  - Remove the clock widget from the Home Screen and add it again
+  - Avoid extremely dense timelines (hundreds of 1-second entries can fail view archiving and leave a stale snapshot behind)
 - **Widgets don’t reflect edits**
   - Make sure the design is saved
   - Use **Editor → … → Refresh Widgets** (or remove/re-add the widget)
