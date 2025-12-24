@@ -85,18 +85,14 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        // Wet contract: dry intensities render nothing above baseline.
         let intensities: [Double] = samples.map { s in
             let i = max(0.0, s.intensityMMPerHour)
             return WeatherNowcast.isWet(intensityMMPerHour: i) ? i : 0.0
         }
 
-        // Certainty model:
-        // - base certainty from chance01
-        // - plus a gentle horizon falloff so the chart can show both surfaces (smooth near-term, fuzzy further out)
         let n = samples.count
-        let horizonStart = 0.15         // start easing certainty down after ~9 minutes
-        let horizonEndCertainty = 0.55  // certainty floor at the horizon
+        let horizonStart = 0.15
+        let horizonEndCertainty = 0.55
 
         let certainties: [Double] = samples.enumerated().map { idx, s in
             let chance = RainSurfaceMath.clamp01(s.chance01)
@@ -108,103 +104,101 @@ private struct WeatherNowcastSurfacePlot: View {
         }
 
         let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-
-        // Widgets have tight render budgets; avoid extreme layer counts in the extension.
         let diffusionLayerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 28 : 36
 
-        // Configuration tuned for:
-        // - one ribbon (no 2nd band)
-        // - fuzzy top only when certainty is low (via destinationOut diffusion)
-        // - baseline visible across the whole chart
-        var cfg = RainForecastSurfaceConfiguration()
+        let cfg: RainForecastSurfaceConfiguration = {
+            var c = RainForecastSurfaceConfiguration()
 
-        cfg.backgroundColor = .black
-        cfg.backgroundOpacity = 0.0
+            c.backgroundColor = .black
+            c.backgroundOpacity = 0.0
 
-        cfg.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
-        cfg.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
-        cfg.intensityEasingPower = 0.75
-        cfg.minVisibleHeightFraction = 0.030
+            c.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
+            c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
+            c.intensityEasingPower = 0.75
+            c.minVisibleHeightFraction = 0.030
 
-        cfg.geometrySmoothingPasses = 1
-        cfg.baselineYFraction = 0.82
-        cfg.edgeInsetFraction = 0.00
+            c.geometrySmoothingPasses = 1
+            c.baselineYFraction = 0.82
+            c.edgeInsetFraction = 0.00
 
-        // Baseline (match mock: thin, clean, visible even under fill)
-        cfg.baselineColor = accent
-        cfg.baselineOpacity = 0.14
-        cfg.baselineLineWidth = onePixel
-        cfg.baselineInsetPoints = 0.0
-        cfg.baselineSoftWidthMultiplier = 3.0
-        cfg.baselineSoftOpacityMultiplier = 0.34
+            // Baseline (mock-like)
+            c.baselineColor = accent
+            c.baselineOpacity = 0.14
+            c.baselineLineWidth = onePixel
+            c.baselineInsetPoints = 0.0
+            c.baselineSoftWidthMultiplier = 3.0
+            c.baselineSoftOpacityMultiplier = 0.34
 
-        // Core ribbon
-        cfg.fillBottomColor = accent
-        cfg.fillTopColor = accent
-        cfg.fillBottomOpacity = 0.16
-        cfg.fillTopOpacity = 0.92
+            // Core ribbon
+            c.fillBottomColor = accent
+            c.fillTopColor = accent
+            c.fillBottomOpacity = 0.16
+            c.fillTopOpacity = 0.92
 
-        cfg.startEaseMinutes = 6
-        cfg.endFadeMinutes = 10
-        cfg.endFadeFloor = 0.0
+            c.startEaseMinutes = 6
+            c.endFadeMinutes = 10
+            c.endFadeFloor = 0.0
 
-        // Layer 3: diffusion (stacked alpha, but rendered as alpha erosion to black)
-        cfg.diffusionLayers = diffusionLayerCount
-        cfg.diffusionFalloffPower = 2.2
+            // Diffusion (stacked contours; rendered subtractively in RainSurfaceDrawing via destinationOut)
+            c.diffusionLayers = diffusionLayerCount
+            c.diffusionFalloffPower = 2.2
 
-        cfg.diffusionMinRadiusPoints = 1.5        // treated as px in renderer
-        cfg.diffusionMaxRadiusPoints = 48.0       // treated as px in renderer (clamp max)
-        cfg.diffusionMinRadiusFractionOfHeight = 0.0
-        cfg.diffusionMaxRadiusFractionOfHeight = 0.60
-        cfg.diffusionRadiusUncertaintyPower = 1.15
+            c.diffusionMinRadiusPoints = 1.5
+            c.diffusionMaxRadiusPoints = 48.0
+            c.diffusionMinRadiusFractionOfHeight = 0.0
+            c.diffusionMaxRadiusFractionOfHeight = 0.60
+            c.diffusionRadiusUncertaintyPower = 1.15
 
-        cfg.diffusionStrengthMax = 0.78
-        cfg.diffusionStrengthMinUncertainTerm = 0.00
-        cfg.diffusionStrengthUncertaintyPower = 1.05
+            c.diffusionStrengthMax = 0.78
+            c.diffusionStrengthMinUncertainTerm = 0.00
+            c.diffusionStrengthUncertaintyPower = 1.05
 
-        cfg.diffusionDrizzleThreshold = 0.08
-        cfg.diffusionLowIntensityGateMin = 0.60
+            c.diffusionDrizzleThreshold = 0.08
+            c.diffusionLowIntensityGateMin = 0.60
 
-        cfg.diffusionStopStride = 2
-        cfg.diffusionJitterAmplitudePoints = 0.0
-        cfg.diffusionEdgeSofteningWidth = 0.10
+            c.diffusionStopStride = 2
+            c.diffusionJitterAmplitudePoints = 0.0
+            c.diffusionEdgeSofteningWidth = 0.10
 
-        // No internal texture
-        cfg.textureEnabled = false
-        cfg.textureMaxAlpha = 0.0
-        cfg.textureMinAlpha = 0.0
-        cfg.textureIntensityPower = 0.70
-        cfg.textureUncertaintyAlphaBoost = 0.0
-        cfg.textureStreaksMin = 0
-        cfg.textureStreaksMax = 0
-        cfg.textureLineWidthMultiplier = 0.70
-        cfg.textureBlurRadiusPoints = 0.0
-        cfg.textureTopInsetFractionOfHeight = 0.02
+            // No internal texture
+            c.textureEnabled = false
+            c.textureMaxAlpha = 0.0
+            c.textureMinAlpha = 0.0
+            c.textureIntensityPower = 0.70
+            c.textureUncertaintyAlphaBoost = 0.0
+            c.textureStreaksMin = 0
+            c.textureStreaksMax = 0
+            c.textureLineWidthMultiplier = 0.70
+            c.textureBlurRadiusPoints = 0.0
+            c.textureTopInsetFractionOfHeight = 0.02
 
-        // Use fuzzEnabled as the diffusion enable switch; no particles/dots
-        cfg.fuzzEnabled = true
-        cfg.fuzzGlobalBlurRadiusPoints = 0.0
-        cfg.fuzzLineWidthMultiplier = 0.0
-        cfg.fuzzLengthMultiplier = 0.0
-        cfg.fuzzDotsEnabled = false
-        cfg.fuzzDotsPerSampleMax = 0
-        cfg.fuzzRidgeEnabled = false
-        cfg.fuzzOutsideOnly = false
-        cfg.fuzzRidgeCoreRadiusMultiplier = 0.0
-        cfg.fuzzRidgeCoreAlphaMultiplier = 0.0
-        cfg.fuzzRidgeFeatherRadiusMultiplier = 0.0
-        cfg.fuzzRidgeFeatherAlphaMultiplier = 0.0
-        cfg.fuzzParticleAlphaMultiplier = 0.0
+            // Diffusion enable switch
+            c.fuzzEnabled = true
+            c.fuzzGlobalBlurRadiusPoints = 0.0
+            c.fuzzLineWidthMultiplier = 0.0
+            c.fuzzLengthMultiplier = 0.0
+            c.fuzzDotsEnabled = false
+            c.fuzzDotsPerSampleMax = 0
+            c.fuzzRidgeEnabled = false
+            c.fuzzOutsideOnly = false
+            c.fuzzRidgeCoreRadiusMultiplier = 0.0
+            c.fuzzRidgeCoreAlphaMultiplier = 0.0
+            c.fuzzRidgeFeatherRadiusMultiplier = 0.0
+            c.fuzzRidgeFeatherAlphaMultiplier = 0.0
+            c.fuzzParticleAlphaMultiplier = 0.0
 
-        // Layer 4: subtle inward glow (kept tight and clipped)
-        cfg.glowEnabled = true
-        cfg.glowColor = accent
-        cfg.glowLayers = 6
-        cfg.glowMaxAlpha = 0.10
-        cfg.glowFalloffPower = 1.75
-        cfg.glowCertaintyPower = 1.5
-        cfg.glowMaxRadiusPoints = 4.5            // treated as px in renderer
-        cfg.glowMaxRadiusFractionOfHeight = 0.075
+            // Glow (kept subtle)
+            c.glowEnabled = true
+            c.glowColor = accent
+            c.glowLayers = 6
+            c.glowMaxAlpha = 0.10
+            c.glowFalloffPower = 1.75
+            c.glowCertaintyPower = 1.5
+            c.glowMaxRadiusPoints = 4.5
+            c.glowMaxRadiusFractionOfHeight = 0.075
+
+            return c
+        }()
 
         RainForecastSurfaceView(
             intensities: intensities,
