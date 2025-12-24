@@ -140,12 +140,12 @@ private struct WeatherNowcastSurfacePlot: View {
             diffusionFalloffPower: 2.2,
 
             diffusionMinRadiusPoints: 1.5,       // treated as px in renderer
-            diffusionMaxRadiusPoints: 52.0,      // treated as px in renderer (clamp max)
+            diffusionMaxRadiusPoints: 68.0,      // treated as px in renderer (clamp max)
             diffusionMinRadiusFractionOfHeight: 0.0,
             diffusionMaxRadiusFractionOfHeight: 0.42,
             diffusionRadiusUncertaintyPower: 1.15,
 
-            diffusionStrengthMax: 0.78,
+            diffusionStrengthMax: 0.84,
             diffusionStrengthMinUncertainTerm: 0.30,
             diffusionStrengthUncertaintyPower: 1.05,
 
