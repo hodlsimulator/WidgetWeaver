@@ -74,17 +74,21 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-
-        // Tick the second hand by stepping through a dense timeline.
-        // Note: WidgetKit may still coalesce updates, but a 1s timeline is the only
-        // public API route for per-second non-text rendering.
         let now = Date()
 
+        // 1-second ticks.
+        //
+        // IMPORTANT:
+        // Don’t generate hundreds and hundreds of entries here.
+        // WidgetKit has to archive each entry’s view representation; too many entries
+        // can fail archiving and you end up with a frozen / partially rendered widget.
         let tickSeconds: TimeInterval = 1.0
-        let maxEntries: Int = 360  // ~6 minutes at 1s/tick (keeps the timeline reasonably small)
 
-        // Start on the *next* whole second so we don’t immediately miss the first tick
-        // (which can lead to the system effectively skipping every other entry).
+        // Keep this modest. Old code was 180 entries at 2s (180 frames).
+        // This keeps the *frame count* the same (180 frames), but at 1s tick.
+        let maxEntries: Int = 180 // ~3 minutes of 1Hz ticks
+
+        // Start on the NEXT whole second so the first entry is never in the past.
         let baseSeconds = floor(now.timeIntervalSinceReferenceDate) + 1.0
         let base = Date(timeIntervalSinceReferenceDate: baseSeconds)
 
@@ -137,11 +141,10 @@ struct WidgetWeaverHomeScreenClockView: View {
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
-        // Avoid forcing a full view identity change per tick, which looks like “blinking”.
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
+
+        // IMPORTANT:
+        // Removing the `.id(...)` prevents SwiftUI from treating every tick as a brand-new view,
+        // which is what causes the “whole widget blinking” look.
     }
 }
 
@@ -524,7 +527,7 @@ private struct WidgetWeaverClockHandsView: View {
         let tickDate = Date(timeIntervalSinceReferenceDate: floor(date.timeIntervalSinceReferenceDate))
         let a = WidgetWeaverClockAngles(date: tickDate)
 
-        ZStack {
+        return ZStack {
             WidgetWeaverClockHourHandView(
                 palette: palette,
                 width: innerRadius * 0.30,
@@ -546,6 +549,11 @@ private struct WidgetWeaverClockHandsView: View {
                 angleDegrees: a.secondDegrees
             )
         }
+        // Prevent the “spin backwards around 12” (and any springy transitions) by disabling animations for hands.
+        .transaction { t in
+            t.animation = nil
+            t.disablesAnimations = true
+        }
     }
 }
 
@@ -555,25 +563,22 @@ private struct WidgetWeaverClockAngles {
     let secondDegrees: Double
 
     init(date: Date) {
-        // Use monotonic angles to avoid the “wrap” at 59 -> 0 causing an animated backwards spin.
-        // Hours/minutes update on whole-minute boundaries; seconds update every second.
-        let nowSeconds = floor(date.timeIntervalSinceReferenceDate)
-        let minuteSeconds = floor(nowSeconds / 60.0) * 60.0
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.hour, .minute, .second], from: date)
 
-        let minuteDate = Date(timeIntervalSinceReferenceDate: minuteSeconds)
-        let tzOffset = TimeInterval(TimeZone.current.secondsFromGMT(for: minuteDate))
-        let localMinuteSeconds = minuteSeconds + tzOffset
+        let h = Double((comps.hour ?? 0) % 12)
+        let m = Double(comps.minute ?? 0)
+        let s = Double(comps.second ?? 0)
 
-        // 12 hours == 43,200 seconds == 360 degrees
-        let hourDegrees = localMinuteSeconds / 120.0
-        // 60 minutes == 3,600 seconds == 360 degrees
-        let minuteDegrees = (minuteSeconds / 60.0) * 6.0
-        // 60 seconds == 360 degrees
-        let secondDegrees = nowSeconds * 6.0
+        let hourValue = h + (m / 60.0) + (s / 3600.0)
+        let minuteValue = m + (s / 60.0)
 
-        self.hour = .degrees(hourDegrees)
-        self.minute = .degrees(minuteDegrees)
-        self.secondDegrees = secondDegrees
+        self.hour = .degrees((hourValue / 12.0) * 360.0)
+        self.minute = .degrees((minuteValue / 60.0) * 360.0)
+
+        // Monotonic seconds to avoid wrap-related backwards interpolation even if something re-enables animations.
+        let wholeSeconds = floor(date.timeIntervalSinceReferenceDate)
+        self.secondDegrees = wholeSeconds * 6.0
     }
 }
 
@@ -694,24 +699,6 @@ private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
     let g = Double((hex >> 8) & 0xFF) / 255.0
     let b = Double(hex & 0xFF) / 255.0
     return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
-}
-
-private struct WidgetWeaverPerSecondInvalidator: View {
-    private let start: Date
-
-    init(startDate: Date) {
-        self.start = Date(timeIntervalSinceReferenceDate: floor(startDate.timeIntervalSinceReferenceDate))
-    }
-
-    var body: some View {
-        Text(start, style: .timer)
-            .font(.system(size: 1, weight: .regular, design: .default))
-            .opacity(0.01)
-            .frame(width: 1, height: 1)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
 }
 
 private extension View {
