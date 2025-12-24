@@ -220,6 +220,11 @@ enum RainSurfaceDrawing {
                     inner.clip(to: seg.surfacePath)
 
                     if diffusionEnabled {
+                        // Key change: screen blend makes the diffusion visible on top of the core fill
+                        // (without introducing outlines or texture).
+                        let savedBlend = inner.blendMode
+                        inner.blendMode = .screen
+
                         drawStackedDiffusion(
                             in: &inner,
                             plotRect: plotRect,
@@ -235,6 +240,8 @@ enum RainSurfaceDrawing {
                             edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
                             onePixel: onePixel
                         )
+
+                        inner.blendMode = savedBlend
                     }
 
                     if glowEnabled, glowRadius > 0.000_01 {
@@ -332,7 +339,8 @@ enum RainSurfaceDrawing {
             let t1 = Double(k + 1) / Double(layers)
 
             // Decreasing alpha into the interior.
-            let w = pow(max(0.0, 1.0 - t0), falloffPower)
+            let tMid = (Double(k) + 0.5) / Double(layers)
+            let w = pow(max(0.0, 1.0 - tMid), falloffPower)
             if w <= 0.000_01 { continue }
 
             let outer = insetPointsDown(points: points, radii: radii, baselineY: baselineY, fraction: CGFloat(t0))
@@ -417,7 +425,8 @@ enum RainSurfaceDrawing {
             let t0 = Double(k) / Double(layers)
             let t1 = Double(k + 1) / Double(layers)
 
-            let w = pow(max(0.0, 1.0 - t0), falloffPower)
+            let tMid = (Double(k) + 0.5) / Double(layers)
+            let w = pow(max(0.0, 1.0 - tMid), falloffPower)
             if w <= 0.000_01 { continue }
 
             let outer = insetPointsDownConstant(points: points, radius: glowRadius, baselineY: baselineY, fraction: CGFloat(t0))

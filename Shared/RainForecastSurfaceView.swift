@@ -49,15 +49,15 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // Diffusion controls (Layer 3)
     // Multi-contour stacked-alpha diffusion (no blur, no particles).
-    var diffusionLayers: Int = 20
-    var diffusionFalloffPower: Double = 2.2
+    var diffusionLayers: Int = 32
+    var diffusionFalloffPower: Double = 1.90
 
     // Radii are treated as pixels in the renderer (converted using displayScale).
-    var diffusionMinRadiusPoints: CGFloat = 1.2
-    var diffusionMaxRadiusPoints: CGFloat = 16.0
+    var diffusionMinRadiusPoints: CGFloat = 2.2
+    var diffusionMaxRadiusPoints: CGFloat = 26.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.0
-    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.34
-    var diffusionRadiusUncertaintyPower: Double = 1.35
+    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.48
+    var diffusionRadiusUncertaintyPower: Double = 1.20
 
     // Strength model:
     // strength = diffusionStrengthMax * (minFactor + (1 - minFactor) * pow(u, diffusionStrengthUncertaintyPower))
