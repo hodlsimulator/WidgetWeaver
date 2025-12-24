@@ -314,6 +314,9 @@ enum RainSurfaceDrawing {
     ) {
         guard maxDotsPerSample > 0 else { return }
 
+        // Keeps blur from “sticking” to the very top edge and forming a line.
+        let topMargin = onePixel * 3.0
+
         for i in range {
             let h = heights[i]
             if h <= 0.000_01 { continue }
@@ -329,16 +332,23 @@ enum RainSurfaceDrawing {
 
             let intensitySupport = 0.40 + 0.60 * pow(inorm, 0.55)
 
-            // Higher density than before: this is what makes the right side of the mock feel “foggy”.
+            // Higher density: matches the “foggy” right-side behaviour in the mock.
             let desired = Double(maxDotsPerSample) * (0.55 + 2.60 * fa) * intensitySupport
             let dotCount = min(140, max(1, Int(desired.rounded(.toNearestOrAwayFromZero))))
 
-            // Ridge-attached spans (caps prevent detached clouds).
-            let upSpan = min(h * 0.90, s * (0.65 + 1.10 * CGFloat(fa)))
+            // Ridge-attached spans.
+            let upSpanRaw = min(h * 0.90, s * (0.65 + 1.10 * CGFloat(fa)))
             let downSpan = min(h * 0.55, s * (0.60 + 1.35 * CGFloat(fa)))
 
-            // More inside dots than before so the top doesn’t stay perfectly smooth.
-            let outsideWeight = RainSurfaceMath.clamp01(0.30 + 0.45 * fa)
+            // Prevent outside dots from ever reaching the plot’s top edge.
+            // If there is no headroom, outside dots are disabled for this column.
+            let maxUpAllowed = max(0.0, topY - (plotRect.minY + topMargin))
+            let upSpan = min(upSpanRaw, maxUpAllowed)
+
+            var outsideWeight = RainSurfaceMath.clamp01(0.30 + 0.45 * fa)
+            if upSpan <= onePixel * 0.75 {
+                outsideWeight = 0.0
+            }
 
             for j in 0..<dotCount {
                 var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: 0xD07D07D0, saltB: (j &* 173) &+ 19))
@@ -351,7 +361,7 @@ enum RainSurfaceDrawing {
                 if pick < outsideWeight {
                     let t = prng.nextDouble01()
                     let up = CGFloat(pow(t, 1.12)) * upSpan
-                    y = max(plotRect.minY, topY - up)
+                    y = max(plotRect.minY + topMargin, topY - up)
                 } else {
                     let t = prng.nextDouble01()
                     let down = CGFloat(pow(t, 1.05)) * max(onePixel, downSpan)
