@@ -11,24 +11,19 @@ import SwiftUI
 // MARK: - Configuration
 
 struct RainForecastSurfaceConfiguration: Hashable {
-    // Background (usually handled by the chart container; kept for flexibility)
     var backgroundColor: Color = .clear
     var backgroundOpacity: Double = 0.0
 
-    // Data mapping
     var intensityCap: Double = 1.0
     var wetThreshold: Double = 0.0
     var intensityEasingPower: Double = 0.75
     var minVisibleHeightFraction: CGFloat = 0.03
 
-    // Geometry smoothing (visual only)
     var geometrySmoothingPasses: Int = 1
 
-    // Layout
     var baselineYFraction: CGFloat = 0.82
     var edgeInsetFraction: CGFloat = 0.0
 
-    // Baseline (felt, not an axis)
     var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
     var baselineOpacity: Double = 0.09
     var baselineLineWidth: CGFloat = 1.0
@@ -36,41 +31,31 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var baselineSoftWidthMultiplier: CGFloat = 2.6
     var baselineSoftOpacityMultiplier: Double = 0.28
 
-    // Core ribbon fill (matte)
     var fillBottomColor: Color = Color(red: 0.10, green: 0.20, blue: 0.40)
     var fillTopColor: Color = Color(red: 0.25, green: 0.55, blue: 0.95)
     var fillBottomOpacity: Double = 0.18
     var fillTopOpacity: Double = 0.92
 
-    // Boundary modifiers (rendering only; intended for diffusion/glow alpha)
     var startEaseMinutes: Int = 6
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    // Diffusion controls (Layer 3)
-    // Multi-contour stacked-alpha diffusion (no blur, no particles).
     var diffusionLayers: Int = 32
     var diffusionFalloffPower: Double = 1.90
 
-    // Radii are treated as pixels in the renderer (converted using displayScale).
     var diffusionMinRadiusPoints: CGFloat = 2.2
     var diffusionMaxRadiusPoints: CGFloat = 26.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.0
     var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.48
     var diffusionRadiusUncertaintyPower: Double = 1.20
 
-    // Strength model:
-    // strength = diffusionStrengthMax * (minFactor + (1 - minFactor) * pow(u, diffusionStrengthUncertaintyPower))
-    // where u = 1 - certainty
     var diffusionStrengthMax: Double = 0.50
     var diffusionStrengthMinUncertainTerm: Double = 0.25
     var diffusionStrengthUncertaintyPower: Double = 1.15
 
-    // Intensity gating (keeps drizzle calm)
     var diffusionDrizzleThreshold: Double = 0.10
     var diffusionLowIntensityGateMin: Double = 0.55
 
-    // Legacy controls (kept for compatibility; not used by the stacked-alpha diffusion)
     var diffusionLightRainMeanThreshold: Double = 0.18
     var diffusionLightRainMaxRadiusScale: Double = 0.80
     var diffusionLightRainStrengthScale: Double = 0.85
@@ -78,7 +63,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var diffusionJitterAmplitudePoints: Double = 0.0
     var diffusionEdgeSofteningWidth: Double = 0.08
 
-    // Internal texture (disabled; kept for compatibility)
     var textureEnabled: Bool = false
     var textureMaxAlpha: Double = 0.0
     var textureMinAlpha: Double = 0.0
@@ -90,8 +74,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var textureBlurRadiusPoints: CGFloat = 0.0
     var textureTopInsetFractionOfHeight: CGFloat = 0.02
 
-    // "Fuzz" toggles are treated as diffusion enable switches.
-    // Particle/dot rendering is intentionally not used.
     var fuzzEnabled: Bool = true
     var fuzzGlobalBlurRadiusPoints: CGFloat = 0.0
     var fuzzLineWidthMultiplier: CGFloat = 0.0
@@ -106,7 +88,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzRidgeFeatherAlphaMultiplier: Double = 0.0
     var fuzzParticleAlphaMultiplier: Double = 0.0
 
-    // Glow (Layer 4; subtle inward concentration)
     var glowEnabled: Bool = true
     var glowColor: Color = Color(red: 0.35, green: 0.70, blue: 1.0)
     var glowLayers: Int = 6
@@ -114,7 +95,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glowFalloffPower: Double = 1.75
     var glowCertaintyPower: Double = 1.6
 
-    // Radii are treated as pixels in the renderer (converted using displayScale).
     var glowMaxRadiusPoints: CGFloat = 3.8
     var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
 }
@@ -139,6 +119,52 @@ struct RainForecastSurfaceView: View {
     }
 
     var body: some View {
+        if isRunningInExtensionBundle {
+            rasterizedForWidgetKit()
+        } else {
+            canvasContent()
+                .drawingGroup(opaque: false, colorMode: .linear)
+        }
+    }
+
+    private var isRunningInExtensionBundle: Bool {
+        Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
+    }
+
+    @ViewBuilder
+    private func rasterizedForWidgetKit() -> some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            let content =
+                canvasContent()
+                    .frame(width: size.width, height: size.height)
+
+            if #available(iOS 16.0, *) {
+                // ViewBuilder can’t accept Void-returning assignment statements,
+                // so renderer configuration is done inside a closure that returns the renderer.
+                let renderer: ImageRenderer<AnyView> = {
+                    let r = ImageRenderer(content: AnyView(content))
+                    r.scale = displayScale
+                    r.isOpaque = false
+                    r.proposedSize = ProposedViewSize(width: size.width, height: size.height)
+                    return r
+                }()
+
+                if let cgImage = renderer.cgImage {
+                    Image(decorative: cgImage, scale: displayScale, orientation: .up)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    content
+                }
+            } else {
+                content
+            }
+        }
+    }
+
+    private func canvasContent() -> some View {
         Canvas { context, size in
             let renderer = RainForecastSurfaceRenderer(
                 intensities: intensities,
