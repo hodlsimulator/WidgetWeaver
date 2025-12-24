@@ -74,17 +74,16 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-
-        // Tick the second hand by stepping through a dense timeline.
-        // The system may still throttle updates, but providing frequent entries is the only
-        // reliable way to animate non-text content in a Home Screen widget.
         let now = Date()
 
+        // 1-second spacing.
+        // Keep the entry count modest to avoid WidgetKit getting unstable.
         let tickSeconds: TimeInterval = 1.0
-        let maxEntries: Int = 180  // ~3 minutes at 1s/tick (keeps the timeline reasonably small)
+        let maxEntries: Int = 120  // 2 minutes at 1s/tick
 
-        // Align to whole seconds so hands don’t “wobble” due to sub-second render timing.
-        let base = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
+        // Start on the NEXT whole second (never in the past).
+        let baseSeconds = ceil(now.timeIntervalSinceReferenceDate)
+        let base = Date(timeIntervalSinceReferenceDate: baseSeconds)
 
         var entries: [Entry] = []
         entries.reserveCapacity(maxEntries)
@@ -126,22 +125,21 @@ struct WidgetWeaverHomeScreenClockView: View {
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
-        let now = entry.date
 
         ZStack {
-            WidgetWeaverClockIconView(date: now, palette: palette)
+            WidgetWeaverClockIconView(date: entry.date, palette: palette)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
+        // No forced identity changes (that was the blinking culprit).
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
         }
     }
 }
-
 
 // MARK: - Palette
 
@@ -521,8 +519,7 @@ private struct WidgetWeaverClockHandsView: View {
     let innerRadius: CGFloat
 
     var body: some View {
-        let tickDate = Date(timeIntervalSinceReferenceDate: floor(date.timeIntervalSinceReferenceDate))
-        let a = WidgetWeaverClockAngles(date: tickDate)
+        let a = WidgetWeaverClockAngles(date: date)
 
         ZStack {
             WidgetWeaverClockHourHandView(
@@ -555,20 +552,20 @@ private struct WidgetWeaverClockAngles {
     let secondDegrees: Double
 
     init(date: Date) {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.hour, .minute, .second], from: date)
+        // Continuous, non-wrapping angles based on local time seconds.
+        // This prevents “359° -> 0°” from being interpreted as a backwards spin.
+        let offset = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
+        let localSeconds = date.timeIntervalSinceReferenceDate + offset
 
-        let h = Double((comps.hour ?? 0) % 12)
-        let m = Double(comps.minute ?? 0)
-        let s = Double(comps.second ?? 0)
+        let wholeSeconds = floor(localSeconds)
 
-        // Keep hour/minute stable within the minute so only the second hand changes each tick.
-        let hourValue = h + (m / 60.0)
-        let minuteValue = m
+        let hourDegrees = (localSeconds / 3600.0) * 30.0     // 30° per hour
+        let minuteDegrees = (localSeconds / 60.0) * 6.0      // 6° per minute
+        let secondDegrees = wholeSeconds * 6.0               // tick once per second
 
-        self.hour = .degrees((hourValue / 12.0) * 360.0)
-        self.minute = .degrees((minuteValue / 60.0) * 360.0)
-        self.secondDegrees = (s / 60.0) * 360.0
+        self.hour = .degrees(hourDegrees)
+        self.minute = .degrees(minuteDegrees)
+        self.secondDegrees = secondDegrees
     }
 }
 
@@ -595,6 +592,7 @@ private struct WidgetWeaverClockHourHandView: View {
             .frame(width: width, height: length)
             .rotationEffect(angle, anchor: .bottom)
             .offset(y: -length / 2.0)
+            .animation(nil, value: angle.degrees)
     }
 }
 
@@ -654,6 +652,7 @@ private struct WidgetWeaverClockMinuteHandView: View {
             .frame(width: width, height: length)
             .rotationEffect(angle, anchor: .bottom)
             .offset(y: -length / 2.0)
+            .animation(nil, value: angle.degrees)
     }
 }
 
@@ -679,6 +678,7 @@ private struct WidgetWeaverClockSecondHandView: View {
                 .offset(y: -length)
         }
         .rotationEffect(.degrees(angleDegrees))
+        .animation(nil, value: angleDegrees)
     }
 }
 
@@ -689,24 +689,6 @@ private func wwColor(_ hex: UInt32, _ alpha: Double = 1.0) -> Color {
     let g = Double((hex >> 8) & 0xFF) / 255.0
     let b = Double(hex & 0xFF) / 255.0
     return Color(.sRGB, red: r, green: g, blue: b, opacity: alpha)
-}
-
-private struct WidgetWeaverPerSecondInvalidator: View {
-    private let start: Date
-
-    init(startDate: Date) {
-        self.start = Date(timeIntervalSinceReferenceDate: floor(startDate.timeIntervalSinceReferenceDate))
-    }
-
-    var body: some View {
-        Text(start, style: .timer)
-            .font(.system(size: 1, weight: .regular, design: .default))
-            .opacity(0.01)
-            .frame(width: 1, height: 1)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
 }
 
 private extension View {
