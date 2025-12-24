@@ -49,8 +49,9 @@ struct RainForecastSurfaceRenderer {
         let intensityCap = max(configuration.intensityCap, 0.000_001)
 
         let stepX = plotRect.width / CGFloat(n)
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-        // Rendering-only edge fade (start/end).
+        // Rendering-only edge fade (start/end of horizon).
         let edgeFactors = RainSurfaceMath.edgeFactors(
             sampleCount: n,
             startEaseMinutes: configuration.startEaseMinutes,
@@ -58,9 +59,9 @@ struct RainForecastSurfaceRenderer {
             endFadeFloor: configuration.endFadeFloor
         )
 
-        var wetMask = [Bool](repeating: false, count: n)
-        var heights = [CGFloat](repeating: 0, count: n)
-        var intensityNorm = [Double](repeating: 0, count: n)
+        // Raw arrays (before taper / smoothing).
+        var rawWetMask = [Bool](repeating: false, count: n)
+        var rawIntensityNorm = [Double](repeating: 0, count: n)
         var certainty = [Double](repeating: 0, count: n)
 
         for i in 0..<n {
@@ -70,21 +71,102 @@ struct RainForecastSurfaceRenderer {
             let rawI = max(0.0, intensities[i])
             guard rawI > configuration.wetThreshold else { continue }
 
-            wetMask[i] = true
+            rawWetMask[i] = true
 
             let frac = min(rawI / intensityCap, 1.0)
             let eased = pow(frac, configuration.intensityEasingPower)
-            intensityNorm[i] = eased
+            rawIntensityNorm[i] = eased
+        }
 
-            var h = CGFloat(eased) * maxHeight
-            if h > 0 {
+        // Segment-aware taper so the rain shape falls to baseline gracefully
+        // instead of ending with a vertical cliff.
+        let rawRanges = RainSurfaceGeometry.wetRanges(from: rawWetMask)
+
+        var taperedIntensityNorm = rawIntensityNorm
+        var taperedCertainty = certainty
+
+        let startTaper = max(0, min(6, configuration.startEaseMinutes / 2))
+        let endTaper = max(0, min(8, configuration.endFadeMinutes / 2))
+
+        if startTaper > 0 || endTaper > 0 {
+            for r in rawRanges {
+                if r.isEmpty { continue }
+
+                let startIdx = r.lowerBound
+                let endIdx = max(startIdx, r.upperBound - 1)
+
+                // Leading taper (into earlier dry minutes).
+                if startTaper > 0 {
+                    let anchorI = taperedIntensityNorm[startIdx]
+                    let anchorC = taperedCertainty[startIdx]
+                    if anchorI > 0 {
+                        for k in 1...startTaper {
+                            let idx = startIdx - k
+                            if idx < 0 { break }
+
+                            let t = Double(k) / Double(startTaper + 1) // 0..1
+                            let f = pow(max(0.0, 1.0 - t), 2.05)
+
+                            taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
+                            taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
+                        }
+                    }
+                }
+
+                // Trailing taper (into later dry minutes).
+                if endTaper > 0 {
+                    let anchorI = taperedIntensityNorm[endIdx]
+                    let anchorC = taperedCertainty[endIdx]
+                    if anchorI > 0 {
+                        for k in 1...endTaper {
+                            let idx = endIdx + k
+                            if idx >= n { break }
+
+                            let t = Double(k) / Double(endTaper + 1)
+                            let f = pow(max(0.0, 1.0 - t), 2.10)
+
+                            taperedIntensityNorm[idx] = max(taperedIntensityNorm[idx], anchorI * f)
+                            taperedCertainty[idx] = max(taperedCertainty[idx], anchorC * f)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mild smoothing after taper to avoid any “kinks”.
+        let intensitySmoothPasses = max(1, configuration.geometrySmoothingPasses + 1)
+        let certaintySmoothPasses = 1
+
+        let intensityNorm = RainSurfaceMath.smooth(taperedIntensityNorm, passes: intensitySmoothPasses)
+        let certaintySmoothed = RainSurfaceMath.smooth(taperedCertainty, passes: certaintySmoothPasses)
+
+        // Build heights from smoothed intensity.
+        // IMPORTANT: minVisibleHeight is applied only to truly-wet source points
+        // so taper tails can fall below it (and reach baseline smoothly).
+        var heights = [CGFloat](repeating: 0, count: n)
+        for i in 0..<n {
+            let inorm = RainSurfaceMath.clamp01(intensityNorm[i])
+
+            var h = CGFloat(inorm) * maxHeight
+
+            // Horizon start/end easing affects geometry (prevents hard ends at chart edges).
+            h *= CGFloat(RainSurfaceMath.clamp01(edgeFactors[i]))
+
+            if rawWetMask[i], h > 0 {
                 h = max(h, minVisibleHeight)
             }
+
             heights[i] = h
         }
 
-        if configuration.geometrySmoothingPasses > 0 {
-            heights = RainSurfaceMath.smooth(heights, passes: configuration.geometrySmoothingPasses)
+        // Determine wet mask from geometry (includes taper).
+        // Threshold is intentionally tiny so the segment ends where the height is ~0,
+        // making the clip edge invisible.
+        let epsilon = max(onePixel * 0.20, maxHeight * 0.0012)
+
+        var wetMask = [Bool](repeating: false, count: n)
+        for i in 0..<n {
+            wetMask[i] = heights[i] > epsilon
         }
 
         let wetRanges = RainSurfaceGeometry.wetRanges(from: wetMask)
@@ -110,9 +192,6 @@ struct RainForecastSurfaceRenderer {
             segments.append(.init(range: r, surfacePath: surface, topEdgePath: top))
         }
 
-        // IMPORTANT: the fill is no longer a smooth path.
-        // The shape is generated by a probability mask (core + inside fade + outside fade + grain),
-        // so low-chance minutes look diffuse and high-chance minutes look smooth.
         RainSurfaceDrawing.drawProbabilityMaskedSurface(
             in: &context,
             plotRect: plotRect,
@@ -121,13 +200,12 @@ struct RainForecastSurfaceRenderer {
             segments: segments,
             heights: heights,
             intensityNorm: intensityNorm,
-            certainty: certainty,
+            certainty: certaintySmoothed,
             edgeFactors: edgeFactors,
             configuration: configuration,
             displayScale: displayScale
         )
 
-        // Optional glow highlight (kept subtle and certainty-weighted).
         RainSurfaceDrawing.drawGlowIfEnabled(
             in: &context,
             plotRect: plotRect,
@@ -136,7 +214,7 @@ struct RainForecastSurfaceRenderer {
             segments: segments,
             heights: heights,
             intensityNorm: intensityNorm,
-            certainty: certainty,
+            certainty: certaintySmoothed,
             edgeFactors: edgeFactors,
             configuration: configuration,
             displayScale: displayScale
