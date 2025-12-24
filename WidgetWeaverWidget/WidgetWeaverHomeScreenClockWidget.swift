@@ -33,7 +33,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .orchid: DisplayRepresentation(title: "Orchid"),
             .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: DisplayRepresentation(title: "Graphite"),
+            .graphite: DisplayRepresentation(title: "Graphite")
         ]
     }
 }
@@ -76,22 +76,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
 
-        // One timeline entry per second.
-        //
-        // WidgetKit displays each entry at its date, allowing the second hand to advance
-        // without relying on in-view timers.
-        let start = Date(timeIntervalSinceReferenceDate: floor(now.timeIntervalSinceReferenceDate))
-
-        let horizonSeconds: Int = 180
-        var entries: [Entry] = []
-        entries.reserveCapacity(horizonSeconds)
-
-        for i in 0..<horizonSeconds {
-            let date = start.addingTimeInterval(TimeInterval(i))
-            entries.append(Entry(date: date, colourScheme: scheme))
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
+        // Keep WidgetKit reloads cheap. The per-second ticking is handled by TimelineView inside the view.
+        let entry = Entry(date: now, colourScheme: scheme)
+        return Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60)))
     }
 }
 
@@ -119,17 +106,23 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
+
     @Environment(\.colorScheme) private var mode
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        WidgetWeaverClockIconView(date: entry.date, palette: palette)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .containerBackground(for: .widget) {
-                WidgetWeaverClockBackgroundView(palette: palette)
-            }
-            .id(entry.colourScheme.rawValue)
+        // Align start to an exact second so the tick cadence is stable.
+        let alignedStart = Date(timeIntervalSinceReferenceDate: floor(Date().timeIntervalSinceReferenceDate))
+
+        TimelineView(.periodic(from: alignedStart, by: 0.5)) { context in
+            WidgetWeaverClockIconView(date: context.date, palette: palette)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(for: .widget) {
+                    WidgetWeaverClockBackgroundView(palette: palette)
+                }
+        }
+        .id(entry.colourScheme.rawValue)
     }
 }
 
@@ -295,7 +288,7 @@ private struct WidgetWeaverClockBackgroundView: View {
                                 gradient: Gradient(colors: [
                                     Color.white.opacity(0.10),
                                     Color.white.opacity(0.00),
-                                    Color.black.opacity(0.22),
+                                    Color.black.opacity(0.22)
                                 ]),
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -339,7 +332,7 @@ private struct WidgetWeaverClockIconView: View {
                             gradient: Gradient(stops: [
                                 .init(color: palette.bezelHighlight, location: 0.0),
                                 .init(color: palette.bezelMid, location: 0.48),
-                                .init(color: palette.bezelShadow, location: 1.0),
+                                .init(color: palette.bezelShadow, location: 1.0)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -358,7 +351,7 @@ private struct WidgetWeaverClockIconView: View {
                         RadialGradient(
                             gradient: Gradient(stops: [
                                 .init(color: palette.faceTop, location: 0.0),
-                                .init(color: palette.faceBottom, location: 1.0),
+                                .init(color: palette.faceBottom, location: 1.0)
                             ]),
                             center: .center,
                             startRadius: 0,
@@ -591,8 +584,6 @@ private struct WidgetWeaverClockHandsView: View {
 
         let delta = abs(target - displayedSecondAngleDegrees)
 
-        // Only animate the normal 1-second step.
-        // Any missed ticks snap to the correct time, then resume 1-second ticks.
         let shouldAnimate = animated && (delta <= 6.1)
 
         if shouldAnimate {
