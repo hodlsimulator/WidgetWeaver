@@ -125,9 +125,8 @@ enum RainSurfaceDrawing {
         let diffusionEnabled = configuration.fuzzEnabled
         let glowEnabled = configuration.glowEnabled
 
-        guard
-            (diffusionEnabled && configuration.diffusionLayers > 0 && configuration.diffusionStrengthMax > 0.000_01)
-            || (glowEnabled && configuration.glowLayers > 0 && configuration.glowMaxAlpha > 0.000_01)
+        guard (diffusionEnabled && configuration.diffusionLayers > 0 && configuration.diffusionStrengthMax > 0.000_01)
+                || (glowEnabled && configuration.glowLayers > 0 && configuration.glowMaxAlpha > 0.000_01)
         else { return }
 
         guard !segments.isEmpty else { return }
@@ -172,7 +171,7 @@ enum RainSurfaceDrawing {
         let radiusPower = max(0.01, configuration.diffusionRadiusUncertaintyPower)
 
         for i in 0..<n {
-            guard edgeFactors[i] > 0 else { continue }
+            guard heights[i] > 0 else { continue }
 
             let c = RainSurfaceMath.clamp01(certainty[i])
             let u = 1.0 - c
@@ -198,13 +197,13 @@ enum RainSurfaceDrawing {
                 let sT = pow(u, strengthPower)
                 var s = strengthMax * (strengthMinFactor + (1.0 - strengthMinFactor) * sT)
                 s *= gate
-                s *= edgeFactors[i] // boundary easing is alpha-only
+                s *= edgeFactors[i]  // boundary easing is alpha-only
                 diffusionAlphaBySample[i] = s
             }
 
             if glowEnabled {
                 var g = configuration.glowMaxAlpha * pow(c, configuration.glowCertaintyPower)
-                g *= edgeFactors[i] // boundary easing is alpha-only
+                g *= edgeFactors[i]  // boundary easing is alpha-only
                 glowAlphaBySample[i] = g
             }
         }
@@ -221,7 +220,6 @@ enum RainSurfaceDrawing {
                     inner.clip(to: seg.surfacePath)
 
                     if diffusionEnabled {
-                        // Important: keep diffusion on the default blend mode for WidgetKit rasterisation.
                         drawStackedDiffusion(
                             in: &inner,
                             plotRect: plotRect,
@@ -242,6 +240,7 @@ enum RainSurfaceDrawing {
                     if glowEnabled, glowRadius > 0.000_01 {
                         let savedBlend = inner.blendMode
                         inner.blendMode = .screen
+
                         drawStackedGlow(
                             in: &inner,
                             plotRect: plotRect,
@@ -257,6 +256,7 @@ enum RainSurfaceDrawing {
                             edgeSofteningWidth: configuration.diffusionEdgeSofteningWidth,
                             onePixel: onePixel
                         )
+
                         inner.blendMode = savedBlend
                     }
                 }
@@ -332,8 +332,7 @@ enum RainSurfaceDrawing {
             let t1 = Double(k + 1) / Double(layers)
 
             // Decreasing alpha into the interior.
-            let tMid = (Double(k) + 0.5) / Double(layers)
-            let w = pow(max(0.0, 1.0 - tMid), falloffPower)
+            let w = pow(max(0.0, 1.0 - t0), falloffPower)
             if w <= 0.000_01 { continue }
 
             let outer = insetPointsDown(points: points, radii: radii, baselineY: baselineY, fraction: CGFloat(t0))
@@ -418,8 +417,7 @@ enum RainSurfaceDrawing {
             let t0 = Double(k) / Double(layers)
             let t1 = Double(k + 1) / Double(layers)
 
-            let tMid = (Double(k) + 0.5) / Double(layers)
-            let w = pow(max(0.0, 1.0 - tMid), falloffPower)
+            let w = pow(max(0.0, 1.0 - t0), falloffPower)
             if w <= 0.000_01 { continue }
 
             let outer = insetPointsDownConstant(points: points, radius: glowRadius, baselineY: baselineY, fraction: CGFloat(t0))

@@ -40,18 +40,18 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    var diffusionLayers: Int = 32
-    var diffusionFalloffPower: Double = 1.90
+    var diffusionLayers: Int = 20
+    var diffusionFalloffPower: Double = 2.20
 
-    var diffusionMinRadiusPoints: CGFloat = 2.2
-    var diffusionMaxRadiusPoints: CGFloat = 26.0
+    var diffusionMinRadiusPoints: CGFloat = 1.2
+    var diffusionMaxRadiusPoints: CGFloat = 16.0
     var diffusionMinRadiusFractionOfHeight: CGFloat = 0.0
-    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.48
-    var diffusionRadiusUncertaintyPower: Double = 1.20
+    var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.34
+    var diffusionRadiusUncertaintyPower: Double = 1.35
 
-    var diffusionStrengthMax: Double = 0.50
-    var diffusionStrengthMinUncertainTerm: Double = 0.25
-    var diffusionStrengthUncertaintyPower: Double = 1.15
+    var diffusionStrengthMax: Double = 0.46
+    var diffusionStrengthMinUncertainTerm: Double = 0.18
+    var diffusionStrengthUncertaintyPower: Double = 1.95
 
     var diffusionDrizzleThreshold: Double = 0.10
     var diffusionLowIntensityGateMin: Double = 0.55
@@ -119,52 +119,6 @@ struct RainForecastSurfaceView: View {
     }
 
     var body: some View {
-        if isRunningInExtensionBundle {
-            rasterizedForWidgetKit()
-        } else {
-            canvasContent()
-                .drawingGroup(opaque: false, colorMode: .linear)
-        }
-    }
-
-    private var isRunningInExtensionBundle: Bool {
-        Bundle.main.bundleURL.pathExtension.lowercased() == "appex"
-    }
-
-    @ViewBuilder
-    private func rasterizedForWidgetKit() -> some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-
-            let content =
-                canvasContent()
-                    .frame(width: size.width, height: size.height)
-
-            if #available(iOS 16.0, *) {
-                // ViewBuilder can’t accept Void-returning assignment statements,
-                // so renderer configuration is done inside a closure that returns the renderer.
-                let renderer: ImageRenderer<AnyView> = {
-                    let r = ImageRenderer(content: AnyView(content))
-                    r.scale = displayScale
-                    r.isOpaque = false
-                    r.proposedSize = ProposedViewSize(width: size.width, height: size.height)
-                    return r
-                }()
-
-                if let cgImage = renderer.cgImage {
-                    Image(decorative: cgImage, scale: displayScale, orientation: .up)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    content
-                }
-            } else {
-                content
-            }
-        }
-    }
-
-    private func canvasContent() -> some View {
         Canvas { context, size in
             let renderer = RainForecastSurfaceRenderer(
                 intensities: intensities,
