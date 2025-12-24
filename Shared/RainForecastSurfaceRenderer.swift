@@ -1,10 +1,10 @@
 //
-//  RainForecastSurfaceRenderer.swift
-//  WidgetWeaver
+// RainForecastSurfaceRenderer.swift
+// WidgetWeaver
 //
-//  Created by . . on 12/23/25.
+// Created by . . on 12/23/25.
 //
-//  Forecast surface rendering core (WidgetKit-safe).
+// Forecast surface rendering core (WidgetKit-safe).
 //
 
 import Foundation
@@ -31,10 +31,7 @@ struct RainForecastSurfaceRenderer {
         if configuration.backgroundOpacity > 0 {
             var bg = Path()
             bg.addRect(rect)
-            context.fill(
-                bg,
-                with: .color(configuration.backgroundColor.opacity(configuration.backgroundOpacity))
-            )
+            context.fill(bg, with: .color(configuration.backgroundColor.opacity(configuration.backgroundOpacity)))
         }
 
         let insetX = max(0, rect.width * configuration.edgeInsetFraction)
@@ -49,9 +46,9 @@ struct RainForecastSurfaceRenderer {
 
         let minVisibleHeight = max(0, maxHeight * configuration.minVisibleHeightFraction)
         let intensityCap = max(configuration.intensityCap, 0.000_001)
-
         let stepX = plotRect.width / CGFloat(n)
 
+        // Edge factors are rendering-only (diffusion/glow alpha). Geometry is not modified by these.
         let edgeFactors = RainSurfaceMath.edgeFactors(
             sampleCount: n,
             startEaseMinutes: configuration.startEaseMinutes,
@@ -65,27 +62,21 @@ struct RainForecastSurfaceRenderer {
         var certainty = [Double](repeating: 0, count: n)
 
         for i in 0..<n {
+            let rawI = max(0.0, intensities[i])
             let c = RainSurfaceMath.clamp01(certainties[i])
             certainty[i] = c
 
-            let rawI = max(0.0, intensities[i])
-            let edge = edgeFactors[i]
-
-            let isWet = (rawI > configuration.wetThreshold) && (edge > 0.000_01)
-            wetMask[i] = isWet
-
-            guard isWet else { continue }
+            guard rawI > configuration.wetThreshold else { continue }
+            wetMask[i] = true
 
             let frac = min(rawI / intensityCap, 1.0)
             let eased = pow(frac, configuration.intensityEasingPower)
-
-            intensityNorm[i] = eased * edge
+            intensityNorm[i] = eased
 
             var h = CGFloat(eased) * maxHeight
             if h > 0 {
                 h = max(h, minVisibleHeight)
             }
-            h *= CGFloat(edge)
             heights[i] = h
         }
 
@@ -105,7 +96,6 @@ struct RainForecastSurfaceRenderer {
                 stepX: stepX,
                 heights: heights
             )
-
             let top = RainSurfaceGeometry.makeTopEdgePath(
                 for: r,
                 plotRect: plotRect,
@@ -113,7 +103,6 @@ struct RainForecastSurfaceRenderer {
                 stepX: stepX,
                 heights: heights
             )
-
             segments.append(.init(range: r, surfacePath: surface, topEdgePath: top))
         }
 
