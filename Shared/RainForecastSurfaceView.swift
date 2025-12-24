@@ -40,7 +40,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var endFadeMinutes: Int = 10
     var endFadeFloor: Double = 0.0
 
-    var diffusionLayers: Int = 20
+    var diffusionLayers: Int = 28
     var diffusionFalloffPower: Double = 2.20
 
     var diffusionMinRadiusPoints: CGFloat = 1.2
@@ -49,9 +49,9 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var diffusionMaxRadiusFractionOfHeight: CGFloat = 0.34
     var diffusionRadiusUncertaintyPower: Double = 1.35
 
-    var diffusionStrengthMax: Double = 0.46
-    var diffusionStrengthMinUncertainTerm: Double = 0.18
-    var diffusionStrengthUncertaintyPower: Double = 1.95
+    var diffusionStrengthMax: Double = 0.50
+    var diffusionStrengthMinUncertainTerm: Double = 0.25
+    var diffusionStrengthUncertaintyPower: Double = 1.15
 
     var diffusionDrizzleThreshold: Double = 0.10
     var diffusionLowIntensityGateMin: Double = 0.55
