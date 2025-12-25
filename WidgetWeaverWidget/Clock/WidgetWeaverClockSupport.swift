@@ -36,11 +36,10 @@ enum WWClock {
 
 extension View {
     @ViewBuilder
-    func wwWidgetContainerBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
-        if #available(iOS 17.0, *) {
-            self.containerBackground(for: .widget) { background() }
-        } else {
-            self.background(background())
-        }
+    func wwWidgetContainerBackground<Background: View>(
+        @ViewBuilder _ background: () -> Background
+    ) -> some View {
+        // iOS 26-only: always adopt the widget container background API.
+        self.containerBackground(for: .widget) { background() }
     }
 }

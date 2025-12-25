@@ -33,7 +33,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
 
     // Hub cut-out
     let hubCutoutRadius: CGFloat
-
     let scale: CGFloat
 
     private let hourIndices: [Int] = [1, 2, 4, 5, 7, 8, 10, 11]
@@ -42,22 +41,21 @@ struct WidgetWeaverClockGlowsOverlayView: View {
         let px = WWClock.px(scale: scale)
 
         // Tight glows only (single blur layer per element).
-        let capGlowBlur = max(px, capLength * 0.22)
-        let pipGlowBlur = max(px, pipSide * 0.26)
+        let capGlowBlur = max(px, capLength * 0.18)
+        let pipGlowBlur = max(px, pipSide * 0.20)
 
-        let minuteGlowWidth = max(px, minuteWidth * 0.16)
-        let minuteGlowBlur = max(px, minuteWidth * 0.22)
+        let minuteGlowWidth = max(px, minuteWidth * 0.14)
+        let minuteGlowBlur = max(px, minuteWidth * 0.20)
 
-        let secondGlowBlur = max(px, secondWidth * 1.05)
-        let secondTipGlowBlur = max(px, secondWidth * 1.15)
+        let secondGlowBlur = max(px, secondWidth * 0.95)
+        let secondTipGlowBlur = max(px, secondWidth * 1.05)
 
         ZStack {
             // Cap glows (one layer each, symmetric).
             ForEach(hourIndices, id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
-
-                Rectangle()
-                    .fill(palette.accent.opacity(0.44))
+                RoundedRectangle(cornerRadius: batonWidth * 0.18, style: .continuous)
+                    .fill(palette.accent.opacity(0.32))
                     .frame(width: batonWidth, height: capLength)
                     .offset(y: -(hourCapCentreRadius + (batonLength * 0.5) - (capLength * 0.5)))
                     .rotationEffect(.degrees(degrees))
@@ -65,12 +63,11 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     .blendMode(.screen)
             }
 
-            // Pip glows (clipped by parent dial mask).
+            // Pip glows (tight, clipped by dial mask in the caller).
             ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
-
-                RoundedRectangle(cornerRadius: pipSide * 0.16, style: .continuous)
-                    .fill(palette.accent.opacity(0.40))
+                RoundedRectangle(cornerRadius: pipSide * 0.14, style: .continuous)
+                    .fill(palette.accent.opacity(0.26))
                     .frame(width: pipSide, height: pipSide)
                     .offset(y: -pipRadius)
                     .rotationEffect(.degrees(degrees))
@@ -85,7 +82,7 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                         gradient: Gradient(stops: [
                             .init(color: palette.accent.opacity(0.00), location: 0.00),
                             .init(color: palette.accent.opacity(0.08), location: 0.55),
-                            .init(color: palette.accent.opacity(0.42), location: 1.00)
+                            .init(color: palette.accent.opacity(0.34), location: 1.00)
                         ]),
                         startPoint: .bottom,
                         endPoint: .top
@@ -101,7 +98,7 @@ struct WidgetWeaverClockGlowsOverlayView: View {
 
             // Second-hand glow (minimal).
             Rectangle()
-                .fill(palette.accent.opacity(0.18))
+                .fill(palette.accent.opacity(0.12))
                 .frame(width: secondWidth, height: secondLength)
                 .offset(y: -secondLength / 2.0)
                 .rotationEffect(secondAngle)
@@ -110,7 +107,7 @@ struct WidgetWeaverClockGlowsOverlayView: View {
 
             // Terminal square glow only.
             Rectangle()
-                .fill(palette.accent.opacity(0.34))
+                .fill(palette.accent.opacity(0.18))
                 .frame(width: secondTipSide, height: secondTipSide)
                 .offset(y: -secondLength)
                 .rotationEffect(secondAngle)

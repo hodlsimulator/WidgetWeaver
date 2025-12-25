@@ -10,28 +10,27 @@ import SwiftUI
 struct WidgetWeaverClockHourIndicesView: View {
     let palette: WidgetWeaverClockPalette
     let dialDiameter: CGFloat
-
     let centreRadius: CGFloat
     let length: CGFloat
     let width: CGFloat
-
     let capLength: CGFloat
     let capColour: Color
-
     let scale: CGFloat
 
     private let hourIndices: [Int] = [1, 2, 4, 5, 7, 8, 10, 11]
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-        let shadowRadius = max(px, width * 0.045)
+
+        // Very small cast shadow (tight, no fuzz).
+        let shadowRadius = max(px, width * 0.040)
         let shadowOffset = max(px, width * 0.050)
 
-        // Global (screen-space) metal lighting field (keeps one light direction).
+        // Screen-space metal lighting fields (single global light direction).
         let metalField = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: palette.batonBright, location: 0.00),
-                .init(color: palette.batonMid, location: 0.48),
+                .init(color: palette.batonMid, location: 0.50),
                 .init(color: palette.batonDark, location: 1.00)
             ]),
             startPoint: .topLeading,
@@ -42,7 +41,7 @@ struct WidgetWeaverClockHourIndicesView: View {
         let edgeField = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: palette.batonEdgeLight, location: 0.00),
-                .init(color: Color.clear, location: 0.56),
+                .init(color: Color.clear, location: 0.54),
                 .init(color: palette.batonEdgeDark, location: 1.00)
             ]),
             startPoint: .topLeading,
@@ -66,23 +65,23 @@ struct WidgetWeaverClockHourIndicesView: View {
                     .offset(y: -centreRadius)
                     .rotationEffect(.degrees(degrees))
 
-                // Baton body (screen-space metal field masked by the rotated baton shape).
+                // Baton body
                 metalField
                     .mask(batonMask)
                     .shadow(color: palette.batonShadow, radius: shadowRadius, x: shadowOffset, y: shadowOffset)
 
-                // Bevel edges (screen-space edge field masked by a stroke of the baton).
+                // Bevel edges (highlight UL, shade LR)
                 edgeField
                     .mask(batonStrokeMask)
 
-                // Subtle centre chamfer strip (local, symmetric; no outside blur).
+                // Centre chamfer strip (implies thickness, stays inside shape)
                 RoundedRectangle(cornerRadius: corner * 0.85, style: .continuous)
                     .fill(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: Color.black.opacity(0.10), location: 0.0),
-                                .init(color: Color.white.opacity(0.22), location: 0.52),
-                                .init(color: Color.black.opacity(0.12), location: 1.0)
+                                .init(color: Color.black.opacity(0.12), location: 0.0),
+                                .init(color: Color.white.opacity(0.40), location: 0.52),
+                                .init(color: Color.black.opacity(0.14), location: 1.0)
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing
@@ -93,8 +92,8 @@ struct WidgetWeaverClockHourIndicesView: View {
                     .rotationEffect(.degrees(degrees))
                     .blendMode(.overlay)
 
-                // Blue end-cap (physically attached at distal end, consistent length).
-                Rectangle()
+                // Blue end-cap (physical cap at outer end, consistent length)
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(capColour)
                     .frame(width: width, height: capLength)
                     .offset(y: -(centreRadius + (length * 0.5) - (capLength * 0.5)))
@@ -112,7 +111,7 @@ struct WidgetWeaverClockCardinalPipsView: View {
     let radius: CGFloat
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: side * 0.16, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: side * 0.14, style: .continuous)
 
         ZStack {
             ForEach([3, 6, 9], id: \.self) { i in
@@ -162,6 +161,7 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+        let embossOffset = max(px, fontSize * 0.010)
 
         let face = LinearGradient(
             gradient: Gradient(stops: [
@@ -173,30 +173,28 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
             endPoint: .bottomTrailing
         )
 
-        let highlightOffset = max(px, fontSize * 0.010)
-        let shadeOffset = max(px, fontSize * 0.010)
-
         let glyph = Text(text)
             .font(.system(size: fontSize, weight: .semibold, design: .rounded))
 
         ZStack {
             glyph.foregroundStyle(face)
 
-            // Tight emboss highlight (upper-left), clipped inside glyph.
+            // Tight emboss highlight (upper-left), clipped to glyph.
             glyph
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -highlightOffset, y: -highlightOffset)
+                .offset(x: -embossOffset, y: -embossOffset)
                 .blendMode(.screen)
                 .mask(glyph)
 
-            // Tight emboss shade (lower-right), clipped inside glyph.
+            // Tight emboss shade (lower-right), clipped to glyph.
             glyph
                 .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: shadeOffset, y: shadeOffset)
+                .offset(x: embossOffset, y: embossOffset)
                 .blendMode(.multiply)
                 .mask(glyph)
         }
-        .shadow(color: palette.numeralShadow, radius: max(px, fontSize * 0.010), x: px, y: px)
+        // Reduced shadow: no halo.
+        .shadow(color: palette.numeralShadow, radius: max(px, fontSize * 0.008), x: px, y: px)
         .compositingGroup()
     }
 }

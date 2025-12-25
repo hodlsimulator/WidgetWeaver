@@ -17,20 +17,13 @@ struct WidgetWeaverClockMinuteDotsView: View {
     var body: some View {
         ZStack {
             ForEach(0..<count, id: \.self) { i in
-                let a = (Double(i) / Double(count)) * (Double.pi * 2.0)
-                let x = CGFloat(sin(a)) * radius
-                let y = -CGFloat(cos(a)) * radius
-
                 Circle()
                     .fill(dotColour)
                     .frame(width: dotDiameter, height: dotDiameter)
-                    .position(
-                        x: WWClock.pixel((radius) + x, scale: scale),
-                        y: WWClock.pixel((radius) + y, scale: scale)
-                    )
+                    .offset(y: -radius)
+                    .rotationEffect(.degrees((Double(i) / Double(count)) * 360.0))
             }
         }
-        .frame(width: radius * 2.0, height: radius * 2.0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

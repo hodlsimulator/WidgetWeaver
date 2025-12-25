@@ -13,12 +13,13 @@ struct WidgetWeaverClockPalette {
     let backgroundTop: Color
     let backgroundBottom: Color
 
-    // Bezel
+    // Bezel metal
     let bezelBright: Color
     let bezelMid: Color
     let bezelDark: Color
     let bezelOcclusion: Color
 
+    // Dark separator / occlusion ring
     let separatorRing: Color
 
     // Dial
@@ -65,20 +66,13 @@ struct WidgetWeaverClockPalette {
 
         let accent: Color = {
             switch scheme {
-            case .classic:
-                return WWClock.colour(0x43A7D8)
-            case .ocean:
-                return WWClock.colour(0x4FA9FF)
-            case .mint:
-                return WWClock.colour(0x4BE3B4)
-            case .orchid:
-                return WWClock.colour(0xB08CFF)
-            case .sunset:
-                return WWClock.colour(0xFF9F4E)
-            case .ember:
-                return WWClock.colour(0xFF4D4A)
-            case .graphite:
-                return WWClock.colour(0x9FB2CC)
+            case .classic: return WWClock.colour(0x3FC0F0)
+            case .ocean: return WWClock.colour(0x4FA9FF)
+            case .mint: return WWClock.colour(0x4BE3B4)
+            case .orchid: return WWClock.colour(0xB08CFF)
+            case .sunset: return WWClock.colour(0xFF9F4E)
+            case .ember: return WWClock.colour(0xFF4D4A)
+            case .graphite: return WWClock.colour(0x93A7C2)
             }
         }()
 
@@ -86,54 +80,55 @@ struct WidgetWeaverClockPalette {
         let backgroundTop: Color = isDark ? WWClock.colour(0x141A22) : WWClock.colour(0xECF1F8)
         let backgroundBottom: Color = isDark ? WWClock.colour(0x0B0F15) : WWClock.colour(0xC7D2E5)
 
-        // Bezel: increase value range so it reads as metal.
-        let bezelBright: Color = WWClock.colour(0xFAFCFF, alpha: 0.95)
-        let bezelMid: Color = WWClock.colour(0xB9C6D8, alpha: 0.92)
-        let bezelDark: Color = WWClock.colour(0x4E5B6C, alpha: 0.95)
-        let bezelOcclusion: Color = WWClock.colour(0x000000, alpha: isDark ? 0.78 : 0.55)
+        // Bezel: stronger metal range; keep highlight controlled.
+        let bezelBright: Color = WWClock.colour(0xF6FAFF, alpha: 0.96)
+        let bezelMid: Color = WWClock.colour(0xB9C7DB, alpha: 0.92)
+        let bezelDark: Color = WWClock.colour(0x2C3442, alpha: 0.96)
+        let bezelOcclusion: Color = WWClock.colour(0x000000, alpha: isDark ? 0.86 : 0.66)
 
-        // Separator ring: slightly stronger than before.
+        // Ring D / separator: near-black but not pure black.
         let separatorRing: Color = WWClock.colour(0x0B0F15, alpha: 1.0)
 
-        // Dial: near-black, controlled highlight + vignette.
-        let dialCenter: Color = WWClock.colour(0x0C121A, alpha: 1.0)
-        let dialMid: Color = WWClock.colour(0x05070B, alpha: 1.0)
-        let dialEdge: Color = WWClock.colour(0x010203, alpha: 1.0)
-        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.62)
-        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.055)
+        // Dial: keep it near-black, no lifted mid-grey.
+        let dialCenter: Color = WWClock.colour(0x05070B, alpha: 1.0)
+        let dialMid: Color = WWClock.colour(0x030509, alpha: 1.0)
+        let dialEdge: Color = WWClock.colour(0x010102, alpha: 1.0)
 
-        // Minute dots: uniform, slightly higher opacity.
-        let minuteDot: Color = WWClock.colour(0xC4D0E0, alpha: 0.56)
+        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.68)
+        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.045)
 
-        // Batons: stronger bevel range.
-        let batonBright: Color = WWClock.colour(0xF2F7FF, alpha: 0.92)
-        let batonMid: Color = WWClock.colour(0xC1CEE0, alpha: 0.88)
-        let batonDark: Color = WWClock.colour(0x55667D, alpha: 0.96)
-        let batonEdgeLight: Color = WWClock.colour(0xFFFFFF, alpha: 0.46)
-        let batonEdgeDark: Color = WWClock.colour(0x000000, alpha: 0.46)
-        let batonShadow: Color = WWClock.colour(0x000000, alpha: 0.22)
+        // Minute dots: materially more visible, uniform.
+        let minuteDot: Color = WWClock.colour(0xC7D3E6, alpha: 0.72)
 
-        // Numerals: brighten substantially (silver-grey), crisp emboss.
-        let numeralLight: Color = WWClock.colour(0xF0F6FF, alpha: 0.86)
-        let numeralMid: Color = WWClock.colour(0xC1CEE0, alpha: 0.84)
-        let numeralDark: Color = WWClock.colour(0x7B8EA8, alpha: 0.86)
-        let numeralInnerHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.26)
-        let numeralInnerShade: Color = WWClock.colour(0x000000, alpha: 0.36)
-        let numeralShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.28 : 0.18)
+        // Batons: crisp bevel range.
+        let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.96)
+        let batonMid: Color = WWClock.colour(0xC3D0E2, alpha: 0.92)
+        let batonDark: Color = WWClock.colour(0x5E6E89, alpha: 0.96)
+        let batonEdgeLight: Color = WWClock.colour(0xFFFFFF, alpha: 0.52)
+        let batonEdgeDark: Color = WWClock.colour(0x000000, alpha: 0.55)
+        let batonShadow: Color = WWClock.colour(0x000000, alpha: 0.18)
 
-        // Hands: separate clearly from dial.
-        let handLight: Color = WWClock.colour(0xEEF5FF, alpha: 0.92)
-        let handMid: Color = WWClock.colour(0xC0CEE0, alpha: 0.88)
-        let handDark: Color = WWClock.colour(0x46566D, alpha: 0.96)
-        let handEdge: Color = WWClock.colour(0x000000, alpha: 0.20)
-        let handShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.55 : 0.28)
+        // Numerals: brighter silver-grey, minimal outer shadow.
+        let numeralLight: Color = WWClock.colour(0xEEF5FF, alpha: 0.92)
+        let numeralMid: Color = WWClock.colour(0xC2D0E4, alpha: 0.90)
+        let numeralDark: Color = WWClock.colour(0x7E8EA9, alpha: 0.92)
+        let numeralInnerHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.28)
+        let numeralInnerShade: Color = WWClock.colour(0x000000, alpha: 0.32)
+        let numeralShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.18 : 0.12)
 
-        // Hub: simple layered metal.
-        let hubBase: Color = WWClock.colour(0x121A24, alpha: 1.0)
-        let hubCapLight: Color = WWClock.colour(0xFAFCFF, alpha: 0.92)
-        let hubCapMid: Color = WWClock.colour(0xC0CEE0, alpha: 0.88)
-        let hubCapDark: Color = WWClock.colour(0x4C5A6C, alpha: 0.95)
-        let hubShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.60 : 0.30)
+        // Hands: clear metal separation + consistent lighting.
+        let handLight: Color = WWClock.colour(0xF1F7FF, alpha: 0.94)
+        let handMid: Color = WWClock.colour(0xBCCADF, alpha: 0.92)
+        let handDark: Color = WWClock.colour(0x55657F, alpha: 0.95)
+        let handEdge: Color = WWClock.colour(0x000000, alpha: 0.22)
+        let handShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.62 : 0.30)
+
+        // Hub: two discs with tight spec highlight.
+        let hubBase: Color = WWClock.colour(0x0C121B, alpha: 1.0)
+        let hubCapLight: Color = WWClock.colour(0xF7FBFF, alpha: 0.96)
+        let hubCapMid: Color = WWClock.colour(0xC2D0E2, alpha: 0.92)
+        let hubCapDark: Color = WWClock.colour(0x5B6A82, alpha: 0.96)
+        let hubShadow: Color = WWClock.colour(0x000000, alpha: isDark ? 0.65 : 0.32)
 
         return WidgetWeaverClockPalette(
             accent: accent,

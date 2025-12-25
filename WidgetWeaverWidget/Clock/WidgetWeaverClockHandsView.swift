@@ -25,11 +25,11 @@ struct WidgetWeaverClockHandShadowsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let hourShadowBlur = max(px, hourWidth * 0.05)
-        let hourShadowOffset = max(px, hourWidth * 0.045)
+        let hourShadowBlur = max(px, hourWidth * 0.055)
+        let hourShadowOffset = max(px, hourWidth * 0.055)
 
-        let minuteShadowBlur = max(px, minuteWidth * 0.05)
-        let minuteShadowOffset = max(px, minuteWidth * 0.045)
+        let minuteShadowBlur = max(px, minuteWidth * 0.050)
+        let minuteShadowOffset = max(px, minuteWidth * 0.050)
 
         ZStack {
             WidgetWeaverClockHourWedgeShape()
@@ -41,7 +41,7 @@ struct WidgetWeaverClockHandShadowsView: View {
                 .blur(radius: hourShadowBlur)
 
             WidgetWeaverClockMinuteNeedleShape()
-                .fill(palette.handShadow.opacity(0.42))
+                .fill(palette.handShadow.opacity(0.40))
                 .frame(width: minuteWidth, height: minuteLength)
                 .rotationEffect(minuteAngle, anchor: .bottom)
                 .offset(y: -minuteLength / 2.0)
@@ -76,11 +76,11 @@ struct WidgetWeaverClockHandsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Screen-space metal field (consistent light direction)
+        // Screen-space metal field (consistent light direction).
         let metalField = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: palette.handLight, location: 0.00),
-                .init(color: palette.handMid, location: 0.50),
+                .init(color: palette.handMid, location: 0.52),
                 .init(color: palette.handDark, location: 1.00)
             ]),
             startPoint: .topLeading,
@@ -89,7 +89,7 @@ struct WidgetWeaverClockHandsView: View {
         .frame(width: dialDiameter, height: dialDiameter)
 
         ZStack {
-            // Hour hand (heavier wedge): high contrast bevel via screen-space metal.
+            // MARK: Hour hand (heavier wedge, stronger bevel separation)
             metalField
                 .mask(
                     WidgetWeaverClockHourWedgeShape()
@@ -98,11 +98,11 @@ struct WidgetWeaverClockHandsView: View {
                         .offset(y: -hourLength / 2.0)
                 )
                 .overlay(
-                    // Bright ridge highlight (tight, no fuzz).
+                    // Bright ridge highlight (tight).
                     Rectangle()
-                        .fill(Color.white.opacity(0.22))
-                        .frame(width: max(px, hourWidth * 0.14), height: hourLength)
-                        .offset(x: -hourWidth * 0.10, y: -hourLength / 2.0)
+                        .fill(Color.white.opacity(0.30))
+                        .frame(width: max(px, hourWidth * 0.16), height: hourLength)
+                        .offset(x: -hourWidth * 0.12, y: -hourLength / 2.0)
                         .rotationEffect(hourAngle)
                         .blendMode(.screen)
                         .mask(
@@ -113,14 +113,29 @@ struct WidgetWeaverClockHandsView: View {
                         )
                 )
                 .overlay(
+                    // Dark underside plane (tight).
+                    Rectangle()
+                        .fill(Color.black.opacity(0.22))
+                        .frame(width: max(px, hourWidth * 0.22), height: hourLength)
+                        .offset(x: hourWidth * 0.16, y: -hourLength / 2.0)
+                        .rotationEffect(hourAngle)
+                        .blendMode(.multiply)
+                        .mask(
+                            WidgetWeaverClockHourWedgeShape()
+                                .frame(width: hourWidth, height: hourLength)
+                                .rotationEffect(hourAngle, anchor: .bottom)
+                                .offset(y: -hourLength / 2.0)
+                        )
+                )
+                .overlay(
                     WidgetWeaverClockHourWedgeShape()
-                        .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.040))
+                        .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
                         .frame(width: hourWidth, height: hourLength)
                         .rotationEffect(hourAngle, anchor: .bottom)
                         .offset(y: -hourLength / 2.0)
                 )
 
-            // Minute hand: slightly thicker + stronger ridge highlight + crisp blue edge line.
+            // MARK: Minute hand (defined ridge + opposing dark edge + blue edge emission)
             metalField
                 .mask(
                     WidgetWeaverClockMinuteNeedleShape()
@@ -129,9 +144,9 @@ struct WidgetWeaverClockHandsView: View {
                         .offset(y: -minuteLength / 2.0)
                 )
                 .overlay(
-                    // Ridge highlight (upper-left lit)
+                    // Ridge highlight (lit side).
                     Rectangle()
-                        .fill(Color.white.opacity(0.26))
+                        .fill(Color.white.opacity(0.34))
                         .frame(width: max(px, minuteWidth * 0.14), height: minuteLength)
                         .offset(x: -minuteWidth * 0.18, y: -minuteLength / 2.0)
                         .rotationEffect(minuteAngle)
@@ -144,10 +159,10 @@ struct WidgetWeaverClockHandsView: View {
                         )
                 )
                 .overlay(
-                    // Dark opposing edge (underside)
+                    // Dark opposing edge.
                     Rectangle()
-                        .fill(Color.black.opacity(0.20))
-                        .frame(width: max(px, minuteWidth * 0.10), height: minuteLength)
+                        .fill(Color.black.opacity(0.22))
+                        .frame(width: max(px, minuteWidth * 0.12), height: minuteLength)
                         .offset(x: minuteWidth * 0.22, y: -minuteLength / 2.0)
                         .rotationEffect(minuteAngle)
                         .blendMode(.multiply)
@@ -159,14 +174,14 @@ struct WidgetWeaverClockHandsView: View {
                         )
                 )
                 .overlay(
-                    // Crisp blue edge line (no blur). Glow is handled in the separate overlay layer.
+                    // Crisp blue edge emission (inside the hand; glow is in overlay layer).
                     Rectangle()
                         .fill(
                             LinearGradient(
                                 gradient: Gradient(stops: [
                                     .init(color: palette.accent.opacity(0.00), location: 0.00),
-                                    .init(color: palette.accent.opacity(0.16), location: 0.55),
-                                    .init(color: palette.accent.opacity(0.86), location: 1.00)
+                                    .init(color: palette.accent.opacity(0.10), location: 0.45),
+                                    .init(color: palette.accent.opacity(0.80), location: 1.00)
                                 ]),
                                 startPoint: .bottom,
                                 endPoint: .top
@@ -184,6 +199,20 @@ struct WidgetWeaverClockHandsView: View {
                         )
                 )
                 .overlay(
+                    // Crisp tip highlight (no blob).
+                    Ellipse()
+                        .fill(Color.white.opacity(0.30))
+                        .frame(width: minuteWidth * 0.70, height: minuteWidth * 0.55)
+                        .offset(x: -minuteWidth * 0.06, y: -minuteLength * 0.48)
+                        .mask(
+                            WidgetWeaverClockMinuteNeedleShape()
+                                .frame(width: minuteWidth, height: minuteLength)
+                                .rotationEffect(minuteAngle, anchor: .bottom)
+                                .offset(y: -minuteLength / 2.0)
+                        )
+                        .blendMode(.screen)
+                )
+                .overlay(
                     WidgetWeaverClockMinuteNeedleShape()
                         .stroke(palette.handEdge, lineWidth: max(px, minuteWidth * 0.075))
                         .frame(width: minuteWidth, height: minuteLength)
@@ -191,7 +220,7 @@ struct WidgetWeaverClockHandsView: View {
                         .offset(y: -minuteLength / 2.0)
                 )
 
-            // Second hand: present but not dominant + terminal square.
+            // MARK: Second hand (thin, straight, reduced dominance + terminal square)
             WidgetWeaverClockSecondHandView(
                 colour: palette.accent,
                 width: secondWidth,
@@ -214,6 +243,7 @@ struct WidgetWeaverClockCentreHubView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+
         let baseD = baseRadius * 2.0
         let capD = capRadius * 2.0
 
@@ -242,10 +272,10 @@ struct WidgetWeaverClockCentreHubView: View {
                 // Tight specular highlight biased upper-left.
                 .overlay(
                     Circle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: capD * 0.50, height: capD * 0.50)
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: capD * 0.44, height: capD * 0.44)
                         .offset(x: -capRadius * 0.18, y: -capRadius * 0.22)
-                        .blur(radius: max(px, capRadius * 0.10))
+                        .blur(radius: max(px, capRadius * 0.09))
                         .blendMode(.screen)
                 )
         }
@@ -259,10 +289,11 @@ struct WidgetWeaverClockCentreHubView: View {
 struct WidgetWeaverClockHourWedgeShape: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width
-        let baseInset = w * 0.04
 
+        let baseInset = w * 0.035
         let baseLeft = CGPoint(x: rect.minX + baseInset, y: rect.maxY)
         let baseRight = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
+
         let tip = CGPoint(x: rect.midX, y: rect.minY)
 
         var p = Path()
@@ -277,8 +308,8 @@ struct WidgetWeaverClockHourWedgeShape: Shape {
 struct WidgetWeaverClockMinuteNeedleShape: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width
-        let tipHeight = max(1, w * 0.95)
 
+        let tipHeight = max(1, w * 0.95)
         let shaftTopY = rect.minY + tipHeight
         let shaftInset = w * 0.10
 
@@ -314,18 +345,18 @@ struct WidgetWeaverClockSecondHandView: View {
 
         ZStack {
             Rectangle()
-                .fill(colour.opacity(0.72))
+                .fill(colour.opacity(0.62))
                 .frame(width: width, height: length)
                 .offset(y: -length / 2.0)
 
             Rectangle()
-                .fill(colour.opacity(0.92))
+                .fill(colour.opacity(0.82))
                 .frame(width: tipSide, height: tipSide)
                 .offset(y: -length)
         }
         .overlay(
             Rectangle()
-                .strokeBorder(Color.black.opacity(0.10), lineWidth: max(px, width * 0.12))
+                .strokeBorder(Color.black.opacity(0.10), lineWidth: max(px, width * 0.14))
                 .frame(width: tipSide, height: tipSide)
                 .offset(y: -length)
         )

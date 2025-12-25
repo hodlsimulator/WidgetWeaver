@@ -79,8 +79,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
-
         let entry = Entry(date: now, colourScheme: scheme)
+
         let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.widgetKitRefreshAfter)
         return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
@@ -110,6 +110,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
+
     @Environment(\.colorScheme) private var mode
 
     var body: some View {
