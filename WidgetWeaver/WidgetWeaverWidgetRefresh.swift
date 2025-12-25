@@ -21,7 +21,7 @@ public enum WidgetWeaverWidgetRefresh {
 
         defaults.set(now, forKey: lastKickKey)
 
-        WidgetCenter.shared.reloadAllTimelines()
+        reloadAllExceptClock()
 
         if #available(iOS 17.0, *) {
             WidgetCenter.shared.invalidateConfigurationRecommendations()
@@ -35,10 +35,37 @@ public enum WidgetWeaverWidgetRefresh {
 
         defaults.set(now, forKey: lastKickKey)
 
+        reloadAllExceptClock()
+
+        if #available(iOS 17.0, *) {
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+        }
+    }
+
+    @MainActor
+    public static func forceKickIncludingClock() {
+        let defaults = AppGroup.userDefaults
+        let now = Date()
+
+        defaults.set(now, forKey: lastKickKey)
+
         WidgetCenter.shared.reloadAllTimelines()
 
         if #available(iOS 17.0, *) {
             WidgetCenter.shared.invalidateConfigurationRecommendations()
         }
+    }
+
+    @MainActor
+    private static func reloadAllExceptClock() {
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenNextUp)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenSteps)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenSteps)
+
+        // The clock widget is view-driven now (TimelineView), so frequent reloads are unnecessary
+        // and can keep the system in a throttled state while iterating.
+        // WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
     }
 }
