@@ -11,7 +11,7 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    static let widgetKitRefreshAfter: TimeInterval = 60 * 60 * 6 // 6 hours
+    static let widgetKitRefreshAfter: TimeInterval = 60 * 60 * 6
 }
 
 // MARK: - Configuration
@@ -99,8 +99,8 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
         ) { entry in
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
-        .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
+        .configurationDisplayName("Clock")
+        .description("A small analogue clock with a sweeping second hand.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
@@ -116,12 +116,11 @@ struct WidgetWeaverHomeScreenClockView: View {
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        ZStack {
-            WidgetWeaverClockIconView(palette: palette)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
-        }
+        WidgetWeaverClockWidgetLiveView(palette: palette)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .wwWidgetContainerBackground {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
+            .id(entry.date)
     }
 }

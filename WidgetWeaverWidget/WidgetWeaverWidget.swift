@@ -53,7 +53,6 @@ public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable, Senda
         DisplayRepresentation(title: "\(name)")
     }
 
-    // Computed (not stored) to avoid nonisolated global shared mutable state.
     public static var defaultQuery: Query { Query() }
 
     public struct Query: EntityQuery, Sendable {
@@ -144,7 +143,10 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         // produces a new entry date and forces a redraw on the Home Screen.
         let base: Date = now
 
-        let horizon: TimeInterval = 60 * 60
+        // Buffer enough future entries so the widget doesn't "run out" if WidgetKit delays reloads.
+        let maxEntries: Int = 240
+        let desiredHorizon: TimeInterval = 60 * 60 * 6
+        let horizon: TimeInterval = min(desiredHorizon, refreshSeconds * Double(maxEntries - 1))
         let count = max(2, Int(horizon / refreshSeconds) + 1)
 
         var entries: [Entry] = []
@@ -181,9 +183,6 @@ struct WidgetWeaverWidget: Widget {
             provider: WidgetWeaverProvider()
         ) { entry in
             WidgetWeaverRenderClock.withNow(entry.date) {
-                // Load the latest saved spec at render-time so Home Screen widgets pick up
-                // edits immediately after saving (even if the system is still displaying a
-                // previously generated timeline entry).
                 let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
                 WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
             }
@@ -225,7 +224,6 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        // Fire-and-forget refresh (does not capture `completion`)
         if !context.isPreview {
             let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
             if hasLocation {
@@ -357,7 +355,6 @@ struct WidgetWeaverLockScreenNextUpProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        // Fire-and-forget refresh (does not capture `completion`)
         if !context.isPreview {
             Task.detached(priority: .utility) {
                 _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
