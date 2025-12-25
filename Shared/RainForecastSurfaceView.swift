@@ -121,7 +121,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Vertical clamp region around the crest (as a fraction of plot rect height).
     var bloomBandHeightFractionOfPlotHeight: CGFloat = 0.70
 
-    // MARK: - Surface shell fuzz (boundary-attached; texture NEVER inside the fill)
+    // MARK: - Surface shell fuzz (boundary-attached; texture lives on/under the ridge)
 
     var shellEnabled: Bool = true
     var shellColor: Color = Color(red: 0.60, green: 0.86, blue: 1.0)
@@ -132,7 +132,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Inside shell thickness (1–3 px); used only to soften the edge, not for texture.
     var shellInsideThicknessPoints: CGFloat = 2.0
 
-    /// Outside shell “dilation” a in points. Large start 10, Medium start 7.
+    /// Below-surface shell band thickness in points.
+    ///
+    /// Historical name: shellAboveThicknessPoints (kept for API stability).
+    /// (Large start 10, Medium start 7)
     var shellAboveThicknessPoints: CGFloat = 10.0
 
     /// Noise influence amount. Large start 0.28, Medium start 0.18.
