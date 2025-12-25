@@ -162,14 +162,13 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Keep numerals “boring” for WidgetKit reliability:
-        // no masks, no blend modes, no multi-pass embossing.
+        // WidgetKit reliability: avoid glyph masks + blend modes for numerals.
         Text(text)
             .font(.system(size: fontSize, weight: .semibold, design: .rounded))
             .foregroundStyle(palette.numeralLight)
             .shadow(
                 color: palette.numeralShadow,
-                radius: max(px, fontSize * 0.04),
+                radius: max(px, fontSize * 0.040),
                 x: px,
                 y: px
             )
