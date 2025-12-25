@@ -11,7 +11,8 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    static let widgetKitRefreshAfter: TimeInterval = 60 * 60 * 6
+    static let tickSeconds: TimeInterval = 2.0
+    static let maxEntries: Int = 900
 }
 
 // MARK: - Configuration
@@ -78,11 +79,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
-        let entry = Entry(date: now, colourScheme: scheme)
+        let base = Date()
 
-        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.widgetKitRefreshAfter)
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+        var entries: [Entry] = []
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
+
+        for i in 0..<WWClockTimelineTuning.maxEntries {
+            let d = base.addingTimeInterval(TimeInterval(i) * WWClockTimelineTuning.tickSeconds)
+            entries.append(Entry(date: d, colourScheme: scheme))
+        }
+
+        return Timeline(entries: entries, policy: .atEnd)
     }
 }
 
@@ -99,7 +106,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
         ) { entry in
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
-        .configurationDisplayName("Clock")
+        .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock with a sweeping second hand.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
@@ -116,11 +123,30 @@ struct WidgetWeaverHomeScreenClockView: View {
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        WidgetWeaverClockWidgetLiveView(palette: palette)
+        WidgetWeaverRenderClock.withNow(entry.date) {
+            let date = WidgetWeaverRenderClock.now
+            let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
+            let localT = date.timeIntervalSinceReferenceDate + tz
+
+            let secondDegrees = localT * (360.0 / 60.0)
+            let minuteDegrees = localT * (360.0 / 3600.0)
+            let hourDegrees = localT * (360.0 / 43200.0)
+
+            ZStack {
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: .degrees(hourDegrees),
+                    minuteAngle: .degrees(minuteDegrees),
+                    secondAngle: .degrees(secondDegrees)
+                )
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: secondDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: minuteDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: hourDegrees)
             .wwWidgetContainerBackground {
                 WidgetWeaverClockBackgroundView(palette: palette)
             }
-            .id(entry.date)
+        }
     }
 }

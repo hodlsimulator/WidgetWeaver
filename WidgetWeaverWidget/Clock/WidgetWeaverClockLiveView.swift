@@ -1,32 +1,22 @@
 //
-//  WidgetWeaverClockIconView.swift
-//  WidgetWeaver
+//  WidgetWeaverClockLiveView.swift
+//  WidgetWeaverWidget
 //
 //  Created by . . on 12/25/25.
 //
 
 import SwiftUI
 
-struct WidgetWeaverClockIconView: View {
+struct WidgetWeaverClockLiveView: View {
     let palette: WidgetWeaverClockPalette
-
-    let hourAngle: Angle
-    let minuteAngle: Angle
-    let secondAngle: Angle
+    let startDate: Date
 
     @Environment(\.displayScale) private var displayScale
 
-    init(
-        palette: WidgetWeaverClockPalette,
-        hourAngle: Angle = .degrees(310.0),
-        minuteAngle: Angle = .degrees(120.0),
-        secondAngle: Angle = .degrees(180.0)
-    ) {
-        self.palette = palette
-        self.hourAngle = hourAngle
-        self.minuteAngle = minuteAngle
-        self.secondAngle = secondAngle
-    }
+    @State private var started = false
+    @State private var secPhase: Double = 0
+    @State private var minPhase: Double = 0
+    @State private var hourPhase: Double = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -134,6 +124,12 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
 
+            let baseAngles = WidgetWeaverClockBaseAngles(date: startDate)
+
+            let hourAngle = Angle.degrees(baseAngles.hour + hourPhase * 360.0)
+            let minuteAngle = Angle.degrees(baseAngles.minute + minPhase * 360.0)
+            let secondAngle = Angle.degrees(baseAngles.second + secPhase * 360.0)
+
             ZStack {
                 ZStack {
                     WidgetWeaverClockDialFaceView(
@@ -173,7 +169,12 @@ struct WidgetWeaverClockIconView: View {
                         fontSize: numeralsSize,
                         scale: displayScale
                     )
+                }
+                .frame(width: dialDiameter, height: dialDiameter)
+                .clipShape(Circle())
+                .compositingGroup()
 
+                ZStack {
                     WidgetWeaverClockHandShadowsView(
                         palette: palette,
                         dialDiameter: dialDiameter,
@@ -208,28 +209,9 @@ struct WidgetWeaverClockIconView: View {
                         capRadius: hubCapRadius,
                         scale: displayScale
                     )
-
-                    WidgetWeaverClockGlowsOverlayView(
-                        palette: palette,
-                        hourCapCentreRadius: batonCentreRadius,
-                        batonLength: batonLength,
-                        batonWidth: batonWidth,
-                        capLength: capLength,
-                        pipSide: pipSide,
-                        pipRadius: pipRadius,
-                        minuteAngle: minuteAngle,
-                        minuteLength: minuteLength,
-                        minuteWidth: minuteWidth,
-                        secondAngle: secondAngle,
-                        secondLength: secondLength,
-                        secondWidth: secondWidth,
-                        secondTipSide: secondTipSide,
-                        hubCutoutRadius: hubBaseRadius + hubCapRadius * 0.12,
-                        scale: displayScale
-                    )
                 }
                 .frame(width: dialDiameter, height: dialDiameter)
-                .clipShape(Circle())
+                .allowsHitTesting(false)
 
                 WidgetWeaverClockBezelView(
                     palette: palette,
@@ -242,6 +224,47 @@ struct WidgetWeaverClockIconView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
+            .onAppear {
+                guard !started else { return }
+                started = true
+
+                secPhase = 0
+                minPhase = 0
+                hourPhase = 0
+
+                withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
+                    secPhase = 1
+                }
+                withAnimation(.linear(duration: 3600.0).repeatForever(autoreverses: false)) {
+                    minPhase = 1
+                }
+                withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
+                    hourPhase = 1
+                }
+            }
         }
+    }
+}
+
+private struct WidgetWeaverClockBaseAngles {
+    let hour: Double
+    let minute: Double
+    let second: Double
+
+    init(date: Date) {
+        let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
+        let local = date.timeIntervalSince1970 + tz
+
+        let sec = local.truncatingRemainder(dividingBy: 60.0)
+        let minTotal = (local / 60.0).truncatingRemainder(dividingBy: 60.0)
+        let hourTotal = (local / 3600.0).truncatingRemainder(dividingBy: 12.0)
+
+        let secondDeg = sec * 6.0
+        let minuteDeg = (minTotal + sec / 60.0) * 6.0
+        let hourDeg = (hourTotal + minTotal / 60.0 + sec / 3600.0) * 30.0
+
+        self.second = secondDeg
+        self.minute = minuteDeg
+        self.hour = hourDeg
     }
 }
