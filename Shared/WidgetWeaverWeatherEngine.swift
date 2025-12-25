@@ -75,33 +75,36 @@ public actor WidgetWeaverWeatherEngine {
 
         #if canImport(WeatherKit)
         do {
-            async let wxTask = WeatherService.shared.weather(
-                for: location.clLocation,
-                including: .current, .minute, .hourly, .daily
-            )
-            async let attributionTask = WeatherService.shared.attribution
+            // Core weather must succeed for the widget to be useful everywhere.
+            // Minute forecast + attribution are treated as best-effort so they can't block the widget.
+            let (current, hourly, daily) = try await fetchCoreWeatherWithRetry(for: location.clLocation)
 
-            let (current, minute, hourly, daily) = try await wxTask
-            let attribution = try await attributionTask
+            let minuteForecast = await fetchMinuteForecastBestEffort(for: location.clLocation)
 
             let snap = Self.makeSnapshot(
                 current: current,
-                minuteForecast: minute,
+                minuteForecast: minuteForecast,
                 hourlyForecast: hourly,
                 dailyForecast: daily,
                 location: location
             )
 
-            let attr = WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
-
             store.saveSnapshot(snap)
-            store.saveAttribution(attr)
+
+            // Attribution is best-effort. Keep the existing attribution if fetch fails.
+            let existingAttr = store.loadAttribution()
+            if let newAttr = await fetchAttributionBestEffort() {
+                store.saveAttribution(newAttr)
+            } else if existingAttr == nil {
+                // No-op: leave it nil. The UI already handles "link appears after first success".
+            }
+
             store.saveLastError(nil)
 
             notifyWidgetsWeatherUpdated()
-            return Result(snapshot: snap, attribution: attr, errorDescription: nil)
+            return Result(snapshot: snap, attribution: store.loadAttribution(), errorDescription: nil)
         } catch {
-            let message = String(describing: error)
+            let message = Self.describe(error: error)
             store.saveLastError(message)
             notifyWidgetsWeatherUpdated()
             return Result(
@@ -134,6 +137,65 @@ public actor WidgetWeaverWeatherEngine {
     }
 
     #if canImport(WeatherKit)
+
+    // MARK: - Fetching (robust)
+
+    private func fetchCoreWeatherWithRetry(
+        for location: CLLocation,
+        maxAttempts: Int = 2
+    ) async throws -> (CurrentWeather, Forecast<HourWeather>, Forecast<DayWeather>) {
+        var lastError: Error?
+
+        for attempt in 1...maxAttempts {
+            do {
+                return try await WeatherService.shared.weather(
+                    for: location,
+                    including: .current, .hourly, .daily
+                )
+            } catch {
+                lastError = error
+
+                // Tiny backoff. Helps with transient WeatherKit/network flakiness without stalling the widget.
+                if attempt < maxAttempts {
+                    let delayNanos: UInt64 = (attempt == 1) ? 250_000_000 : 600_000_000
+                    try? await Task.sleep(nanoseconds: delayNanos)
+                }
+            }
+        }
+
+        throw lastError ?? NSError(domain: "WidgetWeaverWeatherEngine", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown WeatherKit error"])
+    }
+
+    private func fetchMinuteForecastBestEffort(
+        for location: CLLocation
+    ) async -> Forecast<MinuteWeather>? {
+        do {
+            // This can throw intermittently even in regions where Weather is supported.
+            return try await WeatherService.shared.weather(for: location, including: .minute)
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchAttributionBestEffort() async -> WidgetWeaverWeatherAttribution? {
+        do {
+            let attribution = try await WeatherService.shared.attribution
+            return WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func describe(error: Error) -> String {
+        // Keep it simple but stable for debugging.
+        if let urlError = error as? URLError {
+            return "Network error (\(urlError.code.rawValue)): \(urlError.localizedDescription)"
+        }
+        return String(describing: error)
+    }
+
+    // MARK: - Snapshot building
+
     private static func makeSnapshot(
         current: CurrentWeather,
         minuteForecast: Forecast<MinuteWeather>?,
@@ -218,5 +280,6 @@ public actor WidgetWeaverWeatherEngine {
             daily: daily
         )
     }
+
     #endif
 }
