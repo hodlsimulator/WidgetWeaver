@@ -37,23 +37,32 @@ struct WeatherNowcastChart: View {
     var body: some View {
         let kind = familyKind(for: widgetFamily)
 
-        // Medium was reading too “flat”. These insets are trimmed so the plot gets more usable height.
         let cornerRadius: CGFloat = (kind == .small) ? 12 : 14
         let horizontalInset: CGFloat = (kind == .small) ? 8 : 10
-        let topInset: CGFloat = (kind == .small) ? 6 : ((kind == .medium) ? 6 : 10)
-        let bottomInset: CGFloat = (kind == .small) ? 6 : ((kind == .medium) ? 4 : (showAxisLabels ? 6 : 10))
-        let spacing: CGFloat = (kind == .small) ? 4 : 6
 
-        VStack(spacing: spacing) {
+        // Labels are best as an overlay so the plot can use the full height.
+        // Reserve a small bottom band for the labels so the baseline can sit just above them.
+        let labelFontSize: CGFloat = 11
+        let labelBottomPadding: CGFloat = (kind == .small) ? 8 : 10
+        let labelHorizontalPadding: CGFloat = horizontalInset + 6
+
+        // The key change: medium gets a larger reserved band so the baseline can drop
+        // to just above the “Now / +60m” text, making the surface feel tall.
+        let reservedLabelBand: CGFloat = showAxisLabels
+            ? ((kind == .medium) ? 26 : 22)
+            : 0
+
+        let topPlotPadding: CGFloat = (kind == .small) ? 6 : ((kind == .medium) ? 6 : 10)
+
+        ZStack(alignment: .bottom) {
             WeatherNowcastSurfacePlot(
                 points: points,
                 maxIntensityMMPerHour: maxIntensityMMPerHour,
                 accent: accent
             )
-            // Padding first, then infinity frame so the plot expands correctly inside a tall chart frame.
             .padding(.horizontal, horizontalInset)
-            .padding(.top, topInset)
-            .padding(.bottom, bottomInset)
+            .padding(.top, topPlotPadding)
+            .padding(.bottom, reservedLabelBand)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showAxisLabels {
@@ -62,10 +71,10 @@ struct WeatherNowcastChart: View {
                     Spacer(minLength: 0)
                     Text("+60m")
                 }
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(.system(size: labelFontSize, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.55))
-                .padding(.horizontal, horizontalInset + 4)
-                .padding(.bottom, (kind == .small) ? 0 : 8)
+                .padding(.horizontal, labelHorizontalPadding)
+                .padding(.bottom, labelBottomPadding)
             }
         }
         .background {
@@ -136,15 +145,32 @@ private struct WeatherNowcastSurfacePlot: View {
         let cap = max(0.000_001, maxIntensityMMPerHour)
         c.intensityCap = cap
         c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
-
-        // Medium: boost perceived height (was too flat).
-        c.intensityEasingPower = (familyKind == .large) ? 0.78 : 0.58
         c.geometrySmoothingPasses = 2
 
-        // Geometry (taller in medium)
-        c.baselineYFraction = (familyKind == .large) ? 0.60 : 0.78
-        c.maxCoreHeightFractionOfPlotHeight = (familyKind == .large) ? 0.22 : 0.62
-        c.minVisibleHeightFraction = (familyKind == .large) ? 0.018 : 0.028
+        // Medium vs large control:
+        // - Medium: baseline much lower + larger height cap => chart feels tall.
+        // - Large: baseline higher + smaller height cap => chart feels calmer.
+        switch familyKind {
+        case .small:
+            c.intensityEasingPower = 0.70
+            c.baselineYFraction = 0.88
+            c.maxCoreHeightFractionOfPlotHeight = 0.50
+            c.minVisibleHeightFraction = 0.022
+
+        case .medium:
+            // This is the primary fix for “thin” medium charts.
+            c.intensityEasingPower = 0.55
+            c.baselineYFraction = 0.965
+            c.maxCoreHeightFractionOfPlotHeight = 0.90
+            c.minVisibleHeightFraction = 0.030
+
+        case .large:
+            c.intensityEasingPower = 0.78
+            c.baselineYFraction = 0.72
+            c.maxCoreHeightFractionOfPlotHeight = 0.34
+            c.minVisibleHeightFraction = 0.018
+        }
+
         c.edgeInsetFraction = 0.0
 
         // Wet region tapers / tails (keeps ends settled into the horizon).
@@ -231,15 +257,20 @@ private struct WeatherNowcastSurfacePlot: View {
             certainties: certainties,
             configuration: c
         )
+        // Ensures the Canvas receives the full size offered by the parent.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private enum WidgetFamilyKind {
+        case small
         case medium
         case large
     }
 
     private func familyKind(for widgetFamily: WidgetFamily) -> WidgetFamilyKind {
         switch widgetFamily {
+        case .systemSmall:
+            return .small
         case .systemMedium:
             return .medium
         default:
