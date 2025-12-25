@@ -206,6 +206,9 @@ private struct WeatherNowcastSurfacePlot: View {
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
             }
 
+            let peakIntensity = intensities.max() ?? 0.0
+            let peak01 = RainSurfaceMath.clamp01(peakIntensity / max(maxIntensityMMPerHour, 0.000_001))
+
             let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
             let plotH = max(1.0, proxy.size.height)
 
@@ -230,8 +233,8 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.mistHeightPoints = 95.0
                     c.mistHeightFractionOfPlotHeight = 0.85
 
-                    c.bloomBlurFractionOfPlotHeight = 0.54
-                    c.bloomBandHeightFractionOfPlotHeight = 0.72
+                    c.bloomBlurFractionOfPlotHeight = 0.48
+                    c.bloomBandHeightFractionOfPlotHeight = 0.68
 
                     c.baselineOpacity = 0.10
                     c.mistMaxOpacity = 0.16
@@ -249,8 +252,8 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.mistHeightPoints = 44.0
                     c.mistHeightFractionOfPlotHeight = 0.62
 
-                    c.bloomBlurFractionOfPlotHeight = 0.40
-                    c.bloomBandHeightFractionOfPlotHeight = 0.62
+                    c.bloomBlurFractionOfPlotHeight = 0.36
+                    c.bloomBandHeightFractionOfPlotHeight = 0.58
 
                     c.baselineOpacity = 0.08
                     c.mistMaxOpacity = 0.12
@@ -264,8 +267,8 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.14
                     c.mistHeightPoints = 40.0
                     c.mistHeightFractionOfPlotHeight = 0.65
-                    c.bloomBlurFractionOfPlotHeight = 0.42
-                    c.bloomBandHeightFractionOfPlotHeight = 0.60
+                    c.bloomBlurFractionOfPlotHeight = 0.36
+                    c.bloomBandHeightFractionOfPlotHeight = 0.58
                     c.baselineOpacity = 0.08
                     c.mistMaxOpacity = 0.12
                 }
@@ -298,20 +301,37 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fillTopColor = accent
 
                 c.fillBottomOpacity = 0.90
-                c.fillMidOpacity = 0.55
-                c.fillTopOpacity = 0.38
+
+                switch familyKind {
+                case .large:
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.72 + 0.10 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.60 + 0.18 * peak01)
+                case .medium:
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.70 + 0.10 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.58 + 0.16 * peak01)
+                case .small:
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.68 + 0.10 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.56 + 0.14 * peak01)
+                }
 
                 c.crestLiftEnabled = true
-                c.crestLiftMaxOpacity = 0.10
+                switch familyKind {
+                case .large:
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.18 + 0.10 * peak01)
+                case .medium:
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.16 + 0.10 * peak01)
+                case .small:
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.15 + 0.08 * peak01)
+                }
 
                 c.ridgeEnabled = true
                 c.ridgeColor = Color(red: 0.78, green: 0.95, blue: 1.0)
-                c.ridgeMaxOpacity = 0.22
-                c.ridgePeakBoost = 0.55
+                c.ridgeMaxOpacity = RainSurfaceMath.clamp01(0.32 + 0.14 * peak01)
+                c.ridgePeakBoost = 0.55 + 0.25 * peak01
 
                 c.bloomEnabled = true
                 c.bloomColor = accent
-                c.bloomMaxOpacity = 0.06
+                c.bloomMaxOpacity = RainSurfaceMath.clamp01(0.10 + 0.10 * peak01)
 
                 c.shellEnabled = true
                 c.shellColor = Color(red: 0.70, green: 0.92, blue: 1.0)
