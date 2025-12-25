@@ -14,7 +14,7 @@ import SwiftUI
 import WidgetKit
 #endif
 
-struct WeatherNowcastChart: View {
+struct WeatherNowcastChart: View { 
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
