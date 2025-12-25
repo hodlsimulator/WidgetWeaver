@@ -23,11 +23,11 @@ struct WidgetWeaverApp: App {
                     #endif
                 }
                 .onChange(of: scenePhase) { _, phase in
+                    #if !DEBUG
                     if phase == .background {
-                        #if !DEBUG
                         WidgetWeaverWidgetRefresh.kickIfNeeded()
-                        #endif
                     }
+                    #endif
                 }
         }
     }

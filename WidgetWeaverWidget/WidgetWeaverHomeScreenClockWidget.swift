@@ -10,12 +10,19 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-private enum WWClockTuning {
-    /// View-driven tick cadence. iOS may still coalesce, but this avoids WidgetKit timeline spam.
-    static let viewTickSeconds: TimeInterval = 1.0
+private enum WWClockTimelineTuning {
+    /// Provider refresh cadence.
+    ///
+    /// The clock display is driven by time-aware SwiftUI views (`ProgressView(timerInterval:)`).
+    /// Timeline refresh exists only as a safety net.
+    static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
+}
 
-    /// Provider refresh cadence. This is not used to animate the second hand.
-    static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0
+private enum WWClockTimeDriverTuning {
+    /// Length of the driving date-range for `ProgressView(timerInterval:)`.
+    ///
+    /// A long duration avoids the progress view reaching the end during normal use.
+    static let driverDurationSeconds: TimeInterval = 60.0 * 60.0 * 24.0 * 7.0
 }
 
 // MARK: - Configuration
@@ -85,9 +92,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
 
         let entry = Entry(date: now, colourScheme: scheme)
+        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
 
-        let next = now.addingTimeInterval(WWClockTuning.providerRefreshSeconds)
-        return Timeline(entries: [entry], policy: .after(next))
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 }
 
@@ -105,13 +112,86 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
         .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
+        .description("A small analogue clock with a ticking second hand.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
 }
 
 // MARK: - View
+
+private struct WWClockHandAngles {
+    let hour: Angle
+    let minute: Angle
+    let second: Angle
+
+    init(date: Date, timeZone: TimeZone, quantiseToWholeSeconds: Bool) {
+        let tz = TimeInterval(timeZone.secondsFromGMT(for: date))
+        var localT = date.timeIntervalSinceReferenceDate + tz
+
+        if quantiseToWholeSeconds {
+            localT = floor(localT)
+        }
+
+        let secondDegrees = localT * (360.0 / 60.0)
+        let minuteDegrees = localT * (360.0 / 3600.0)
+        let hourDegrees = localT * (360.0 / 43200.0)
+
+        self.second = .degrees(secondDegrees)
+        self.minute = .degrees(minuteDegrees)
+        self.hour = .degrees(hourDegrees)
+    }
+}
+
+private struct WWClockTimeDrivenProgressStyle: ProgressViewStyle {
+    let palette: WidgetWeaverClockPalette
+    let startDate: Date
+    let endDate: Date
+    let timeZone: TimeZone
+
+    func makeBody(configuration: Configuration) -> some View {
+        let duration = max(1.0, endDate.timeIntervalSince(startDate))
+        let fraction = configuration.fractionCompleted ?? 0.0
+        let clamped = min(max(fraction, 0.0), 1.0)
+
+        let now = startDate.addingTimeInterval(duration * clamped)
+        let angles = WWClockHandAngles(date: now, timeZone: timeZone, quantiseToWholeSeconds: true)
+
+        return WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: angles.hour,
+            minuteAngle: angles.minute,
+            secondAngle: angles.second
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockTimeDrivenView: View {
+    let palette: WidgetWeaverClockPalette
+    let startDate: Date
+    let timeZone: TimeZone
+
+    var body: some View {
+        let endDate = startDate.addingTimeInterval(WWClockTimeDriverTuning.driverDurationSeconds)
+
+        ProgressView(
+            timerInterval: startDate...endDate,
+            countsDown: false,
+            label: { EmptyView() },
+            currentValueLabel: { EmptyView() }
+        )
+        .progressViewStyle(
+            WWClockTimeDrivenProgressStyle(
+                palette: palette,
+                startDate: startDate,
+                endDate: endDate,
+                timeZone: timeZone
+            )
+        )
+    }
+}
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
@@ -121,28 +201,11 @@ struct WidgetWeaverHomeScreenClockView: View {
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        ZStack {
-            TimelineView(.periodic(from: Date(), by: WWClockTuning.viewTickSeconds)) { tl in
-                let date = tl.date
-                let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
-                let localT = date.timeIntervalSinceReferenceDate + tz
-
-                // “Tick” behaviour: quantise to whole seconds.
-                // Keeping degrees monotonic avoids backwards rotation at wrap points.
-                let t = floor(localT)
-
-                let secondDegrees = t * (360.0 / 60.0)
-                let minuteDegrees = t * (360.0 / 3600.0)
-                let hourDegrees = t * (360.0 / 43200.0)
-
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: .degrees(hourDegrees),
-                    minuteAngle: .degrees(minuteDegrees),
-                    secondAngle: .degrees(secondDegrees)
-                )
-            }
-        }
+        WWClockTimeDrivenView(
+            palette: palette,
+            startDate: entry.date,
+            timeZone: .autoupdatingCurrent
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
