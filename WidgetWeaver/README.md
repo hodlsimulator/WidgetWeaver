@@ -2,7 +2,7 @@
 
 WidgetWeaver is an **iOS 26-only** prototype app that turns a typed “widget design spec” into real WidgetKit widgets.
 
-It’s intended as a playground for exploring:
+The project is a playground for exploring:
 
 - A simple typed JSON-ish design spec (`WidgetSpec`)
 - Deterministic SwiftUI rendering in a WidgetKit extension (`WidgetWeaverSpecView`)
@@ -19,10 +19,10 @@ The app and widget extension communicate via an App Group (UserDefaults + shared
 WidgetWeaver has three tabs:
 
 - **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps)
-- **Library**: your saved designs (set Default, duplicate, delete)
-- **Editor**: edit the currently selected design, then **Save** to push changes to widgets
+- **Library**: saved designs (set Default, duplicate, delete)
+- **Editor**: edits the currently selected design; **Save** pushes changes to widgets
 
-Tip: widgets refresh when you **Save** a design. If something looks stale, use **Editor → … → Refresh Widgets**.
+Widgets refresh when a design is saved. If something looks stale, the in-app refresh action can be used (Editor → … → Refresh Widgets).
 
 ---
 
@@ -37,19 +37,19 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
 - Exposes `__weather_*` **built-in variables** usable in any text field (no Pro required)
 - Includes a Lock Screen companion widget: **Rain (WidgetWeaver)** (accessory rectangular)
 
-### Weather setup
+### Weather setup checklist
 
-1. Open **Explore** → **Weather**, then choose a location (Current Location or search), and tap **Update now**.
-   - (Alternative) **Editor → … → Weather settings**
-2. In **Explore**, add the **Weather** template (optionally “Add & Make Default”).
-3. Add widgets:
-   - Home Screen: **WidgetWeaver** (pick a Weather design), and/or
-   - Lock Screen: **Rain (WidgetWeaver)**
+- Explore → Weather: location selected (Current Location or search)
+- Weather snapshot cached (Update now)
+- Weather template added into the Library (optionally “Add & Make Default”)
+- Widgets added:
+  - Home Screen: **WidgetWeaver** (select a Weather design), and/or
+  - Lock Screen: **Rain (WidgetWeaver)**
 
 Notes:
 
 - Widgets refresh on a schedule, but **WidgetKit may throttle updates**.
-- Use **Weather → Update now** to refresh the cached snapshot used by widgets.
+- Weather UI provides “Update now” to refresh the cached snapshot used by widgets.
 
 ---
 
@@ -57,25 +57,26 @@ Notes:
 
 WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`LayoutTemplateToken.nextUpCalendar`):
 
-- Shows your next calendar event with a live countdown
+- Next calendar event with a live countdown
 - Medium/Large can also show a “Then” line (second upcoming event)
-- Uses a cached calendar snapshot stored in the App Group (offline-friendly)
-- Looks ahead until it finds upcoming events (not limited to “next 24 hours”)
+- Cached calendar snapshot stored in the App Group (offline-friendly widgets)
+- Looks ahead until upcoming events are found (not limited to “next 24 hours”)
 - Includes a Lock Screen companion widget: **Next Up (WidgetWeaver)** (inline / circular / rectangular)
 
-### Next Up (Calendar) setup
+### Next Up (Calendar) setup checklist
 
-1. In **Explore**, add the **Next Up (Calendar)** template.
-2. When prompted, allow Calendar access (the app will refresh the cached snapshot after permission is granted).
-3. Add widgets:
-   - Home Screen: **WidgetWeaver** (pick a Next Up design), and/or
-   - Lock Screen: **Next Up (WidgetWeaver)**
+- Explore → Templates: **Next Up (Calendar)** added into the Library
+- Calendar permission granted
+- Calendar snapshot cached (Next Up refresh action)
+- Widgets added:
+  - Home Screen: **WidgetWeaver** (select a Next Up design), and/or
+  - Lock Screen: **Next Up (WidgetWeaver)**
 
 Notes:
 
-- Calendar widgets render from a cache; if the widget looks stale:
-  - open **Editor → … → Next Up: refresh Calendar**, then
-  - **Editor → … → Refresh Widgets**.
+- Calendar widgets render from a cache. If the widget looks stale:
+  - refresh the Calendar snapshot (Next Up refresh action), then
+  - refresh widget timelines (Editor → … → Refresh Widgets).
 
 ---
 
@@ -85,10 +86,10 @@ WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widge
 
 - Today’s step count snapshot (offline-friendly for widgets)
 - **Goal schedule** (weekday / weekend goals, with optional rest days)
-- **Streak rules** that feel fair:
+- **Streak rules** designed to feel fair:
   - “Fair” rule avoids showing the streak as broken early in the day
   - Rest days (goal = 0) can be skipped without breaking
-- **Full-history timeline in-app**: loads daily step totals back to the earliest available step sample (years if available)
+- **Full-history timeline in-app**: loads daily step totals back to the earliest available step sample
 - **Monthly calendar view** with goal-hit dots (tap a day → jump to that day in the timeline)
 - **Year heatmap view** (GitHub-style grid) with year picker + “best week / most consistent month”
 - “Pin this day” action from history (creates a saved design highlight for that day)
@@ -96,24 +97,22 @@ WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widge
 - Lock Screen companion widget: **Steps (WidgetWeaver)** (inline / circular / rectangular)
 - Home Screen companion widget: **Steps (Home)** (Small / Medium / Large)
 
-### Steps setup
+### Steps setup checklist
 
-1. Open **Explore** → **Steps** (or **Editor → … → Steps settings**).
-2. Grant Health access for Step Count when prompted (widgets cannot request permission).
-3. Refresh Steps in-app to cache:
-   - Today’s steps snapshot (for widgets and `__steps_today`), and
-   - Full history (for streak / averages / heatmap / calendar)
-4. (Optional) Set weekday/weekend goals and pick a streak rule.
-5. Add widgets:
-   - Lock Screen: **Steps (WidgetWeaver)**
-   - Home Screen: **Steps (Home)**
-   - Or: use `__steps_*` variables inside any normal **WidgetWeaver** design
+- Health permission granted for Step Count
+- Steps refreshed in-app to cache:
+  - Today’s steps snapshot (for widgets and `__steps_today`), and
+  - Full history (for streak / averages / heatmap / calendar)
+- Optional: weekday/weekend goals configured and a streak rule selected
+- Widgets added:
+  - Lock Screen: **Steps (WidgetWeaver)**
+  - Home Screen: **Steps (Home)**
+  - Or: `__steps_*` variables used inside any normal **WidgetWeaver** design
 
 Notes:
 
-- If you see **0 steps**, that can be normal (early in the day) or it can mean no step samples are being recorded.
-- Check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking** is enabled.
-- If you see **Denied**, enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver).
+- If “0 steps” appears unexpectedly, Fitness Tracking may be disabled or no step samples may be recorded.
+- Health access can be inspected via the Steps settings screen.
 
 ---
 
@@ -121,9 +120,11 @@ Notes:
 
 WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style sweeping second hand.
 
+Current dev builds can snap to the correct time and then freeze; see **Public per-second ticking plan (WIP)** below.
+
 ### Sweeping second hand (implementation notes)
 
-WidgetKit doesn’t guarantee 1 Hz redraws for non-text content on the Home Screen. On iOS 26 (iPhone 16 Pro), updates often coalesce to ~2 seconds even if a 1-second timeline is provided. To get a smooth sweep without whole-widget blinking or frozen renders, the clock uses:
+WidgetKit doesn’t guarantee 1 Hz redraws for non-text content on the Home Screen. On iOS 26 (iPhone 16 Pro), updates often coalesce to ~2 seconds even if a 1-second timeline is provided. To get a smooth sweep without whole-widget blinking or frozen renders, the clock previously used:
 
 1. A modest timeline cadence (2 seconds) in `WidgetWeaverHomeScreenClockProvider` (for example: `tickSeconds = 2`, `maxEntries ≈ 180`).
 2. Monotonic angles derived from time (no `mod 360`), using local-time seconds:
@@ -139,18 +140,43 @@ WidgetKit doesn’t guarantee 1 Hz redraws for non-text content on the Home Scre
             .rotationEffect(.degrees(secondDegrees))
             .animation(.linear(duration: tickSeconds), value: secondDegrees)
 
-4. No `.id(entry.date)` (or other identity churn) on the root view, which prevents the “entire widget flashes each tick” look.
+4. No root identity churn (no `.id(entry.date)` or similar) to prevent “entire widget flashes each tick”.
 
-Notes:
+Hard “ticks” (instead of a sweep) are produced by quantising `localT` to whole seconds before computing degrees.
 
-- If you prefer hard “ticks” instead of a sweep, quantise `localT` to whole seconds before computing degrees.
-- If the clock ever renders partially or appears stuck while iterating on timelines, remove it from the Home Screen and add it again (WidgetKit can hold onto an archived snapshot from a failed render).
+WidgetKit may hold onto an archived snapshot from a failed render; during iteration a widget can appear partially rendered or stuck until a clean archive occurs.
+
+### Public per-second ticking plan (WIP)
+
+Goal: restore a reliably ticking clock using **public APIs only** (App Review-safe) without relying on high-frequency WidgetKit timelines (which trigger throttling). Private API/backdoor approaches (for example anything like `_clockHandRotationEffect`) are intentionally avoided.
+
+High-level approach:
+
+- Keep `WidgetWeaverHomeScreenClockProvider` timelines sparse (one entry, refresh every few hours).
+- Drive the hands from a SwiftUI “time-aware” view that iOS updates internally on the Home Screen (so the system can re-render without consuming the WidgetKit refresh budget).
+
+Attempted drivers and outcomes:
+
+1. `ProgressView(timerInterval:)` with a custom `ProgressViewStyle` reading `configuration.fractionCompleted` to derive the current time.
+   - Observed outcome: `fractionCompleted` did not advance for the timer-interval progress view in that configuration, leaving hands static.
+2. Hidden timer text driver using `Text(entry.date, style: .timer)` (transparent) and rendering the clock in an attached `background` driven from `Date()`.
+   - Observed outcome: the timer text can update, but the host appears to update only the text layer; the clock subtree can still freeze (snaps once, then stops). This is the current behaviour.
+
+Next iteration (public-only):
+
+- Render the clock drawing within the same subtree as the dynamic timer text (overlaying the timer text itself rather than using sibling/background), to force the host to re-evaluate the same view subtree each tick.
+- Add a DEBUG-only on-face seconds counter to confirm whether the host is actually re-evaluating the view hierarchy at 1 Hz.
+- Keep timeline reloads low-frequency and avoid `WidgetCenter.shared.reloadAllTimelines()` loops while iterating; reload only the clock widget kind when its configuration changes.
+
+Once reliable ticking returns, smooth sweeping can be reintroduced by interpolating within each second (hands-only), keeping the dial static.
+
+---
 
 ## Current status (0.9.4 (15))
 
 ### App
 
-- ✅ Explore tab: featured widgets + template catalogue (add templates into the Library)
+- ✅ Explore tab: featured widgets + template catalogue (adds templates into the Library)
 - ✅ Library of saved specs + Default selection
 - ✅ Editor for `WidgetSpec`
 - ✅ Free tier: up to `WidgetWeaverEntitlements.maxFreeDesigns` saved designs
@@ -202,43 +228,24 @@ Notes:
 
 ---
 
-## Quick start
+## Project setup checklist
 
-- Open the Xcode project
-- Set a Team + bundle identifiers for app + widget targets
-- Configure **App Groups**:
-  - Ensure both targets have the App Group capability enabled
-  - The default identifier is `group.com.conornolan.widgetweaver` (see `Shared/AppGroup.swift`)
-  - If changing it, update:
+- Xcode project opened
+- Team + bundle identifiers configured for app + widget targets
+- App Groups configured:
+  - Both targets have the App Group capability enabled
+  - Default identifier: `group.com.conornolan.widgetweaver` (see `Shared/AppGroup.swift`)
+  - If the identifier changes, updates are required in:
     - `Shared/AppGroup.swift` (`AppGroup.identifier`)
     - `WidgetWeaver/WidgetWeaver.entitlements`
     - `WidgetWeaverWidgetExtension.entitlements`
-- Run the app
-- In **Explore**, add a starter template (or create a blank design from Library)
-- Edit in **Editor**, then **Save** (widgets refresh after Save)
+- First run: templates added from **Explore** into the Library
+- Designs edited in **Editor**, then saved to push updates to widgets
+- Weather / Calendar / Steps setup performed (for templates that depend on cached snapshots)
 
-If using Weather:
+Widgets can be added from the Home Screen / Lock Screen widget galleries and configured to select a specific saved design when relevant.
 
-- **Explore → Weather** to pick a location and cache a snapshot (or **Editor → … → Weather settings**)
-
-If using Next Up (Calendar):
-
-- Add the template from **Explore**, then grant Calendar access when prompted
-
-If using Steps:
-
-- Add the **HealthKit** capability to both targets (app + widget extension)
-- Add `NSHealthShareUsageDescription` to the app Info.plist
-- In the app: **Explore → Steps** → grant access → refresh today + (optional) load full history
-
-Add widgets:
-
-- Home Screen: **WidgetWeaver** and/or **Steps (Home)**
-- Lock Screen: **Rain (WidgetWeaver)** and/or **Next Up (WidgetWeaver)** and/or **Steps (WidgetWeaver)**
-
-For Pro features:
-
-- Unlock Pro, then use **Variables** + **Actions** in the editor
+Pro features require a Pro unlock; Variables and Actions become available in the editor after unlock.
 
 ---
 
@@ -251,7 +258,7 @@ For Pro features:
 - **Poster**: photo-first with a gradient overlay for text
 - **Weather**: WeatherKit-powered, rain-first nowcast layout with glass panels and adaptive S/M/L layouts
 - **Next Up (Calendar)**: next event + countdown (optionally “Then” on Medium/Large)
-- **Steps (Starter)**: a ready-made Steps design using built-in `__steps_*` keys (choose it from Explore → Templates)
+- **Steps (Starter)**: a ready-made Steps design using built-in `__steps_*` keys
 
 The layout is controlled via `LayoutSpec` (template + axis + alignment + spacing + line limits).
 
@@ -259,16 +266,16 @@ The layout is controlled via `LayoutSpec` (template + axis + alignment + spacing
 
 The editor includes a collapsible preview dock:
 
-- Switch size (Small / Medium / Large)
-- Switch mode (Preview vs Live) to mimic widget rendering
+- Size: Small / Medium / Large
+- Mode: Preview vs Live (mimics widget rendering constraints)
 
 ### Photo theme extraction
 
-The app can extract a simple “image theme” from a chosen photo (to help pick an accent colour/background), but the photo itself is always chosen manually.
+A simple “image theme” can be extracted from a chosen photo to guide accent/background choices. Images are always chosen manually.
 
 ### Remix
 
-Remix generates several deterministic variants of a design by perturbing layout/style tokens. It’s intended as a fast way to explore alternatives without losing the original.
+Remix generates deterministic variants of a design by perturbing layout/style tokens, intended for rapid exploration without losing the original.
 
 ### Interactive actions (Pro)
 
@@ -385,73 +392,6 @@ AI features are designed to run on-device to generate or patch the design spec. 
 
 ---
 
-## Architecture notes
+## Licence / notes
 
-- **App Group** is the single source of truth for widgets:
-  - Specs: JSON in App Group `UserDefaults`
-  - Images: files in App Group container
-  - Variables (Pro): JSON dictionary in App Group `UserDefaults`
-  - Weather: location + cached snapshot + attribution in App Group `UserDefaults`
-  - Calendar: cached “next/second event” snapshot in App Group `UserDefaults`
-  - Steps:
-    - cached “today steps” snapshot in App Group `UserDefaults`
-    - goal schedule + streak rule in App Group `UserDefaults`
-    - cached full-history daily steps snapshot (for timeline/month/year views and `__steps_*` history vars)
-- Widgets render using `WidgetWeaverSpecView` (for Home Screen designs) or lightweight dedicated views (for dedicated widgets like Rain / Next Up / Steps).
-
----
-
-## Milestones (high level)
-
-- Typed spec + deterministic renderer
-- Multi-design library + per-widget configuration
-- Pro: matched sets + variables + actions
-- Weather template + WeatherKit caching (+ Lock Screen Rain widget)
-- Next Up (Calendar) template + calendar snapshot caching (+ Lock Screen Next Up widget)
-- Steps mini-app:
-  - HealthKit access + today snapshot
-  - full-history timeline + month calendar + year heatmap
-  - built-in `__steps_*` variables usable in any design
-  - “Pin this day” highlights
-  - (+ Lock Screen Steps widget + Home Screen Steps widget)
-- Optional on-device AI
-
----
-
-## Troubleshooting
-
-- **Weather shows “Set a location”**
-  - Open **Explore → Weather**
-  - Choose a location, then tap **Update now**
-- **Weather isn’t updating**
-  - Weather updates are cached; WidgetKit may throttle refreshes
-  - Use **Weather → Update now**
-  - Check Location permissions if using Current Location
-- **Next Up shows “Calendar access off”**
-  - Add **Next Up (Calendar)** from **Explore**, then grant Calendar access when prompted (or enable it in Settings)
-- **Next Up shows “No upcoming events”**
-  - Confirm there’s an event ahead of the current time
-  - Open **Editor → … → Next Up: refresh Calendar**, then **Refresh Widgets**
-- **Steps shows “Open app” / “No cached steps yet”**
-  - Open **Explore → Steps**
-  - Grant Health access, then refresh Steps to cache today
-- **Steps history is empty**
-  - Open **Explore → Steps → History**
-  - Refresh to fetch full history back to your first step sample (then it will be cached)
-- **Steps streak looks “broken” early in the day**
-  - In **Steps**, switch streak rules to the “Fair” option so today doesn’t break the streak before you hit goal
-- **Steps shows “Denied”**
-  - Enable Step Count for WidgetWeaver in the Health app (profile → Apps → WidgetWeaver)
-  - Return to WidgetWeaver → **Steps** → refresh
-- **Steps shows 0**
-  - This can be normal (especially early in the day)
-  - If you expect steps but always get 0, check **Settings → Privacy & Security → Motion & Fitness → Fitness Tracking**
-- **Clock widget looks frozen / partially rendered**
-  - Remove the clock widget from the Home Screen and add it again
-  - Avoid extremely dense timelines (hundreds of 1-second entries can fail view archiving and leave a stale snapshot behind)
-- **Widgets don’t reflect edits**
-  - Make sure the design is saved
-  - Use **Editor → … → Refresh Widgets** (or remove/re-add the widget)
-- **Images don’t appear**
-  - Ensure the banner image is saved to the App Group container (the app handles this)
-  - Try **Clean Up Unused Images** then re-add the image
+This is a prototype playground; it is not intended as a production app yet.
