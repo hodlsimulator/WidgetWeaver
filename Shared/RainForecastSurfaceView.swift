@@ -30,112 +30,133 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Minimum visible height for wet samples, expressed as a fraction of maxCoreHeight.
     var minVisibleHeightFraction: CGFloat = 0.025
 
-    /// Mild smoothing passes over heights (post-mapping, pre-taper).
+    /// Mild smoothing passes over heights (post-mapping, pre-masks).
     var geometrySmoothingPasses: Int = 1
 
-    // MARK: Scale cap (Step 1)
+    // MARK: - Height mapping (MUST be plot-rect based)
 
-    /// Hard cap: the filled core surface never exceeds this fraction of plot height.
-    /// Recommended 0.25–0.35 (start at 0.30).
+    /// Hard cap: the filled core surface never exceeds this fraction of plot rect height.
+    /// (Large: 0.37 start, Medium: 0.62 start)
     var maxCoreHeightFractionOfPlotHeight: CGFloat = 0.30
 
     /// Optional absolute cap in points. 0 disables.
     var maxCoreHeightPoints: CGFloat = 0.0
 
-    // MARK: Wet-region taper (Step 2)
+    // MARK: - End tapers (ALPHA ONLY)
 
     /// Fade-in over first N samples of the first wet region.
-    /// Recommended 6–10.
     var wetRegionFadeInSamples: Int = 8
 
     /// Fade-out over last N samples of the last wet region.
-    /// Recommended 10–16.
     var wetRegionFadeOutSamples: Int = 14
 
-    /// Extra softening at every wet segment start/end (internal cliffs).
-    /// This is separate from wetRegionFadeIn/Out and applies to all segments.
-    var segmentEdgeTaperSamples: Int = 5
-    var segmentEdgeTaperPower: Double = 1.35
+    // MARK: - Segment drop settling (GEOMETRY, not end-taper)
 
-    // Baseline styling
+    /// Adds short geometric tails into neighbouring dry samples to avoid vertical walls at segment boundaries.
+    /// This does not “squash” the curve; it extends the curve into the baseline.
+    var geometryTailInSamples: Int = 6
+    var geometryTailOutSamples: Int = 12
+    var geometryTailPower: Double = 2.25
+
+    // Baseline styling (drawn behind the fill)
     var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
-    var baselineOpacity: Double = 0.09
+    var baselineOpacity: Double = 0.10
     var baselineLineWidth: CGFloat = 1.0
-    var baselineInsetPoints: CGFloat = 6.0
+    var baselineInsetPoints: CGFloat = 0.0
     var baselineSoftWidthMultiplier: CGFloat = 2.6
-    var baselineSoftOpacityMultiplier: Double = 0.28
+    var baselineSoftOpacityMultiplier: Double = 0.24
 
-    // Core fill styling (Step 8.1)
-    var fillBottomColor: Color = Color(red: 0.06, green: 0.12, blue: 0.26)
-    var fillTopColor: Color = Color(red: 0.22, green: 0.48, blue: 0.92)
-    var fillBottomOpacity: Double = 0.20
-    var fillTopOpacity: Double = 0.78
+    // MARK: - Core fill depth (smooth, no noise)
 
-    // MARK: Ridge highlight (Step 4)
+    var fillBottomColor: Color = Color(red: 0.02, green: 0.04, blue: 0.09)   // near-black navy
+    var fillMidColor: Color = Color(red: 0.05, green: 0.10, blue: 0.22)      // mid-body lift
+    var fillTopColor: Color = Color(red: 0.18, green: 0.42, blue: 0.86)      // near crest
+    var fillBottomOpacity: Double = 0.88
+    var fillMidOpacity: Double = 0.55
+    var fillTopOpacity: Double = 0.40
+
+    /// Optional “crest lift” inside the fill (still smooth).
+    var crestLiftEnabled: Bool = true
+    var crestLiftMaxOpacity: Double = 0.10
+
+    // MARK: - Ridge highlight (mask-derived)
 
     var ridgeEnabled: Bool = true
-    var ridgeColor: Color = Color(red: 0.72, green: 0.90, blue: 1.0)
+    var ridgeColor: Color = Color(red: 0.72, green: 0.92, blue: 1.0)
     var ridgeMaxOpacity: Double = 0.22
 
-    /// Ridge thickness in points (pre-blur). Recommended 2–6.
+    /// Ridge thickness r in points (pre-blur). Large start 4, Medium start 3.
     var ridgeThicknessPoints: CGFloat = 4.0
 
-    /// Ridge blur radius in points. Recommended 6–14 (scale-dependent).
-    var ridgeBlurRadiusPoints: CGFloat = 10.0
+    /// Ridge blur as a fraction of plot rect height (derived from plotRectHeight).
+    /// Large ~0.11, Medium ~0.13 produces ~12px / ~9px on common sizes.
+    var ridgeBlurFractionOfPlotHeight: CGFloat = 0.11
 
-    /// Extra ridge emphasis on local peaks.
     var ridgePeakBoost: Double = 0.55
 
-    // MARK: Mist band (Step 5–7)
+    // MARK: - Broad bloom (mask-derived, clipped; no ghost silhouette)
+
+    var bloomEnabled: Bool = true
+    var bloomColor: Color = Color(red: 0.42, green: 0.78, blue: 1.0)
+    var bloomMaxOpacity: Double = 0.06
+
+    /// Blur as a fraction of plot rect height (derived from plotRectHeight).
+    /// Large start ~0.50–0.60, Medium start ~0.38–0.45.
+    var bloomBlurFractionOfPlotHeight: CGFloat = 0.52
+
+    /// Vertical clamp region around the crest (as a fraction of plot rect height).
+    var bloomBandHeightFractionOfPlotHeight: CGFloat = 0.70
+
+    // MARK: - Surface shell fuzz (boundary-attached; texture NEVER inside the fill)
+
+    var shellEnabled: Bool = true
+    var shellColor: Color = Color(red: 0.60, green: 0.86, blue: 1.0)
+
+    /// Overall shell alpha cap.
+    var shellMaxOpacity: Double = 0.16
+
+    /// Inside shell thickness (1–3 px); used only to soften the edge, not for texture.
+    var shellInsideThicknessPoints: CGFloat = 2.0
+
+    /// Outside shell “dilation” a in points. Large start 10, Medium start 7.
+    var shellAboveThicknessPoints: CGFloat = 10.0
+
+    /// Noise influence amount. Large start 0.28, Medium start 0.18.
+    var shellNoiseAmount: Double = 0.28
+
+    /// Small symmetric blur derived from plot rect height.
+    var shellBlurFractionOfPlotHeight: CGFloat = 0.030
+
+    /// Shell noise density controls (kept modest for widgets).
+    var shellPuffsPerSampleMax: Int = 5
+    var shellPuffMinRadiusPoints: CGFloat = 0.7
+    var shellPuffMaxRadiusPoints: CGFloat = 3.0
+
+    // MARK: - Above-surface mist (outside-only, fades upward; isotropic 2D)
 
     var mistEnabled: Bool = true
     var mistColor: Color = Color(red: 0.50, green: 0.74, blue: 1.0)
 
-    /// Overall mist opacity cap. Keep subtle.
+    /// Mist opacity cap (subtle).
     var mistMaxOpacity: Double = 0.18
 
-    /// Mist band height in points (upper bound). Recommended 40–90 depending on size.
+    /// Mist height cap in points (Large start 95, Medium start 50).
     var mistHeightPoints: CGFloat = 60.0
 
-    /// Mist band height as fraction of plot height (primary limiter for small widgets).
-    var mistHeightFractionOfPlotHeight: CGFloat = 0.55
+    /// Mist height as fraction of plot rect height (derived).
+    var mistHeightFractionOfPlotHeight: CGFloat = 0.85
 
-    /// Mist blur radius in points. 0 enables auto (≈ mistHeight * 0.33).
-    var mistBlurRadiusPoints: CGFloat = 0.0
-
-    /// Mist vertical falloff power (higher = faster decay upward).
     var mistFalloffPower: Double = 1.70
 
-    /// Horizontal softening near the ends of each segment (0..0.5 typical).
-    var mistEdgeSofteningWidth: Double = 0.10
-
-    // Mist texture (Step 6)
+    /// Mist texture
     var mistNoiseEnabled: Bool = true
-
-    /// 0.15–0.30 recommended.
     var mistNoiseInfluence: Double = 0.25
-
-    /// Low-to-mid frequency “puffs”.
     var mistPuffsPerSampleMax: Int = 12
-
-    /// Subtle fine grain (very low alpha).
     var mistFineGrainPerSampleMax: Int = 8
-
     var mistParticleMinRadiusPoints: CGFloat = 0.7
     var mistParticleMaxRadiusPoints: CGFloat = 3.8
     var mistFineParticleMinRadiusPoints: CGFloat = 0.35
     var mistFineParticleMaxRadiusPoints: CGFloat = 1.1
-
-    // MARK: Controlled glow (optional; clipped and mask-derived)
-
-    var glowEnabled: Bool = true
-    var glowColor: Color = Color(red: 0.35, green: 0.70, blue: 1.0)
-    var glowLayers: Int = 6
-    var glowMaxAlpha: Double = 0.08
-    var glowFalloffPower: Double = 1.75
-    var glowCertaintyPower: Double = 1.5
-    var glowMaxRadiusPoints: CGFloat = 4.5
-    var glowMaxRadiusFractionOfHeight: CGFloat = 0.075
 }
 
 // MARK: - View
