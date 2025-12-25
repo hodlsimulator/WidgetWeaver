@@ -4,6 +4,8 @@
 //
 //  Created by . . on 12/23/25.
 //
+//  Forecast surface view + configuration.
+//
 
 import Foundation
 import SwiftUI
@@ -11,6 +13,7 @@ import SwiftUI
 // MARK: - Configuration
 
 struct RainForecastSurfaceConfiguration: Hashable {
+
     // Background
     var backgroundColor: Color = .clear
     var backgroundOpacity: Double = 0.0
@@ -58,7 +61,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var geometryTailOutSamples: Int = 12
     var geometryTailPower: Double = 2.25
 
-    // Baseline styling (drawn behind the fill)
+    // Baseline styling (drawn behind the fill; uses a horizontal falloff so the centre reads brighter).
     var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
     var baselineOpacity: Double = 0.10
     var baselineLineWidth: CGFloat = 1.0
@@ -68,9 +71,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // MARK: - Core fill depth (smooth, no noise)
 
-    var fillBottomColor: Color = Color(red: 0.02, green: 0.04, blue: 0.09)   // near-black navy
-    var fillMidColor: Color = Color(red: 0.05, green: 0.10, blue: 0.22)      // mid-body lift
-    var fillTopColor: Color = Color(red: 0.18, green: 0.42, blue: 0.86)      // near crest
+    var fillBottomColor: Color = Color(red: 0.02, green: 0.04, blue: 0.09) // near-black navy
+    var fillMidColor: Color = Color(red: 0.05, green: 0.10, blue: 0.22) // mid-body lift
+    var fillTopColor: Color = Color(red: 0.18, green: 0.42, blue: 0.86) // near crest
+
     var fillBottomOpacity: Double = 0.88
     var fillMidOpacity: Double = 0.55
     var fillTopOpacity: Double = 0.40
@@ -91,8 +95,18 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Ridge blur as a fraction of plot rect height (derived from plotRectHeight).
     /// Large ~0.11, Medium ~0.13 produces ~12px / ~9px on common sizes.
     var ridgeBlurFractionOfPlotHeight: CGFloat = 0.11
-
     var ridgePeakBoost: Double = 0.55
+
+    // MARK: - Specular glint (small peak highlight)
+
+    var glintEnabled: Bool = true
+    var glintColor: Color = Color(red: 0.99, green: 1.0, blue: 1.0)
+    var glintMaxOpacity: Double = 0.85
+    var glintThicknessPoints: CGFloat = 1.2
+    var glintBlurRadiusPoints: CGFloat = 1.6
+    var glintHaloOpacityMultiplier: Double = 0.20
+    var glintSpanSamples: Int = 6
+    var glintMinPeakHeightFractionOfSegmentMax: Double = 0.70
 
     // MARK: - Broad bloom (mask-derived, clipped; no ghost silhouette)
 
@@ -145,7 +159,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     /// Mist height as fraction of plot rect height (derived).
     var mistHeightFractionOfPlotHeight: CGFloat = 0.85
-
     var mistFalloffPower: Double = 1.70
 
     /// Mist texture
@@ -162,6 +175,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
 // MARK: - View
 
 struct RainForecastSurfaceView: View {
+
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
