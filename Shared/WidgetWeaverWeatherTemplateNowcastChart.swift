@@ -37,10 +37,11 @@ struct WeatherNowcastChart: View {
     var body: some View {
         let kind = familyKind(for: widgetFamily)
 
+        // Medium was reading too “flat”. These insets are trimmed so the plot gets more usable height.
         let cornerRadius: CGFloat = (kind == .small) ? 12 : 14
         let horizontalInset: CGFloat = (kind == .small) ? 8 : 10
-        let topInset: CGFloat = (kind == .small) ? 6 : 10
-        let bottomInset: CGFloat = (kind == .small) ? 6 : (showAxisLabels ? 6 : 10)
+        let topInset: CGFloat = (kind == .small) ? 6 : ((kind == .medium) ? 6 : 10)
+        let bottomInset: CGFloat = (kind == .small) ? 6 : ((kind == .medium) ? 4 : (showAxisLabels ? 6 : 10))
         let spacing: CGFloat = (kind == .small) ? 4 : 6
 
         VStack(spacing: spacing) {
@@ -49,15 +50,16 @@ struct WeatherNowcastChart: View {
                 maxIntensityMMPerHour: maxIntensityMMPerHour,
                 accent: accent
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Padding first, then infinity frame so the plot expands correctly inside a tall chart frame.
             .padding(.horizontal, horizontalInset)
             .padding(.top, topInset)
             .padding(.bottom, bottomInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showAxisLabels {
                 HStack {
                     Text("Now")
-                    Spacer()
+                    Spacer(minLength: 0)
                     Text("+60m")
                 }
                 .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -67,7 +69,6 @@ struct WeatherNowcastChart: View {
             }
         }
         .background {
-            // Black field, no border (the baseline is the only horizon line).
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.black)
         }
@@ -135,13 +136,15 @@ private struct WeatherNowcastSurfacePlot: View {
         let cap = max(0.000_001, maxIntensityMMPerHour)
         c.intensityCap = cap
         c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
-        c.intensityEasingPower = (familyKind == .large) ? 0.78 : 0.72
+
+        // Medium: boost perceived height (was too flat).
+        c.intensityEasingPower = (familyKind == .large) ? 0.78 : 0.58
         c.geometrySmoothingPasses = 2
 
-        // Geometry (baseline position and height cap tuned to the mock)
-        c.baselineYFraction = (familyKind == .large) ? 0.60 : 0.66
-        c.maxCoreHeightFractionOfPlotHeight = (familyKind == .large) ? 0.22 : 0.30
-        c.minVisibleHeightFraction = 0.018
+        // Geometry (taller in medium)
+        c.baselineYFraction = (familyKind == .large) ? 0.60 : 0.78
+        c.maxCoreHeightFractionOfPlotHeight = (familyKind == .large) ? 0.22 : 0.62
+        c.minVisibleHeightFraction = (familyKind == .large) ? 0.018 : 0.028
         c.edgeInsetFraction = 0.0
 
         // Wet region tapers / tails (keeps ends settled into the horizon).
@@ -154,7 +157,7 @@ private struct WeatherNowcastSurfacePlot: View {
         // Baseline (horizontal falloff is implemented in RainSurfaceDrawing)
         c.baselineColor = Color(red: 140.0 / 255.0, green: 173.0 / 255.0, blue: 237.0 / 255.0) // #8CADED
         c.baselineLineWidth = onePixel
-        c.baselineOpacity = (familyKind == .large) ? 0.68 : 0.62
+        c.baselineOpacity = (familyKind == .large) ? 0.68 : 0.64
         c.baselineSoftWidthMultiplier = 4.6
         c.baselineSoftOpacityMultiplier = 0.22
         c.baselineInsetPoints = 0.0
@@ -211,8 +214,8 @@ private struct WeatherNowcastSurfacePlot: View {
         c.mistEnabled = true
         c.mistColor = c.shellColor
         c.mistMaxOpacity = 0.12
-        c.mistHeightPoints = (familyKind == .large) ? 80.0 : 58.0
-        c.mistHeightFractionOfPlotHeight = (familyKind == .large) ? 0.70 : 0.74
+        c.mistHeightPoints = (familyKind == .large) ? 80.0 : 62.0
+        c.mistHeightFractionOfPlotHeight = (familyKind == .large) ? 0.70 : 0.76
         c.mistFalloffPower = 1.85
         c.mistNoiseEnabled = true
         c.mistNoiseInfluence = 0.18
