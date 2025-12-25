@@ -54,6 +54,7 @@ struct WeatherGlassBackground: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
         switch renderContext {
         case .widget:
             shape.fill(fallbackFill)
@@ -63,12 +64,12 @@ struct WeatherGlassBackground: View {
     }
 
     private var fallbackFill: Color {
-        // Light mode: a little dark tint.
-        // Dark mode: a little light tint.
+        // Brighter “glass” in dark mode, still stable in WidgetKit.
+        // Light mode keeps a subtle tint so text/material remains legible.
         if colorScheme == .dark {
-            return Color.white.opacity(0.11)
+            return Color.white.opacity(0.16)
         } else {
-            return Color.black.opacity(0.07)
+            return Color.black.opacity(0.08)
         }
     }
 }
@@ -93,7 +94,7 @@ struct WeatherGlassContainer<Content: View>: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: metrics.containerCornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
             }
             .compositingGroup()
     }
@@ -113,12 +114,12 @@ struct WeatherSectionCard<Content: View>: View {
             .padding(metrics.sectionPadding)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(
-                Color.black.opacity(0.16),
+                Color.white.opacity(0.08),
                 in: RoundedRectangle(cornerRadius: metrics.sectionCornerRadius, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: metrics.sectionCornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
             )
     }
 }
@@ -128,6 +129,7 @@ struct WeatherAttributionLink: View {
 
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
+
         if let url = store.attributionLegalURL() {
             Link(destination: url) {
                 // Removes the redundant info icon and stays out of the “Now” axis label area.
@@ -137,7 +139,7 @@ struct WeatherAttributionLink: View {
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.black.opacity(0.18), in: Capsule())
+                    .background(Color.white.opacity(0.10), in: Capsule())
             }
             .accessibilityLabel("Apple Weather attribution")
         }
@@ -151,13 +153,12 @@ struct WeatherMetrics {
     let style: StyleSpec
     let layout: LayoutSpec
 
-    var scale: CGFloat {
-        max(0.85, min(1.35, CGFloat(style.weatherScale)))
-    }
+    var scale: CGFloat { max(0.85, min(1.35, CGFloat(style.weatherScale))) }
 
     var contentPadding: CGFloat {
         let base = CGFloat(style.padding)
         let familyMultiplier: CGFloat
+
         switch family {
         case .systemSmall:
             familyMultiplier = 0.85
@@ -166,24 +167,14 @@ struct WeatherMetrics {
         default:
             familyMultiplier = 1.00
         }
+
         return max(10, min(18, base * familyMultiplier)) * scale
     }
 
-    var containerCornerRadius: CGFloat {
-        max(14, min(26, CGFloat(style.cornerRadius)))
-    }
-
-    var sectionCornerRadius: CGFloat {
-        max(12, min(22, CGFloat(style.cornerRadius) - 4))
-    }
-
-    var sectionPadding: CGFloat {
-        max(10, min(16, CGFloat(style.padding) * 0.75)) * scale
-    }
-
-    var sectionSpacing: CGFloat {
-        max(8, min(14, CGFloat(layout.spacing))) * scale
-    }
+    var containerCornerRadius: CGFloat { max(14, min(26, CGFloat(style.cornerRadius))) }
+    var sectionCornerRadius: CGFloat { max(12, min(22, CGFloat(style.cornerRadius) - 4)) }
+    var sectionPadding: CGFloat { max(10, min(16, CGFloat(style.padding) * 0.75)) * scale }
+    var sectionSpacing: CGFloat { max(8, min(14, CGFloat(layout.spacing))) * scale }
 
     // Font sizes
     var locationFontSize: CGFloat { 12 * scale }
@@ -223,10 +214,13 @@ struct WeatherPalette: Hashable {
     let rainAccent: Color
 
     static func fallback(accent: Color) -> WeatherPalette {
-        WeatherPalette(
-            top: Color.black.opacity(0.55),
-            bottom: Color.black.opacity(0.75),
-            glow: accent.opacity(0.25),
+        let baseTop = Color(red: 0.24, green: 0.26, blue: 0.33).opacity(0.92)
+        let baseBottom = Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.96)
+
+        return WeatherPalette(
+            top: baseTop.wwBlended(with: accent, amount: 0.08),
+            bottom: baseBottom.wwBlended(with: accent, amount: 0.06),
+            glow: accent.opacity(0.55),
             rainAccent: accent
         )
     }
@@ -237,19 +231,22 @@ struct WeatherPalette: Hashable {
             (nowcast.peakIntensityMMPerHour >= WeatherNowcast.wetIntensityThresholdMMPerHour) ||
             ((nowcast.startOffsetMinutes ?? 999) <= 60)
 
+        let baseTop = Color(red: 0.24, green: 0.26, blue: 0.33).opacity(0.92)
+        let baseBottom = Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.96)
+
         if hasRain {
             return WeatherPalette(
-                top: Color.black.opacity(0.40),
-                bottom: Color.black.opacity(0.78),
-                glow: accent.opacity(0.35),
+                top: baseTop.wwBlended(with: accent, amount: 0.16),
+                bottom: baseBottom.wwBlended(with: accent, amount: 0.12),
+                glow: accent.opacity(0.65),
                 rainAccent: accent
             )
         }
 
         return WeatherPalette(
-            top: Color.black.opacity(0.45),
-            bottom: Color.black.opacity(0.82),
-            glow: Color.white.opacity(0.08),
+            top: baseTop.wwBlended(with: accent, amount: 0.08),
+            bottom: baseBottom.wwBlended(with: accent, amount: 0.06),
+            glow: Color.white.opacity(0.16),
             rainAccent: accent
         )
     }
@@ -328,10 +325,12 @@ private extension Color {
     func wwRGBA() -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)? {
         #if canImport(UIKit)
         let ui = UIColor(self)
+
         var r: CGFloat = 0
         var g: CGFloat = 0
         var b: CGFloat = 0
         var a: CGFloat = 0
+
         if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
             return (r, g, b, a)
         }
@@ -343,6 +342,7 @@ private extension Color {
             if comps.count >= 4 { return (comps[0], comps[1], comps[2], comps[3]) }
             if comps.count == 2 { return (comps[0], comps[0], comps[0], comps[1]) }
         }
+
         return nil
         #elseif canImport(AppKit)
         let ns = NSColor(self)

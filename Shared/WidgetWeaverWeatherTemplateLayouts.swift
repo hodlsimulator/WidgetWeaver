@@ -53,6 +53,7 @@ struct WeatherSmallRainLayout: View {
                 showAxisLabels: false
             )
             .frame(height: metrics.nowcastChartHeightSmall)
+            .wwBrightWeatherNowcastChart()
 
             Spacer(minLength: 0)
 
@@ -125,6 +126,7 @@ struct WeatherMediumRainLayout: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightMedium)
+            .wwBrightWeatherNowcastChart()
 
             // Footer row (keeps attribution out of the chart so it can’t block “Now”).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -194,6 +196,7 @@ struct WeatherLargeRainLayout: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightLarge)
+            .wwBrightWeatherNowcastChart()
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 WeatherAttributionLink(accent: accent)
@@ -214,12 +217,9 @@ private struct WeatherUpdatedLabel: View {
         let store = WidgetWeaverWeatherStore.shared
         let cadenceSeconds = store.recommendedDataRefreshIntervalSeconds()
         let staleThresholdSeconds = cadenceSeconds * 2
+
         let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
-
-        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds)
-            ? wwUpdatedAgoString(from: fetchedAt, now: now)
-            : nil
-
+        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds) ? wwUpdatedAgoString(from: fetchedAt, now: now) : nil
         let text = dataAgeText.map { "Refreshed now · Data \($0)" } ?? "Refreshed now"
 
         return Text(text)
@@ -229,5 +229,17 @@ private struct WeatherUpdatedLabel: View {
             .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .multilineTextAlignment(.trailing)
+    }
+}
+
+// MARK: - Brightening
+
+private extension View {
+    func wwBrightWeatherNowcastChart() -> some View {
+        overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.18))
+                .allowsHitTesting(false)
+        }
     }
 }
