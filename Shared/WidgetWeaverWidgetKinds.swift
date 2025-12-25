@@ -13,5 +13,7 @@ public enum WidgetWeaverWidgetKinds {
     public static let lockScreenNextUp = "WidgetWeaverLockScreenNextUpWidget"
     public static let lockScreenSteps = "WidgetWeaverLockScreenStepsWidget"
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidget"
+
+    // Bumped to force a clean widget archive when the clock gets stuck/partially rendered.
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV2"
 }
