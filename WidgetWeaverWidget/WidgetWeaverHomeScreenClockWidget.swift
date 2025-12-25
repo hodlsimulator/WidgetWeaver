@@ -11,8 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    static let tickSeconds: TimeInterval = 2.0
-    static let maxEntries: Int = 900
+    /// The widget’s TimelineEntry is no longer used to “tick” the clock.
+    /// Keep a light refresh cadence so WidgetKit can periodically re-evaluate the widget,
+    /// but rely on TimelineView for smooth second-hand motion.
+    static let timelineRefreshSeconds: TimeInterval = 60 * 60 // 1 hour
 }
 
 // MARK: - Configuration
@@ -79,17 +81,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let base = Date()
+        let now = Date()
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
+        // One entry is enough because the view uses TimelineView(.animation)
+        // to keep the hands moving smoothly without consuming WidgetKit reload budget.
+        let entry = Entry(date: now, colourScheme: scheme)
 
-        for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = base.addingTimeInterval(TimeInterval(i) * WWClockTimelineTuning.tickSeconds)
-            entries.append(Entry(date: d, colourScheme: scheme))
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
+        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.timelineRefreshSeconds)
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 }
 
@@ -123,30 +122,41 @@ struct WidgetWeaverHomeScreenClockView: View {
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            let date = WidgetWeaverRenderClock.now
-            let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
-            let localT = date.timeIntervalSinceReferenceDate + tz
+        ZStack {
+            TimelineView(.animation) { context in
+                let angles = WidgetWeaverClockAngles(now: context.date)
 
-            let secondDegrees = localT * (360.0 / 60.0)
-            let minuteDegrees = localT * (360.0 / 3600.0)
-            let hourDegrees = localT * (360.0 / 43200.0)
-
-            ZStack {
                 WidgetWeaverClockIconView(
                     palette: palette,
-                    hourAngle: .degrees(hourDegrees),
-                    minuteAngle: .degrees(minuteDegrees),
-                    secondAngle: .degrees(secondDegrees)
+                    hourAngle: angles.hour,
+                    minuteAngle: angles.minute,
+                    secondAngle: angles.second
                 )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: secondDegrees)
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: minuteDegrees)
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: hourDegrees)
-            .wwWidgetContainerBackground {
-                WidgetWeaverClockBackgroundView(palette: palette)
-            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .wwWidgetContainerBackground {
+            WidgetWeaverClockBackgroundView(palette: palette)
+        }
+    }
+}
+
+private struct WidgetWeaverClockAngles {
+    let hour: Angle
+    let minute: Angle
+    let second: Angle
+
+    init(now: Date) {
+        // autoupdatingCurrent keeps behaviour correct if the system time zone changes.
+        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: now))
+        let local = now.timeIntervalSince1970 + tz
+
+        let secondDeg = local * 6.0
+        let minuteDeg = local * (360.0 / 3600.0)
+        let hourDeg = local * (360.0 / 43200.0)
+
+        self.second = .degrees(secondDeg)
+        self.minute = .degrees(minuteDeg)
+        self.hour = .degrees(hourDeg)
     }
 }
