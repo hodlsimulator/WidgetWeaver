@@ -11,10 +11,9 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    /// The widget’s TimelineEntry is no longer used to “tick” the clock.
-    /// Keep a light refresh cadence so WidgetKit can periodically re-evaluate the widget,
-    /// but rely on TimelineView for smooth second-hand motion.
-    static let timelineRefreshSeconds: TimeInterval = 60 * 60 // 1 hour
+    // The clock runs via a local repeating animation once rendered.
+    // The timeline only needs to refresh occasionally so WidgetKit can re-evaluate the view.
+    static let refreshSeconds: TimeInterval = 60.0 * 60.0
 }
 
 // MARK: - Configuration
@@ -82,12 +81,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
+        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.refreshSeconds)
 
-        // One entry is enough because the view uses TimelineView(.animation)
-        // to keep the hands moving smoothly without consuming WidgetKit reload budget.
         let entry = Entry(date: now, colourScheme: scheme)
-
-        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.timelineRefreshSeconds)
         return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 }
@@ -123,16 +119,10 @@ struct WidgetWeaverHomeScreenClockView: View {
         let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
 
         ZStack {
-            TimelineView(.animation) { context in
-                let angles = WidgetWeaverClockAngles(now: context.date)
-
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: angles.hour,
-                    minuteAngle: angles.minute,
-                    secondAngle: angles.second
-                )
-            }
+            WidgetWeaverClockResyncingIconView(
+                palette: palette,
+                colourScheme: entry.colourScheme
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .wwWidgetContainerBackground {
@@ -141,22 +131,196 @@ struct WidgetWeaverHomeScreenClockView: View {
     }
 }
 
-private struct WidgetWeaverClockAngles {
-    let hour: Angle
-    let minute: Angle
-    let second: Angle
+// MARK: - Resyncing clock driver
 
-    init(now: Date) {
-        // autoupdatingCurrent keeps behaviour correct if the system time zone changes.
-        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: now))
-        let local = now.timeIntervalSince1970 + tz
+private enum WWClockResyncTuning {
+    static let smallCatchUpSeconds: TimeInterval = 2.0
+    static let mediumCatchUpSeconds: TimeInterval = 10.0
 
-        let secondDeg = local * 6.0
-        let minuteDeg = local * (360.0 / 3600.0)
-        let hourDeg = local * (360.0 / 43200.0)
+    static let smallCatchUpDuration: TimeInterval = 0.30
+    static let mediumCatchUpDuration: TimeInterval = 0.70
 
-        self.second = .degrees(secondDeg)
-        self.minute = .degrees(minuteDeg)
-        self.hour = .degrees(hourDeg)
+    static let fadeDuration: TimeInterval = 0.16
+    static let fadeHold: TimeInterval = 0.02
+}
+
+private enum WWClockResyncStore {
+    static func lastRenderKey(colourScheme: WidgetWeaverClockColourScheme) -> String {
+        "widgetweaver.clock.lastRender.\(colourScheme.rawValue)"
+    }
+
+    static func readLastRenderDate(colourScheme: WidgetWeaverClockColourScheme) -> Date? {
+        let key = lastRenderKey(colourScheme: colourScheme)
+        let t = AppGroup.userDefaults.double(forKey: key)
+        guard t > 0 else { return nil }
+        return Date(timeIntervalSinceReferenceDate: t)
+    }
+
+    static func writeLastRenderDate(_ date: Date, colourScheme: WidgetWeaverClockColourScheme) {
+        let key = lastRenderKey(colourScheme: colourScheme)
+        AppGroup.userDefaults.set(date.timeIntervalSinceReferenceDate, forKey: key)
+    }
+}
+
+private struct WWClockBaseAngles {
+    let hour: Double
+    let minute: Double
+    let second: Double
+
+    init(date: Date) {
+        let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: date))
+        let local = date.timeIntervalSince1970 + tz
+
+        let sec = local.truncatingRemainder(dividingBy: 60.0)
+        let minTotal = (local / 60.0).truncatingRemainder(dividingBy: 60.0)
+        let hourTotal = (local / 3600.0).truncatingRemainder(dividingBy: 12.0)
+
+        let secondDeg = sec * 6.0
+        let minuteDeg = (minTotal + sec / 60.0) * 6.0
+        let hourDeg = (hourTotal + minTotal / 60.0 + sec / 3600.0) * 30.0
+
+        self.second = secondDeg
+        self.minute = minuteDeg
+        self.hour = hourDeg
+    }
+}
+
+private func wwClockNegativeOffsetDegrees(previous: Double, current: Double) -> Double {
+    var prev = previous.truncatingRemainder(dividingBy: 360.0)
+    var cur = current.truncatingRemainder(dividingBy: 360.0)
+
+    if prev < 0 { prev += 360.0 }
+    if cur < 0 { cur += 360.0 }
+
+    var diff = prev - cur
+    if diff > 0 { diff -= 360.0 }
+    return diff
+}
+
+private struct WidgetWeaverClockResyncingIconView: View {
+    let palette: WidgetWeaverClockPalette
+    let colourScheme: WidgetWeaverClockColourScheme
+
+    @State private var baseHour: Double = 0
+    @State private var baseMinute: Double = 0
+    @State private var baseSecond: Double = 0
+
+    @State private var hourPhase: Double = 0
+    @State private var minutePhase: Double = 0
+    @State private var secondPhase: Double = 0
+
+    @State private var hourOffset: Double = 0
+    @State private var minuteOffset: Double = 0
+    @State private var secondOffset: Double = 0
+
+    @State private var handsOpacity: Double = 1.0
+
+    var body: some View {
+        let hourAngle = Angle.degrees(baseHour + hourPhase * 360.0 + hourOffset)
+        let minuteAngle = Angle.degrees(baseMinute + minutePhase * 360.0 + minuteOffset)
+        let secondAngle = Angle.degrees(baseSecond + secondPhase * 360.0 + secondOffset)
+
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: hourAngle,
+            minuteAngle: minuteAngle,
+            secondAngle: secondAngle,
+            handsOpacity: handsOpacity
+        )
+        .onAppear {
+            let now = Date()
+            let previous = WWClockResyncStore.readLastRenderDate(colourScheme: colourScheme)
+
+            WWClockResyncStore.writeLastRenderDate(now, colourScheme: colourScheme)
+            restart(now: now, previous: previous)
+        }
+    }
+
+    private func restart(now: Date, previous: Date?) {
+        let base = WWClockBaseAngles(date: now)
+
+        var prevBase: WWClockBaseAngles? = nil
+        var elapsed: TimeInterval = 0
+
+        if let previous {
+            elapsed = now.timeIntervalSince(previous)
+            if elapsed > 0 {
+                prevBase = WWClockBaseAngles(date: previous)
+            }
+        }
+
+        let initialOffsets: (hour: Double, minute: Double, second: Double)
+        if let prevBase {
+            initialOffsets = (
+                wwClockNegativeOffsetDegrees(previous: prevBase.hour, current: base.hour),
+                wwClockNegativeOffsetDegrees(previous: prevBase.minute, current: base.minute),
+                wwClockNegativeOffsetDegrees(previous: prevBase.second, current: base.second)
+            )
+        } else {
+            initialOffsets = (0, 0, 0)
+        }
+
+        withTransaction(Transaction(animation: nil)) {
+            baseHour = base.hour
+            baseMinute = base.minute
+            baseSecond = base.second
+
+            hourPhase = 0
+            minutePhase = 0
+            secondPhase = 0
+
+            hourOffset = initialOffsets.hour
+            minuteOffset = initialOffsets.minute
+            secondOffset = initialOffsets.second
+
+            handsOpacity = 1.0
+        }
+
+        withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
+            secondPhase = 1
+        }
+        withAnimation(.linear(duration: 3600.0).repeatForever(autoreverses: false)) {
+            minutePhase = 1
+        }
+        withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
+            hourPhase = 1
+        }
+
+        guard prevBase != nil else { return }
+
+        if elapsed <= WWClockResyncTuning.smallCatchUpSeconds {
+            withAnimation(.easeOut(duration: WWClockResyncTuning.smallCatchUpDuration)) {
+                hourOffset = 0
+                minuteOffset = 0
+                secondOffset = 0
+            }
+            return
+        }
+
+        if elapsed <= WWClockResyncTuning.mediumCatchUpSeconds {
+            withAnimation(.easeOut(duration: WWClockResyncTuning.mediumCatchUpDuration)) {
+                hourOffset = 0
+                minuteOffset = 0
+                secondOffset = 0
+            }
+            return
+        }
+
+        withAnimation(.easeOut(duration: WWClockResyncTuning.fadeDuration)) {
+            handsOpacity = 0.0
+        }
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + WWClockResyncTuning.fadeDuration + WWClockResyncTuning.fadeHold
+        ) {
+            withTransaction(Transaction(animation: nil)) {
+                hourOffset = 0
+                minuteOffset = 0
+                secondOffset = 0
+            }
+            withAnimation(.easeIn(duration: WWClockResyncTuning.fadeDuration)) {
+                handsOpacity = 1.0
+            }
+        }
     }
 }
