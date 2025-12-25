@@ -112,22 +112,25 @@ private struct WeatherNowcastSurfacePlot: View {
             c.backgroundColor = .black
             c.backgroundOpacity = 0.0
 
-            // Leave headroom so peaks do not “hit the ceiling”.
+            // Step 1: scale cap first
+            c.maxCoreHeightFractionOfPlotHeight = 0.30
+            c.maxCoreHeightPoints = 0.0
+
+            // Value shaping (gamma)
             c.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
-            c.intensityCapHeadroomFraction = 0.18
-
             c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
-            c.intensityEasingPower = 0.75
+            c.intensityEasingPower = 0.70
 
-            // Geometry: leave negative space above.
-            c.surfaceHeightScale = 0.78
-            c.minVisibleHeightFraction = 0.030
-            c.geometrySmoothingPasses = 1
+            // Baseline placement
             c.baselineYFraction = 0.82
             c.edgeInsetFraction = 0.00
+            c.minVisibleHeightFraction = 0.025
+            c.geometrySmoothingPasses = 1
 
-            // Remove start/end cliffs even when rain begins/ends at chart edges.
-            c.segmentEdgeTaperSamples = 9
+            // Step 2: wet-region taper (applies to all layers)
+            c.wetRegionFadeInSamples = 8
+            c.wetRegionFadeOutSamples = 14
+            c.segmentEdgeTaperSamples = 5
             c.segmentEdgeTaperPower = 1.35
 
             // Baseline
@@ -138,71 +141,47 @@ private struct WeatherNowcastSurfacePlot: View {
             c.baselineSoftWidthMultiplier = 3.0
             c.baselineSoftOpacityMultiplier = 0.34
 
-            // Fill depth (dark base -> bright crest)
-            c.fillBottomColor = accent
+            // Step 8: core fill depth (dark base + lifted crest)
+            c.fillBottomColor = Color(red: 0.05, green: 0.11, blue: 0.25)
             c.fillTopColor = accent
-            c.fillBottomOpacity = 0.16
-            c.fillTopOpacity = 0.92
+            c.fillBottomOpacity = 0.22
+            c.fillTopOpacity = 0.72
 
-            c.startEaseMinutes = 6
-            c.endFadeMinutes = 10
-            c.endFadeFloor = 0.0
+            // Step 4: ridge highlight
+            c.ridgeEnabled = true
+            c.ridgeColor = Color(red: 0.82, green: 0.94, blue: 1.0)
+            c.ridgeMaxOpacity = 0.22
+            c.ridgeThicknessPoints = max(onePixel, onePixel * 3.5)  // ~2–6 px in practice
+            c.ridgeBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 9.0 : 11.0
+            c.ridgePeakBoost = 0.55
 
-            // Atmospheric diffusion band: uncertainty-aware, ridge-attached, fades upward.
-            c.fuzzEnabled = true
-            c.diffusionLayers = WidgetWeaverRuntime.isRunningInAppExtension ? 54 : 66
+            // Step 5–7: mist band (bounded, clipped, textured)
+            c.mistEnabled = true
+            c.mistColor = accent
+            c.mistMaxOpacity = 0.18
+            c.mistHeightPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 56.0 : 62.0
+            c.mistHeightFractionOfPlotHeight = 0.55
+            c.mistBlurRadiusPoints = 0.0 // auto
 
-            // Thickness bounds
-            c.diffusionMinRadiusPoints = 1.2
-            c.diffusionMaxRadiusPoints = 70.0
-            c.diffusionMaxRadiusFractionOfHeight = 0.52
+            c.mistFalloffPower = 1.70
+            c.mistEdgeSofteningWidth = 0.10
 
-            // Uncertainty mapping
-            c.diffusionRadiusUncertaintyPower = 0.78
-            c.diffusionStrengthMax = 0.92
-            c.diffusionStrengthMinUncertainTerm = 0.12
-            c.diffusionStrengthUncertaintyPower = 0.92
-            c.diffusionFalloffPower = 1.75
+            c.mistNoiseEnabled = true
+            c.mistNoiseInfluence = 0.25
 
-            // Edge softening within segments
-            c.diffusionEdgeSofteningWidth = 0.10
+            c.mistPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 10 : 12
+            c.mistFineGrainPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 6 : 8
 
-            // Jitter adds organic variation without streaks (true 2D noise is from dots)
-            c.diffusionJitterAmplitudePoints = WidgetWeaverRuntime.isRunningInAppExtension ? 2.0 : 2.4
+            c.mistParticleMinRadiusPoints = 0.7
+            c.mistParticleMaxRadiusPoints = 3.6
+            c.mistFineParticleMinRadiusPoints = 0.35
+            c.mistFineParticleMaxRadiusPoints = 1.05
 
-            // Dots are the diffusion texture (no vertical streaking).
-            c.fuzzDotsEnabled = true
-            c.fuzzDotsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 18 : 24
-            c.fuzzGlobalBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.00 : 1.15
-
-            // Optional continuous haze body stroke (kept subtle)
-            c.fuzzLineWidthMultiplier = 0.22
-
-            // Crest highlight (adds depth without an outline)
-            c.crestEnabled = true
-            c.crestColor = accent
-            c.crestMaxOpacity = 0.22
-            c.crestLineWidthPoints = max(onePixel, onePixel * 1.35)
-            c.crestBlurRadiusPoints = WidgetWeaverRuntime.isRunningInAppExtension ? 1.10 : 1.25
-            c.crestPeakBoost = 0.55
-
-            // Turn off any legacy internal texture
-            c.textureEnabled = false
-            c.textureMaxAlpha = 0.0
-            c.textureMinAlpha = 0.0
-            c.textureIntensityPower = 0.70
-            c.textureUncertaintyAlphaBoost = 0.0
-            c.textureStreaksMin = 0
-            c.textureStreaksMax = 0
-            c.textureLineWidthMultiplier = 0.70
-            c.textureBlurRadiusPoints = 0.0
-            c.textureTopInsetFractionOfHeight = 0.02
-
-            // Glow: subtle, ridge-derived, does not create a second silhouette
+            // Controlled glow (optional)
             c.glowEnabled = true
             c.glowColor = accent
             c.glowLayers = 6
-            c.glowMaxAlpha = 0.08
+            c.glowMaxAlpha = 0.06
             c.glowFalloffPower = 1.75
             c.glowCertaintyPower = 1.5
             c.glowMaxRadiusPoints = 4.5
