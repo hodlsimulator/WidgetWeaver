@@ -210,7 +210,7 @@ private struct WeatherNowcastSurfacePlot: View {
             let peak01 = RainSurfaceMath.clamp01(peakIntensity / max(maxIntensityMMPerHour, 0.000_001))
 
             let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
-            let plotH = max(1.0, proxy.size.height)
+            let plotH = max(onePixel, proxy.size.height)
 
             let desiredBottomInset = max(0.0, baselineLabelSafeBottom + 2.0)
             let computedBaselineFraction = 1.0 - Double(desiredBottomInset / plotH)
@@ -219,58 +219,72 @@ private struct WeatherNowcastSurfacePlot: View {
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
 
+                // Palette tuned to match the mockup: deep navy base, saturated body, electric crest.
+                let deepNavy = Color(red: 0.00, green: 0.02, blue: 0.18)
+                let saturatedBody = Color(red: 0.00, green: 0.11, blue: 0.55)
+
+                // Fixed blur radii (expressed via fractions to keep the configuration format).
+                func fraction(forPoints points: CGFloat) -> CGFloat {
+                    points / max(onePixel, plotH)
+                }
+
                 switch familyKind {
                 case .large:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.42
+                    c.maxCoreHeightFractionOfPlotHeight = 0.44
                     c.intensityEasingPower = 0.74
 
                     c.ridgeThicknessPoints = 4.0
-                    c.ridgeBlurFractionOfPlotHeight = 0.11
+                    c.ridgeBlurFractionOfPlotHeight = fraction(forPoints: 5.0)
 
-                    c.shellAboveThicknessPoints = 10.0
-                    c.shellNoiseAmount = 0.26
+                    c.shellAboveThicknessPoints = 14.0
+                    c.shellNoiseAmount = 0.42
+                    c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.10)
 
-                    c.mistHeightPoints = 95.0
-                    c.mistHeightFractionOfPlotHeight = 0.85
+                    c.baselineOpacity = 0.24
+                    c.baselineSoftWidthMultiplier = 3.2
+                    c.baselineSoftOpacityMultiplier = 0.45
 
-                    c.bloomBlurFractionOfPlotHeight = 0.48
-                    c.bloomBandHeightFractionOfPlotHeight = 0.68
+                    // Halo-like bloom is disabled for the mockup match.
+                    c.bloomEnabled = false
 
-                    c.baselineOpacity = 0.10
-                    c.mistMaxOpacity = 0.16
+                    // The mockup reads as boundary fuzz rather than tall mist.
+                    c.mistEnabled = false
 
                 case .medium:
                     c.maxCoreHeightFractionOfPlotHeight = 0.80
                     c.intensityEasingPower = 0.56
 
                     c.ridgeThicknessPoints = 3.0
-                    c.ridgeBlurFractionOfPlotHeight = 0.12
+                    c.ridgeBlurFractionOfPlotHeight = fraction(forPoints: 4.2)
 
-                    c.shellAboveThicknessPoints = 8.0
-                    c.shellNoiseAmount = 0.16
+                    c.shellAboveThicknessPoints = 11.0
+                    c.shellNoiseAmount = 0.38
+                    c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
 
-                    c.mistHeightPoints = 44.0
-                    c.mistHeightFractionOfPlotHeight = 0.62
+                    c.baselineOpacity = 0.22
+                    c.baselineSoftWidthMultiplier = 3.0
+                    c.baselineSoftOpacityMultiplier = 0.44
 
-                    c.bloomBlurFractionOfPlotHeight = 0.36
-                    c.bloomBandHeightFractionOfPlotHeight = 0.58
-
-                    c.baselineOpacity = 0.08
-                    c.mistMaxOpacity = 0.12
+                    c.bloomEnabled = false
+                    c.mistEnabled = false
 
                 case .small:
                     c.maxCoreHeightFractionOfPlotHeight = 0.55
                     c.intensityEasingPower = 0.70
+
                     c.ridgeThicknessPoints = 3.0
-                    c.ridgeBlurFractionOfPlotHeight = 0.12
-                    c.shellAboveThicknessPoints = 7.0
-                    c.shellNoiseAmount = 0.14
-                    c.mistHeightPoints = 40.0
-                    c.mistHeightFractionOfPlotHeight = 0.65
-                    c.bloomBlurFractionOfPlotHeight = 0.36
-                    c.bloomBandHeightFractionOfPlotHeight = 0.58
-                    c.baselineOpacity = 0.08
-                    c.mistMaxOpacity = 0.12
+                    c.ridgeBlurFractionOfPlotHeight = fraction(forPoints: 4.0)
+
+                    c.shellAboveThicknessPoints = 10.0
+                    c.shellNoiseAmount = 0.36
+                    c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
+
+                    c.baselineOpacity = 0.21
+                    c.baselineSoftWidthMultiplier = 3.0
+                    c.baselineSoftOpacityMultiplier = 0.44
+
+                    c.bloomEnabled = false
+                    c.mistEnabled = false
                 }
 
                 c.intensityCap = max(maxIntensityMMPerHour, 0.000_001)
@@ -293,69 +307,59 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.baselineColor = accent
                 c.baselineLineWidth = onePixel
                 c.baselineInsetPoints = 0.0
-                c.baselineSoftWidthMultiplier = 2.6
-                c.baselineSoftOpacityMultiplier = 0.22
 
-                c.fillBottomColor = Color(red: 0.02, green: 0.04, blue: 0.09)
-                c.fillMidColor = Color(red: 0.05, green: 0.10, blue: 0.22)
+                c.fillBottomColor = deepNavy
+                c.fillMidColor = saturatedBody
                 c.fillTopColor = accent
 
-                c.fillBottomOpacity = 0.90
+                // Brighter fill to match the mockup.
+                c.fillBottomOpacity = 0.98
 
                 switch familyKind {
                 case .large:
-                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.72 + 0.10 * peak01)
-                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.60 + 0.18 * peak01)
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.90 + 0.05 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.92 + 0.06 * peak01)
                 case .medium:
-                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.70 + 0.10 * peak01)
-                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.58 + 0.16 * peak01)
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.88 + 0.05 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.90 + 0.06 * peak01)
                 case .small:
-                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.68 + 0.10 * peak01)
-                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.56 + 0.14 * peak01)
+                    c.fillMidOpacity = RainSurfaceMath.clamp01(0.86 + 0.05 * peak01)
+                    c.fillTopOpacity = RainSurfaceMath.clamp01(0.88 + 0.06 * peak01)
                 }
 
                 c.crestLiftEnabled = true
                 switch familyKind {
                 case .large:
-                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.18 + 0.10 * peak01)
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.22 + 0.12 * peak01)
                 case .medium:
-                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.16 + 0.10 * peak01)
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.20 + 0.12 * peak01)
                 case .small:
-                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.15 + 0.08 * peak01)
+                    c.crestLiftMaxOpacity = RainSurfaceMath.clamp01(0.18 + 0.10 * peak01)
                 }
 
                 c.ridgeEnabled = true
                 c.ridgeColor = Color(red: 0.78, green: 0.95, blue: 1.0)
-                c.ridgeMaxOpacity = RainSurfaceMath.clamp01(0.32 + 0.14 * peak01)
-                c.ridgePeakBoost = 0.55 + 0.25 * peak01
+                c.ridgeMaxOpacity = RainSurfaceMath.clamp01(0.38 + 0.18 * peak01)
+                c.ridgePeakBoost = 0.85 + 0.30 * peak01
 
-                c.bloomEnabled = true
-                c.bloomColor = accent
-                c.bloomMaxOpacity = RainSurfaceMath.clamp01(0.10 + 0.10 * peak01)
+                // Specular peak glint (small white highlight at the crest).
+                c.glintEnabled = true
+                c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
+                c.glintMaxOpacity = RainSurfaceMath.clamp01(0.92 + 0.06 * peak01)
+                c.glintThicknessPoints = 1.05
+                c.glintBlurRadiusPoints = 1.15
+                c.glintHaloOpacityMultiplier = 0.0
+                c.glintSpanSamples = 5
+                c.glintMinPeakHeightFractionOfSegmentMax = 0.70
 
                 c.shellEnabled = true
                 c.shellColor = Color(red: 0.70, green: 0.92, blue: 1.0)
-                c.shellMaxOpacity = 0.15
+                c.shellMaxOpacity = 0.24
                 c.shellInsideThicknessPoints = 2.0
-                c.shellBlurFractionOfPlotHeight = 0.030
 
-                c.shellPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 4 : 5
-                c.shellPuffMinRadiusPoints = 0.7
-                c.shellPuffMaxRadiusPoints = 2.8
-
-                c.mistEnabled = true
-                c.mistColor = accent
-                c.mistFalloffPower = 1.70
-                c.mistNoiseEnabled = true
-                c.mistNoiseInfluence = 0.25
-
-                c.mistPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 10 : 12
-                c.mistFineGrainPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 6 : 8
-
-                c.mistParticleMinRadiusPoints = 0.7
-                c.mistParticleMaxRadiusPoints = 3.6
-                c.mistFineParticleMinRadiusPoints = 0.35
-                c.mistFineParticleMaxRadiusPoints = 1.05
+                c.shellPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 5 : 7
+                c.shellPuffMinRadiusPoints = 0.60
+                c.shellPuffMaxRadiusPoints = 2.20
 
                 return c
             }()

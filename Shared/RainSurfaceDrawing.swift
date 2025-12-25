@@ -31,7 +31,7 @@ enum RainSurfaceDrawing {
         base.addLine(to: CGPoint(x: x1, y: baselineY))
 
         let savedBlend = context.blendMode
-        context.blendMode = .screen
+        context.blendMode = .plusLighter
 
         if configuration.baselineSoftOpacityMultiplier > 0,
            configuration.baselineSoftWidthMultiplier > 1
@@ -55,7 +55,8 @@ enum RainSurfaceDrawing {
     // 2) broad bloom (mask-derived, clipped)
     // 3) above-surface mist (outside-only, drawn behind ridge)
     // 4) surface shell fuzz (boundary-attached)
-    // 5) ridge highlight (inside core, drawn last to stay crisp)
+    // 5) ridge highlight (inside core)
+    // 6) specular glint (peak highlight, inside core)
     static func drawProbabilityMaskedSurface(
         in context: inout GraphicsContext,
         plotRect: CGRect,
@@ -78,10 +79,21 @@ enum RainSurfaceDrawing {
         let plotH = max(1.0, plotRect.height)
         let width = max(1.0, plotRect.width)
 
-        // Effective blur radii derived from plot height.
-        let ridgeBlur = max(onePixel, plotH * max(0.0, configuration.ridgeBlurFractionOfPlotHeight))
-        let bloomBlur = max(onePixel, plotH * max(0.0, configuration.bloomBlurFractionOfPlotHeight))
-        let shellBlur = max(onePixel, plotH * max(0.0, configuration.shellBlurFractionOfPlotHeight))
+        let globalMaxHeight = heights.max() ?? 0.0
+
+        // Effective blur radii derived from plot height (clamped to avoid broad halos on small charts).
+        let ridgeBlur = min(
+            max(onePixel, plotH * max(0.0, configuration.ridgeBlurFractionOfPlotHeight)),
+            max(onePixel, 14.0)
+        )
+        let bloomBlur = min(
+            max(onePixel, plotH * max(0.0, configuration.bloomBlurFractionOfPlotHeight)),
+            max(onePixel, 28.0)
+        )
+        let shellBlur = min(
+            max(onePixel, plotH * max(0.0, configuration.shellBlurFractionOfPlotHeight)),
+            max(onePixel, 6.0)
+        )
 
         // Per-sample alphas (end tapers are ALPHA ONLY).
         var coreAlpha = [Double](repeating: 0.0, count: n)
@@ -94,54 +106,63 @@ enum RainSurfaceDrawing {
             let v = RainSurfaceMath.clamp01(intensityNorm[i])
             let c = RainSurfaceMath.clamp01(certainty[i])
             let proxy = 1.0 - c
-            let lowV = pow(1.0 - v, 1.20)
-
+            let lowV = pow(1.0 - v, 1.15)
             let taper = RainSurfaceMath.clamp01(edgeFactors[i])
 
-            if configuration.baselineOpacity > 0.000_01 {
-                // Baseline handled elsewhere; kept here for completeness.
-            }
-
             if configuration.ridgeEnabled, configuration.ridgeMaxOpacity > 0.000_01 {
+                // Ridge reads mostly from intensity, with a modest certainty influence.
                 let base = configuration.ridgeMaxOpacity * taper
-                    * (0.22 + 0.78 * pow(v, 0.85))
-                    * (0.55 + 0.45 * pow(c, 1.10))
+                    * (0.28 + 0.72 * pow(v, 0.90))
+                    * (0.78 + 0.22 * pow(c, 0.65))
 
                 ridgeAlpha[i] = RainSurfaceMath.clamp01(base)
             }
 
             if configuration.bloomEnabled, configuration.bloomMaxOpacity > 0.000_01 {
+                // Bloom is intentionally subtle; it is optional and can be disabled by callers.
                 let base = configuration.bloomMaxOpacity * taper
-                    * (0.20 + 0.80 * pow(v, 0.75))
+                    * (0.20 + 0.80 * pow(v, 0.80))
 
                 let unc = (0.40 + 0.60 * proxy)
                 bloomAlpha[i] = RainSurfaceMath.clamp01(base * unc)
             }
 
             if configuration.shellEnabled, configuration.shellMaxOpacity > 0.000_01 {
+                // Shell fuzz is the primary uncertainty cue; it ramps up with proxy but stays present as a soft edge.
+                let unc = pow(proxy, 0.55)
                 let base = configuration.shellMaxOpacity * taper
-                    * pow(proxy, 0.92)
-                    * (0.70 + 0.30 * lowV)
+                    * (0.08 + 0.92 * unc)
+                    * (0.25 + 0.75 * lowV)
 
                 shellAlpha[i] = RainSurfaceMath.clamp01(base)
             }
 
             if configuration.mistEnabled, configuration.mistMaxOpacity > 0.000_01 {
-                let base = configuration.mistMaxOpacity * taper * pow(proxy, 1.08)
+                // Mist is outside-only and fades upward; it is a secondary uncertainty cue.
+                let unc = pow(proxy, 0.70)
+                let base = configuration.mistMaxOpacity * taper
+                    * unc
+                    * (0.25 + 0.75 * lowV)
+
                 mistAlpha[i] = RainSurfaceMath.clamp01(base)
             }
 
-            // Core alpha: primarily intensity, moderated by certainty so low-confidence fades.
-            let core = (0.20 + 0.80 * pow(v, 0.70)) * (0.35 + 0.65 * pow(c, 0.90)) * taper
+            // Core alpha: stays bright even when certainty is lower; uncertainty is expressed in the shell/mist.
+            let intensityFactor = (0.20 + 0.80 * pow(v, 0.70))
+            let confidenceFloor = (0.82 + 0.18 * pow(c, 0.75))
+            let uncertaintyDim = (1.0 - 0.28 * pow(proxy, 0.80))
+            let core = intensityFactor * confidenceFloor * uncertaintyDim * taper
             coreAlpha[i] = RainSurfaceMath.clamp01(core)
         }
 
-        // Core fill gradient: dark baseline -> lifted mid -> slightly brighter crest.
+        // Core fill gradient: deep base -> saturated mid -> bright crest.
         let fillGradient = Gradient(stops: [
             .init(color: configuration.fillBottomColor.opacity(configuration.fillBottomOpacity), location: 0.0),
             .init(color: configuration.fillMidColor.opacity(configuration.fillMidOpacity), location: 0.55),
             .init(color: configuration.fillTopColor.opacity(configuration.fillTopOpacity), location: 1.0)
         ])
+
+        let clipPadX = min(max(onePixel, configuration.shellAboveThicknessPoints * 1.10), 20.0)
 
         for seg in segments {
             let r = seg.range
@@ -153,12 +174,16 @@ enum RainSurfaceDrawing {
             let startEdgeX = plotRect.minX + CGFloat(r.lowerBound) * stepX
             let endEdgeX = plotRect.minX + CGFloat(r.upperBound) * stepX
 
-            let clipRect = CGRect(
+            let baseClipRect = CGRect(
                 x: startEdgeX,
                 y: plotRect.minY,
                 width: max(0.0, endEdgeX - startEdgeX),
                 height: max(0.0, baselineY - plotRect.minY)
             )
+            if baseClipRect.width <= 0 || baseClipRect.height <= 0 { continue }
+
+            // Allow fuzz to extend slightly past segment ends (avoids hard cutoffs at wet region boundaries).
+            let clipRect = baseClipRect.insetBy(dx: -clipPadX, dy: 0).intersection(plotRect)
             if clipRect.width <= 0 || clipRect.height <= 0 { continue }
 
             let coreMaskPath = seg.surfacePath
@@ -169,6 +194,45 @@ enum RainSurfaceDrawing {
             outside.addRect(clipRect)
             outside.addPath(coreMaskPath)
 
+            // Segment peak (used for ridge boost + glint).
+            var peakIndex = first
+            var peakHeight: CGFloat = 0.0
+            for i in r {
+                let h = heights[i]
+                if h > peakHeight {
+                    peakHeight = h
+                    peakIndex = i
+                }
+            }
+            let peakV01 = RainSurfaceMath.clamp01(intensityNorm[peakIndex])
+            let peakC01 = RainSurfaceMath.clamp01(certainty[peakIndex])
+            let peakTaper = RainSurfaceMath.clamp01(edgeFactors[peakIndex])
+            let peakHeightFractionOfGlobal = (globalMaxHeight > 0) ? Double(peakHeight / globalMaxHeight) : 0.0
+
+            // Glint alpha envelope (computed here to reuse xPoints indexing).
+            let glintSpan = max(1, configuration.glintSpanSamples)
+            let glintPeakAlpha: Double = {
+                guard configuration.glintEnabled,
+                      configuration.glintMaxOpacity > 0.000_01,
+                      peakHeightFractionOfGlobal >= configuration.glintMinPeakHeightFractionOfSegmentMax
+                else { return 0.0 }
+
+                let base = configuration.glintMaxOpacity * peakTaper
+                    * (0.30 + 0.70 * pow(peakV01, 0.92))
+                    * (0.75 + 0.25 * pow(peakC01, 0.85))
+
+                return RainSurfaceMath.clamp01(base)
+            }()
+
+            func glintAlphaAtIndex(_ idx: Int) -> Double {
+                guard glintPeakAlpha > 0.000_5 else { return 0.0 }
+                let d = abs(idx - peakIndex)
+                if d > glintSpan { return 0.0 }
+                let t = 1.0 - Double(d) / Double(glintSpan + 1)
+                let w = RainSurfaceMath.smoothstep01(t)
+                return RainSurfaceMath.clamp01(glintPeakAlpha * w)
+            }
+
             // Per-x stop arrays (same xPoints for every layer).
             var xPoints: [CGFloat] = []
             var coreA: [Double] = []
@@ -176,6 +240,7 @@ enum RainSurfaceDrawing {
             var bloomA: [Double] = []
             var shellA: [Double] = []
             var mistA: [Double] = []
+            var glintA: [Double] = []
 
             xPoints.reserveCapacity(r.count + 2)
             coreA.reserveCapacity(r.count + 2)
@@ -183,6 +248,7 @@ enum RainSurfaceDrawing {
             bloomA.reserveCapacity(r.count + 2)
             shellA.reserveCapacity(r.count + 2)
             mistA.reserveCapacity(r.count + 2)
+            glintA.reserveCapacity(r.count + 2)
 
             func appendEdgePoint(x: CGFloat, idx: Int) {
                 xPoints.append(x)
@@ -191,6 +257,7 @@ enum RainSurfaceDrawing {
                 bloomA.append(bloomAlpha[idx])
                 shellA.append(shellAlpha[idx])
                 mistA.append(mistAlpha[idx])
+                glintA.append(glintAlphaAtIndex(idx))
             }
 
             appendEdgePoint(x: startEdgeX, idx: first)
@@ -257,7 +324,7 @@ enum RainSurfaceDrawing {
                 )
 
                 let savedBlend = context.blendMode
-                context.blendMode = .screen
+                context.blendMode = .plusLighter
 
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -304,7 +371,7 @@ enum RainSurfaceDrawing {
                 )
 
                 let savedBlend = context.blendMode
-                context.blendMode = .screen
+                context.blendMode = .plusLighter
 
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -324,7 +391,7 @@ enum RainSurfaceDrawing {
             }
 
             // -------------------------
-            // PASS 3 — Above-surface mist (outside-only, drawn behind ridge)
+            // PASS 3 — Above-surface mist (outside-only)
             // -------------------------
             if configuration.mistEnabled,
                configuration.mistMaxOpacity > 0.000_01,
@@ -334,46 +401,16 @@ enum RainSurfaceDrawing {
                 let mistHeightFrac = max(0.10, min(1.0, configuration.mistHeightFractionOfPlotHeight))
                 let mistHeight = min(mistHeightCap, plotH * mistHeightFrac)
 
-                let mistBlur = max(onePixel, min(mistHeight * 0.33, plotH * 0.40))
                 let mistBand = topEdgePath.strokedPath(
                     StrokeStyle(lineWidth: mistHeight * 2.0, lineCap: .round, lineJoin: .round)
                 )
 
-                let mistStops = makeHorizontalColourStops(
-                    plotRect: plotRect,
-                    width: width,
-                    xPoints: xPoints,
-                    alphas: mistA,
-                    colour: configuration.mistColor
-                )
-
-                let mistShading = GraphicsContext.Shading.linearGradient(
-                    Gradient(stops: mistStops),
-                    startPoint: CGPoint(x: plotRect.minX, y: baselineY),
-                    endPoint: CGPoint(x: plotRect.maxX, y: baselineY)
-                )
-
                 let savedBlend = context.blendMode
-                context.blendMode = .screen
+                context.blendMode = .plusLighter
 
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
 
-                    // Base mist body (smooth), then clipped.
-                    layer.drawLayer { base in
-                        base.addFilter(.blur(radius: mistBlur))
-
-                        let crestStroke = topEdgePath.strokedPath(
-                            StrokeStyle(
-                                lineWidth: max(onePixel, configuration.ridgeThicknessPoints * 0.85),
-                                lineCap: .round,
-                                lineJoin: .round
-                            )
-                        )
-                        base.fill(crestStroke, with: mistShading)
-                    }
-
-                    // Texture (2D isotropic; no streaks).
                     if configuration.mistNoiseEnabled {
                         drawMistParticles(
                             in: &layer,
@@ -442,7 +479,7 @@ enum RainSurfaceDrawing {
                 )
 
                 let savedBlend = context.blendMode
-                context.blendMode = .screen
+                context.blendMode = .plusLighter
 
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -460,7 +497,7 @@ enum RainSurfaceDrawing {
                     layer.drawLayer { outer in
                         if shellBlur > 0 { outer.addFilter(.blur(radius: shellBlur)) }
 
-                        // Draw first (screen), then clamp.
+                        // Draw first (additive), then clamp.
                         outer.fill(shellAboveBand, with: shellShading)
 
                         if configuration.shellNoiseAmount > 0.000_01,
@@ -497,7 +534,7 @@ enum RainSurfaceDrawing {
             }
 
             // -------------------------
-            // PASS 5 — Ridge highlight (ridgeMask inside core; drawn last)
+            // PASS 5 — Ridge highlight (inside core)
             // -------------------------
             if configuration.ridgeEnabled,
                configuration.ridgeMaxOpacity > 0.000_01,
@@ -508,10 +545,9 @@ enum RainSurfaceDrawing {
                     StrokeStyle(lineWidth: ridgeR * 2.0, lineCap: .round, lineJoin: .round)
                 )
 
-                // Peak boost.
-                let peak01 = RainSurfaceMath.clamp01(intensityNorm[last])
+                // Peak boost uses the segment peak, not the segment tail.
                 let boostedRidgeA = ridgeA.map { a in
-                    let boost = 1.0 + configuration.ridgePeakBoost * peak01
+                    let boost = 1.0 + configuration.ridgePeakBoost * peakV01
                     return RainSurfaceMath.clamp01(a * boost)
                 }
 
@@ -530,13 +566,88 @@ enum RainSurfaceDrawing {
                 )
 
                 let savedBlend = context.blendMode
-                context.blendMode = .screen
+                context.blendMode = .plusLighter
 
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
                     if ridgeBlur > 0 { layer.addFilter(.blur(radius: ridgeBlur)) }
 
                     layer.fill(ridgeBand, with: ridgeShading)
+
+                    layer.blendMode = .destinationIn
+                    layer.fill(coreMaskPath, with: .color(.white))
+                }
+
+                context.blendMode = savedBlend
+            }
+
+            // -------------------------
+            // PASS 6 — Specular glint (small peak highlight; inside core)
+            // -------------------------
+            if configuration.glintEnabled,
+               configuration.glintMaxOpacity > 0.000_01,
+               (glintA.max() ?? 0.0) > 0.000_5
+            {
+                let glintR = max(onePixel, configuration.glintThicknessPoints)
+                let glintBand = topEdgePath.strokedPath(
+                    StrokeStyle(lineWidth: glintR * 2.0, lineCap: .round, lineJoin: .round)
+                )
+
+                let glintStops = makeHorizontalColourStops(
+                    plotRect: plotRect,
+                    width: width,
+                    xPoints: xPoints,
+                    alphas: glintA,
+                    colour: configuration.glintColor
+                )
+
+                let glintShading = GraphicsContext.Shading.linearGradient(
+                    Gradient(stops: glintStops),
+                    startPoint: CGPoint(x: plotRect.minX, y: baselineY),
+                    endPoint: CGPoint(x: plotRect.maxX, y: baselineY)
+                )
+
+                let savedBlend = context.blendMode
+                context.blendMode = .plusLighter
+
+                // Halo (optional, caller-controlled).
+                if configuration.glintHaloOpacityMultiplier > 0.000_01 {
+                    let haloR = max(onePixel, glintR * 3.5)
+                    let haloBlur = max(onePixel, configuration.glintBlurRadiusPoints * 3.2)
+
+                    let haloBand = topEdgePath.strokedPath(
+                        StrokeStyle(lineWidth: haloR * 2.0, lineCap: .round, lineJoin: .round)
+                    )
+
+                    let haloStops = makeHorizontalColourStops(
+                        plotRect: plotRect,
+                        width: width,
+                        xPoints: xPoints,
+                        alphas: glintA.map { RainSurfaceMath.clamp01($0 * configuration.glintHaloOpacityMultiplier) },
+                        colour: configuration.glintColor
+                    )
+
+                    let haloShading = GraphicsContext.Shading.linearGradient(
+                        Gradient(stops: haloStops),
+                        startPoint: CGPoint(x: plotRect.minX, y: baselineY),
+                        endPoint: CGPoint(x: plotRect.maxX, y: baselineY)
+                    )
+
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(clipRect))
+                        if haloBlur > 0 { layer.addFilter(.blur(radius: haloBlur)) }
+                        layer.fill(haloBand, with: haloShading)
+
+                        layer.blendMode = .destinationIn
+                        layer.fill(coreMaskPath, with: .color(.white))
+                    }
+                }
+
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    if configuration.glintBlurRadiusPoints > 0 { layer.addFilter(.blur(radius: configuration.glintBlurRadiusPoints)) }
+
+                    layer.fill(glintBand, with: glintShading)
 
                     layer.blendMode = .destinationIn
                     layer.fill(coreMaskPath, with: .color(.white))
@@ -576,8 +687,8 @@ enum RainSurfaceDrawing {
             let a0 = RainSurfaceMath.clamp01(shellAlpha[i])
             if a0 <= 0.000_8 { continue }
 
-            let desired = Double(maxPuffsPerSample) * (0.55 + 2.10 * a0)
-            let puffCount = min(90, max(1, Int(desired + 0.5)))
+            let desired = Double(maxPuffsPerSample) * (0.80 + 2.80 * a0)
+            let puffCount = min(120, max(1, Int(desired + 0.5)))
 
             let topY = baselineY - h
             let x0 = plotRect.minX + CGFloat(i) * stepX
@@ -585,19 +696,51 @@ enum RainSurfaceDrawing {
 
             var prng = RainSurfacePRNG(seed: makeSeed(sampleIndex: i, saltA: 0x0000_0000_0A11_CAFE, saltB: 0x0000_0000_00B0_0B1E))
 
+            // Larger puffs
             for _ in 0..<puffCount {
                 let rx = prng.random01()
                 let rr = prng.random01()
                 let ry = prng.random01()
 
-                let x = x0 + (x1 - x0) * rx
+                // Mild horizontal jitter improves grain continuity along slopes.
+                let xJitter = (prng.random01() - 0.5) * Double(stepX) * 0.40
+                let x = x0 + (x1 - x0) * rx + CGFloat(xJitter)
+
                 let r = minR + (maxR - minR) * pow(rr, 0.70)
 
-                // Centres sit slightly below the ridge; outside-only clipping reveals the top portion.
-                let y = topY + r * 0.10 - hSpan * (0.35 * ry)
+                // Centres span the full outside band; outside-only clipping reveals the ridge-attached portion.
+                let y = topY + r * 0.10 - hSpan * (0.10 + 0.90 * ry)
 
-                let jitter = 0.35 + 0.65 * prng.random01()
-                let a = RainSurfaceMath.clamp01(a0 * amount * 0.16 * jitter)
+                let grain = 0.65 + 0.35 * prng.random01()
+                let a = RainSurfaceMath.clamp01(a0 * amount * 0.42 * grain)
+
+                var circle = Path()
+                circle.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2.0, height: r * 2.0))
+                context.fill(circle, with: .color(colour.opacity(a)))
+            }
+
+            // Fine grain (small dots)
+            let fineDesired = Double(maxPuffsPerSample) * (2.40 + 5.20 * a0)
+            let fineCount = min(220, max(1, Int(fineDesired + 0.5)))
+
+            var prng2 = RainSurfacePRNG(seed: makeSeed(sampleIndex: i, saltA: 0x0000_0000_0F1E_EEED, saltB: 0x0000_0000_0BEE_F00D))
+
+            let fineMinR = max(onePixel * 0.35, minR * 0.45)
+            let fineMaxR = max(onePixel * 0.55, maxR * 0.55)
+
+            for _ in 0..<fineCount {
+                let rx = prng2.random01()
+                let rr = prng2.random01()
+                let ry = prng2.random01()
+
+                let xJitter = (prng2.random01() - 0.5) * Double(stepX) * 0.55
+                let x = x0 + (x1 - x0) * rx + CGFloat(xJitter)
+
+                let r = fineMinR + (fineMaxR - fineMinR) * pow(rr, 0.85)
+                let y = topY + r * 0.10 - hSpan * (0.05 + 0.95 * ry)
+
+                let grain = 0.55 + 0.45 * prng2.random01()
+                let a = RainSurfaceMath.clamp01(a0 * amount * 0.22 * grain)
 
                 var circle = Path()
                 circle.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2.0, height: r * 2.0))
