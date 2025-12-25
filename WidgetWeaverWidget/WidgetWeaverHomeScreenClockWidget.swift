@@ -41,7 +41,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .orchid: DisplayRepresentation(title: "Orchid"),
             .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: DisplayRepresentation(title: "Graphite")
+            .graphite: DisplayRepresentation(title: "Graphite"),
         ]
     }
 }
@@ -83,10 +83,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
-
         let entry = Entry(date: now, colourScheme: scheme)
         let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
-
         return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 }
@@ -141,17 +139,23 @@ private struct WWClockHandAngles {
 
 private struct WWPerSecondDriver<Content: View>: View {
     let anchorDate: Date
+
+    @ViewBuilder
     let content: (Date) -> Content
 
     var body: some View {
+        // The Text(.timer) updates at ~1Hz when the host chooses to.
+        // The key change: render the clock in an OVERLAY of the same Text subtree,
+        // so the host can't update only the text layer and leave the clock frozen.
         Text(anchorDate, style: .timer)
             .font(.system(size: 1).monospacedDigit())
             .foregroundStyle(Color.clear)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .background {
+            .overlay {
                 content(Date())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
     }
 }
@@ -161,7 +165,8 @@ private struct WWPerSecondDriver<Content: View>: View {
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
-    @Environment(\.colorScheme) private var mode
+    @Environment(\.colorScheme)
+    private var mode
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(
@@ -176,7 +181,7 @@ struct WidgetWeaverHomeScreenClockView: View {
                 quantiseToWholeSeconds: true
             )
 
-            return ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .bottomTrailing) {
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: angles.hour,
@@ -188,8 +193,8 @@ struct WidgetWeaverHomeScreenClockView: View {
                     txn.animation = nil
                 }
 
-                #if DEBUGz
-                Text(entry.date, style: .timer)
+                #if DEBUG
+                Text(now, format: .dateTime.hour().minute().second())
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary.opacity(0.35))
                     .padding(6)
@@ -201,4 +206,3 @@ struct WidgetWeaverHomeScreenClockView: View {
         }
     }
 }
-
