@@ -282,11 +282,9 @@ struct WidgetWeaverWeatherSettingsView: View {
                 updatedAt: Date()
             )
 
+            // Keep the existing snapshot until a new one is successfully fetched.
             store.saveLocation(stored)
-            store.clearSnapshot()
-
             refreshLocalState()
-            reloadWidgets()
 
             await updateNow(force: true)
         } catch {
@@ -345,11 +343,9 @@ struct WidgetWeaverWeatherSettingsView: View {
                 updatedAt: Date()
             )
 
+            // Keep the existing snapshot until a new one is successfully fetched.
             store.saveLocation(stored)
-            store.clearSnapshot()
-
             refreshLocalState()
-            reloadWidgets()
 
             await updateNow(force: true)
         } catch {
@@ -364,8 +360,13 @@ struct WidgetWeaverWeatherSettingsView: View {
 
         let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: force)
 
-        store.saveSnapshot(result.snapshot)
-        store.saveAttribution(result.attribution)
+        // Preserve last known-good data if the refresh fails.
+        if let snap = result.snapshot {
+            store.saveSnapshot(snap)
+        }
+        if let attr = result.attribution {
+            store.saveAttribution(attr)
+        }
 
         refreshLocalState()
         reloadWidgets()
