@@ -11,11 +11,16 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    /// Provider refresh cadence.
-    ///
-    /// The clock motion is driven by a live-updating `Text(..., style: .timer)` inside the widget view.
-    /// The timeline refresh exists only as a safety net for palette/config changes and long-running host quirks.
-    static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
+    /// Timeline cadence. The system may coalesce faster timelines anyway.
+    static let tickSeconds: TimeInterval = 2.0
+
+    /// Number of entries emitted per timeline request.
+    /// 1800 @ 2s ≈ 1 hour of motion before WidgetKit asks for a new timeline.
+    static let maxEntries: Int = 1800
+
+    static var providerRefreshSeconds: TimeInterval {
+        tickSeconds * Double(maxEntries)
+    }
 }
 
 // MARK: - Configuration
@@ -82,10 +87,18 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
-        let entry = Entry(date: now, colourScheme: scheme)
-        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+        let start = Date()
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
+
+        for i in 0..<WWClockTimelineTuning.maxEntries {
+            let d = start.addingTimeInterval(Double(i) * WWClockTimelineTuning.tickSeconds)
+            entries.append(Entry(date: d, colourScheme: scheme))
+        }
+
+        let nextRefresh = start.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
+        return Timeline(entries: entries, policy: .after(nextRefresh))
     }
 }
 
@@ -112,51 +125,18 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 // MARK: - Time maths
 
 private struct WWClockHandAngles {
-    let hour: Angle
-    let minute: Angle
-    let second: Angle
+    let hourDegrees: Double
+    let minuteDegrees: Double
+    let secondDegrees: Double
 
-    init(date: Date, timeZone: TimeZone, quantiseToWholeSeconds: Bool) {
+    init(date: Date, timeZone: TimeZone) {
         let tz = TimeInterval(timeZone.secondsFromGMT(for: date))
-        var localT = date.timeIntervalSinceReferenceDate + tz
-
-        if quantiseToWholeSeconds {
-            localT = floor(localT)
-        }
+        let localT = date.timeIntervalSinceReferenceDate + tz
 
         // Monotonic angles (no mod 360) to avoid reverse interpolation at wrap boundaries.
-        let secondDegrees = localT * (360.0 / 60.0)
-        let minuteDegrees = localT * (360.0 / 3600.0)
-        let hourDegrees = localT * (360.0 / 43200.0)
-
-        self.second = .degrees(secondDegrees)
-        self.minute = .degrees(minuteDegrees)
-        self.hour = .degrees(hourDegrees)
-    }
-}
-
-// MARK: - Per-second driver
-
-private struct WWPerSecondDriver<Content: View>: View {
-    let anchorDate: Date
-
-    @ViewBuilder
-    let content: (Date) -> Content
-
-    var body: some View {
-        // The Text(.timer) updates at ~1Hz when the host chooses to.
-        // The key change: render the clock in an OVERLAY of the same Text subtree,
-        // so the host can't update only the text layer and leave the clock frozen.
-        Text(anchorDate, style: .timer)
-            .font(.system(size: 1).monospacedDigit())
-            .foregroundStyle(Color.clear)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-            .overlay {
-                content(Date())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+        self.secondDegrees = localT * (360.0 / 60.0)
+        self.minuteDegrees = localT * (360.0 / 3600.0)
+        self.hourDegrees = localT * (360.0 / 43200.0)
     }
 }
 
@@ -174,32 +154,30 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WWPerSecondDriver(anchorDate: entry.date) { now in
-            let angles = WWClockHandAngles(
-                date: now,
-                timeZone: .autoupdatingCurrent,
-                quantiseToWholeSeconds: true
+        let angles = WWClockHandAngles(
+            date: entry.date,
+            timeZone: .autoupdatingCurrent
+        )
+
+        ZStack(alignment: .bottomTrailing) {
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(angles.hourDegrees),
+                minuteAngle: .degrees(angles.minuteDegrees),
+                secondAngle: .degrees(angles.secondDegrees)
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Animate the hands between timeline entries.
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.secondDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.minuteDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.hourDegrees)
 
-            ZStack(alignment: .bottomTrailing) {
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: angles.hour,
-                    minuteAngle: angles.minute,
-                    secondAngle: angles.second
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .transaction { txn in
-                    txn.animation = nil
-                }
-
-                #if DEBUG
-                Text(now, format: .dateTime.hour().minute().second())
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary.opacity(0.35))
-                    .padding(6)
-                #endif
-            }
+            #if DEBUG
+            Text(entry.date, format: .dateTime.hour().minute().second())
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary.opacity(0.35))
+                .padding(6)
+            #endif
         }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
