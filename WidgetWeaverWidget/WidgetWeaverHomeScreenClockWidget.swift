@@ -11,12 +11,13 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    /// Timeline cadence. The system may coalesce faster timelines anyway.
+    // Home Screen widgets do not guarantee 1 Hz redraws for non-text content.
+    // On iOS 26 the system often coalesces to ~2s anyway, so target 2s.
     static let tickSeconds: TimeInterval = 2.0
 
-    /// Number of entries emitted per timeline request.
-    /// 1800 @ 2s ≈ 1 hour of motion before WidgetKit asks for a new timeline.
-    static let maxEntries: Int = 1800
+    // Keep under WidgetKit’s practical entry limits.
+    // 180 @ 2s ≈ 6 minutes of smooth sweeping between provider reloads.
+    static let maxEntries: Int = 180
 
     static var providerRefreshSeconds: TimeInterval {
         tickSeconds * Double(maxEntries)
@@ -46,7 +47,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .orchid: DisplayRepresentation(title: "Orchid"),
             .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: DisplayRepresentation(title: "Graphite"),
+            .graphite: DisplayRepresentation(title: "Graphite")
         ]
     }
 }
@@ -87,17 +88,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let start = Date()
+        let base = Date()
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
 
         for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = start.addingTimeInterval(Double(i) * WWClockTimelineTuning.tickSeconds)
+            let d = base.addingTimeInterval(Double(i) * WWClockTimelineTuning.tickSeconds)
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
-        let nextRefresh = start.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
+        let nextRefresh = base.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
         return Timeline(entries: entries, policy: .after(nextRefresh))
     }
 }
@@ -124,16 +125,17 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 
 // MARK: - Time maths
 
-private struct WWClockHandAngles {
+private struct WWClockHandDegrees {
     let hourDegrees: Double
     let minuteDegrees: Double
     let secondDegrees: Double
 
     init(date: Date, timeZone: TimeZone) {
+        // Use local-time seconds but keep angles monotonic (no mod 360)
+        // so interpolation never runs backwards at wrap boundaries.
         let tz = TimeInterval(timeZone.secondsFromGMT(for: date))
         let localT = date.timeIntervalSinceReferenceDate + tz
 
-        // Monotonic angles (no mod 360) to avoid reverse interpolation at wrap boundaries.
         self.secondDegrees = localT * (360.0 / 60.0)
         self.minuteDegrees = localT * (360.0 / 3600.0)
         self.hourDegrees = localT * (360.0 / 43200.0)
@@ -154,7 +156,7 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        let angles = WWClockHandAngles(
+        let deg = WWClockHandDegrees(
             date: entry.date,
             timeZone: .autoupdatingCurrent
         )
@@ -162,15 +164,15 @@ struct WidgetWeaverHomeScreenClockView: View {
         ZStack(alignment: .bottomTrailing) {
             WidgetWeaverClockIconView(
                 palette: palette,
-                hourAngle: .degrees(angles.hourDegrees),
-                minuteAngle: .degrees(angles.minuteDegrees),
-                secondAngle: .degrees(angles.secondDegrees)
+                hourAngle: .degrees(deg.hourDegrees),
+                minuteAngle: .degrees(deg.minuteDegrees),
+                secondAngle: .degrees(deg.secondDegrees)
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Animate the hands between timeline entries.
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.secondDegrees)
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.minuteDegrees)
-            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: angles.hourDegrees)
+            // Explicit hand sweep between timeline entries.
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: deg.secondDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: deg.minuteDegrees)
+            .animation(.linear(duration: WWClockTimelineTuning.tickSeconds), value: deg.hourDegrees)
 
             #if DEBUG
             Text(entry.date, format: .dateTime.hour().minute().second())
