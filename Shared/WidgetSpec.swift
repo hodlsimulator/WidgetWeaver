@@ -463,3 +463,4 @@ public struct WidgetSpecVariant: Codable, Hashable {
         return v
     }
 }
+

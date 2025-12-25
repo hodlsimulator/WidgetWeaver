@@ -240,7 +240,7 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.42
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.10)
 
-                    c.baselineOpacity = 0.24
+                    c.baselineOpacity = 0.28
                     c.baselineSoftWidthMultiplier = 3.2
                     c.baselineSoftOpacityMultiplier = 0.45
 
@@ -261,7 +261,7 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.38
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
 
-                    c.baselineOpacity = 0.22
+                    c.baselineOpacity = 0.26
                     c.baselineSoftWidthMultiplier = 3.0
                     c.baselineSoftOpacityMultiplier = 0.44
 
@@ -279,7 +279,7 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.36
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
 
-                    c.baselineOpacity = 0.21
+                    c.baselineOpacity = 0.25
                     c.baselineSoftWidthMultiplier = 3.0
                     c.baselineSoftOpacityMultiplier = 0.44
 

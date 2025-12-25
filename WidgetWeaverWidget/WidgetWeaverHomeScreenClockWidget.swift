@@ -13,16 +13,9 @@ import AppIntents
 private enum WWClockTimelineTuning {
     /// Provider refresh cadence.
     ///
-    /// The clock display is driven by time-aware SwiftUI views (`ProgressView(timerInterval:)`).
-    /// Timeline refresh exists only as a safety net.
+    /// The clock motion is driven by a live-updating `Text(..., style: .timer)` inside the widget view.
+    /// The timeline refresh exists only as a safety net for palette/config changes and long-running host quirks.
     static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
-}
-
-private enum WWClockTimeDriverTuning {
-    /// Length of the driving date-range for `ProgressView(timerInterval:)`.
-    ///
-    /// A long duration avoids the progress view reaching the end during normal use.
-    static let driverDurationSeconds: TimeInterval = 60.0 * 60.0 * 24.0 * 7.0
 }
 
 // MARK: - Configuration
@@ -112,13 +105,13 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
         .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock with a ticking second hand.")
+        .description("A small analogue clock.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
 }
 
-// MARK: - View
+// MARK: - Time maths
 
 private struct WWClockHandAngles {
     let hour: Angle
@@ -133,6 +126,7 @@ private struct WWClockHandAngles {
             localT = floor(localT)
         }
 
+        // Monotonic angles (no mod 360) to avoid reverse interpolation at wrap boundaries.
         let secondDegrees = localT * (360.0 / 60.0)
         let minuteDegrees = localT * (360.0 / 3600.0)
         let hourDegrees = localT * (360.0 / 43200.0)
@@ -143,55 +137,26 @@ private struct WWClockHandAngles {
     }
 }
 
-private struct WWClockTimeDrivenProgressStyle: ProgressViewStyle {
-    let palette: WidgetWeaverClockPalette
-    let startDate: Date
-    let endDate: Date
-    let timeZone: TimeZone
+// MARK: - Per-second driver
 
-    func makeBody(configuration: Configuration) -> some View {
-        let duration = max(1.0, endDate.timeIntervalSince(startDate))
-        let fraction = configuration.fractionCompleted ?? 0.0
-        let clamped = min(max(fraction, 0.0), 1.0)
-
-        let now = startDate.addingTimeInterval(duration * clamped)
-        let angles = WWClockHandAngles(date: now, timeZone: timeZone, quantiseToWholeSeconds: true)
-
-        return WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: angles.hour,
-            minuteAngle: angles.minute,
-            secondAngle: angles.second
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct WWClockTimeDrivenView: View {
-    let palette: WidgetWeaverClockPalette
-    let startDate: Date
-    let timeZone: TimeZone
+private struct WWPerSecondDriver<Content: View>: View {
+    let anchorDate: Date
+    let content: (Date) -> Content
 
     var body: some View {
-        let endDate = startDate.addingTimeInterval(WWClockTimeDriverTuning.driverDurationSeconds)
-
-        ProgressView(
-            timerInterval: startDate...endDate,
-            countsDown: false,
-            label: { EmptyView() },
-            currentValueLabel: { EmptyView() }
-        )
-        .progressViewStyle(
-            WWClockTimeDrivenProgressStyle(
-                palette: palette,
-                startDate: startDate,
-                endDate: endDate,
-                timeZone: timeZone
-            )
-        )
+        Text(anchorDate, style: .timer)
+            .font(.system(size: 1).monospacedDigit())
+            .foregroundStyle(Color.clear)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .background {
+                content(Date())
+            }
     }
 }
+
+// MARK: - View
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
@@ -199,16 +164,41 @@ struct WidgetWeaverHomeScreenClockView: View {
     @Environment(\.colorScheme) private var mode
 
     var body: some View {
-        let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: mode)
-
-        WWClockTimeDrivenView(
-            palette: palette,
-            startDate: entry.date,
-            timeZone: .autoupdatingCurrent
+        let palette = WidgetWeaverClockPalette.resolve(
+            scheme: entry.colourScheme,
+            mode: mode
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        WWPerSecondDriver(anchorDate: entry.date) { now in
+            let angles = WWClockHandAngles(
+                date: now,
+                timeZone: .autoupdatingCurrent,
+                quantiseToWholeSeconds: true
+            )
+
+            return ZStack(alignment: .bottomTrailing) {
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: angles.hour,
+                    minuteAngle: angles.minute,
+                    secondAngle: angles.second
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transaction { txn in
+                    txn.animation = nil
+                }
+
+                #if DEBUGz
+                Text(entry.date, style: .timer)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary.opacity(0.35))
+                    .padding(6)
+                #endif
+            }
+        }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
     }
 }
+
