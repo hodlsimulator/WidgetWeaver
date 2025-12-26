@@ -50,7 +50,10 @@ struct WeatherSmallRainLayout: View {
                 points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
-                showAxisLabels: false
+                showAxisLabels: false,
+                forecastStart: now,
+                locationLatitude: snapshot.latitude,
+                locationLongitude: snapshot.longitude
             )
             .frame(height: metrics.nowcastChartHeightSmall)
 
@@ -121,7 +124,10 @@ struct WeatherMediumRainLayout: View {
                 points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
-                showAxisLabels: true
+                showAxisLabels: true,
+                forecastStart: now,
+                locationLatitude: snapshot.latitude,
+                locationLongitude: snapshot.longitude
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightMedium)
@@ -190,7 +196,10 @@ struct WeatherLargeRainLayout: View {
                 points: nowcast.points,
                 maxIntensityMMPerHour: visualMax,
                 accent: accent,
-                showAxisLabels: true
+                showAxisLabels: true,
+                forecastStart: now,
+                locationLatitude: snapshot.latitude,
+                locationLongitude: snapshot.longitude
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: metrics.nowcastChartHeightLarge)
@@ -214,11 +223,9 @@ private struct WeatherUpdatedLabel: View {
         let store = WidgetWeaverWeatherStore.shared
         let cadenceSeconds = store.recommendedDataRefreshIntervalSeconds()
         let staleThresholdSeconds = cadenceSeconds * 2
-        let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
 
-        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds)
-            ? wwUpdatedAgoString(from: fetchedAt, now: now)
-            : nil
+        let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
+        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds) ? wwUpdatedAgoString(from: fetchedAt, now: now) : nil
 
         let text = dataAgeText.map { "Refreshed now · Data \($0)" } ?? "Refreshed now"
 

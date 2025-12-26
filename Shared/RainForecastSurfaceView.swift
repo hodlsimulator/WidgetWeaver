@@ -4,169 +4,104 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Forecast surface view + configuration.
+//  SwiftUI wrapper for the procedural nowcast surface renderer.
 //
 
 import Foundation
 import SwiftUI
 
-// MARK: - Configuration
-
 struct RainForecastSurfaceConfiguration: Hashable {
+    // MARK: - Determinism
 
-    // Background
-    var backgroundColor: Color = .clear
-    var backgroundOpacity: Double = 0.0
+    /// Base seed (caller supplies start time / family / location mixing).
+    /// Renderer further mixes in render size so grain is stable per widget size.
+    var noiseSeed: UInt64 = 0
 
-    // Input normalisation
-    var intensityCap: Double = 1.0
-    var wetThreshold: Double = 0.0
+    // MARK: - Geometry (shape-agnostic)
 
-    /// Value shaping gamma for v in [0, 1].
-    /// vShaped = pow(v, intensityEasingPower)
-    var intensityEasingPower: Double = 0.70
+    /// Top headroom fraction of chart height (≈ 6–10%).
+    var topHeadroomFraction: CGFloat = 0.08
 
-    // Geometry
-    var baselineYFraction: CGFloat = 0.82
-    var edgeInsetFraction: CGFloat = 0.0
+    /// Typical peak height above baseline as a fraction of chart height (≈ 55–65%).
+    var typicalPeakFraction: CGFloat = 0.60
 
-    /// Minimum visible height for wet samples, expressed as a fraction of maxCoreHeight.
-    var minVisibleHeightFraction: CGFloat = 0.025
+    /// Percentile used as the robust “max” for scaling (≈ 90–95th of non-zero values).
+    var robustMaxPercentile: Double = 0.93
 
-    /// Mild smoothing passes over heights (post-mapping, pre-masks).
-    var geometrySmoothingPasses: Int = 1
+    /// Gamma < 1 lifts mid-range values (prevents thin strip).
+    var intensityGamma: Double = 0.65
 
-    // MARK: - Height mapping (MUST be plot-rect based)
+    /// Dense sampling cap (per-pixel sampling is used up to this maximum).
+    var maxDenseSamples: Int = 2048
 
-    /// Hard cap: the filled core surface never exceeds this fraction of plot rect height.
-    /// (Large: 0.37 start, Medium: 0.62 start)
-    var maxCoreHeightFractionOfPlotHeight: CGFloat = 0.30
+    /// Baseline inset in pixels to avoid clipping at the bottom edge.
+    var baselineAntiClipInsetPixels: Double = 0.75
 
-    /// Optional absolute cap in points. 0 disables.
-    var maxCoreHeightPoints: CGFloat = 0.0
+    // MARK: - Core (opaque volume)
 
-    // MARK: - End tapers (ALPHA ONLY)
+    var coreTopColor: Color = Color(red: 0.12, green: 0.45, blue: 1.0)
+    var coreMidColor: Color = Color(red: 0.03, green: 0.22, blue: 0.78)
+    var coreBottomColor: Color = Color(red: 0.00, green: 0.05, blue: 0.18)
 
-    /// Fade-in over first N samples of the first wet region.
-    var wetRegionFadeInSamples: Int = 8
+    // MARK: - Gloss (inside-only)
 
-    /// Fade-out over last N samples of the last wet region.
-    var wetRegionFadeOutSamples: Int = 14
+    var glossEnabled: Bool = true
+    var glossMaxOpacity: Double = 0.18
+    var glossDepthPixels: ClosedRange<Double> = 8.0...14.0
+    var glossSoftBlurPixels: Double = 0.8
 
-    // MARK: - Segment drop settling (GEOMETRY, not end-taper)
-
-    /// Adds short geometric tails into neighbouring dry samples to avoid vertical walls at segment boundaries.
-    /// This does not “squash” the curve; it extends the curve into the baseline.
-    var geometryTailInSamples: Int = 6
-    var geometryTailOutSamples: Int = 12
-    var geometryTailPower: Double = 2.25
-
-    // Baseline styling.
-    var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
-    var baselineOpacity: Double = 0.10
-    var baselineLineWidth: CGFloat = 1.0
-    var baselineInsetPoints: CGFloat = 0.0
-    var baselineSoftWidthMultiplier: CGFloat = 2.6
-    var baselineSoftOpacityMultiplier: Double = 0.24
-
-    // MARK: - Core fill depth (smooth, no noise)
-
-    var fillBottomColor: Color = Color(red: 0.02, green: 0.04, blue: 0.09) // near-black navy
-    var fillMidColor: Color = Color(red: 0.05, green: 0.10, blue: 0.22) // mid-body lift
-    var fillTopColor: Color = Color(red: 0.18, green: 0.42, blue: 0.86) // near crest
-
-    var fillBottomOpacity: Double = 0.88
-    var fillMidOpacity: Double = 0.55
-    var fillTopOpacity: Double = 0.40
-
-    /// Optional “crest lift” inside the fill (still smooth).
-    var crestLiftEnabled: Bool = true
-    var crestLiftMaxOpacity: Double = 0.10
-
-    // MARK: - Ridge highlight (mask-derived)
-
-    var ridgeEnabled: Bool = true
-    var ridgeColor: Color = Color(red: 0.72, green: 0.92, blue: 1.0)
-    var ridgeMaxOpacity: Double = 0.22
-
-    /// Ridge thickness r in points (pre-blur). Large start 4, Medium start 3.
-    var ridgeThicknessPoints: CGFloat = 4.0
-
-    /// Ridge blur as a fraction of plot rect height (derived from plotRectHeight).
-    var ridgeBlurFractionOfPlotHeight: CGFloat = 0.11
-    var ridgePeakBoost: Double = 0.55
-
-    // MARK: - Specular glint (small peak highlight)
+    // MARK: - Glints (tiny, local maxima only)
 
     var glintEnabled: Bool = true
-    var glintColor: Color = Color(red: 0.99, green: 1.0, blue: 1.0)
-    var glintMaxOpacity: Double = 0.85
-    var glintThicknessPoints: CGFloat = 1.2
-    var glintBlurRadiusPoints: CGFloat = 1.6
-    var glintHaloOpacityMultiplier: Double = 0.20
-    var glintSpanSamples: Int = 6
-    var glintMinPeakHeightFractionOfSegmentMax: Double = 0.70
+    var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
+    var glintMaxOpacity: Double = 0.28
+    var glintBlurPixels: Double = 1.2
+    var glintMinHeightFraction: Double = 0.55
+    var glintMaxCount: Int = 2
 
-    // MARK: - Broad bloom (unused by the nowcast spec implementation)
+    // MARK: - Fuzz (granular speckle outside core)
 
-    var bloomEnabled: Bool = true
-    var bloomColor: Color = Color(red: 0.42, green: 0.78, blue: 1.0)
-    var bloomMaxOpacity: Double = 0.06
-    var bloomBlurFractionOfPlotHeight: CGFloat = 0.52
-    var bloomBandHeightFractionOfPlotHeight: CGFloat = 0.70
+    var fuzzEnabled: Bool = true
+    var fuzzColor: Color = Color(red: 0.65, green: 0.90, blue: 1.0)
+    var fuzzMaxOpacity: Double = 0.18
 
-    // MARK: - Surface shell fuzz
+    /// fuzzWidth ≈ 10–20% of chart height
+    var fuzzWidthFraction: CGFloat = 0.16
 
-    var shellEnabled: Bool = true
-    var shellColor: Color = Color(red: 0.60, green: 0.86, blue: 1.0)
-    var shellMaxOpacity: Double = 0.16
-    var shellInsideThicknessPoints: CGFloat = 2.0
+    /// Pixel clamp so fuzz stays consistent across very small/large chart sizes.
+    var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...90.0
 
-    /// Historical name: shellAboveThicknessPoints (kept for API stability).
-    var shellAboveThicknessPoints: CGFloat = 10.0
-    var shellNoiseAmount: Double = 0.28
-    var shellBlurFractionOfPlotHeight: CGFloat = 0.030
-    var shellPuffsPerSampleMax: Int = 5
-    var shellPuffMinRadiusPoints: CGFloat = 0.7
-    var shellPuffMaxRadiusPoints: CGFloat = 3.0
+    /// Base density (turned into speckles via deterministic thresholding).
+    var fuzzBaseDensity: Double = 0.55
 
-    // MARK: - Above-surface mist (unused by the nowcast spec implementation)
+    /// Stronger concentration near baseline / lower slopes.
+    var fuzzLowHeightPower: Double = 1.7
 
-    var mistEnabled: Bool = true
-    var mistColor: Color = Color(red: 0.50, green: 0.74, blue: 1.0)
-    var mistMaxOpacity: Double = 0.18
-    var mistHeightPoints: CGFloat = 60.0
-    var mistHeightFractionOfPlotHeight: CGFloat = 0.85
-    var mistFalloffPower: Double = 1.70
-    var mistNoiseEnabled: Bool = true
-    var mistNoiseInfluence: Double = 0.25
-    var mistPuffsPerSampleMax: Int = 12
-    var mistFineGrainPerSampleMax: Int = 8
-    var mistParticleMinRadiusPoints: CGFloat = 0.7
-    var mistParticleMaxRadiusPoints: CGFloat = 3.8
-    var mistFineParticleMinRadiusPoints: CGFloat = 0.35
-    var mistFineParticleMaxRadiusPoints: CGFloat = 1.1
+    /// Keeps a small envelope even when certainty is high.
+    var fuzzUncertaintyFloor: Double = 0.10
+
+    /// Optional micro-blur (< 1 px) for fuzz only.
+    var fuzzMicroBlurPixels: Double = 0.6
+
+    /// Speckle radius range in pixels.
+    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
+
+    /// Upper bound on speckle attempts per column.
+    var fuzzMaxAttemptsPerColumn: Int = 28
+
+    // MARK: - Baseline
+
+    var baselineColor: Color = Color(red: 0.55, green: 0.75, blue: 1.0)
+    var baselineLineOpacity: Double = 0.30
+    var baselineEndFadeFraction: CGFloat = 0.035
 }
 
-// MARK: - View
-
 struct RainForecastSurfaceView: View {
-
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
 
     @Environment(\.displayScale) private var displayScale
-
-    init(
-        intensities: [Double],
-        certainties: [Double],
-        configuration: RainForecastSurfaceConfiguration
-    ) {
-        self.intensities = intensities
-        self.certainties = certainties
-        self.configuration = configuration
-    }
 
     var body: some View {
         Canvas { context, size in
@@ -178,5 +113,6 @@ struct RainForecastSurfaceView: View {
             )
             renderer.render(in: &context, size: size)
         }
+        .drawingGroup(opaque: false, colorMode: .linear)
     }
 }
