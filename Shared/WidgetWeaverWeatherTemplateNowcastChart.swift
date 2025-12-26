@@ -14,6 +14,12 @@ import SwiftUI
 import WidgetKit
 #endif
 
+fileprivate enum NowcastChartFamilyKind {
+    case large
+    case medium
+    case small
+}
+
 struct WeatherNowcastChart: View {
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
@@ -23,6 +29,63 @@ struct WeatherNowcastChart: View {
     #if canImport(WidgetKit)
     @Environment(\.widgetFamily) private var widgetFamily
     #endif
+
+    private struct Insets {
+        var plotHorizontal: CGFloat
+        var plotTop: CGFloat
+        var plotBottom: CGFloat
+
+        var axisSafeBottom: CGFloat
+        var axisHorizontal: CGFloat
+        var axisBottom: CGFloat
+    }
+
+    private var familyKind: NowcastChartFamilyKind {
+        #if canImport(WidgetKit)
+        switch widgetFamily {
+        case .systemSmall:
+            return .small
+        case .systemMedium:
+            return .medium
+        default:
+            return .large
+        }
+        #else
+        return .large
+        #endif
+    }
+
+    private var chartInsets: Insets {
+        switch familyKind {
+        case .large:
+            return Insets(
+                plotHorizontal: 12,
+                plotTop: 10,
+                plotBottom: 10,
+                axisSafeBottom: 32,
+                axisHorizontal: 18,
+                axisBottom: 12
+            )
+        case .medium:
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 10,
+                plotBottom: 10,
+                axisSafeBottom: 28,
+                axisHorizontal: 18,
+                axisBottom: 12
+            )
+        case .small:
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 8,
+                plotBottom: 8,
+                axisSafeBottom: 24,
+                axisHorizontal: 18,
+                axisBottom: 10
+            )
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -51,7 +114,8 @@ struct WeatherNowcastChart: View {
                 samples: WeatherNowcastSurfacePlot.samples(from: points, targetMinutes: 60),
                 maxIntensityMMPerHour: maxIntensityMMPerHour,
                 accent: accent,
-                baselineLabelSafeBottom: showAxisLabels ? insets.axisSafeBottom : 0
+                baselineLabelSafeBottom: showAxisLabels ? insets.axisSafeBottom : 0,
+                familyKind: familyKind
             )
             .padding(.horizontal, insets.plotHorizontal)
             .padding(.top, insets.plotTop)
@@ -68,67 +132,14 @@ struct WeatherNowcastChart: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: insets.axisSafeBottom + 10)
-                .allowsHitTesting(false)
+                .frame(maxWidth: .infinity, maxHeight: 42)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 WeatherNowcastAxisLabels()
                     .padding(.horizontal, insets.axisHorizontal)
                     .padding(.bottom, insets.axisBottom)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private struct Insets {
-        let plotHorizontal: CGFloat
-        let plotTop: CGFloat
-        let plotBottom: CGFloat
-        let axisSafeBottom: CGFloat
-        let axisHorizontal: CGFloat
-        let axisBottom: CGFloat
-    }
-
-    private var chartInsets: Insets {
-        #if canImport(WidgetKit)
-        switch widgetFamily {
-        case .systemMedium:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 6,
-                plotBottom: 6,
-                axisSafeBottom: 24,
-                axisHorizontal: 18,
-                axisBottom: 10
-            )
-        case .systemLarge:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 10,
-                plotBottom: 10,
-                axisSafeBottom: 32,
-                axisHorizontal: 18,
-                axisBottom: 12
-            )
-        default:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 8,
-                plotBottom: 8,
-                axisSafeBottom: 24,
-                axisHorizontal: 18,
-                axisBottom: 10
-            )
-        }
-        #else
-        return Insets(
-            plotHorizontal: 10,
-            plotTop: 8,
-            plotBottom: 8,
-            axisSafeBottom: 28,
-            axisHorizontal: 18,
-            axisBottom: 10
-        )
-        #endif
     }
 }
 
@@ -153,37 +164,10 @@ private struct WeatherNowcastSurfacePlot: View {
     let samples: [Sample]
     let maxIntensityMMPerHour: Double
     let accent: Color
-
-    /// Vertical space reserved for the axis labels overlay.
-    /// The renderer baseline is positioned just above this region.
     let baselineLabelSafeBottom: CGFloat
+    let familyKind: NowcastChartFamilyKind
 
     @Environment(\.displayScale) private var displayScale
-
-    #if canImport(WidgetKit)
-    @Environment(\.widgetFamily) private var widgetFamily
-    #endif
-
-    private enum FamilyKind {
-        case small
-        case medium
-        case large
-    }
-
-    private var familyKind: FamilyKind {
-        #if canImport(WidgetKit)
-        switch widgetFamily {
-        case .systemMedium:
-            return .medium
-        case .systemLarge:
-            return .large
-        default:
-            return .large
-        }
-        #else
-        return .large
-        #endif
-    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -194,8 +178,8 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let n = samples.count
 
-            let horizonStart = 0.15
-            let horizonEndCertainty = 0.55
+            let horizonStart: Double = 0.65
+            let horizonEndCertainty: Double = 0.72
 
             let certainties: [Double] = samples.enumerated().map { idx, s in
                 let chance = RainSurfaceMath.clamp01(s.chance01)
@@ -219,11 +203,9 @@ private struct WeatherNowcastSurfacePlot: View {
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
 
-                // Palette tuned to match the mockup: deep navy base, saturated body, electric crest.
                 let deepNavy = Color(red: 0.00, green: 0.02, blue: 0.18)
                 let saturatedBody = Color(red: 0.00, green: 0.11, blue: 0.55)
 
-                // Fixed blur radii (expressed via fractions to keep the configuration format).
                 func fraction(forPoints points: CGFloat) -> CGFloat {
                     points / max(onePixel, plotH)
                 }
@@ -244,17 +226,14 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.baselineSoftWidthMultiplier = 3.2
                     c.baselineSoftOpacityMultiplier = 0.45
 
-                    // Halo-like bloom is disabled for the mockup match.
                     c.bloomEnabled = false
-
-                    // The mockup reads as boundary fuzz rather than tall mist.
                     c.mistEnabled = false
 
                 case .medium:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.80
-                    c.intensityEasingPower = 0.56
+                    c.maxCoreHeightFractionOfPlotHeight = 0.38
+                    c.intensityEasingPower = 0.76
 
-                    c.ridgeThicknessPoints = 3.0
+                    c.ridgeThicknessPoints = 3.5
                     c.ridgeBlurFractionOfPlotHeight = fraction(forPoints: 4.2)
 
                     c.shellAboveThicknessPoints = 11.0
@@ -269,10 +248,10 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.mistEnabled = false
 
                 case .small:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.55
-                    c.intensityEasingPower = 0.70
+                    c.maxCoreHeightFractionOfPlotHeight = 0.36
+                    c.intensityEasingPower = 0.78
 
-                    c.ridgeThicknessPoints = 3.0
+                    c.ridgeThicknessPoints = 3.2
                     c.ridgeBlurFractionOfPlotHeight = fraction(forPoints: 4.0)
 
                     c.shellAboveThicknessPoints = 10.0
@@ -291,10 +270,9 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.wetThreshold = WeatherNowcast.wetIntensityThresholdMMPerHour
 
                 c.baselineYFraction = baselineFraction
-                c.edgeInsetFraction = 0.00
+                c.edgeInsetFraction = 0.0
 
                 c.minVisibleHeightFraction = (familyKind == .medium) ? 0.040 : 0.022
-
                 c.geometrySmoothingPasses = 1
 
                 c.wetRegionFadeInSamples = 9
@@ -312,7 +290,6 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fillMidColor = saturatedBody
                 c.fillTopColor = accent
 
-                // Brighter fill to match the mockup.
                 c.fillBottomOpacity = 0.98
 
                 switch familyKind {
@@ -342,7 +319,6 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.ridgeMaxOpacity = RainSurfaceMath.clamp01(0.38 + 0.18 * peak01)
                 c.ridgePeakBoost = 0.85 + 0.30 * peak01
 
-                // Specular peak glint (small white highlight at the crest).
                 c.glintEnabled = true
                 c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
                 c.glintMaxOpacity = RainSurfaceMath.clamp01(0.92 + 0.06 * peak01)
@@ -357,7 +333,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.shellMaxOpacity = 0.24
                 c.shellInsideThicknessPoints = 2.0
 
-                c.shellPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 5 : 7
+                c.shellPuffsPerSampleMax = WidgetWeaverRuntime.isRunningInAppExtension ? 3 : 6
                 c.shellPuffMinRadiusPoints = 0.60
                 c.shellPuffMaxRadiusPoints = 2.20
 
