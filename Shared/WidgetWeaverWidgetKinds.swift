@@ -17,5 +17,5 @@ public enum WidgetWeaverWidgetKinds {
     // Bumped to flush any archived/stuck render snapshots during iteration.
     // If the Home Screen still shows a frozen/stale clock after reinstall, bump again (V5, V6, ...),
     // then remove and re-add the widget.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV4"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV5"
 }
