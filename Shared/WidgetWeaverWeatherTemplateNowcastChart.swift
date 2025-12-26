@@ -212,7 +212,7 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 switch familyKind {
                 case .large:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.44
+                    c.maxCoreHeightFractionOfPlotHeight = 0.62
                     c.intensityEasingPower = 0.74
 
                     c.ridgeThicknessPoints = 4.0
@@ -230,7 +230,7 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.mistEnabled = false
 
                 case .medium:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.38
+                    c.maxCoreHeightFractionOfPlotHeight = 0.66
                     c.intensityEasingPower = 0.76
 
                     c.ridgeThicknessPoints = 3.5
@@ -248,7 +248,7 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.mistEnabled = false
 
                 case .small:
-                    c.maxCoreHeightFractionOfPlotHeight = 0.36
+                    c.maxCoreHeightFractionOfPlotHeight = 0.62
                     c.intensityEasingPower = 0.78
 
                     c.ridgeThicknessPoints = 3.2
