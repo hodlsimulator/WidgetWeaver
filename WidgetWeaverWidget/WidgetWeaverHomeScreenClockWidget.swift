@@ -13,8 +13,8 @@ import AppIntents
 private enum WWClockTimelineTuning {
     /// Provider refresh cadence.
     ///
-    /// The clock motion is driven by `TimelineView(.animation)` inside `WidgetWeaverClockWidgetLiveView`.
-    /// WidgetKit timelines stay sparse to avoid refresh throttling.
+    /// Clock motion is driven by a view-level `TimelineView(.periodic)` inside
+    /// `WidgetWeaverClockWidgetLiveView`, so WidgetKit timeline reloads stay sparse to avoid throttling.
     static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
 }
 
@@ -124,9 +124,12 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(palette: palette)
-            .wwWidgetContainerBackground {
-                WidgetWeaverClockBackgroundView(palette: palette)
-            }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            anchorDate: entry.date
+        )
+        .wwWidgetContainerBackground {
+            WidgetWeaverClockBackgroundView(palette: palette)
+        }
     }
 }

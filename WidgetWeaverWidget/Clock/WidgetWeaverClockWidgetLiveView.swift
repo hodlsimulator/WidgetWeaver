@@ -7,14 +7,12 @@
 
 import SwiftUI
 
-private enum WWClockLiveTuning {
-    /// Allows a smooth sweep when the system is willing to tick frequently.
-    /// The system may still coalesce updates depending on Home Screen state.
-    static let minimumInterval: TimeInterval = 1.0 / 30.0
-}
-
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
+
+    /// Stable schedule anchor (comes from the WidgetKit entry date).
+    /// This keeps the periodic schedule identity stable across renders.
+    let anchorDate: Date
 
     @Environment(\.displayScale) private var displayScale
 
@@ -169,48 +167,37 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 .clipShape(Circle())
                 .compositingGroup()
 
-                TimelineView(.animation(minimumInterval: WWClockLiveTuning.minimumInterval)) { context in
-                    let angles = WidgetWeaverClockAngles(now: context.date)
+                // Hands: update once per second without WidgetKit timeline spam.
+                TimelineView(.periodic(from: anchorDate, by: 1.0)) { context in
+                    let angles = WidgetWeaverClockAngles(now: context.date, timeZone: .autoupdatingCurrent)
 
-                    ZStack(alignment: .bottomTrailing) {
-                        ZStack {
-                            WidgetWeaverClockHandsView(
-                                palette: palette,
-                                dialDiameter: dialDiameter,
-                                hourAngle: angles.hour,
-                                minuteAngle: angles.minute,
-                                secondAngle: angles.second,
-                                hourLength: hourLength,
-                                hourWidth: hourWidth,
-                                minuteLength: minuteLength,
-                                minuteWidth: minuteWidth,
-                                secondLength: secondLength,
-                                secondWidth: secondWidth,
-                                secondTipSide: secondTipSide,
-                                scale: displayScale
-                            )
+                    ZStack {
+                        WidgetWeaverClockHandsView(
+                            palette: palette,
+                            dialDiameter: dialDiameter,
+                            hourAngle: angles.hour,
+                            minuteAngle: angles.minute,
+                            secondAngle: angles.second,
+                            hourLength: hourLength,
+                            hourWidth: hourWidth,
+                            minuteLength: minuteLength,
+                            minuteWidth: minuteWidth,
+                            secondLength: secondLength,
+                            secondWidth: secondWidth,
+                            secondTipSide: secondTipSide,
+                            scale: displayScale
+                        )
 
-                            WidgetWeaverClockCentreHubView(
-                                palette: palette,
-                                baseRadius: hubBaseRadius,
-                                capRadius: hubCapRadius,
-                                scale: displayScale
-                            )
-                        }
-                        .frame(width: dialDiameter, height: dialDiameter)
-                        .allowsHitTesting(false)
-
-                        #if DEBUG
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(context.date, format: .dateTime.hour().minute().second())
-                            Text("TV .animation")
-                        }
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary.opacity(0.55))
-                        .padding(6)
-                        #endif
+                        WidgetWeaverClockCentreHubView(
+                            palette: palette,
+                            baseRadius: hubBaseRadius,
+                            capRadius: hubCapRadius,
+                            scale: displayScale
+                        )
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(width: dialDiameter, height: dialDiameter)
+                    // Smooth sweep across each 1-second step.
+                    .animation(.linear(duration: 1.0), value: angles.secondDegrees)
                 }
 
                 WidgetWeaverClockBezelView(
@@ -221,6 +208,25 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     ringC: ringC,
                     scale: displayScale
                 )
+
+                #if DEBUG
+                // Debug timestamp that must advance (driven by the same 1 Hz periodic schedule).
+                TimelineView(.periodic(from: anchorDate, by: 1.0)) { context in
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(context.date, format: .dateTime.hour().minute().second())
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary.opacity(0.70))
+
+                        Text("anchor: \(anchorDate, format: .dateTime.hour().minute().second())")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary.opacity(0.35))
+                    }
+                    .padding(6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+                #endif
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
@@ -233,14 +239,22 @@ private struct WidgetWeaverClockAngles {
     let minute: Angle
     let second: Angle
 
-    init(now: Date) {
-        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: now))
-        let local = now.timeIntervalSince1970 + tz
+    /// Monotonic (no modulo) value used as the animation driver.
+    let secondDegrees: Double
 
-        let secondDeg = local * 6.0
-        let minuteDeg = local * (360.0 / 3600.0)
-        let hourDeg = local * (360.0 / 43200.0)
+    init(now: Date, timeZone: TimeZone) {
+        let tz = TimeInterval(timeZone.secondsFromGMT(for: now))
+        let localT = now.timeIntervalSinceReferenceDate + tz
 
+        // Tick at whole seconds, but animate smoothly over the following second.
+        let localTSeconds = floor(localT)
+
+        // Monotonic angles (no mod 360) to avoid reverse interpolation at wrap boundaries.
+        let secondDeg = localTSeconds * (360.0 / 60.0)
+        let minuteDeg = localT * (360.0 / 3600.0)
+        let hourDeg = localT * (360.0 / 43200.0)
+
+        self.secondDegrees = secondDeg
         self.second = .degrees(secondDeg)
         self.minute = .degrees(minuteDeg)
         self.hour = .degrees(hourDeg)

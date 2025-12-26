@@ -14,6 +14,8 @@ public enum WidgetWeaverWidgetKinds {
     public static let lockScreenSteps = "WidgetWeaverLockScreenStepsWidget"
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
-    // Bumped to force a clean WidgetKit archive during iteration.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV2"
+    // Bumped to flush any archived/stuck render snapshots during iteration.
+    // If the Home Screen still shows a frozen/stale clock after reinstall, bump again (V5, V6, ...),
+    // then remove and re-add the widget.
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV4"
 }
