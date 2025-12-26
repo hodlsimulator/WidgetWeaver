@@ -222,9 +222,9 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.42
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.10)
 
-                    c.baselineOpacity = 0.28
+                    c.baselineOpacity = 0.34
                     c.baselineSoftWidthMultiplier = 3.2
-                    c.baselineSoftOpacityMultiplier = 0.45
+                    c.baselineSoftOpacityMultiplier = 0.52
 
                     c.bloomEnabled = false
                     c.mistEnabled = false
@@ -240,9 +240,9 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.38
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
 
-                    c.baselineOpacity = 0.26
+                    c.baselineOpacity = 0.32
                     c.baselineSoftWidthMultiplier = 3.0
-                    c.baselineSoftOpacityMultiplier = 0.44
+                    c.baselineSoftOpacityMultiplier = 0.50
 
                     c.bloomEnabled = false
                     c.mistEnabled = false
@@ -258,9 +258,9 @@ private struct WeatherNowcastSurfacePlot: View {
                     c.shellNoiseAmount = 0.36
                     c.shellBlurFractionOfPlotHeight = fraction(forPoints: 1.00)
 
-                    c.baselineOpacity = 0.25
+                    c.baselineOpacity = 0.30
                     c.baselineSoftWidthMultiplier = 3.0
-                    c.baselineSoftOpacityMultiplier = 0.44
+                    c.baselineSoftOpacityMultiplier = 0.50
 
                     c.bloomEnabled = false
                     c.mistEnabled = false
