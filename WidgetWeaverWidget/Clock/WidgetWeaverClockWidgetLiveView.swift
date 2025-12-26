@@ -5,15 +5,12 @@
 //  Created by . . on 12/25/25.
 //
 
-import Foundation
 import SwiftUI
 
-private enum WWClockWidgetLiveTuning {
-    // Matches README observations: Home Screen widget updates often coalesce to ~2 seconds.
-    static let tickSeconds: TimeInterval = 2.0
-
-    // Always-on for now so the host behaviour is obvious during debugging.
-    static let showDebugOverlay: Bool = true
+private enum WWClockLiveTuning {
+    /// Allows a smooth sweep when the system is willing to tick frequently.
+    /// The system may still coalesce updates depending on Home Screen state.
+    static let minimumInterval: TimeInterval = 1.0 / 30.0
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
@@ -128,54 +125,54 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 scale: displayScale
             )
 
-            ZStack(alignment: .bottomTrailing) {
+            ZStack {
                 ZStack {
-                    ZStack {
-                        WidgetWeaverClockDialFaceView(
-                            palette: palette,
-                            radius: R,
-                            occlusionWidth: occlusionWidth
-                        )
+                    WidgetWeaverClockDialFaceView(
+                        palette: palette,
+                        radius: R,
+                        occlusionWidth: occlusionWidth
+                    )
 
-                        WidgetWeaverClockMinuteDotsView(
-                            count: 60,
-                            radius: dotRadius,
-                            dotDiameter: dotDiameter,
-                            dotColour: palette.minuteDot,
-                            scale: displayScale
-                        )
+                    WidgetWeaverClockMinuteDotsView(
+                        count: 60,
+                        radius: dotRadius,
+                        dotDiameter: dotDiameter,
+                        dotColour: palette.minuteDot,
+                        scale: displayScale
+                    )
 
-                        WidgetWeaverClockHourIndicesView(
-                            palette: palette,
-                            dialDiameter: dialDiameter,
-                            centreRadius: batonCentreRadius,
-                            length: batonLength,
-                            width: batonWidth,
-                            capLength: capLength,
-                            capColour: palette.accent,
-                            scale: displayScale
-                        )
+                    WidgetWeaverClockHourIndicesView(
+                        palette: palette,
+                        dialDiameter: dialDiameter,
+                        centreRadius: batonCentreRadius,
+                        length: batonLength,
+                        width: batonWidth,
+                        capLength: capLength,
+                        capColour: palette.accent,
+                        scale: displayScale
+                    )
 
-                        WidgetWeaverClockCardinalPipsView(
-                            pipColour: palette.accent,
-                            side: pipSide,
-                            radius: pipRadius
-                        )
+                    WidgetWeaverClockCardinalPipsView(
+                        pipColour: palette.accent,
+                        side: pipSide,
+                        radius: pipRadius
+                    )
 
-                        WidgetWeaverClockNumeralsView(
-                            palette: palette,
-                            radius: numeralsRadius,
-                            fontSize: numeralsSize,
-                            scale: displayScale
-                        )
-                    }
-                    .frame(width: dialDiameter, height: dialDiameter)
-                    .clipShape(Circle())
-                    .compositingGroup()
+                    WidgetWeaverClockNumeralsView(
+                        palette: palette,
+                        radius: numeralsRadius,
+                        fontSize: numeralsSize,
+                        scale: displayScale
+                    )
+                }
+                .frame(width: dialDiameter, height: dialDiameter)
+                .clipShape(Circle())
+                .compositingGroup()
 
-                    TimelineView(.periodic(from: Date(), by: WWClockWidgetLiveTuning.tickSeconds)) { context in
-                        let angles = WidgetWeaverClockAngles(now: context.date)
+                TimelineView(.animation(minimumInterval: WWClockLiveTuning.minimumInterval)) { context in
+                    let angles = WidgetWeaverClockAngles(now: context.date)
 
+                    ZStack(alignment: .bottomTrailing) {
                         ZStack {
                             WidgetWeaverClockHandsView(
                                 palette: palette,
@@ -201,33 +198,32 @@ struct WidgetWeaverClockWidgetLiveView: View {
                             )
                         }
                         .frame(width: dialDiameter, height: dialDiameter)
-                        .animation(.linear(duration: WWClockWidgetLiveTuning.tickSeconds), value: angles.secondDegrees)
-                    }
+                        .allowsHitTesting(false)
 
-                    WidgetWeaverClockBezelView(
-                        palette: palette,
-                        outerDiameter: outerDiameter,
-                        ringA: ringA,
-                        ringB: ringB,
-                        ringC: ringC,
-                        scale: displayScale
-                    )
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityHidden(true)
-
-                if WWClockWidgetLiveTuning.showDebugOverlay {
-                    TimelineView(.periodic(from: Date(), by: WWClockWidgetLiveTuning.tickSeconds)) { context in
+                        #if DEBUG
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(context.date, format: .dateTime.hour().minute().second())
-                            Text("CLK V3")
+                            Text("TV .animation")
                         }
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary.opacity(0.55))
+                        .padding(6)
+                        #endif
                     }
-                    .padding(6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+
+                WidgetWeaverClockBezelView(
+                    palette: palette,
+                    outerDiameter: outerDiameter,
+                    ringA: ringA,
+                    ringB: ringB,
+                    ringC: ringC,
+                    scale: displayScale
+                )
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityHidden(true)
         }
     }
 }
@@ -237,17 +233,14 @@ private struct WidgetWeaverClockAngles {
     let minute: Angle
     let second: Angle
 
-    let secondDegrees: Double
-
     init(now: Date) {
-        let tz = TimeInterval(TimeZone.current.secondsFromGMT(for: now))
+        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: now))
         let local = now.timeIntervalSince1970 + tz
 
         let secondDeg = local * 6.0
         let minuteDeg = local * (360.0 / 3600.0)
         let hourDeg = local * (360.0 / 43200.0)
 
-        self.secondDegrees = secondDeg
         self.second = .degrees(secondDeg)
         self.minute = .degrees(minuteDeg)
         self.hour = .degrees(hourDeg)

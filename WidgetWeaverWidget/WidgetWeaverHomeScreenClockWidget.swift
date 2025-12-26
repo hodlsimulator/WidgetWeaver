@@ -11,8 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    /// Keep WidgetKit timelines sparse to avoid refresh throttling.
-    /// The clock motion is driven by a SwiftUI animation loop while visible.
+    /// Provider refresh cadence.
+    ///
+    /// The clock motion is driven by `TimelineView(.animation)` inside `WidgetWeaverClockWidgetLiveView`.
+    /// WidgetKit timelines stay sparse to avoid refresh throttling.
     static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
 }
 
@@ -100,10 +102,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Ensures deterministic snapshots when WidgetKit pre-renders.
-            WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverHomeScreenClockView(entry: entry)
-            }
+            WidgetWeaverHomeScreenClockView(entry: entry)
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
@@ -125,25 +124,9 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        ZStack(alignment: .bottomTrailing) {
-            // Widgy-style: one long-running SwiftUI sweep loop.
-            // When the widget becomes visible again, the view re-syncs to current time.
-            WidgetWeaverClockLiveView(
-                palette: palette,
-                startDate: entry.date
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            #if DEBUG
-            // Debug-only: confirms the view exists; the clock motion is not driven by this text.
-            Text(Date(), style: .timer)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary.opacity(0.45))
-                .padding(6)
-            #endif
-        }
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
-        }
+        WidgetWeaverClockWidgetLiveView(palette: palette)
+            .wwWidgetContainerBackground {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
     }
 }

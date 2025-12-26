@@ -3,6 +3,7 @@
 WidgetWeaver is an **iOS 26-only** prototype app that turns a typed “widget design spec” into real WidgetKit widgets.
 
 The project is a playground for exploring:
+
 - A simple typed JSON-ish design spec (`WidgetSpec`)
 - Deterministic SwiftUI rendering in a WidgetKit extension (`WidgetWeaverSpecView`)
 - A lightweight template catalogue (the **Explore** tab) for seeding designs
@@ -16,6 +17,7 @@ The app and widget extension communicate via an App Group (UserDefaults + shared
 ## App structure
 
 WidgetWeaver has three tabs:
+
 - **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps)
 - **Library**: saved designs (set Default, duplicate, delete)
 - **Editor**: edits the currently selected design; **Save** pushes changes to widgets
@@ -27,6 +29,7 @@ Widgets refresh when a design is saved. If something looks stale, the in-app ref
 ## Featured — Weather
 
 WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** (`LayoutTemplateToken.weather`):
+
 - Rain-first “next hour” nowcast chart (Dark Sky-ish)
 - Hourly strip + daily highs/lows (when data is available)
 - Glass container + glow styling
@@ -35,6 +38,7 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
 - Includes a Lock Screen companion widget: **Rain (WidgetWeaver)** (accessory rectangular)
 
 ### Weather setup checklist
+
 - Explore → Weather: location selected (Current Location or search)
 - Weather snapshot cached (Update now)
 - Weather template added into the Library (optionally “Add & Make Default”)
@@ -43,6 +47,7 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
   - Lock Screen: **Rain (WidgetWeaver)**
 
 Notes:
+
 - Widgets refresh on a schedule, but **WidgetKit may throttle updates**.
 - Weather UI provides “Update now” to refresh the cached snapshot used by widgets.
 
@@ -51,6 +56,7 @@ Notes:
 ## Featured — Next Up (Calendar)
 
 WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`LayoutTemplateToken.nextUpCalendar`):
+
 - Next calendar event with a live countdown
 - Medium/Large can also show a “Then” line (second upcoming event)
 - Cached calendar snapshot stored in the App Group (offline-friendly widgets)
@@ -58,6 +64,7 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
 - Includes a Lock Screen companion widget: **Next Up (WidgetWeaver)** (inline / circular / rectangular)
 
 ### Next Up (Calendar) setup checklist
+
 - Explore → Templates: **Next Up (Calendar)** added into the Library
 - Calendar permission granted
 - Calendar snapshot cached (Next Up refresh action)
@@ -66,8 +73,8 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
   - Lock Screen: **Next Up (WidgetWeaver)**
 
 Notes:
-- Calendar widgets render from a cache.
-- If the widget looks stale:
+
+- Calendar widgets render from a cache. If the widget looks stale:
   - refresh the Calendar snapshot (Next Up refresh action), then
   - refresh widget timelines (Editor → … → Refresh Widgets).
 
@@ -76,6 +83,7 @@ Notes:
 ## Featured — Steps (Pedometer)
 
 WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widgets:
+
 - Today’s step count snapshot (offline-friendly for widgets)
 - **Goal schedule** (weekday / weekend goals, with optional rest days)
 - **Streak rules** designed to feel fair:
@@ -90,6 +98,7 @@ WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widge
 - Home Screen companion widget: **Steps (Home)** (Small / Medium / Large)
 
 ### Steps setup checklist
+
 - Health permission granted for Step Count
 - Steps refreshed in-app to cache:
   - Today’s steps snapshot (for widgets and `__steps_today`), and
@@ -101,6 +110,7 @@ WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widge
   - Or: `__steps_*` variables used inside any normal **WidgetWeaver** design
 
 Notes:
+
 - If “0 steps” appears unexpectedly, Fitness Tracking may be disabled or no step samples may be recorded.
 - Health access can be inspected via the Steps settings screen.
 
@@ -112,30 +122,44 @@ WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenC
 
 ### Per-second ticking without WidgetKit throttling (Widgy-style)
 
-Goal: a second hand that **ticks every second** (ideally a smooth sweep) without using high-frequency WidgetKit timelines (which get throttled).
+WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled.
 
-Chosen approach (public APIs only, App Review-safe):
-- Keep `WidgetWeaverHomeScreenClockProvider` timelines **sparse** (single entry; refresh every few hours).
-- Drive motion using a **view-local SwiftUI animation loop**:
-  - Animate a `secPhase` from `0 → 1` over `60s` with `.linear(duration: 60).repeatForever`.
-  - Do the same for minutes (`3600s`) and hours (`43200s`).
-  - Compute the base angles from the current time at sync, then add `phase * 360` for each hand.
-- When the widget is not visible, iOS may pause animations.
-  - When it becomes visible again, the view re-appears and **re-syncs** to the current time.
+The clock avoids that by keeping its WidgetKit timeline **sparse** (one entry; refresh every few hours) and driving motion with `TimelineView(.animation)`:
 
-Implementation:
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` contains the repeat-forever sweep driver.
-- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` uses a sparse WidgetKit timeline and renders `WidgetWeaverClockLiveView`.
+- The dial/bezel render once (static).
+- The hands render inside `TimelineView(.animation(minimumInterval: …))` using `context.date`.
+- Angles are monotonic (no `mod 360`) so rotation never runs backwards at wrap boundaries.
+- When the widget is off-screen, iOS may pause updates.
+  - When it becomes visible again, `context.date` jumps forward and the hands “catch up” immediately.
 
-Notes:
-- This avoids burning the WidgetKit refresh budget because the widget is not requesting per-second timeline entries.
-- If WidgetKit holds onto an archived snapshot from a failed render, a widget can appear partially rendered or stuck until a clean archive occurs.
+Files:
+
+- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` uses a sparse `WidgetWeaverHomeScreenClockProvider`.
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` contains the live driver (`TimelineView(.animation)`) and the DEBUG-only timestamp overlay.
+
+### Sweeping second hand (implementation notes)
+
+The core time maths is:
+
+- `local = now.timeIntervalSince1970 + TimeZone.autoupdatingCurrent.secondsFromGMT(for: now)`
+- `secondDeg = local * 6.0`
+- `minuteDeg = local * (360.0 / 3600.0)`
+- `hourDeg = local * (360.0 / 43200.0)`
+
+Using monotonic degrees avoids reverse interpolation if any implicit animation is introduced elsewhere.
+
+### Archived snapshots during iteration
+
+WidgetKit can hold onto an archived snapshot from a failed render; during iteration a widget can appear partially rendered or stuck until a clean archive occurs.
+
+If a clock widget remains stuck after code changes, bump the clock widget kind string (`WidgetWeaverWidgetKinds.homeScreenClock`) to force a clean archive.
 
 ---
 
 ## Current status (0.9.4 (15))
 
 ### App
+
 - ✅ Explore tab: featured widgets + template catalogue (adds templates into the Library)
 - ✅ Library of saved specs + Default selection
 - ✅ Editor for `WidgetSpec`
@@ -152,6 +176,7 @@ Notes:
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
 
 ### Widgets
+
 - ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
 - ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
@@ -167,6 +192,7 @@ Notes:
 - ✅ Time-sensitive designs can attempt minute-level timelines (still subject to WidgetKit throttling)
 
 ### Layout + style
+
 - ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up (Calendar) (includes a starter Steps design via `__steps_*` keys)
 - ✅ Axis: vertical/horizontal; alignment; spacing; line limits
 - ✅ Accent bar toggle
@@ -175,6 +201,7 @@ Notes:
 - ✅ Optional banner image (stored in App Group container)
 
 ### Components
+
 - ✅ Built-in typed models: `WidgetSpec`, `LayoutSpec`, `StyleSpec`, `SymbolSpec`, `ImageSpec`
 - ✅ Rendering path: `WidgetWeaverSpecView` (SwiftUI)
 - ✅ Variable template engine: `WidgetWeaverVariableTemplate` (stored vars are Pro-only)
@@ -192,10 +219,10 @@ Notes:
 - App Groups configured:
   - Both targets have the App Group capability enabled
   - Default identifier: `group.com.conornolan.widgetweaver` (see `Shared/AppGroup.swift`)
-- If the identifier changes, updates are required in:
-  - `Shared/AppGroup.swift` (`AppGroup.identifier`)
-  - `WidgetWeaver/WidgetWeaver.entitlements`
-  - `WidgetWeaverWidgetExtension.entitlements`
+  - If the identifier changes, updates are required in:
+    - `Shared/AppGroup.swift` (`AppGroup.identifier`)
+    - `WidgetWeaver/WidgetWeaver.entitlements`
+    - `WidgetWeaverWidgetExtension.entitlements`
 - First run: templates added from **Explore** into the Library
 - Designs edited in **Editor**, then saved to push updates to widgets
 - Weather / Calendar / Steps setup performed (for templates that depend on cached snapshots)
@@ -203,3 +230,69 @@ Notes:
 Widgets can be added from the Home Screen / Lock Screen widget galleries and configured to select a specific saved design when relevant.
 
 Pro features require a Pro unlock; Variables and Actions become available in the editor after unlock.
+
+---
+
+## Editor features
+
+### Layout templates
+
+- **Classic**: stacked header + text, optional symbol, optional accent bar
+- **Hero**: text left, big symbol right (when present), optional accent bar
+- **Poster**: photo-first with a gradient overlay for text
+- **Weather**: WeatherKit-powered, rain-first nowcast layout with glass panels and adaptive S/M/L layouts
+- **Next Up (Calendar)**: next event + countdown (optionally “Then” on Medium/Large)
+
+### Built-in variables (free)
+
+Built-in variables are available in any text field via `{{...}}` templating.
+
+Weather:
+
+- `__weather_location_name`
+- `__weather_temperature`
+- `__weather_temperature_feels_like`
+- `__weather_condition`
+- `__weather_condition_symbol`
+- `__weather_rain_next_hour_mm`
+- `__weather_rain_next_hour_max_mm_hr`
+- `__weather_rain_next_hour_summary`
+- `__weather_hourly_strip`
+- `__weather_daily_high`
+- `__weather_daily_low`
+
+Steps:
+
+- `__steps_today`
+- `__steps_goal_today`
+- `__steps_progress_today`
+- `__steps_streak`
+- `__steps_avg_7`, `__steps_avg_7_exact`
+- `__steps_avg_30`, `__steps_avg_30_exact`
+- `__steps_best_day`
+- `__steps_best_day_date`
+- `__steps_best_day_date_iso`
+
+Access/debug:
+
+- `__steps_access`
+
+Example:
+
+- `Steps: {{__steps_today|--}} • Streak {{__steps_streak|0}}d`
+
+### Stored variables (Pro)
+
+The shared variable store is Pro-only and can be updated in-app or via widget buttons (App Intents).
+
+---
+
+## AI (Optional)
+
+AI features are designed to run on-device to generate or patch the design spec. Images are never generated.
+
+---
+
+## Licence / notes
+
+This is a prototype playground; it is not intended as a production app yet.

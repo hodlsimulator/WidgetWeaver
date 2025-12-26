@@ -21,7 +21,6 @@ public enum WidgetWeaverWidgetRefresh {
 
         defaults.set(now, forKey: lastKickKey)
 
-        // Include the clock so it can recover from archived/stuck states during iteration.
         reloadTimelines(includeClock: true)
 
         if #available(iOS 17.0, *) {
@@ -36,7 +35,6 @@ public enum WidgetWeaverWidgetRefresh {
 
         defaults.set(now, forKey: lastKickKey)
 
-        // Include the clock so “Refresh Widgets” actually refreshes the clock timeline.
         reloadTimelines(includeClock: true)
 
         if #available(iOS 17.0, *) {
