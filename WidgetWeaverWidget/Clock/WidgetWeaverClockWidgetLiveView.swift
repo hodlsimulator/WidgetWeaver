@@ -9,82 +9,88 @@ import Foundation
 import SwiftUI
 
 private enum WWClockWidgetLiveTuning {
-    /// Must match the Home Screen clock widget timeline step.
-    /// In WidgetWeaverHomeScreenClockWidget.swift this is 60 * 15.
-    static let entryLifetimeSeconds: TimeInterval = 60.0 * 15.0
-
     static let showDebugOverlay: Bool = false
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
-    /// WidgetKit timeline entry date (deterministic anchor).
+    /// Used as a stable phase anchor for `.periodic` scheduling.
     let anchorDate: Date
+
+    @State private var lastTick: Int? = nil
+    @State private var lastSecondDegrees: Double? = nil
 
     var body: some View {
-        let interval = anchorDate...anchorDate.addingTimeInterval(WWClockWidgetLiveTuning.entryLifetimeSeconds)
+        TimelineView(.periodic(from: anchorDate, by: 1.0)) { context in
+            let now = context.date
+            let tick = Int(now.timeIntervalSince1970)
 
-        ProgressView(timerInterval: interval, countsDown: false)
-            .progressViewStyle(
-                WWClockWidgetLiveProgressStyle(
+            let angles = WidgetWeaverClockAngles(now: now)
+
+            let shouldAnimate: Bool = {
+                guard let lastTick, let lastSecondDegrees else { return false }
+                guard tick == lastTick + 1 else { return false }
+
+                // Expected delta is ~6 degrees per second.
+                // Large deltas usually mean the widget was paused off-screen or a timezone/DST jump occurred.
+                let delta = abs(angles.secondDegrees - lastSecondDegrees)
+                return delta < 20.0
+            }()
+
+            ZStack(alignment: .bottomTrailing) {
+                WidgetWeaverClockIconView(
                     palette: palette,
-                    anchorDate: anchorDate,
-                    entryLifetimeSeconds: WWClockWidgetLiveTuning.entryLifetimeSeconds
+                    hourAngle: .degrees(angles.hourDegrees),
+                    minuteAngle: .degrees(angles.minuteDegrees),
+                    secondAngle: .degrees(angles.secondDegrees)
                 )
-            )
-            .accessibilityHidden(true)
-    }
-}
 
-private struct WWClockWidgetLiveProgressStyle: ProgressViewStyle {
-    let palette: WidgetWeaverClockPalette
-    let anchorDate: Date
-    let entryLifetimeSeconds: TimeInterval
-
-    func makeBody(configuration: Configuration) -> some View {
-        let rawFraction = configuration.fractionCompleted ?? 0.0
-        let fraction = min(1.0, max(0.0, rawFraction))
-
-        let now = anchorDate.addingTimeInterval(fraction * entryLifetimeSeconds)
-        let degrees = WWClockHandDegrees(date: now)
-
-        return ZStack(alignment: .bottomTrailing) {
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: .degrees(degrees.hourDegrees),
-                minuteAngle: .degrees(degrees.minuteDegrees),
-                secondAngle: .degrees(degrees.secondDegrees)
-            )
-
-            #if DEBUG
-            if WWClockWidgetLiveTuning.showDebugOverlay {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(now, format: .dateTime.hour().minute().second())
-                    Text(String(format: "f=%.4f", fraction))
+                #if DEBUG
+                if WWClockWidgetLiveTuning.showDebugOverlay {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(now, format: .dateTime.hour().minute().second())
+                        Text("LIVE .periodic(1s)")
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary.opacity(0.55))
+                    .padding(6)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary.opacity(0.70))
-                .padding(6)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                #endif
             }
-            #endif
+            .transaction { transaction in
+                transaction.animation = shouldAnimate ? .linear(duration: 1.0) : nil
+            }
+            .onAppear {
+                if lastTick == nil {
+                    lastTick = tick
+                    lastSecondDegrees = angles.secondDegrees
+                }
+            }
+            .onChange(of: tick) { _, newTick in
+                lastTick = newTick
+
+                // Recompute at the quantised second boundary to keep the comparison stable.
+                let d = Date(timeIntervalSince1970: Double(newTick))
+                let a = WidgetWeaverClockAngles(now: d)
+                lastSecondDegrees = a.secondDegrees
+            }
         }
-        .accessibilityHidden(true)
     }
 }
 
-private struct WWClockHandDegrees: Equatable {
+private struct WidgetWeaverClockAngles {
     let hourDegrees: Double
     let minuteDegrees: Double
     let secondDegrees: Double
 
-    init(date: Date) {
-        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: date))
-        let local = date.timeIntervalSince1970 + tz
+    init(now: Date) {
+        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: now))
+        let local = now.timeIntervalSince1970 + tz
 
-        // Monotonic degrees avoid backwards interpolation at wrap boundaries.
+        // Monotonic degrees keep interpolation direction stable across wrap boundaries.
         secondDegrees = local * 6.0
         minuteDegrees = local * (360.0 / 3600.0)
         hourDegrees = local * (360.0 / 43200.0)

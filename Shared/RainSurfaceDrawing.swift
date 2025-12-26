@@ -524,8 +524,7 @@ enum RainSurfaceDrawing {
             _ = fogA
 
             for x in 0..<fw {
-                let tX = (fw <= 1) ? 0.0 : Double(x) / Double(fw - 1)
-
+                
                 // Original raster sample for distance.
                 let ox = max(0, min(w - 1, Int((Double(x) + 0.5) * xMap)))
                 let oy = max(0, min(h - 1, Int((Double(y) + 0.5) * yMap)))

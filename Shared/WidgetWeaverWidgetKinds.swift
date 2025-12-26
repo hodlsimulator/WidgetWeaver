@@ -9,11 +9,13 @@ import Foundation
 
 public enum WidgetWeaverWidgetKinds {
     public static let main = "WidgetWeaverWidget"
+
     public static let lockScreenWeather = "WidgetWeaverLockScreenWeatherWidget"
     public static let lockScreenNextUp = "WidgetWeaverLockScreenNextUpWidget"
     public static let lockScreenSteps = "WidgetWeaverLockScreenStepsWidget"
+
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
     // Bumped to flush any archived/stuck render snapshots during iteration.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV7"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV8"
 }
