@@ -11,7 +11,7 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Conservative: avoids reload budget issues.
+    // Conservative WidgetKit timeline; motion is handled by the view’s periodic schedule.
     static let tickSeconds: TimeInterval = 60.0 * 15.0
     static let maxEntries: Int = 96
 }
@@ -123,7 +123,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
 
 // MARK: - View
 
-struct WidgetWeaverHomeScreenClockView: View {
+private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
     @Environment(\.colorScheme) private var mode
@@ -134,12 +134,10 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        ZStack {
-            WidgetWeaverClockWidgetLiveView(
-                palette: palette,
-                anchorDate: entry.date
-            )
-        }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            anchorDate: entry.date
+        )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
