@@ -11,13 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Timeline entries are used as deterministic anchors for WidgetKit pre-rendering and
-    // as an occasional safety net to re-create the view if the system archives a stale snapshot.
-    //
-    // The actual per-second sweep is driven by CoreAnimation-backed repeatForever animations
-    // started when the widget becomes visible.
-    static let entrySpacing: TimeInterval = 60.0 * 60.0
-    static let entryCount: Int = 6
+    /// Keep WidgetKit entries modest to avoid relying on frequent refreshes.
+    /// The second-hand sweep is driven by TimelineView(.animation) in the view.
+    static let entryStepSeconds: TimeInterval = 60.0 * 30.0 // 30 minutes
+    static let maxEntries: Int = 48 // 24 hours @ 30 minutes
 }
 
 // MARK: - Configuration
@@ -50,7 +47,6 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
 
 public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
-
     public static var description: IntentDescription {
         IntentDescription("Select the colour scheme for the clock widget.")
     }
@@ -84,13 +80,15 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
+
+        // Important: use a base that changes on each timeline request to help avoid cached renders.
         let base = Date()
 
         var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.entryCount)
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
 
-        for i in 0..<WWClockTimelineTuning.entryCount {
-            let d = base.addingTimeInterval(Double(i) * WWClockTimelineTuning.entrySpacing)
+        for i in 0..<WWClockTimelineTuning.maxEntries {
+            let d = base.addingTimeInterval(WWClockTimelineTuning.entryStepSeconds * Double(i))
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
@@ -98,63 +96,45 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 }
 
+// MARK: - View
+
+private struct WidgetWeaverHomeScreenClockView: View {
+    let entry: WidgetWeaverHomeScreenClockEntry
+
+    @Environment(\.colorScheme) private var colourMode
+
+    var body: some View {
+        let palette = WidgetWeaverClockPalette.resolve(scheme: entry.colourScheme, mode: colourMode)
+
+        // Wrap in RenderClock scope so any other time-dependent widget content stays deterministic.
+        WidgetWeaverRenderClock.withNow(entry.date) {
+            WidgetWeaverClockWidgetLiveView(palette: palette, anchorDate: entry.date)
+                .id(entry.date) // reset internal anchor state per entry
+                .wwWidgetContainerBackground {
+                    WidgetWeaverClockBackgroundView(palette: palette)
+                }
+        }
+    }
+}
+
 // MARK: - Widget
 
-struct WidgetWeaverHomeScreenClockWidget: Widget {
-    let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
+public struct WidgetWeaverHomeScreenClockWidget: Widget {
+    public init() {}
 
-    var body: some WidgetConfiguration {
+    public let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
+
+    public var body: some WidgetConfiguration {
         AppIntentConfiguration(
             kind: kind,
             intent: WidgetWeaverClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverHomeScreenClockView(entry: entry)
-            }
+            WidgetWeaverHomeScreenClockView(entry: entry)
         }
-        .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
+        .configurationDisplayName("Clock (WidgetWeaver)")
+        .description("An analogue clock widget.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
-    }
-}
-
-// MARK: - View
-
-struct WidgetWeaverHomeScreenClockView: View {
-    let entry: WidgetWeaverHomeScreenClockEntry
-
-    @Environment(\.colorScheme) private var mode
-
-    var body: some View {
-        let palette = WidgetWeaverClockPalette.resolve(
-            scheme: entry.colourScheme,
-            mode: mode
-        )
-
-        ZStack(alignment: .bottomTrailing) {
-            // Widgy-style: start long-running CA animations once and let them run while visible.
-            WidgetWeaverClockLiveView(
-                palette: palette,
-                startDate: entry.date
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            #if DEBUG
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(entry.date, format: .dateTime.hour().minute().second())
-                Text("CLK LIVE")
-            }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(.secondary.opacity(0.75))
-            .padding(6)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-            #endif
-        }
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
-        }
     }
 }

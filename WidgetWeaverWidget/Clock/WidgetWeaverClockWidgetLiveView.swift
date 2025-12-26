@@ -9,10 +9,11 @@ import Foundation
 import SwiftUI
 
 private enum WWClockWidgetLiveTuning {
-    // Home Screen widget hosts often coalesce “1 second” schedules.
-    // A 2-second cadence tends to produce continuous motion without long stalls.
-    static let tickSeconds: TimeInterval = 2.0
+    /// Lower values are smoother but cost more CPU if the host actually allows live updates.
+    /// 1/20 ≈ 20fps is a decent compromise for a sweeping second hand.
+    static let minimumInterval: TimeInterval = 1.0 / 20.0
 
+    /// DEBUG overlay for validating whether the host is actually advancing time.
     static let showDebugOverlay: Bool = false
 }
 
@@ -20,12 +21,29 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
     /// Deterministic anchor provided by WidgetKit (timeline entry date).
-    /// Used as the periodic schedule anchor so WidgetKit pre-rendering stays stable.
+    /// This is used as “t=0” so WidgetKit pre-rendering stays stable.
     let anchorDate: Date
 
+    @State private var initialContextDate: Date?
+
     var body: some View {
-        TimelineView(.periodic(from: anchorDate, by: WWClockWidgetLiveTuning.tickSeconds)) { context in
-            let angles = WidgetWeaverClockAngles(now: context.date)
+        TimelineView(.animation(minimumInterval: WWClockWidgetLiveTuning.minimumInterval, paused: false)) { context in
+            let base = initialContextDate ?? context.date
+
+            // Capture the first context date asynchronously to avoid "Modifying state during view update".
+            if initialContextDate == nil {
+                DispatchQueue.main.async {
+                    if initialContextDate == nil {
+                        initialContextDate = context.date
+                    }
+                }
+            }
+
+            // Map the animation timeline onto the entry’s anchor date.
+            let elapsed = context.date.timeIntervalSince(base)
+            let effectiveNow = anchorDate.addingTimeInterval(elapsed)
+
+            let angles = WidgetWeaverClockAngles(now: effectiveNow)
 
             ZStack(alignment: .bottomTrailing) {
                 WidgetWeaverClockIconView(
@@ -34,13 +52,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     minuteAngle: .degrees(angles.minuteDegrees),
                     secondAngle: .degrees(angles.secondDegrees)
                 )
-                .animation(.linear(duration: WWClockWidgetLiveTuning.tickSeconds), value: angles.secondDegrees)
 
                 #if DEBUG
                 if WWClockWidgetLiveTuning.showDebugOverlay {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(context.date, format: .dateTime.hour().minute().second())
-                        Text("CLK TLV")
+                        Text(effectiveNow, format: .dateTime.hour().minute().second())
+                        Text("CLK TLV anim")
                     }
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary.opacity(0.55))
@@ -50,6 +67,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 }
                 #endif
             }
+        }
+        .onChange(of: anchorDate) { _ in
+            // Reset the anchor mapping if WidgetKit switches to a new entry.
+            initialContextDate = nil
         }
     }
 }
