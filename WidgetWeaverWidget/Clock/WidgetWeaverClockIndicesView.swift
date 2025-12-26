@@ -22,11 +22,9 @@ struct WidgetWeaverClockHourIndicesView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Very small cast shadow (tight, no fuzz).
         let shadowRadius = max(px, width * 0.040)
         let shadowOffset = max(px, width * 0.050)
 
-        // Screen-space metal lighting fields (single global light direction).
         let metalField = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: palette.batonBright, location: 0.00),
@@ -65,16 +63,13 @@ struct WidgetWeaverClockHourIndicesView: View {
                     .offset(y: -centreRadius)
                     .rotationEffect(.degrees(degrees))
 
-                // Baton body
                 metalField
                     .mask(batonMask)
                     .shadow(color: palette.batonShadow, radius: shadowRadius, x: shadowOffset, y: shadowOffset)
 
-                // Bevel edges (highlight UL, shade LR)
                 edgeField
                     .mask(batonStrokeMask)
 
-                // Centre chamfer strip (implies thickness, stays inside shape)
                 RoundedRectangle(cornerRadius: corner * 0.85, style: .continuous)
                     .fill(
                         LinearGradient(
@@ -92,7 +87,6 @@ struct WidgetWeaverClockHourIndicesView: View {
                     .rotationEffect(.degrees(degrees))
                     .blendMode(.overlay)
 
-                // Blue end-cap (physical cap at outer end, consistent length)
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(capColour)
                     .frame(width: width, height: capLength)
@@ -162,16 +156,16 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // WidgetKit reliability: avoid glyph masks + blend modes for numerals.
         Text(text)
             .font(.system(size: fontSize, weight: .semibold, design: .rounded))
-            .foregroundStyle(palette.numeralLight)
+            .foregroundColor(palette.numeralLight)
             .shadow(
                 color: palette.numeralShadow,
                 radius: max(px, fontSize * 0.040),
                 x: px,
                 y: px
             )
+            .compositingGroup()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

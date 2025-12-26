@@ -9,75 +9,79 @@ import Foundation
 import SwiftUI
 
 private enum WWClockWidgetLiveTuning {
+    static let tickSeconds: TimeInterval = 1.0
+
+    // Keep this off unless investigating on-device behaviour.
     static let showDebugOverlay: Bool = false
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
-    /// Used as a stable phase anchor for `.periodic` scheduling.
+    /// WidgetKit timeline entry date (stable anchor).
     let anchorDate: Date
 
     @State private var lastTick: Int? = nil
-    @State private var lastSecondDegrees: Double? = nil
 
     var body: some View {
-        TimelineView(.periodic(from: anchorDate, by: 1.0)) { context in
-            let now = context.date
-            let tick = Int(now.timeIntervalSince1970)
+        let now = Date()
+        let tick = Int(floor(now.timeIntervalSince1970))
 
-            let angles = WidgetWeaverClockAngles(now: now)
+        let tickDate = Date(timeIntervalSince1970: Double(tick))
+        let angles = WidgetWeaverClockAngles(now: tickDate)
 
-            let shouldAnimate: Bool = {
-                guard let lastTick, let lastSecondDegrees else { return false }
-                guard tick == lastTick + 1 else { return false }
+        let shouldAnimate: Bool = {
+            guard let lastTick else { return false }
+            return (tick - lastTick) == 1
+        }()
 
-                // Expected delta is ~6 degrees per second.
-                // Large deltas usually mean the widget was paused off-screen or a timezone/DST jump occurred.
-                let delta = abs(angles.secondDegrees - lastSecondDegrees)
-                return delta < 20.0
-            }()
+        // System-updating time text.
+        //
+        // The intent is Widgy-like behaviour: updates while visible, pauses off-screen, catches up on return.
+        // The actual clock drawing is attached to this dynamic view so it participates in the same update passes.
+        let base = (anchorDate <= now) ? anchorDate : now
+        return Text(timerInterval: base...Date.distantFuture, countsDown: false)
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.clear)
+            .frame(width: 1, height: 1, alignment: .topLeading)
+            .clipped()
+            .overlay {
+                ZStack(alignment: .bottomTrailing) {
+                    WidgetWeaverClockIconView(
+                        palette: palette,
+                        hourAngle: .degrees(angles.hourDegrees),
+                        minuteAngle: .degrees(angles.minuteDegrees),
+                        secondAngle: .degrees(angles.secondDegrees)
+                    )
 
-            ZStack(alignment: .bottomTrailing) {
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: .degrees(angles.hourDegrees),
-                    minuteAngle: .degrees(angles.minuteDegrees),
-                    secondAngle: .degrees(angles.secondDegrees)
-                )
-
-                #if DEBUG
-                if WWClockWidgetLiveTuning.showDebugOverlay {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(now, format: .dateTime.hour().minute().second())
-                        Text("LIVE .periodic(1s)")
+                    #if DEBUG
+                    if WWClockWidgetLiveTuning.showDebugOverlay {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(now, format: .dateTime.hour().minute().second())
+                            Text("tick: \(tick)")
+                            Text("last: \(lastTick.map(String.init) ?? "nil")")
+                        }
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary.opacity(0.70))
+                        .padding(6)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary.opacity(0.55))
-                    .padding(6)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                    #endif
                 }
-                #endif
-            }
-            .transaction { transaction in
-                transaction.animation = shouldAnimate ? .linear(duration: 1.0) : nil
-            }
-            .onAppear {
-                if lastTick == nil {
-                    lastTick = tick
-                    lastSecondDegrees = angles.secondDegrees
+                .transaction { transaction in
+                    transaction.animation = shouldAnimate ? .linear(duration: WWClockWidgetLiveTuning.tickSeconds) : nil
+                }
+                .onAppear {
+                    if lastTick == nil {
+                        lastTick = tick
+                    }
+                }
+                .onChange(of: tick) { _, newTick in
+                    lastTick = newTick
                 }
             }
-            .onChange(of: tick) { _, newTick in
-                lastTick = newTick
-
-                // Recompute at the quantised second boundary to keep the comparison stable.
-                let d = Date(timeIntervalSince1970: Double(newTick))
-                let a = WidgetWeaverClockAngles(now: d)
-                lastSecondDegrees = a.secondDegrees
-            }
-        }
+            .accessibilityHidden(true)
     }
 }
 
