@@ -30,10 +30,9 @@ enum RainSurfaceDrawing {
 
         let scale = max(1.0, displayScale)
         let onePixel = CGFloat(1.0 / scale)
-
         let maxHeight = max(heights.max() ?? 0, onePixel)
 
-        // (2) Fuzz layer: speckled uncertainty outside core only, additive.
+        // (2) Fuzz layer: speckled uncertainty outside core only; additive.
         if configuration.fuzzEnabled {
             drawFuzz(
                 in: &context,
@@ -49,7 +48,7 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // (3) Core layer: fully opaque fill with interior shading + inside-only gloss band.
+        // (3) Core layer: opaque fill + inside-only gloss band.
         drawCore(
             in: &context,
             chartRect: chartRect,
@@ -61,7 +60,7 @@ enum RainSurfaceDrawing {
             displayScale: displayScale
         )
 
-        // (4) Optional tiny local glints near local maxima.
+        // (4) Optional tiny local glints.
         if configuration.glintEnabled {
             drawGlints(
                 in: &context,
@@ -111,6 +110,8 @@ enum RainSurfaceDrawing {
             width: clipRect.width,
             height: max(0, baselineY - clipRect.minY - onePixel)
         )
+        var aboveBaselinePath = Path()
+        aboveBaselinePath.addRect(aboveBaselineRect)
 
         let seed = configuration.noiseSeed
         let sizeSaltW = UInt64(max(1, Int((chartRect.width * scale).rounded())))
@@ -121,17 +122,14 @@ enum RainSurfaceDrawing {
         let n = heights.count
         let certaintyCount = certainties.count
 
-        // Cap how many columns are processed by striding if needed.
         let maxCols = max(1, configuration.fuzzMaxColumns)
         let colStride = max(1, Int(ceil(Double(n) / Double(maxCols))))
         let processedCols = (n + colStride - 1) / colStride
 
-        // Hard budget on attempt count to prevent widget timeouts.
         let maxAttempts = max(4, configuration.fuzzMaxAttemptsPerColumn)
         let budget = max(500, configuration.fuzzSpeckleBudget)
         let attemptScale = min(1.0, Double(budget) / Double(max(1, processedCols * maxAttempts)))
 
-        // Batched paths: 3 opacity buckets (density fade is expressed primarily via count, not alpha).
         var pNear = Path()
         var pMid = Path()
         var pFar = Path()
@@ -172,7 +170,6 @@ enum RainSurfaceDrawing {
             let attempts = max(1, Int(ceil(rawAttempts)))
 
             for _ in 0..<attempts {
-                // Bias distance towards boundary: more samples near d = 0.
                 let u = prng.nextDouble01()
                 let d = fuzzWidth * CGFloat(pow(u, 2.25))
 
@@ -194,45 +191,31 @@ enum RainSurfaceDrawing {
 
                 let rect = CGRect(x: xCenter + jitterX - r, y: y - r, width: r * 2, height: r * 2)
 
-                // 3 buckets by distance; “fade” is mainly by speckle count, so alpha can stay stable.
                 if t < 0.33 {
-                    pNear.addRect(rect)
+                    pNear.addEllipse(in: rect)
                 } else if t < 0.66 {
-                    pMid.addRect(rect)
+                    pMid.addEllipse(in: rect)
                 } else {
-                    pFar.addRect(rect)
+                    pFar.addEllipse(in: rect)
                 }
             }
         }
 
-        // Nothing to draw.
         if pNear.isEmpty && pMid.isEmpty && pFar.isEmpty { return }
 
         context.drawLayer { layer in
             layer.blendMode = .plusLighter
-
-            let blurPx = configuration.fuzzMicroBlurPixels
-            if blurPx > 0 {
-                layer.addFilter(.blur(radius: CGFloat(blurPx / scale)))
-            }
-
             layer.clip(to: outsideMask, style: FillStyle(eoFill: true))
-            layer.clip(to: Path(aboveBaselineRect))
+            layer.clip(to: aboveBaselinePath)
 
             let maxA = configuration.fuzzMaxOpacity
-            if !pFar.isEmpty {
-                layer.fill(pFar, with: .color(configuration.fuzzColor.opacity(maxA * 0.45)))
-            }
-            if !pMid.isEmpty {
-                layer.fill(pMid, with: .color(configuration.fuzzColor.opacity(maxA * 0.70)))
-            }
-            if !pNear.isEmpty {
-                layer.fill(pNear, with: .color(configuration.fuzzColor.opacity(maxA * 1.00)))
-            }
+            if !pFar.isEmpty { layer.fill(pFar, with: .color(configuration.fuzzColor.opacity(maxA * 0.45))) }
+            if !pMid.isEmpty { layer.fill(pMid, with: .color(configuration.fuzzColor.opacity(maxA * 0.70))) }
+            if !pNear.isEmpty { layer.fill(pNear, with: .color(configuration.fuzzColor.opacity(maxA * 1.00))) }
         }
     }
 
-    // MARK: - Core (opaque volume + inside gloss)
+    // MARK: - Core (opaque volume + inside-only gloss, widget-safe)
 
     private static func drawCore(
         in context: inout GraphicsContext,
@@ -262,6 +245,8 @@ enum RainSurfaceDrawing {
 
         context.fill(corePath, with: shading)
 
+        // Inside-only gloss band without clip():
+        // draw strokes, then mask to the core via destinationIn (cheaper than clipping on some widget paths).
         if configuration.glossEnabled {
             let depthPx = RainSurfaceMath.clamp(
                 configuration.glossDepthPixels.mid,
@@ -269,31 +254,30 @@ enum RainSurfaceDrawing {
                 max: configuration.glossDepthPixels.upperBound
             )
             let depth = CGFloat(depthPx / scale)
-
-            let blur = CGFloat(configuration.glossSoftBlurPixels / scale)
             let opacity = configuration.glossMaxOpacity
 
             context.drawLayer { layer in
-                layer.clip(to: corePath)
                 layer.blendMode = .screen
-                if blur > 0 { layer.addFilter(.blur(radius: blur)) }
 
-                let stroke = StrokeStyle(
-                    lineWidth: max(onePixel, depth * 2),
-                    lineCap: .round,
-                    lineJoin: .round
-                )
-
+                // Single pass (cheap) that still reads as a soft “skin”.
                 layer.stroke(
                     topEdgePath,
                     with: .color(configuration.coreTopColor.opacity(opacity)),
-                    style: stroke
+                    style: StrokeStyle(
+                        lineWidth: max(onePixel, depth * 2.0),
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
                 )
+
+                // Mask to core so nothing appears outside the silhouette.
+                layer.blendMode = .destinationIn
+                layer.fill(corePath, with: .color(.white))
             }
         }
     }
 
-    // MARK: - Glints (tiny local maxima only)
+    // MARK: - Glints (optional)
 
     private static func drawGlints(
         in context: inout GraphicsContext,
@@ -323,11 +307,7 @@ enum RainSurfaceDrawing {
         guard !peakIndices.isEmpty else { return }
 
         context.drawLayer { layer in
-            layer.clip(to: corePath)
             layer.blendMode = .plusLighter
-
-            let blur = CGFloat(configuration.glintBlurPixels / scale)
-            if blur > 0 { layer.addFilter(.blur(radius: blur)) }
 
             for idx in peakIndices {
                 let h = heights[idx]
@@ -336,11 +316,12 @@ enum RainSurfaceDrawing {
 
                 let r = max(onePixel * 1.25, onePixel * 1.75)
                 let rect = CGRect(x: x - r, y: y - r * 0.65, width: r * 2, height: r * 1.6)
-                layer.fill(
-                    Path(ellipseIn: rect),
-                    with: .color(configuration.glintColor.opacity(configuration.glintMaxOpacity))
-                )
+                layer.fill(Path(ellipseIn: rect), with: .color(configuration.glintColor.opacity(configuration.glintMaxOpacity)))
             }
+
+            // Mask to core.
+            layer.blendMode = .destinationIn
+            layer.fill(corePath, with: .color(.white))
         }
     }
 
@@ -424,29 +405,14 @@ enum RainSurfaceDrawing {
 
             let base = configuration.baselineLineOpacity
 
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base * 0.14)),
-                style: StrokeStyle(lineWidth: onePixel * 11, lineCap: .round)
-            )
-
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base * 0.26)),
-                style: StrokeStyle(lineWidth: onePixel * 6, lineCap: .round)
-            )
-
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base * 0.38)),
-                style: StrokeStyle(lineWidth: onePixel * 3, lineCap: .round)
-            )
-
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base)),
-                style: StrokeStyle(lineWidth: onePixel, lineCap: .butt)
-            )
+            layer.stroke(line, with: .color(configuration.baselineColor.opacity(base * 0.14)),
+                         style: StrokeStyle(lineWidth: onePixel * 11, lineCap: .round))
+            layer.stroke(line, with: .color(configuration.baselineColor.opacity(base * 0.26)),
+                         style: StrokeStyle(lineWidth: onePixel * 6, lineCap: .round))
+            layer.stroke(line, with: .color(configuration.baselineColor.opacity(base * 0.38)),
+                         style: StrokeStyle(lineWidth: onePixel * 3, lineCap: .round))
+            layer.stroke(line, with: .color(configuration.baselineColor.opacity(base)),
+                         style: StrokeStyle(lineWidth: onePixel, lineCap: .butt))
 
             layer.blendMode = .destinationIn
             var fadeRect = Path()

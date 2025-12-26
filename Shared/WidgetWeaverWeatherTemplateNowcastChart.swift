@@ -147,8 +147,11 @@ private struct WeatherNowcastSurfacePlot: View {
             let config: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
+                c.maxDenseSamples = 256
+                c.glossEnabled = true
+                c.glintEnabled = false
+                c.fuzzEnabled = true
 
-                // Fixed rendering style: luminous blue mound + speckled uncertainty.
                 c.coreTopColor = accent
                 c.coreMidColor = Color(red: 0.03, green: 0.22, blue: 0.78)
                 c.coreBottomColor = Color(red: 0.00, green: 0.05, blue: 0.18)
