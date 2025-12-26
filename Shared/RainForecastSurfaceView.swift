@@ -9,186 +9,124 @@
 
 import Foundation
 import SwiftUI
-
-// MARK: - Configuration
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 struct RainForecastSurfaceConfiguration: Hashable {
-
-    // Background
-    var backgroundColor: Color = .clear
-    var backgroundOpacity: Double = 0.0
-
-    // Input normalisation
+    // MARK: - Data
     var intensityCap: Double = 1.0
     var wetThreshold: Double = 0.0
 
-    /// Value shaping gamma for v in [0, 1].
-    /// vShaped = pow(v, intensityEasingPower)
-    var intensityEasingPower: Double = 0.70
+    // MARK: - Background (renderer enforces pure black)
+    var backgroundColor: Color = .black
+    var backgroundOpacity: Double = 1.0
 
-    // Geometry
-    var baselineYFraction: CGFloat = 0.82
+    // MARK: - Geometry (spec-driven; kept for compatibility)
     var edgeInsetFraction: CGFloat = 0.0
+    var baselineYFraction: CGFloat = 0.596
+    var maxCoreHeightFractionOfPlotHeight: CGFloat = 0.195
+    var minVisibleHeightFractionOfMax: CGFloat = 0.012
+    var intensityEasingPower: Double = 0.78
+    var geometryTailInSamples: Int = 2
+    var geometryTailOutSamples: Int = 3
+    var geometrySmoothingPasses: Int = 2
 
-    /// Minimum visible height for wet samples, expressed as a fraction of maxCoreHeight.
-    var minVisibleHeightFraction: CGFloat = 0.025
+    // MARK: - Alpha taper (legacy; core is now drawn opaque)
+    var alphaTaperStartSamples: Int = 2
+    var alphaTaperEndSamples: Int = 5
+    var alphaTaperFloor: Double = 0.38
 
-    /// Mild smoothing passes over heights (post-mapping, pre-masks).
-    var geometrySmoothingPasses: Int = 1
-
-    // MARK: - Height mapping (MUST be plot-rect based)
-
-    /// Hard cap: the filled core surface never exceeds this fraction of plot rect height.
-    /// (Large: 0.37 start, Medium: 0.62 start)
-    var maxCoreHeightFractionOfPlotHeight: CGFloat = 0.30
-
-    /// Optional absolute cap in points. 0 disables.
-    var maxCoreHeightPoints: CGFloat = 0.0
-
-    // MARK: - End tapers (ALPHA ONLY)
-
-    /// Fade-in over first N samples of the first wet region.
-    var wetRegionFadeInSamples: Int = 8
-
-    /// Fade-out over last N samples of the last wet region.
-    var wetRegionFadeOutSamples: Int = 14
-
-    // MARK: - Segment drop settling (GEOMETRY, not end-taper)
-
-    /// Adds short geometric tails into neighbouring dry samples to avoid vertical walls at segment boundaries.
-    /// This does not “squash” the curve; it extends the curve into the baseline.
-    var geometryTailInSamples: Int = 6
-    var geometryTailOutSamples: Int = 12
-    var geometryTailPower: Double = 2.25
-
-    // Baseline styling (drawn behind the fill; uses a horizontal falloff so the centre reads brighter).
-    var baselineColor: Color = Color(red: 0.55, green: 0.65, blue: 0.85)
-    var baselineOpacity: Double = 0.10
+    // MARK: - Baseline
+    var baselineColor: Color = Color(red: 0.40, green: 0.74, blue: 1.0)
+    var baselineOpacity: Double = 0.70
     var baselineLineWidth: CGFloat = 1.0
-    var baselineInsetPoints: CGFloat = 0.0
-    var baselineSoftWidthMultiplier: CGFloat = 2.6
-    var baselineSoftOpacityMultiplier: Double = 0.24
+    var baselineSoftWidthMultiplier: CGFloat = 3.0
+    var baselineSoftOpacity: Double = 0.18
+    var baselineGlowWidthMultiplier: CGFloat = 12.0
+    var baselineGlowOpacity: Double = 0.055
 
-    // MARK: - Core fill depth (smooth, no noise)
+    // MARK: - Core fill colours (opaque)
+    var fillBottomColor: Color = Color(red: 0.02, green: 0.05, blue: 0.12)
+    var fillMidColor: Color = Color(red: 0.10, green: 0.30, blue: 0.90)
+    var fillTopColor: Color = Color(red: 0.20, green: 0.55, blue: 1.0)
+    var fillBottomOpacity: Double = 1.0
+    var fillMidOpacity: Double = 1.0
+    var fillTopOpacity: Double = 1.0
 
-    var fillBottomColor: Color = Color(red: 0.02, green: 0.04, blue: 0.09) // near-black navy
-    var fillMidColor: Color = Color(red: 0.05, green: 0.10, blue: 0.22) // mid-body lift
-    var fillTopColor: Color = Color(red: 0.18, green: 0.42, blue: 0.86) // near crest
-
-    var fillBottomOpacity: Double = 0.88
-    var fillMidOpacity: Double = 0.55
-    var fillTopOpacity: Double = 0.40
-
-    /// Optional “crest lift” inside the fill (still smooth).
+    // MARK: - Crest lift (used as inside-only gloss band)
     var crestLiftEnabled: Bool = true
-    var crestLiftMaxOpacity: Double = 0.10
+    var crestLiftBandHeightFractionOfCore: CGFloat = 0.20
+    var crestLiftMaxOpacity: Double = 0.14
+    var crestLiftBlurFractionOfPlotHeight: CGFloat = 0.016
 
-    // MARK: - Ridge highlight (mask-derived)
+    // MARK: - Bloom (disabled; spec forbids global lift)
+    var bloomEnabled: Bool = false
+    var bloomOpacity: Double = 0.11
+    var bloomBlurFractionOfPlotHeight: CGFloat = 0.16
 
-    var ridgeEnabled: Bool = true
-    var ridgeColor: Color = Color(red: 0.72, green: 0.92, blue: 1.0)
-    var ridgeMaxOpacity: Double = 0.22
+    // MARK: - Mist (disabled; spec forbids haze)
+    var mistEnabled: Bool = false
+    var mistColor: Color = Color(red: 0.38, green: 0.70, blue: 1.0)
+    var mistMaxOpacity: Double = 0.060
+    var mistThicknessFractionOfPlotHeight: CGFloat = 0.24
+    var mistLiftFractionOfPlotHeight: CGFloat = 0.040
+    var mistBlurFractionOfPlotHeight: CGFloat = 0.060
 
-    /// Ridge thickness r in points (pre-blur). Large start 4, Medium start 3.
-    var ridgeThicknessPoints: CGFloat = 4.0
-
-    /// Ridge blur as a fraction of plot rect height (derived from plotRectHeight).
-    /// Large ~0.11, Medium ~0.13 produces ~12px / ~9px on common sizes.
-    var ridgeBlurFractionOfPlotHeight: CGFloat = 0.11
-    var ridgePeakBoost: Double = 0.55
-
-    // MARK: - Specular glint (small peak highlight)
-
-    var glintEnabled: Bool = true
-    var glintColor: Color = Color(red: 0.99, green: 1.0, blue: 1.0)
-    var glintMaxOpacity: Double = 0.85
-    var glintThicknessPoints: CGFloat = 1.2
-    var glintBlurRadiusPoints: CGFloat = 1.6
-    var glintHaloOpacityMultiplier: Double = 0.20
-    var glintSpanSamples: Int = 6
-    var glintMinPeakHeightFractionOfSegmentMax: Double = 0.70
-
-    // MARK: - Broad bloom (mask-derived, clipped; no ghost silhouette)
-
-    var bloomEnabled: Bool = true
-    var bloomColor: Color = Color(red: 0.42, green: 0.78, blue: 1.0)
-    var bloomMaxOpacity: Double = 0.06
-
-    /// Blur as a fraction of plot rect height (derived from plotRectHeight).
-    /// Large start ~0.50–0.60, Medium start ~0.38–0.45.
-    var bloomBlurFractionOfPlotHeight: CGFloat = 0.52
-
-    /// Vertical clamp region around the crest (as a fraction of plot rect height).
-    var bloomBandHeightFractionOfPlotHeight: CGFloat = 0.70
-
-    // MARK: - Surface shell fuzz (boundary-attached; texture lives on/under the ridge)
-
+    // MARK: - Shell (reinterpreted as fuzz speckle envelope)
     var shellEnabled: Bool = true
-    var shellColor: Color = Color(red: 0.60, green: 0.86, blue: 1.0)
-
-    /// Overall shell alpha cap.
+    var shellColor: Color = Color(red: 0.70, green: 0.92, blue: 1.0)
     var shellMaxOpacity: Double = 0.16
-
-    /// Inside shell thickness (1–3 px); used only to soften the edge, not for texture.
-    var shellInsideThicknessPoints: CGFloat = 2.0
-
-    /// Below-surface shell band thickness in points.
-    ///
-    /// Historical name: shellAboveThicknessPoints (kept for API stability).
-    /// (Large start 10, Medium start 7)
-    var shellAboveThicknessPoints: CGFloat = 10.0
-
-    /// Noise influence amount. Large start 0.28, Medium start 0.18.
     var shellNoiseAmount: Double = 0.28
+    var shellAboveThicknessPoints: CGFloat = 10.0
+    var shellBelowThicknessPoints: CGFloat = 18.0
+    var shellBlurFractionOfPlotHeight: CGFloat = 0.008
+    var shellPuffsPerSample: Int = 7
+    var shellPuffRadiusPoints: CGFloat = 1.30
+    var shellPuffRadiusJitterPoints: CGFloat = 0.70
+    var shellPuffHorizontalJitterPoints: CGFloat = 1.20
 
-    /// Small symmetric blur derived from plot rect height.
-    var shellBlurFractionOfPlotHeight: CGFloat = 0.030
+    // MARK: - Ridge highlight (disabled; spec forbids bright rim)
+    var ridgeHighlightEnabled: Bool = false
+    var ridgeHighlightColor: Color = Color(red: 0.90, green: 0.98, blue: 1.0)
+    var ridgeHighlightMaxOpacity: Double = 0.16
+    var ridgeHighlightBandHeightFractionOfCore: CGFloat = 0.09
+    var ridgeHighlightBlurFractionOfPlotHeight: CGFloat = 0.006
 
-    /// Shell noise density controls (kept modest for widgets).
-    var shellPuffsPerSampleMax: Int = 5
-    var shellPuffMinRadiusPoints: CGFloat = 0.7
-    var shellPuffMaxRadiusPoints: CGFloat = 3.0
+    // MARK: - Glint (tiny + localised)
+    var glintEnabled: Bool = true
+    var glintColor: Color = Color(red: 0.98, green: 1.0, blue: 1.0)
+    var glintMaxOpacity: Double = 0.78
+    var glintBlurRadiusPoints: CGFloat = 1.6
+    var glintCount: Int = 2
+    var glintHorizontalJitterFractionOfSample: Double = 0.16
+    var glintVerticalOffsetFractionOfBand: Double = 0.22
 
-    // MARK: - Above-surface mist (outside-only, fades upward; isotropic 2D)
+    // MARK: - Determinism / certainty shaping
+    /// If zero, RainForecastSurfaceView derives a deterministic seed.
+    var noiseSeed: UInt64 = 0
 
-    var mistEnabled: Bool = true
-    var mistColor: Color = Color(red: 0.50, green: 0.74, blue: 1.0)
+    /// Rounding for the time component of the derived seed.
+    var noiseSeedRoundingSeconds: Int = 15 * 60
 
-    /// Mist opacity cap (subtle).
-    var mistMaxOpacity: Double = 0.18
-
-    /// Mist height cap in points (Large start 95, Medium start 50).
-    var mistHeightPoints: CGFloat = 60.0
-
-    /// Mist height as fraction of plot rect height (derived).
-    var mistHeightFractionOfPlotHeight: CGFloat = 0.85
-    var mistFalloffPower: Double = 1.70
-
-    /// Mist texture
-    var mistNoiseEnabled: Bool = true
-    var mistNoiseInfluence: Double = 0.25
-    var mistPuffsPerSampleMax: Int = 12
-    var mistFineGrainPerSampleMax: Int = 8
-    var mistParticleMinRadiusPoints: CGFloat = 0.7
-    var mistParticleMaxRadiusPoints: CGFloat = 3.8
-    var mistFineParticleMinRadiusPoints: CGFloat = 0.35
-    var mistFineParticleMaxRadiusPoints: CGFloat = 1.1
+    /// How strongly certainty suppresses the solid core height. (Higher => smaller core when certainty is low.)
+    var coreCertaintyPower: Double = 0.85
 }
 
-// MARK: - View
-
 struct RainForecastSurfaceView: View {
-
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
 
     @Environment(\.displayScale) private var displayScale
+    #if canImport(WidgetKit)
+    @Environment(\.widgetFamily) private var widgetFamily
+    #endif
 
     init(
         intensities: [Double],
         certainties: [Double],
-        configuration: RainForecastSurfaceConfiguration
+        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
     ) {
         self.intensities = intensities
         self.certainties = certainties
@@ -197,13 +135,39 @@ struct RainForecastSurfaceView: View {
 
     var body: some View {
         Canvas { context, size in
+            var config = configuration
+
+            // Deterministic seed: rounded render-clock time + pixel size + widget family.
+            if config.noiseSeed == 0 {
+                let now = WidgetWeaverRenderClock.now
+                let rounded = RainSurfacePRNG.roundedTimestampSeconds(now, roundingSeconds: config.noiseSeedRoundingSeconds)
+
+                let pxW = max(1, Int(ceil(size.width * max(displayScale, 1.0))))
+                let pxH = max(1, Int(ceil(size.height * max(displayScale, 1.0))))
+
+                #if canImport(WidgetKit)
+                let familyRaw = widgetFamily.rawValue
+                #else
+                let familyRaw = 0
+                #endif
+
+                config.noiseSeed = RainSurfacePRNG.seed(
+                    roundedTimestampSeconds: rounded,
+                    pixelWidth: pxW,
+                    pixelHeight: pxH,
+                    widgetFamilyRaw: familyRaw
+                )
+            }
+
             let renderer = RainForecastSurfaceRenderer(
                 intensities: intensities,
                 certainties: certainties,
-                configuration: configuration,
+                configuration: config,
                 displayScale: displayScale
             )
+
             renderer.render(in: &context, size: size)
         }
+        .compositingGroup()
     }
 }

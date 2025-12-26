@@ -7,126 +7,186 @@
 //  Surface path construction helpers.
 //
 
+import Foundation
 import SwiftUI
 
 enum RainSurfaceGeometry {
 
-    static func wetRanges(from mask: [Bool]) -> [Range<Int>] {
-        guard !mask.isEmpty else { return [] }
+    struct SurfaceSegment {
+        let range: Range<Int>
+        let surfacePath: Path
+        let topEdgePath: Path
+        let peakIndex: Int
+        let peakHeight: CGFloat
+        let startX: CGFloat
+        let endX: CGFloat
+    }
 
-        var ranges: [Range<Int>] = []
-        ranges.reserveCapacity(6)
+    static func wetRanges(from heights: [CGFloat], threshold: CGFloat) -> [Range<Int>] {
+        guard !heights.isEmpty else { return [] }
 
+        var raw: [Range<Int>] = []
         var start: Int? = nil
 
-        for i in 0..<mask.count {
-            if mask[i] {
+        for i in 0..<heights.count {
+            let wet = heights[i] > threshold
+            if wet {
                 if start == nil { start = i }
-            } else {
-                if let s = start {
-                    ranges.append(s..<i)
-                    start = nil
-                }
+            } else if let s = start {
+                raw.append(s..<i)
+                start = nil
             }
         }
 
         if let s = start {
-            ranges.append(s..<mask.count)
+            raw.append(s..<heights.count)
         }
 
-        return ranges
+        if raw.isEmpty { return [] }
+
+        // Expand by 1 on each side to avoid hard starts/ends, then merge overlaps.
+        let expanded: [Range<Int>] = raw.map { r in
+            let lo = max(0, r.lowerBound - 1)
+            let hi = min(heights.count, r.upperBound + 1)
+            return lo..<hi
+        }.sorted { $0.lowerBound < $1.lowerBound }
+
+        var merged: [Range<Int>] = []
+        for r in expanded {
+            if merged.isEmpty {
+                merged.append(r)
+                continue
+            }
+
+            let last = merged[merged.count - 1]
+            if r.lowerBound <= last.upperBound {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, r.upperBound)
+            } else {
+                merged.append(r)
+            }
+        }
+
+        return merged
+    }
+
+    static func buildSegments(
+        plotRect: CGRect,
+        baselineY: CGFloat,
+        heights: [CGFloat],
+        threshold: CGFloat
+    ) -> [SurfaceSegment] {
+        guard heights.count >= 2 else { return [] }
+
+        let stepX = plotRect.width / CGFloat(max(1, heights.count - 1))
+        let ranges = wetRanges(from: heights, threshold: threshold)
+
+        var out: [SurfaceSegment] = []
+        out.reserveCapacity(ranges.count)
+
+        for r in ranges {
+            let surface = makeSurfacePath(range: r, plotRect: plotRect, baselineY: baselineY, stepX: stepX, heights: heights)
+            let top = makeTopEdgePath(range: r, plotRect: plotRect, baselineY: baselineY, stepX: stepX, heights: heights)
+
+            var peakIndex = r.lowerBound
+            var peakHeight: CGFloat = 0
+            for i in r {
+                let h = heights[i]
+                if h > peakHeight {
+                    peakHeight = h
+                    peakIndex = i
+                }
+            }
+
+            let startX = plotRect.minX + CGFloat(r.lowerBound) * stepX
+            let endX = plotRect.minX + CGFloat(max(r.lowerBound, r.upperBound - 1)) * stepX
+
+            out.append(
+                SurfaceSegment(
+                    range: r,
+                    surfacePath: surface,
+                    topEdgePath: top,
+                    peakIndex: peakIndex,
+                    peakHeight: peakHeight,
+                    startX: startX,
+                    endX: endX
+                )
+            )
+        }
+
+        return out
     }
 
     static func makeSurfacePath(
-        for range: Range<Int>,
+        range: Range<Int>,
         plotRect: CGRect,
         baselineY: CGFloat,
         stepX: CGFloat,
         heights: [CGFloat]
     ) -> Path {
-        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
-        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
+        guard !range.isEmpty else { return Path() }
 
-        var points: [CGPoint] = []
-        points.reserveCapacity(range.count + 2)
-
-        points.append(CGPoint(x: startEdgeX, y: baselineY))
-
-        for i in range {
-            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            points.append(CGPoint(x: x, y: y))
-        }
-
-        points.append(CGPoint(x: endEdgeX, y: baselineY))
+        let start = range.lowerBound
+        let endInclusive = max(range.lowerBound, range.upperBound - 1)
 
         var path = Path()
-        addSmoothQuadSegments(&path, points: points, moveToFirst: true)
+
+        let xStart = plotRect.minX + CGFloat(start) * stepX
+        path.move(to: CGPoint(x: xStart, y: baselineY))
+
+        for i in start...endInclusive {
+            let x = plotRect.minX + CGFloat(i) * stepX
+            let y = baselineY - heights[i]
+            path.addLine(to: CGPoint(x: x, y: y))
+        }
+
+        let xEnd = plotRect.minX + CGFloat(endInclusive) * stepX
+        path.addLine(to: CGPoint(x: xEnd, y: baselineY))
         path.closeSubpath()
+
         return path
     }
 
     static func makeTopEdgePath(
-        for range: Range<Int>,
+        range: Range<Int>,
         plotRect: CGRect,
         baselineY: CGFloat,
         stepX: CGFloat,
         heights: [CGFloat]
     ) -> Path {
-        guard let first = range.first else { return Path() }
-        let last = max(first, range.upperBound - 1)
+        guard !range.isEmpty else { return Path() }
 
-        let startEdgeX = plotRect.minX + CGFloat(range.lowerBound) * stepX
-        let endEdgeX = plotRect.minX + CGFloat(range.upperBound) * stepX
-
-        var points: [CGPoint] = []
-        points.reserveCapacity(range.count + 2)
-
-        points.append(CGPoint(x: startEdgeX, y: baselineY - heights[first]))
-
-        for i in range {
-            let x = plotRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            points.append(CGPoint(x: x, y: y))
-        }
-
-        points.append(CGPoint(x: endEdgeX, y: baselineY - heights[last]))
+        let start = range.lowerBound
+        let endInclusive = max(range.lowerBound, range.upperBound - 1)
 
         var path = Path()
-        addSmoothQuadSegments(&path, points: points, moveToFirst: true)
+
+        let x0 = plotRect.minX + CGFloat(start) * stepX
+        let y0 = baselineY - heights[start]
+        path.move(to: CGPoint(x: x0, y: y0))
+
+        if start < endInclusive {
+            for i in (start + 1)...endInclusive {
+                let x = plotRect.minX + CGFloat(i) * stepX
+                let y = baselineY - heights[i]
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+
         return path
     }
 
-    /// Smooth polyline with quadratic segments (stable and widget-safe).
-    static func addSmoothQuadSegments(_ path: inout Path, points: [CGPoint], moveToFirst: Bool) {
-        guard points.count >= 2 else { return }
-
-        if moveToFirst {
-            path.move(to: points[0])
+    static func unionCoreMaskPath(segments: [SurfaceSegment]) -> Path {
+        var mask = Path()
+        for s in segments {
+            mask.addPath(s.surfacePath)
         }
-
-        if points.count == 2 {
-            path.addLine(to: points[1])
-            return
-        }
-
-        for i in 1..<(points.count - 1) {
-            let current = points[i]
-            let next = points[i + 1]
-            let mid = CGPoint(x: (current.x + next.x) * 0.5, y: (current.y + next.y) * 0.5)
-            path.addQuadCurve(to: mid, control: current)
-        }
-
-        path.addQuadCurve(to: points[points.count - 1], control: points[points.count - 2])
+        return mask
     }
 
-    /// Useful for effects that must exclude the interior.
-    /// Not used by the diffusion approach.
-    static func makeOutsideMaskPath(plotRect: CGRect, surfacePath: Path, padding: CGFloat) -> Path {
-        let pad = max(0, padding)
+    static func outsideMaskPath(clipRect: CGRect, coreMask: Path) -> Path {
         var p = Path()
-        p.addRect(plotRect.insetBy(dx: -pad, dy: -pad))
-        p.addPath(surfacePath)
+        p.addRect(clipRect)
+        p.addPath(coreMask)
         return p
     }
 }
