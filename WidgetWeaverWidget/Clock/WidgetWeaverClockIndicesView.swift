@@ -161,37 +161,18 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-        let embossOffset = max(px, fontSize * 0.010)
 
-        let face = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: palette.numeralLight, location: 0.00),
-                .init(color: palette.numeralMid, location: 0.55),
-                .init(color: palette.numeralDark, location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-
-        let glyph = Text(text)
+        // WidgetKit reliability: avoid glyph masks + blend modes for numerals.
+        Text(text)
             .font(.system(size: fontSize, weight: .semibold, design: .rounded))
-
-        ZStack {
-            glyph
-                .foregroundStyle(face)
-
-            // WidgetKit-friendly “emboss” hint: no masks, no blend modes.
-            glyph
-                .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -embossOffset, y: -embossOffset)
-                .opacity(0.55)
-
-            glyph
-                .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: embossOffset, y: embossOffset)
-                .opacity(0.55)
-        }
-        .shadow(color: palette.numeralShadow, radius: max(px, fontSize * 0.020), x: px, y: px)
-        .compositingGroup()
+            .foregroundStyle(palette.numeralLight)
+            .shadow(
+                color: palette.numeralShadow,
+                radius: max(px, fontSize * 0.040),
+                x: px,
+                y: px
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
