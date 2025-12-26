@@ -64,4 +64,13 @@ struct RainSurfacePRNG {
         let b = UInt64(bitPattern: Int64(saltB))
         return combine(combine(i, a), b)
     }
+
+    /// Stable hash → [0, 1) for grid dithering (blue-noise-ish by coordinate hashing).
+    static func hash2D01(x: Int, y: Int, seed: UInt64) -> Double {
+        let ux = UInt64(bitPattern: Int64(x))
+        let uy = UInt64(bitPattern: Int64(y))
+        let h = combine(seed, combine(ux, uy))
+        let v = h >> 11
+        return Double(v) / Double(1 << 53)
+    }
 }

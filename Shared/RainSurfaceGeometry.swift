@@ -26,28 +26,18 @@ enum RainSurfaceGeometry {
             return p
         }
 
-        var pts: [CGPoint] = []
-        pts.reserveCapacity(n + 2)
-
-        // Baseline anchor at chart bottom.
-        pts.append(CGPoint(x: chartRect.minX, y: baselineY))
-
-        // Per-column centres.
-        for i in 0..<n {
-            let x = chartRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            pts.append(CGPoint(x: x, y: y))
-        }
-
-        pts.append(CGPoint(x: chartRect.maxX, y: baselineY))
+        let topPoints = makeTopPoints(chartRect: chartRect, baselineY: baselineY, stepX: stepX, heights: heights)
 
         var path = Path()
-        addSmoothQuadSegments(&path, points: pts)
+        path.move(to: CGPoint(x: chartRect.minX, y: baselineY))
+        path.addLine(to: topPoints[0])
+        addSmoothQuad(points: topPoints, to: &path)
+        path.addLine(to: CGPoint(x: chartRect.maxX, y: baselineY))
         path.closeSubpath()
         return path
     }
 
-    /// Top edge (open) used for gloss band and optional glints.
+    /// Builds the top edge only (smooth curve across the chart width).
     static func makeTopEdgePath(
         chartRect: CGRect,
         baselineY: CGFloat,
@@ -57,54 +47,12 @@ enum RainSurfaceGeometry {
         let n = heights.count
         guard n > 0 else { return Path() }
 
-        var pts: [CGPoint] = []
-        pts.reserveCapacity(n + 2)
-
-        // Extend to edges without forcing the edge down to baseline.
-        let firstY = baselineY - (heights.first ?? 0)
-        let lastY = baselineY - (heights.last ?? 0)
-        pts.append(CGPoint(x: chartRect.minX, y: firstY))
-
-        for i in 0..<n {
-            let x = chartRect.minX + (CGFloat(i) + 0.5) * stepX
-            let y = baselineY - heights[i]
-            pts.append(CGPoint(x: x, y: y))
-        }
-
-        pts.append(CGPoint(x: chartRect.maxX, y: lastY))
+        let topPoints = makeTopPoints(chartRect: chartRect, baselineY: baselineY, stepX: stepX, heights: heights)
 
         var path = Path()
-        addSmoothQuadSegments(&path, points: pts)
+        path.move(to: topPoints[0])
+        addSmoothQuad(points: topPoints, to: &path)
         return path
-    }
-
-    /// Smooth quadratic chain through given points.
-    static func addSmoothQuadSegments(_ path: inout Path, points: [CGPoint]) {
-        guard points.count > 1 else {
-            if let p0 = points.first { path.move(to: p0) }
-            return
-        }
-
-        path.move(to: points[0])
-
-        if points.count == 2 {
-            path.addLine(to: points[1])
-            return
-        }
-
-        for i in 1..<(points.count - 1) {
-            let current = points[i]
-            let next = points[i + 1]
-            let mid = CGPoint(
-                x: (current.x + next.x) * 0.5,
-                y: (current.y + next.y) * 0.5
-            )
-            path.addQuadCurve(to: mid, control: current)
-        }
-
-        if let secondLast = points.dropLast().last, let last = points.last {
-            path.addQuadCurve(to: last, control: secondLast)
-        }
     }
 
     /// Even-odd mask path: (clip rect) minus (core path).
@@ -113,5 +61,53 @@ enum RainSurfaceGeometry {
         p.addRect(clipRect)
         p.addPath(corePath)
         return p
+    }
+
+    // MARK: - Helpers
+
+    private static func makeTopPoints(
+        chartRect: CGRect,
+        baselineY: CGFloat,
+        stepX: CGFloat,
+        heights: [CGFloat]
+    ) -> [CGPoint] {
+        let n = heights.count
+        let firstY = baselineY - (heights.first ?? 0)
+        let lastY = baselineY - (heights.last ?? 0)
+
+        var pts: [CGPoint] = []
+        pts.reserveCapacity(n + 2)
+
+        // Extend to edges without creating hard vertical walls (tail easing enforces heights≈0 at ends).
+        pts.append(CGPoint(x: chartRect.minX, y: firstY))
+        for i in 0..<n {
+            let x = chartRect.minX + (CGFloat(i) + 0.5) * stepX
+            let y = baselineY - heights[i]
+            pts.append(CGPoint(x: x, y: y))
+        }
+        pts.append(CGPoint(x: chartRect.maxX, y: lastY))
+
+        return pts
+    }
+
+    /// Adds a quad-smoothed polyline passing through `points` to `path`.
+    /// `path` is expected to already be moved/connected to `points[0]`.
+    private static func addSmoothQuad(points: [CGPoint], to path: inout Path) {
+        guard points.count >= 2 else { return }
+        if points.count == 2 {
+            path.addLine(to: points[1])
+            return
+        }
+
+        for i in 1..<(points.count - 1) {
+            let current = points[i]
+            let next = points[i + 1]
+            let mid = CGPoint(x: (current.x + next.x) * 0.5, y: (current.y + next.y) * 0.5)
+            path.addQuadCurve(to: mid, control: current)
+        }
+
+        if let secondLast = points.dropLast().last, let last = points.last {
+            path.addQuadCurve(to: last, control: secondLast)
+        }
     }
 }

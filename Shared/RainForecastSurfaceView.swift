@@ -14,43 +14,62 @@ struct RainForecastSurfaceConfiguration: Hashable {
     // MARK: - Determinism
 
     /// Base seed (caller supplies start time / family / location mixing).
-    /// Renderer further mixes in render size so grain is stable per widget size.
+    /// Renderer further mixes in render size so patterns are stable per widget size.
     var noiseSeed: UInt64 = 0
 
     // MARK: - Geometry (shape-agnostic)
 
     /// Baseline position as a fraction of chart height from the top.
-    /// The mock baseline sits well above the bottom, leaving empty space beneath.
     var baselineFractionFromTop: CGFloat = 0.596
 
-    /// Top headroom fraction of chart height (≈ 25–40%).
-    /// This caps the absolute maximum height (even for extreme intensities).
+    /// Top headroom fraction of chart height (caps the absolute maximum height).
     var topHeadroomFraction: CGFloat = 0.30
 
-    /// Typical peak height above baseline as a fraction of chart height (≈ 18–24%).
-    /// Robust max (percentile) maps to this height; larger values may rise a bit further.
+    /// Typical peak height above baseline as a fraction of chart height.
     var typicalPeakFraction: CGFloat = 0.195
 
-    /// Percentile used as the robust “max” for scaling (≈ 90–95th of non-zero values).
+    /// Percentile used as the robust “max” for scaling.
     var robustMaxPercentile: Double = 0.93
 
-    /// Gamma < 1 lifts mid-range values (prevents thin strip).
+    /// Gamma < 1 lifts mid-range values.
     var intensityGamma: Double = 0.65
 
-    /// Dense sampling cap for path building.
-    /// Kept below ultra-high values to avoid widget render timeouts.
-    var maxDenseSamples: Int = 1024
+    /// Dense sampling cap for silhouette creation (widget-safe).
+    var maxDenseSamples: Int = 512
+
+    /// Tail easing fraction (both ends) to prevent vertical cliffs when endpoints aren’t zero.
+    var tailEasingFraction: CGFloat = 0.10
+
+    /// Number of smoothing passes after resampling.
+    var silhouetteSmoothingPasses: Int = 3
 
     /// Baseline inset in pixels to avoid clipping.
-    /// Mostly relevant if baseline is placed very near the edges.
     var baselineAntiClipInsetPixels: Double = 0.75
+
+    // MARK: - Raster (mask / fields)
+
+    /// Supersampling factor for the offscreen mask/field raster.
+    var rasterSupersample: CGFloat = 1.0
+
+    /// Max raster width (in pixels) for mask/field passes.
+    var rasterMaxWidthPixels: Int = 720
+
+    /// Max raster height (in pixels) for mask/field passes.
+    var rasterMaxHeightPixels: Int = 420
+
+    /// Max total pixels (width * height) for mask/field passes.
+    var rasterMaxTotalPixels: Int = 240_000
+
+    /// Mask threshold (0–255) used to define “inside” for field passes.
+    /// A small threshold prevents fuzz from leaking into the anti-aliased edge.
+    var maskInsideThreshold: UInt8 = 16
 
     // MARK: - Core (opaque volume)
 
-    /// Core fill colour (solid; no vertical gradient fill).
+    /// Core fill colour (solid; no rect-aligned gradient fill).
     var coreBodyColor: Color = Color(red: 0.02, green: 0.14, blue: 0.52)
 
-    /// Highlight colour used by the gloss band and rim.
+    /// Highlight colour used by inside lighting (surface-driven).
     var coreTopColor: Color = Color(red: 0.12, green: 0.45, blue: 1.0)
 
     /// Kept for compatibility / theming, but not used for the core fill.
@@ -59,76 +78,80 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Kept for compatibility / theming, but not used for the core fill.
     var coreBottomColor: Color = Color(red: 0.00, green: 0.05, blue: 0.18)
 
-    // MARK: - Rim (crisp surface edge + subtle outer halo)
+    // MARK: - Rim (repurposed as optional wide bloom; no stroke tracing)
 
     var rimEnabled: Bool = true
     var rimColor: Color = Color(red: 0.62, green: 0.88, blue: 1.00)
 
-    /// Inner rim drawn inside the core.
-    var rimInnerOpacity: Double = 0.55
-    var rimInnerWidthPixels: Double = 1.15
+    /// Inner rim kept for compatibility; not used (avoid traced line).
+    var rimInnerOpacity: Double = 0.0
+    var rimInnerWidthPixels: Double = 0.0
 
-    /// Outer halo drawn outside the core.
-    var rimOuterOpacity: Double = 0.14
-    var rimOuterWidthPixels: Double = 5.5
+    /// Outer bloom (wide, low opacity).
+    var rimOuterOpacity: Double = 0.06
+    var rimOuterWidthPixels: Double = 14.0
 
-    // MARK: - Gloss (inside-only)
+    // MARK: - Inside lighting (replaces “gloss band”)
 
     var glossEnabled: Bool = true
-    var glossMaxOpacity: Double = 0.18
-    var glossDepthPixels: ClosedRange<Double> = 8.0...14.0
-    var glossSoftBlurPixels: Double = 0.6
+    var glossMaxOpacity: Double = 0.12
+    var glossDepthPixels: ClosedRange<Double> = 10.0...16.0
 
-    // MARK: - Glints (tiny, local maxima only)
+    /// Minimum surface height required before lighting sources are placed (in display pixels).
+    var insideLightMinHeightPixels: Double = 3.0
 
-    var glintEnabled: Bool = true
+    /// Kept for compatibility; not used.
+    var glossSoftBlurPixels: Double = 0.0
+
+    // MARK: - Glints (optional, subtle)
+
+    var glintEnabled: Bool = false
     var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
-    var glintMaxOpacity: Double = 0.20
-    var glintBlurPixels: Double = 1.0
-    var glintMinHeightFraction: Double = 0.55
+    var glintMaxOpacity: Double = 0.10
+    var glintBlurPixels: Double = 0.0
+    var glintMinHeightFraction: Double = 0.78
     var glintMaxCount: Int = 1
 
-    // MARK: - Fuzz (granular speckle outside core)
+    // MARK: - Fuzz (granular mist outside core)
 
     var fuzzEnabled: Bool = true
     var fuzzColor: Color = Color(red: 0.65, green: 0.90, blue: 1.0)
-    var fuzzMaxOpacity: Double = 0.18
+    var fuzzMaxOpacity: Double = 0.14
 
-    /// fuzzWidth ≈ 10–22% of chart height
-    var fuzzWidthFraction: CGFloat = 0.18
+    /// fuzzWidth ≈ 10–22% of chart height.
+    var fuzzWidthFraction: CGFloat = 0.20
 
     /// Pixel clamp so fuzz stays consistent across very small/large chart sizes.
     var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...90.0
 
     /// Base density (turned into speckles via deterministic thresholding).
-    var fuzzBaseDensity: Double = 0.55
+    var fuzzBaseDensity: Double = 0.62
 
-    /// Stronger concentration near baseline / lower slopes.
-    var fuzzLowHeightPower: Double = 2.4
+    /// Stronger concentration near baseline / shoulders.
+    var fuzzLowHeightPower: Double = 2.6
 
     /// Keeps a small envelope even when certainty is high.
-    var fuzzUncertaintyFloor: Double = 0.10
+    var fuzzUncertaintyFloor: Double = 0.12
 
-    /// Optional micro-blur (< 1 px) for fuzz only.
-    /// Defaulted to 0 for widget safety; can be bumped slightly if needed.
+    /// Kept for compatibility; not used (speckles are grid-dithered).
     var fuzzMicroBlurPixels: Double = 0.0
 
-    /// Speckle radius range in pixels (near-boundary).
+    /// Kept for compatibility; not used (no circle spawning).
     var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
 
-    /// Upper bound on speckle attempts per column.
+    /// Kept for compatibility; not used (grid-dithered).
     var fuzzMaxAttemptsPerColumn: Int = 24
 
-    /// Hard cap on how many fuzz columns are processed (stride is applied when denseCount is larger).
+    /// Kept for compatibility; not used (grid-dithered).
     var fuzzMaxColumns: Int = 900
 
-    /// Hard cap on total speckle attempts for the entire render (keeps widgets from timing out).
-    var fuzzSpeckleBudget: Int = 6500
+    /// Hard cap for speckle population (deterministically thinned if exceeded).
+    var fuzzSpeckleBudget: Int = 7_500
 
     // MARK: - Baseline
 
-    var baselineColor: Color = Color(red: 0.55, green: 0.75, blue: 1.0)
-    var baselineLineOpacity: Double = 0.30
+    var baselineColor: Color = Color(red: 0.48, green: 0.64, blue: 0.82)
+    var baselineLineOpacity: Double = 0.18
     var baselineEndFadeFraction: CGFloat = 0.035
 }
 

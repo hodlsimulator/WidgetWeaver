@@ -119,7 +119,7 @@ private struct WidgetWeaverClockWidgetLiveDriverView: View {
         }
         .onAppear { syncToNow() }
         .task { syncToNow() }
-        .onChange(of: tick) { newTick in
+        .onChange(of: tick) { _, newTick in
             applyTick(newTick)
         }
     }
@@ -137,29 +137,8 @@ private struct WidgetWeaverClockWidgetLiveDriverView: View {
     }
 
     private func applyTick(_ newTick: Int) {
-        let targetDate = Date(timeIntervalSince1970: Double(newTick))
-        let target = WWClockHandDegrees(date: targetDate)
-
-        let shouldAnimate: Bool = {
-            guard WWClockWidgetLiveTuning.animateOnlyWhenDeltaSecondsIsExactlyOne else {
-                return true
-            }
-            guard let last = lastTick else { return false }
-            return (newTick - last) == 1
-        }()
-
-        lastTick = newTick
-
-        if shouldAnimate {
-            withAnimation(.linear(duration: WWClockWidgetLiveTuning.tickSeconds)) {
-                rendered = target
-            }
-        } else {
-            withAnimation(.none) {
-                rendered = target
-            }
-        }
-    }
+           _ = newTick
+       }
 }
 
 private struct WWClockHandDegrees: Equatable {

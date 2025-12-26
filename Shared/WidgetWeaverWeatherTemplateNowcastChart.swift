@@ -10,7 +10,6 @@
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -36,7 +35,6 @@ struct WeatherNowcastChart: View {
         var plotHorizontal: CGFloat
         var plotTop: CGFloat
         var plotBottom: CGFloat
-
         var axisHorizontal: CGFloat
         var axisTop: CGFloat
         var axisBottom: CGFloat
@@ -46,42 +44,14 @@ struct WeatherNowcastChart: View {
         #if canImport(WidgetKit)
         switch widgetFamily {
         case .systemSmall:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 8,
-                plotBottom: showAxisLabels ? 8 : 10,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 10
-            )
+            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 8 : 10, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
         case .systemMedium:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 10,
-                plotBottom: showAxisLabels ? 8 : 10,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 12
-            )
+            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 8 : 10, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         default:
-            return Insets(
-                plotHorizontal: 12,
-                plotTop: 10,
-                plotBottom: showAxisLabels ? 10 : 10,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 12
-            )
+            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 10 : 10, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         }
         #else
-        return Insets(
-            plotHorizontal: 12,
-            plotTop: 10,
-            plotBottom: showAxisLabels ? 10 : 10,
-            axisHorizontal: 18,
-            axisTop: 0,
-            axisBottom: 12
-        )
+        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 10 : 10, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         #endif
     }
 
@@ -152,7 +122,6 @@ private struct WeatherNowcastSurfacePlot: View {
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
-
     let forecastStart: Date
     let locationLatitude: Double?
     let locationLongitude: Double?
@@ -175,7 +144,6 @@ private struct WeatherNowcastSurfacePlot: View {
             // Certainty: chance with a gentle horizon softening.
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
@@ -196,56 +164,69 @@ private struct WeatherNowcastSurfacePlot: View {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
 
-                // Widget-safe sampling (prevents placeholder timeouts).
+                // Widget-safe silhouette sampling.
                 c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 1024
+                c.silhouetteSmoothingPasses = 3
+                c.tailEasingFraction = 0.10
 
-                // Geometry to match the mock composition.
+                // Geometry.
                 c.baselineFractionFromTop = 0.596
                 c.topHeadroomFraction = 0.30
                 c.typicalPeakFraction = 0.195
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.65
 
-                // Core: solid body fill (no vertical gradient) + highlight colour for rim/gloss.
+                // Raster budgets (fields + mist).
+                if WidgetWeaverRuntime.isRunningInAppExtension {
+                    c.rasterMaxWidthPixels = 680
+                    c.rasterMaxHeightPixels = 420
+                    c.rasterMaxTotalPixels = 220_000
+                } else {
+                    c.rasterMaxWidthPixels = 1200
+                    c.rasterMaxHeightPixels = 760
+                    c.rasterMaxTotalPixels = 700_000
+                }
+                c.rasterSupersample = 1.0
+                c.maskInsideThreshold = 16
+
+                // Core.
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Rim: crisp edge plus a subtle outer halo.
+                // Edge highlight: optional wide bloom only (no traced rim line).
                 c.rimEnabled = true
                 c.rimColor = Color(red: 0.62, green: 0.88, blue: 1.00)
-                c.rimInnerOpacity = 0.52
-                c.rimInnerWidthPixels = 1.10
-                c.rimOuterOpacity = 0.12
-                c.rimOuterWidthPixels = 5.4
+                c.rimInnerOpacity = 0.0
+                c.rimInnerWidthPixels = 0.0
+                c.rimOuterOpacity = 0.06
+                c.rimOuterWidthPixels = 14.0
 
-                // Gloss band (inside-only).
+                // Inside lighting (surface-driven).
                 c.glossEnabled = true
-                c.glossMaxOpacity = 0.16
-                c.glossDepthPixels = 9.0...14.0
+                c.glossMaxOpacity = 0.12
+                c.glossDepthPixels = 10.0...16.0
+                c.insideLightMinHeightPixels = 3.0
 
-                // Tiny apex glint (local maxima only). Kept subtle.
-                c.glintEnabled = true
+                // Glint: optional (disabled by default for a cleaner read).
+                c.glintEnabled = false
                 c.glintMaxCount = 1
                 c.glintMinHeightFraction = 0.78
-                c.glintMaxOpacity = 0.18
+                c.glintMaxOpacity = 0.08
                 c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
 
-                // Fuzz: granular speckle, outside-only, strongest near baseline.
+                // Fuzz: dense granular mist, outside-only.
                 c.fuzzEnabled = true
                 c.fuzzColor = Color(red: 0.62, green: 0.88, blue: 1.00)
-                c.fuzzMaxOpacity = 0.18
-                c.fuzzWidthFraction = 0.18
-                c.fuzzBaseDensity = 0.55
+                c.fuzzMaxOpacity = 0.14
+                c.fuzzWidthFraction = 0.20
+                c.fuzzBaseDensity = 0.62
                 c.fuzzLowHeightPower = 2.6
-                c.fuzzUncertaintyFloor = 0.10
-                c.fuzzSpeckleRadiusPixels = 0.5...1.15
-                c.fuzzMaxAttemptsPerColumn = 24
-                c.fuzzMaxColumns = 900
-                c.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? 6500 : 12000
+                c.fuzzUncertaintyFloor = 0.12
+                c.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? 7_500 : 14_000
 
-                // Baseline.
-                c.baselineColor = accent
-                c.baselineLineOpacity = 0.30
+                // Baseline: subtle blue-grey (kept independent from accent).
+                c.baselineColor = Color(red: 0.46, green: 0.62, blue: 0.80)
+                c.baselineLineOpacity = 0.18
                 c.baselineEndFadeFraction = 0.035
 
                 return c
@@ -268,7 +249,6 @@ private struct WeatherNowcastSurfacePlot: View {
     ) -> UInt64 {
         let minute = Int64(floor(forecastStart.timeIntervalSince1970 / 60.0))
         var seed = RainSurfacePRNG.combine(UInt64(bitPattern: minute), widgetFamily)
-
         if let latitude, let longitude {
             let latQ = Int64((latitude * 10_000.0).rounded())
             let lonQ = Int64((longitude * 10_000.0).rounded())
@@ -277,7 +257,6 @@ private struct WeatherNowcastSurfacePlot: View {
         } else {
             seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
         }
-
         return seed
     }
 
