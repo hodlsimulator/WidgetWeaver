@@ -15,133 +15,244 @@ struct RainForecastSurfaceRenderer {
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
     let displayScale: CGFloat
-    let baselineLabelSafeBottom: CGFloat
 
-    init(
-        intensities: [Double],
-        certainties: [Double],
-        configuration: RainForecastSurfaceConfiguration,
-        displayScale: CGFloat,
-        baselineLabelSafeBottom: CGFloat = 0
-    ) {
-        self.intensities = intensities
-        self.certainties = certainties
-        self.configuration = configuration
-        self.displayScale = displayScale
-        self.baselineLabelSafeBottom = baselineLabelSafeBottom
+    struct WetSegment {
+        let range: Range<Int>
+        let surfacePath: Path
+        let topEdgePath: Path
     }
 
     func render(in context: inout GraphicsContext, size: CGSize) {
+        let n0 = min(intensities.count, certainties.count)
+
         let rect = CGRect(origin: .zero, size: size)
         guard rect.width > 1, rect.height > 1 else { return }
 
-        // 1) Background: pure black (no haze, no gradient).
-        context.fill(Path(rect), with: .color(.black))
+        // Spec: background is always true black.
+        var bg = Path()
+        bg.addRect(rect)
+        context.fill(bg, with: .color(.black))
 
-        // Spec: work inside the exact rect being drawn into.
-        let plotRect = rect
-
-        // Spec fixed geometry.
-        let baselineY = RainSurfaceMath.alignToPixelCenter(
-            plotRect.minY + 0.596 * plotRect.height,
-            displayScale: displayScale
-        )
-        let maxCoreHeightBudget = plotRect.height * 0.195
-        let onePixel = RainSurfaceMath.onePixel(displayScale: displayScale)
-
-        let n = min(intensities.count, certainties.count)
-        if n <= 0 {
-            RainSurfaceDrawing.drawBaseline(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                configuration: configuration,
-                displayScale: displayScale
-            )
+        guard n0 > 0 else {
+            // Baseline still anchors the chart.
+            let plotRect = rect
+            let baselineY = RainSurfaceMath.alignToPixelCenter(plotRect.minY + plotRect.height * 0.596, displayScale: displayScale)
+            RainSurfaceDrawing.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration, displayScale: displayScale)
             return
         }
 
-        // Map input data to a low mound height budget.
-        let cap = max(configuration.intensityCap, 0.000_000_1)
-        let certaintyPower = max(0.0, configuration.coreCertaintyPower)
+        let insetX = max(0, rect.width * configuration.edgeInsetFraction)
+        let plotRect = rect.insetBy(dx: insetX, dy: 0)
+        guard plotRect.width > 0, plotRect.height > 0 else { return }
 
-        var intensity01 = [CGFloat](repeating: 0, count: n)
-        var certainty01 = [CGFloat](repeating: 0, count: n)
-        var coreHeights = [CGFloat](repeating: 0, count: n)
+        // Spec: fixed baseline ratio.
+        var baselineY = plotRect.minY + plotRect.height * 0.596
+        baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
 
-        for i in 0..<n {
-            let intensity = intensities[i]
-            let certainty = certainties[i]
+        let availableAboveBaseline = max(0, baselineY - plotRect.minY)
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
 
-            let wet = (intensity > configuration.wetThreshold) && (certainty > 0)
+        // Spec: fixed height budget (≈19–20% of rect height above baseline).
+        var maxCoreHeight = plotRect.height * 0.195
+        maxCoreHeight = min(maxCoreHeight, availableAboveBaseline)
+        if configuration.maxCoreHeightPoints > 0 {
+            maxCoreHeight = min(maxCoreHeight, max(0.0, configuration.maxCoreHeightPoints))
+        }
+        maxCoreHeight = max(onePixel, maxCoreHeight)
 
-            let i01 = RainSurfaceMath.clamp01(intensity / cap)
-            let eased = pow(i01, configuration.intensityEasingPower)
+        let minVisibleHeight = max(onePixel * 0.60, maxCoreHeight * configuration.minVisibleHeightFraction)
 
-            let c01 = RainSurfaceMath.clamp01(CGFloat(certainty))
+        // Raw per-sample values (coarse)
+        let intensityCap = max(configuration.intensityCap, 0.000_001)
 
-            intensity01[i] = CGFloat(eased)
-            certainty01[i] = c01
+        var rawWetMask = [Bool](repeating: false, count: n0)
+        var intensityNorm = [Double](repeating: 0.0, count: n0)
+        var certainty = [Double](repeating: 0.0, count: n0)
 
-            let coreFactor = pow(Double(c01), certaintyPower)
-            var h = CGFloat(eased * coreFactor) * maxCoreHeightBudget
+        for i in 0..<n0 {
+            let rawI = max(0.0, intensities[i])
+            let c = RainSurfaceMath.clamp01(certainties[i])
+            certainty[i] = c
 
-            if wet && h > 0 {
-                let minVisible = max(onePixel, maxCoreHeightBudget * configuration.minVisibleHeightFractionOfMax)
-                if h < minVisible { h = minVisible }
-            } else {
-                h = 0
-            }
+            guard rawI > configuration.wetThreshold else { continue }
+            guard c > 0 else { continue }
 
-            coreHeights[i] = RainSurfaceMath.clamp(h, min: 0, max: maxCoreHeightBudget)
+            rawWetMask[i] = true
+            let v = min(rawI / intensityCap, 1.0)
+            intensityNorm[i] = pow(v, configuration.intensityEasingPower)
         }
 
-        // Smooth before path construction.
-        coreHeights = RainSurfaceMath.smooth(coreHeights, passes: max(1, configuration.geometrySmoothingPasses))
-        coreHeights = coreHeights.map { RainSurfaceMath.clamp($0, min: 0, max: maxCoreHeightBudget) }
+        // If fully dry, draw baseline only.
+        if rawWetMask.allSatisfy({ !$0 }) {
+            RainSurfaceDrawing.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration, displayScale: displayScale)
+            return
+        }
 
-        // Resample beyond 60 points (per-pixel sampling across width).
-        let pixelWidth = max(1, Int(ceil(plotRect.width * max(displayScale, 1.0))))
-        let denseCount = min(max(pixelWidth + 1, max(121, n * 4)), 2049)
+        // Heights from shaped values (no end-taper height squashing).
+        var heights = [CGFloat](repeating: 0.0, count: n0)
+        for i in 0..<n0 {
+            var h = CGFloat(RainSurfaceMath.clamp01(intensityNorm[i])) * maxCoreHeight
+            if rawWetMask[i], h > 0 {
+                h = max(h, minVisibleHeight)
+            }
+            heights[i] = min(maxCoreHeight, max(0.0, h))
+        }
 
-        var denseHeights = RainSurfaceMath.resampleMonotoneCubic(coreHeights, targetCount: denseCount)
-        denseHeights = RainSurfaceMath.smooth(denseHeights, passes: 1).map { RainSurfaceMath.clamp($0, min: 0, max: maxCoreHeightBudget) }
+        // Mild smoothing.
+        if configuration.geometrySmoothingPasses > 0 {
+            heights = RainSurfaceMath.smooth(heights, passes: configuration.geometrySmoothingPasses)
+            for i in 0..<n0 { heights[i] = min(maxCoreHeight, max(0.0, heights[i])) }
+        }
 
-        var denseIntensity = RainSurfaceMath.resampleMonotoneCubic(intensity01, targetCount: denseCount).map { RainSurfaceMath.clamp01($0) }
+        // Segment drop settling: extend short geometric tails into neighbouring dry samples.
+        let tailIn = max(0, configuration.geometryTailInSamples)
+        let tailOut = max(0, configuration.geometryTailOutSamples)
+        let tailPow = max(0.50, configuration.geometryTailPower)
+
+        if tailIn > 0 || tailOut > 0 {
+            let rawRanges = RainSurfaceGeometry.wetRanges(from: rawWetMask)
+
+            for r in rawRanges {
+                if r.isEmpty { continue }
+
+                let start = r.lowerBound
+                let end = max(start, r.upperBound - 1)
+
+                let hStart = heights[start]
+                let hEnd = heights[end]
+
+                if tailIn > 0, hStart > onePixel {
+                    for k in 1...tailIn {
+                        let idx = start - k
+                        if idx < 0 { break }
+                        if rawWetMask[idx] { break }
+
+                        let t = Double(k) / Double(tailIn + 1)
+                        let f = pow(max(0.0, 1.0 - t), tailPow)
+                        let hh = hStart * CGFloat(f)
+                        if hh > heights[idx] { heights[idx] = hh }
+                    }
+                }
+
+                if tailOut > 0, hEnd > onePixel {
+                    for k in 1...tailOut {
+                        let idx = end + k
+                        if idx >= n0 { break }
+                        if rawWetMask[idx] { break }
+
+                        let t = Double(k) / Double(tailOut + 1)
+                        let f = pow(max(0.0, 1.0 - t), tailPow)
+                        let hh = hEnd * CGFloat(f)
+                        if hh > heights[idx] { heights[idx] = hh }
+                    }
+                }
+            }
+        }
+
+        // Resample beyond minute steps (dense, widget-safe cap).
+        let pxW = max(1, Int(ceil(plotRect.width * max(1.0, displayScale))))
+        let denseCount = min(1025, max(121, (pxW / 2) + 1))
+
+        var denseHeights = RainSurfaceMath.resampleMonotoneCubic(heights, targetCount: denseCount)
+        denseHeights = RainSurfaceMath.smooth(denseHeights, passes: 1).map { min(maxCoreHeight, max(0.0, $0)) }
+
+        var denseIntensity = RainSurfaceMath.resampleMonotoneCubic(intensityNorm, targetCount: denseCount)
+        denseIntensity = denseIntensity.map { RainSurfaceMath.clamp01($0) }
         denseIntensity = RainSurfaceMath.smooth(denseIntensity, passes: 1)
 
-        var denseCertainty = RainSurfaceMath.resampleMonotoneCubic(certainty01, targetCount: denseCount).map { RainSurfaceMath.clamp01($0) }
+        let certaintySmoothed = RainSurfaceMath.smooth(certainty, passes: 1)
+        var denseCertainty = RainSurfaceMath.resampleMonotoneCubic(certaintySmoothed, targetCount: denseCount)
+        denseCertainty = denseCertainty.map { RainSurfaceMath.clamp01($0) }
         denseCertainty = RainSurfaceMath.smooth(denseCertainty, passes: 1)
 
-        let denseAlphas = [CGFloat](repeating: 1.0, count: denseCount)
+        // Wet mask from geometry.
+        let epsilon = max(onePixel * 0.18, maxCoreHeight * 0.0015)
+        var wetMask = [Bool](repeating: false, count: denseCount)
+        for i in 0..<denseCount { wetMask[i] = denseHeights[i] > epsilon }
 
-        // Build smoothed segments.
-        let wetThreshold = onePixel * 0.35
-        let segments = RainSurfaceGeometry.buildSegments(
-            plotRect: plotRect,
-            baselineY: baselineY,
-            heights: denseHeights,
-            threshold: wetThreshold
-        )
-
-        if !segments.isEmpty {
-            // 2–4) Fuzz, core, glints.
-            RainSurfaceDrawing.drawProbabilityMaskedSurface(
-                in: &context,
-                plotRect: plotRect,
-                baselineY: baselineY,
-                baselineLabelSafeBottom: baselineLabelSafeBottom,
-                heights: denseHeights,
-                alphas: denseAlphas,
-                intensities: denseIntensity,
-                certainties: denseCertainty,
-                segments: segments,
-                configuration: configuration,
-                displayScale: displayScale
-            )
+        if wetMask.allSatisfy({ !$0 }) {
+            RainSurfaceDrawing.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration, displayScale: displayScale)
+            return
         }
 
-        // 5) Baseline (final layer).
+        let wetRanges = RainSurfaceGeometry.wetRanges(from: wetMask)
+        if wetRanges.isEmpty {
+            RainSurfaceDrawing.drawBaseline(in: &context, plotRect: plotRect, baselineY: baselineY, configuration: configuration, displayScale: displayScale)
+            return
+        }
+
+        // End tapers are ALPHA ONLY.
+        let firstWet = wetMask.firstIndex(where: { $0 }) ?? 0
+        let lastWet = wetMask.lastIndex(where: { $0 }) ?? (denseCount - 1)
+
+        let fadeIn = max(0, configuration.wetRegionFadeInSamples)
+        let fadeOut = max(0, configuration.wetRegionFadeOutSamples)
+
+        var alphaTaper = [Double](repeating: 0.0, count: denseCount)
+        for i in 0..<denseCount {
+            if i < firstWet || i > lastWet { alphaTaper[i] = 0.0 }
+            else { alphaTaper[i] = 1.0 }
+        }
+
+        if fadeIn > 0 {
+            let end = min(lastWet, firstWet + fadeIn)
+            if end >= firstWet {
+                for i in firstWet...end {
+                    let t = Double(i - firstWet) / Double(max(1, fadeIn))
+                    alphaTaper[i] *= RainSurfaceMath.smoothstep01(t)
+                }
+            }
+        }
+
+        if fadeOut > 0 {
+            let start = max(firstWet, lastWet - fadeOut)
+            if lastWet >= start {
+                for i in start...lastWet {
+                    let t = Double(lastWet - i) / Double(max(1, fadeOut))
+                    alphaTaper[i] *= RainSurfaceMath.smoothstep01(t)
+                }
+            }
+        }
+
+        let stepX = plotRect.width / CGFloat(denseCount)
+
+        // Build segments (paths from geometry only).
+        var segments: [WetSegment] = []
+        segments.reserveCapacity(wetRanges.count)
+
+        for r in wetRanges {
+            let surface = RainSurfaceGeometry.makeSurfacePath(
+                for: r,
+                plotRect: plotRect,
+                baselineY: baselineY,
+                stepX: stepX,
+                heights: denseHeights
+            )
+            let top = RainSurfaceGeometry.makeTopEdgePath(
+                for: r,
+                plotRect: plotRect,
+                baselineY: baselineY,
+                stepX: stepX,
+                heights: denseHeights
+            )
+            segments.append(.init(range: r, surfacePath: surface, topEdgePath: top))
+        }
+
+        RainSurfaceDrawing.drawProbabilityMaskedSurface(
+            in: &context,
+            plotRect: plotRect,
+            baselineY: baselineY,
+            stepX: stepX,
+            segments: segments,
+            heights: denseHeights,
+            intensityNorm: denseIntensity,
+            certainty: denseCertainty,
+            edgeFactors: alphaTaper,
+            configuration: configuration,
+            displayScale: displayScale
+        )
+
+        // Spec: baseline is drawn last so it reads through the surface.
         RainSurfaceDrawing.drawBaseline(
             in: &context,
             plotRect: plotRect,

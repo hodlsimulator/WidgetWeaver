@@ -7,12 +7,11 @@
 //  Rendering helpers for the forecast surface.
 //
 
-import Foundation
 import SwiftUI
 
 enum RainSurfaceDrawing {
 
-    // MARK: - Baseline (drawn last)
+    // MARK: - Baseline (drawn last; additive)
 
     static func drawBaseline(
         in context: inout GraphicsContext,
@@ -21,30 +20,33 @@ enum RainSurfaceDrawing {
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
-        let onePixel = RainSurfaceMath.onePixel(displayScale: displayScale)
+        let inset = max(0, configuration.baselineInsetPoints)
+        let x0 = plotRect.minX + inset
+        let x1 = plotRect.maxX - inset
+        guard x1 > x0 else { return }
+
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
         let y = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
 
+        var line = Path()
+        line.move(to: CGPoint(x: x0, y: y))
+        line.addLine(to: CGPoint(x: x1, y: y))
+
+        let base = RainSurfaceMath.clamp01(configuration.baselineOpacity)
+        if base <= 0 { return }
+
         let fadeFrac: CGFloat = 0.035
-        let fadeWidth = plotRect.width * fadeFrac
+        let fadeW = max(onePixel, plotRect.width * fadeFrac)
+        let f = Double(RainSurfaceMath.clamp(fadeW / max(plotRect.width, onePixel), min: 0.0, max: 0.25))
 
-        let x0 = plotRect.minX
-        let x1 = plotRect.maxX
-
-        let linePath: Path = {
-            var p = Path()
-            p.move(to: CGPoint(x: x0, y: y))
-            p.addLine(to: CGPoint(x: x1, y: y))
-            return p
-        }()
-
-        func endFadeShading(color: Color, opacity: Double) -> GraphicsContext.Shading {
-            let c0 = color.opacity(0)
-            let c1 = color.opacity(opacity)
+        func fadeShading(opacity: Double) -> GraphicsContext.Shading {
+            let c0 = configuration.baselineColor.opacity(0)
+            let c1 = configuration.baselineColor.opacity(RainSurfaceMath.clamp01(opacity))
 
             let stops = [
                 Gradient.Stop(color: c0, location: 0.0),
-                Gradient.Stop(color: c1, location: Double(RainSurfaceMath.clamp(fadeWidth / max(plotRect.width, 0.0001), min: 0, max: 0.25))),
-                Gradient.Stop(color: c1, location: Double(1.0 - RainSurfaceMath.clamp(fadeWidth / max(plotRect.width, 0.0001), min: 0, max: 0.25))),
+                Gradient.Stop(color: c1, location: f),
+                Gradient.Stop(color: c1, location: 1.0 - f),
                 Gradient.Stop(color: c0, location: 1.0)
             ]
 
@@ -55,269 +57,313 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // Additive/screen-like blending so the baseline reads through the core.
+        let soft = RainSurfaceMath.clamp01(configuration.baselineSoftOpacityMultiplier)
+        let glowBase = RainSurfaceMath.clamp01(base * max(0.60, soft * 2.0))
+
+        let outerAlpha = glowBase * 0.18
+        let midAlpha = glowBase * 0.28
+        let innerAlpha = glowBase * 0.40
+        let coreAlpha = base
+
+        let outerW = onePixel * 11.0 // faint tail out to ~5–6px
+        let midW = onePixel * 6.0
+        let innerW = onePixel * 3.0 // strongest within ~2px
+        let coreW = max(onePixel, configuration.baselineLineWidth)
+
         let savedBlend = context.blendMode
         context.blendMode = .plusLighter
 
-        let base = RainSurfaceMath.clamp(configuration.baselineOpacity, min: 0.0, max: 1.0)
-        let color = configuration.baselineColor
-
-        // Glow: strongest at the line, quick falloff (~2px), faint tail (~5–6px).
-        let outerWidth = onePixel * 11.0   // ~5.5px radius
-        let midWidth = onePixel * 6.0      // ~3px radius
-        let innerWidth = onePixel * 3.0    // ~1.5px radius
-        let coreWidth = onePixel * max(1.0, configuration.baselineLineWidth)
-
-        context.stroke(
-            linePath,
-            with: endFadeShading(color: color, opacity: base * 0.10),
-            style: StrokeStyle(lineWidth: outerWidth, lineCap: .butt)
-        )
-        context.stroke(
-            linePath,
-            with: endFadeShading(color: color, opacity: base * 0.18),
-            style: StrokeStyle(lineWidth: midWidth, lineCap: .butt)
-        )
-        context.stroke(
-            linePath,
-            with: endFadeShading(color: color, opacity: base * 0.28),
-            style: StrokeStyle(lineWidth: innerWidth, lineCap: .butt)
-        )
-        context.stroke(
-            linePath,
-            with: endFadeShading(color: color, opacity: base * 0.60),
-            style: StrokeStyle(lineWidth: coreWidth, lineCap: .butt)
-        )
+        context.stroke(line, with: fadeShading(opacity: outerAlpha), style: StrokeStyle(lineWidth: outerW, lineCap: .butt))
+        context.stroke(line, with: fadeShading(opacity: midAlpha), style: StrokeStyle(lineWidth: midW, lineCap: .butt))
+        context.stroke(line, with: fadeShading(opacity: innerAlpha), style: StrokeStyle(lineWidth: innerW, lineCap: .butt))
+        context.stroke(line, with: fadeShading(opacity: coreAlpha), style: StrokeStyle(lineWidth: coreW, lineCap: .butt))
 
         context.blendMode = savedBlend
     }
 
-    // MARK: - Core + fuzz + glint (baseline handled separately)
+    // MARK: - Surface (spec order)
+    //
+    // 1) fuzz envelope (outside-core speckle)
+    // 2) solid core (opaque)
+    // 3) inside-only gloss band
+    // 4) optional localised glint
 
     static func drawProbabilityMaskedSurface(
         in context: inout GraphicsContext,
         plotRect: CGRect,
         baselineY: CGFloat,
-        baselineLabelSafeBottom: CGFloat,
+        stepX: CGFloat,
+        segments: [RainForecastSurfaceRenderer.WetSegment],
         heights: [CGFloat],
-        alphas: [CGFloat],
-        intensities: [CGFloat],
-        certainties: [CGFloat],
-        segments: [RainSurfaceGeometry.SurfaceSegment],
+        intensityNorm: [Double],
+        certainty: [Double],
+        edgeFactors: [Double],
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
         guard !segments.isEmpty else { return }
-        guard heights.count >= 2 else { return }
 
-        let onePixel = RainSurfaceMath.onePixel(displayScale: displayScale)
-        let stepX = plotRect.width / CGFloat(max(1, heights.count - 1))
+        let n = min(heights.count, min(intensityNorm.count, min(certainty.count, edgeFactors.count)))
+        guard n > 0 else { return }
 
-        // Spec constants (fixed geometry; renderer sets baseline to match).
-        let maxCoreHeightBudget = plotRect.height * 0.195
-        let fuzzWidthPoints = {
-            let minPts = 40.0 / max(displayScale, 1.0)
-            let maxPts = 120.0 / max(displayScale, 1.0)
-            return RainSurfaceMath.clamp(plotRect.height * 0.22, min: minPts, max: maxPts)
-        }()
+        let onePixel = max(0.33, 1.0 / max(1.0, displayScale))
+        let plotH = max(onePixel, plotRect.height)
 
-        let coreMask = RainSurfaceGeometry.unionCoreMaskPath(segments: segments)
-        let outsideMask = RainSurfaceGeometry.outsideMaskPath(clipRect: plotRect, coreMask: coreMask)
+        let globalMaxHeight = max(onePixel, heights.max() ?? onePixel)
 
-        // 2) Fuzz layer: speckled, outside-core only, additive/screen-like.
-        if configuration.shellEnabled && configuration.shellMaxOpacity > 0 {
-            let baseSeed = (configuration.noiseSeed == 0) ? 0xA7F0C2D3B4E59687 : configuration.noiseSeed
-            let edgeFadeWidth = plotRect.width * 0.045
-            let microBlur = min(onePixel * 0.95, max(0.0, plotRect.height * configuration.shellBlurFractionOfPlotHeight))
+        // Fuzz width in pixels, scaled by render size.
+        let fuzzPx = RainSurfaceMath.clamp(plotRect.height * 0.22 * max(displayScale, 1.0), min: 40.0, max: 120.0)
+        let fuzzW = max(onePixel, fuzzPx / max(displayScale, 1.0))
+
+        // Padding so speckles are not clipped.
+        let padX = min(max(onePixel, fuzzW * 0.35), 44.0)
+        let padY = min(max(onePixel, fuzzW * 0.55), 52.0)
+        let clipRect = plotRect.insetBy(dx: -padX, dy: -padY)
+
+        // Union mask for all wet segments.
+        var coreMaskPath = Path()
+        for seg in segments { coreMaskPath.addPath(seg.surfacePath) }
+
+        // Outside-of-core mask (even-odd fill).
+        var outsideMaskPath = Path()
+        outsideMaskPath.addRect(clipRect)
+        outsideMaskPath.addPath(coreMaskPath)
+
+        // Keep texture above the baseline so the baseline stays crisp.
+        var aboveBaselineMask = Path()
+        aboveBaselineMask.addRect(
+            CGRect(
+                x: clipRect.minX,
+                y: clipRect.minY,
+                width: clipRect.width,
+                height: max(onePixel, (baselineY - (onePixel * 1.5)) - clipRect.minY)
+            )
+        )
+
+        // Deterministic salting derived from plot size + forecast intensity field.
+        let peakI = intensityNorm.max() ?? 0.0
+        let sumI = intensityNorm.reduce(0.0, +)
+        let pxW = Int((plotRect.width * max(1.0, displayScale)).rounded())
+        let pxH = Int((plotRect.height * max(1.0, displayScale)).rounded())
+        let saltA = 0xA11C_AFE ^ pxW ^ (pxH &* 33) ^ Int((peakI * 10_000.0).rounded())
+        let saltB = 0x0B0B_1E ^ (n &* 97) ^ Int((sumI * 1_000.0).rounded())
+
+        // PASS 1 — Fuzz envelope (outside-core speckle, density fade)
+        if configuration.shellEnabled,
+           configuration.shellMaxOpacity > 0.000_01,
+           configuration.shellNoiseAmount > 0.000_01 {
+
+            let baseDensity = RainSurfaceMath.clamp01(configuration.shellNoiseAmount)
+            let alphaCap = RainSurfaceMath.clamp01(configuration.shellMaxOpacity)
+
+            let rawMicroBlur = plotH * max(0.0, configuration.shellBlurFractionOfPlotHeight)
+            let microBlur = min(onePixel * 0.95, max(0.0, rawMicroBlur))
+
+            let edgeFadeWidth = max(onePixel, plotRect.width * 0.045)
+
+            func edgeFade(_ x: CGFloat) -> Double {
+                let d = min(x - plotRect.minX, plotRect.maxX - x)
+                let t = RainSurfaceMath.clamp01(Double(d / max(onePixel, edgeFadeWidth)))
+                return RainSurfaceMath.smoothstep01(t)
+            }
 
             context.drawLayer { layer in
-                layer.clip(to: Path(plotRect))
-
-                if microBlur > 0 {
+                layer.clip(to: Path(clipRect))
+                if microBlur > onePixel * 0.60 {
                     layer.addFilter(.blur(radius: microBlur))
                 }
 
                 layer.blendMode = .plusLighter
 
-                // Density calibration. shellNoiseAmount in the existing config is tuned low; scale it into a usable probability.
-                let baseDensity = RainSurfaceMath.clamp(configuration.shellNoiseAmount * 2.4, min: 0.0, max: 1.0)
-                let maxAttemptsPerColumn = 18
+                for seg in segments {
+                    for i in seg.range {
+                        if i < 0 || i >= n { continue }
 
-                let sampleStride = max(1, Int(round(max(1.0, displayScale))) )  // stable, avoids overdraw on higher scales
+                        let h = heights[i]
+                        if h <= onePixel * 0.25 { continue }
 
-                for i in stride(from: 0, to: heights.count, by: sampleStride) {
-                    let h = heights[i]
-                    if h <= onePixel * 0.35 { continue }
+                        let v = RainSurfaceMath.clamp01(intensityNorm[i])
+                        let c = RainSurfaceMath.clamp01(certainty[i])
+                        let unc = RainSurfaceMath.clamp01(1.0 - c)
+                        let taper = RainSurfaceMath.clamp01(edgeFactors[i])
 
-                    let c = (i < certainties.count) ? RainSurfaceMath.clamp01(certainties[i]) : 1.0
-                    let intensity01 = (i < intensities.count) ? RainSurfaceMath.clamp01(intensities[i]) : 1.0
+                        let height01 = RainSurfaceMath.clamp01(Double(h / globalMaxHeight))
+                        let lowHeight = pow(max(0.0, 1.0 - height01), 1.6)
 
-                    // Low-height emphasis: stronger near baseline, suppressed near higher portions.
-                    let height01 = RainSurfaceMath.clamp01(h / max(maxCoreHeightBudget, onePixel))
-                    let lowHeightFactor = 0.15 + 0.85 * pow(max(0.0, 1.0 - height01), 1.6)
+                        // Stronger when uncertain, stronger near baseline, suppressed near peak.
+                        var strength = baseDensity
+                        strength *= (0.25 + 0.75 * unc)
+                        strength *= (0.55 + 0.45 * pow(max(0.0, v), 0.55))
+                        strength *= (0.12 + 0.88 * lowHeight)
+                        strength *= taper
 
-                    // Uncertainty drives fuzz.
-                    let uncertainty = pow(max(0.0, 1.0 - c), 0.85)
+                        if strength <= 0.000_8 { continue }
 
-                    // Still scale a little by intensity.
-                    let intensityFactor = pow(max(0.0, intensity01), 0.55)
+                        let cx = plotRect.minX + (CGFloat(i) + 0.5) * stepX
+                        let ex = edgeFade(cx)
+                        if ex <= 0.0 { continue }
 
-                    let columnStrength = RainSurfaceMath.clamp(baseDensity * Double(lowHeightFactor) * Double(uncertainty) * Double(intensityFactor), min: 0.0, max: 1.0)
-                    if columnStrength <= 0 { continue }
+                        let columnStrength = RainSurfaceMath.clamp01(strength * ex)
+                        if columnStrength <= 0.000_8 { continue }
 
-                    let xBase = plotRect.minX + CGFloat(i) * stepX
-                    let edgeFade = RainSurfaceMath.edgeFadeFactor(x: xBase, minX: plotRect.minX, maxX: plotRect.maxX, fadeWidth: edgeFadeWidth)
-                    if edgeFade <= 0 { continue }
+                        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.seed(sampleIndex: i, saltA: saltA, saltB: saltB))
 
-                    // Deterministic per-column RNG.
-                    let columnSeed = RainSurfacePRNG.hash64(baseSeed ^ (UInt64(i) &* 0xD6E8FEB86659FD93))
-                    var prng = RainSurfacePRNG(seed: columnSeed)
+                        let attempts = max(2, Int(18.0 * columnStrength + 0.5))
+                        let topY = baselineY - h
 
-                    let attempts = max(2, Int(Double(maxAttemptsPerColumn) * columnStrength))
-                    for _ in 0..<attempts {
-                        // Bias towards the boundary (distance ~ 0).
-                        let u = prng.nextDouble01()
-                        let d = fuzzWidthPoints * CGFloat(pow(u, 2.2))
-                        let d01 = RainSurfaceMath.clamp01(d / max(fuzzWidthPoints, 0.0001))
-                        let distanceFactor = pow(max(0.0, 1.0 - Double(d01)), 1.35)
+                        for _ in 0..<attempts {
+                            let uDist = prng.random01()
+                            let d = fuzzW * CGFloat(pow(uDist, 2.2))
 
-                        // Decide speckle presence via thresholding (dither-like).
-                        let p = columnStrength * Double(distanceFactor) * Double(edgeFade)
-                        if prng.nextDouble01() > p { continue }
+                            let d01 = Double(d / max(fuzzW, onePixel))
+                            let distFactor = pow(max(0.0, 1.0 - d01), 1.35)
 
-                        let jitterU = prng.nextCGFloat01() - 0.5
-                        let jitterV = prng.nextCGFloat01() - 0.5
+                            let p = columnStrength * distFactor
+                            if prng.random01() > p { continue }
 
-                        let x = xBase + jitterU * (stepX * 1.15 + d * 0.6)
-                        if x < plotRect.minX - 2 || x > plotRect.maxX + 2 { continue }
+                            let jx = (CGFloat(prng.random01() - 0.5)) * (stepX * 5.6 + d * 0.85)
+                            let x = cx + jx
+                            if x < clipRect.minX || x > clipRect.maxX { continue }
 
-                        let xi = Int(round((x - plotRect.minX) / stepX))
-                        let idx = min(max(0, xi), heights.count - 1)
-                        let topYAtX = baselineY - heights[idx]
+                            let y = topY - d + (CGFloat(prng.random01() - 0.5)) * onePixel
+                            if y < clipRect.minY || y > baselineY - onePixel * 1.0 { continue }
 
-                        let y = topYAtX - d + jitterV * onePixel
-                        if y < plotRect.minY { continue }
-                        if y > baselineY - onePixel * 1.0 { continue } // keep baseline crisp
+                            let rPx = 0.45 + 0.70 * CGFloat(prng.random01())
+                            let r = rPx / max(displayScale, 1.0)
 
-                        // Tiny speckles.
-                        let rPx = 0.45 + 0.70 * prng.nextCGFloat01()
-                        let r = (rPx / max(displayScale, 1.0))
+                            let a = RainSurfaceMath.clamp01(alphaCap * (0.28 + 0.72 * distFactor) * columnStrength)
+                            if a <= 0.000_9 { continue }
 
-                        let alpha = RainSurfaceMath.clamp(
-                            configuration.shellMaxOpacity
-                            * (0.55 + 0.45 * Double(distanceFactor))
-                            * Double(edgeFade),
-                            min: 0.0,
-                            max: 1.0
-                        )
-
-                        let speck = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-                        layer.fill(speck, with: .color(configuration.shellColor.opacity(alpha)))
+                            let speck = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
+                            layer.fill(speck, with: .color(configuration.shellColor.opacity(a)))
+                        }
                     }
                 }
 
-                // Mask to outside-of-core (even-odd fill).
+                // Keep only outside-of-core + above baseline.
                 layer.blendMode = .destinationIn
-                layer.fill(outsideMask, with: .color(.white), style: FillStyle(eoFill: true))
+                layer.fill(outsideMaskPath, with: .color(.white), style: FillStyle(eoFill: true))
+                layer.fill(aboveBaselineMask, with: .color(.white))
             }
         }
 
-        // 3) Core: opaque fill + interior shading + inside-only gloss band.
+        // PASS 2 — Solid core (opaque; interior shading only)
         for seg in segments {
-            let peakH = max(seg.peakHeight, onePixel)
-            let topY = baselineY - peakH
+            let r = seg.range
+            if r.isEmpty { continue }
 
-            // Base vertical luminance structure (stays blue all the way down).
-            let bottom = configuration.fillBottomColor.opacity(1.0)
-            let mid = configuration.fillMidColor.opacity(1.0)
-            let top = configuration.fillTopColor.opacity(1.0)
+            var peakIndex = r.lowerBound
+            var peakHeight: CGFloat = 0.0
+            for i in r {
+                let h = heights[safe: i] ?? 0.0
+                if h > peakHeight {
+                    peakHeight = h
+                    peakIndex = i
+                }
+            }
 
-            let stops = [
-                Gradient.Stop(color: bottom, location: 0.0),
-                Gradient.Stop(color: mid, location: 0.58),
-                Gradient.Stop(color: top, location: 1.0)
-            ]
+            let segMaxHeight = max(onePixel, peakHeight)
+            let peakV01 = RainSurfaceMath.clamp01(Double(segMaxHeight / globalMaxHeight))
 
-            let shading = GraphicsContext.Shading.linearGradient(
-                Gradient(stops: stops),
-                startPoint: CGPoint(x: plotRect.midX, y: baselineY),
-                endPoint: CGPoint(x: plotRect.midX, y: topY)
+            let fillTopY = baselineY - segMaxHeight
+
+            let fillGradient = Gradient(stops: [
+                .init(color: configuration.fillBottomColor.opacity(1.0), location: 0.0),
+                .init(color: configuration.fillMidColor.opacity(1.0), location: 0.60),
+                .init(color: configuration.fillTopColor.opacity(1.0), location: 1.0)
+            ])
+
+            let fillShading = GraphicsContext.Shading.linearGradient(
+                fillGradient,
+                startPoint: CGPoint(x: plotRect.minX, y: baselineY),
+                endPoint: CGPoint(x: plotRect.minX, y: fillTopY)
             )
 
-            context.fill(seg.surfacePath, with: shading)
+            context.fill(seg.surfacePath, with: fillShading)
 
-            // Very subtle side shading (one side marginally darker).
+            // Subtle directional shading between sides.
             let sideStops = [
-                Gradient.Stop(color: Color.black.opacity(0.10), location: 0.0),
+                Gradient.Stop(color: Color.black.opacity(0.12), location: 0.0),
                 Gradient.Stop(color: Color.black.opacity(0.00), location: 1.0)
             ]
-            let sideShade = GraphicsContext.Shading.linearGradient(
+            let sideShading = GraphicsContext.Shading.linearGradient(
                 Gradient(stops: sideStops),
-                startPoint: CGPoint(x: seg.startX, y: baselineY),
-                endPoint: CGPoint(x: seg.endX, y: baselineY)
+                startPoint: CGPoint(x: plotRect.minX, y: baselineY),
+                endPoint: CGPoint(x: plotRect.maxX, y: baselineY)
             )
-            context.fill(seg.surfacePath, with: sideShade)
 
-            // Inside-only gloss band (~8–14px beneath the top curve), clipped inside the core.
-            if configuration.crestLiftEnabled && configuration.crestLiftMaxOpacity > 0 {
-                let depthPx = RainSurfaceMath.clamp(plotRect.height * 0.04 * displayScale, min: 8.0, max: 14.0)
-                let depth = depthPx / max(displayScale, 1.0)
-                let inset = onePixel * 2.0
+            context.drawLayer { layer in
+                layer.clip(to: seg.surfacePath)
+                layer.fill(Path(plotRect), with: sideShading)
+            }
 
-                let glossPath = seg.topEdgePath.applying(CGAffineTransform(translationX: 0, y: inset))
-                let glossStroke = glossPath.strokedPath(
+            // PASS 3 — Inside-only gloss band (8–14px beneath the top curve)
+            if configuration.crestLiftEnabled, configuration.crestLiftMaxOpacity > 0.000_01 {
+                let depthPx = RainSurfaceMath.clamp(plotH * 0.04 * max(displayScale, 1.0), min: 8.0, max: 14.0)
+                let depth = max(onePixel, depthPx / max(displayScale, 1.0))
+
+                let insetY = onePixel * 2.0
+                let glossEdge = seg.topEdgePath.applying(CGAffineTransform(translationX: 0, y: insetY))
+                let glossBand = glossEdge.strokedPath(
                     StrokeStyle(lineWidth: depth * 2.0, lineCap: .round, lineJoin: .round)
                 )
 
+                let glossOpacity = RainSurfaceMath.clamp01(configuration.crestLiftMaxOpacity * (0.75 + 0.25 * peakV01))
+
                 context.drawLayer { layer in
                     layer.clip(to: seg.surfacePath)
-
-                    // Small blur to blend inward; avoids a rim.
                     layer.addFilter(.blur(radius: onePixel * 0.85))
                     layer.blendMode = .screen
-
-                    let alpha = RainSurfaceMath.clamp(configuration.crestLiftMaxOpacity, min: 0.0, max: 1.0)
-                    layer.fill(glossStroke, with: .color(configuration.fillTopColor.opacity(alpha)))
+                    layer.fill(glossBand, with: .color(configuration.fillTopColor.opacity(glossOpacity)))
                 }
             }
-        }
 
-        // 4) Optional apex glint(s): tiny and localised.
-        if configuration.glintEnabled && configuration.glintMaxOpacity > 0 {
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
+            // PASS 4 — Optional localised glint (tiny; near peak only)
+            if configuration.glintEnabled, configuration.glintMaxOpacity > 0.000_01 {
+                if peakV01 >= configuration.glintMinPeakHeightFractionOfSegmentMax {
+                    let span = max(1, configuration.glintSpanSamples)
+                    let start = max(r.lowerBound, peakIndex - span)
+                    let end = min(r.upperBound - 1, peakIndex + span)
 
-                let blur = min(configuration.glintBlurRadiusPoints, onePixel * 2.0)
-                if blur > 0 {
-                    layer.addFilter(.blur(radius: blur))
-                }
+                    if start <= end {
+                        var glintAlphaLocal = [Double](repeating: 0.0, count: n)
+                        for i in start...end {
+                            let dx = abs(i - peakIndex)
+                            let t = 1.0 - Double(dx) / Double(max(1, span))
+                            let w = RainSurfaceMath.smoothstep01(t)
+                            glintAlphaLocal[i] = RainSurfaceMath.clamp01(configuration.glintMaxOpacity * w)
+                        }
 
-                for seg in segments {
-                    let peakH = seg.peakHeight
-                    if peakH <= onePixel { continue }
+                        // Convert to a simple peak blob rather than a ridge-running highlight.
+                        let x = plotRect.minX + (CGFloat(peakIndex) + 0.5) * stepX
+                        let y = (baselineY - segMaxHeight) + onePixel * 1.6
 
-                    // Only for clearer peaks.
-                    let peakNorm = peakH / max(maxCoreHeightBudget, onePixel)
-                    if peakNorm < 0.70 { continue }
+                        let rPx: CGFloat = 1.2 + 0.6 * CGFloat(RainSurfaceMath.clamp01(peakV01))
+                        let rr = rPx / max(displayScale, 1.0)
 
-                    let x = plotRect.minX + CGFloat(seg.peakIndex) * stepX
-                    let y = (baselineY - peakH) + onePixel * 2.0
-
-                    let rPx: CGFloat = 1.2 + 0.6 * RainSurfaceMath.clamp01(peakNorm)
-                    let r = rPx / max(displayScale, 1.0)
-
-                    let a = RainSurfaceMath.clamp(configuration.glintMaxOpacity * 0.28, min: 0.0, max: 1.0)
-                    let p = Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-                    layer.fill(p, with: .color(configuration.glintColor.opacity(a)))
+                        let a = RainSurfaceMath.clamp01(configuration.glintMaxOpacity * 0.22)
+                        if a > 0.000_9 {
+                            let p = Path(ellipseIn: CGRect(x: x - rr, y: y - rr, width: 2 * rr, height: 2 * rr))
+                            context.drawLayer { layer in
+                                layer.clip(to: seg.surfacePath)
+                                layer.blendMode = .plusLighter
+                                layer.addFilter(.blur(radius: max(onePixel, configuration.glintBlurRadiusPoints)))
+                                layer.fill(p, with: .color(configuration.glintColor.opacity(a)))
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-extension Array {
+// MARK: - Safe indexing
+
+private extension Array {
     subscript(safe index: Int) -> Element? {
-        guard index >= 0 && index < count else { return nil }
+        if index < 0 { return nil }
+        if index >= count { return nil }
         return self[index]
     }
 }
