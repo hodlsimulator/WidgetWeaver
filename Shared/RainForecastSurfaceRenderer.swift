@@ -6,9 +6,10 @@
 //
 //  Procedural nowcast rain surface renderer:
 //  - pure black background
-//  - opaque glossy core
+//  - opaque core (solid fill; no vertical gradient)
+//  - crisp rim + inside-only gloss
 //  - granular speckled fuzz outside core only
-//  - baseline anchored to the bottom of the chart area
+//  - baseline anchored inside the chart (leaves empty space beneath)
 //
 
 import Foundation
@@ -33,10 +34,15 @@ struct RainForecastSurfaceRenderer {
         let scale = max(1.0, displayScale)
         let onePixel = CGFloat(1.0 / scale)
 
-        // Baseline at the bottom edge of chart area (optional inset to avoid clipping).
+        // Baseline placed inside the chart, matching the mock composition.
+        let baselineFrac = RainSurfaceMath.clamp(configuration.baselineFractionFromTop, min: 0.45, max: 0.75)
+        let baselineRaw = chartRect.minY + chartRect.height * baselineFrac
+
+        // Optional inset to avoid clipping if baseline gets very close to an edge.
         let inset = CGFloat(configuration.baselineAntiClipInsetPixels / scale)
+
         let baselineY = RainSurfaceMath.alignToPixelCenter(
-            chartRect.maxY - max(onePixel * 0.5, inset),
+            RainSurfaceMath.clamp(baselineRaw, min: chartRect.minY + inset, max: chartRect.maxY - inset),
             displayScale: scale
         )
 
@@ -88,14 +94,15 @@ struct RainForecastSurfaceRenderer {
         let robustMax = max(1e-9, RainSurfaceMath.percentile(nonZero, p: p))
 
         // Height budget:
-        // - top headroom ≈ 6–10%
-        // - typical peaks ≈ 55–65% above baseline
-        let headroomFrac = RainSurfaceMath.clamp(configuration.topHeadroomFraction, min: 0.06, max: 0.10)
-        let typicalFrac = RainSurfaceMath.clamp(configuration.typicalPeakFraction, min: 0.55, max: 0.65)
+        // - baseline is inside the rect (space exists below)
+        // - top headroom caps absolute maximum height
+        // - typical peaks map to a fixed fraction of chart height (matches mock)
+        let headroomFrac = RainSurfaceMath.clamp(configuration.topHeadroomFraction, min: 0.20, max: 0.50)
+        let typicalFrac = RainSurfaceMath.clamp(configuration.typicalPeakFraction, min: 0.12, max: 0.30)
 
         let availableAboveBaseline = max(onePixel, baselineY - chartRect.minY)
         let headroom = chartRect.height * headroomFrac
-        let maxHeight = max(onePixel, availableAboveBaseline - headroom)
+        let maxHeight = max(onePixel, min(availableAboveBaseline - onePixel, availableAboveBaseline - headroom))
         let targetPeakHeight = min(maxHeight, chartRect.height * typicalFrac)
 
         let gamma = RainSurfaceMath.clamp(configuration.intensityGamma, min: 0.20, max: 0.95)
@@ -142,7 +149,7 @@ struct RainForecastSurfaceRenderer {
             heights: denseHeights
         )
 
-        // (2)(3)(4) Fuzz + Core + Glints
+        // (2)(3)(4) Fuzz + Core + Rim + Glints
         RainSurfaceDrawing.drawSurface(
             in: &context,
             chartRect: chartRect,

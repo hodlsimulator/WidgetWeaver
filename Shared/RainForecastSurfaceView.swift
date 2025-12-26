@@ -19,11 +19,17 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // MARK: - Geometry (shape-agnostic)
 
-    /// Top headroom fraction of chart height (≈ 6–10%).
-    var topHeadroomFraction: CGFloat = 0.08
+    /// Baseline position as a fraction of chart height from the top.
+    /// The mock baseline sits well above the bottom, leaving empty space beneath.
+    var baselineFractionFromTop: CGFloat = 0.596
 
-    /// Typical peak height above baseline as a fraction of chart height (≈ 55–65%).
-    var typicalPeakFraction: CGFloat = 0.60
+    /// Top headroom fraction of chart height (≈ 25–40%).
+    /// This caps the absolute maximum height (even for extreme intensities).
+    var topHeadroomFraction: CGFloat = 0.30
+
+    /// Typical peak height above baseline as a fraction of chart height (≈ 18–24%).
+    /// Robust max (percentile) maps to this height; larger values may rise a bit further.
+    var typicalPeakFraction: CGFloat = 0.195
 
     /// Percentile used as the robust “max” for scaling (≈ 90–95th of non-zero values).
     var robustMaxPercentile: Double = 0.93
@@ -35,14 +41,36 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Kept below ultra-high values to avoid widget render timeouts.
     var maxDenseSamples: Int = 1024
 
-    /// Baseline inset in pixels to avoid clipping at the bottom edge.
+    /// Baseline inset in pixels to avoid clipping.
+    /// Mostly relevant if baseline is placed very near the edges.
     var baselineAntiClipInsetPixels: Double = 0.75
 
     // MARK: - Core (opaque volume)
 
+    /// Core fill colour (solid; no vertical gradient fill).
+    var coreBodyColor: Color = Color(red: 0.02, green: 0.14, blue: 0.52)
+
+    /// Highlight colour used by the gloss band and rim.
     var coreTopColor: Color = Color(red: 0.12, green: 0.45, blue: 1.0)
+
+    /// Kept for compatibility / theming, but not used for the core fill.
     var coreMidColor: Color = Color(red: 0.03, green: 0.22, blue: 0.78)
+
+    /// Kept for compatibility / theming, but not used for the core fill.
     var coreBottomColor: Color = Color(red: 0.00, green: 0.05, blue: 0.18)
+
+    // MARK: - Rim (crisp surface edge + subtle outer halo)
+
+    var rimEnabled: Bool = true
+    var rimColor: Color = Color(red: 0.62, green: 0.88, blue: 1.00)
+
+    /// Inner rim drawn inside the core.
+    var rimInnerOpacity: Double = 0.55
+    var rimInnerWidthPixels: Double = 1.15
+
+    /// Outer halo drawn outside the core.
+    var rimOuterOpacity: Double = 0.14
+    var rimOuterWidthPixels: Double = 5.5
 
     // MARK: - Gloss (inside-only)
 
@@ -55,10 +83,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     var glintEnabled: Bool = true
     var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
-    var glintMaxOpacity: Double = 0.28
+    var glintMaxOpacity: Double = 0.20
     var glintBlurPixels: Double = 1.0
     var glintMinHeightFraction: Double = 0.55
-    var glintMaxCount: Int = 2
+    var glintMaxCount: Int = 1
 
     // MARK: - Fuzz (granular speckle outside core)
 
@@ -66,8 +94,8 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzColor: Color = Color(red: 0.65, green: 0.90, blue: 1.0)
     var fuzzMaxOpacity: Double = 0.18
 
-    /// fuzzWidth ≈ 10–20% of chart height
-    var fuzzWidthFraction: CGFloat = 0.16
+    /// fuzzWidth ≈ 10–22% of chart height
+    var fuzzWidthFraction: CGFloat = 0.18
 
     /// Pixel clamp so fuzz stays consistent across very small/large chart sizes.
     var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...90.0
@@ -76,7 +104,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzBaseDensity: Double = 0.55
 
     /// Stronger concentration near baseline / lower slopes.
-    var fuzzLowHeightPower: Double = 1.7
+    var fuzzLowHeightPower: Double = 2.4
 
     /// Keeps a small envelope even when certainty is high.
     var fuzzUncertaintyFloor: Double = 0.10
@@ -85,7 +113,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Defaulted to 0 for widget safety; can be bumped slightly if needed.
     var fuzzMicroBlurPixels: Double = 0.0
 
-    /// Speckle radius range in pixels.
+    /// Speckle radius range in pixels (near-boundary).
     var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
 
     /// Upper bound on speckle attempts per column.

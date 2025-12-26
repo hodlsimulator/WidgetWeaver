@@ -141,7 +141,7 @@ private struct WeatherNowcastAxisLabels: View {
         HStack {
             Text("Now")
             Spacer(minLength: 0)
-            Text("+60m")
+            Text("60m")
         }
         .font(.system(size: 11, weight: .medium, design: .rounded))
         .foregroundColor(.white.opacity(0.55))
@@ -199,36 +199,44 @@ private struct WeatherNowcastSurfacePlot: View {
                 // Widget-safe sampling (prevents placeholder timeouts).
                 c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 1024
 
-                // Height behaviour (tall mound, headroom preserved).
-                c.topHeadroomFraction = 0.08
-                c.typicalPeakFraction = 0.60
+                // Geometry to match the mock composition.
+                c.baselineFractionFromTop = 0.596
+                c.topHeadroomFraction = 0.30
+                c.typicalPeakFraction = 0.195
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.65
 
-                // Core (opaque luminous volume).
+                // Core: solid body fill (no vertical gradient) + highlight colour for rim/gloss.
+                c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
-                c.coreMidColor = Color(red: 0.03, green: 0.22, blue: 0.78)
-                c.coreBottomColor = Color(red: 0.00, green: 0.04, blue: 0.16)
+
+                // Rim: crisp edge plus a subtle outer halo.
+                c.rimEnabled = true
+                c.rimColor = Color(red: 0.62, green: 0.88, blue: 1.00)
+                c.rimInnerOpacity = 0.52
+                c.rimInnerWidthPixels = 1.10
+                c.rimOuterOpacity = 0.12
+                c.rimOuterWidthPixels = 5.4
 
                 // Gloss band (inside-only).
                 c.glossEnabled = true
-                c.glossMaxOpacity = 0.14
-                c.glossDepthPixels = 9.0...13.0
+                c.glossMaxOpacity = 0.16
+                c.glossDepthPixels = 9.0...14.0
 
-                // Tiny apex glint (local maxima only).
+                // Tiny apex glint (local maxima only). Kept subtle.
                 c.glintEnabled = true
                 c.glintMaxCount = 1
-                c.glintMinHeightFraction = 0.72
-                c.glintMaxOpacity = 0.34
+                c.glintMinHeightFraction = 0.78
+                c.glintMaxOpacity = 0.18
                 c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
 
-                // Fuzz (granular speckle, outside-only, strongest near baseline).
+                // Fuzz: granular speckle, outside-only, strongest near baseline.
                 c.fuzzEnabled = true
                 c.fuzzColor = Color(red: 0.62, green: 0.88, blue: 1.00)
-                c.fuzzMaxOpacity = 0.20
+                c.fuzzMaxOpacity = 0.18
                 c.fuzzWidthFraction = 0.18
-                c.fuzzBaseDensity = 0.72
-                c.fuzzLowHeightPower = 2.05
+                c.fuzzBaseDensity = 0.55
+                c.fuzzLowHeightPower = 2.6
                 c.fuzzUncertaintyFloor = 0.10
                 c.fuzzSpeckleRadiusPixels = 0.5...1.15
                 c.fuzzMaxAttemptsPerColumn = 24
