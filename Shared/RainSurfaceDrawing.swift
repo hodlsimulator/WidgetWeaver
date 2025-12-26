@@ -631,7 +631,6 @@ enum RainSurfaceDrawing {
 
             let topY = baselineY - h
             let x0 = plotRect.minX + CGFloat(i) * stepX
-            let x1 = x0 + stepX
 
             // Density grows fast with alpha to get the mock’s “spray” look.
             let density = amount * (0.55 + 3.40 * a0)

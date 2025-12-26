@@ -11,12 +11,17 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    /// Provider refresh cadence.
+    /// Timeline-driven redraw interval.
     ///
-    /// Clock motion is driven by a CoreAnimation-backed repeat-forever sweep
-    /// inside `WidgetWeaverClockLiveView` (wrapped by `WidgetWeaverClockWidgetLiveView`),
-    /// so WidgetKit timeline reloads stay sparse to avoid throttling.
-    static let providerRefreshSeconds: TimeInterval = 60.0 * 60.0 * 6.0
+    /// Smaller values look smoother but consume more WidgetKit refresh/render budget.
+    /// A value like 10s keeps the second hand moving (smooth sweep) while being far less aggressive than 2s.
+    static let tickSeconds: TimeInterval = 10.0
+
+    /// Number of entries to generate per timeline.
+    ///
+    /// `maxEntries * tickSeconds` is how long the widget can keep animating before WidgetKit requests a new timeline.
+    /// 360 entries @ 10s ≈ 1 hour.
+    static let maxEntries: Int = 360
 }
 
 // MARK: - Configuration
@@ -83,12 +88,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
+        let base = Date()
 
-        let entry = Entry(date: now, colourScheme: scheme)
-        let nextRefresh = now.addingTimeInterval(WWClockTimelineTuning.providerRefreshSeconds)
+        var entries: [Entry] = []
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
 
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+        for i in 0..<WWClockTimelineTuning.maxEntries {
+            let d = base.addingTimeInterval(Double(i) * WWClockTimelineTuning.tickSeconds)
+            entries.append(Entry(date: d, colourScheme: scheme))
+        }
+
+        return Timeline(entries: entries, policy: .atEnd)
     }
 }
 
@@ -103,7 +113,10 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            WidgetWeaverHomeScreenClockView(entry: entry)
+            // Deterministic “now” during WidgetKit pre-rendering.
+            WidgetWeaverRenderClock.withNow(entry.date) {
+                WidgetWeaverHomeScreenClockView(entry: entry, tickSeconds: WWClockTimelineTuning.tickSeconds)
+            }
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
@@ -112,10 +125,29 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
     }
 }
 
+// MARK: - Time maths
+
+private struct WWClockHandDegrees {
+    let hourDegrees: Double
+    let minuteDegrees: Double
+    let secondDegrees: Double
+
+    init(date: Date, timeZone: TimeZone) {
+        // Monotonic angles (no mod 360) so interpolation never runs backwards at wrap boundaries.
+        let tz = TimeInterval(timeZone.secondsFromGMT(for: date))
+        let localT = date.timeIntervalSinceReferenceDate + tz
+
+        self.secondDegrees = localT * (360.0 / 60.0)
+        self.minuteDegrees = localT * (360.0 / 3600.0)
+        self.hourDegrees = localT * (360.0 / 43200.0)
+    }
+}
+
 // MARK: - View
 
 struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
+    let tickSeconds: TimeInterval
 
     @Environment(\.colorScheme) private var mode
 
@@ -125,10 +157,30 @@ struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            anchorDate: entry.date
-        )
+        let deg = WWClockHandDegrees(date: entry.date, timeZone: .autoupdatingCurrent)
+
+        ZStack(alignment: .bottomTrailing) {
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(deg.hourDegrees),
+                minuteAngle: .degrees(deg.minuteDegrees),
+                secondAngle: .degrees(deg.secondDegrees)
+            )
+            .animation(.linear(duration: tickSeconds), value: deg.secondDegrees)
+
+            #if DEBUG
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(entry.date, format: .dateTime.hour().minute().second())
+                Text("tick: \(tickSeconds, format: .number)")
+                Text("CLK TL")
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary.opacity(0.70))
+            .padding(6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            #endif
+        }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
