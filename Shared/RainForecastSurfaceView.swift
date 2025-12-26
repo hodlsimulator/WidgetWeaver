@@ -31,8 +31,9 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Gamma < 1 lifts mid-range values (prevents thin strip).
     var intensityGamma: Double = 0.65
 
-    /// Dense sampling cap (per-pixel sampling is used up to this maximum).
-    var maxDenseSamples: Int = 2048
+    /// Dense sampling cap for path building.
+    /// Kept below ultra-high values to avoid widget render timeouts.
+    var maxDenseSamples: Int = 1024
 
     /// Baseline inset in pixels to avoid clipping at the bottom edge.
     var baselineAntiClipInsetPixels: Double = 0.75
@@ -48,14 +49,14 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glossEnabled: Bool = true
     var glossMaxOpacity: Double = 0.18
     var glossDepthPixels: ClosedRange<Double> = 8.0...14.0
-    var glossSoftBlurPixels: Double = 0.8
+    var glossSoftBlurPixels: Double = 0.6
 
     // MARK: - Glints (tiny, local maxima only)
 
     var glintEnabled: Bool = true
     var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
     var glintMaxOpacity: Double = 0.28
-    var glintBlurPixels: Double = 1.2
+    var glintBlurPixels: Double = 1.0
     var glintMinHeightFraction: Double = 0.55
     var glintMaxCount: Int = 2
 
@@ -81,13 +82,20 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzUncertaintyFloor: Double = 0.10
 
     /// Optional micro-blur (< 1 px) for fuzz only.
-    var fuzzMicroBlurPixels: Double = 0.6
+    /// Defaulted to 0 for widget safety; can be bumped slightly if needed.
+    var fuzzMicroBlurPixels: Double = 0.0
 
     /// Speckle radius range in pixels.
     var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
 
     /// Upper bound on speckle attempts per column.
-    var fuzzMaxAttemptsPerColumn: Int = 28
+    var fuzzMaxAttemptsPerColumn: Int = 24
+
+    /// Hard cap on how many fuzz columns are processed (stride is applied when denseCount is larger).
+    var fuzzMaxColumns: Int = 900
+
+    /// Hard cap on total speckle attempts for the entire render (keeps widgets from timing out).
+    var fuzzSpeckleBudget: Int = 6500
 
     // MARK: - Baseline
 
@@ -113,6 +121,5 @@ struct RainForecastSurfaceView: View {
             )
             renderer.render(in: &context, size: size)
         }
-        .drawingGroup(opaque: false, colorMode: .linear)
     }
 }
