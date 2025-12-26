@@ -9,105 +9,59 @@ import Foundation
 import SwiftUI
 
 private enum WWClockWidgetLiveTuning {
-    static let tickSeconds: TimeInterval = 1.0
+    /// Must match the Home Screen clock widget timeline step.
+    /// In WidgetWeaverHomeScreenClockWidget.swift this is 60 * 15.
+    static let entryLifetimeSeconds: TimeInterval = 60.0 * 15.0
 
-    /// A missed-tick threshold. If the widget host pauses updates (off-screen, power, etc),
-    /// the next visible update snaps to the correct time instead of spinning rapidly.
-    static let animateOnlyWhenDeltaSecondsIsExactlyOne: Bool = true
-
-    /// Keeps the heartbeat view “rendered” but effectively invisible.
-    /// Avoids using `.hidden()` so the host is less likely to optimise it away.
-    static let heartbeatOpacity: Double = 0.001
-
-    /// Off by default. Flip to true for on-device verification.
     static let showDebugOverlay: Bool = false
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
-    /// Provided for deterministic WidgetKit pre-rendering.
-    /// The view re-syncs to real time when it becomes visible.
+    /// WidgetKit timeline entry date (deterministic anchor).
     let anchorDate: Date
 
-    @State private var heartbeatBaseDate: Date
-
-    init(palette: WidgetWeaverClockPalette, anchorDate: Date) {
-        self.palette = palette
-        self.anchorDate = anchorDate
-
-        let now = Date()
-        let safeBase = (anchorDate <= now) ? anchorDate : now
-        _heartbeatBaseDate = State(initialValue: safeBase)
-    }
-
     var body: some View {
-        // The “heartbeat” is a system-updating timer Text.
-        // The clock is placed in its overlay so it is recomputed whenever the heartbeat updates.
-        Text(timerInterval: heartbeatBaseDate...Date.distantFuture, countsDown: false)
-            .font(.system(size: 1).monospacedDigit())
-            .opacity(WWClockWidgetLiveTuning.heartbeatOpacity)
-            .frame(width: 28, height: 12, alignment: .topLeading)
-            .clipped()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .accessibilityHidden(true)
-            .overlay {
-                WidgetWeaverClockWidgetLiveDriverView(
+        let interval = anchorDate...anchorDate.addingTimeInterval(WWClockWidgetLiveTuning.entryLifetimeSeconds)
+
+        ProgressView(timerInterval: interval, countsDown: false)
+            .progressViewStyle(
+                WWClockWidgetLiveProgressStyle(
                     palette: palette,
-                    anchorDate: anchorDate
+                    anchorDate: anchorDate,
+                    entryLifetimeSeconds: WWClockWidgetLiveTuning.entryLifetimeSeconds
                 )
-            }
-            .onAppear { resyncHeartbeatIfNeeded() }
-            .task { resyncHeartbeatIfNeeded() }
-    }
-
-    private func resyncHeartbeatIfNeeded() {
-        let now = Date()
-
-        if heartbeatBaseDate > now {
-            heartbeatBaseDate = now
-            return
-        }
-
-        // Avoid moving the base date every render; only re-anchor if it is stale.
-        if abs(now.timeIntervalSince(heartbeatBaseDate)) > 10.0 {
-            heartbeatBaseDate = now
-        }
+            )
+            .accessibilityHidden(true)
     }
 }
 
-private struct WidgetWeaverClockWidgetLiveDriverView: View {
+private struct WWClockWidgetLiveProgressStyle: ProgressViewStyle {
     let palette: WidgetWeaverClockPalette
     let anchorDate: Date
+    let entryLifetimeSeconds: TimeInterval
 
-    @State private var rendered: WWClockHandDegrees
-    @State private var lastTick: Int?
+    func makeBody(configuration: Configuration) -> some View {
+        let rawFraction = configuration.fractionCompleted ?? 0.0
+        let fraction = min(1.0, max(0.0, rawFraction))
 
-    init(palette: WidgetWeaverClockPalette, anchorDate: Date) {
-        self.palette = palette
-        self.anchorDate = anchorDate
-        _rendered = State(initialValue: WWClockHandDegrees(date: anchorDate))
-        _lastTick = State(initialValue: Int(anchorDate.timeIntervalSince1970))
-    }
+        let now = anchorDate.addingTimeInterval(fraction * entryLifetimeSeconds)
+        let degrees = WWClockHandDegrees(date: now)
 
-    var body: some View {
-        let now = Date()
-        let tick = Int(floor(now.timeIntervalSince1970))
-
-        ZStack(alignment: .bottomTrailing) {
+        return ZStack(alignment: .bottomTrailing) {
             WidgetWeaverClockIconView(
                 palette: palette,
-                hourAngle: .degrees(rendered.hourDegrees),
-                minuteAngle: .degrees(rendered.minuteDegrees),
-                secondAngle: .degrees(rendered.secondDegrees)
+                hourAngle: .degrees(degrees.hourDegrees),
+                minuteAngle: .degrees(degrees.minuteDegrees),
+                secondAngle: .degrees(degrees.secondDegrees)
             )
 
             #if DEBUG
             if WWClockWidgetLiveTuning.showDebugOverlay {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(now, format: .dateTime.hour().minute().second())
-                    Text("tick: \(tick)")
-                    Text("last: \(lastTick.map(String.init) ?? "nil")")
+                    Text(String(format: "f=%.4f", fraction))
                 }
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary.opacity(0.70))
@@ -117,28 +71,8 @@ private struct WidgetWeaverClockWidgetLiveDriverView: View {
             }
             #endif
         }
-        .onAppear { syncToNow() }
-        .task { syncToNow() }
-        .onChange(of: tick) { _, newTick in
-            applyTick(newTick)
-        }
+        .accessibilityHidden(true)
     }
-
-    private func syncToNow() {
-        let now = Date()
-        let tick = Int(floor(now.timeIntervalSince1970))
-        let quantised = Date(timeIntervalSince1970: Double(tick))
-        let target = WWClockHandDegrees(date: quantised)
-
-        lastTick = tick
-        withAnimation(.none) {
-            rendered = target
-        }
-    }
-
-    private func applyTick(_ newTick: Int) {
-           _ = newTick
-       }
 }
 
 private struct WWClockHandDegrees: Equatable {
@@ -150,7 +84,7 @@ private struct WWClockHandDegrees: Equatable {
         let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: date))
         let local = date.timeIntervalSince1970 + tz
 
-        // Monotonic degrees keep direction stable across wrap boundaries.
+        // Monotonic degrees avoid backwards interpolation at wrap boundaries.
         secondDegrees = local * 6.0
         minuteDegrees = local * (360.0 / 3600.0)
         hourDegrees = local * (360.0 / 43200.0)
