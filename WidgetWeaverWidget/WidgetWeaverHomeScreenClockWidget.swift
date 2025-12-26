@@ -11,7 +11,7 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Conservative WidgetKit timeline; motion is handled by the view’s periodic schedule.
+    // Conservative: avoids WidgetKit reload budget issues.
     static let tickSeconds: TimeInterval = 60.0 * 15.0
     static let maxEntries: Int = 96
 }
