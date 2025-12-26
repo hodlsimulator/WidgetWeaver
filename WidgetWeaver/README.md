@@ -124,18 +124,24 @@ WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenC
 
 WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled.
 
-The clock avoids that by keeping its WidgetKit timeline **sparse** (one entry; refresh every few hours) and driving motion with `TimelineView(.animation)`:
+On iOS 26 Home Screen we cannot rely on `TimelineView` schedules actually advancing; the host will often render once and then freeze the schedule. The approach used here is the Widgy-style one: start CoreAnimation-backed “repeat forever” sweeps once, and let the system animate the hands while the widget is visible.
 
-- The dial/bezel render once (static).
-- The hands render inside `TimelineView(.animation(minimumInterval: …))` using `context.date`.
-- Angles are monotonic (no `mod 360`) so rotation never runs backwards at wrap boundaries.
-- When the widget is off-screen, iOS may pause updates.
-  - When it becomes visible again, `context.date` jumps forward and the hands “catch up” immediately.
+How it works:
+
+- The widget timeline stays **sparse** (one entry; refresh every few hours) to avoid throttling.
+- The hands are driven by three phase values (seconds / minutes / hours).
+- On appearance the view **re-syncs** to the real `Date()` and starts:
+  - 60s sweep for the second hand
+  - 3600s sweep for the minute hand
+  - 43200s sweep for the hour hand
+- If iOS pauses the widget while off-screen, the animation pauses too.
+  - When the widget becomes visible again, the view re-syncs and restarts the sweeps so it “catches up”.
 
 Files:
 
 - `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` uses a sparse `WidgetWeaverHomeScreenClockProvider`.
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` contains the live driver (`TimelineView(.animation)`) and the DEBUG-only timestamp overlay.
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` contains the CoreAnimation-backed driver.
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` is a thin wrapper used by the widget.
 
 ### Sweeping second hand (implementation notes)
 

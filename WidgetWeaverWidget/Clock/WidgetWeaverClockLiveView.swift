@@ -17,10 +17,13 @@ struct WidgetWeaverClockLiveView: View {
 
     @State private var baseDate: Date
     @State private var started: Bool = false
+    @State private var appeared: Bool = false
 
     @State private var secPhase: Double = 0
     @State private var minPhase: Double = 0
     @State private var hourPhase: Double = 0
+
+    @State private var debugPulse: Double = 0
 
     init(palette: WidgetWeaverClockPalette, startDate: Date) {
         self.palette = palette
@@ -35,14 +38,51 @@ struct WidgetWeaverClockLiveView: View {
         let minuteAngle = Angle.degrees(baseAngles.minute + minPhase * 360.0)
         let secondAngle = Angle.degrees(baseAngles.second + secPhase * 360.0)
 
-        WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: hourAngle,
-            minuteAngle: minuteAngle,
-            secondAngle: secondAngle
-        )
+        ZStack(alignment: .bottomTrailing) {
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: hourAngle,
+                minuteAngle: minuteAngle,
+                secondAngle: secondAngle
+            )
+
+            #if DEBUG
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .frame(width: 6, height: 6)
+                        .opacity(0.15 + debugPulse * 0.85)
+
+                    // Counts up from the last re-sync. This should tick if the widget host is live.
+                    Text(timerInterval: baseDate...Date.distantFuture, countsDown: false)
+                }
+
+                Text(appeared ? "APPEAR ✅" : "APPEAR ❌")
+                Text(started ? "RUN ✅" : "RUN ❌")
+
+                Text("base: \(baseDate, format: .dateTime.hour().minute().second())")
+                    .opacity(0.6)
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary.opacity(0.70))
+            .padding(6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            #endif
+        }
         .onAppear {
-            syncAndStartIfNeeded()
+            appeared = true
+            // Start on the next runloop tick so CoreAnimation gets a clean “from” state.
+            DispatchQueue.main.async {
+                syncAndStartIfNeeded()
+            }
+        }
+        .task {
+            // Some WidgetKit hosting paths reuse snapshots in ways that can skip onAppear.
+            // Running the same guarded start logic here is harmless.
+            DispatchQueue.main.async {
+                syncAndStartIfNeeded()
+            }
         }
     }
 
@@ -57,10 +97,15 @@ struct WidgetWeaverClockLiveView: View {
         started = true
         baseDate = now
 
-        secPhase = 0
-        minPhase = 0
-        hourPhase = 0
+        // Reset phases without animation.
+        withAnimation(.none) {
+            secPhase = 0
+            minPhase = 0
+            hourPhase = 0
+            debugPulse = 0
+        }
 
+        // CoreAnimation-backed infinite sweeps.
         withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
             secPhase = 1
         }
@@ -70,6 +115,12 @@ struct WidgetWeaverClockLiveView: View {
         withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
             hourPhase = 1
         }
+
+        #if DEBUG
+        withAnimation(.linear(duration: 0.6).repeatForever(autoreverses: true)) {
+            debugPulse = 1
+        }
+        #endif
     }
 }
 
