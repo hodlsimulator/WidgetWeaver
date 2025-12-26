@@ -12,11 +12,12 @@ import AppIntents
 
 private enum WWClockTimelineTuning {
     // Home Screen widgets do not guarantee 1 Hz redraws.
-    // The README notes iOS 26 often coalesces to ~2 seconds even if 1-second timelines are provided.
-    static let tickSeconds: TimeInterval = 2.0
+    // High-frequency timelines can be throttled/coalesced on Home Screen; keep cadence modest
+    // and rely on SwiftUI linear interpolation between timeline entries for smooth motion.
+    static let tickSeconds: TimeInterval = 15.0
 
     // Keep entry count modest (README example: ~180).
-    // 180 @ 2s ≈ 6 minutes; WidgetKit should request a new timeline at end.
+    // 180 @ 15s ≈ 45 minutes; WidgetKit should request a new timeline at end.
     static let maxEntries: Int = 180
 }
 
