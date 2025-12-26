@@ -73,4 +73,30 @@ struct RainSurfacePRNG {
         let v = h >> 11
         return Double(v) / Double(1 << 53)
     }
+
+    /// Cheap 2D value-noise in [0, 1), continuous across pixels.
+    /// This intentionally avoids expensive gradients; it is used only to clump the mist.
+    static func valueNoise2D01(x: Int, y: Int, seed: UInt64, cell: Int) -> Double {
+        let c = max(1, cell)
+        let fx = Double(x) / Double(c)
+        let fy = Double(y) / Double(c)
+
+        let x0 = Int(floor(fx))
+        let y0 = Int(floor(fy))
+
+        let tx = fx - Double(x0)
+        let ty = fy - Double(y0)
+
+        let sx = RainSurfaceMath.smoothstep01(tx)
+        let sy = RainSurfaceMath.smoothstep01(ty)
+
+        let v00 = hash2D01(x: x0, y: y0, seed: seed)
+        let v10 = hash2D01(x: x0 + 1, y: y0, seed: seed)
+        let v01 = hash2D01(x: x0, y: y0 + 1, seed: seed)
+        let v11 = hash2D01(x: x0 + 1, y: y0 + 1, seed: seed)
+
+        let a = RainSurfaceMath.lerp(v00, v10, sx)
+        let b = RainSurfaceMath.lerp(v01, v11, sx)
+        return RainSurfaceMath.lerp(a, b, sy)
+    }
 }

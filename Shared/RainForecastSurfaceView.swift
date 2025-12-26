@@ -17,16 +17,17 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Renderer further mixes in render size so patterns are stable per widget size.
     var noiseSeed: UInt64 = 0
 
-    // MARK: - Geometry (shape-agnostic)
+    // MARK: - Geometry
 
     /// Baseline position as a fraction of chart height from the top.
-    var baselineFractionFromTop: CGFloat = 0.596
+    /// A higher value places the baseline lower (more vertical range above).
+    var baselineFractionFromTop: CGFloat = 0.78
 
     /// Top headroom fraction of chart height (caps the absolute maximum height).
-    var topHeadroomFraction: CGFloat = 0.30
+    var topHeadroomFraction: CGFloat = 0.14
 
     /// Typical peak height above baseline as a fraction of chart height.
-    var typicalPeakFraction: CGFloat = 0.195
+    var typicalPeakFraction: CGFloat = 0.33
 
     /// Percentile used as the robust “max” for scaling.
     var robustMaxPercentile: Double = 0.93
@@ -48,28 +49,17 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     // MARK: - Raster (mask / fields)
 
-    /// Supersampling factor for the offscreen mask/field raster.
     var rasterSupersample: CGFloat = 1.0
-
-    /// Max raster width (in pixels) for mask/field passes.
     var rasterMaxWidthPixels: Int = 720
-
-    /// Max raster height (in pixels) for mask/field passes.
     var rasterMaxHeightPixels: Int = 420
-
-    /// Max total pixels (width * height) for mask/field passes.
     var rasterMaxTotalPixels: Int = 240_000
 
     /// Mask threshold (0–255) used to define “inside” for field passes.
-    /// A small threshold prevents fuzz from leaking into the anti-aliased edge.
     var maskInsideThreshold: UInt8 = 16
 
     // MARK: - Core (opaque volume)
 
-    /// Core fill colour (solid; no rect-aligned gradient fill).
     var coreBodyColor: Color = Color(red: 0.02, green: 0.14, blue: 0.52)
-
-    /// Highlight colour used by inside lighting (surface-driven).
     var coreTopColor: Color = Color(red: 0.12, green: 0.45, blue: 1.0)
 
     /// Kept for compatibility / theming, but not used for the core fill.
@@ -78,12 +68,12 @@ struct RainForecastSurfaceConfiguration: Hashable {
     /// Kept for compatibility / theming, but not used for the core fill.
     var coreBottomColor: Color = Color(red: 0.00, green: 0.05, blue: 0.18)
 
-    // MARK: - Rim (repurposed as optional wide bloom; no stroke tracing)
+    // MARK: - Rim (wide bloom; no traced stroke)
 
     var rimEnabled: Bool = true
     var rimColor: Color = Color(red: 0.62, green: 0.88, blue: 1.00)
 
-    /// Inner rim kept for compatibility; not used (avoid traced line).
+    /// Inner rim kept for compatibility; not used.
     var rimInnerOpacity: Double = 0.0
     var rimInnerWidthPixels: Double = 0.0
 
@@ -91,19 +81,15 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var rimOuterOpacity: Double = 0.06
     var rimOuterWidthPixels: Double = 14.0
 
-    // MARK: - Inside lighting (replaces “gloss band”)
+    // MARK: - Inside lighting (subtle; surface-driven)
 
     var glossEnabled: Bool = true
-    var glossMaxOpacity: Double = 0.12
+    var glossMaxOpacity: Double = 0.10
     var glossDepthPixels: ClosedRange<Double> = 10.0...16.0
-
-    /// Minimum surface height required before lighting sources are placed (in display pixels).
     var insideLightMinHeightPixels: Double = 3.0
-
-    /// Kept for compatibility; not used.
     var glossSoftBlurPixels: Double = 0.0
 
-    // MARK: - Glints (optional, subtle)
+    // MARK: - Glints (optional)
 
     var glintEnabled: Bool = false
     var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
@@ -116,43 +102,43 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     var fuzzEnabled: Bool = true
     var fuzzColor: Color = Color(red: 0.65, green: 0.90, blue: 1.0)
-    var fuzzMaxOpacity: Double = 0.14
+    var fuzzMaxOpacity: Double = 0.16
 
-    /// fuzzWidth ≈ 10–22% of chart height.
-    var fuzzWidthFraction: CGFloat = 0.20
+    /// Fuzz width as a fraction of chart height.
+    var fuzzWidthFraction: CGFloat = 0.23
 
     /// Pixel clamp so fuzz stays consistent across very small/large chart sizes.
-    var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...90.0
+    var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...110.0
 
     /// Base density (turned into speckles via deterministic thresholding).
-    var fuzzBaseDensity: Double = 0.62
+    var fuzzBaseDensity: Double = 0.92
 
-    /// Stronger concentration near baseline / shoulders.
-    var fuzzLowHeightPower: Double = 2.6
+    /// Higher values concentrate mist nearer the baseline.
+    var fuzzLowHeightPower: Double = 1.9
 
-    /// Keeps a small envelope even when certainty is high.
-    var fuzzUncertaintyFloor: Double = 0.12
+    /// Keeps a visible envelope even when certainty is high.
+    var fuzzUncertaintyFloor: Double = 0.45
 
-    /// Kept for compatibility; not used (speckles are grid-dithered).
-    var fuzzMicroBlurPixels: Double = 0.0
+    /// Renders fuzz at a reduced raster scale and upscales for a mistier read.
+    var fuzzRenderScale: CGFloat = 0.72
 
-    /// Kept for compatibility; not used (no circle spawning).
-    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
-
-    /// Kept for compatibility; not used (grid-dithered).
-    var fuzzMaxAttemptsPerColumn: Int = 24
-
-    /// Kept for compatibility; not used (grid-dithered).
-    var fuzzMaxColumns: Int = 900
+    /// Low-frequency noise cell size in display pixels (clumps the mist).
+    var fuzzFogCellPixels: Double = 18.0
 
     /// Hard cap for speckle population (deterministically thinned if exceeded).
-    var fuzzSpeckleBudget: Int = 7_500
+    var fuzzSpeckleBudget: Int = 18_000
+
+    // Kept for compatibility; not used.
+    var fuzzMicroBlurPixels: Double = 0.0
+    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.2
+    var fuzzMaxAttemptsPerColumn: Int = 24
+    var fuzzMaxColumns: Int = 900
 
     // MARK: - Baseline
 
     var baselineColor: Color = Color(red: 0.48, green: 0.64, blue: 0.82)
-    var baselineLineOpacity: Double = 0.18
-    var baselineEndFadeFraction: CGFloat = 0.035
+    var baselineLineOpacity: Double = 0.14
+    var baselineEndFadeFraction: CGFloat = 0.040
 }
 
 struct RainForecastSurfaceView: View {
