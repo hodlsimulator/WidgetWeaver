@@ -162,101 +162,64 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
 
-                // Hard cap work up-front (this is the main placeholder fix).
                 c.maxDenseSamples = isExt ? 180 : 900
 
-                // Mock geometry ratios.
                 c.baselineFractionFromTop = 0.596
                 c.topHeadroomFraction = 0.30
                 c.typicalPeakFraction = 0.195
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.65
 
-                // Stronger taper so ends don’t become vertical walls.
-                c.edgeEasingFraction = 0.22
+                // Enough easing to prevent hard segment edges (renderer now also does wet-segment easing).
+                c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
-                // Core: solid fill (no vertical gradient).
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Rim: thin smooth edge + soft halo (kept secondary to fuzz band).
                 c.rimEnabled = true
                 c.rimColor = accent
-                c.rimInnerOpacity = 0.10
+                c.rimInnerOpacity = 0.08
                 c.rimInnerWidthPixels = 1.0
-                c.rimOuterOpacity = 0.045
-                c.rimOuterWidthPixels = 16.0
+                c.rimOuterOpacity = 0.035
+                c.rimOuterWidthPixels = 14.0
 
                 // No glint / no gradient.
                 c.glossEnabled = false
                 c.glintEnabled = false
 
-                // --- Fuzz: set ALL budgets/knobs first, enable LAST. ---
-                c.fuzzEnabled = false
-
+                // Fuzz: make it the surface band.
+                c.fuzzEnabled = true
                 c.fuzzColor = accent
+                c.fuzzRasterMaxPixels = isExt ? 85_000 : 260_000
 
-                // Extension-safe opacity. (Too much additive work can also trigger placeholder.)
-                c.fuzzMaxOpacity = isExt ? 0.18 : 0.22
+                c.fuzzMaxOpacity = isExt ? 0.30 : 0.34
+                c.fuzzWidthFraction = 0.24
+                c.fuzzWidthPixelsClamp = 12.0...120.0
 
-                c.fuzzWidthFraction = 0.22
-                c.fuzzWidthPixelsClamp = 10.0...90.0
+                c.fuzzBaseDensity = 0.92
+                c.fuzzHazeStrength = isExt ? 1.20 : 1.05
+                c.fuzzSpeckStrength = isExt ? 1.15 : 1.25
 
-                // In the extension, lean more on haze (cheap) and less on speckles (expensive).
-                c.fuzzBaseDensity = 0.95
-                c.fuzzHazeStrength = isExt ? 1.05 : 0.95
-                c.fuzzSpeckStrength = isExt ? 0.60 : 1.00
+                c.fuzzEdgePower = 0.55
+                c.fuzzClumpCellPixels = 10.0
+                c.fuzzMicroBlurPixels = isExt ? 0.7 : 1.0
 
-                c.fuzzUncertaintyFloor = 0.16
-                c.fuzzUncertaintyExponent = 2.25
-
+                c.fuzzUncertaintyFloor = 0.22
+                c.fuzzUncertaintyExponent = 2.0
                 c.fuzzLowHeightPower = 2.15
-                c.fuzzLowHeightBoost = 0.92
+                c.fuzzLowHeightBoost = 1.00
 
-                c.fuzzInsideWidthFactor = 0.66
-                c.fuzzInsideOpacityFactor = 0.70
-                c.fuzzInsideSpeckleFraction = isExt ? 0.22 : 0.36
+                c.fuzzInsideWidthFactor = 0.78
+                c.fuzzInsideOpacityFactor = 0.78
+                c.fuzzInsideSpeckleFraction = 0.55
 
-                c.fuzzDistancePowerOutside = 1.90
-                c.fuzzDistancePowerInside = 1.55
-                c.fuzzAlongTangentJitterFraction = 0.95
+                c.fuzzDistancePowerOutside = 1.75
+                c.fuzzDistancePowerInside = 1.45
 
-                c.fuzzHazeBlurFractionOfBand = 0.36
-                c.fuzzHazeStrokeWidthFactor = 1.35
-                c.fuzzInsideHazeStrokeWidthFactor = 1.12
-
-                c.fuzzSpeckleRadiusPixels = isExt ? 0.55...1.10 : 0.50...1.20
-
-                // Column cap (keeps per-column loops bounded even when denseCount is high).
-                c.fuzzMaxColumns = isExt ? 180 : 520
-
-                // Budget by actual pixel area so this stays stable across families/devices.
-                let pxArea = Double(proxy.size.width * proxy.size.height) * Double(displayScale * displayScale)
-                let mp = max(0.05, pxArea / 1_000_000.0)
-
-                let areaDrivenExt = Int(3200.0 * mp)
-                let areaDrivenApp = Int(8500.0 * mp)
-
-                let familyFloorExt: Int
-                switch widgetFamilyValue {
-                case 1: familyFloorExt = 850
-                case 2: familyFloorExt = 1300
-                default: familyFloorExt = 1900
-                }
-
-                let extBudget = min(max(areaDrivenExt, familyFloorExt), 2200)
-                let appBudget = min(max(areaDrivenApp, 4500), 12000)
-
-                c.fuzzSpeckleBudget = isExt ? extBudget : appBudget
-
-                // Baseline.
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.035
-
-                // Enable fuzz LAST, after budgets are set.
-                c.fuzzEnabled = true
 
                 return c
             }()

@@ -139,9 +139,51 @@ enum RainSurfaceMath {
             out[i] = out[i] * CGFloat(1.0 - s)
         }
 
-        // Ensure exact zeros at the outermost samples.
         out[0] = 0
         out[n - 1] = 0
+
+        return out
+    }
+
+    /// Applies the same kind of tapering, but to *every* wet segment, not just the chart edges.
+    /// Fixes “vertical walls” when rain stops before 60m.
+    static func applyWetSegmentEasing(_ heights: [CGFloat], threshold: CGFloat, fraction: CGFloat, power: Double) -> [CGFloat] {
+        guard heights.count >= 3 else { return heights }
+
+        let f = clamp(fraction, min: 0.0, max: 0.35)
+        if f <= 0.0001 { return heights }
+
+        let p = max(0.8, power)
+        var out = heights
+
+        let n = out.count
+        var i = 0
+
+        while i < n {
+            while i < n && out[i] <= threshold { i += 1 }
+            if i >= n { break }
+
+            let start = i
+            while i < n && out[i] > threshold { i += 1 }
+            let end = i - 1
+
+            let runLen = end - start + 1
+            if runLen < 3 { continue }
+
+            let edgeCount = max(2, min(runLen / 2, Int(round(CGFloat(runLen) * f))))
+            if edgeCount <= 1 { continue }
+
+            for j in 0..<edgeCount {
+                let u = Double(j) / Double(edgeCount - 1)
+                let s = pow(smoothstep01(u), p)
+
+                out[start + j] = out[start + j] * CGFloat(s)
+                out[end - j] = out[end - j] * CGFloat(s)
+            }
+
+            out[start] = 0
+            out[end] = 0
+        }
 
         return out
     }
@@ -166,12 +208,11 @@ enum RainSurfaceMath {
                 if d0 == 0 || d1 == 0 || (d0 > 0 && d1 < 0) || (d0 < 0 && d1 > 0) {
                     m[i] = 0
                 } else {
-                    m[i] = 2 * d0 * d1 / (d0 + d1) // harmonic mean
+                    m[i] = 2 * d0 * d1 / (d0 + d1)
                 }
             }
         }
 
-        // Fritsch–Carlson limiter
         let eps: CGFloat = 1e-8
         for i in 0..<(n - 1) {
             let di = d[i]
@@ -221,7 +262,6 @@ enum RainSurfaceMath {
         return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
     }
 
-    /// Resamples across the full domain including endpoints (j = 0 maps to x = 0; j = last maps to x = n-1).
     static func resampleMonotoneCubicEdges(_ y: [CGFloat], targetCount: Int) -> [CGFloat] {
         let n = y.count
         let outCount = max(2, targetCount)
@@ -246,8 +286,6 @@ enum RainSurfaceMath {
         return out
     }
 
-    /// Resamples at bin centres across the domain.
-    /// Matches the renderer’s usage of `x = (i + 0.5) * stepX`.
     static func resampleMonotoneCubicCenters(_ y: [CGFloat], targetCount: Int) -> [CGFloat] {
         let n = y.count
         let outCount = max(1, targetCount)
@@ -260,7 +298,7 @@ enum RainSurfaceMath {
         var out = [CGFloat](repeating: 0, count: outCount)
 
         for j in 0..<outCount {
-            let t = (CGFloat(j) + 0.5) / CGFloat(outCount) // 0..1
+            let t = (CGFloat(j) + 0.5) / CGFloat(outCount)
             let x = (t * CGFloat(n)) - 0.5
             out[j] = evalMonotoneCubic(y: y, m: tangents, x: clamp(x, min: 0, max: maxX))
         }

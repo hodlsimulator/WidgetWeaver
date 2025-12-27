@@ -4,8 +4,6 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  SwiftUI wrapper for the procedural nowcast surface renderer.
-//
 
 import Foundation
 import SwiftUI
@@ -14,11 +12,7 @@ import UIKit
 #endif
 
 struct RainForecastSurfaceConfiguration: Hashable {
-    // MARK: - Determinism
-
     var noiseSeed: UInt64 = 0
-
-    // MARK: - Geometry (shape-agnostic)
 
     var baselineFractionFromTop: CGFloat = 0.84
     var topHeadroomFraction: CGFloat = 0.16
@@ -28,21 +22,16 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var intensityGamma: Double = 0.65
 
     var maxDenseSamples: Int = 256
-
     var baselineAntiClipInsetPixels: Double = 0.75
 
     var edgeEasingFraction: CGFloat = 0.10
     var edgeEasingPower: Double = 1.7
-
-    // MARK: - Core (opaque volume)
 
     var coreBodyColor: Color = Color(red: 0.00, green: 0.10, blue: 0.42)
     var coreTopColor: Color = Color(red: 0.12, green: 0.45, blue: 1.0)
 
     var coreMidColor: Color = Color(red: 0.03, green: 0.22, blue: 0.78)
     var coreBottomColor: Color = Color(red: 0.00, green: 0.05, blue: 0.18)
-
-    // MARK: - Rim
 
     var rimEnabled: Bool = true
     var rimColor: Color = Color(red: 0.62, green: 0.88, blue: 1.00)
@@ -51,14 +40,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var rimOuterOpacity: Double = 0.12
     var rimOuterWidthPixels: Double = 5.2
 
-    // MARK: - Gloss (inside-only)
-
     var glossEnabled: Bool = true
     var glossMaxOpacity: Double = 0.14
     var glossDepthPixels: ClosedRange<Double> = 9.0...14.0
     var glossSoftBlurPixels: Double = 0.6
-
-    // MARK: - Glints
 
     var glintEnabled: Bool = true
     var glintColor: Color = Color(red: 0.95, green: 0.99, blue: 1.0)
@@ -67,8 +52,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glintMinHeightFraction: Double = 0.78
     var glintMaxCount: Int = 1
 
-    // MARK: - Fuzz (surface-band; outside + inside; certainty-driven)
-
+    // Fuzz: raster surface band (outside + inside).
     var fuzzEnabled: Bool = true
     var fuzzColor: Color = Color(red: 0.05, green: 0.32, blue: 1.00)
     var fuzzMaxOpacity: Double = 0.22
@@ -81,10 +65,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzUncertaintyExponent: Double = 2.0
 
     var fuzzMicroBlurPixels: Double = 0.0
-    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.5...1.15
-    var fuzzMaxAttemptsPerColumn: Int = 24
-    var fuzzMaxColumns: Int = 900
-    var fuzzSpeckleBudget: Int = 6500
 
     var fuzzRasterMaxPixels: Int = 110_000
     var fuzzEdgePower: Double = 0.65
@@ -93,31 +73,39 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzSpeckStrength: Double = 1.0
     var fuzzInsideThreshold: UInt8 = 14
 
-    // New: the “mock” look needs fuzz to straddle the surface.
-    var fuzzInsideWidthFactor: Double = 0.62
-    var fuzzInsideOpacityFactor: Double = 0.70
-    var fuzzInsideSpeckleFraction: Double = 0.35
+    // Surface-band controls (new).
+    var fuzzInsideWidthFactor: Double = 0.68
+    var fuzzInsideOpacityFactor: Double = 0.72
+    var fuzzInsideSpeckleFraction: Double = 0.40
 
-    // New: keeps tapered ends fuzzy even at high certainty.
+    // Ensures tapered ends stay fuzzy.
     var fuzzLowHeightBoost: Double = 0.85
 
-    // New: concentrates speckles near the edge (surface-band).
+    // Concentrates grain near the edge.
     var fuzzDistancePowerOutside: Double = 1.85
     var fuzzDistancePowerInside: Double = 1.55
-    var fuzzAlongTangentJitterFraction: Double = 0.90
-
-    // New: haze stroke shaping (continuous “surface fog”, bounded).
-    var fuzzHazeBlurFractionOfBand: Double = 0.36
-    var fuzzHazeStrokeWidthFactor: Double = 1.35
-    var fuzzInsideHazeStrokeWidthFactor: Double = 1.15
-
-    // MARK: - Baseline
 
     var baselineColor: Color = Color(red: 0.55, green: 0.75, blue: 1.0)
     var baselineLineOpacity: Double = 0.22
     var baselineEndFadeFraction: CGFloat = 0.040
 
-    // MARK: - Hashable
+    private static func colorKey(_ color: Color) -> UInt64 {
+        #if canImport(UIKit)
+        let ui = UIColor(color)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
+            let rr = UInt64(max(0, min(255, Int(round(r * 255.0)))))
+            let gg = UInt64(max(0, min(255, Int(round(g * 255.0)))))
+            let bb = UInt64(max(0, min(255, Int(round(b * 255.0)))))
+            let aa = UInt64(max(0, min(255, Int(round(a * 255.0)))))
+            return (rr << 24) | (gg << 16) | (bb << 8) | aa
+        }
+        #endif
+        return 0
+    }
 
     static func == (lhs: RainForecastSurfaceConfiguration, rhs: RainForecastSurfaceConfiguration) -> Bool {
         lhs.noiseSeed == rhs.noiseSeed
@@ -132,8 +120,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
         && lhs.edgeEasingPower == rhs.edgeEasingPower
         && colorKey(lhs.coreBodyColor) == colorKey(rhs.coreBodyColor)
         && colorKey(lhs.coreTopColor) == colorKey(rhs.coreTopColor)
-        && colorKey(lhs.coreMidColor) == colorKey(rhs.coreMidColor)
-        && colorKey(lhs.coreBottomColor) == colorKey(rhs.coreBottomColor)
         && lhs.rimEnabled == rhs.rimEnabled
         && colorKey(lhs.rimColor) == colorKey(rhs.rimColor)
         && lhs.rimInnerOpacity == rhs.rimInnerOpacity
@@ -162,29 +148,17 @@ struct RainForecastSurfaceConfiguration: Hashable {
         && lhs.fuzzUncertaintyFloor == rhs.fuzzUncertaintyFloor
         && lhs.fuzzUncertaintyExponent == rhs.fuzzUncertaintyExponent
         && lhs.fuzzMicroBlurPixels == rhs.fuzzMicroBlurPixels
-        && lhs.fuzzSpeckleRadiusPixels.lowerBound == rhs.fuzzSpeckleRadiusPixels.lowerBound
-        && lhs.fuzzSpeckleRadiusPixels.upperBound == rhs.fuzzSpeckleRadiusPixels.upperBound
-        && lhs.fuzzMaxAttemptsPerColumn == rhs.fuzzMaxAttemptsPerColumn
-        && lhs.fuzzMaxColumns == rhs.fuzzMaxColumns
-        && lhs.fuzzSpeckleBudget == rhs.fuzzSpeckleBudget
         && lhs.fuzzRasterMaxPixels == rhs.fuzzRasterMaxPixels
         && lhs.fuzzEdgePower == rhs.fuzzEdgePower
         && lhs.fuzzClumpCellPixels == rhs.fuzzClumpCellPixels
         && lhs.fuzzHazeStrength == rhs.fuzzHazeStrength
         && lhs.fuzzSpeckStrength == rhs.fuzzSpeckStrength
-        && lhs.fuzzInsideThreshold == rhs.fuzzInsideThreshold
-
         && lhs.fuzzInsideWidthFactor == rhs.fuzzInsideWidthFactor
         && lhs.fuzzInsideOpacityFactor == rhs.fuzzInsideOpacityFactor
         && lhs.fuzzInsideSpeckleFraction == rhs.fuzzInsideSpeckleFraction
         && lhs.fuzzLowHeightBoost == rhs.fuzzLowHeightBoost
         && lhs.fuzzDistancePowerOutside == rhs.fuzzDistancePowerOutside
         && lhs.fuzzDistancePowerInside == rhs.fuzzDistancePowerInside
-        && lhs.fuzzAlongTangentJitterFraction == rhs.fuzzAlongTangentJitterFraction
-        && lhs.fuzzHazeBlurFractionOfBand == rhs.fuzzHazeBlurFractionOfBand
-        && lhs.fuzzHazeStrokeWidthFactor == rhs.fuzzHazeStrokeWidthFactor
-        && lhs.fuzzInsideHazeStrokeWidthFactor == rhs.fuzzInsideHazeStrokeWidthFactor
-
         && colorKey(lhs.baselineColor) == colorKey(rhs.baselineColor)
         && lhs.baselineLineOpacity == rhs.baselineLineOpacity
         && lhs.baselineEndFadeFraction == rhs.baselineEndFadeFraction
@@ -192,6 +166,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(noiseSeed)
+
         hasher.combine(baselineFractionFromTop)
         hasher.combine(topHeadroomFraction)
         hasher.combine(typicalPeakFraction)
@@ -204,8 +179,6 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
         hasher.combine(Self.colorKey(coreBodyColor))
         hasher.combine(Self.colorKey(coreTopColor))
-        hasher.combine(Self.colorKey(coreMidColor))
-        hasher.combine(Self.colorKey(coreBottomColor))
 
         hasher.combine(rimEnabled)
         hasher.combine(Self.colorKey(rimColor))
@@ -238,17 +211,11 @@ struct RainForecastSurfaceConfiguration: Hashable {
         hasher.combine(fuzzUncertaintyFloor)
         hasher.combine(fuzzUncertaintyExponent)
         hasher.combine(fuzzMicroBlurPixels)
-        hasher.combine(fuzzSpeckleRadiusPixels.lowerBound)
-        hasher.combine(fuzzSpeckleRadiusPixels.upperBound)
-        hasher.combine(fuzzMaxAttemptsPerColumn)
-        hasher.combine(fuzzMaxColumns)
-        hasher.combine(fuzzSpeckleBudget)
         hasher.combine(fuzzRasterMaxPixels)
         hasher.combine(fuzzEdgePower)
         hasher.combine(fuzzClumpCellPixels)
         hasher.combine(fuzzHazeStrength)
         hasher.combine(fuzzSpeckStrength)
-        hasher.combine(fuzzInsideThreshold)
 
         hasher.combine(fuzzInsideWidthFactor)
         hasher.combine(fuzzInsideOpacityFactor)
@@ -256,32 +223,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
         hasher.combine(fuzzLowHeightBoost)
         hasher.combine(fuzzDistancePowerOutside)
         hasher.combine(fuzzDistancePowerInside)
-        hasher.combine(fuzzAlongTangentJitterFraction)
-        hasher.combine(fuzzHazeBlurFractionOfBand)
-        hasher.combine(fuzzHazeStrokeWidthFactor)
-        hasher.combine(fuzzInsideHazeStrokeWidthFactor)
 
         hasher.combine(Self.colorKey(baselineColor))
         hasher.combine(baselineLineOpacity)
         hasher.combine(baselineEndFadeFraction)
-    }
-
-    private static func colorKey(_ color: Color) -> UInt64 {
-        #if canImport(UIKit)
-        let ui = UIColor(color)
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        var a: CGFloat = 0
-        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
-            let rr = UInt64(max(0, min(255, Int(round(r * 255.0)))))
-            let gg = UInt64(max(0, min(255, Int(round(g * 255.0)))))
-            let bb = UInt64(max(0, min(255, Int(round(b * 255.0)))))
-            let aa = UInt64(max(0, min(255, Int(round(a * 255.0)))))
-            return (rr << 24) | (gg << 16) | (bb << 8) | aa
-        }
-        #endif
-        return 0
     }
 }
 
