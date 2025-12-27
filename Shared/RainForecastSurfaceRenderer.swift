@@ -4,7 +4,12 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Procedural nowcast rain surface renderer (mask/field driven).
+//  Procedural nowcast rain surface renderer:
+//  - pure black background
+//  - opaque core (solid fill; no vertical gradient)
+//  - crisp rim + inside-only gloss
+//  - granular speckled fuzz outside core only
+//  - baseline anchored inside the chart (leaves empty space beneath)
 //
 
 import Foundation
@@ -20,7 +25,7 @@ struct RainForecastSurfaceRenderer {
         let rect = CGRect(origin: .zero, size: size)
         guard rect.width >= 2, rect.height >= 2 else { return }
 
-        // Background: pure black.
+        // (1) Background: pure black, no gradients/vignette/grain.
         var bg = Path()
         bg.addRect(rect)
         context.fill(bg, with: .color(.black))
@@ -29,16 +34,18 @@ struct RainForecastSurfaceRenderer {
         let scale = max(1.0, displayScale)
         let onePixel = CGFloat(1.0 / scale)
 
-        // Baseline can sit low to give the chart more vertical range.
-        let baselineFrac = RainSurfaceMath.clamp(configuration.baselineFractionFromTop, min: 0.50, max: 0.92)
+        // Baseline placed inside the chart, matching the mock composition.
+        let baselineFrac = RainSurfaceMath.clamp(configuration.baselineFractionFromTop, min: 0.45, max: 0.92)
         let baselineRaw = chartRect.minY + chartRect.height * baselineFrac
 
+        // Optional inset to avoid clipping if baseline gets very close to an edge.
         let inset = CGFloat(configuration.baselineAntiClipInsetPixels / scale)
         let baselineY = RainSurfaceMath.alignToPixelCenter(
             RainSurfaceMath.clamp(baselineRaw, min: chartRect.minY + inset, max: chartRect.maxY - inset),
             displayScale: scale
         )
 
+        // Normalise inputs.
         let nI = intensities.count
         if nI == 0 {
             RainSurfaceDrawing.drawBaseline(
@@ -52,20 +59,18 @@ struct RainForecastSurfaceRenderer {
         }
 
         let safeCertainties: [Double] = {
-            if certainties.isEmpty {
-                return Array(repeating: 1.0, count: nI)
-            }
-            if certainties.count == nI {
-                return certainties.map { RainSurfaceMath.clamp01($0) }
-            }
-            if certainties.count > nI {
-                return Array(certainties.prefix(nI)).map { RainSurfaceMath.clamp01($0) }
-            }
+            if certainties.isEmpty { return Array(repeating: 1.0, count: nI) }
+            if certainties.count == nI { return certainties.map { RainSurfaceMath.clamp01($0) } }
+            if certainties.count > nI { return Array(certainties.prefix(nI)).map { RainSurfaceMath.clamp01($0) } }
+
+            // Pad with last value.
             let last = RainSurfaceMath.clamp01(certainties.last ?? 1.0)
             return certainties.map { RainSurfaceMath.clamp01($0) } + Array(repeating: last, count: nI - certainties.count)
         }()
 
         let clampedIntensities = intensities.map { max(0.0, $0) }
+
+        // Robust scaling max: percentile of non-zero values.
         let nonZero = clampedIntensities.filter { $0 > 0.0 }
         if nonZero.isEmpty {
             RainSurfaceDrawing.drawBaseline(
@@ -78,13 +83,15 @@ struct RainForecastSurfaceRenderer {
             return
         }
 
-        // Robust scaling max: percentile of non-zero values.
-        let p = RainSurfaceMath.clamp(configuration.robustMaxPercentile, min: 0.90, max: 0.96)
+        let p = RainSurfaceMath.clamp(configuration.robustMaxPercentile, min: 0.88, max: 0.97)
         let robustMax = max(1e-9, RainSurfaceMath.percentile(nonZero, p: p))
 
-        // Height budget above the baseline.
-        let headroomFrac = RainSurfaceMath.clamp(configuration.topHeadroomFraction, min: 0.06, max: 0.35)
-        let typicalFrac = RainSurfaceMath.clamp(configuration.typicalPeakFraction, min: 0.16, max: 0.45)
+        // Height budget:
+        // - baseline is inside the rect (space exists below)
+        // - top headroom caps absolute maximum height
+        // - typical peaks map to a fixed fraction of chart height (matches mock)
+        let headroomFrac = RainSurfaceMath.clamp(configuration.topHeadroomFraction, min: 0.08, max: 0.45)
+        let typicalFrac = RainSurfaceMath.clamp(configuration.typicalPeakFraction, min: 0.18, max: 0.78)
 
         let availableAboveBaseline = max(onePixel, baselineY - chartRect.minY)
         let headroom = chartRect.height * headroomFrac
@@ -95,6 +102,7 @@ struct RainForecastSurfaceRenderer {
         let ratio = max(1.0, Double(maxHeight / max(onePixel, targetPeakHeight)))
         let vMax = pow(ratio, 1.0 / gamma)
 
+        // Map minute intensities to heights (no minimum clamp; near-zero approaches baseline).
         let minuteHeights: [CGFloat] = clampedIntensities.map { intensity in
             if intensity <= 0.0 { return 0.0 }
             let v = intensity / robustMax
@@ -103,44 +111,29 @@ struct RainForecastSurfaceRenderer {
             return CGFloat(shaped) * maxHeight
         }
 
-        // Dense sampling: per-pixel (or capped), then smoothing and tail easing.
+        // Dense sampling: per-pixel (or sub-pixel) across chart width, capped.
         let pxW = max(1, Int(ceil(chartRect.width * scale)))
         let denseCount = max(32, min(configuration.maxDenseSamples, pxW))
 
         var denseHeights = RainSurfaceMath.resampleMonotoneCubicCenters(minuteHeights, targetCount: denseCount)
-        denseHeights = RainSurfaceMath.smooth(denseHeights, passes: max(0, configuration.silhouetteSmoothingPasses))
-
-        let tailFrac = RainSurfaceMath.clamp(configuration.tailEasingFraction, min: 0.06, max: 0.12)
-        if denseHeights.count >= 2 {
-            let n = denseHeights.count
-            for i in 0..<n {
-                let t = Double(i) / Double(max(1, n - 1))
-                let uL = RainSurfaceMath.clamp01(t / Double(tailFrac))
-                let uR = RainSurfaceMath.clamp01((1.0 - t) / Double(tailFrac))
-                let f = RainSurfaceMath.smoothstep01(uL) * RainSurfaceMath.smoothstep01(uR)
-                denseHeights[i] *= CGFloat(f)
-            }
-            denseHeights = RainSurfaceMath.smooth(denseHeights, passes: 1)
-            for i in 0..<n {
-                let t = Double(i) / Double(max(1, n - 1))
-                let uL = RainSurfaceMath.clamp01(t / Double(tailFrac))
-                let uR = RainSurfaceMath.clamp01((1.0 - t) / Double(tailFrac))
-                let f = RainSurfaceMath.smoothstep01(uL) * RainSurfaceMath.smoothstep01(uR)
-                denseHeights[i] *= CGFloat(f)
-            }
-            denseHeights[0] = 0
-            denseHeights[n - 1] = 0
-        }
-
+        denseHeights = RainSurfaceMath.smooth(denseHeights, passes: 2)
         denseHeights = denseHeights.map { h in
             let hh = RainSurfaceMath.clamp(h, min: 0.0, max: maxHeight)
             return (hh < onePixel * 0.10) ? 0.0 : hh
         }
 
+        // Tail easing prevents vertical walls/steps at the ends.
+        denseHeights = RainSurfaceMath.applyEdgeEasing(
+            denseHeights,
+            fraction: configuration.edgeEasingFraction,
+            power: configuration.edgeEasingPower
+        )
+
         var denseCertainties = RainSurfaceMath.resampleMonotoneCubicCenters(safeCertainties, targetCount: denseCount)
         denseCertainties = RainSurfaceMath.smooth(denseCertainties, passes: 1)
         denseCertainties = denseCertainties.map { RainSurfaceMath.clamp01($0) }
 
+        // Path construction at per-column centres.
         let stepX = chartRect.width / CGFloat(max(1, denseCount))
         let corePath = RainSurfaceGeometry.makeCorePath(
             chartRect: chartRect,
@@ -155,6 +148,7 @@ struct RainForecastSurfaceRenderer {
             heights: denseHeights
         )
 
+        // (2)(3)(4) Fuzz + Core + Rim + Glints
         RainSurfaceDrawing.drawSurface(
             in: &context,
             chartRect: chartRect,
@@ -168,6 +162,7 @@ struct RainForecastSurfaceRenderer {
             displayScale: displayScale
         )
 
+        // (5) Baseline drawn last (top-most), end-faded, additive.
         RainSurfaceDrawing.drawBaseline(
             in: &context,
             chartRect: chartRect,

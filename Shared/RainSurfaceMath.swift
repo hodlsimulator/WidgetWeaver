@@ -11,8 +11,6 @@ import Foundation
 import SwiftUI
 
 enum RainSurfaceMath {
-    // MARK: - Clamp / lerp
-
     static func clamp01(_ v: Double) -> Double { max(0.0, min(1.0, v)) }
     static func clamp01(_ v: CGFloat) -> CGFloat { max(0.0, min(1.0, v)) }
 
@@ -27,6 +25,11 @@ enum RainSurfaceMath {
     }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        let tt = clamp01(t)
+        return a + (b - a) * tt
+    }
+
+    static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
         let tt = clamp01(t)
         return a + (b - a) * tt
     }
@@ -46,30 +49,6 @@ enum RainSurfaceMath {
         return (floor(value * displayScale) + 0.5) / displayScale
     }
 
-    // MARK: - Sampling
-
-    static func sampleLinear(_ values: [Double], t: Double) -> Double {
-        guard !values.isEmpty else { return 0.0 }
-        if values.count == 1 { return values[0] }
-        let tt = clamp01(t)
-        let x = tt * Double(values.count - 1)
-        let i0 = Int(floor(x))
-        let i1 = min(values.count - 1, i0 + 1)
-        let f = x - Double(i0)
-        return lerp(values[i0], values[i1], f)
-    }
-
-    static func sampleLinear(_ values: [CGFloat], t: CGFloat) -> CGFloat {
-        guard !values.isEmpty else { return 0.0 }
-        if values.count == 1 { return values[0] }
-        let tt = clamp01(t)
-        let x = tt * CGFloat(values.count - 1)
-        let i0 = Int(floor(x))
-        let i1 = min(values.count - 1, i0 + 1)
-        let f = x - CGFloat(i0)
-        return values[i0] + (values[i1] - values[i0]) * f
-    }
-
     // MARK: - Percentile scaling
 
     static func percentile(_ values: [Double], p: Double) -> Double {
@@ -77,10 +56,12 @@ enum RainSurfaceMath {
         let pp = clamp01(p)
         let sorted = values.sorted()
         if sorted.count == 1 { return sorted[0] }
+
         let r = pp * Double(sorted.count - 1)
         let i0 = Int(floor(r))
         let i1 = Int(ceil(r))
         if i0 == i1 { return sorted[i0] }
+
         let t = r - Double(i0)
         return lerp(sorted[i0], sorted[i1], t)
     }
@@ -91,15 +72,20 @@ enum RainSurfaceMath {
         guard values.count >= 3, passes > 0 else { return values }
         var out = values
         var tmp = values
+
         for _ in 0..<passes {
             tmp[0] = out[0]
-            tmp[out.count - 1] = out[out.count - 1]
-            for i in 1..<(out.count - 1) {
-                // 1–2–1 kernel
-                tmp[i] = (out[i - 1] + out[i] * 2.0 + out[i + 1]) * 0.25
+            tmp[tmp.count - 1] = out[out.count - 1]
+
+            if out.count >= 3 {
+                for i in 1..<(out.count - 1) {
+                    tmp[i] = (out[i - 1] * 0.25) + (out[i] * 0.50) + (out[i + 1] * 0.25)
+                }
             }
-            swap(&out, &tmp)
+
+            out = tmp
         }
+
         return out
     }
 
@@ -107,14 +93,56 @@ enum RainSurfaceMath {
         guard values.count >= 3, passes > 0 else { return values }
         var out = values
         var tmp = values
+
         for _ in 0..<passes {
             tmp[0] = out[0]
-            tmp[out.count - 1] = out[out.count - 1]
-            for i in 1..<(out.count - 1) {
-                tmp[i] = (out[i - 1] + out[i] * 2.0 + out[i + 1]) * 0.25
+            tmp[tmp.count - 1] = out[out.count - 1]
+
+            if out.count >= 3 {
+                for i in 1..<(out.count - 1) {
+                    tmp[i] = (out[i - 1] * 0.25) + (out[i] * 0.50) + (out[i + 1] * 0.25)
+                }
             }
-            swap(&out, &tmp)
+
+            out = tmp
         }
+
+        return out
+    }
+
+    // MARK: - Tail easing (prevents cliffs at ends)
+
+    static func applyEdgeEasing(_ heights: [CGFloat], fraction: CGFloat, power: Double) -> [CGFloat] {
+        guard heights.count >= 3 else { return heights }
+
+        let f = clamp(fraction, min: 0.0, max: 0.25)
+        if f <= 0.0001 { return heights }
+
+        let n = heights.count
+        let edgeCount = max(2, min(n / 2, Int(round(CGFloat(n) * f))))
+        let p = max(0.8, power)
+
+        var out = heights
+
+        // Left edge: 0 -> 1
+        for i in 0..<edgeCount {
+            let u = Double(i) / Double(edgeCount - 1)
+            let s = pow(smoothstep01(u), p)
+            out[i] = out[i] * CGFloat(s)
+        }
+
+        // Right edge: 1 -> 0
+        for j in 0..<edgeCount {
+            let i = (n - 1) - j
+            let u = Double(j) / Double(edgeCount - 1)
+            let s = pow(smoothstep01(u), p)
+            out[i] = out[i] * CGFloat(1.0 - s)
+        }
+
+        // Ensure exact zeros at the outermost samples.
+        out[0] = 0
+        out[n - 1] = 0
+
         return out
     }
 
@@ -125,9 +153,7 @@ enum RainSurfaceMath {
         guard n >= 2 else { return y }
 
         var d = [CGFloat](repeating: 0, count: n - 1)
-        for i in 0..<(n - 1) {
-            d[i] = y[i + 1] - y[i]
-        }
+        for i in 0..<(n - 1) { d[i] = y[i + 1] - y[i] }
 
         var m = [CGFloat](repeating: 0, count: n)
         m[0] = d[0]
@@ -140,13 +166,12 @@ enum RainSurfaceMath {
                 if d0 == 0 || d1 == 0 || (d0 > 0 && d1 < 0) || (d0 < 0 && d1 > 0) {
                     m[i] = 0
                 } else {
-                    // Harmonic mean.
-                    m[i] = 2 * d0 * d1 / (d0 + d1)
+                    m[i] = 2 * d0 * d1 / (d0 + d1) // harmonic mean
                 }
             }
         }
 
-        // Fritsch–Carlson limiter.
+        // Fritsch–Carlson limiter
         let eps: CGFloat = 1e-8
         for i in 0..<(n - 1) {
             let di = d[i]
@@ -155,6 +180,7 @@ enum RainSurfaceMath {
                 m[i + 1] = 0
                 continue
             }
+
             let a = m[i] / di
             let b = m[i + 1] / di
             let s = a * a + b * b
@@ -195,44 +221,50 @@ enum RainSurfaceMath {
         return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
     }
 
-    /// Resamples across the full domain including endpoints
-    /// (j = 0 maps to x = 0; j = last maps to x = n-1).
+    /// Resamples across the full domain including endpoints (j = 0 maps to x = 0; j = last maps to x = n-1).
     static func resampleMonotoneCubicEdges(_ y: [CGFloat], targetCount: Int) -> [CGFloat] {
         let n = y.count
         let outCount = max(2, targetCount)
-        guard n >= 2 else {
-            return Array(repeating: y.first ?? 0, count: outCount)
-        }
+
+        guard n >= 2 else { return Array(repeating: y.first ?? 0, count: outCount) }
 
         let tangents = monotoneCubicTangents(y)
         let maxX = CGFloat(n - 1)
 
         var out = [CGFloat](repeating: 0, count: outCount)
+        if outCount == 1 {
+            out[0] = y[0]
+            return out
+        }
+
         for j in 0..<outCount {
-            let t = (outCount <= 1) ? 0 : (CGFloat(j) / CGFloat(outCount - 1))
+            let t = CGFloat(j) / CGFloat(outCount - 1)
             let x = t * maxX
             out[j] = evalMonotoneCubic(y: y, m: tangents, x: x)
         }
+
         return out
     }
 
-    /// Resamples at evenly-spaced bin centres, avoiding hard edge anchoring.
+    /// Resamples at bin centres across the domain.
+    /// Matches the renderer’s usage of `x = (i + 0.5) * stepX`.
     static func resampleMonotoneCubicCenters(_ y: [CGFloat], targetCount: Int) -> [CGFloat] {
         let n = y.count
         let outCount = max(1, targetCount)
-        guard n >= 2 else {
-            return Array(repeating: y.first ?? 0, count: outCount)
-        }
+
+        guard n >= 2 else { return Array(repeating: y.first ?? 0, count: outCount) }
 
         let tangents = monotoneCubicTangents(y)
         let maxX = CGFloat(n - 1)
 
         var out = [CGFloat](repeating: 0, count: outCount)
+
         for j in 0..<outCount {
-            let u = (CGFloat(j) + 0.5) / CGFloat(outCount)
-            let x = u * maxX
-            out[j] = evalMonotoneCubic(y: y, m: tangents, x: x)
+            let t = (CGFloat(j) + 0.5) / CGFloat(outCount) // 0..1
+            let x = (t * CGFloat(n)) - 0.5
+            out[j] = evalMonotoneCubic(y: y, m: tangents, x: clamp(x, min: 0, max: maxX))
         }
+
         return out
     }
 
@@ -244,175 +276,5 @@ enum RainSurfaceMath {
     static func resampleMonotoneCubicCenters(_ y: [Double], targetCount: Int) -> [Double] {
         let yy = y.map { CGFloat($0) }
         return resampleMonotoneCubicCenters(yy, targetCount: targetCount).map { Double($0) }
-    }
-
-    // MARK: - Distance field (fast chamfer)
-
-    /// 3–4 chamfer distance transform in units of 1/3 px.
-    /// - sources: 1 for source pixels, 0 otherwise.
-    /// - traversable: optional mask; if provided, only pixels with 1 participate.
-    static func chamferDistance3_4(
-        width: Int,
-        height: Int,
-        sources: [UInt8],
-        traversable: [UInt8]?
-    ) -> [UInt16] {
-        let count = width * height
-        guard width > 0, height > 0, sources.count == count else {
-            return []
-        }
-        if let traversable, traversable.count != count {
-            return []
-        }
-
-        let INF: UInt16 = 0x3FFF
-        let orth: UInt16 = 3
-        let diag: UInt16 = 4
-
-        var dist = [UInt16](repeating: INF, count: count)
-
-        if let traversable {
-            for i in 0..<count {
-                if traversable[i] == 0 {
-                    dist[i] = INF
-                } else if sources[i] != 0 {
-                    dist[i] = 0
-                }
-            }
-        } else {
-            for i in 0..<count {
-                if sources[i] != 0 { dist[i] = 0 }
-            }
-        }
-
-        // Forward pass.
-        if let traversable {
-            for y in 0..<height {
-                let row = y * width
-                for x in 0..<width {
-                    let idx = row + x
-                    if traversable[idx] == 0 { continue }
-                    var best = dist[idx]
-                    if best == 0 { continue }
-
-                    if x > 0 {
-                        let d = dist[idx - 1]
-                        if d != INF { best = min(best, d &+ orth) }
-                    }
-                    if y > 0 {
-                        let up = idx - width
-                        let dUp = dist[up]
-                        if dUp != INF { best = min(best, dUp &+ orth) }
-
-                        if x > 0 {
-                            let d = dist[up - 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                        if x + 1 < width {
-                            let d = dist[up + 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                    }
-
-                    dist[idx] = best
-                }
-            }
-        } else {
-            for y in 0..<height {
-                let row = y * width
-                for x in 0..<width {
-                    let idx = row + x
-                    var best = dist[idx]
-                    if best == 0 { continue }
-
-                    if x > 0 {
-                        let d = dist[idx - 1]
-                        if d != INF { best = min(best, d &+ orth) }
-                    }
-                    if y > 0 {
-                        let up = idx - width
-                        let dUp = dist[up]
-                        if dUp != INF { best = min(best, dUp &+ orth) }
-
-                        if x > 0 {
-                            let d = dist[up - 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                        if x + 1 < width {
-                            let d = dist[up + 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                    }
-
-                    dist[idx] = best
-                }
-            }
-        }
-
-        // Backward pass.
-        if let traversable {
-            for y in stride(from: height - 1, through: 0, by: -1) {
-                let row = y * width
-                for x in stride(from: width - 1, through: 0, by: -1) {
-                    let idx = row + x
-                    if traversable[idx] == 0 { continue }
-                    var best = dist[idx]
-                    if best == 0 { continue }
-
-                    if x + 1 < width {
-                        let d = dist[idx + 1]
-                        if d != INF { best = min(best, d &+ orth) }
-                    }
-                    if y + 1 < height {
-                        let dn = idx + width
-                        let dDn = dist[dn]
-                        if dDn != INF { best = min(best, dDn &+ orth) }
-
-                        if x + 1 < width {
-                            let d = dist[dn + 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                        if x > 0 {
-                            let d = dist[dn - 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                    }
-
-                    dist[idx] = best
-                }
-            }
-        } else {
-            for y in stride(from: height - 1, through: 0, by: -1) {
-                let row = y * width
-                for x in stride(from: width - 1, through: 0, by: -1) {
-                    let idx = row + x
-                    var best = dist[idx]
-                    if best == 0 { continue }
-
-                    if x + 1 < width {
-                        let d = dist[idx + 1]
-                        if d != INF { best = min(best, d &+ orth) }
-                    }
-                    if y + 1 < height {
-                        let dn = idx + width
-                        let dDn = dist[dn]
-                        if dDn != INF { best = min(best, dDn &+ orth) }
-
-                        if x + 1 < width {
-                            let d = dist[dn + 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                        if x > 0 {
-                            let d = dist[dn - 1]
-                            if d != INF { best = min(best, d &+ diag) }
-                        }
-                    }
-
-                    dist[idx] = best
-                }
-            }
-        }
-
-        return dist
     }
 }

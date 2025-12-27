@@ -5,6 +5,7 @@
 //  Created by . . on 12/23/25.
 //
 //  Nowcast chart container + axis labels.
+//  Chart area is dedicated to surface rendering; labels are outside.
 //
 
 import Foundation
@@ -43,14 +44,42 @@ struct WeatherNowcastChart: View {
         #if canImport(WidgetKit)
         switch widgetFamily {
         case .systemSmall:
-            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 2 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 8,
+                plotBottom: showAxisLabels ? 2 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 10
+            )
         case .systemMedium:
-            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 2 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 10,
+                plotBottom: showAxisLabels ? 2 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 12
+            )
         default:
-            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 2 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+            return Insets(
+                plotHorizontal: 12,
+                plotTop: 10,
+                plotBottom: showAxisLabels ? 3 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 12
+            )
         }
         #else
-        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 2 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        return Insets(
+            plotHorizontal: 12,
+            plotTop: 10,
+            plotBottom: showAxisLabels ? 3 : 8,
+            axisHorizontal: 18,
+            axisTop: 0,
+            axisBottom: 12
+        )
         #endif
     }
 
@@ -126,6 +155,8 @@ private struct WeatherNowcastSurfacePlot: View {
     let locationLongitude: Double?
     let widgetFamilyValue: UInt64
 
+    @Environment(\.displayScale) private var displayScale
+
     var body: some View {
         GeometryReader { proxy in
             let series = samples(from: points, targetMinutes: 60)
@@ -137,11 +168,13 @@ private struct WeatherNowcastSurfacePlot: View {
             }
 
             let n = series.count
+
+            // Certainty: chance with a gentle horizon softening.
+            let horizonStart: Double = 0.65
+            let horizonEndCertainty: Double = 0.72
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
-                let horizonStart: Double = 0.65
-                let horizonEndCertainty: Double = 0.74
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
@@ -159,68 +192,61 @@ private struct WeatherNowcastSurfacePlot: View {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
 
-                // Silhouette.
-                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 1024
-                c.silhouetteSmoothingPasses = 3
-                c.tailEasingFraction = 0.10
+                // Widget-safe sampling (prevents placeholder timeouts).
+                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 220 : 900
 
-                // Baseline sits low so the chart reads tall and the line sits near the axis labels.
-                c.baselineFractionFromTop = 0.80
+                // Geometry: baseline low (near labels) and tall peaks for heavy rain.
+                c.baselineFractionFromTop = 0.88
                 c.topHeadroomFraction = 0.14
-                c.typicalPeakFraction = 0.33
+                c.typicalPeakFraction = 0.56
                 c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.65
+                c.intensityGamma = 0.62
+                c.edgeEasingFraction = 0.10
+                c.edgeEasingPower = 1.7
 
-                // Raster budgets.
-                if WidgetWeaverRuntime.isRunningInAppExtension {
-                    c.rasterMaxWidthPixels = 680
-                    c.rasterMaxHeightPixels = 420
-                    c.rasterMaxTotalPixels = 220_000
-                } else {
-                    c.rasterMaxWidthPixels = 1200
-                    c.rasterMaxHeightPixels = 760
-                    c.rasterMaxTotalPixels = 700_000
-                }
-                c.rasterSupersample = 1.0
-                c.maskInsideThreshold = 16
-
-                // Core.
+                // Core: solid body fill (no vertical gradient) + highlight colour for rim/gloss.
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Edge bloom only.
+                // Rim: keep subtle (avoid a traced neon line look).
                 c.rimEnabled = true
-                c.rimColor = Color(red: 0.62, green: 0.88, blue: 1.00)
-                c.rimInnerOpacity = 0.0
-                c.rimInnerWidthPixels = 0.0
-                c.rimOuterOpacity = 0.06
-                c.rimOuterWidthPixels = 14.0
+                c.rimColor = accent
+                c.rimInnerOpacity = 0.22
+                c.rimInnerWidthPixels = 1.05
+                c.rimOuterOpacity = 0.10
+                c.rimOuterWidthPixels = 4.8
 
-                // Inside lighting kept subtle; the mist is the focus.
+                // Gloss band (inside-only).
                 c.glossEnabled = true
-                c.glossMaxOpacity = 0.10
-                c.glossDepthPixels = 10.0...16.0
-                c.insideLightMinHeightPixels = 3.0
+                c.glossMaxOpacity = 0.12
+                c.glossDepthPixels = 9.0...14.0
 
-                // Glint off by default.
-                c.glintEnabled = false
+                // Tiny apex glint (local maxima only). Kept subtle.
+                c.glintEnabled = true
+                c.glintMaxCount = 1
+                c.glintMinHeightFraction = 0.82
+                c.glintMaxOpacity = 0.16
+                c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
 
-                // Fuzz: dense granular mist, clumped and distance-banded.
+                // Fuzz: dense granular mist (blue-only), outside-only, strongest near baseline/shoulders.
                 c.fuzzEnabled = true
-                c.fuzzColor = Color(red: 0.62, green: 0.88, blue: 1.00)
-                c.fuzzMaxOpacity = 0.16
-                c.fuzzWidthFraction = 0.23
-                c.fuzzWidthPixelsClamp = 10.0...110.0
-                c.fuzzBaseDensity = 0.92
-                c.fuzzLowHeightPower = 1.9
-                c.fuzzUncertaintyFloor = 0.45
-                c.fuzzRenderScale = WidgetWeaverRuntime.isRunningInAppExtension ? 0.72 : 0.68
-                c.fuzzFogCellPixels = 18.0
-                c.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? 18_000 : 30_000
+                c.fuzzColor = Color(red: 0.05, green: 0.32, blue: 1.00)
+                c.fuzzMaxOpacity = 0.22
+                c.fuzzWidthFraction = 0.26
+                c.fuzzWidthPixelsClamp = 12.0...130.0
+                c.fuzzBaseDensity = 0.86
+                c.fuzzLowHeightPower = 2.8
+                c.fuzzUncertaintyFloor = 0.18
+                c.fuzzRasterMaxPixels = WidgetWeaverRuntime.isRunningInAppExtension ? 220_000 : 620_000
+                c.fuzzClumpCellPixels = 12.0
+                c.fuzzEdgePower = 0.65
+                c.fuzzHazeStrength = 0.72
+                c.fuzzSpeckStrength = 1.0
+                c.fuzzInsideThreshold = 14
 
-                // Baseline: subtle blue-grey.
-                c.baselineColor = Color(red: 0.46, green: 0.62, blue: 0.80)
-                c.baselineLineOpacity = 0.14
+                // Baseline.
+                c.baselineColor = accent
+                c.baselineLineOpacity = 0.22
                 c.baselineEndFadeFraction = 0.040
 
                 return c
@@ -243,6 +269,7 @@ private struct WeatherNowcastSurfacePlot: View {
     ) -> UInt64 {
         let minute = Int64(floor(forecastStart.timeIntervalSince1970 / 60.0))
         var seed = RainSurfacePRNG.combine(UInt64(bitPattern: minute), widgetFamily)
+
         if let latitude, let longitude {
             let latQ = Int64((latitude * 10_000.0).rounded())
             let lonQ = Int64((longitude * 10_000.0).rounded())
@@ -251,11 +278,13 @@ private struct WeatherNowcastSurfacePlot: View {
         } else {
             seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
         }
+
         return seed
     }
 
     private func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [WidgetWeaverWeatherMinutePoint] {
         guard targetMinutes > 0 else { return [] }
+
         guard !points.isEmpty else {
             return Array(
                 repeating: WidgetWeaverWeatherMinutePoint(
@@ -275,6 +304,7 @@ private struct WeatherNowcastSurfacePlot: View {
             let lastDate = out.last?.date ?? Date()
             let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
             let needed = targetMinutes - out.count
+
             for i in 1...needed {
                 let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
                 out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))

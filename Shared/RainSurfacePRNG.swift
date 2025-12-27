@@ -65,38 +65,49 @@ struct RainSurfacePRNG {
         return combine(combine(i, a), b)
     }
 
-    /// Stable hash → [0, 1) for grid dithering (blue-noise-ish by coordinate hashing).
+    /// Deterministic 2D hash (0...1), suitable for per-pixel dithering.
     static func hash2D01(x: Int, y: Int, seed: UInt64) -> Double {
         let ux = UInt64(bitPattern: Int64(x))
         let uy = UInt64(bitPattern: Int64(y))
-        let h = combine(seed, combine(ux, uy))
-        let v = h >> 11
-        return Double(v) / Double(1 << 53)
+
+        // Coordinate mixing with distinct odd constants to reduce correlation.
+        var h = combine(seed, ux &* 0x9E3779B97F4A7C15)
+        h = combine(h, uy &* 0xD6E8FEB86659FD93)
+
+        // Map to [0, 1) using the top 53 bits (Double mantissa).
+        return Double(h >> 11) / Double(1 << 53)
     }
 
-    /// Cheap 2D value-noise in [0, 1), continuous across pixels.
-    /// This intentionally avoids expensive gradients; it is used only to clump the mist.
-    static func valueNoise2D01(x: Int, y: Int, seed: UInt64, cell: Int) -> Double {
-        let c = max(1, cell)
-        let fx = Double(x) / Double(c)
-        let fy = Double(y) / Double(c)
+    /// Low-frequency value noise (0...1) using bilinear interpolation between hashed lattice points.
+    static func valueNoise2D01(x: Double, y: Double, cell: Double, seed: UInt64) -> Double {
+        let c = max(1e-6, cell)
+        let gx = x / c
+        let gy = y / c
 
-        let x0 = Int(floor(fx))
-        let y0 = Int(floor(fy))
+        let x0 = Int(floor(gx))
+        let y0 = Int(floor(gy))
+        let fx = gx - Double(x0)
+        let fy = gy - Double(y0)
 
-        let tx = fx - Double(x0)
-        let ty = fy - Double(y0)
+        let u = smoothstep01(fx)
+        let v = smoothstep01(fy)
 
-        let sx = RainSurfaceMath.smoothstep01(tx)
-        let sy = RainSurfaceMath.smoothstep01(ty)
+        let a = hash2D01(x: x0, y: y0, seed: seed)
+        let b = hash2D01(x: x0 + 1, y: y0, seed: seed)
+        let c0 = hash2D01(x: x0, y: y0 + 1, seed: seed)
+        let d = hash2D01(x: x0 + 1, y: y0 + 1, seed: seed)
 
-        let v00 = hash2D01(x: x0, y: y0, seed: seed)
-        let v10 = hash2D01(x: x0 + 1, y: y0, seed: seed)
-        let v01 = hash2D01(x: x0, y: y0 + 1, seed: seed)
-        let v11 = hash2D01(x: x0 + 1, y: y0 + 1, seed: seed)
+        let ab = lerp(a, b, u)
+        let cd = lerp(c0, d, u)
+        return lerp(ab, cd, v)
+    }
 
-        let a = RainSurfaceMath.lerp(v00, v10, sx)
-        let b = RainSurfaceMath.lerp(v01, v11, sx)
-        return RainSurfaceMath.lerp(a, b, sy)
+    private static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        a + (b - a) * t
+    }
+
+    private static func smoothstep01(_ u: Double) -> Double {
+        let x = max(0.0, min(1.0, u))
+        return x * x * (3.0 - 2.0 * x)
     }
 }
