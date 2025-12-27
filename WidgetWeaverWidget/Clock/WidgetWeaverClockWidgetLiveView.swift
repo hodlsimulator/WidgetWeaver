@@ -5,156 +5,103 @@
 //  Created by . . on 12/25/25.
 //
 
-import Foundation
 import SwiftUI
+import Foundation
 
 private enum WWClockWidgetSweepTuning {
-    // The render host can re-render late or skip entries. Large jumps are handled by snapping.
-    static let contiguousToleranceSeconds: TimeInterval = 6.0
-
-    // Degrees-of-error threshold for deciding whether a snap-to-start is required.
-    // Second-hand velocity is 6 degrees/second.
-    static let maxSnapErrorDegrees: Double = 36.0
-
-    // Guardrails for the long-running linear sweep.
-    static let minAnimatableDurationSeconds: TimeInterval = 5.0
-    static let maxAnimatableDurationSeconds: TimeInterval = 60.0 * 60.0 * 2.0
-
-    static let showDebugOverlay: Bool = false
+    static let resyncThresholdSeconds: TimeInterval = 1.0
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
-    let entryDate: Date
-    let nextDate: Date
 
-    @State private var hourDegrees: Double
-    @State private var minuteDegrees: Double
-    @State private var secondDegrees: Double
+    /// Deterministic anchor for WidgetKit pre-rendering.
+    /// The view re-syncs itself to `Date()` when it becomes visible.
+    let startDate: Date
 
+    @State private var baseDate: Date
     @State private var started: Bool = false
-    @State private var lastEntryDate: Date? = nil
-    @State private var lastTargetDate: Date? = nil
 
-    init(palette: WidgetWeaverClockPalette, entryDate: Date, nextDate: Date) {
+    @State private var secPhase: Double = 0
+    @State private var minPhase: Double = 0
+    @State private var hourPhase: Double = 0
+
+    init(palette: WidgetWeaverClockPalette, startDate: Date) {
         self.palette = palette
-        self.entryDate = entryDate
-        self.nextDate = nextDate
-
-        let startAngles = WidgetWeaverClockMonotonicAngles(date: entryDate)
-        _hourDegrees = State(initialValue: startAngles.hourDegrees)
-        _minuteDegrees = State(initialValue: startAngles.minuteDegrees)
-        _secondDegrees = State(initialValue: startAngles.secondDegrees)
+        self.startDate = startDate
+        _baseDate = State(initialValue: startDate)
     }
 
     var body: some View {
-        let hourAngle = Angle.degrees(hourDegrees)
-        let minuteAngle = Angle.degrees(minuteDegrees)
-        let secondAngle = Angle.degrees(secondDegrees)
+        let baseAngles = WWClockBaseAngles(date: baseDate)
 
-        ZStack(alignment: .bottomTrailing) {
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: hourAngle,
-                minuteAngle: minuteAngle,
-                secondAngle: secondAngle
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        let hourAngle = Angle.degrees(baseAngles.hour + hourPhase * 360.0)
+        let minuteAngle = Angle.degrees(baseAngles.minute + minPhase * 360.0)
+        let secondAngle = Angle.degrees(baseAngles.second + secPhase * 360.0)
 
-            #if DEBUG
-            if WWClockWidgetSweepTuning.showDebugOverlay {
-                let duration = nextDate.timeIntervalSince(entryDate)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("entry: \(entryDate, format: .dateTime.hour().minute().second())")
-                    Text("next:  \(nextDate, format: .dateTime.hour().minute().second())")
-                    Text("dt: \(duration, format: .number.precision(.fractionLength(3)))")
-                }
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary.opacity(0.70))
-                .padding(6)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: hourAngle,
+            minuteAngle: minuteAngle,
+            secondAngle: secondAngle
+        )
+        .onAppear {
+            DispatchQueue.main.async {
+                syncAndStartIfNeeded()
             }
-            #endif
         }
-        .task(id: entryDate) {
-            await MainActor.run {
-                applyEntryAndStartSweep()
+        .task {
+            DispatchQueue.main.async {
+                syncAndStartIfNeeded()
             }
         }
     }
 
-    @MainActor
-    private func applyEntryAndStartSweep() {
-        let startAngles = WidgetWeaverClockMonotonicAngles(date: entryDate)
-        let endAngles = WidgetWeaverClockMonotonicAngles(date: nextDate)
-
-        let duration = nextDate.timeIntervalSince(entryDate)
-        let animatableDuration = duration >= WWClockWidgetSweepTuning.minAnimatableDurationSeconds
-            && duration <= WWClockWidgetSweepTuning.maxAnimatableDurationSeconds
-
-        var shouldSnapToStart = !started
-
-        if let lastEntryDate, let lastTargetDate {
-            let expectedDt = lastTargetDate.timeIntervalSince(lastEntryDate)
-            let actualDt = entryDate.timeIntervalSince(lastEntryDate)
-
-            let contiguous = abs(actualDt - expectedDt) <= WWClockWidgetSweepTuning.contiguousToleranceSeconds
-
-            if contiguous {
-                let errH = abs(hourDegrees - startAngles.hourDegrees)
-                let errM = abs(minuteDegrees - startAngles.minuteDegrees)
-                let errS = abs(secondDegrees - startAngles.secondDegrees)
-                let worst = max(errH, max(errM, errS))
-
-                shouldSnapToStart = worst > WWClockWidgetSweepTuning.maxSnapErrorDegrees
-            } else {
-                shouldSnapToStart = true
-            }
-        }
-
-        if shouldSnapToStart {
-            withAnimation(.none) {
-                hourDegrees = startAngles.hourDegrees
-                minuteDegrees = startAngles.minuteDegrees
-                secondDegrees = startAngles.secondDegrees
-            }
-        }
-
-        guard animatableDuration else {
-            started = true
-            self.lastEntryDate = entryDate
-            self.lastTargetDate = nextDate
-            return
-        }
-
-        // Starting on the next runloop tick yields a stable “from” state for CoreAnimation.
-        DispatchQueue.main.async {
-            withAnimation(.linear(duration: duration)) {
-                hourDegrees = endAngles.hourDegrees
-                minuteDegrees = endAngles.minuteDegrees
-                secondDegrees = endAngles.secondDegrees
-            }
-        }
+    private func syncAndStartIfNeeded() {
+        let now = Date()
+        let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > WWClockWidgetSweepTuning.resyncThresholdSeconds)
+        guard shouldResync else { return }
 
         started = true
-        lastEntryDate = entryDate
-        lastTargetDate = nextDate
+        baseDate = now
+
+        withAnimation(.none) {
+            secPhase = 0
+            minPhase = 0
+            hourPhase = 0
+        }
+
+        withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
+            secPhase = 1.0
+        }
+        withAnimation(.linear(duration: 3600.0).repeatForever(autoreverses: false)) {
+            minPhase = 1.0
+        }
+        withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
+            hourPhase = 1.0
+        }
     }
 }
 
-private struct WidgetWeaverClockMonotonicAngles {
-    let hourDegrees: Double
-    let minuteDegrees: Double
-    let secondDegrees: Double
+private struct WWClockBaseAngles {
+    let hour: Double
+    let minute: Double
+    let second: Double
 
     init(date: Date) {
         let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: date))
-        let localSeconds = date.timeIntervalSince1970 + tz
+        let local = date.timeIntervalSince1970 + tz
 
-        secondDegrees = localSeconds * 6.0
-        minuteDegrees = localSeconds * (360.0 / 3600.0)
-        hourDegrees = localSeconds * (360.0 / 43200.0)
+        let sec = local.truncatingRemainder(dividingBy: 60.0)
+        let minTotal = (local / 60.0).truncatingRemainder(dividingBy: 60.0)
+        let hourTotal = (local / 3600.0).truncatingRemainder(dividingBy: 12.0)
+
+        let secondDeg = sec * 6.0
+        let minuteDeg = (minTotal + sec / 60.0) * 6.0
+        let hourDeg = (hourTotal + minTotal / 60.0 + sec / 3600.0) * 30.0
+
+        self.second = secondDeg
+        self.minute = minuteDeg
+        self.hour = hourDeg
     }
 }
