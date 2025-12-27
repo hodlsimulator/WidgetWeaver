@@ -11,15 +11,16 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Conservative cadence: hourly entries.
-    static let stepSeconds: TimeInterval = 60.0 * 60.0
-    static let maxEntries: Int = 24
+    // Conservative provider cadence.
+    // The live sweep is handled in-view; the provider is only a periodic resync.
+    static let stepSeconds: TimeInterval = 60.0 * 60.0   // 60m
+    static let maxEntries: Int = 24                       // 24h
 
-    static func floorAlignedBase(for now: Date) -> Date {
+    static func nextAlignedBoundary(after date: Date) -> Date {
         let step = stepSeconds
-        let t = now.timeIntervalSince1970
-        let alignedT = floor(t / step) * step
-        return Date(timeIntervalSince1970: alignedT)
+        let t = date.timeIntervalSince1970
+        let base = floor(t / step) * step
+        return Date(timeIntervalSince1970: base + step)
     }
 }
 
@@ -89,19 +90,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        let step = WWClockTimelineTuning.stepSeconds
-        let base = WWClockTimelineTuning.floorAlignedBase(for: now)
-
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineTuning.maxEntries + 1)
 
-        // Seed entry for immediate correctness at render time.
+        // A “now” entry prevents future anchors (eg near the next boundary).
         entries.append(Entry(date: now, colourScheme: scheme))
 
-        // Hourly boundaries ahead (strictly increasing).
-        let firstBoundary = base.addingTimeInterval(step)
+        let first = WWClockTimelineTuning.nextAlignedBoundary(after: now)
+        let step = WWClockTimelineTuning.stepSeconds
+
         for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = firstBoundary.addingTimeInterval(Double(i) * step)
+            let d = first.addingTimeInterval(Double(i) * step)
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
