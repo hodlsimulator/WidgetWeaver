@@ -11,9 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Try 1s entries. Keep the horizon short to reduce pressure on WidgetKit.
-    static let stepSeconds: TimeInterval = 1.0
-    static let entriesAfterBoundary: Int = 60 // 60s (+ one "now" entry)
+    // Provider timelines at 1s are commonly coalesced on Home Screen.
+    // Using longer segments keeps the sweep smooth while reducing visible resync and timeline pressure.
+    static let stepSeconds: TimeInterval = 15.0
+    static let entriesAfterBoundary: Int = 240 // 1 hour of 15s entries (+ one "now" entry)
 }
 
 // MARK: - Configuration
