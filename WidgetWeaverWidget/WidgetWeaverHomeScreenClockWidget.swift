@@ -11,16 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Conservative cadence: 60 minutes -> 24 entries/day (+ an immediate "now" entry).
+    // Budget-friendly baseline:
+    // 60 minutes -> 24 entries/day.
     static let tickSeconds: TimeInterval = 60.0 * 60.0
     static let maxEntries: Int = 24
-
-    static func floorAlignedBase(for now: Date) -> Date {
-        let step = tickSeconds
-        let t = now.timeIntervalSince1970
-        let alignedT = floor(t / step) * step
-        return Date(timeIntervalSince1970: alignedT)
-    }
 }
 
 // MARK: - Configuration
@@ -87,20 +81,18 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
 
+        let now = Date()
         let step = WWClockTimelineTuning.tickSeconds
-        let base = WWClockTimelineTuning.floorAlignedBase(for: now)
+        let t = now.timeIntervalSince1970
+        let alignedT = floor(t / step) * step
+        let base = Date(timeIntervalSince1970: alignedT)
 
         var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.maxEntries + 1)
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
 
-        // Immediate entry prevents “future entry selected” edge cases.
-        entries.append(Entry(date: now, colourScheme: scheme))
-
-        let firstBoundary = base.addingTimeInterval(step)
         for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = firstBoundary.addingTimeInterval(Double(i) * step)
+            let d = base.addingTimeInterval(Double(i) * step)
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 

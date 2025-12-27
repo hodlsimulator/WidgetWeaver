@@ -14,6 +14,8 @@ struct WidgetWeaverClockIconView: View {
     let minuteAngle: Angle
     let secondAngle: Angle
 
+    let showsSecondHand: Bool
+
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
@@ -23,12 +25,14 @@ struct WidgetWeaverClockIconView: View {
         hourAngle: Angle = .degrees(310.0),
         minuteAngle: Angle = .degrees(120.0),
         secondAngle: Angle = .degrees(180.0),
+        showsSecondHand: Bool = true,
         handsOpacity: Double = 1.0
     ) {
         self.palette = palette
         self.hourAngle = hourAngle
         self.minuteAngle = minuteAngle
         self.secondAngle = secondAngle
+        self.showsSecondHand = showsSecondHand
         self.handsOpacity = handsOpacity
     }
 
@@ -129,6 +133,10 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
 
+            let usedSecondLength: CGFloat = showsSecondHand ? secondLength : 0.0
+            let usedSecondWidth: CGFloat = showsSecondHand ? secondWidth : 0.0
+            let usedSecondTipSide: CGFloat = showsSecondHand ? secondTipSide : 0.0
+
             let hubBaseRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
                 scale: displayScale
@@ -201,9 +209,9 @@ struct WidgetWeaverClockIconView: View {
                             hourWidth: hourWidth,
                             minuteLength: minuteLength,
                             minuteWidth: minuteWidth,
-                            secondLength: secondLength,
-                            secondWidth: secondWidth,
-                            secondTipSide: secondTipSide,
+                            secondLength: usedSecondLength,
+                            secondWidth: usedSecondWidth,
+                            secondTipSide: usedSecondTipSide,
                             scale: displayScale
                         )
 
@@ -226,9 +234,9 @@ struct WidgetWeaverClockIconView: View {
                             minuteLength: minuteLength,
                             minuteWidth: minuteWidth,
                             secondAngle: secondAngle,
-                            secondLength: secondLength,
-                            secondWidth: secondWidth,
-                            secondTipSide: secondTipSide,
+                            secondLength: usedSecondLength,
+                            secondWidth: usedSecondWidth,
+                            secondTipSide: usedSecondTipSide,
                             hubCutoutRadius: hubBaseRadius + hubCapRadius * 0.12,
                             scale: displayScale
                         )
