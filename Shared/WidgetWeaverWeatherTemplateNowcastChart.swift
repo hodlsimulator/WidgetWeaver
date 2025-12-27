@@ -10,16 +10,17 @@
 
 import Foundation
 import SwiftUI
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
 
 struct WeatherNowcastChart: View {
+
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
     let showAxisLabels: Bool
-
     let forecastStart: Date
     let locationLatitude: Double?
     let locationLongitude: Double?
@@ -116,6 +117,7 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastSurfacePlot: View {
+
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
@@ -138,8 +140,10 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let n = series.count
 
+            // Certainty tapers towards the horizon.
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
+
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
@@ -161,64 +165,80 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.noiseSeed = seed
 
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
-
                 c.maxDenseSamples = isExt ? 180 : 900
 
-                // Fill the available plot height:
-                // baseline near the bottom, peaks mapped high with small headroom.
+                // Fill the available plot height.
                 c.baselineFractionFromTop = 0.90
                 c.topHeadroomFraction = 0.05
                 c.typicalPeakFraction = 0.80
-
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.52
 
-                // Keep segment endings tapered.
+                // Keep endings tapered.
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
+                // Core (no vertical gradient for the “no gradient” request).
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Let fuzz define the surface; rim tends to re-crisp the edge.
+                // Edge treatments off; fuzz defines the surface.
                 c.rimEnabled = false
-
                 c.glossEnabled = false
                 c.glintEnabled = false
 
-                // Fuzz: narrower, sharper falloff, stronger grain, and more inside contribution
-                // so it breaks up the edge instead of floating above it.
+                // ---------
+                // Fuzz: big behaviour changes:
+                // - Minimum fuzz always present so the surface reads as fuzz, not a crisp cut-out.
+                // - Threshold at 60%: below is strongly fuzzy.
+                // - Core-edge erosion on: fuzz replaces the surface instead of floating above it.
+                // ---------
+
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-                c.fuzzRasterMaxPixels = isExt ? 95_000 : 300_000
+                c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
 
-                c.fuzzMaxOpacity = isExt ? 0.36 : 0.40
-                c.fuzzWidthFraction = 0.16
-                c.fuzzWidthPixelsClamp = 10.0...85.0
+                c.fuzzMaxOpacity = isExt ? 0.46 : 0.50
 
-                c.fuzzBaseDensity = 0.92
-                c.fuzzHazeStrength = isExt ? 0.78 : 0.72
-                c.fuzzSpeckStrength = isExt ? 1.35 : 1.45
+                c.fuzzWidthFraction = 0.22
+                c.fuzzWidthPixelsClamp = 12.0...105.0
 
-                c.fuzzEdgePower = 1.65
-                c.fuzzClumpCellPixels = 9.0
-                c.fuzzMicroBlurPixels = isExt ? 0.35 : 0.55
+                c.fuzzBaseDensity = 0.96
+                c.fuzzHazeStrength = isExt ? 0.98 : 0.92
+                c.fuzzSpeckStrength = isExt ? 1.50 : 1.55
 
-                // Keep fuzz present even when certainty is high (but still “smoother = more certain”).
-                c.fuzzUncertaintyFloor = 0.34
-                c.fuzzUncertaintyExponent = 1.75
+                c.fuzzEdgePower = 1.05
+                c.fuzzClumpCellPixels = 10.0
+                c.fuzzMicroBlurPixels = isExt ? 0.55 : 0.75
 
-                c.fuzzLowHeightPower = 2.10
-                c.fuzzLowHeightBoost = 1.05
+                // Chance → fuzz.
+                c.fuzzChanceThreshold = 0.60
+                c.fuzzChanceTransition = 0.12
+                c.fuzzChanceMinStrength = 0.32
 
-                c.fuzzInsideWidthFactor = 0.85
-                c.fuzzInsideOpacityFactor = 0.85
-                c.fuzzInsideSpeckleFraction = 0.75
+                // Legacy uncertainty shaping still helps a bit near the horizon.
+                c.fuzzUncertaintyFloor = 0.10
+                c.fuzzUncertaintyExponent = 1.55
 
-                // Concentrate speckles hard at the edge (prevents tall fuzz plumes).
-                c.fuzzDistancePowerOutside = 2.40
-                c.fuzzDistancePowerInside = 2.00
+                // Ensure tapered / low-height regions stay fuzzy.
+                c.fuzzLowHeightPower = 2.05
+                c.fuzzLowHeightBoost = 1.20
 
+                // Inside contribution so fuzz straddles and extends below the surface.
+                c.fuzzInsideWidthFactor = 0.98
+                c.fuzzInsideOpacityFactor = 0.90
+                c.fuzzInsideSpeckleFraction = 0.90
+
+                // Spread grain through the band (less “only at the edge”).
+                c.fuzzDistancePowerOutside = 1.55
+                c.fuzzDistancePowerInside = 1.45
+
+                // Erode the core near the surface.
+                c.fuzzErodeEnabled = true
+                c.fuzzErodeStrength = 0.78
+                c.fuzzErodeEdgePower = 2.35
+
+                // Baseline.
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.035
@@ -278,7 +298,6 @@ private struct WeatherNowcastSurfacePlot: View {
             let lastDate = out.last?.date ?? Date()
             let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
             let needed = targetMinutes - out.count
-
             for i in 1...needed {
                 let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
                 out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
