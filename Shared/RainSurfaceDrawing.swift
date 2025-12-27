@@ -4,14 +4,12 @@
 //
 //  Created by . . on 12/23/25.
 //
+//  Core fill + fuzz-band replacement edge.
+//
 
 import Foundation
 import SwiftUI
 import CoreGraphics
-
-#if canImport(UIKit)
-import UIKit
-#endif
 
 enum RainSurfaceDrawing {
 
@@ -22,475 +20,113 @@ enum RainSurfaceDrawing {
         stepX: CGFloat,
         heights: [CGFloat],
         certainties: [Double],
-        corePath: Path,
-        topEdgePath: Path,
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
-        guard chartRect.width > 1, chartRect.height > 1 else { return }
         guard !heights.isEmpty else { return }
 
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
-        let maxHeight = max(heights.max() ?? 0, onePixel)
+        let corePath = RainSurfaceGeometry.makeCorePath(chartRect: chartRect, baselineY: baselineY, stepX: stepX, heights: heights)
+        let topEdgePath = RainSurfaceGeometry.makeTopEdgePath(chartRect: chartRect, baselineY: baselineY, stepX: stepX, heights: heights)
 
-        drawCore(
-            in: &context,
-            corePath: corePath,
-            topEdgePath: topEdgePath,
-            configuration: configuration,
-            displayScale: displayScale
-        )
+        // Core fill (solid; mockup wants no vertical gradient).
+        context.fill(corePath, with: .color(configuration.coreBodyColor))
 
-        if configuration.canEnableFuzz {
-            drawFuzzBandRaster(
+        // Fuzz edge + core erosion.
+        if configuration.canEnableFuzz, certainties.count == heights.count {
+            drawFuzzReplacingEdge(
                 in: &context,
                 chartRect: chartRect,
                 baselineY: baselineY,
                 stepX: stepX,
                 heights: heights,
                 certainties: certainties,
-                maxHeight: maxHeight,
                 configuration: configuration,
                 displayScale: displayScale
             )
         }
 
+        // Optional rim.
         if configuration.rimEnabled {
-            drawRim(
-                in: &context,
-                topEdgePath: topEdgePath,
-                corePath: corePath,
-                configuration: configuration,
-                displayScale: displayScale
-            )
+            drawRim(in: &context, topEdgePath: topEdgePath, configuration: configuration, displayScale: displayScale)
         }
 
+        // Optional glints.
         if configuration.glintEnabled {
-            drawGlints(
-                in: &context,
-                chartRect: chartRect,
-                baselineY: baselineY,
-                stepX: stepX,
-                heights: heights,
-                maxHeight: maxHeight,
-                corePath: corePath,
-                configuration: configuration,
-                displayScale: displayScale
-            )
+            drawGlints(in: &context, chartRect: chartRect, baselineY: baselineY, stepX: stepX, heights: heights, configuration: configuration, displayScale: displayScale)
         }
+
+        // Baseline.
+        drawBaseline(in: &context, chartRect: chartRect, baselineY: baselineY, configuration: configuration, displayScale: displayScale)
     }
 
-    // MARK: - Fuzz (bounded surface band, raster, inside + outside, plus core-edge erosion)
+    // MARK: - Baseline
 
-    private static func drawFuzzBandRaster(
-        in context: inout GraphicsContext,
-        chartRect: CGRect,
-        baselineY: CGFloat,
-        stepX: CGFloat,
-        heights: [CGFloat],
-        certainties: [Double],
-        maxHeight: CGFloat,
-        configuration: RainForecastSurfaceConfiguration,
-        displayScale: CGFloat
-    ) {
-        guard chartRect.width > 2, chartRect.height > 2 else { return }
-        guard heights.count >= 2 else { return }
+    static func drawBaseline(in context: inout GraphicsContext, chartRect: CGRect, baselineY: CGFloat, configuration: RainForecastSurfaceConfiguration, displayScale: CGFloat) {
+        let alpha = max(0.0, min(1.0, configuration.baselineLineOpacity))
+        if alpha <= 0.000_1 { return }
 
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
+        let y = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
+        let fade = RainSurfaceMath.clamp(configuration.baselineEndFadeFraction, min: 0.0, max: 0.45)
 
-        let desiredPx = Double(chartRect.height * configuration.fuzzWidthFraction * scale)
-        let clampedPx = RainSurfaceMath.clamp(
-            desiredPx,
-            min: configuration.fuzzWidthPixelsClamp.lowerBound,
-            max: configuration.fuzzWidthPixelsClamp.upperBound
-        )
-        let bandPoints = CGFloat(clampedPx / Double(scale))
-        if bandPoints <= onePixel { return }
+        var path = Path()
+        path.move(to: CGPoint(x: chartRect.minX, y: y))
+        path.addLine(to: CGPoint(x: chartRect.maxX, y: y))
 
-        let clipH = max(onePixel, baselineY - chartRect.minY)
-        let clipRect = CGRect(x: chartRect.minX, y: chartRect.minY, width: chartRect.width, height: clipH)
-
-        let maxPixels = max(24_000, configuration.fuzzRasterMaxPixels)
-        let areaPoints = max(1.0, Double(clipRect.width * clipRect.height))
-        let maxScaleBudget = sqrt(Double(maxPixels) / areaPoints)
-        let rasterScale = CGFloat(max(0.45, min(Double(scale), maxScaleBudget)))
-
-        let w = max(2, Int(ceil(chartRect.width * rasterScale)))
-        let h = max(2, Int(ceil(chartRect.height * rasterScale)))
-
-        let baselinePx = Double((baselineY - chartRect.minY) * rasterScale)
-        let yMax = max(1, min(h, Int(floor(baselinePx))))
-
-        let bandPxBase = Double(bandPoints * rasterScale)
-        if bandPxBase <= 1.0 { return }
-
-        let insideWidthFactor = RainSurfaceMath.clamp(configuration.fuzzInsideWidthFactor, min: 0.10, max: 1.00)
-        let insideOpacityFactor = RainSurfaceMath.clamp(configuration.fuzzInsideOpacityFactor, min: 0.0, max: 1.0)
-        let insideSpeckleFrac = RainSurfaceMath.clamp(configuration.fuzzInsideSpeckleFraction, min: 0.0, max: 1.0)
-
-        let maxOpacity = RainSurfaceMath.clamp(configuration.fuzzMaxOpacity, min: 0.02, max: 0.75)
-        let baseDensity = RainSurfaceMath.clamp(configuration.fuzzBaseDensity, min: 0.05, max: 0.995)
-
-        let uncertaintyFloor = RainSurfaceMath.clamp(configuration.fuzzUncertaintyFloor, min: 0.0, max: 0.95)
-        let uncertaintyExponent = RainSurfaceMath.clamp(configuration.fuzzUncertaintyExponent, min: 0.35, max: 7.0)
-
-        let chanceThreshold = RainSurfaceMath.clamp01(configuration.fuzzChanceThreshold)
-        let chanceTransition = max(0.000_001, configuration.fuzzChanceTransition)
-        let chanceMinStrength = RainSurfaceMath.clamp(configuration.fuzzChanceMinStrength, min: 0.0, max: 1.0)
-
-        let lowHeightPower = max(0.8, configuration.fuzzLowHeightPower)
-        let lowHeightBoost = RainSurfaceMath.clamp(configuration.fuzzLowHeightBoost, min: 0.0, max: 1.6)
-
-        let edgePower = max(0.20, configuration.fuzzEdgePower)
-        let hazeStrength = RainSurfaceMath.clamp(configuration.fuzzHazeStrength, min: 0.0, max: 2.0)
-        let speckStrength = RainSurfaceMath.clamp(configuration.fuzzSpeckStrength, min: 0.0, max: 2.0)
-
-        let speckEdgeOutPow = RainSurfaceMath.clamp(configuration.fuzzDistancePowerOutside, min: 1.0, max: 4.0)
-        let speckEdgeInPow = RainSurfaceMath.clamp(configuration.fuzzDistancePowerInside, min: 1.0, max: 4.0)
-
-        let erodeEnabled = configuration.fuzzErodeEnabled
-        let erodeStrength = RainSurfaceMath.clamp(configuration.fuzzErodeStrength, min: 0.0, max: 1.0)
-        let erodeEdgePower = max(0.60, configuration.fuzzErodeEdgePower)
-
-        let clumpCell = max(2.0, configuration.fuzzClumpCellPixels)
-
-        let seed = configuration.noiseSeed
-        let sizeSalt = RainSurfacePRNG.combine(
-            UInt64(w) &* 0x9E3779B97F4A7C15,
-            UInt64(h) &* 0xD6E8FEB86659FD93
-        )
-        let baseSeed = RainSurfacePRNG.combine(seed, sizeSalt)
-        let seedClump = RainSurfacePRNG.combine(baseSeed, 0xA71D6A4F3FDC5A19)
-        let seedFine = RainSurfacePRNG.combine(baseSeed, 0xC6BC279692B5C323)
-        let seedFine2 = RainSurfacePRNG.combine(baseSeed, 0xD1B54A32D192ED03)
-
-        let rgb = rgbComponents(from: configuration.fuzzColor, fallback: (r: 13, g: 82, b: 255))
-
-        let n = heights.count
-        let maxHeightSafe = max(maxHeight, onePixel)
-
-        var ySurfacePxByX = [Double](repeating: 0.0, count: w)
-        var strengthByX = [Double](repeating: 0.0, count: w)
-        var erodeByX = [Double](repeating: 0.0, count: w)
-        var bandOutByX = [Double](repeating: bandPxBase, count: w)
-        var bandInByX = [Double](repeating: bandPxBase * insideWidthFactor, count: w)
-
-        for x in 0..<w {
-            let t = (w <= 1) ? 0.0 : (Double(x) / Double(w - 1))
-            let idxF = t * Double(n - 1)
-            let i0 = max(0, min(n - 2, Int(floor(idxF))))
-            let i1 = i0 + 1
-            let frac = idxF - Double(i0)
-
-            let hPt = Double(RainSurfaceMath.lerp(heights[i0], heights[i1], CGFloat(frac)))
-            let chance0 = (i0 < certainties.count) ? RainSurfaceMath.clamp01(certainties[i0]) : 1.0
-            let chance1 = (i1 < certainties.count) ? RainSurfaceMath.clamp01(certainties[i1]) : chance0
-            let chance = RainSurfaceMath.clamp01(RainSurfaceMath.lerp(chance0, chance1, frac))
-
-            let lowH = 1.0 - RainSurfaceMath.clamp01(hPt / Double(maxHeightSafe))
-            let lowBoost = pow(max(0.0, lowH), lowHeightPower) * lowHeightBoost
-
-            let legacyUncertainty = pow(
-                RainSurfaceMath.clamp01(uncertaintyFloor + (1.0 - uncertaintyFloor) * (1.0 - chance)),
-                uncertaintyExponent
-            )
-
-            let threshFuzz = fuzzStrengthFromChance(
-                chance: chance,
-                threshold: chanceThreshold,
-                transition: chanceTransition
-            )
-
-            var s = max(chanceMinStrength, max(legacyUncertainty, threshFuzz))
-            s = max(s, lowBoost)
-            s = RainSurfaceMath.clamp01(s)
-
-            strengthByX[x] = s
-
-            let widthMod = (0.85 + 1.15 * s) * (0.80 + 0.55 * lowH)
-            let outW = max(1.0, bandPxBase * widthMod)
-            bandOutByX[x] = outW
-            bandInByX[x] = max(1.0, outW * insideWidthFactor)
-
-            if erodeEnabled && erodeStrength > 0.001 {
-                let ek = erodeStrength * (0.25 + 0.75 * s)
-                erodeByX[x] = RainSurfaceMath.clamp01(ek)
-            } else {
-                erodeByX[x] = 0.0
-            }
-
-            let ySurfacePoints = baselineY - CGFloat(hPt)
-            ySurfacePxByX[x] = Double((ySurfacePoints - chartRect.minY) * rasterScale)
+        if fade <= 0.000_1 {
+            context.stroke(path, with: .color(configuration.baselineColor.opacity(alpha)), lineWidth: 1.0 / displayScale)
+            return
         }
 
-        var fuzzBytes = [UInt8](repeating: 0, count: w * h * 4)
-        var erodeBytes = [UInt8](repeating: 0, count: w * h * 4)
+        // Fade ends with a gradient stroke by drawing 3 segments.
+        let w = chartRect.width
+        let leftW = w * fade
+        let rightW = w * fade
 
-        var hasAnyFuzz = false
-        var hasAnyErode = false
+        let x0 = chartRect.minX
+        let x1 = chartRect.minX + leftW
+        let x2 = chartRect.maxX - rightW
+        let x3 = chartRect.maxX
 
-        for y in 0..<yMax {
-            for x in 0..<w {
-                let ySurface = ySurfacePxByX[x]
-                let dy = Double(y) - ySurface
-                let inside = dy >= 0.0
+        func strokeSegment(xa: CGFloat, xb: CGFloat, a0: Double, a1: Double) {
+            var seg = Path()
+            seg.move(to: CGPoint(x: xa, y: y))
+            seg.addLine(to: CGPoint(x: xb, y: y))
 
-                let dist = abs(dy)
-                let band = inside ? bandInByX[x] : bandOutByX[x]
-                if dist > band { continue }
-
-                let u = max(0.0, 1.0 - (dist / max(1e-6, band)))
-                if u <= 0.0 { continue }
-
-                let s = strengthByX[x]
-                if s <= 0.0005 { continue }
-
-                let edge = pow(u, edgePower)
-
-                let clump = RainSurfacePRNG.valueNoise2D01(
-                    x: Double(x),
-                    y: Double(y),
-                    cell: clumpCell,
-                    seed: seedClump
-                )
-                let r0 = RainSurfacePRNG.hash2D01(x: x, y: y, seed: seedFine)
-                let r1 = RainSurfacePRNG.hash2D01(x: x &+ 17, y: y &+ 31, seed: seedFine2)
-
-                let sCurve = pow(max(0.0, s), 0.92)
-
-                let sideOpacity = inside ? (maxOpacity * insideOpacityFactor) : maxOpacity
-                let sideHazeMul = inside ? 1.08 : 1.0
-                let sideSpeckMul = inside ? (insideSpeckleFrac * insideOpacityFactor) : 1.0
-
-                var alpha = 0.0
-
-                // Continuous haze (this is the “surface is made of fuzz” base layer).
-                alpha += sideOpacity
-                    * sCurve
-                    * edge
-                    * (0.090 + 0.260 * hazeStrength * sideHazeMul * (0.50 + 0.50 * clump))
-
-                // Speckles: grain sits inside the haze and provides structure.
-                let speckEdgePow = inside ? speckEdgeInPow : speckEdgeOutPow
-                let speckEdge = pow(u, speckEdgePow)
-                let speckPos = 0.25 + 0.75 * speckEdge
-
-                var speckProb = baseDensity
-                    * speckStrength
-                    * sideSpeckMul
-                    * sCurve
-                    * speckPos
-                    * (0.55 + 0.45 * clump)
-
-                speckProb = min(speckProb, 0.82)
-
-                if r0 < speckProb {
-                    alpha += sideOpacity
-                        * sCurve
-                        * edge
-                        * (0.65 + 0.35 * r1)
-                        * (0.70 + 0.30 * clump)
-                }
-
-                // Occasional extra haze clumps.
-                let hazeProb = baseDensity
-                    * hazeStrength
-                    * sCurve
-                    * edge
-                    * 0.12
-                    * (0.50 + 0.50 * clump)
-
-                if r1 < hazeProb {
-                    alpha += sideOpacity
-                        * sCurve
-                        * edge
-                        * 0.22
-                        * (0.35 + 0.65 * r0)
-                }
-
-                alpha = min(alpha, sideOpacity)
-
-                if alpha > 0.001 {
-                    let idx = y * w + x
-                    let o = idx * 4
-                    fuzzBytes[o + 0] = UInt8(min(255.0, (Double(rgb.r) * alpha).rounded()))
-                    fuzzBytes[o + 1] = UInt8(min(255.0, (Double(rgb.g) * alpha).rounded()))
-                    fuzzBytes[o + 2] = UInt8(min(255.0, (Double(rgb.b) * alpha).rounded()))
-                    fuzzBytes[o + 3] = UInt8(min(255.0, (alpha * 255.0).rounded()))
-                    hasAnyFuzz = true
-                }
-
-                // Core-edge erosion mask (inside only).
-                if erodeEnabled && inside {
-                    let ek = erodeByX[x]
-                    if ek > 0.0005 {
-                        let erodeEdge = pow(u, erodeEdgePower)
-
-                        // Continuous soft erosion keeps the anti-aliased edge from reading as “clean”.
-                        var maskAlpha = ek * erodeEdge * (0.18 + 0.10 * clump)
-
-                        // Hole bursts: these create the broken, fuzzy boundary that fuzz fills.
-                        let holeProb = min(
-                            1.0,
-                            ek * erodeEdge * baseDensity * (0.35 + 0.45 * clump)
-                        )
-
-                        if r1 < holeProb {
-                            maskAlpha += ek * erodeEdge * (0.35 + 0.65 * r0)
-                        }
-
-                        maskAlpha = RainSurfaceMath.clamp01(maskAlpha)
-
-                        if maskAlpha > 0.001 {
-                            let idx = y * w + x
-                            let o = idx * 4
-                            erodeBytes[o + 0] = 255
-                            erodeBytes[o + 1] = 255
-                            erodeBytes[o + 2] = 255
-                            erodeBytes[o + 3] = UInt8(min(255.0, (maskAlpha * 255.0).rounded()))
-                            hasAnyErode = true
-                        }
-                    }
-                }
+            // Approximate gradient by drawing multiple thin strokes.
+            let steps = 12
+            for i in 0..<steps {
+                let t = Double(i) / Double(max(1, steps - 1))
+                let a = RainSurfaceMath.lerp(a0, a1, t)
+                context.stroke(seg, with: .color(configuration.baselineColor.opacity(alpha * a)), lineWidth: 1.0 / displayScale)
             }
         }
 
-        if hasAnyErode, let erodeCG = makeCGImageRGBA(bytes: erodeBytes, width: w, height: h) {
+        strokeSegment(xa: x0, xb: x1, a0: 0.0, a1: 1.0)
+        strokeSegment(xa: x1, xb: x2, a0: 1.0, a1: 1.0)
+        strokeSegment(xa: x2, xb: x3, a0: 1.0, a1: 0.0)
+    }
+
+    // MARK: - Rim
+
+    private static func drawRim(in context: inout GraphicsContext, topEdgePath: Path, configuration: RainForecastSurfaceConfiguration, displayScale: CGFloat) {
+        let innerA = max(0.0, min(1.0, configuration.rimInnerOpacity))
+        let outerA = max(0.0, min(1.0, configuration.rimOuterOpacity))
+        let innerW = max(0.0, configuration.rimInnerWidthPixels) / Double(displayScale)
+        let outerBlur = max(0.0, configuration.rimOuterWidthPixels) / Double(displayScale)
+
+        if innerA > 0.000_1, innerW > 0.000_1 {
+            context.stroke(topEdgePath, with: .color(configuration.rimColor.opacity(innerA)), lineWidth: innerW)
+        }
+
+        if outerA > 0.000_1, outerBlur > 0.000_1 {
             context.drawLayer { layer in
-                layer.blendMode = .destinationOut
-                layer.clip(to: Path(chartRect))
-                layer.clip(to: Path(clipRect))
-                let img = Image(decorative: erodeCG, scale: rasterScale, orientation: .up)
-                layer.draw(img, in: chartRect)
-            }
-        }
-
-        if hasAnyFuzz, let fuzzCG = makeCGImageRGBA(bytes: fuzzBytes, width: w, height: h) {
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                layer.clip(to: Path(chartRect))
-                layer.clip(to: Path(clipRect))
-
-                let blurPoints = CGFloat(configuration.fuzzMicroBlurPixels / Double(scale))
-                if blurPoints > 0.01 {
-                    layer.addFilter(.blur(radius: blurPoints))
-                }
-
-                let img = Image(decorative: fuzzCG, scale: rasterScale, orientation: .up)
-                layer.draw(img, in: chartRect)
+                layer.addFilter(.blur(radius: outerBlur))
+                layer.stroke(topEdgePath, with: .color(configuration.rimColor.opacity(outerA)), lineWidth: 1.0 / displayScale)
             }
         }
     }
 
-    private static func fuzzStrengthFromChance(chance: Double, threshold: Double, transition: Double) -> Double {
-        // Returns 1 below threshold, 0 above, with smooth transition band.
-        let t = RainSurfaceMath.clamp01(threshold)
-        let w = max(0.000_001, transition)
-        let t0 = RainSurfaceMath.clamp01(t - w)
-        let t1 = RainSurfaceMath.clamp01(t + w)
-        let u = RainSurfaceMath.clamp01((chance - t0) / max(1e-9, (t1 - t0)))
-        let s = RainSurfaceMath.smoothstep01(u) // 0..1
-        return 1.0 - s
-    }
-
-    // MARK: - Core / Rim / Glints / Baseline
-
-    private static func drawCore(
-        in context: inout GraphicsContext,
-        corePath: Path,
-        topEdgePath: Path,
-        configuration: RainForecastSurfaceConfiguration,
-        displayScale: CGFloat
-    ) {
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
-
-        context.fill(corePath, with: .color(configuration.coreBodyColor.opacity(1.0)))
-
-        if configuration.glossEnabled {
-            let depthPx = RainSurfaceMath.clamp(
-                (configuration.glossDepthPixels.lowerBound + configuration.glossDepthPixels.upperBound) * 0.5,
-                min: configuration.glossDepthPixels.lowerBound,
-                max: configuration.glossDepthPixels.upperBound
-            )
-            let depth = CGFloat(depthPx / scale)
-
-            let opacity = RainSurfaceMath.clamp(configuration.glossMaxOpacity, min: 0.0, max: 1.0)
-
-            let shiftY = max(onePixel, depth * 0.33)
-            let bandPath = topEdgePath.applying(CGAffineTransform(translationX: 0, y: shiftY))
-            let bandPath2 = topEdgePath.applying(CGAffineTransform(translationX: 0, y: shiftY + max(onePixel, depth * 0.32)))
-
-            context.drawLayer { layer in
-                layer.blendMode = .screen
-
-                if configuration.glossSoftBlurPixels > 0.01 {
-                    layer.addFilter(.blur(radius: CGFloat(configuration.glossSoftBlurPixels / Double(scale))))
-                }
-
-                layer.stroke(
-                    bandPath2,
-                    with: .color(configuration.coreTopColor.opacity(opacity * 0.50)),
-                    style: StrokeStyle(lineWidth: max(onePixel, depth * 2.35), lineCap: .round, lineJoin: .round)
-                )
-                layer.stroke(
-                    bandPath,
-                    with: .color(configuration.coreTopColor.opacity(opacity)),
-                    style: StrokeStyle(lineWidth: max(onePixel, depth * 1.45), lineCap: .round, lineJoin: .round)
-                )
-
-                layer.blendMode = .destinationIn
-                layer.fill(corePath, with: .color(.white))
-            }
-        }
-    }
-
-    private static func drawRim(
-        in context: inout GraphicsContext,
-        topEdgePath: Path,
-        corePath: Path,
-        configuration: RainForecastSurfaceConfiguration,
-        displayScale: CGFloat
-    ) {
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
-
-        let innerW = max(onePixel, CGFloat(configuration.rimInnerWidthPixels / scale))
-        let outerW = max(innerW, CGFloat(configuration.rimOuterWidthPixels / scale))
-
-        let innerA = RainSurfaceMath.clamp(configuration.rimInnerOpacity, min: 0.0, max: 1.0)
-        let outerA = RainSurfaceMath.clamp(configuration.rimOuterOpacity, min: 0.0, max: 1.0)
-
-        if outerA > 0.0001 && outerW > onePixel {
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                layer.stroke(
-                    topEdgePath,
-                    with: .color(configuration.rimColor.opacity(outerA)),
-                    style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round)
-                )
-
-                layer.blendMode = .destinationOut
-                layer.fill(corePath, with: .color(.white))
-            }
-        }
-
-        if innerA > 0.0001 {
-            context.drawLayer { layer in
-                layer.blendMode = .screen
-                layer.stroke(
-                    topEdgePath,
-                    with: .color(configuration.rimColor.opacity(innerA)),
-                    style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round)
-                )
-
-                layer.blendMode = .destinationIn
-                layer.fill(corePath, with: .color(.white))
-            }
-        }
-    }
+    // MARK: - Glints
 
     private static func drawGlints(
         in context: inout GraphicsContext,
@@ -498,197 +134,412 @@ enum RainSurfaceDrawing {
         baselineY: CGFloat,
         stepX: CGFloat,
         heights: [CGFloat],
-        maxHeight: CGFloat,
-        corePath: Path,
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
+        let maxCount = max(0, configuration.glintMaxCount)
+        if maxCount == 0 { return }
 
-        let minFrac = RainSurfaceMath.clamp(configuration.glintMinHeightFraction, min: 0.35, max: 0.90)
-        let minH = maxHeight * CGFloat(minFrac)
+        let maxH = max(0.000_1, heights.max() ?? 0.0)
+        let minFrac = RainSurfaceMath.clamp(configuration.glintMinHeightFraction, min: 0.0, max: 1.0)
 
-        let peakIndices = localMaximaIndices(
-            heights: heights,
-            minHeight: minH,
-            maxCount: max(0, configuration.glintMaxCount),
-            minSeparationPoints: max(onePixel * 10, chartRect.width * 0.08),
-            stepX: stepX
-        )
+        // Find local maxima.
+        var peaks: [(idx: Int, h: CGFloat)] = []
+        for i in 1..<(heights.count - 1) {
+            let h0 = heights[i - 1]
+            let h1 = heights[i]
+            let h2 = heights[i + 1]
+            if h1 >= h0, h1 >= h2, h1 >= maxH * CGFloat(minFrac) {
+                peaks.append((i, h1))
+            }
+        }
 
-        guard !peakIndices.isEmpty else { return }
+        peaks.sort(by: { $0.h > $1.h })
+        if peaks.count > maxCount { peaks = Array(peaks.prefix(maxCount)) }
+
+        let blur = max(0.0, configuration.glintBlurPixels) / Double(displayScale)
+        let a = max(0.0, min(1.0, configuration.glintMaxOpacity))
+        if a <= 0.000_1 { return }
 
         context.drawLayer { layer in
-            layer.blendMode = .plusLighter
-
-            if configuration.glintBlurPixels > 0.01 {
-                layer.addFilter(.blur(radius: CGFloat(configuration.glintBlurPixels / Double(scale))))
+            if blur > 0.000_1 {
+                layer.addFilter(.blur(radius: blur))
             }
-
-            for idx in peakIndices {
-                let h = heights[idx]
-                let x = chartRect.minX + (CGFloat(idx) + 0.5) * stepX
-                let y = baselineY - h
-
-                let w0 = max(onePixel * 7.0, onePixel * 9.0)
-                let h0 = max(onePixel * 1.2, onePixel * 1.6)
-                let rect0 = CGRect(x: x - w0 * 0.5, y: y - h0 * 0.6, width: w0, height: h0)
-
-                layer.fill(
-                    Path(roundedRect: rect0, cornerRadius: h0 * 0.5),
-                    with: .color(configuration.glintColor.opacity(configuration.glintMaxOpacity * 0.52))
-                )
-
-                let w1 = max(onePixel * 4.0, onePixel * 5.5)
-                let h1 = max(onePixel * 0.9, onePixel * 1.2)
-                let rect1 = CGRect(x: x - w1 * 0.5, y: y - h1 * 0.6, width: w1, height: h1)
-
-                layer.fill(
-                    Path(roundedRect: rect1, cornerRadius: h1 * 0.5),
-                    with: .color(configuration.glintColor.opacity(configuration.glintMaxOpacity))
-                )
+            for p in peaks {
+                let x = chartRect.minX + (CGFloat(p.idx) + 0.5) * stepX
+                let y = baselineY - p.h
+                let r: CGFloat = max(2.0, min(9.0, chartRect.height * 0.05))
+                let rect = CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)
+                layer.fill(Path(ellipseIn: rect), with: .color(configuration.glintColor.opacity(a)))
             }
-
-            layer.blendMode = .destinationIn
-            layer.fill(corePath, with: .color(.white))
         }
     }
 
-    private static func localMaximaIndices(
-        heights: [CGFloat],
-        minHeight: CGFloat,
-        maxCount: Int,
-        minSeparationPoints: CGFloat,
-        stepX: CGFloat
-    ) -> [Int] {
-        guard heights.count >= 3, maxCount > 0 else { return [] }
+    // MARK: - Fuzz (key change)
 
-        var peaks: [(idx: Int, h: CGFloat)] = []
-        peaks.reserveCapacity(8)
-
-        for i in 1..<(heights.count - 1) {
-            let a = heights[i - 1]
-            let b = heights[i]
-            let c = heights[i + 1]
-            if b >= minHeight && b > a && b >= c {
-                peaks.append((i, b))
-            }
-        }
-
-        guard !peaks.isEmpty else { return [] }
-
-        peaks.sort { $0.h > $1.h }
-
-        var chosen: [Int] = []
-        chosen.reserveCapacity(min(maxCount, peaks.count))
-
-        for p in peaks {
-            if chosen.count >= maxCount { break }
-            let xP = CGFloat(p.idx) * stepX
-            let tooClose = chosen.contains { j in
-                abs(CGFloat(j) * stepX - xP) < minSeparationPoints
-            }
-            if !tooClose {
-                chosen.append(p.idx)
-            }
-        }
-
-        return chosen
-    }
-
-    static func drawBaseline(
+    private static func drawFuzzReplacingEdge(
         in context: inout GraphicsContext,
         chartRect: CGRect,
         baselineY: CGFloat,
+        stepX: CGFloat,
+        heights: [CGFloat],
+        certainties: [Double],
         configuration: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
-        guard chartRect.width > 1 else { return }
+        // Raster scale selection (bounded by fuzzRasterMaxPixels).
+        let maxPixels = max(10_000, configuration.fuzzRasterMaxPixels)
 
-        let scale = max(1.0, displayScale)
-        let onePixel = CGFloat(1.0 / scale)
+        let baseScale = min(displayScale, 0.85)
+        var rasterScale = max(0.35, baseScale)
 
-        let x0 = chartRect.minX
-        let x1 = chartRect.maxX
+        var w = max(2, Int((chartRect.width * rasterScale).rounded(.up)))
+        var h = max(2, Int((chartRect.height * rasterScale).rounded(.up)))
 
-        let fadeFrac = RainSurfaceMath.clamp(configuration.baselineEndFadeFraction, min: 0.03, max: 0.08)
-        let fadeW = max(onePixel, chartRect.width * fadeFrac)
+        if w * h > maxPixels {
+            let s = sqrt(Double(maxPixels) / Double(max(1, w * h)))
+            rasterScale = max(0.35, rasterScale * CGFloat(s))
+            w = max(2, Int((chartRect.width * rasterScale).rounded(.up)))
+            h = max(2, Int((chartRect.height * rasterScale).rounded(.up)))
+        }
 
-        let leftStop = min(1.0, Double(fadeW / chartRect.width))
-        let rightStop = max(0.0, 1.0 - Double(fadeW / chartRect.width))
+        let invScale = 1.0 / rasterScale
 
-        let gradient = Gradient(stops: [
-            .init(color: .white.opacity(0.0), location: 0.0),
-            .init(color: .white.opacity(1.0), location: leftStop),
-            .init(color: .white.opacity(1.0), location: rightStop),
-            .init(color: .white.opacity(0.0), location: 1.0)
-        ])
+        // Colour.
+        let rgba = colorRGBA(configuration.fuzzColor)
+        let maxOpacity = RainSurfaceMath.clamp(configuration.fuzzMaxOpacity, min: 0.0, max: 1.0)
 
-        let alphaMask = GraphicsContext.Shading.linearGradient(
-            gradient,
-            startPoint: CGPoint(x: x0, y: baselineY),
-            endPoint: CGPoint(x: x1, y: baselineY)
+        if maxOpacity <= 0.000_1 { return }
+
+        // Precompute per-x surface y (in pixels), band widths, strength.
+        var ySurfacePxByX = [Double](repeating: 0.0, count: w)
+        var bandOutByX = [Double](repeating: 0.0, count: w)
+        var bandInByX = [Double](repeating: 0.0, count: w)
+        var strengthByX = [Double](repeating: 0.0, count: w)
+        var wetMaskByX = [Bool](repeating: false, count: w)
+
+        // Band base (in pixels) from fraction-of-height and clamp.
+        let bandBasePxUnclamped = Double(chartRect.height) * Double(rasterScale) * configuration.fuzzWidthFraction
+        let bandBasePx = RainSurfaceMath.clamp(
+            bandBasePxUnclamped,
+            min: configuration.fuzzWidthPixelsClamp.lowerBound,
+            max: configuration.fuzzWidthPixelsClamp.upperBound
         )
 
-        var line = Path()
-        line.move(to: CGPoint(x: x0, y: baselineY))
-        line.addLine(to: CGPoint(x: x1, y: baselineY))
+        let maxH = max(0.000_001, Double(heights.max() ?? 0.0))
+        let baselineYPx = Double((baselineY - chartRect.minY) * rasterScale)
 
+        // Sample helper (centres).
+        func sampleHeightAtXPixel(_ xPix: Int) -> Double {
+            let xPoints = Double(chartRect.minX) + (Double(xPix) + 0.5) * Double(invScale)
+            let pos = (xPoints - Double(chartRect.minX)) / Double(stepX) - 0.5
+
+            if heights.count == 1 { return Double(heights[0]) }
+
+            let i0 = Int(floor(pos))
+            let t = pos - Double(i0)
+
+            if i0 <= 0 { return Double(heights[0]) }
+            if i0 >= heights.count - 1 { return Double(heights[heights.count - 1]) }
+
+            let a = Double(heights[i0])
+            let b = Double(heights[i0 + 1])
+            return RainSurfaceMath.lerp(a, b, t)
+        }
+
+        func sampleCertaintyAtXPixel(_ xPix: Int) -> Double {
+            let xPoints = Double(chartRect.minX) + (Double(xPix) + 0.5) * Double(invScale)
+            let pos = (xPoints - Double(chartRect.minX)) / Double(stepX) - 0.5
+
+            if certainties.count == 1 { return RainSurfaceMath.clamp01(certainties[0]) }
+
+            let i0 = Int(floor(pos))
+            let t = pos - Double(i0)
+
+            if i0 <= 0 { return RainSurfaceMath.clamp01(certainties[0]) }
+            if i0 >= certainties.count - 1 { return RainSurfaceMath.clamp01(certainties[certainties.count - 1]) }
+
+            let a = RainSurfaceMath.clamp01(certainties[i0])
+            let b = RainSurfaceMath.clamp01(certainties[i0 + 1])
+            return RainSurfaceMath.lerp(a, b, t)
+        }
+
+        // Strength from chance threshold (below threshold => strong fuzz, above => 0).
+        func fuzzStrengthFromChance(_ chance: Double) -> Double {
+            let t = RainSurfaceMath.clamp01(configuration.fuzzChanceThreshold)
+            let w = max(0.000_001, configuration.fuzzChanceTransition)
+            let low = t - 0.5 * w
+            let high = t + 0.5 * w
+            if chance <= low { return 1.0 }
+            if chance >= high { return 0.0 }
+            let u = (chance - low) / (high - low)
+            return 1.0 - RainSurfaceMath.smoothstep01(u)
+        }
+
+        // Pre-pass: wet mask.
+        for x in 0..<w {
+            let hPt = sampleHeightAtXPixel(x)
+            wetMaskByX[x] = hPt > (Double(invScale) * 0.20) // ~0.2px in points
+        }
+
+        // Wet proximity (decays as distance from any wet column grows).
+        let proxRadiusPx = max(8.0, min(120.0, Double(w) * 0.10))
+        var distToWet = [Int](repeating: Int.max / 4, count: w)
+
+        // Left scan.
+        var lastWet = -10_000
+        for x in 0..<w {
+            if wetMaskByX[x] { lastWet = x }
+            distToWet[x] = x - lastWet
+        }
+        // Right scan.
+        lastWet = 10_000
+        for x in stride(from: w - 1, through: 0, by: -1) {
+            if wetMaskByX[x] { lastWet = x }
+            let d = lastWet - x
+            distToWet[x] = min(distToWet[x], d)
+        }
+
+        func wetProximity(_ x: Int) -> Double {
+            let d = Double(max(0, distToWet[x]))
+            return exp(-d / proxRadiusPx)
+        }
+
+        // Precompute per-x arrays.
+        for x in 0..<w {
+            let hPt = max(0.0, sampleHeightAtXPixel(x))
+            let chance = RainSurfaceMath.clamp01(sampleCertaintyAtXPixel(x))
+
+            let ySurfPoints = Double(baselineY - CGFloat(hPt))
+            let ySurfPx = (ySurfPoints - Double(chartRect.minY)) * Double(rasterScale)
+            ySurfacePxByX[x] = ySurfPx
+
+            let hNorm = RainSurfaceMath.clamp01(hPt / maxH)
+            let presence = sqrt(hNorm) // 0..1, but gives some weight even for small heights.
+
+            let threshFuzz = fuzzStrengthFromChance(chance)
+            let invChance = 1.0 - chance
+            let uncertainty = max(configuration.fuzzUncertaintyFloor, pow(invChance, configuration.fuzzUncertaintyExponent))
+            var sTarget = max(threshFuzz, uncertainty)
+            sTarget = configuration.fuzzChanceMinStrength + (1.0 - configuration.fuzzChanceMinStrength) * sTarget
+            sTarget = RainSurfaceMath.clamp01(sTarget)
+
+            // Baseline-strength: subtle, and fades away from wet segments.
+            let prox = wetProximity(x)
+            let baselineStrength = (0.02 + 0.08 * sTarget) * pow(prox, 0.85)
+
+            // Final strength: as rain gets taller, move toward the true “chance fuzz”.
+            let s = RainSurfaceMath.lerp(baselineStrength, sTarget, presence)
+            strengthByX[x] = RainSurfaceMath.clamp01(s)
+
+            // Band width modulation.
+            let lowH = pow(1.0 - hNorm, configuration.fuzzLowHeightPower)
+            let proxW = 0.25 + 0.75 * prox
+            let lowFactor = 1.0 + configuration.fuzzLowHeightBoost * lowH * proxW
+            let widthMod = (0.70 + 1.20 * s) * lowFactor
+
+            let outBand = RainSurfaceMath.clamp(bandBasePx * widthMod, min: 6.0, max: bandBasePx * 2.6)
+            let inBand = RainSurfaceMath.clamp(outBand * configuration.fuzzInsideWidthFactor, min: 4.0, max: outBand)
+
+            bandOutByX[x] = outBand
+            bandInByX[x] = inBand
+        }
+
+        // Search radius for approximate 2D distance-to-surface (the big change).
+        let searchRadius = Int(RainSurfaceMath.clamp(bandBasePx * 0.33, min: 6.0, max: 22.0))
+
+        // Limit y-range we need to rasterise (surface band only).
+        let maxBandIn = bandInByX.max() ?? 0.0
+        let maxBandOut = bandOutByX.max() ?? 0.0
+
+        let minSurf = ySurfacePxByX.min() ?? 0.0
+        let yMin = max(0, Int(floor(minSurf - maxBandOut - 2.0)))
+        let yMax = min(h - 1, Int(ceil(baselineYPx + maxBandIn + 2.0)))
+        if yMax <= yMin { return }
+
+        // Allocate pixels.
+        var fuzzPixels = [UInt8](repeating: 0, count: w * h * 4)
+        var erodePixels = [UInt8](repeating: 0, count: w * h * 4)
+
+        // Noise helpers.
+        let seed = configuration.noiseSeed
+
+        func hash01(_ ax: Int, _ ay: Int, salt: UInt64) -> Double {
+            var s = RainSurfacePRNG.combine(seed ^ salt, UInt64(bitPattern: Int64(ax)))
+            s = RainSurfacePRNG.combine(s, UInt64(bitPattern: Int64(ay)))
+            return RainSurfacePRNG.float01(s)
+        }
+
+        func valueNoise01(_ x: Double, _ y: Double, salt: UInt64) -> Double {
+            let x0 = Int(floor(x))
+            let y0 = Int(floor(y))
+            let tx = x - Double(x0)
+            let ty = y - Double(y0)
+
+            let v00 = hash01(x0, y0, salt: salt)
+            let v10 = hash01(x0 + 1, y0, salt: salt)
+            let v01 = hash01(x0, y0 + 1, salt: salt)
+            let v11 = hash01(x0 + 1, y0 + 1, salt: salt)
+
+            let sx = RainSurfaceMath.smoothstep01(tx)
+            let sy = RainSurfaceMath.smoothstep01(ty)
+
+            let a = RainSurfaceMath.lerp(v00, v10, sx)
+            let b = RainSurfaceMath.lerp(v01, v11, sx)
+            return RainSurfaceMath.lerp(a, b, sy)
+        }
+
+        // Raster loop.
+        let baseDensity = RainSurfaceMath.clamp(configuration.fuzzBaseDensity, min: 0.0, max: 1.0)
+        let hazeStrength = RainSurfaceMath.clamp(configuration.fuzzHazeStrength, min: 0.0, max: 2.0)
+        let speckStrength = RainSurfaceMath.clamp(configuration.fuzzSpeckStrength, min: 0.0, max: 3.0)
+
+        let edgePower = max(0.50, configuration.fuzzEdgePower)
+        let distPowOut = max(0.25, configuration.fuzzDistancePowerOutside)
+        let distPowIn = max(0.25, configuration.fuzzDistancePowerInside)
+
+        let insideOpacityFactor = RainSurfaceMath.clamp(configuration.fuzzInsideOpacityFactor, min: 0.0, max: 1.0)
+        let insideSpeckFrac = RainSurfaceMath.clamp(configuration.fuzzInsideSpeckleFraction, min: 0.0, max: 1.0)
+
+        let erodeEnabled = configuration.fuzzErodeEnabled
+        let erodeStrength = RainSurfaceMath.clamp(configuration.fuzzErodeStrength, min: 0.0, max: 1.0)
+        let erodeEdgePower = max(0.50, configuration.fuzzErodeEdgePower)
+
+        let cell = max(1.0, configuration.fuzzClumpCellPixels)
+
+        for y in yMin...yMax {
+            for x in 0..<w {
+
+                // Find closest surface sample column (approx 2D distance).
+                var bestX = x
+                var bestDy = Double(y) - ySurfacePxByX[x]
+                var bestD2 = bestDy * bestDy
+
+                if searchRadius > 0 {
+                    let lo = max(0, x - searchRadius)
+                    let hi = min(w - 1, x + searchRadius)
+                    if lo < hi {
+                        for xx in lo...hi where xx != x {
+                            let dy = Double(y) - ySurfacePxByX[xx]
+                            let dx = Double(xx - x)
+                            let d2 = dx * dx + dy * dy
+                            if d2 < bestD2 {
+                                bestD2 = d2
+                                bestDy = dy
+                                bestX = xx
+                            }
+                        }
+                    }
+                }
+
+                let inside = bestDy >= 0.0
+                let band = inside ? bandInByX[bestX] : bandOutByX[bestX]
+                if band <= 0.000_1 { continue }
+
+                let dist = sqrt(bestD2)
+                if dist > band { continue }
+
+                let u = 1.0 - (dist / band) // 0..1, 1 at surface
+                let edge = pow(max(0.0, u), edgePower)
+
+                let sCurve = strengthByX[bestX]
+                if sCurve <= 0.000_1 { continue }
+
+                // Clump noise (smooth).
+                let clump = valueNoise01(Double(x) / cell, Double(y) / cell, salt: 0xC1A0_F00D)
+                let micro = valueNoise01(Double(x) / 2.6, Double(y) / 2.6, salt: 0xBADC_0FFE)
+
+                // Distance falloff within band.
+                let dPow = inside ? distPowIn : distPowOut
+                let distFalloff = pow(max(0.0, u), dPow)
+
+                // Base haze and speckles.
+                let sideMul = inside ? insideOpacityFactor : 1.0
+                let haze = (0.06 + 0.22 * hazeStrength * (0.55 + 0.45 * clump)) * sideMul
+                let speckProbBase = (0.10 + 0.50 * baseDensity) * (0.55 + 0.45 * micro)
+
+                let speckFrac = inside ? insideSpeckFrac : 1.0
+                let speckProb = speckProbBase * speckFrac
+
+                // Edge concentrates energy near the surface; distFalloff spreads through the band.
+                var a = maxOpacity * sCurve * (0.55 * haze + 0.45 * speckStrength * distFalloff) * edge
+
+                // Add discrete speckles.
+                let r = hash01(x, y, salt: 0xFACE_FEED)
+                if r < speckProb {
+                    a += maxOpacity * sCurve * 0.55 * edge
+                }
+
+                a = RainSurfaceMath.clamp(a, min: 0.0, max: 1.0)
+                if a <= 0.000_1 { continue }
+
+                let idx = (y * w + x) * 4
+
+                // Fuzz pixels: premultiplied RGBA.
+                let alpha8 = UInt8((a * 255.0).rounded())
+                let pr = UInt8((rgba.r * a * 255.0).rounded())
+                let pg = UInt8((rgba.g * a * 255.0).rounded())
+                let pb = UInt8((rgba.b * a * 255.0).rounded())
+
+                fuzzPixels[idx + 0] = pr
+                fuzzPixels[idx + 1] = pg
+                fuzzPixels[idx + 2] = pb
+                fuzzPixels[idx + 3] = alpha8
+
+                // Erosion mask: only inside, only near the surface.
+                if erodeEnabled, inside, erodeStrength > 0.000_1 {
+                    let ek = erodeStrength * (0.30 + 0.70 * sCurve)
+                    let erEdge = pow(max(0.0, u), erodeEdgePower)
+                    let holes = (hash01(x, y, salt: 0xDEAD_BEEF) < (0.06 + 0.10 * baseDensity)) ? 1.0 : 0.0
+                    var ea = ek * erEdge * (0.14 + 0.14 * clump) + ek * erEdge * holes * 0.25
+                    ea = RainSurfaceMath.clamp(ea, min: 0.0, max: 1.0)
+
+                    if ea > 0.000_1 {
+                        let e8 = UInt8((ea * 255.0).rounded())
+                        erodePixels[idx + 0] = 255
+                        erodePixels[idx + 1] = 255
+                        erodePixels[idx + 2] = 255
+                        erodePixels[idx + 3] = e8
+                    }
+                }
+            }
+        }
+
+        guard let fuzzImage = makeCGImage(width: w, height: h, pixelsRGBA: fuzzPixels) else { return }
+        guard let erodeImage = makeCGImage(width: w, height: h, pixelsRGBA: erodePixels) else { return }
+
+        let fuzz = Image(decorative: fuzzImage, scale: 1.0, orientation: .up)
+        let erode = Image(decorative: erodeImage, scale: 1.0, orientation: .up)
+
+        // Apply erosion first (cuts the core edge so fuzz replaces it).
+        let savedBlend = context.blendMode
+        context.blendMode = .destinationOut
+        context.draw(erode, in: chartRect)
+        context.blendMode = savedBlend
+
+        // Draw fuzz over the surface.
         context.drawLayer { layer in
             layer.blendMode = .plusLighter
-
-            let base = RainSurfaceMath.clamp(configuration.baselineLineOpacity, min: 0.05, max: 0.60)
-
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base * 0.08)),
-                style: StrokeStyle(lineWidth: onePixel * 6.0, lineCap: .round)
-            )
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base * 0.16)),
-                style: StrokeStyle(lineWidth: onePixel * 3.2, lineCap: .round)
-            )
-            layer.stroke(
-                line,
-                with: .color(configuration.baselineColor.opacity(base)),
-                style: StrokeStyle(lineWidth: onePixel * 0.85, lineCap: .butt)
-            )
-
-            layer.blendMode = .destinationIn
-            var fadeRect = Path()
-            fadeRect.addRect(chartRect)
-            layer.fill(fadeRect, with: alphaMask)
+            let blurPx = max(0.0, configuration.fuzzMicroBlurPixels)
+            let blurPts = blurPx / Double(rasterScale)
+            if blurPts > 0.000_1 {
+                layer.addFilter(.blur(radius: blurPts))
+            }
+            layer.draw(fuzz, in: chartRect)
         }
     }
 
-    // MARK: - Utilities
+    // MARK: - CGImage helper
 
-    private static func rgbComponents(from color: Color, fallback: (r: UInt8, g: UInt8, b: UInt8)) -> (r: UInt8, g: UInt8, b: UInt8) {
-        #if canImport(UIKit)
-        let ui = UIColor(color)
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        var a: CGFloat = 0
-        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
-            return (
-                r: UInt8(RainSurfaceMath.clamp(r, min: 0, max: 1) * 255.0),
-                g: UInt8(RainSurfaceMath.clamp(g, min: 0, max: 1) * 255.0),
-                b: UInt8(RainSurfaceMath.clamp(b, min: 0, max: 1) * 255.0)
-            )
-        }
-        #endif
-        return fallback
-    }
+    private static func makeCGImage(width: Int, height: Int, pixelsRGBA: [UInt8]) -> CGImage? {
+        guard width > 0, height > 0 else { return nil }
+        guard pixelsRGBA.count == width * height * 4 else { return nil }
 
-    private static func makeCGImageRGBA(bytes: [UInt8], width: Int, height: Int) -> CGImage? {
-        let data = Data(bytes)
-        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        let data = Data(pixelsRGBA)
+        let provider = CGDataProvider(data: data as CFData)
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue))
 
         return CGImage(
             width: width,
@@ -698,10 +549,33 @@ enum RainSurfaceDrawing {
             bytesPerRow: width * 4,
             space: colorSpace,
             bitmapInfo: bitmapInfo,
-            provider: provider,
+            provider: provider!,
             decode: nil,
-            shouldInterpolate: true,
+            shouldInterpolate: false,
             intent: .defaultIntent
         )
+    }
+
+    // MARK: - Colour conversion
+
+    private struct RGBA {
+        var r: Double
+        var g: Double
+        var b: Double
+        var a: Double
+    }
+
+    private static func colorRGBA(_ color: Color) -> RGBA {
+        #if canImport(UIKit)
+        let ui = UIColor(color)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        ui.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return RGBA(r: Double(r), g: Double(g), b: Double(b), a: Double(a))
+        #else
+        return RGBA(r: 1, g: 1, b: 1, a: 1)
+        #endif
     }
 }

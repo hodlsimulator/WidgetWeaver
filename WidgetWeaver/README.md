@@ -120,30 +120,50 @@ Notes:
 
 WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style sweeping second hand.
 
-### Per-second ticking without WidgetKit throttling (Widgy-style)
+### Why the clock is tricky
 
-WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled.
+WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled. On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
 
-On iOS 26 Home Screen we cannot rely on `TimelineView` schedules actually advancing; the host will often render once and then freeze the schedule. The approach used here is the Widgy-style one: start CoreAnimation-backed “repeat forever” sweeps once, and let the system animate the hands while the widget is visible.
+### Clock animation strategies (history + trade-offs)
 
-How it works:
+1) **Timeline-driven redraws + short linear sweeps** (most reliable when budgets allow)
 
-- The widget timeline stays **sparse** (one entry; refresh every few hours) to avoid throttling.
-- The hands are driven by three phase values (seconds / minutes / hours).
-- On appearance the view **re-syncs** to the real `Date()` and starts:
-  - 60s sweep for the second hand
-  - 3600s sweep for the minute hand
-  - 43200s sweep for the hour hand
-- If iOS pauses the widget while off-screen, the animation pauses too.
-  - When the widget becomes visible again, the view re-syncs and restarts the sweeps so it “catches up”.
+- Provider emits frequent timeline entries (`tickSeconds` around 2–15s, capped `maxEntries`, policy `.atEnd`).
+- The view wraps rendering in `WidgetWeaverRenderClock.withNow(entry.date)` and computes monotonic hand angles from `entry.date` so interpolation never runs backwards at wrap boundaries.
+- The sweeping effect comes from `.animation(.linear(duration: tickSeconds), value: secondDegrees)` between entries.
 
-Files:
+Notes:
 
-- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` uses a sparse `WidgetWeaverHomeScreenClockProvider`.
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` contains the CoreAnimation-backed driver.
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` is a thin wrapper used by the widget.
+- The update cadence can eventually be throttled by WidgetKit.
+- Alignment to whole seconds (base = `ceil(timeIntervalSinceReferenceDate)`) keeps the sweep phase-locked.
 
-### Sweeping second hand (implementation notes)
+2) **Widgy-style CoreAnimation sweeps** (no timeline spam, but host-dependent)
+
+- Keep the provider sparse (hourly or less) and start CoreAnimation-backed `repeatForever` sweeps on appearance.
+- Uses three phase values (seconds / minutes / hours) and resyncs to `Date()` on appearance to catch up after suspension.
+
+Status: not reliably animated on Home Screen; the hosting view can be paused/frozen.
+
+3) **Heartbeat driver** (in-view periodic invalidation)
+
+- Keep the provider sparse (hourly) but drive an in-view periodic tick (for example: `TimelineView(.periodic(...))`) so the view re-evaluates.
+
+Status: can render but has been unreliable; the clock can stop even after a widget kind bump.
+
+4) **Long single sweep per interval** (current code path)
+
+- Provider emits an immediate “now” entry plus hour-boundary entries; each entry carries `intervalStart` and `intervalEnd`.
+- The view snaps hands to real current time on appear, then attempts a single long `.linear` animation towards `intervalEnd` using monotonic (unbounded) angle maths.
+
+Status: snaps correctly but often remains stopped (no ongoing animation).
+
+### Files
+
+- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` — timeline generation (`date` + `endDate`)
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` — current long-interval sweep attempt
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` — experimental Widgy-style `repeatForever` driver
+
+### Sweeping second hand (time maths)
 
 The core time maths is:
 
@@ -159,6 +179,10 @@ Using monotonic degrees avoids reverse interpolation if any implicit animation i
 WidgetKit can hold onto an archived snapshot from a failed render; during iteration a widget can appear partially rendered or stuck until a clean archive occurs.
 
 If a clock widget remains stuck after code changes, bump the clock widget kind string (`WidgetWeaverWidgetKinds.homeScreenClock`) to force a clean archive.
+
+### RenderClock recursion pitfall
+
+`WidgetWeaverRenderClockScope.body` must not call `WidgetWeaverRenderClock.withNow(...)` from inside the scope. Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI view recursion and a black Home Screen widget.
 
 ---
 
@@ -188,7 +212,7 @@ If a clock widget remains stuck after code changes, bump the clock widget kind s
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
-- ✅ **Home Screen widget (“Clock (Icon)”)** analogue clock face with a sweeping second hand (Small)
+- 🧪 **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); sweeping second hand is experimental (see Clock section)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group

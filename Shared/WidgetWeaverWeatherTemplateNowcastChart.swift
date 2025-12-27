@@ -10,13 +10,11 @@
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
 
 struct WeatherNowcastChart: View {
-
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
@@ -117,7 +115,6 @@ private struct WeatherNowcastAxisLabels: View {
 }
 
 private struct WeatherNowcastSurfacePlot: View {
-
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
@@ -143,7 +140,6 @@ private struct WeatherNowcastSurfacePlot: View {
             // Certainty tapers towards the horizon.
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
@@ -178,7 +174,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
-                // Core (no vertical gradient for the “no gradient” request).
+                // Core (solid).
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
@@ -188,55 +184,52 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.glintEnabled = false
 
                 // ---------
-                // Fuzz: big behaviour changes:
-                // - Minimum fuzz always present so the surface reads as fuzz, not a crisp cut-out.
-                // - Threshold at 60%: below is strongly fuzzy.
-                // - Core-edge erosion on: fuzz replaces the surface instead of floating above it.
+                // Fuzz tuned to the mockup:
+                // - Uses the new 2D distance-to-surface band, so it appears on vertical sides too.
+                // - Narrower and less “floor fog”.
+                // - Still replaces the surface via erosion.
                 // ---------
-
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
                 c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
 
-                c.fuzzMaxOpacity = isExt ? 0.46 : 0.50
+                c.fuzzMaxOpacity = isExt ? 0.28 : 0.32
+                c.fuzzWidthFraction = 0.18
+                c.fuzzWidthPixelsClamp = 10.0...90.0
 
-                c.fuzzWidthFraction = 0.22
-                c.fuzzWidthPixelsClamp = 12.0...105.0
-
-                c.fuzzBaseDensity = 0.96
-                c.fuzzHazeStrength = isExt ? 0.98 : 0.92
-                c.fuzzSpeckStrength = isExt ? 1.50 : 1.55
-
-                c.fuzzEdgePower = 1.05
-                c.fuzzClumpCellPixels = 10.0
-                c.fuzzMicroBlurPixels = isExt ? 0.55 : 0.75
+                c.fuzzBaseDensity = 0.90
+                c.fuzzHazeStrength = isExt ? 0.78 : 0.74
+                c.fuzzSpeckStrength = isExt ? 1.18 : 1.25
+                c.fuzzEdgePower = 1.65
+                c.fuzzClumpCellPixels = 12.0
+                c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
 
                 // Chance → fuzz.
                 c.fuzzChanceThreshold = 0.60
-                c.fuzzChanceTransition = 0.12
-                c.fuzzChanceMinStrength = 0.32
+                c.fuzzChanceTransition = 0.14
+                c.fuzzChanceMinStrength = 0.14
 
-                // Legacy uncertainty shaping still helps a bit near the horizon.
-                c.fuzzUncertaintyFloor = 0.10
-                c.fuzzUncertaintyExponent = 1.55
+                // Uncertainty shaping.
+                c.fuzzUncertaintyFloor = 0.06
+                c.fuzzUncertaintyExponent = 2.15
 
-                // Ensure tapered / low-height regions stay fuzzy.
-                c.fuzzLowHeightPower = 2.05
-                c.fuzzLowHeightBoost = 1.20
+                // Low-height reinforcement (keeps tapered ends fuzzy without creating a huge fog field).
+                c.fuzzLowHeightPower = 2.10
+                c.fuzzLowHeightBoost = 0.55
 
-                // Inside contribution so fuzz straddles and extends below the surface.
-                c.fuzzInsideWidthFactor = 0.98
-                c.fuzzInsideOpacityFactor = 0.90
-                c.fuzzInsideSpeckleFraction = 0.90
+                // Straddle the surface (some fuzz below), but not an 0.98-wide inside slab.
+                c.fuzzInsideWidthFactor = 0.72
+                c.fuzzInsideOpacityFactor = 0.62
+                c.fuzzInsideSpeckleFraction = 0.40
 
-                // Spread grain through the band (less “only at the edge”).
-                c.fuzzDistancePowerOutside = 1.55
-                c.fuzzDistancePowerInside = 1.45
+                // Keep fuzz near the surface.
+                c.fuzzDistancePowerOutside = 2.00
+                c.fuzzDistancePowerInside = 1.70
 
-                // Erode the core near the surface.
+                // Erode the core near the surface so fuzz *is* the boundary.
                 c.fuzzErodeEnabled = true
-                c.fuzzErodeStrength = 0.78
-                c.fuzzErodeEdgePower = 2.35
+                c.fuzzErodeStrength = 0.82
+                c.fuzzErodeEdgePower = 2.70
 
                 // Baseline.
                 c.baselineColor = accent

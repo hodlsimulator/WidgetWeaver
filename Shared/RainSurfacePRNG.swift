@@ -12,6 +12,7 @@ import Foundation
 /// SplitMix64-based deterministic PRNG.
 /// Stable across redraws when initialised with a stable seed.
 struct RainSurfacePRNG {
+
     private var state: UInt64
 
     init(seed: UInt64) {
@@ -26,7 +27,7 @@ struct RainSurfacePRNG {
     mutating func nextDouble01() -> Double {
         // 53-bit mantissa -> [0, 1)
         let x = nextUInt64() >> 11
-        return Double(x) / Double(1 << 53)
+        return Double(x) / Double(UInt64(1) << 53)
     }
 
     // MARK: - Hash / mixing
@@ -65,6 +66,11 @@ struct RainSurfacePRNG {
         return combine(combine(i, a), b)
     }
 
+    /// Maps a pre-mixed 64-bit value to [0, 1) using the top 53 bits (Double mantissa).
+    static func float01(_ x: UInt64) -> Double {
+        return Double(x >> 11) / Double(UInt64(1) << 53)
+    }
+
     /// Deterministic 2D hash (0...1), suitable for per-pixel dithering.
     static func hash2D01(x: Int, y: Int, seed: UInt64) -> Double {
         let ux = UInt64(bitPattern: Int64(x))
@@ -74,8 +80,7 @@ struct RainSurfacePRNG {
         var h = combine(seed, ux &* 0x9E3779B97F4A7C15)
         h = combine(h, uy &* 0xD6E8FEB86659FD93)
 
-        // Map to [0, 1) using the top 53 bits (Double mantissa).
-        return Double(h >> 11) / Double(1 << 53)
+        return float01(h)
     }
 
     /// Low-frequency value noise (0...1) using bilinear interpolation between hashed lattice points.
@@ -86,6 +91,7 @@ struct RainSurfacePRNG {
 
         let x0 = Int(floor(gx))
         let y0 = Int(floor(gy))
+
         let fx = gx - Double(x0)
         let fy = gy - Double(y0)
 
@@ -99,6 +105,7 @@ struct RainSurfacePRNG {
 
         let ab = lerp(a, b, u)
         let cd = lerp(c0, d, u)
+
         return lerp(ab, cd, v)
     }
 
