@@ -11,10 +11,10 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Provider timelines at 1s are commonly coalesced on Home Screen.
-    // Using longer segments keeps the sweep smooth while reducing visible resync and timeline pressure.
-    static let stepSeconds: TimeInterval = 15.0
-    static let entriesAfterBoundary: Int = 240 // 1 hour of 15s entries (+ one "now" entry)
+    // WidgetKit commonly coalesces sub-second and 1s timelines on Home Screen.
+    // 2s segments have been the most reliable for visible sweeping.
+    static let stepSeconds: TimeInterval = 2.0
+    static let entriesAfterBoundary: Int = 180 // ~6 minutes (+ one "now" entry)
 }
 
 // MARK: - Configuration
@@ -107,7 +107,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineTuning.entriesAfterBoundary + 1)
 
-        // First entry starts at the real "now" to avoid showing the boundary time.
+        // First entry starts at real "now" so the widget never shows the boundary time instantly.
         entries.append(
             Entry(
                 date: now,

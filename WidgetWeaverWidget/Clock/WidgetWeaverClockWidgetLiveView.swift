@@ -11,10 +11,6 @@ import SwiftUI
 private enum WWClockWidgetLiveTuning {
     static let showDebugOverlay: Bool = false
     static let minimumAnimationSeconds: TimeInterval = 0.05
-
-    // Avoids a visible "tick" when the running animation is already close to the correct time.
-    // Second hand: 6° per second, so 3° ~= 0.5s.
-    static let resyncSnapThresholdDegrees: Double = 3.0
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
@@ -111,17 +107,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let fromAngles = WWClockMonotonicAngles(date: clampedNow)
         let toAngles = WWClockMonotonicAngles(date: intervalEnd)
 
-        let needsSnap =
-            abs(WWClockAngleMath.shortestDeltaDegrees(current: secondDegrees, target: fromAngles.secondDegrees)) > WWClockWidgetLiveTuning.resyncSnapThresholdDegrees ||
-            abs(WWClockAngleMath.shortestDeltaDegrees(current: minuteDegrees, target: fromAngles.minuteDegrees)) > WWClockWidgetLiveTuning.resyncSnapThresholdDegrees ||
-            abs(WWClockAngleMath.shortestDeltaDegrees(current: hourDegrees, target: fromAngles.hourDegrees)) > WWClockWidgetLiveTuning.resyncSnapThresholdDegrees
-
-        if needsSnap {
-            withAnimation(.none) {
-                hourDegrees = fromAngles.hourDegrees
-                minuteDegrees = fromAngles.minuteDegrees
-                secondDegrees = fromAngles.secondDegrees
-            }
+        withAnimation(.none) {
+            hourDegrees = fromAngles.hourDegrees
+            minuteDegrees = fromAngles.minuteDegrees
+            secondDegrees = fromAngles.secondDegrees
         }
 
         DispatchQueue.main.async {
@@ -151,15 +140,5 @@ private struct WWClockMonotonicAngles {
         secondDegrees = localSeconds * 6.0
         minuteDegrees = localSeconds * (360.0 / 3600.0)
         hourDegrees = localSeconds * (360.0 / 43200.0)
-    }
-}
-
-private enum WWClockAngleMath {
-    static func shortestDeltaDegrees(current: Double, target: Double) -> Double {
-        // Delta modulo 360 in [-180, 180).
-        var d = (target - current).truncatingRemainder(dividingBy: 360.0)
-        if d >= 180.0 { d -= 360.0 }
-        if d < -180.0 { d += 360.0 }
-        return d
     }
 }
