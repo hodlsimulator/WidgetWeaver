@@ -11,10 +11,18 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Budget-friendly baseline:
-    // 60 minutes -> 24 entries/day (+ one "now" entry).
-    static let stepSeconds: TimeInterval = 60.0 * 60.0
-    static let entriesAfterBoundary: Int = 24
+    // Motion-friendly tuning:
+    //
+    // Home Screen widgets are heavily budgeted by WidgetKit. A single hour-long SwiftUI animation
+    // often appears "stuck" because the host can snapshot / freeze long-running animations.
+    //
+    // The most reliable approach is to keep the same "animate-to-intervalEnd" technique, but
+    // subdivide time into short intervals so each sweep is short and gets restarted regularly
+    // by timeline entries.
+    //
+    // 2s * 180 = 6 minutes (+ one "now" entry).
+    static let stepSeconds: TimeInterval = 2.0
+    static let entriesAfterBoundary: Int = 180
 }
 
 // MARK: - Configuration
@@ -107,7 +115,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineTuning.entriesAfterBoundary + 1)
 
-        // First entry starts at the real "now" to avoid showing the hour boundary time.
+        // First entry starts at the real "now" to avoid showing the boundary time.
         entries.append(
             Entry(
                 date: now,

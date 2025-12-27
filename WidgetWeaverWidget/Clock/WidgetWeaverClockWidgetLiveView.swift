@@ -22,8 +22,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @State private var minuteDegrees: Double
     @State private var secondDegrees: Double
 
-    @State private var lastSignature: IntervalSignature
-
     init(palette: WidgetWeaverClockPalette, intervalStart: Date, intervalEnd: Date) {
         self.palette = palette
         self.intervalStart = intervalStart
@@ -33,8 +31,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
         _hourDegrees = State(initialValue: initialAngles.hourDegrees)
         _minuteDegrees = State(initialValue: initialAngles.minuteDegrees)
         _secondDegrees = State(initialValue: initialAngles.secondDegrees)
+    }
 
-        _lastSignature = State(initialValue: IntervalSignature(start: intervalStart, end: intervalEnd))
+    private var signature: IntervalSignature {
+        IntervalSignature(start: intervalStart, end: intervalEnd)
     }
 
     var body: some View {
@@ -69,22 +69,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
             #endif
         }
         .onAppear {
-            startOrResyncAnimationIfNeeded()
+            startOrResyncAnimation()
         }
-        .onChange(of: intervalStart) { _, _ in
-            startOrResyncAnimationIfNeeded()
-        }
-        .onChange(of: intervalEnd) { _, _ in
-            startOrResyncAnimationIfNeeded()
+        .onChange(of: signature) { _, _ in
+            startOrResyncAnimation()
         }
     }
 
-    private func startOrResyncAnimationIfNeeded() {
-        let signature = IntervalSignature(start: intervalStart, end: intervalEnd)
-        if signature != lastSignature {
-            lastSignature = signature
-        }
-
+    private func startOrResyncAnimation() {
         guard intervalEnd > intervalStart else {
             let snap = WWClockMonotonicAngles(date: intervalStart)
             withAnimation(.none) {
@@ -95,19 +87,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
             return
         }
 
-        let now = Date()
+        // Clamp to the interval so future pre-rendering does not bail out, and late presentation
+        // can still catch up within the current interval.
+        let wallNow = Date()
+        let clampedNow = min(max(wallNow, intervalStart), intervalEnd)
 
-        if now < intervalStart {
-            let snap = WWClockMonotonicAngles(date: intervalStart)
-            withAnimation(.none) {
-                hourDegrees = snap.hourDegrees
-                minuteDegrees = snap.minuteDegrees
-                secondDegrees = snap.secondDegrees
-            }
-            return
-        }
-
-        if now >= intervalEnd {
+        let remaining = intervalEnd.timeIntervalSince(clampedNow)
+        guard remaining > 0 else {
             let snap = WWClockMonotonicAngles(date: intervalEnd)
             withAnimation(.none) {
                 hourDegrees = snap.hourDegrees
@@ -117,12 +103,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
             return
         }
 
-        let remaining = intervalEnd.timeIntervalSince(now)
         let duration = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, remaining)
 
-        let fromAngles = WWClockMonotonicAngles(date: now)
+        let fromAngles = WWClockMonotonicAngles(date: clampedNow)
         let toAngles = WWClockMonotonicAngles(date: intervalEnd)
 
+        // Snap to the best "now" for this entry, then animate to the interval end.
         withAnimation(.none) {
             hourDegrees = fromAngles.hourDegrees
             minuteDegrees = fromAngles.minuteDegrees
