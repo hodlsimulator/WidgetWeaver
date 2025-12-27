@@ -12,9 +12,9 @@ import AppIntents
 
 private enum WWClockTimelineTuning {
     // Budget-friendly baseline:
-    // 60 minutes -> 24 entries/day.
-    static let tickSeconds: TimeInterval = 60.0 * 60.0
-    static let maxEntries: Int = 24
+    // 60 minutes -> 24 entries/day (+ one "now" entry).
+    static let stepSeconds: TimeInterval = 60.0 * 60.0
+    static let entriesAfterBoundary: Int = 24
 }
 
 // MARK: - Configuration
@@ -64,6 +64,7 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
 
 public struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     public let date: Date
+    public let endDate: Date
     public let colourScheme: WidgetWeaverClockColourScheme
 }
 
@@ -72,28 +73,60 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), colourScheme: .classic)
+        let now = Date()
+        return Entry(
+            date: now,
+            endDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
+            colourScheme: .classic
+        )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
-        Entry(date: Date(), colourScheme: configuration.colourScheme ?? .classic)
+        let scheme = configuration.colourScheme ?? .classic
+        let now = Date()
+        return Entry(
+            date: now,
+            endDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
+            colourScheme: scheme
+        )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
 
         let now = Date()
-        let step = WWClockTimelineTuning.tickSeconds
+        let step = WWClockTimelineTuning.stepSeconds
+
         let t = now.timeIntervalSince1970
-        let alignedT = floor(t / step) * step
-        let base = Date(timeIntervalSince1970: alignedT)
+        let nextBoundaryT = ceil(t / step) * step
+        var boundary = Date(timeIntervalSince1970: nextBoundaryT)
+        if boundary <= now {
+            boundary = boundary.addingTimeInterval(step)
+        }
 
         var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
+        entries.reserveCapacity(WWClockTimelineTuning.entriesAfterBoundary + 1)
 
-        for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = base.addingTimeInterval(Double(i) * step)
-            entries.append(Entry(date: d, colourScheme: scheme))
+        // First entry starts at the real "now" to avoid showing the hour boundary time.
+        entries.append(
+            Entry(
+                date: now,
+                endDate: boundary,
+                colourScheme: scheme
+            )
+        )
+
+        // Phase-locked entries on whole boundaries.
+        for i in 0..<WWClockTimelineTuning.entriesAfterBoundary {
+            let start = boundary.addingTimeInterval(Double(i) * step)
+            let end = start.addingTimeInterval(step)
+            entries.append(
+                Entry(
+                    date: start,
+                    endDate: end,
+                    colourScheme: scheme
+                )
+            )
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -137,7 +170,8 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
-            anchorDate: entry.date
+            intervalStart: entry.date,
+            intervalEnd: entry.endDate
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
