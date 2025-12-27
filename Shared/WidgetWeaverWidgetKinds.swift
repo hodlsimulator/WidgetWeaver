@@ -15,5 +15,5 @@ public enum WidgetWeaverWidgetKinds {
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
     // Bumped to flush any archived/stuck render snapshots during iteration.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV13"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV14"
 }
