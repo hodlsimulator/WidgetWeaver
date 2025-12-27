@@ -36,7 +36,7 @@ enum RainSurfaceDrawing {
         let onePixel = CGFloat(1.0 / scale)
         let maxHeight = max(heights.max() ?? 0, onePixel)
 
-        // (2) Fuzz layer: granular mist outside core only; additive.
+        // Fuzz layer: granular mist outside core only; additive.
         if configuration.fuzzEnabled {
             drawFuzz(
                 in: &context,
@@ -52,7 +52,7 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // (3) Core layer: opaque solid fill + inside-only gloss band.
+        // Core layer: opaque solid fill + inside-only gloss band.
         drawCore(
             in: &context,
             chartRect: chartRect,
@@ -75,7 +75,7 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // (4) Optional tiny local glints near local maxima.
+        // Optional tiny local glints near local maxima.
         if configuration.glintEnabled {
             drawGlints(
                 in: &context,
@@ -110,7 +110,6 @@ enum RainSurfaceDrawing {
         let scale = max(1.0, displayScale)
         let onePixel = CGFloat(1.0 / scale)
 
-        // fuzzWidth ≈ fraction of chart height, clamped in pixels at displayScale.
         let desiredPx = Double(chartRect.height * configuration.fuzzWidthFraction * scale)
         let clampedPx = RainSurfaceMath.clamp(
             desiredPx,
@@ -121,10 +120,10 @@ enum RainSurfaceDrawing {
         if fuzzWidthPoints <= onePixel { return }
 
         // Raster scale for fuzz: bounded by a hard pixel budget (widget safe).
-        let maxPixels = max(40_000, configuration.fuzzRasterMaxPixels)
+        let maxPixels = max(24_000, configuration.fuzzRasterMaxPixels)
         let areaPoints = max(1.0, Double(chartRect.width * chartRect.height))
         let maxScaleBudget = sqrt(Double(maxPixels) / areaPoints)
-        let rasterScale = CGFloat(max(0.55, min(Double(scale), maxScaleBudget)))
+        let rasterScale = CGFloat(max(0.35, min(Double(scale), maxScaleBudget)))
 
         let w = max(2, Int(ceil(chartRect.width * rasterScale)))
         let h = max(2, Int(ceil(chartRect.height * rasterScale)))
@@ -149,17 +148,19 @@ enum RainSurfaceDrawing {
         let baselinePx = Int(round((baselineY - chartRect.minY) * rasterScale))
         if baselinePx <= 1 { return }
 
+        let yMax = min(h, baselinePx)
+        if yMax <= 1 { return }
+
         let fuzzWidthPx = Double(fuzzWidthPoints * rasterScale)
         if fuzzWidthPx <= 1.0 { return }
 
-        let maxOpacity = RainSurfaceMath.clamp(configuration.fuzzMaxOpacity, min: 0.02, max: 0.50)
+        let maxOpacity = RainSurfaceMath.clamp(configuration.fuzzMaxOpacity, min: 0.02, max: 0.55)
         let baseDensity = RainSurfaceMath.clamp(configuration.fuzzBaseDensity, min: 0.10, max: 0.98)
-        let uncertaintyFloor = RainSurfaceMath.clamp(configuration.fuzzUncertaintyFloor, min: 0.0, max: 0.70)
+        let uncertaintyFloor = RainSurfaceMath.clamp(configuration.fuzzUncertaintyFloor, min: 0.0, max: 0.80)
         let edgePower = max(0.25, configuration.fuzzEdgePower)
 
-        let hazeStrength = RainSurfaceMath.clamp(configuration.fuzzHazeStrength, min: 0.0, max: 1.0)
+        let hazeStrength = RainSurfaceMath.clamp(configuration.fuzzHazeStrength, min: 0.0, max: 1.25)
         let speckStrength = RainSurfaceMath.clamp(configuration.fuzzSpeckStrength, min: 0.0, max: 1.25)
-
         let lowHeightPower = max(0.6, configuration.fuzzLowHeightPower)
 
         // Deterministic seed mixed with size for stability across widget families/sizes.
@@ -169,117 +170,191 @@ enum RainSurfaceDrawing {
 
         let seedClump = RainSurfacePRNG.combine(baseSeed, 0xA71D6A4F3FDC5A19)
         let seedFine = RainSurfacePRNG.combine(baseSeed, 0xC6BC279692B5C323)
-        let seedSpeck = RainSurfacePRNG.combine(baseSeed, 0x3B4B0F6F9A1B2C77)
-        let seedSpeckAmp = RainSurfacePRNG.combine(baseSeed, 0x9E3779B97F4A7C15)
 
         // Colour components (blue-only; avoid grey haze).
         let rgb = rgbComponents(from: configuration.fuzzColor, fallback: (r: 13, g: 82, b: 255))
 
-        // Precompute certainty/slope/height per x in raster space.
+        // Precompute per-x cues in raster space.
         let n = max(2, heights.count)
-        var idxByX = [Int](repeating: 0, count: w)
         var certaintyByX = [Double](repeating: 1.0, count: w)
-        var slopeByX = [Double](repeating: 0.0, count: w)
-        var curveHeightNormByX = [Double](repeating: 0.0, count: w)
+        var uncertaintyByX = [Double](repeating: 0.0, count: w)
+        var slopeBiasByX = [Double](repeating: 1.0, count: w)
+        var lowHeightByX = [Double](repeating: 0.0, count: w)
+        var effectiveWidthByX = [Double](repeating: fuzzWidthPx, count: w)
 
         for x in 0..<w {
-            // Map raster x -> bin index in the dense series.
             let t = (Double(x) + 0.5) / Double(w)
             let i = min(n - 1, max(0, Int(floor(t * Double(n)))))
-            idxByX[x] = i
 
             let c = (i < certainties.count) ? certainties[i] : (certainties.last ?? 1.0)
-            certaintyByX[x] = RainSurfaceMath.clamp01(c)
+            let cc = RainSurfaceMath.clamp01(c)
+            certaintyByX[x] = cc
+            uncertaintyByX[x] = RainSurfaceMath.clamp01(uncertaintyFloor + (1.0 - uncertaintyFloor) * (1.0 - cc))
 
             let ip = max(0, i - 1)
             let inx = min(n - 1, i + 1)
             let dy = Double(abs(heights[inx] - heights[ip])) * Double(rasterScale)
             let dx = max(1.0, Double(inx - ip) * Double(stepX) * Double(rasterScale))
-            slopeByX[x] = RainSurfaceMath.clamp01((dy / dx) * 0.95)
+            let slope = RainSurfaceMath.clamp01((dy / dx) * 0.95)
+            slopeBiasByX[x] = 0.72 + 0.28 * slope
 
-            curveHeightNormByX[x] = RainSurfaceMath.clamp01(Double(heights[i] / maxHeight))
+            let hNorm = RainSurfaceMath.clamp01(Double(heights[i] / maxHeight))
+            let low = pow(max(0.0, 1.0 - hNorm), lowHeightPower)
+            lowHeightByX[x] = low
+
+            // Wider envelope near baseline/shoulders, tighter near crest.
+            let widthFactor = 0.52 + 1.05 * low
+            effectiveWidthByX[x] = fuzzWidthPx * widthFactor
         }
 
-        let maxHeightPx = max(1.0, Double(maxHeight) * Double(rasterScale))
-        let yMax = min(h, baselinePx)
+        // Precompute a low-frequency clump field grid (cheap to sample).
+        let cell = max(6, Int(round(configuration.fuzzClumpCellPixels)))
+        let gridW = (w / cell) + 3
+        let gridH = (yMax / cell) + 3
+        var clumpGrid = [Double](repeating: 0.0, count: gridW * gridH)
+
+        if gridW > 0 && gridH > 0 {
+            for gy in 0..<gridH {
+                let row = gy * gridW
+                for gx in 0..<gridW {
+                    clumpGrid[row + gx] = RainSurfacePRNG.hash2D01(x: gx, y: gy, seed: seedClump)
+                }
+            }
+        }
+
+        @inline(__always)
+        func smoothstep(_ u: Double) -> Double {
+            let x = max(0.0, min(1.0, u))
+            return x * x * (3.0 - 2.0 * x)
+        }
+
+        @inline(__always)
+        func fract(_ x: Double) -> Double {
+            x - floor(x)
+        }
+
+        @inline(__always)
+        func sampleClump(x: Int, y: Int) -> Double {
+            let fx = Double(x) / Double(cell)
+            let fy = Double(y) / Double(cell)
+
+            let x0 = Int(floor(fx))
+            let y0 = Int(floor(fy))
+
+            let tx = fx - Double(x0)
+            let ty = fy - Double(y0)
+
+            let sx = smoothstep(tx)
+            let sy = smoothstep(ty)
+
+            let ix0 = max(0, min(gridW - 1, x0))
+            let iy0 = max(0, min(gridH - 1, y0))
+            let ix1 = max(0, min(gridW - 1, x0 + 1))
+            let iy1 = max(0, min(gridH - 1, y0 + 1))
+
+            let v00 = clumpGrid[iy0 * gridW + ix0]
+            let v10 = clumpGrid[iy0 * gridW + ix1]
+            let v01 = clumpGrid[iy1 * gridW + ix0]
+            let v11 = clumpGrid[iy1 * gridW + ix1]
+
+            let a = v00 + (v10 - v00) * sx
+            let b = v01 + (v11 - v01) * sx
+            return a + (b - a) * sy
+        }
+
+        @inline(__always)
+        func edgeFalloff(_ x: Double, power: Double) -> Double {
+            let u = max(0.0, min(1.0, x))
+            // Avoid pow() in the tight loop where possible.
+            if power < 0.78 {
+                return sqrt(u)
+            } else if power < 1.25 {
+                return u
+            } else if power < 2.25 {
+                return u * u
+            } else {
+                return pow(u, power)
+            }
+        }
 
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
 
-        // Build the mist. This is intentionally per-pixel, not spawned circles.
         for y in 0..<yMax {
-            let yD = Double(y)
-
             for x in 0..<w {
                 let idx = y * w + x
 
                 // Outside-only.
                 if coreMask[idx] > configuration.fuzzInsideThreshold { continue }
 
-                // Distance to the core in (approx) pixels.
                 let d = Double(dist[idx]) / 3.0
                 if d <= 0.0001 { continue }
 
-                // Low-height bias based on the curve height at this x.
-                let hNormCurve = curveHeightNormByX[x]
-                let lowHeight = pow(max(0.0, 1.0 - hNormCurve), lowHeightPower)
-
-                // Make the fuzz envelope thinner near crests, wider near baseline/shoulders.
-                let widthFactor = 0.55 + 0.95 * lowHeight
-                let effectiveWidth = fuzzWidthPx * widthFactor
+                let effectiveWidth = effectiveWidthByX[x]
                 if d > effectiveWidth { continue }
 
-                let t = RainSurfaceMath.clamp01(d / max(1e-6, effectiveWidth))
-                let edge = pow(max(0.0, 1.0 - t), edgePower)
+                let t = d / max(1e-6, effectiveWidth)
+                let edge = edgeFalloff(1.0 - t, power: edgePower)
+                if edge <= 0.0005 { continue }
 
-                // Certainty -> uncertainty (kept gentle; avoids “grey” confidence haze).
-                let certainty = certaintyByX[x]
-                let uncertainty = RainSurfaceMath.clamp01(uncertaintyFloor + (1.0 - uncertaintyFloor) * (1.0 - certainty))
+                let uncertainty = uncertaintyByX[x]
+                let slopeBias = slopeBiasByX[x]
+                let lowHeight = lowHeightByX[x]
 
-                // Slope bias (stronger on sides; still present on gentle slopes).
-                let slope = slopeByX[x]
-                let slopeBias = 0.72 + 0.28 * slope
+                // Low-frequency clumping (mist patches) + a single fine hash for grain.
+                let cl = sampleClump(x: x, y: y) // 0..1
+                let clumpAmp = 0.62 + 0.38 * cl  // 0.62..1.00
 
-                // Clumped haze field (low frequency) + fine grain.
-                let clumpCell = max(6.0, configuration.fuzzClumpCellPixels)
-                let clump = RainSurfacePRNG.valueNoise2D01(
-                    x: Double(x),
-                    y: yD,
-                    cell: clumpCell,
-                    seed: seedClump
-                )
-                let fine = RainSurfacePRNG.hash2D01(x: x, y: y, seed: seedFine)
+                let r = RainSurfacePRNG.hash2D01(x: x, y: y, seed: seedFine) // 0..1
+                let rA = fract(r * 17.371)
+                let rB = fract(r * 73.113)
+                let grain = 0.25 + 0.75 * (rA * rA)
 
-                // Continuous haze component: dense near edge, granular via noise modulation.
                 var alpha = 0.0
-                if hazeStrength > 0.0001 {
-                    let hazeNoise = 0.30 + 0.70 * pow(fine, 2.2)
-                    let hazeAmp = 0.55 + 0.45 * clump
-                    let a = maxOpacity
-                        * hazeStrength
-                        * edge
-                        * (0.45 + 0.55 * uncertainty)
-                        * slopeBias
-                        * (0.22 + 0.78 * hazeNoise)
-                        * (0.55 + 0.45 * hazeAmp)
-                    alpha += a
-                }
 
-                // Bright speck component: sparser flecks that read as “mist” at widget scale.
-                if speckStrength > 0.0001 {
-                    let p = RainSurfaceMath.clamp01(baseDensity * 0.40 * uncertainty * slopeBias * (0.28 + 0.72 * edge))
-                    let r = RainSurfacePRNG.hash2D01(x: x, y: y, seed: seedSpeck)
-                    if r < p {
-                        let amp = RainSurfacePRNG.hash2D01(x: x, y: y, seed: seedSpeckAmp)
-                        let a = maxOpacity
-                            * speckStrength
-                            * edge * edge
-                            * (0.38 + 0.62 * amp)
-                            * (0.60 + 0.40 * uncertainty)
-                        alpha += a
+                // Haze: dense, tiny grain (still speckled, not a blur).
+                if hazeStrength > 0.0001 {
+                    let pH = RainSurfaceMath.clamp01(
+                        baseDensity
+                        * (0.30 + 0.70 * edge)
+                        * (0.45 + 0.55 * uncertainty)
+                        * (0.55 + 0.45 * lowHeight)
+                        * (0.72 + 0.28 * clumpAmp)
+                    )
+
+                    if r < pH {
+                        alpha += maxOpacity
+                            * hazeStrength
+                            * edge
+                            * (0.42 + 0.58 * uncertainty)
+                            * slopeBias
+                            * grain
+                            * clumpAmp
+                            * (0.58 + 0.42 * lowHeight)
                     }
                 }
 
-                if alpha <= 0.0005 { continue }
+                // Specks: brighter flecks for the inset look (kept subtle; no grey).
+                if speckStrength > 0.0001 {
+                    let pS = RainSurfaceMath.clamp01(
+                        baseDensity
+                        * 0.18
+                        * (0.22 + 0.78 * edge)
+                        * (0.50 + 0.50 * uncertainty)
+                        * (0.70 + 0.30 * clumpAmp)
+                    )
+
+                    if rB < pS {
+                        let amp = 0.35 + 0.65 * rA
+                        alpha += maxOpacity
+                            * speckStrength
+                            * (edge * edge)
+                            * slopeBias
+                            * amp
+                            * (0.55 + 0.45 * uncertainty)
+                    }
+                }
+
+                if alpha <= 0.0006 { continue }
                 alpha = min(alpha, maxOpacity)
 
                 let o = idx * 4
@@ -291,7 +366,9 @@ enum RainSurfaceDrawing {
         }
 
         guard let cgImage = makeCGImageRGBA(bytes: rgba, width: w, height: h) else { return }
-        let image = Image(decorative: cgImage, scale: 1.0)
+
+        // Image scale set so the raster maps back to points without extra resampling cost.
+        let image = Image(decorative: cgImage, scale: rasterScale)
 
         // Draw additively, clipped above the baseline.
         context.drawLayer { layer in
@@ -354,7 +431,7 @@ enum RainSurfaceDrawing {
             ctx.setShouldAntialias(true)
             ctx.setFillColor(gray: 1.0, alpha: 1.0)
 
-            // Match SwiftUI's top-left origin / y-down coordinate space.
+            // SwiftUI: top-left origin / y-down.
             ctx.translateBy(x: 0, y: CGFloat(height))
             ctx.scaleBy(x: rasterScale, y: -rasterScale)
 
@@ -470,7 +547,7 @@ enum RainSurfaceDrawing {
         context.fill(corePath, with: .color(configuration.coreBodyColor.opacity(1.0)))
 
         // Inside-only gloss band:
-        // draw a softened band slightly below the top curve (not on the edge) and mask to the core.
+        // draw a softened band slightly below the top curve and mask to the core.
         if configuration.glossEnabled {
             let depthPx = RainSurfaceMath.clamp(
                 configuration.glossDepthPixels.mid,
@@ -487,21 +564,18 @@ enum RainSurfaceDrawing {
             context.drawLayer { layer in
                 layer.blendMode = .screen
 
-                // Soft inner skin (wider, fainter).
                 layer.stroke(
                     bandPath2,
                     with: .color(configuration.coreTopColor.opacity(opacity * 0.50)),
                     style: StrokeStyle(lineWidth: max(onePixel, depth * 2.35), lineCap: .round, lineJoin: .round)
                 )
 
-                // Brighter band (narrower).
                 layer.stroke(
                     bandPath,
                     with: .color(configuration.coreTopColor.opacity(opacity)),
                     style: StrokeStyle(lineWidth: max(onePixel, depth * 1.45), lineCap: .round, lineJoin: .round)
                 )
 
-                // Mask to core so nothing appears outside the silhouette.
                 layer.blendMode = .destinationIn
                 layer.fill(corePath, with: .color(.white))
             }
@@ -536,7 +610,6 @@ enum RainSurfaceDrawing {
                     style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round)
                 )
 
-                // Keep only the part outside the core.
                 layer.blendMode = .destinationOut
                 layer.fill(corePath, with: .color(.white))
             }
@@ -552,7 +625,6 @@ enum RainSurfaceDrawing {
                     style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round)
                 )
 
-                // Keep only the part inside the core.
                 layer.blendMode = .destinationIn
                 layer.fill(corePath, with: .color(.white))
             }
@@ -595,7 +667,6 @@ enum RainSurfaceDrawing {
                 let x = chartRect.minX + (CGFloat(idx) + 0.5) * stepX
                 let y = baselineY - h
 
-                // Tiny, localised apex glint.
                 let w0 = max(onePixel * 7.0, onePixel * 9.0)
                 let h0 = max(onePixel * 1.2, onePixel * 1.6)
                 let rect0 = CGRect(x: x - w0 * 0.5, y: y - h0 * 0.6, width: w0, height: h0)
@@ -613,7 +684,6 @@ enum RainSurfaceDrawing {
                 )
             }
 
-            // Mask to core.
             layer.blendMode = .destinationIn
             layer.fill(corePath, with: .color(.white))
         }
@@ -696,7 +766,6 @@ enum RainSurfaceDrawing {
 
             let base = RainSurfaceMath.clamp(configuration.baselineLineOpacity, min: 0.05, max: 0.60)
 
-            // Subtle glow stack (kept faint so it never competes with the mound).
             layer.stroke(
                 line,
                 with: .color(configuration.baselineColor.opacity(base * 0.08)),
@@ -713,7 +782,6 @@ enum RainSurfaceDrawing {
                 style: StrokeStyle(lineWidth: onePixel * 0.85, lineCap: .butt)
             )
 
-            // Apply end fade to the whole baseline stack.
             layer.blendMode = .destinationIn
             var fadeRect = Path()
             fadeRect.addRect(chartRect)

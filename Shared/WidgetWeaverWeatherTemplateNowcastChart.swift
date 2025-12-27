@@ -44,42 +44,14 @@ struct WeatherNowcastChart: View {
         #if canImport(WidgetKit)
         switch widgetFamily {
         case .systemSmall:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 8,
-                plotBottom: showAxisLabels ? 2 : 8,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 10
-            )
+            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
         case .systemMedium:
-            return Insets(
-                plotHorizontal: 10,
-                plotTop: 10,
-                plotBottom: showAxisLabels ? 2 : 8,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 12
-            )
+            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         default:
-            return Insets(
-                plotHorizontal: 12,
-                plotTop: 10,
-                plotBottom: showAxisLabels ? 3 : 8,
-                axisHorizontal: 18,
-                axisTop: 0,
-                axisBottom: 12
-            )
+            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         }
         #else
-        return Insets(
-            plotHorizontal: 12,
-            plotTop: 10,
-            plotBottom: showAxisLabels ? 3 : 8,
-            axisHorizontal: 18,
-            axisTop: 0,
-            axisBottom: 12
-        )
+        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         #endif
     }
 
@@ -169,7 +141,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let n = series.count
 
-            // Certainty: chance with a gentle horizon softening.
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
             let certainties: [Double] = series.enumerated().map { idx, p in
@@ -192,61 +163,57 @@ private struct WeatherNowcastSurfacePlot: View {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
 
-                // Widget-safe sampling (prevents placeholder timeouts).
-                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 220 : 900
-
-                // Geometry: baseline low (near labels) and tall peaks for heavy rain.
-                c.baselineFractionFromTop = 0.88
-                c.topHeadroomFraction = 0.14
-                c.typicalPeakFraction = 0.56
-                c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.62
+                // Keep the widget out of placeholder territory by bounding work before fuzz turns on.
+                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 200 : 800
                 c.edgeEasingFraction = 0.10
                 c.edgeEasingPower = 1.7
 
-                // Core: solid body fill (no vertical gradient) + highlight colour for rim/gloss.
+                // Baseline low (near labels) and tall peaks for heavy rain.
+                c.baselineFractionFromTop = 0.92
+                c.topHeadroomFraction = 0.10
+                c.typicalPeakFraction = 0.62
+                c.robustMaxPercentile = 0.93
+                c.intensityGamma = 0.60
+
+                // Core.
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Rim: keep subtle (avoid a traced neon line look).
+                // Rim + gloss kept subtle.
                 c.rimEnabled = true
                 c.rimColor = accent
-                c.rimInnerOpacity = 0.22
-                c.rimInnerWidthPixels = 1.05
+                c.rimInnerOpacity = 0.20
+                c.rimInnerWidthPixels = 1.0
                 c.rimOuterOpacity = 0.10
                 c.rimOuterWidthPixels = 4.8
 
-                // Gloss band (inside-only).
                 c.glossEnabled = true
-                c.glossMaxOpacity = 0.12
+                c.glossMaxOpacity = 0.10
                 c.glossDepthPixels = 9.0...14.0
 
-                // Tiny apex glint (local maxima only). Kept subtle.
-                c.glintEnabled = true
-                c.glintMaxCount = 1
-                c.glintMinHeightFraction = 0.82
-                c.glintMaxOpacity = 0.16
-                c.glintColor = Color(red: 0.98, green: 1.0, blue: 1.0)
+                // Glint off by default.
+                c.glintEnabled = false
 
-                // Fuzz: dense granular mist (blue-only), outside-only, strongest near baseline/shoulders.
-                c.fuzzEnabled = true
-                c.fuzzColor = Color(red: 0.05, green: 0.32, blue: 1.00)
-                c.fuzzMaxOpacity = 0.22
-                c.fuzzWidthFraction = 0.26
-                c.fuzzWidthPixelsClamp = 12.0...130.0
-                c.fuzzBaseDensity = 0.86
-                c.fuzzLowHeightPower = 2.8
-                c.fuzzUncertaintyFloor = 0.18
-                c.fuzzRasterMaxPixels = WidgetWeaverRuntime.isRunningInAppExtension ? 220_000 : 620_000
+                // Fuzz budgets + knobs must be set before enabling fuzz.
+                c.fuzzRasterMaxPixels = WidgetWeaverRuntime.isRunningInAppExtension ? 90_000 : 360_000
+                c.fuzzInsideThreshold = 14
                 c.fuzzClumpCellPixels = 12.0
                 c.fuzzEdgePower = 0.65
-                c.fuzzHazeStrength = 0.72
-                c.fuzzSpeckStrength = 1.0
-                c.fuzzInsideThreshold = 14
+                c.fuzzHazeStrength = 1.0
+                c.fuzzSpeckStrength = 0.65
+
+                c.fuzzEnabled = true
+                c.fuzzColor = accent
+                c.fuzzMaxOpacity = 0.24
+                c.fuzzWidthFraction = 0.28
+                c.fuzzWidthPixelsClamp = 12.0...140.0
+                c.fuzzBaseDensity = 0.90
+                c.fuzzLowHeightPower = 2.6
+                c.fuzzUncertaintyFloor = 0.22
 
                 // Baseline.
                 c.baselineColor = accent
-                c.baselineLineOpacity = 0.22
+                c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.040
 
                 return c
