@@ -11,10 +11,24 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Budget-friendly baseline:
-    // 30 minutes -> 48 entries/day.
-    static let tickSeconds: TimeInterval = 60.0 * 30.0
-    static let maxEntries: Int = 48
+    // 30 minutes -> 48 aligned entries/day.
+    static let stepSeconds: TimeInterval = 60.0 * 30.0
+    static let alignedEntriesPerDay: Int = 48
+
+    /// The next whole-step boundary strictly after the provided date.
+    ///
+    /// Alignment is performed in epoch seconds to keep the sweep phase-locked.
+    static func nextAlignedBoundary(after date: Date) -> Date {
+        let step = stepSeconds
+        let t = date.timeIntervalSince1970
+
+        var boundaryT = (t / step).rounded(.up) * step
+        if boundaryT <= t {
+            boundaryT += step
+        }
+
+        return Date(timeIntervalSince1970: boundaryT)
+    }
 }
 
 // MARK: - Configuration
@@ -64,6 +78,10 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
 
 public struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     public let date: Date
+
+    /// The next entry date used as the animation target for a smooth sweep.
+    public let nextDate: Date
+
     public let colourScheme: WidgetWeaverClockColourScheme
 }
 
@@ -72,28 +90,56 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), colourScheme: .classic)
+        let now = Date()
+        return Entry(
+            date: now,
+            nextDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
+            colourScheme: .classic
+        )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
-        Entry(date: Date(), colourScheme: configuration.colourScheme ?? .classic)
+        let scheme = configuration.colourScheme ?? .classic
+        let now = Date()
+
+        return Entry(
+            date: now,
+            nextDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
+            colourScheme: scheme
+        )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
 
         let now = Date()
-        let step = WWClockTimelineTuning.tickSeconds
-        let t = now.timeIntervalSince1970
-        let alignedT = floor(t / step) * step
-        let base = Date(timeIntervalSince1970: alignedT)
+        let step = WWClockTimelineTuning.stepSeconds
+
+        let nextBoundary = WWClockTimelineTuning.nextAlignedBoundary(after: now)
+
+        // One immediate entry for correct phase on first render, then aligned entries.
+        var dates: [Date] = [now]
+        dates.reserveCapacity(1 + WWClockTimelineTuning.alignedEntriesPerDay)
+
+        for i in 0..<WWClockTimelineTuning.alignedEntriesPerDay {
+            let d = nextBoundary.addingTimeInterval(TimeInterval(i) * step)
+            dates.append(d)
+        }
 
         var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.maxEntries)
+        entries.reserveCapacity(dates.count)
 
-        for i in 0..<WWClockTimelineTuning.maxEntries {
-            let d = base.addingTimeInterval(Double(i) * step)
-            entries.append(Entry(date: d, colourScheme: scheme))
+        for i in 0..<dates.count {
+            let d = dates[i]
+            let next = (i + 1 < dates.count) ? dates[i + 1] : d.addingTimeInterval(step)
+
+            entries.append(
+                Entry(
+                    date: d,
+                    nextDate: next,
+                    colourScheme: scheme
+                )
+            )
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -137,7 +183,8 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
-            anchorDate: entry.date
+            entryDate: entry.date,
+            nextDate: entry.nextDate
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
