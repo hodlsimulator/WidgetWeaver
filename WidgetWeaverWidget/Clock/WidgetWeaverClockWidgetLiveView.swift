@@ -9,8 +9,14 @@ import Foundation
 import SwiftUI
 
 private enum WWClockWidgetLiveTuning {
-    static let tickSeconds: TimeInterval = 1.0
-    static let heartbeatOpacity: Double = 0.01
+    // Must match the timeline step used by WidgetWeaverHomeScreenClockProvider.
+    static let tickSeconds: TimeInterval = 2.0
+
+    // Only animate when successive timeline entries arrive at the expected cadence.
+    // If WidgetKit skips a beat (budget/throttling) it's better to snap than to
+    // animate a huge jump.
+    static let stepTolerance: TimeInterval = 0.35
+
     static let showDebugOverlay: Bool = false
 }
 
@@ -18,19 +24,23 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
     let anchorDate: Date
 
-    @State private var lastTick: Int? = nil
+    @State private var lastRenderNow: Date? = nil
 
     var body: some View {
-        let now = Date()
-        let base = (anchorDate <= now) ? anchorDate : now
-
-        let tick = Int(floor(now.timeIntervalSince1970))
-        let tickDate = Date(timeIntervalSince1970: Double(tick))
-        let angles = WidgetWeaverClockAngles(now: tickDate)
+        // NOTE:
+        // Do not use `Date()` here expecting it to tick. Home Screen widgets are
+        // generally static until the next timeline entry.
+        //
+        // WidgetWeaverRenderClock.withNow(entry.date) installs the timeline entry date
+        // for the duration of the render pass, so `WidgetWeaverRenderClock.now` is
+        // stable and advances exactly as the timeline advances.
+        let now = WidgetWeaverRenderClock.now
+        let angles = WidgetWeaverClockAngles(now: now)
 
         let shouldAnimate: Bool = {
-            guard let lastTick else { return false }
-            return (tick - lastTick) == 1
+            guard let lastRenderNow else { return false }
+            let dt = now.timeIntervalSince(lastRenderNow)
+            return abs(dt - WWClockWidgetLiveTuning.tickSeconds) <= WWClockWidgetLiveTuning.stepTolerance
         }()
 
         return ZStack(alignment: .bottomTrailing) {
@@ -42,19 +52,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Text(timerInterval: base...Date.distantFuture, countsDown: false)
-                .font(.system(size: 1, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(WWClockWidgetLiveTuning.heartbeatOpacity))
-                .frame(width: 1, height: 1, alignment: .topLeading)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
             #if DEBUG
             if WWClockWidgetLiveTuning.showDebugOverlay {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(now, format: .dateTime.hour().minute().second())
-                    Text("tick: \(tick)")
-                    Text("last: \(lastTick.map(String.init) ?? "nil")")
+                    Text("Δt: \(lastRenderNow.map { now.timeIntervalSince($0) } ?? -1)")
                 }
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary.opacity(0.70))
@@ -68,12 +70,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
             transaction.animation = shouldAnimate ? .linear(duration: WWClockWidgetLiveTuning.tickSeconds) : nil
         }
         .onAppear {
-            if lastTick == nil {
-                lastTick = tick
+            if lastRenderNow == nil {
+                lastRenderNow = now
             }
         }
-        .onChange(of: tick) { _, newTick in
-            lastTick = newTick
+        .onChange(of: now) { _, newNow in
+            lastRenderNow = newNow
         }
     }
 }

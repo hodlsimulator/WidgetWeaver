@@ -11,9 +11,15 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Conservative: avoids WidgetKit reload budget issues.
-    static let tickSeconds: TimeInterval = 60.0 * 15.0
-    static let maxEntries: Int = 96
+    // Heartbeat timeline:
+    // Home Screen widgets are effectively static between WidgetKit timeline entries.
+    // If the clock needs to move (especially the second hand), the widget must be
+    // refreshed frequently and the hands should animate linearly between entries.
+    //
+    // Note: very small intervals can be throttled by WidgetKit depending on system state.
+    // 2 seconds has been a good practical compromise.
+    static let tickSeconds: TimeInterval = 2.0
+    static let maxEntries: Int = 180
 }
 
 // MARK: - Configuration
