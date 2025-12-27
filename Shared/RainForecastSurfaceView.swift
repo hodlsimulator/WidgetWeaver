@@ -67,7 +67,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glintMinHeightFraction: Double = 0.78
     var glintMaxCount: Int = 1
 
-    // MARK: - Fuzz (granular speckle outside core)
+    // MARK: - Fuzz (chance / uncertainty band around the surface)
 
     var fuzzEnabled: Bool = true
     var fuzzColor: Color = Color(red: 0.05, green: 0.32, blue: 1.00)
@@ -77,11 +77,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzBaseDensity: Double = 0.86
     var fuzzLowHeightPower: Double = 2.8
 
-    /// Lower bound of “uncertainty” even at full certainty, to keep a faint outer texture.
     var fuzzUncertaintyFloor: Double = 0.18
-
-    /// Controls how aggressively fuzz ramps up as certainty drops.
-    /// 1.0 = linear; 2.0+ = stronger morph from smooth → fuzzy.
     var fuzzUncertaintyExponent: Double = 2.0
 
     var fuzzMicroBlurPixels: Double = 0.0
@@ -96,6 +92,13 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzHazeStrength: Double = 0.72
     var fuzzSpeckStrength: Double = 1.0
     var fuzzInsideThreshold: UInt8 = 14
+
+    // New: surface-band behaviour (fuzz straddles the edge and extends slightly inside too)
+    var fuzzInsideWidthFactor: Double = 0.58
+    var fuzzInsideOpacityFactor: Double = 0.65
+
+    // New: ensures tapered ends never become fully smooth
+    var fuzzLowHeightBoost: Double = 0.55
 
     // MARK: - Baseline
 
@@ -153,6 +156,9 @@ struct RainForecastSurfaceConfiguration: Hashable {
         && lhs.fuzzHazeStrength == rhs.fuzzHazeStrength
         && lhs.fuzzSpeckStrength == rhs.fuzzSpeckStrength
         && lhs.fuzzInsideThreshold == rhs.fuzzInsideThreshold
+        && lhs.fuzzInsideWidthFactor == rhs.fuzzInsideWidthFactor
+        && lhs.fuzzInsideOpacityFactor == rhs.fuzzInsideOpacityFactor
+        && lhs.fuzzLowHeightBoost == rhs.fuzzLowHeightBoost
         && colorKey(lhs.baselineColor) == colorKey(rhs.baselineColor)
         && lhs.baselineLineOpacity == rhs.baselineLineOpacity
         && lhs.baselineEndFadeFraction == rhs.baselineEndFadeFraction
@@ -211,6 +217,10 @@ struct RainForecastSurfaceConfiguration: Hashable {
         hasher.combine(fuzzHazeStrength)
         hasher.combine(fuzzSpeckStrength)
         hasher.combine(fuzzInsideThreshold)
+
+        hasher.combine(fuzzInsideWidthFactor)
+        hasher.combine(fuzzInsideOpacityFactor)
+        hasher.combine(fuzzLowHeightBoost)
 
         hasher.combine(Self.colorKey(baselineColor))
         hasher.combine(baselineLineOpacity)
