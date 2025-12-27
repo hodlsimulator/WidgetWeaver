@@ -8,40 +8,25 @@
 import Foundation
 import SwiftUI
 
-private enum WWClockWidgetAnimationLimits {
-    // WidgetKit clamps animations to ~2 seconds max.
-    // Keeping this explicit avoids “looks fine in preview, frozen on Home Screen”.
-    static let maxDurationSeconds: TimeInterval = 2.0
-}
-
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
-    let intervalStart: Date
-    let intervalEnd: Date
-
-    private var stepSeconds: TimeInterval {
-        let dt = intervalEnd.timeIntervalSince(intervalStart)
-        if dt.isFinite == false { return 2.0 }
-        return max(0.05, min(WWClockWidgetAnimationLimits.maxDurationSeconds, dt))
-    }
 
     var body: some View {
-        let angles = WWClockMonotonicAngles(date: intervalStart)
+        TimelineView(.animation) { context in
+            let angles = WWClockMonotonicAngles(date: context.date)
 
-        WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: .degrees(angles.hourDegrees),
-            minuteAngle: .degrees(angles.minuteDegrees),
-            secondAngle: .degrees(angles.secondDegrees),
-            showsSecondHand: true,
-            handsOpacity: 1.0
-        )
-        // The only “driver” is timeline entry changes.
-        // When intervalStart changes, angles change, and WidgetKit animates the transition.
-        .animation(.linear(duration: stepSeconds), value: angles.secondDegrees)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(angles.hourDegrees),
+                minuteAngle: .degrees(angles.minuteDegrees),
+                secondAngle: .degrees(angles.secondDegrees),
+                showsSecondHand: true,
+                handsOpacity: 1.0
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

@@ -10,13 +10,6 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-private enum WWClockTimelineTuning {
-    // WidgetKit commonly coalesces sub-second and 1s timelines on Home Screen.
-    // 2s segments have been the most reliable for visible sweeping.
-    static let stepSeconds: TimeInterval = 2.0
-    static let entriesAfterBoundary: Int = 180 // ~6 minutes (+ one "now" entry)
-}
-
 // MARK: - Configuration
 
 public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
@@ -64,7 +57,6 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
 
 public struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     public let date: Date
-    public let endDate: Date
     public let colourScheme: WidgetWeaverClockColourScheme
 }
 
@@ -73,62 +65,28 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
     func placeholder(in context: Context) -> Entry {
-        let now = Date()
-        return Entry(
-            date: now,
-            endDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
-            colourScheme: .classic
-        )
+        Entry(date: Date(), colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
-        let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
-        return Entry(
-            date: now,
-            endDate: now.addingTimeInterval(WWClockTimelineTuning.stepSeconds),
-            colourScheme: scheme
-        )
+        Entry(date: Date(), colourScheme: configuration.colourScheme ?? .classic)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-
         let now = Date()
-        let step = WWClockTimelineTuning.stepSeconds
 
-        let t = now.timeIntervalSince1970
-        let nextBoundaryT = ceil(t / step) * step
-        var boundary = Date(timeIntervalSince1970: nextBoundaryT)
-        if boundary <= now {
-            boundary = boundary.addingTimeInterval(step)
-        }
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
+        let startOfHour = cal.date(from: comps) ?? now
+        let nextHour = cal.date(byAdding: .hour, value: 1, to: startOfHour) ?? now.addingTimeInterval(3600)
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineTuning.entriesAfterBoundary + 1)
+        let entries: [Entry] = [
+            Entry(date: now, colourScheme: scheme),
+            Entry(date: nextHour, colourScheme: scheme)
+        ]
 
-        // First entry starts at real "now" so the widget never shows the boundary time instantly.
-        entries.append(
-            Entry(
-                date: now,
-                endDate: boundary,
-                colourScheme: scheme
-            )
-        )
-
-        // Phase-locked entries on whole boundaries.
-        for i in 0..<WWClockTimelineTuning.entriesAfterBoundary {
-            let start = boundary.addingTimeInterval(Double(i) * step)
-            let end = start.addingTimeInterval(step)
-            entries.append(
-                Entry(
-                    date: start,
-                    endDate: end,
-                    colourScheme: scheme
-                )
-            )
-        }
-
+        // Hourly timeline reload stays within the normal WidgetKit budget envelope.
         return Timeline(entries: entries, policy: .atEnd)
     }
 }
@@ -144,9 +102,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverHomeScreenClockView(entry: entry)
-            }
+            WidgetWeaverHomeScreenClockView(entry: entry)
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
@@ -168,13 +124,9 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            intervalStart: entry.date,
-            intervalEnd: entry.endDate
-        )
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
-        }
+        WidgetWeaverClockWidgetLiveView(palette: palette)
+            .wwWidgetContainerBackground {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
     }
 }
