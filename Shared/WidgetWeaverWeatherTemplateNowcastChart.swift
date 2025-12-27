@@ -164,58 +164,60 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 c.maxDenseSamples = isExt ? 180 : 900
 
-                c.baselineFractionFromTop = 0.596
-                c.topHeadroomFraction = 0.30
-                c.typicalPeakFraction = 0.195
-                c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.65
+                // Fill the available plot height:
+                // baseline near the bottom, peaks mapped high with small headroom.
+                c.baselineFractionFromTop = 0.90
+                c.topHeadroomFraction = 0.05
+                c.typicalPeakFraction = 0.80
 
-                // Enough easing to prevent hard segment edges (renderer now also does wet-segment easing).
+                c.robustMaxPercentile = 0.93
+                c.intensityGamma = 0.52
+
+                // Keep segment endings tapered.
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                c.rimEnabled = true
-                c.rimColor = accent
-                c.rimInnerOpacity = 0.08
-                c.rimInnerWidthPixels = 1.0
-                c.rimOuterOpacity = 0.035
-                c.rimOuterWidthPixels = 14.0
+                // Let fuzz define the surface; rim tends to re-crisp the edge.
+                c.rimEnabled = false
 
-                // No glint / no gradient.
                 c.glossEnabled = false
                 c.glintEnabled = false
 
-                // Fuzz: make it the surface band.
+                // Fuzz: narrower, sharper falloff, stronger grain, and more inside contribution
+                // so it breaks up the edge instead of floating above it.
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-                c.fuzzRasterMaxPixels = isExt ? 85_000 : 260_000
+                c.fuzzRasterMaxPixels = isExt ? 95_000 : 300_000
 
-                c.fuzzMaxOpacity = isExt ? 0.30 : 0.34
-                c.fuzzWidthFraction = 0.24
-                c.fuzzWidthPixelsClamp = 12.0...120.0
+                c.fuzzMaxOpacity = isExt ? 0.36 : 0.40
+                c.fuzzWidthFraction = 0.14
+                c.fuzzWidthPixelsClamp = 10.0...85.0
 
                 c.fuzzBaseDensity = 0.92
-                c.fuzzHazeStrength = isExt ? 1.20 : 1.05
-                c.fuzzSpeckStrength = isExt ? 1.15 : 1.25
+                c.fuzzHazeStrength = isExt ? 0.78 : 0.72
+                c.fuzzSpeckStrength = isExt ? 1.35 : 1.45
 
-                c.fuzzEdgePower = 0.55
-                c.fuzzClumpCellPixels = 10.0
-                c.fuzzMicroBlurPixels = isExt ? 0.7 : 1.0
+                c.fuzzEdgePower = 1.65
+                c.fuzzClumpCellPixels = 9.0
+                c.fuzzMicroBlurPixels = isExt ? 0.35 : 0.55
 
-                c.fuzzUncertaintyFloor = 0.22
-                c.fuzzUncertaintyExponent = 2.0
-                c.fuzzLowHeightPower = 2.15
-                c.fuzzLowHeightBoost = 1.00
+                // Keep fuzz present even when certainty is high (but still “smoother = more certain”).
+                c.fuzzUncertaintyFloor = 0.34
+                c.fuzzUncertaintyExponent = 1.75
 
-                c.fuzzInsideWidthFactor = 0.78
-                c.fuzzInsideOpacityFactor = 0.78
-                c.fuzzInsideSpeckleFraction = 0.55
+                c.fuzzLowHeightPower = 2.10
+                c.fuzzLowHeightBoost = 1.05
 
-                c.fuzzDistancePowerOutside = 1.75
-                c.fuzzDistancePowerInside = 1.45
+                c.fuzzInsideWidthFactor = 0.85
+                c.fuzzInsideOpacityFactor = 0.85
+                c.fuzzInsideSpeckleFraction = 0.75
+
+                // Concentrate speckles hard at the edge (prevents tall fuzz plumes).
+                c.fuzzDistancePowerOutside = 2.40
+                c.fuzzDistancePowerInside = 2.00
 
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20

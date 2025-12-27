@@ -159,7 +159,6 @@ enum RainSurfaceDrawing {
         let maxHeightSafe = max(maxHeight, onePixel)
 
         var ySurfacePxByX = [Double](repeating: 0.0, count: w)
-        var invLenByX = [Double](repeating: 1.0, count: w)
         var strengthByX = [Double](repeating: 0.0, count: w)
         var bandOutByX = [Double](repeating: bandPxBase, count: w)
         var bandInByX = [Double](repeating: bandPxBase * insideWidthFactor, count: w)
@@ -187,22 +186,14 @@ enum RainSurfaceDrawing {
 
             let s = RainSurfaceMath.clamp01(max(uncertainty, lowH * lowHeightBoost))
 
-            let j0 = max(0, i0 - 1)
-            let j1 = min(n - 1, i0 + 1)
-            let dy = Double(heights[j1] - heights[j0])
-            let dx = max(1e-6, Double(j1 - j0) * Double(stepX))
-            let slope = dy / dx
-            let invLen = 1.0 / sqrt(1.0 + slope * slope)
-
             let baseW = bandPxBase
-            let widthMod = (0.55 + 0.65 * lowH) * (0.60 + 0.40 * s)
+            let widthMod = (0.55 + 0.55 * lowH) * (0.72 + 0.28 * s)
             let outW = max(1.0, baseW * widthMod)
             let inW = max(1.0, outW * insideWidthFactor)
 
             let ySurfPx = baselinePx - (hPt * Double(rasterScale))
 
             ySurfacePxByX[x] = ySurfPx
-            invLenByX[x] = invLen
             strengthByX[x] = s
             bandOutByX[x] = outW
             bandInByX[x] = inW
@@ -217,7 +208,9 @@ enum RainSurfaceDrawing {
                 let dy = Double(y) - ySurfacePxByX[x]
                 let inside = dy >= 0.0
 
-                let dist = abs(dy) * invLenByX[x]
+                // Screen-space vertical band thickness (prevents tall “plumes” on steep rises).
+                let dist = abs(dy)
+
                 let band = inside ? bandInByX[x] : bandOutByX[x]
                 if dist > band { continue }
 
@@ -236,16 +229,14 @@ enum RainSurfaceDrawing {
                 let sCurve = pow(max(0.0, s), 0.92)
 
                 let sideOpacity = inside ? (maxOpacity * insideOpacityFactor) : maxOpacity
-                let sideHazeMul = inside ? 1.15 : 1.0
+                let sideHazeMul = inside ? 1.12 : 1.0
                 let sideSpeckMul = inside ? (insideSpeckleFrac * insideOpacityFactor) : 1.0
 
-                // Continuous haze that “glues” fuzz to the surface.
                 var alpha = sideOpacity
                     * sCurve
                     * edge
-                    * (0.045 + 0.115 * hazeStrength * sideHazeMul * (0.55 + 0.45 * clump))
+                    * (0.040 + 0.110 * hazeStrength * sideHazeMul * (0.55 + 0.45 * clump))
 
-                // Speckle probability, strongly concentrated at the edge.
                 let speckEdgePow = inside ? speckEdgeInPow : speckEdgeOutPow
                 let speckEdge = pow(u, speckEdgePow)
 
@@ -267,20 +258,19 @@ enum RainSurfaceDrawing {
                         * (0.55 + 0.45 * clump)
                 }
 
-                // Occasional haze puff to avoid “too uniform” banding.
                 let hazeProb =
                     baseDensity
                     * hazeStrength
                     * sCurve
                     * edge
-                    * 0.08
+                    * 0.07
                     * (0.50 + 0.50 * clump)
 
                 if r1 < hazeProb {
                     alpha += sideOpacity
                         * sCurve
                         * edge
-                        * 0.22
+                        * 0.20
                         * (0.35 + 0.65 * r0)
                 }
 
