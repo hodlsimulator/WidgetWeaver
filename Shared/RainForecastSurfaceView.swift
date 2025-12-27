@@ -7,113 +7,165 @@
 //  SwiftUI view wrapper + configuration.
 //
 
-import Foundation
 import SwiftUI
 
 struct RainForecastSurfaceConfiguration {
+    // Sampling.
+    var maxDenseSamples: Int = 900
 
-    // MARK: - Determinism
-    var noiseSeed: UInt64 = 0
+    // Geometry ratios (measured from the mock).
+    // baselineFractionFromTop: baseline Y as fraction of chart height from top.
+    var baselineFractionFromTop: CGFloat = 0.596
 
-    // MARK: - Sampling / shaping
-    var maxDenseSamples: Int = 420
-    var baselineFractionFromTop: CGFloat = 0.86
-    var topHeadroomFraction: CGFloat = 0.18
-    var typicalPeakFraction: CGFloat = 0.70
+    // topHeadroomFraction: fraction of baseline distance-from-top reserved as headroom.
+    // (This makes it stable across different baseline placements.)
+    var topHeadroomFraction: CGFloat = 0.30
+
+    // typicalPeakFraction: typical peak Y as fraction of chart height from top.
+    // (Used as a geometric target for scaling; not a “cap”.)
+    var typicalPeakFraction: CGFloat = 0.195
+
+    // Intensity mapping.
     var robustMaxPercentile: Double = 0.93
-    var intensityGamma: Double = 0.62
+    var intensityGamma: Double = 0.65
 
-    var edgeEasingFraction: Double = 0.18
+    // Edge easing.
+    var edgeEasingFraction: CGFloat = 0.22
     var edgeEasingPower: Double = 1.45
 
-    // MARK: - Core
+    // Core fill.
     var coreBodyColor: Color = Color(red: 0.00, green: 0.10, blue: 0.42)
-    var coreTopColor: Color = Color(red: 0.10, green: 0.35, blue: 1.00)
+    var coreTopColor: Color = .blue
+    var coreTopMix: CGFloat = 0.0   // 0 = solid coreBodyColor, 1 = overlay coreTopColor
+    var coreFadeFraction: CGFloat = 0.06 // extra fade-out at the top of the core (destinationOut)
 
-    // MARK: - Rim
+    // Rim.
     var rimEnabled: Bool = true
-    var rimColor: Color = .white
+    var rimColor: Color = .blue
     var rimInnerOpacity: Double = 0.10
-    var rimInnerWidthPixels: Double = 1.0
-    var rimOuterOpacity: Double = 0.04
-    var rimOuterWidthPixels: Double = 16.0
+    var rimInnerWidthPixels: CGFloat = 1.0
+    var rimOuterOpacity: Double = 0.045
+    var rimOuterWidthPixels: CGFloat = 16.0
 
-    // MARK: - Gloss
+    // Gloss (optional).
     var glossEnabled: Bool = false
-    var glossDepthPixels: Double = 22.0
-    var glossMaxOpacity: Double = 0.14
-    var glossSoftBlurPixels: Double = 18.0
+    var glossMaxOpacity: Double = 0.06
+    var glossDepthPixels: CGFloat = 18.0
+    var glossBlurPixels: CGFloat = 10.0
+    var glossVerticalOffsetFraction: CGFloat = 0.06
 
-    // MARK: - Glints
+    // Glints (optional).
     var glintEnabled: Bool = false
-    var glintColor: Color = .white
-    var glintMaxOpacity: Double = 0.10
-    var glintBlurPixels: Double = 10.0
-    var glintMinHeightFraction: Double = 0.18
-    var glintMaxCount: Int = 2
+    var glintCount: Int = 7
+    var glintMaxOpacity: Double = 0.16
+    var glintSigmaPixels: CGFloat = 11.0
+    var glintVerticalOffsetPixels: CGFloat = 10.0
 
-    // MARK: - Baseline
-    var baselineColor: Color = .white
-    var baselineLineOpacity: Double = 0.16
-    var baselineEndFadeFraction: Double = 0.04
+    // Noise.
+    var noiseSeed: UInt64 = 0
 
-    // MARK: - Fuzz
+    // Allow the caller to hard-disable fuzz for performance or widget restrictions.
+    var canEnableFuzz: Bool = true
+
+    // Fuzz band.
     var fuzzEnabled: Bool = true
-    var fuzzColor: Color = .white
+    var fuzzColor: Color = .blue
+    var fuzzMaxOpacity: Double = 0.28
+    var fuzzWidthFraction: CGFloat = 0.24
+    var fuzzWidthPixelsClamp: ClosedRange<CGFloat> = 10.0...90.0
 
-    var fuzzRasterMaxPixels: Int = 180_000
-    var fuzzMaxOpacity: Double = 0.26
-
-    var fuzzWidthFraction: Double = 0.18
-    var fuzzWidthPixelsClamp: ClosedRange<Double> = 10.0...90.0
-
-    var fuzzBaseDensity: Double = 0.88
-    var fuzzHazeStrength: Double = 0.78
-    var fuzzSpeckStrength: Double = 1.18
-    var fuzzEdgePower: Double = 1.60
-
-    var fuzzClumpCellPixels: Double = 12.0
-    var fuzzMicroBlurPixels: Double = 0.55
-
-    // Chance → fuzz
+    // Chance → fuzz strength.
+    // “Chance” here is certainty/probability 0..1 (higher = more confident rain).
+    // Below threshold => fuzzier.
     var fuzzChanceThreshold: Double = 0.60
-    var fuzzChanceTransition: Double = 0.14
-    var fuzzChanceMinStrength: Double = 0.14
+    var fuzzChanceTransition: Double = 0.24
+    var fuzzChanceFloor: Double = 0.16
+    var fuzzChanceExponent: Double = 2.25
 
-    // Legacy uncertainty shaping
-    var fuzzUncertaintyFloor: Double = 0.06
-    var fuzzUncertaintyExponent: Double = 2.10
+    // Fuzz composition.
+    var fuzzDensity: Double = 0.95
+    var fuzzHazeStrength: Double = 0.95
+    var fuzzSpeckStrength: Double = 1.00
 
-    // Low-height reinforcement
-    var fuzzLowHeightPower: Double = 2.10
-    var fuzzLowHeightBoost: Double = 0.55
+    // Extra fuzz at low heights (tapered ends).
+    var fuzzLowHeightPower: Double = 2.15
+    var fuzzLowHeightBoost: Double = 0.92
 
-    // Inside band contribution
-    var fuzzInsideWidthFactor: Double = 0.72
-    var fuzzInsideOpacityFactor: Double = 0.62
-    var fuzzInsideSpeckleFraction: Double = 0.40
+    // Inside-band behaviour.
+    var fuzzInsideWidthFactor: Double = 0.66
+    var fuzzInsideOpacityFactor: Double = 0.70
+    var fuzzInsideSpeckleFraction: Double = 0.36
 
-    // Distance falloff within the band
-    var fuzzDistancePowerOutside: Double = 2.00
-    var fuzzDistancePowerInside: Double = 1.70
+    // Distance shaping and tangential jitter.
+    var fuzzDistancePowerOutside: Double = 1.90
+    var fuzzDistancePowerInside: Double = 1.55
+    var fuzzAlongTangentJitter: Double = 0.95
 
-    // Core erosion near the surface
+    // Haze sizing.
+    var fuzzHazeBlurFractionOfBand: Double = 0.36
+    var fuzzHazeStrokeWidthFactor: Double = 1.35
+    var fuzzInsideHazeStrokeWidthFactor: Double = 1.12
+
+    // Speckle sizing and budget.
+    var fuzzSpeckleRadiusPixels: ClosedRange<CGFloat> = 0.50...1.20
+    var fuzzSpeckleBudget: Int = 5200
+
+    // Core edge removal so fuzz “is” the surface (key to the mock).
     var fuzzErodeEnabled: Bool = true
-    var fuzzErodeStrength: Double = 0.82
-    var fuzzErodeEdgePower: Double = 2.70
+    var fuzzErodeStrength: Double = 0.80
+    var fuzzErodeEdgePower: Double = 1.50
+    var fuzzErodeRimInsetPixels: CGFloat = 1.0
 
-    // Extra knobs kept for compatibility (may be set by DEBUG harness / older configs)
-    var fuzzSpeckleBudget: Int = 0
-    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.50...1.20
-    var fuzzAlongTangentJitterFraction: Double = 0.0
-    var fuzzHazeBlurFractionOfBand: Double = 0.0
-    var fuzzHazeStrokeWidthFactor: Double = 0.0
-    var fuzzInsideHazeStrokeWidthFactor: Double = 0.0
+    // Baseline.
+    var baselineEnabled: Bool = true
+    var baselineColor: Color = .blue
+    var baselineLineOpacity: Double = 0.20
+    var baselineWidthPixels: CGFloat = 1.0
+    var baselineOffsetPixels: CGFloat = 0.0
+    var baselineEndFadeFraction: CGFloat = 0.035
 
-    // MARK: - Convenience
+    // -------------------------------------------------------------------------
+    // Compatibility aliases (keeps older Nowcast config code compiling).
+    // -------------------------------------------------------------------------
 
-    var canEnableFuzz: Bool {
-        fuzzEnabled && fuzzMaxOpacity > 0.000_1 && fuzzWidthFraction > 0.000_1
+    var fuzzBaseDensity: Double {
+        get { fuzzDensity }
+        set { fuzzDensity = newValue }
+    }
+
+    var fuzzUncertaintyFloor: Double {
+        get { fuzzChanceFloor }
+        set { fuzzChanceFloor = newValue }
+    }
+
+    var fuzzUncertaintyExponent: Double {
+        get { fuzzChanceExponent }
+        set { fuzzChanceExponent = newValue }
+    }
+
+    var fuzzChanceSoftness: Double {
+        get { fuzzChanceTransition }
+        set { fuzzChanceTransition = newValue }
+    }
+
+    var fuzzAlongTangentJitterFraction: Double {
+        get { fuzzAlongTangentJitter }
+        set { fuzzAlongTangentJitter = newValue }
+    }
+
+    var baselineOpacity: Double {
+        get { baselineLineOpacity }
+        set { baselineLineOpacity = newValue }
+    }
+
+    var glossOpacity: Double {
+        get { glossMaxOpacity }
+        set { glossMaxOpacity = newValue }
+    }
+
+    var glintOpacity: Double {
+        get { glintMaxOpacity }
+        set { glintMaxOpacity = newValue }
     }
 }
 
@@ -124,17 +176,29 @@ struct RainForecastSurfaceView: View {
 
     @Environment(\.displayScale) private var displayScale
 
+    init(
+        intensities: [Double],
+        certainties: [Double] = [],
+        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
+    ) {
+        self.intensities = intensities
+        self.certainties = certainties
+        self.configuration = configuration
+    }
+
     var body: some View {
-        Canvas { gc, size in
-            var context = gc
-            let renderer = RainForecastSurfaceRenderer(
-                intensities: intensities,
-                certainties: certainties,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-            renderer.render(in: &context, size: size)
+        GeometryReader { proxy in
+            Canvas { context, size in
+                let renderer = RainForecastSurfaceRenderer(
+                    intensities: intensities,
+                    certainties: certainties,
+                    configuration: configuration,
+                    displayScale: displayScale
+                )
+                var ctx = context
+                renderer.render(in: &ctx, size: size)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .accessibilityHidden(true)
     }
 }
