@@ -157,15 +157,14 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
         let px = WWClock.px(scale: scale)
 
         Text(text)
-            .font(.system(size: fontSize, weight: .semibold, design: .rounded))
-            .foregroundColor(palette.numeralLight)
+            .font(.system(size: fontSize, weight: .semibold))
+            .foregroundStyle(palette.numeralLight)
             .shadow(
                 color: palette.numeralShadow,
                 radius: max(px, fontSize * 0.040),
                 x: px,
                 y: px
             )
-            .compositingGroup()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
