@@ -207,7 +207,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 // Chance → fuzz.
                 c.fuzzChanceThreshold = 0.60
                 c.fuzzChanceTransition = 0.14
-                c.fuzzChanceMinStrength = 0.14
+                c.fuzzChanceMinStrength = 0.26
 
                 // Uncertainty shaping.
                 c.fuzzUncertaintyFloor = 0.06
