@@ -11,18 +11,9 @@ import SwiftUI
 import AppIntents
 
 private enum WWClockTimelineTuning {
-    // Motion-friendly tuning:
-    //
-    // Home Screen widgets are heavily budgeted by WidgetKit. A single hour-long SwiftUI animation
-    // often appears "stuck" because the host can snapshot / freeze long-running animations.
-    //
-    // The most reliable approach is to keep the same "animate-to-intervalEnd" technique, but
-    // subdivide time into short intervals so each sweep is short and gets restarted regularly
-    // by timeline entries.
-    //
-    // 2s * 180 = 6 minutes (+ one "now" entry).
+    // Try 1s entries. Keep the horizon short to reduce pressure on WidgetKit.
     static let stepSeconds: TimeInterval = 1.0
-    static let entriesAfterBoundary: Int = 120  // 2 minutes (keeps the timeline lighter)
+    static let entriesAfterBoundary: Int = 60 // 60s (+ one "now" entry)
 }
 
 // MARK: - Configuration
