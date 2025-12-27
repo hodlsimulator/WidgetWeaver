@@ -16,8 +16,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
     /// Deterministic anchor for WidgetKit pre-rendering.
-    /// The view re-syncs itself to `Date()` when it becomes visible.
-    let startDate: Date
+    /// The view re-syncs itself to `Date()` when it becomes active.
+    let anchorDate: Date
 
     @State private var baseDate: Date
     @State private var started: Bool = false
@@ -26,10 +26,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @State private var minPhase: Double = 0
     @State private var hourPhase: Double = 0
 
-    init(palette: WidgetWeaverClockPalette, startDate: Date) {
+    init(palette: WidgetWeaverClockPalette, anchorDate: Date) {
         self.palette = palette
-        self.startDate = startDate
-        _baseDate = State(initialValue: startDate)
+        self.anchorDate = anchorDate
+        _baseDate = State(initialValue: anchorDate)
     }
 
     var body: some View {
@@ -50,7 +50,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 syncAndStartIfNeeded()
             }
         }
-        .task {
+        .task(id: anchorDate) {
             DispatchQueue.main.async {
                 syncAndStartIfNeeded()
             }
@@ -59,6 +59,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     private func syncAndStartIfNeeded() {
         let now = Date()
+
         let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > WWClockWidgetSweepTuning.resyncThresholdSeconds)
         guard shouldResync else { return }
 
@@ -72,13 +73,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
         }
 
         withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
-            secPhase = 1.0
+            secPhase = 1
         }
         withAnimation(.linear(duration: 3600.0).repeatForever(autoreverses: false)) {
-            minPhase = 1.0
+            minPhase = 1
         }
         withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
-            hourPhase = 1.0
+            hourPhase = 1
         }
     }
 }

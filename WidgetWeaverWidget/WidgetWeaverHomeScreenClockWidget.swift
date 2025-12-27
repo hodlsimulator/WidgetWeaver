@@ -13,13 +13,13 @@ import AppIntents
 private enum WWClockTimelineTuning {
     // Conservative cadence: hourly entries.
     static let stepSeconds: TimeInterval = 60.0 * 60.0
-    static let entriesAhead: Int = 24
+    static let maxEntries: Int = 24
 
-    static func nextAlignedBoundary(after date: Date) -> Date {
+    static func floorAlignedBase(for now: Date) -> Date {
         let step = stepSeconds
-        let t = date.timeIntervalSince1970
-        let next = floor(t / step) * step + step
-        return Date(timeIntervalSince1970: next)
+        let t = now.timeIntervalSince1970
+        let alignedT = floor(t / step) * step
+        return Date(timeIntervalSince1970: alignedT)
     }
 }
 
@@ -89,18 +89,19 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(1 + WWClockTimelineTuning.entriesAhead)
+        let step = WWClockTimelineTuning.stepSeconds
+        let base = WWClockTimelineTuning.floorAlignedBase(for: now)
 
-        // Seed entry for immediate correctness.
+        var entries: [Entry] = []
+        entries.reserveCapacity(WWClockTimelineTuning.maxEntries + 1)
+
+        // Seed entry for immediate correctness at render time.
         entries.append(Entry(date: now, colourScheme: scheme))
 
-        // Aligned hourly boundaries ahead.
-        let first = WWClockTimelineTuning.nextAlignedBoundary(after: now)
-        let step = WWClockTimelineTuning.stepSeconds
-
-        for i in 0..<WWClockTimelineTuning.entriesAhead {
-            let d = first.addingTimeInterval(TimeInterval(i) * step)
+        // Hourly boundaries ahead (strictly increasing).
+        let firstBoundary = base.addingTimeInterval(step)
+        for i in 0..<WWClockTimelineTuning.maxEntries {
+            let d = firstBoundary.addingTimeInterval(Double(i) * step)
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
@@ -145,7 +146,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
-            startDate: entry.date
+            anchorDate: entry.date
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
