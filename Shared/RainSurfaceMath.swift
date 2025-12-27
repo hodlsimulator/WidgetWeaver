@@ -4,205 +4,309 @@
 //
 //  Created by . . on 12/23/25.
 //
+//  Small maths helpers used by the surface renderer.
+//
 
 import Foundation
-import SwiftUI
+import CoreGraphics
 
 enum RainSurfaceMath {
-    static func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
-    static func clamp01(_ x: CGFloat) -> CGFloat { max(0.0, min(1.0, x)) }
 
-    static func alignToPixelCenter(_ y: CGFloat, displayScale: CGFloat) -> CGFloat {
+    // MARK: - Clamp / Lerp
+
+    static func clamp(_ x: Double, min lo: Double, max hi: Double) -> Double {
+        if x < lo { return lo }
+        if x > hi { return hi }
+        return x
+    }
+
+    static func clamp01(_ x: Double) -> Double {
+        clamp(x, min: 0.0, max: 1.0)
+    }
+
+    static func clamp(_ x: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
+        if x < lo { return lo }
+        if x > hi { return hi }
+        return x
+    }
+
+    static func clamp01(_ x: CGFloat) -> CGFloat {
+        clamp(x, min: 0.0, max: 1.0)
+    }
+
+    static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
+        a + (b - a) * t
+    }
+
+    static func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+        a + (b - a) * t
+    }
+
+    // MARK: - Smoothstep
+
+    static func smoothstep01(_ t: Double) -> Double {
+        let x = clamp01(t)
+        return x * x * (3.0 - 2.0 * x)
+    }
+
+    static func smoothstep01(_ t: CGFloat) -> CGFloat {
+        let x = clamp01(t)
+        return x * x * (3.0 - 2.0 * x)
+    }
+
+    // MARK: - Pixel alignment
+
+    /// Aligns a 1px stroke to the pixel centre for crisp lines.
+    static func alignToPixelCenter(_ value: CGFloat, displayScale: CGFloat) -> CGFloat {
         let s = max(1.0, displayScale)
-        return (round(y * s) + 0.5) / s
+        return (floor(value * s) + 0.5) / s
     }
 
-    static func smoothstep(_ a: Double, _ b: Double, _ x: Double) -> Double {
-        if a == b { return x < a ? 0 : 1 }
-        let t = clamp01((x - a) / (b - a))
-        return t * t * (3 - 2 * t)
-    }
+    // MARK: - Percentile
 
     static func percentile(_ values: [Double], p: Double) -> Double {
         guard !values.isEmpty else { return 0.0 }
-        let pp = clamp01(p)
+        let pp = clamp(p, min: 0.0, max: 1.0)
+        if values.count == 1 { return values[0] }
+
         let sorted = values.sorted()
-        if sorted.count == 1 { return sorted[0] }
         let idx = pp * Double(sorted.count - 1)
         let i0 = Int(floor(idx))
         let i1 = min(sorted.count - 1, i0 + 1)
-        let frac = idx - Double(i0)
-        return sorted[i0] + (sorted[i1] - sorted[i0]) * frac
+        let t = idx - Double(i0)
+        return lerp(sorted[i0], sorted[i1], t)
     }
 
-    static func smooth(_ values: [CGFloat], windowRadius: Int, passes: Int) -> [CGFloat] {
-        guard values.count > 2, windowRadius > 0, passes > 0 else { return values }
-        var v = values
+    // MARK: - Smoothing (moving average)
+
+    static func smooth(_ input: [CGFloat], windowRadius: Int, passes: Int) -> [CGFloat] {
+        guard input.count >= 3, windowRadius > 0, passes > 0 else { return input }
+        var a = input
+        var b = input
+
         for _ in 0..<passes {
-            var out = v
-            for i in 0..<v.count {
-                var acc: CGFloat = 0
+            for i in 0..<a.count {
+                var sum: CGFloat = 0
                 var w: CGFloat = 0
                 let lo = max(0, i - windowRadius)
-                let hi = min(v.count - 1, i + windowRadius)
+                let hi = min(a.count - 1, i + windowRadius)
                 for j in lo...hi {
-                    let ww: CGFloat = (j == i) ? 2.0 : 1.0
-                    acc += v[j] * ww
+                    let ww: CGFloat
+                    if j == i { ww = 2.0 } else { ww = 1.0 }
+                    sum += a[j] * ww
                     w += ww
                 }
-                out[i] = acc / max(0.000_001, w)
+                b[i] = sum / max(0.000_001, w)
             }
-            v = out
+            a = b
         }
-        return v
+
+        return a
     }
 
-    static func applyEdgeEasing(to heights: inout [CGFloat], fraction: CGFloat, power: Double) {
-        guard heights.count > 2 else { return }
-        let f = max(0.0, min(0.49, fraction))
-        let n = heights.count
-        let k = max(1, Int(round(CGFloat(n) * f)))
+    static func smooth(_ input: [Double], windowRadius: Int, passes: Int) -> [Double] {
+        guard input.count >= 3, windowRadius > 0, passes > 0 else { return input }
+        var a = input
+        var b = input
 
-        func ease(_ t: CGFloat) -> CGFloat {
-            let tt = clamp01(t)
-            return CGFloat(pow(Double(tt), max(0.10, power)))
+        for _ in 0..<passes {
+            for i in 0..<a.count {
+                var sum: Double = 0
+                var w: Double = 0
+                let lo = max(0, i - windowRadius)
+                let hi = min(a.count - 1, i + windowRadius)
+                for j in lo...hi {
+                    let ww: Double
+                    if j == i { ww = 2.0 } else { ww = 1.0 }
+                    sum += a[j] * ww
+                    w += ww
+                }
+                b[i] = sum / max(0.000_001, w)
+            }
+            a = b
         }
 
-        for i in 0..<k {
-            let t = CGFloat(i) / CGFloat(max(1, k - 1))
-            let w = ease(t)
-            heights[i] *= w
-            heights[n - 1 - i] *= w
-        }
+        return a
     }
 
-    static func applyWetSegmentEasing(to heights: inout [CGFloat], threshold: CGFloat, fraction: CGFloat, power: Double) {
-        guard heights.count > 4 else { return }
-        let n = heights.count
-        let ramp = max(2, Int(round(CGFloat(n) * max(0.05, min(0.40, fraction)))))
+    // MARK: - Monotone cubic resample (PCHIP style)
 
-        func ease(_ t: CGFloat) -> CGFloat {
-            let tt = clamp01(t)
-            return CGFloat(pow(Double(tt), max(0.10, power)))
+    static func resampleMonotoneCubicCenters(_ input: [CGFloat], targetCount: Int) -> [CGFloat] {
+        guard targetCount > 0 else { return [] }
+        guard input.count > 1 else {
+            return Array(repeating: input.first ?? 0, count: targetCount)
         }
 
-        // Detect transitions and apply ramps.
+        let n = input.count
+        let y = input.map { Double($0) }
+
+        // Slopes between points.
+        var d = [Double](repeating: 0.0, count: n - 1)
         for i in 0..<(n - 1) {
-            let a = heights[i]
-            let b = heights[i + 1]
-
-            // Dry -> Wet
-            if a <= threshold && b > threshold {
-                for k in 0..<ramp {
-                    let idx = i + 1 + k
-                    if idx >= n { break }
-                    let t = CGFloat(k + 1) / CGFloat(ramp)
-                    let w = ease(t)
-                    heights[idx] *= w
-                }
-            }
-
-            // Wet -> Dry
-            if a > threshold && b <= threshold {
-                for k in 0..<ramp {
-                    let idx = i - k
-                    if idx < 0 { break }
-                    let t = CGFloat(k + 1) / CGFloat(ramp)
-                    let w = ease(1.0 - t)
-                    heights[idx] *= w
-                }
-            }
+            d[i] = y[i + 1] - y[i]
         }
-    }
 
-    // Monotone cubic (Fritsch–Carlson) resampling.
-    static func resampleMonotoneCubic(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
-        guard targetCount > 1 else { return values.isEmpty ? [] : [values[0]] }
-        guard values.count > 1 else { return Array(repeating: values.first ?? 0, count: targetCount) }
-
-        let n = values.count
-        var d = Array(repeating: CGFloat(0), count: n - 1)
-        for i in 0..<(n - 1) { d[i] = values[i + 1] - values[i] }
-
-        var m = Array(repeating: CGFloat(0), count: n)
+        // Tangents.
+        var m = [Double](repeating: 0.0, count: n)
         m[0] = d[0]
         m[n - 1] = d[n - 2]
         if n > 2 {
             for i in 1..<(n - 1) {
-                let a = d[i - 1]
-                let b = d[i]
-                if a == 0 || b == 0 || (a > 0) != (b > 0) {
-                    m[i] = 0
+                let d0 = d[i - 1]
+                let d1 = d[i]
+                if d0 == 0.0 || d1 == 0.0 || (d0 > 0.0) != (d1 > 0.0) {
+                    m[i] = 0.0
                 } else {
-                    m[i] = (2 * a * b) / (a + b)
+                    // Harmonic mean (equal spacing).
+                    m[i] = 2.0 / (1.0 / d0 + 1.0 / d1)
                 }
             }
         }
 
-        func hermite(_ y0: CGFloat, _ y1: CGFloat, _ m0: CGFloat, _ m1: CGFloat, _ t: CGFloat) -> CGFloat {
+        func hermite(_ i: Int, _ t: Double) -> Double {
             let t2 = t * t
             let t3 = t2 * t
-            let h00 = 2 * t3 - 3 * t2 + 1
-            let h10 = t3 - 2 * t2 + t
-            let h01 = -2 * t3 + 3 * t2
+            let h00 = 2.0 * t3 - 3.0 * t2 + 1.0
+            let h10 = t3 - 2.0 * t2 + t
+            let h01 = -2.0 * t3 + 3.0 * t2
             let h11 = t3 - t2
-            return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
+            return h00 * y[i] + h10 * m[i] + h01 * y[i + 1] + h11 * m[i + 1]
         }
 
-        var out: [CGFloat] = []
+        var out = [CGFloat]()
         out.reserveCapacity(targetCount)
 
+        // Map output samples across [0, n-1].
+        let denom = Double(max(1, targetCount - 1))
         for j in 0..<targetCount {
-            let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
-            let i0 = max(0, min(n - 2, Int(floor(u))))
-            let t = CGFloat(u - Double(i0))
-            out.append(hermite(values[i0], values[i0 + 1], m[i0], m[i0 + 1], t))
+            let pos = (Double(j) / denom) * Double(n - 1)
+            let i = min(n - 2, max(0, Int(floor(pos))))
+            let t = pos - Double(i)
+            let v = hermite(i, t)
+            out.append(CGFloat(v))
         }
+
         return out
     }
 
-    static func resampleMonotoneCubic(_ values: [Double], targetCount: Int) -> [Double] {
-        guard targetCount > 1 else { return values.isEmpty ? [] : [values[0]] }
-        guard values.count > 1 else { return Array(repeating: values.first ?? 0, count: targetCount) }
+    static func resampleMonotoneCubicCenters(_ input: [Double], targetCount: Int) -> [Double] {
+        guard targetCount > 0 else { return [] }
+        guard input.count > 1 else {
+            return Array(repeating: input.first ?? 0, count: targetCount)
+        }
 
-        let n = values.count
-        var d = Array(repeating: 0.0, count: n - 1)
-        for i in 0..<(n - 1) { d[i] = values[i + 1] - values[i] }
+        let n = input.count
+        let y = input
 
-        var m = Array(repeating: 0.0, count: n)
+        var d = [Double](repeating: 0.0, count: n - 1)
+        for i in 0..<(n - 1) {
+            d[i] = y[i + 1] - y[i]
+        }
+
+        var m = [Double](repeating: 0.0, count: n)
         m[0] = d[0]
         m[n - 1] = d[n - 2]
         if n > 2 {
             for i in 1..<(n - 1) {
-                let a = d[i - 1]
-                let b = d[i]
-                if a == 0 || b == 0 || (a > 0) != (b > 0) {
-                    m[i] = 0
+                let d0 = d[i - 1]
+                let d1 = d[i]
+                if d0 == 0.0 || d1 == 0.0 || (d0 > 0.0) != (d1 > 0.0) {
+                    m[i] = 0.0
                 } else {
-                    m[i] = (2 * a * b) / (a + b)
+                    m[i] = 2.0 / (1.0 / d0 + 1.0 / d1)
                 }
             }
         }
 
-        func hermite(_ y0: Double, _ y1: Double, _ m0: Double, _ m1: Double, _ t: Double) -> Double {
+        func hermite(_ i: Int, _ t: Double) -> Double {
             let t2 = t * t
             let t3 = t2 * t
-            let h00 = 2 * t3 - 3 * t2 + 1
-            let h10 = t3 - 2 * t2 + t
-            let h01 = -2 * t3 + 3 * t2
+            let h00 = 2.0 * t3 - 3.0 * t2 + 1.0
+            let h10 = t3 - 2.0 * t2 + t
+            let h01 = -2.0 * t3 + 3.0 * t2
             let h11 = t3 - t2
-            return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
+            return h00 * y[i] + h10 * m[i] + h01 * y[i + 1] + h11 * m[i + 1]
         }
 
-        var out: [Double] = []
+        var out = [Double]()
         out.reserveCapacity(targetCount)
 
+        let denom = Double(max(1, targetCount - 1))
         for j in 0..<targetCount {
-            let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
-            let i0 = max(0, min(n - 2, Int(floor(u))))
-            let t = u - Double(i0)
-            out.append(hermite(values[i0], values[i0 + 1], m[i0], m[i0 + 1], t))
+            let pos = (Double(j) / denom) * Double(n - 1)
+            let i = min(n - 2, max(0, Int(floor(pos))))
+            let t = pos - Double(i)
+            out.append(hermite(i, t))
         }
+
         return out
+    }
+
+    // MARK: - Edge easing (whole-chart)
+
+    static func applyEdgeEasing(to heights: inout [CGFloat], fraction: Double, power: Double) {
+        guard heights.count >= 6 else { return }
+        let f = clamp(fraction, min: 0.0, max: 0.45)
+        if f <= 0.0 { return }
+
+        let n = heights.count
+        let k = max(1, Int(round(Double(n) * f)))
+
+        for i in 0..<n {
+            let leftT = Double(i) / Double(max(1, k))
+            let rightT = Double(n - 1 - i) / Double(max(1, k))
+            let t = min(1.0, min(leftT, rightT))
+
+            let eased = pow(smoothstep01(t), power)
+            heights[i] = heights[i] * CGFloat(eased)
+        }
+    }
+
+    // MARK: - Wet-segment easing (fix cliffs at start/stop of rain)
+
+    static func applyWetSegmentEasing(to heights: inout [CGFloat], threshold: CGFloat, fraction: Double, power: Double) {
+        guard heights.count >= 6 else { return }
+        let n = heights.count
+        let f = clamp(fraction, min: 0.0, max: 0.45)
+        if f <= 0.0 { return }
+
+        // Identify wet runs (>= threshold).
+        var runs: [(start: Int, end: Int)] = []
+        var i = 0
+        while i < n {
+            while i < n && heights[i] < threshold { i += 1 }
+            if i >= n { break }
+            let start = i
+            while i < n && heights[i] >= threshold { i += 1 }
+            let end = i - 1
+            runs.append((start, end))
+        }
+
+        guard !runs.isEmpty else { return }
+
+        for run in runs {
+            let len = run.end - run.start + 1
+            if len < 4 { continue }
+
+            let k = max(1, Int(round(Double(len) * f)))
+
+            // Start ramp.
+            if k > 0 {
+                for j in 0..<min(k, len) {
+                    let t = Double(j) / Double(max(1, k))
+                    let eased = pow(smoothstep01(t), power)
+                    heights[run.start + j] = heights[run.start + j] * CGFloat(eased)
+                }
+            }
+
+            // End ramp.
+            if k > 0 {
+                for j in 0..<min(k, len) {
+                    let t = Double(j) / Double(max(1, k))
+                    let eased = pow(smoothstep01(t), power)
+                    heights[run.end - j] = heights[run.end - j] * CGFloat(eased)
+                }
+            }
+        }
     }
 }
