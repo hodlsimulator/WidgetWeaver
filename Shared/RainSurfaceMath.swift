@@ -138,7 +138,7 @@ enum RainSurfaceMath {
         }
 
         let n = input.count
-        var y = input.map { Double($0) }
+        let y = input.map { Double($0) }
 
         // Slopes between points.
         var d = [Double](repeating: 0.0, count: n - 1)

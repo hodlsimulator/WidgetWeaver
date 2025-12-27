@@ -58,7 +58,7 @@ struct RainForecastSurfaceRenderer {
         let typicalScale = maxHeight * configuration.typicalPeakFraction
         let gamma = max(0.10, min(2.50, configuration.intensityGamma))
 
-        var minuteHeights: [CGFloat] = nonNeg.map { i in
+        let minuteHeights: [CGFloat] = nonNeg.map { i in
             let r = i / robustMax
             let h = pow(max(0.0, r), gamma) * Double(typicalScale)
             return CGFloat(min(Double(maxHeight), h))
