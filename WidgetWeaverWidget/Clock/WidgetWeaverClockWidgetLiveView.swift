@@ -11,6 +11,12 @@ import SwiftUI
 private enum WWClockWidgetLiveTuning {
     static let showDebugOverlay: Bool = false
     static let minimumAnimationSeconds: TimeInterval = 0.05
+
+    // Snap only when drift is obvious. These are screen-angle thresholds (mod 360).
+    // Second hand: 6° per second. Minute hand: 0.1° per second. Hour hand: ~0.00833° per second.
+    static let snapSecondDegrees: Double = 9.0    // ~1.5s
+    static let snapMinuteDegrees: Double = 2.0    // ~20s
+    static let snapHourDegrees: Double = 0.75     // ~90min
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
@@ -21,8 +27,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @State private var hourDegrees: Double
     @State private var minuteDegrees: Double
     @State private var secondDegrees: Double
-
-    @State private var animationGeneration: Int = 0
 
     init(palette: WidgetWeaverClockPalette, intervalStart: Date, intervalEnd: Date) {
         self.palette = palette
@@ -37,6 +41,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     private var signature: IntervalSignature {
         IntervalSignature(start: intervalStart, end: intervalEnd)
+    }
+
+    private var segmentSeconds: TimeInterval {
+        let dt = intervalEnd.timeIntervalSince(intervalStart)
+        if dt.isFinite && dt > 0 { return dt }
+        return 2.0
     }
 
     var body: some View {
@@ -79,64 +89,38 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 
     private func startOrResyncAnimation() {
-        animationGeneration &+= 1
-        let gen = animationGeneration
+        let step = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, segmentSeconds)
 
-        guard intervalEnd > intervalStart else {
-            let snap = WWClockMonotonicAngles(date: intervalStart)
+        // Treat each new timeline entry as a trigger, but base the sweep on wall time.
+        // This keeps the clock moving even if WidgetKit delivers entries slightly late.
+        let now = Date()
+        let end = now.addingTimeInterval(step)
+
+        let expectedNow = WWClockMonotonicAngles(date: now)
+        let target = WWClockMonotonicAngles(date: end)
+
+        let driftSecond = abs(WWClockAngleMath.shortestDeltaDegrees(current: secondDegrees, target: expectedNow.secondDegrees))
+        let driftMinute = abs(WWClockAngleMath.shortestDeltaDegrees(current: minuteDegrees, target: expectedNow.minuteDegrees))
+        let driftHour = abs(WWClockAngleMath.shortestDeltaDegrees(current: hourDegrees, target: expectedNow.hourDegrees))
+
+        let shouldSnap =
+            driftSecond > WWClockWidgetLiveTuning.snapSecondDegrees ||
+            driftMinute > WWClockWidgetLiveTuning.snapMinuteDegrees ||
+            driftHour > WWClockWidgetLiveTuning.snapHourDegrees
+
+        if shouldSnap {
             withAnimation(.none) {
-                hourDegrees = snap.hourDegrees
-                minuteDegrees = snap.minuteDegrees
-                secondDegrees = snap.secondDegrees
+                hourDegrees = expectedNow.hourDegrees
+                minuteDegrees = expectedNow.minuteDegrees
+                secondDegrees = expectedNow.secondDegrees
             }
-            return
-        }
-
-        runOneSecondSteppedSweep(generation: gen)
-    }
-
-    private func runOneSecondSteppedSweep(generation gen: Int) {
-        guard gen == animationGeneration else { return }
-
-        let wallNow = Date()
-        let clampedNow = min(max(wallNow, intervalStart), intervalEnd)
-
-        guard clampedNow < intervalEnd else {
-            let snap = WWClockMonotonicAngles(date: intervalEnd)
-            withAnimation(.none) {
-                hourDegrees = snap.hourDegrees
-                minuteDegrees = snap.minuteDegrees
-                secondDegrees = snap.secondDegrees
-            }
-            return
-        }
-
-        let nextWholeSecond = Date(timeIntervalSince1970: ceil(clampedNow.timeIntervalSince1970))
-        let target = min(max(nextWholeSecond, clampedNow.addingTimeInterval(WWClockWidgetLiveTuning.minimumAnimationSeconds)), intervalEnd)
-
-        let duration = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, target.timeIntervalSince(clampedNow))
-
-        let fromAngles = WWClockMonotonicAngles(date: clampedNow)
-        let toAngles = WWClockMonotonicAngles(date: target)
-
-        withAnimation(.none) {
-            hourDegrees = fromAngles.hourDegrees
-            minuteDegrees = fromAngles.minuteDegrees
-            secondDegrees = fromAngles.secondDegrees
         }
 
         DispatchQueue.main.async {
-            guard gen == animationGeneration else { return }
-
-            withAnimation(.linear(duration: duration)) {
-                hourDegrees = toAngles.hourDegrees
-                minuteDegrees = toAngles.minuteDegrees
-                secondDegrees = toAngles.secondDegrees
-            }
-
-            let delay = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, duration)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                runOneSecondSteppedSweep(generation: gen)
+            withAnimation(.linear(duration: step)) {
+                hourDegrees = target.hourDegrees
+                minuteDegrees = target.minuteDegrees
+                secondDegrees = target.secondDegrees
             }
         }
     }
@@ -159,5 +143,14 @@ private struct WWClockMonotonicAngles {
         secondDegrees = localSeconds * 6.0
         minuteDegrees = localSeconds * (360.0 / 3600.0)
         hourDegrees = localSeconds * (360.0 / 43200.0)
+    }
+}
+
+private enum WWClockAngleMath {
+    static func shortestDeltaDegrees(current: Double, target: Double) -> Double {
+        var d = (target - current).truncatingRemainder(dividingBy: 360.0)
+        if d >= 180.0 { d -= 360.0 }
+        if d < -180.0 { d += 360.0 }
+        return d
     }
 }
