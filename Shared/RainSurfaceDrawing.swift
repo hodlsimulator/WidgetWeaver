@@ -52,7 +52,13 @@ enum RainSurfaceDrawing {
             displayScale: scale
         )
 
-        if configuration.canEnableFuzz {
+        let fuzzOK =
+            configuration.fuzzEnabled
+            && configuration.fuzzMaxOpacity > 0.001
+            && configuration.fuzzBaseDensity > 0.001
+            && configuration.fuzzWidthFraction > 0.001
+
+        if fuzzOK {
             drawFuzz(
                 in: &context,
                 chartRect: chartRect,
@@ -109,12 +115,6 @@ enum RainSurfaceDrawing {
         let rightStop = Double(1.0 - fadeFrac)
 
         let base = configuration.baselineColor
-        let gradient = Gradient(stops: [
-            .init(color: base.opacity(0.0), location: 0.0),
-            .init(color: base.opacity(opacity), location: leftStop),
-            .init(color: base.opacity(opacity), location: rightStop),
-            .init(color: base.opacity(0.0), location: 1.0)
-        ])
 
         let linePath = Path { p in
             p.move(to: CGPoint(x: chartRect.minX, y: y))
