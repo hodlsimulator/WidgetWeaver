@@ -1,16 +1,15 @@
 //
-// WidgetWeaverWeatherTemplateNowcastChart.swift
-// WidgetWeaver
+//  WidgetWeaverWeatherTemplateNowcastChart.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
-// Nowcast chart container + axis labels.
-// Chart area is dedicated to surface rendering; labels are outside.
+//  Nowcast chart container + axis labels.
+//  Chart area is dedicated to surface rendering; labels are outside.
 //
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -21,10 +20,7 @@ struct WeatherNowcastChart: View {
     let accent: Color
     let showAxisLabels: Bool
 
-    /// Seed component (rounded to minute) for deterministic fuzz.
     let forecastStart: Date
-
-    /// Location components for deterministic fuzz.
     let locationLatitude: Double?
     let locationLongitude: Double?
 
@@ -141,9 +137,9 @@ private struct WeatherNowcastSurfacePlot: View {
             }
 
             let n = series.count
+
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
@@ -164,63 +160,79 @@ private struct WeatherNowcastSurfacePlot: View {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
 
-                // Keep the widget out of placeholder territory by bounding work before fuzz turns on.
-                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 200 : 800
-                c.edgeEasingFraction = 0.10
-                c.edgeEasingPower = 1.7
+                // Sample density.
+                c.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 420 : 900
 
-                // Match the mock’s composition: baseline higher, more black below, smaller typical peak.
+                // Mock geometry ratios.
                 c.baselineFractionFromTop = 0.596
                 c.topHeadroomFraction = 0.30
                 c.typicalPeakFraction = 0.195
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.65
 
-                // Core.
+                // Stronger taper so ends don’t become vertical walls.
+                c.edgeEasingFraction = 0.22
+                c.edgeEasingPower = 1.45
+
+                // Core: solid fill (no vertical gradient).
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Rim + gloss (subtle; fuzz defines the surface).
+                // Rim: thin smooth edge + soft halo (kept secondary to fuzz band).
                 c.rimEnabled = true
                 c.rimColor = accent
-                c.rimInnerOpacity = 0.0
-                c.rimInnerWidthPixels = 0.0
-                c.rimOuterOpacity = 0.06
-                c.rimOuterWidthPixels = 14.0
+                c.rimInnerOpacity = 0.10
+                c.rimInnerWidthPixels = 1.0
+                c.rimOuterOpacity = 0.045
+                c.rimOuterWidthPixels = 16.0
 
-                c.glossEnabled = true
-                c.glossMaxOpacity = 0.12
-                c.glossDepthPixels = 10.0...16.0
-
-                // Glint off (mock explicitly excludes glint).
+                // Gloss/glint off for the “no glint / no gradient” request.
+                c.glossEnabled = false
                 c.glintEnabled = false
 
-                // Fuzz: surface-band (above + below) and bounded.
-                c.fuzzRasterMaxPixels = WidgetWeaverRuntime.isRunningInAppExtension ? 180_000 : 800_000
-                c.fuzzInsideThreshold = 14
-                c.fuzzClumpCellPixels = 12.0
-                c.fuzzEdgePower = 0.65
-                c.fuzzHazeStrength = 0.95
-                c.fuzzSpeckStrength = 0.70
-
+                // Fuzz band: bounded, dense, straddles the surface.
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-                c.fuzzMaxOpacity = 0.14
-                c.fuzzWidthFraction = 0.20
-                c.fuzzWidthPixelsClamp = 12.0...130.0
-                c.fuzzBaseDensity = 0.62
-                c.fuzzLowHeightPower = 2.6
-                c.fuzzUncertaintyFloor = 0.12
-                c.fuzzUncertaintyExponent = 2.2
+                c.fuzzMaxOpacity = 0.22
+                c.fuzzWidthFraction = 0.22
+                c.fuzzWidthPixelsClamp = 10.0...90.0
 
-                // New controls: ensure fuzz straddles the edge and ends never go glassy.
-                c.fuzzInsideWidthFactor = 0.58
-                c.fuzzInsideOpacityFactor = 0.65
-                c.fuzzLowHeightBoost = 0.55
+                c.fuzzBaseDensity = 0.95
+                c.fuzzHazeStrength = 0.95
+                c.fuzzSpeckStrength = 1.00
+
+                c.fuzzUncertaintyFloor = 0.16
+                c.fuzzUncertaintyExponent = 2.25
+
+                c.fuzzLowHeightPower = 2.15
+                c.fuzzLowHeightBoost = 0.92
+
+                c.fuzzInsideWidthFactor = 0.66
+                c.fuzzInsideOpacityFactor = 0.70
+                c.fuzzInsideSpeckleFraction = 0.36
+
+                c.fuzzDistancePowerOutside = 1.90
+                c.fuzzDistancePowerInside = 1.55
+                c.fuzzAlongTangentJitterFraction = 0.95
+
+                c.fuzzHazeBlurFractionOfBand = 0.36
+                c.fuzzHazeStrokeWidthFactor = 1.35
+                c.fuzzInsideHazeStrokeWidthFactor = 1.12
+
+                c.fuzzSpeckleRadiusPixels = 0.50...1.20
+
+                // Budgets by family salt (1 small / 2 medium / 3+ large).
+                let budget: Int
+                switch widgetFamilyValue {
+                case 1: budget = 2400
+                case 2: budget = 4200
+                default: budget = 6200
+                }
+                c.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? budget : max(budget, 7200)
 
                 // Baseline.
                 c.baselineColor = accent
-                c.baselineLineOpacity = 0.18
+                c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.035
 
                 return c

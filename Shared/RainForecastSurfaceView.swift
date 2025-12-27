@@ -67,7 +67,7 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var glintMinHeightFraction: Double = 0.78
     var glintMaxCount: Int = 1
 
-    // MARK: - Fuzz (chance / uncertainty band around the surface)
+    // MARK: - Fuzz (surface-band; outside + inside; certainty-driven)
 
     var fuzzEnabled: Bool = true
     var fuzzColor: Color = Color(red: 0.05, green: 0.32, blue: 1.00)
@@ -93,12 +93,23 @@ struct RainForecastSurfaceConfiguration: Hashable {
     var fuzzSpeckStrength: Double = 1.0
     var fuzzInsideThreshold: UInt8 = 14
 
-    // New: surface-band behaviour (fuzz straddles the edge and extends slightly inside too)
-    var fuzzInsideWidthFactor: Double = 0.58
-    var fuzzInsideOpacityFactor: Double = 0.65
+    // New: the “mock” look needs fuzz to straddle the surface.
+    var fuzzInsideWidthFactor: Double = 0.62
+    var fuzzInsideOpacityFactor: Double = 0.70
+    var fuzzInsideSpeckleFraction: Double = 0.35
 
-    // New: ensures tapered ends never become fully smooth
-    var fuzzLowHeightBoost: Double = 0.55
+    // New: keeps tapered ends fuzzy even at high certainty.
+    var fuzzLowHeightBoost: Double = 0.85
+
+    // New: concentrates speckles near the edge (surface-band).
+    var fuzzDistancePowerOutside: Double = 1.85
+    var fuzzDistancePowerInside: Double = 1.55
+    var fuzzAlongTangentJitterFraction: Double = 0.90
+
+    // New: haze stroke shaping (continuous “surface fog”, bounded).
+    var fuzzHazeBlurFractionOfBand: Double = 0.36
+    var fuzzHazeStrokeWidthFactor: Double = 1.35
+    var fuzzInsideHazeStrokeWidthFactor: Double = 1.15
 
     // MARK: - Baseline
 
@@ -150,15 +161,30 @@ struct RainForecastSurfaceConfiguration: Hashable {
         && lhs.fuzzLowHeightPower == rhs.fuzzLowHeightPower
         && lhs.fuzzUncertaintyFloor == rhs.fuzzUncertaintyFloor
         && lhs.fuzzUncertaintyExponent == rhs.fuzzUncertaintyExponent
+        && lhs.fuzzMicroBlurPixels == rhs.fuzzMicroBlurPixels
+        && lhs.fuzzSpeckleRadiusPixels.lowerBound == rhs.fuzzSpeckleRadiusPixels.lowerBound
+        && lhs.fuzzSpeckleRadiusPixels.upperBound == rhs.fuzzSpeckleRadiusPixels.upperBound
+        && lhs.fuzzMaxAttemptsPerColumn == rhs.fuzzMaxAttemptsPerColumn
+        && lhs.fuzzMaxColumns == rhs.fuzzMaxColumns
+        && lhs.fuzzSpeckleBudget == rhs.fuzzSpeckleBudget
         && lhs.fuzzRasterMaxPixels == rhs.fuzzRasterMaxPixels
         && lhs.fuzzEdgePower == rhs.fuzzEdgePower
         && lhs.fuzzClumpCellPixels == rhs.fuzzClumpCellPixels
         && lhs.fuzzHazeStrength == rhs.fuzzHazeStrength
         && lhs.fuzzSpeckStrength == rhs.fuzzSpeckStrength
         && lhs.fuzzInsideThreshold == rhs.fuzzInsideThreshold
+
         && lhs.fuzzInsideWidthFactor == rhs.fuzzInsideWidthFactor
         && lhs.fuzzInsideOpacityFactor == rhs.fuzzInsideOpacityFactor
+        && lhs.fuzzInsideSpeckleFraction == rhs.fuzzInsideSpeckleFraction
         && lhs.fuzzLowHeightBoost == rhs.fuzzLowHeightBoost
+        && lhs.fuzzDistancePowerOutside == rhs.fuzzDistancePowerOutside
+        && lhs.fuzzDistancePowerInside == rhs.fuzzDistancePowerInside
+        && lhs.fuzzAlongTangentJitterFraction == rhs.fuzzAlongTangentJitterFraction
+        && lhs.fuzzHazeBlurFractionOfBand == rhs.fuzzHazeBlurFractionOfBand
+        && lhs.fuzzHazeStrokeWidthFactor == rhs.fuzzHazeStrokeWidthFactor
+        && lhs.fuzzInsideHazeStrokeWidthFactor == rhs.fuzzInsideHazeStrokeWidthFactor
+
         && colorKey(lhs.baselineColor) == colorKey(rhs.baselineColor)
         && lhs.baselineLineOpacity == rhs.baselineLineOpacity
         && lhs.baselineEndFadeFraction == rhs.baselineEndFadeFraction
@@ -211,6 +237,12 @@ struct RainForecastSurfaceConfiguration: Hashable {
         hasher.combine(fuzzLowHeightPower)
         hasher.combine(fuzzUncertaintyFloor)
         hasher.combine(fuzzUncertaintyExponent)
+        hasher.combine(fuzzMicroBlurPixels)
+        hasher.combine(fuzzSpeckleRadiusPixels.lowerBound)
+        hasher.combine(fuzzSpeckleRadiusPixels.upperBound)
+        hasher.combine(fuzzMaxAttemptsPerColumn)
+        hasher.combine(fuzzMaxColumns)
+        hasher.combine(fuzzSpeckleBudget)
         hasher.combine(fuzzRasterMaxPixels)
         hasher.combine(fuzzEdgePower)
         hasher.combine(fuzzClumpCellPixels)
@@ -220,7 +252,14 @@ struct RainForecastSurfaceConfiguration: Hashable {
 
         hasher.combine(fuzzInsideWidthFactor)
         hasher.combine(fuzzInsideOpacityFactor)
+        hasher.combine(fuzzInsideSpeckleFraction)
         hasher.combine(fuzzLowHeightBoost)
+        hasher.combine(fuzzDistancePowerOutside)
+        hasher.combine(fuzzDistancePowerInside)
+        hasher.combine(fuzzAlongTangentJitterFraction)
+        hasher.combine(fuzzHazeBlurFractionOfBand)
+        hasher.combine(fuzzHazeStrokeWidthFactor)
+        hasher.combine(fuzzInsideHazeStrokeWidthFactor)
 
         hasher.combine(Self.colorKey(baselineColor))
         hasher.combine(baselineLineOpacity)
