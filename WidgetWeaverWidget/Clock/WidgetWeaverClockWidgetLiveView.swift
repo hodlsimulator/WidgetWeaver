@@ -22,6 +22,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @State private var minuteDegrees: Double
     @State private var secondDegrees: Double
 
+    @State private var animationGeneration: Int = 0
+
     init(palette: WidgetWeaverClockPalette, intervalStart: Date, intervalEnd: Date) {
         self.palette = palette
         self.intervalStart = intervalStart
@@ -77,6 +79,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 
     private func startOrResyncAnimation() {
+        animationGeneration &+= 1
+        let gen = animationGeneration
+
         guard intervalEnd > intervalStart else {
             let snap = WWClockMonotonicAngles(date: intervalStart)
             withAnimation(.none) {
@@ -87,12 +92,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
             return
         }
 
-        // WidgetKit can pre-render future entries. Clamping keeps animation alive.
+        runOneSecondSteppedSweep(generation: gen)
+    }
+
+    private func runOneSecondSteppedSweep(generation gen: Int) {
+        guard gen == animationGeneration else { return }
+
         let wallNow = Date()
         let clampedNow = min(max(wallNow, intervalStart), intervalEnd)
 
-        let remaining = intervalEnd.timeIntervalSince(clampedNow)
-        guard remaining > 0 else {
+        guard clampedNow < intervalEnd else {
             let snap = WWClockMonotonicAngles(date: intervalEnd)
             withAnimation(.none) {
                 hourDegrees = snap.hourDegrees
@@ -102,10 +111,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
             return
         }
 
-        let duration = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, remaining)
+        let nextWholeSecond = Date(timeIntervalSince1970: ceil(clampedNow.timeIntervalSince1970))
+        let target = min(max(nextWholeSecond, clampedNow.addingTimeInterval(WWClockWidgetLiveTuning.minimumAnimationSeconds)), intervalEnd)
+
+        let duration = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, target.timeIntervalSince(clampedNow))
 
         let fromAngles = WWClockMonotonicAngles(date: clampedNow)
-        let toAngles = WWClockMonotonicAngles(date: intervalEnd)
+        let toAngles = WWClockMonotonicAngles(date: target)
 
         withAnimation(.none) {
             hourDegrees = fromAngles.hourDegrees
@@ -114,10 +126,17 @@ struct WidgetWeaverClockWidgetLiveView: View {
         }
 
         DispatchQueue.main.async {
+            guard gen == animationGeneration else { return }
+
             withAnimation(.linear(duration: duration)) {
                 hourDegrees = toAngles.hourDegrees
                 minuteDegrees = toAngles.minuteDegrees
                 secondDegrees = toAngles.secondDegrees
+            }
+
+            let delay = max(WWClockWidgetLiveTuning.minimumAnimationSeconds, duration)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                runOneSecondSteppedSweep(generation: gen)
             }
         }
     }

@@ -15,5 +15,5 @@ public enum WidgetWeaverWidgetKinds {
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
     // Bumped to force WidgetKit to rebuild the archive for this widget.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV18"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV19"
 }
