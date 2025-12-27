@@ -193,7 +193,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fuzzRasterMaxPixels = isExt ? 95_000 : 300_000
 
                 c.fuzzMaxOpacity = isExt ? 0.36 : 0.40
-                c.fuzzWidthFraction = 0.14
+                c.fuzzWidthFraction = 0.16
                 c.fuzzWidthPixelsClamp = 10.0...85.0
 
                 c.fuzzBaseDensity = 0.92
