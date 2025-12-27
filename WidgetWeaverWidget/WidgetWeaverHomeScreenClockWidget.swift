@@ -21,8 +21,8 @@ private enum WWClockTimelineTuning {
     // by timeline entries.
     //
     // 2s * 180 = 6 minutes (+ one "now" entry).
-    static let stepSeconds: TimeInterval = 2.0
-    static let entriesAfterBoundary: Int = 180
+    static let stepSeconds: TimeInterval = 1.0
+    static let entriesAfterBoundary: Int = 120  // 2 minutes (keeps the timeline lighter)
 }
 
 // MARK: - Configuration
