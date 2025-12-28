@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import CoreText
 
 struct WidgetWeaverClockHourIndicesView: View {
     let palette: WidgetWeaverClockPalette
@@ -22,51 +23,59 @@ struct WidgetWeaverClockHourIndicesView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-
         let shadowRadius = max(px, width * 0.040)
         let shadowOffset = max(px, width * 0.050)
 
-        let metalField = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: palette.batonBright, location: 0.00),
-                .init(color: palette.batonMid, location: 0.50),
-                .init(color: palette.batonDark, location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .frame(width: dialDiameter, height: dialDiameter)
+        let metalField =
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: palette.batonBright, location: 0.00),
+                    .init(color: palette.batonMid, location: 0.50),
+                    .init(color: palette.batonDark, location: 1.00),
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(width: dialDiameter, height: dialDiameter)
 
-        let edgeField = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: palette.batonEdgeLight, location: 0.00),
-                .init(color: Color.clear, location: 0.54),
-                .init(color: palette.batonEdgeDark, location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .frame(width: dialDiameter, height: dialDiameter)
+        let edgeField =
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: palette.batonEdgeLight, location: 0.00),
+                    .init(color: Color.clear, location: 0.54),
+                    .init(color: palette.batonEdgeDark, location: 1.00),
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(width: dialDiameter, height: dialDiameter)
 
         ZStack {
             ForEach(hourIndices, id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
                 let corner = width * 0.18
 
-                let batonMask = RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .frame(width: width, height: length)
-                    .offset(y: -centreRadius)
-                    .rotationEffect(.degrees(degrees))
+                let batonMask =
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .frame(width: width, height: length)
+                        .offset(y: -centreRadius)
+                        .rotationEffect(.degrees(degrees))
 
-                let batonStrokeMask = RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(lineWidth: max(px, width * 0.10))
-                    .frame(width: width, height: length)
-                    .offset(y: -centreRadius)
-                    .rotationEffect(.degrees(degrees))
+                let batonStrokeMask =
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(lineWidth: max(px, width * 0.10))
+                        .frame(width: width, height: length)
+                        .offset(y: -centreRadius)
+                        .rotationEffect(.degrees(degrees))
 
                 metalField
                     .mask(batonMask)
-                    .shadow(color: palette.batonShadow, radius: shadowRadius, x: shadowOffset, y: shadowOffset)
+                    .shadow(
+                        color: palette.batonShadow,
+                        radius: shadowRadius,
+                        x: shadowOffset,
+                        y: shadowOffset
+                    )
 
                 edgeField
                     .mask(batonStrokeMask)
@@ -77,7 +86,7 @@ struct WidgetWeaverClockHourIndicesView: View {
                             gradient: Gradient(stops: [
                                 .init(color: Color.black.opacity(0.12), location: 0.0),
                                 .init(color: Color.white.opacity(0.40), location: 0.52),
-                                .init(color: Color.black.opacity(0.14), location: 1.0)
+                                .init(color: Color.black.opacity(0.14), location: 1.0),
                             ]),
                             startPoint: .leading,
                             endPoint: .trailing
@@ -111,6 +120,7 @@ struct WidgetWeaverClockCardinalPipsView: View {
         ZStack {
             ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
+
                 shape
                     .fill(pipColour)
                     .frame(width: side, height: side)
@@ -131,106 +141,104 @@ struct WidgetWeaverClockNumeralsView: View {
 
     var body: some View {
         ZStack {
-            WWClockRenderedNumeralImage(text: "12", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockVectorEmbossedNumeral(text: "12", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: -radius)
 
-            WWClockRenderedNumeralImage(text: "3", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockVectorEmbossedNumeral(text: "3", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: radius, y: 0)
 
-            WWClockRenderedNumeralImage(text: "6", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockVectorEmbossedNumeral(text: "6", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: radius)
 
-            WWClockRenderedNumeralImage(text: "9", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockVectorEmbossedNumeral(text: "9", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: -radius, y: 0)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        // If WidgetKit is applying placeholder redaction, force these to render normally.
-        .unredacted()
     }
 }
 
-private struct WWClockRenderedNumeralImage: View {
+// MARK: - Vector numerals (avoid Text/Image placeholder redaction)
+
+private struct WidgetWeaverClockVectorEmbossedNumeral: View {
     let text: String
     let palette: WidgetWeaverClockPalette
     let fontSize: CGFloat
     let scale: CGFloat
 
     var body: some View {
-        let uiImage = renderNumeralUIImage(
-            text: text,
-            fontSize: fontSize,
-            scale: scale,
-            face: UIColor(palette.numeralLight),
-            highlight: UIColor(palette.numeralInnerHighlight),
-            shade: UIColor(palette.numeralInnerShade)
-        )
-
-        Image(uiImage: uiImage)
-            .interpolation(.none)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-
-    private func renderNumeralUIImage(
-        text: String,
-        fontSize: CGFloat,
-        scale: CGFloat,
-        face: UIColor,
-        highlight: UIColor,
-        shade: UIColor
-    ) -> UIImage {
         let px = WWClock.px(scale: scale)
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let shadowRadius = max(px, fontSize * 0.040)
 
-        let baseAttributes: [NSAttributedString.Key: Any] = [
-            .font: font
-        ]
+        let glyph = WWClockGlyphShape(text: text, fontSize: fontSize)
 
-        let measureSize = (text as NSString).size(withAttributes: baseAttributes)
+        ZStack {
+            glyph
+                .fill(palette.numeralInnerShade)
+                .offset(x: px, y: px)
 
-        let pad = ceil(max(2.0 * px, 2.0))
-        let size = CGSize(
-            width: ceil(measureSize.width + pad * 2.0),
-            height: ceil(measureSize.height + pad * 2.0)
-        )
+            glyph
+                .fill(palette.numeralInnerHighlight)
+                .offset(x: -px, y: -px)
 
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = max(1.0, scale)
-        format.opaque = false
-
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-
-        return renderer.image { _ in
-            let origin = CGPoint(x: pad, y: pad)
-
-            let shadeAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: shade
-            ]
-            let highlightAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: highlight
-            ]
-            let faceAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: face
-            ]
-
-            (text as NSString).draw(
-                at: CGPoint(x: origin.x + px, y: origin.y + px),
-                withAttributes: shadeAttributes
-            )
-
-            (text as NSString).draw(
-                at: CGPoint(x: origin.x - px, y: origin.y - px),
-                withAttributes: highlightAttributes
-            )
-
-            (text as NSString).draw(
-                at: origin,
-                withAttributes: faceAttributes
-            )
+            glyph
+                .fill(palette.numeralLight)
         }
+        .shadow(color: palette.numeralShadow, radius: shadowRadius, x: px, y: px)
+        .frame(width: fontSize * 2.0, height: fontSize * 2.0)
+        .compositingGroup()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockGlyphShape: Shape {
+    let text: String
+    let fontSize: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let ctFont = (UIFont.systemFont(ofSize: fontSize, weight: .semibold) as CTFont)
+
+        let chars: [UniChar] = Array(text.utf16)
+        guard !chars.isEmpty else { return Path() }
+
+        var glyphs = Array(repeating: CGGlyph(), count: chars.count)
+        let ok = CTFontGetGlyphsForCharacters(ctFont, chars, &glyphs, chars.count)
+        guard ok else { return Path() }
+
+        let raw = CGMutablePath()
+        var x: CGFloat = 0
+
+        for g in glyphs {
+            if let gp = CTFontCreatePathForGlyph(ctFont, g, nil) {
+                var t = CGAffineTransform(translationX: x, y: 0)
+                raw.addPath(gp, transform: t)
+            }
+
+            var advance = CGSize.zero
+            var gv = g
+            CTFontGetAdvancesForGlyphs(ctFont, .horizontal, &gv, &advance, 1)
+            x += advance.width
+        }
+
+        let bounds = raw.boundingBoxOfPath
+        guard !bounds.isNull, !bounds.isEmpty else { return Path() }
+
+        // Normalise to (0,0)
+        var toOrigin = CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY)
+        guard let normalised = raw.copy(using: &toOrigin) else { return Path() }
+
+        // Flip Y into SwiftUI coordinate space: (x, y) -> (x, -y + H)
+        var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: bounds.height)
+        guard let flipped = normalised.copy(using: &flip) else { return Path() }
+
+        // Centre inside the provided rect
+        let dx = rect.midX - (bounds.width / 2.0)
+        let dy = rect.midY - (bounds.height / 2.0)
+
+        var centre = CGAffineTransform(translationX: dx, y: dy)
+        guard let centred = flipped.copy(using: &centre) else { return Path() }
+
+        return Path(centred)
     }
 }
