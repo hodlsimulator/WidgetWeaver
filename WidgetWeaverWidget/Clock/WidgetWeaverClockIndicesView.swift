@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct WidgetWeaverClockHourIndicesView: View {
     let palette: WidgetWeaverClockPalette
@@ -130,16 +131,16 @@ struct WidgetWeaverClockNumeralsView: View {
 
     var body: some View {
         ZStack {
-            WidgetWeaverClockEmbossedNumeral(text: "12", palette: palette, fontSize: fontSize, scale: scale)
+            WWClockRenderedNumeralImage(text: "12", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: -radius)
 
-            WidgetWeaverClockEmbossedNumeral(text: "3", palette: palette, fontSize: fontSize, scale: scale)
+            WWClockRenderedNumeralImage(text: "3", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: radius, y: 0)
 
-            WidgetWeaverClockEmbossedNumeral(text: "6", palette: palette, fontSize: fontSize, scale: scale)
+            WWClockRenderedNumeralImage(text: "6", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: radius)
 
-            WidgetWeaverClockEmbossedNumeral(text: "9", palette: palette, fontSize: fontSize, scale: scale)
+            WWClockRenderedNumeralImage(text: "9", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: -radius, y: 0)
         }
         .allowsHitTesting(false)
@@ -147,37 +148,87 @@ struct WidgetWeaverClockNumeralsView: View {
     }
 }
 
-private struct WidgetWeaverClockEmbossedNumeral: View {
+private struct WWClockRenderedNumeralImage: View {
     let text: String
     let palette: WidgetWeaverClockPalette
     let fontSize: CGFloat
     let scale: CGFloat
 
     var body: some View {
+        let uiImage = renderNumeralUIImage(
+            text: text,
+            fontSize: fontSize,
+            scale: scale,
+            face: UIColor(palette.numeralLight),
+            highlight: UIColor(palette.numeralInnerHighlight),
+            shade: UIColor(palette.numeralInnerShade)
+        )
+
+        Image(uiImage: uiImage)
+            .interpolation(.none)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func renderNumeralUIImage(
+        text: String,
+        fontSize: CGFloat,
+        scale: CGFloat,
+        face: UIColor,
+        highlight: UIColor,
+        shade: UIColor
+    ) -> UIImage {
         let px = WWClock.px(scale: scale)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
 
-        // Avoid `shadow` + `compositingGroup` here.
-        // In this widget stack, that combo can cause SwiftUI Text to disappear in WidgetKit renders.
-        let base = Text(text)
-            .font(.system(size: fontSize, weight: .semibold))
-            .fixedSize()
+        let baseAttributes: [NSAttributedString.Key: Any] = [
+            .font: font
+        ]
 
-        return ZStack {
-            // Inner shade (down-right)
-            base
-                .foregroundColor(palette.numeralInnerShade)
-                .offset(x: px, y: px)
+        let measureSize = (text as NSString).size(withAttributes: baseAttributes)
 
-            // Inner highlight (up-left)
-            base
-                .foregroundColor(palette.numeralInnerHighlight)
-                .offset(x: -px, y: -px)
+        let pad = ceil(max(2.0 * px, 2.0))
+        let size = CGSize(
+            width: ceil(measureSize.width + pad * 2.0),
+            height: ceil(measureSize.height + pad * 2.0)
+        )
 
-            // Main face
-            base
-                .foregroundColor(palette.numeralLight)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = max(1.0, scale)
+        format.opaque = false
+
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+
+        return renderer.image { _ in
+            let origin = CGPoint(x: pad, y: pad)
+
+            let shadeAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: shade
+            ]
+            let highlightAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: highlight
+            ]
+            let faceAttributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: face
+            ]
+
+            (text as NSString).draw(
+                at: CGPoint(x: origin.x + px, y: origin.y + px),
+                withAttributes: shadeAttributes
+            )
+
+            (text as NSString).draw(
+                at: CGPoint(x: origin.x - px, y: origin.y - px),
+                withAttributes: highlightAttributes
+            )
+
+            (text as NSString).draw(
+                at: origin,
+                withAttributes: faceAttributes
+            )
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
