@@ -10,8 +10,6 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// MARK: - Configuration
-
 public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
     case classic
     case ocean
@@ -53,8 +51,6 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
     }
 }
 
-// MARK: - Timeline
-
 public struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     public let date: Date
     public let colourScheme: WidgetWeaverClockColourScheme
@@ -90,8 +86,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 }
 
-// MARK: - Widget
-
 struct WidgetWeaverHomeScreenClockWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
 
@@ -110,8 +104,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
     }
 }
 
-// MARK: - View
-
 private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
@@ -125,7 +117,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
-            anchorDate: entry.date
+            startDate: entry.date
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
