@@ -250,98 +250,113 @@ private extension RainSurfaceDrawing {
         guard n > 0 else { return [] }
 
         let scale = max(1.0, geometry.displayScale)
-        let dxPt = geometry.dx
-        let dxPx = dxPt * scale
+        let dxPx = geometry.dx * scale
 
-        // Heights below a fraction of a pixel behave like zero in practice.
+        // Height threshold: below this, values behave like zero at the current scale.
         let epsilonHeightPt: CGFloat = max(0.06, 0.35 / scale)
 
-        // If the entire ribbon is extremely thin, rely on chance to identify wet runs so
-        // drizzle / low-scale cases still render (instead of collapsing to baseline-only).
         let maxHeightPt = geometry.heights.max() ?? 0
         let maxHeightPx = maxHeightPt * scale
+
+        // Prevents a fuzzy baseline when the surface is effectively absent.
+        if maxHeightPx < 0.20 {
+            return Array(repeating: 0.0, count: n)
+        }
+
+        // Very thin ribbons benefit from chance-driven wet detection.
         let lowHeightMode = maxHeightPx < 1.75
 
-        // In low-height mode, require a meaningful chance to avoid treating a low background
-        // chance as "wet all hour".
-        let wetChanceThreshold: Double = 0.20
+        // Primary wet detection from height.
+        var wetByHeight: [Bool] = Array(repeating: false, count: n)
+        for i in 0..<n {
+            wetByHeight[i] = geometry.heights[i] > epsilonHeightPt
+        }
 
-        // Wet mask.
-        var wet: [Bool] = Array(repeating: false, count: n)
-        if lowHeightMode {
-            for i in 0..<n {
-                let c = geometry.certaintyAt(i)
-                wet[i] = (geometry.heights[i] > epsilonHeightPt) || (c > wetChanceThreshold)
+        // Distance in samples to the nearest height-wet sample.
+        // Used to allow chance to extend fuzz only near real wet runs (prevents "wet all hour").
+        var distToHeightWet = Array(repeating: Int.max / 4, count: n)
+        var last = -1
+        for i in 0..<n {
+            if wetByHeight[i] {
+                last = i
+                distToHeightWet[i] = 0
+            } else if last >= 0 {
+                distToHeightWet[i] = i - last
             }
-        } else {
-            for i in 0..<n {
-                wet[i] = geometry.heights[i] > epsilonHeightPt
+        }
+        last = -1
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            if wetByHeight[i] { last = i }
+            if last >= 0 {
+                distToHeightWet[i] = min(distToHeightWet[i], last - i)
             }
         }
 
-        // Distance in samples to nearest wet (used for fade-out after wet ends).
-        var dist = Array(repeating: Int.max / 4, count: n)
-        var lastWet = -1
+        let tailChanceThreshold: Double = lowHeightMode ? 0.20 : 0.10
+        let tailDistancePx: CGFloat = max(bandWidthPx * 2.1, 26.0)
+
+        // Wet mask used for fading + keeping fuzz alive at tapered ends.
+        // - In low-height mode: chance can define wet regions.
+        // - Otherwise: chance only extends tails near a true height-wet run.
+        var wet: [Bool] = Array(repeating: false, count: n)
+        for i in 0..<n {
+            if wetByHeight[i] {
+                wet[i] = true
+                continue
+            }
+
+            let c = RainSurfaceMath.clamp01(geometry.certaintyAt(i))
+
+            if lowHeightMode {
+                wet[i] = c > tailChanceThreshold
+            } else {
+                let dPx = CGFloat(distToHeightWet[i]) * dxPx
+                wet[i] = (dPx <= tailDistancePx) && (c > tailChanceThreshold)
+            }
+        }
+
+        // Distance in samples to nearest wet sample (used for fade-out after wet ends).
+        var distToWet = Array(repeating: Int.max / 4, count: n)
+        last = -1
         for i in 0..<n {
             if wet[i] {
-                lastWet = i
-                dist[i] = 0
-            } else if lastWet >= 0 {
-                dist[i] = i - lastWet
+                last = i
+                distToWet[i] = 0
+            } else if last >= 0 {
+                distToWet[i] = i - last
             }
         }
-        lastWet = -1
+        last = -1
         for i in stride(from: n - 1, through: 0, by: -1) {
-            if wet[i] { lastWet = i }
-            if lastWet >= 0 {
-                dist[i] = min(dist[i], lastWet - i)
+            if wet[i] { last = i }
+            if last >= 0 {
+                distToWet[i] = min(distToWet[i], last - i)
             }
         }
 
         // Fade distance: fuzz should stop shortly after wet ends.
-        let fadeDistancePx = max(bandWidthPx * 1.8, 18.0)
+        let fadeDistancePx = max(bandWidthPx * 1.9, 18.0)
+        let safeDxPx = max(0.000_001, dxPx)
         func wetFade(_ dSamples: Int) -> Double {
-            let dPx = Double(CGFloat(dSamples) * dxPx)
+            let dPx = Double(CGFloat(dSamples)) * Double(safeDxPx)
             let t = RainSurfaceMath.smoothstep(0.0, Double(fadeDistancePx), dPx)
             return max(0.0, 1.0 - t)
-        }
-
-        // Edge proximity within wet runs (1 near start/end, 0 in the interior).
-        // This prevents the low-height reinforcement from turning the whole wet run into a slab.
-        var edgeProximity = Array(repeating: 0.0, count: n)
-        if lowHeightMode {
-            for i in 0..<n { edgeProximity[i] = wet[i] ? 1.0 : 0.0 }
-        } else {
-            let edgeRampPx = max(12.0, bandWidthPx * 0.55)
-            let edgeRampSamples = max(1, Int((edgeRampPx / max(0.000_001, dxPx)).rounded(.up)))
-
-            var i = 0
-            while i < n {
-                while i < n && !wet[i] { i += 1 }
-                if i >= n { break }
-                let start = i
-                while i < n && wet[i] { i += 1 }
-                let end = i - 1
-
-                if start <= end {
-                    for j in start...end {
-                        let d = min(j - start, end - j)
-                        let t = Double(d) / Double(edgeRampSamples)
-                        let tt = min(1.0, max(0.0, t))
-                        let w = 1.0 - RainSurfaceMath.smoothstep01(tt)
-                        edgeProximity[j] = w
-                    }
-                }
-            }
         }
 
         // Chance -> fuzz.
         let thr = cfg.fuzzChanceThreshold
         let trans = max(0.000_1, cfg.fuzzChanceTransition)
-        let floorS = max(0.0, min(1.0, cfg.fuzzChanceFloor))
+
+        // IMPORTANT:
+        // The Nowcast chart sets fuzzChanceMinStrength = 0.26.
+        // This floor must participate, otherwise rainy widgets lose most fuzz.
+        let floorFromChance = max(0.0, min(1.0, cfg.fuzzChanceFloor))
+        let floorFromMin = max(0.0, min(1.0, cfg.fuzzChanceMinStrength))
+        let floorS = max(floorFromChance, floorFromMin)
+
         let expn = max(0.10, cfg.fuzzChanceExponent)
 
-        // Height boost.
+        // Height boost (tails + slopes).
         let baselineDist = max(1.0, geometry.baselineY - geometry.chartRect.minY)
         let lowPower = max(0.10, cfg.fuzzLowHeightPower)
         let lowBoostMax = max(0.0, cfg.fuzzLowHeightBoost)
@@ -350,7 +365,7 @@ private extension RainSurfaceDrawing {
         strength.reserveCapacity(n)
 
         for i in 0..<n {
-            let c = geometry.certaintyAt(i)
+            let c = RainSurfaceMath.clamp01(geometry.certaintyAt(i))
 
             // Higher fuzz when chance is low (uncertain).
             var u = (thr - c) / trans
@@ -360,22 +375,13 @@ private extension RainSurfaceDrawing {
             var s = pow(u, expn)
             s = max(s, floorS)
 
+            // Low-height reinforcement must be able to dominate even when chance is high.
+            // This is what keeps tails and long slopes fuzzy like the mock.
             let h01 = Double(max(0.0, min(1.0, geometry.heights[i] / baselineDist)))
+            let lowBoost = pow(max(0.0, 1.0 - h01), lowPower) * lowBoostMax
 
-            // Low-height reinforcement (strong in low-height mode, edge-focused otherwise).
-            var low = pow(max(0.0, 1.0 - h01), lowPower) * lowBoostMax
-            low *= max(0.0, min(1.0, edgeProximity[i]))
-
-            var out: Double
-            if lowHeightMode {
-                // When the ribbon is too thin to read, allow reinforcement to carry visibility.
-                out = s + (1.0 - s) * low
-            } else {
-                // Otherwise, make reinforcement subtle so it doesn't create a uniform slab.
-                out = s * (1.0 + 0.65 * low)
-            }
-
-            out *= wetFade(dist[i])
+            var out = s + (1.0 - s) * lowBoost
+            out *= wetFade(distToWet[i])
             out = max(0.0, min(1.0, out))
             strength.append(out)
         }
