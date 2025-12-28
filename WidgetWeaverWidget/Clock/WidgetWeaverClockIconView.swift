@@ -153,8 +153,6 @@ struct WidgetWeaverClockIconView: View {
             )
 
             ZStack {
-                // Dial subtree (includes Text numerals). We force a single resolved compositing result,
-                // then rasterise it. This avoids the WidgetKit “glyphs disappear” snapshot path.
                 ZStack {
                     WidgetWeaverClockDialFaceView(
                         palette: palette,
@@ -256,8 +254,6 @@ struct WidgetWeaverClockIconView: View {
                 }
                 .frame(width: dialDiameter, height: dialDiameter)
                 .clipShape(Circle())
-                .compositingGroup()
-                .drawingGroup(opaque: false, colorMode: .linear)
 
                 WidgetWeaverClockBezelView(
                     palette: palette,
