@@ -132,7 +132,7 @@ private struct WeatherNowcastSurfacePlot: View {
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
             let maxI = max(0.0, maxI0)
 
-            let intensities: [Double] = series.map { p in
+            let rawIntensities: [Double] = series.map { p in
                 let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
                 let raw = raw0.isFinite ? raw0 : 0.0
                 let nonNeg = max(0.0, raw)
@@ -151,6 +151,14 @@ private struct WeatherNowcastSurfacePlot: View {
                 let hs = RainSurfaceMath.smoothstep01(u)
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
+            }
+
+            // Height uses a certainty-weighted intensity so near-constant intensity forecasts still show a readable taper.
+            let intensities: [Double] = rawIntensities.enumerated().map { idx, raw in
+                guard raw > 0 else { return 0.0 }
+                let c = (idx < certainties.count) ? certainties[idx] : 1.0
+                let w = 0.35 + 0.65 * sqrt(RainSurfaceMath.clamp01(c))
+                return raw * w
             }
 
             let seed = makeNoiseSeed(
