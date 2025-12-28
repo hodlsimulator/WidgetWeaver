@@ -19,7 +19,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let layout = WWClockLayout(side: side, scale: displayScale)
 
             ZStack {
-                // Static dial content (does not depend on time).
                 WWClockStaticDialLayerView(
                     palette: palette,
                     layout: layout,
@@ -28,18 +27,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 .frame(width: layout.dialDiameter, height: layout.dialDiameter)
                 .clipShape(Circle())
 
-                // Dynamic overlay (hands + dynamic glows), driven at 1 Hz.
-                WWClockDynamicOverlayHostView(
-                    palette: palette,
-                    layout: layout,
-                    showsSecondHand: true,
-                    handsOpacity: 1.0,
-                    scale: displayScale
-                )
-                .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-                .clipShape(Circle())
+                TimelineView(.animation(minimumInterval: 1.0, paused: false)) { context in
+                    let a = WWClockMonotonicAngles(date: context.date)
+                    WWClockDynamicOverlayView(
+                        palette: palette,
+                        layout: layout,
+                        hourAngle: .degrees(a.hourDegrees),
+                        minuteAngle: .degrees(a.minuteDegrees),
+                        secondAngle: .degrees(a.secondDegrees),
+                        showsSecondHand: true,
+                        handsOpacity: 1.0,
+                        scale: displayScale
+                    )
+                    .frame(width: layout.dialDiameter, height: layout.dialDiameter)
+                    .clipShape(Circle())
+                }
 
-                // Bezel stays above everything and remains static.
                 WidgetWeaverClockBezelView(
                     palette: palette,
                     outerDiameter: layout.outerDiameter,
@@ -59,18 +62,15 @@ struct WidgetWeaverClockWidgetLiveView: View {
 // MARK: - Layout
 
 private struct WWClockLayout {
-    // Bezel
     let outerDiameter: CGFloat
     let ringA: CGFloat
     let ringB: CGFloat
     let ringC: CGFloat
 
-    // Dial
     let dialRadius: CGFloat
     let dialDiameter: CGFloat
     let occlusionWidth: CGFloat
 
-    // Markers
     let dotRadius: CGFloat
     let dotDiameter: CGFloat
 
@@ -85,7 +85,6 @@ private struct WWClockLayout {
     let numeralsRadius: CGFloat
     let numeralsSize: CGFloat
 
-    // Hands
     let hourLength: CGFloat
     let hourWidth: CGFloat
 
@@ -96,14 +95,12 @@ private struct WWClockLayout {
     let secondWidth: CGFloat
     let secondTipSide: CGFloat
 
-    // Hub
     let hubBaseRadius: CGFloat
     let hubCapRadius: CGFloat
 
     init(side: CGFloat, scale: CGFloat) {
         let s = max(1.0, side)
 
-        // Match the existing icon layout ratios.
         let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
         let outerRadius = outerDiameter * 0.5
 
@@ -334,7 +331,7 @@ private struct WWClockLayout {
     }
 }
 
-// MARK: - Static dial layer
+// MARK: - Static layer
 
 private struct WWClockStaticDialLayerView: View {
     let palette: WidgetWeaverClockPalette
@@ -445,88 +442,7 @@ private struct WWClockStaticGlowsView: View {
     }
 }
 
-// MARK: - Dynamic overlay host (1 Hz timeline + smoothing)
-
-private struct WWClockDynamicOverlayHostView: View {
-    let palette: WidgetWeaverClockPalette
-    let layout: WWClockLayout
-    let showsSecondHand: Bool
-    let handsOpacity: Double
-    let scale: CGFloat
-
-    private let scheduleStart: Date
-
-    @State private var angles: WWClockMonotonicAngles
-    @State private var lastTickDate: Date
-
-    init(
-        palette: WidgetWeaverClockPalette,
-        layout: WWClockLayout,
-        showsSecondHand: Bool,
-        handsOpacity: Double,
-        scale: CGFloat
-    ) {
-        self.palette = palette
-        self.layout = layout
-        self.showsSecondHand = showsSecondHand
-        self.handsOpacity = handsOpacity
-        self.scale = scale
-
-        let now = Date()
-        self.scheduleStart = WWClockSecondAlignedSchedule.nextSecond(after: now)
-
-        let initialAngles = WWClockMonotonicAngles(date: now)
-        self._angles = State(initialValue: initialAngles)
-        self._lastTickDate = State(initialValue: now)
-    }
-
-    var body: some View {
-        TimelineView(.periodic(from: scheduleStart, by: 1.0)) { context in
-            WWClockDynamicOverlayView(
-                palette: palette,
-                layout: layout,
-                hourAngle: .degrees(angles.hourDegrees),
-                minuteAngle: .degrees(angles.minuteDegrees),
-                secondAngle: .degrees(angles.secondDegrees),
-                showsSecondHand: showsSecondHand,
-                handsOpacity: handsOpacity,
-                scale: scale
-            )
-            .onAppear {
-                let d = context.date
-                lastTickDate = d
-                angles = WWClockMonotonicAngles(date: d)
-            }
-            .onChange(of: context.date) { _, newDate in
-                let dt = newDate.timeIntervalSince(lastTickDate)
-                let newAngles = WWClockMonotonicAngles(date: newDate)
-
-                if dt.isFinite, dt > 0, dt < 5.0 {
-                    let duration = max(0.15, min(2.0, dt))
-                    withAnimation(.linear(duration: duration)) {
-                        angles = newAngles
-                    }
-                } else {
-                    angles = newAngles
-                }
-
-                lastTickDate = newDate
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-private enum WWClockSecondAlignedSchedule {
-    static func nextSecond(after date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let next = floor(t) + 1.0
-        return Date(timeIntervalSinceReferenceDate: next)
-    }
-}
-
-// MARK: - Dynamic overlay content (hands + dynamic glows + hub)
+// MARK: - Dynamic overlay
 
 private struct WWClockDynamicOverlayView: View {
     let palette: WidgetWeaverClockPalette
@@ -546,18 +462,6 @@ private struct WWClockDynamicOverlayView: View {
         let usedSecondTipSide: CGFloat = showsSecondHand ? layout.secondTipSide : 0.0
 
         ZStack {
-            WidgetWeaverClockHandShadowsView(
-                palette: palette,
-                dialDiameter: layout.dialDiameter,
-                hourAngle: hourAngle,
-                minuteAngle: minuteAngle,
-                hourLength: layout.hourLength,
-                hourWidth: layout.hourWidth,
-                minuteLength: layout.minuteLength,
-                minuteWidth: layout.minuteWidth,
-                scale: scale
-            )
-
             WidgetWeaverClockHandsView(
                 palette: palette,
                 dialDiameter: layout.dialDiameter,
@@ -568,18 +472,6 @@ private struct WWClockDynamicOverlayView: View {
                 hourWidth: layout.hourWidth,
                 minuteLength: layout.minuteLength,
                 minuteWidth: layout.minuteWidth,
-                secondLength: usedSecondLength,
-                secondWidth: usedSecondWidth,
-                secondTipSide: usedSecondTipSide,
-                scale: scale
-            )
-
-            WWClockDynamicGlowsView(
-                palette: palette,
-                minuteAngle: minuteAngle,
-                minuteLength: layout.minuteLength,
-                minuteWidth: layout.minuteWidth,
-                secondAngle: secondAngle,
                 secondLength: usedSecondLength,
                 secondWidth: usedSecondWidth,
                 secondTipSide: usedSecondTipSide,
@@ -599,77 +491,7 @@ private struct WWClockDynamicOverlayView: View {
     }
 }
 
-private struct WWClockDynamicGlowsView: View {
-    let palette: WidgetWeaverClockPalette
-
-    let minuteAngle: Angle
-    let minuteLength: CGFloat
-    let minuteWidth: CGFloat
-
-    let secondAngle: Angle
-    let secondLength: CGFloat
-    let secondWidth: CGFloat
-    let secondTipSide: CGFloat
-
-    let scale: CGFloat
-
-    var body: some View {
-        let px = WWClock.px(scale: scale)
-
-        let minuteGlowWidth = max(px, minuteWidth * 0.14)
-        let minuteGlowBlur = max(px, minuteWidth * 0.20)
-
-        let secondGlowBlur = max(px, secondWidth * 0.95)
-        let secondTipGlowBlur = max(px, secondWidth * 1.05)
-
-        ZStack {
-            // Minute-hand edge emission glow.
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.accent.opacity(0.00), location: 0.00),
-                            .init(color: palette.accent.opacity(0.08), location: 0.55),
-                            .init(color: palette.accent.opacity(0.34), location: 1.00)
-                        ]),
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
-                .frame(width: minuteGlowWidth, height: minuteLength)
-                .offset(x: minuteWidth * 0.36, y: 0)
-                .frame(width: minuteWidth, height: minuteLength)
-                .rotationEffect(minuteAngle, anchor: .bottom)
-                .offset(y: -minuteLength / 2.0)
-                .blur(radius: minuteGlowBlur)
-                .blendMode(.screen)
-
-            if secondLength > 0.0, secondWidth > 0.0 {
-                // Second-hand glow (minimal).
-                Rectangle()
-                    .fill(palette.accent.opacity(0.12))
-                    .frame(width: secondWidth, height: secondLength)
-                    .offset(y: -secondLength / 2.0)
-                    .rotationEffect(secondAngle)
-                    .blur(radius: secondGlowBlur)
-                    .blendMode(.screen)
-
-                // Terminal square glow.
-                Rectangle()
-                    .fill(palette.accent.opacity(0.18))
-                    .frame(width: secondTipSide, height: secondTipSide)
-                    .offset(y: -secondLength)
-                    .rotationEffect(secondAngle)
-                    .blur(radius: secondTipGlowBlur)
-                    .blendMode(.screen)
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Monotonic angles (prevents reverse wrap at 59->00)
+// MARK: - Monotonic angles
 
 private struct WWClockMonotonicAngles {
     let hourDegrees: Double
