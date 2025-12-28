@@ -1,15 +1,14 @@
 //
-// RainForecastSurfaceRenderer.swift
-// WidgetWeaver
+//  RainForecastSurfaceRenderer.swift
+//  WidgetWeaver
 //
-// Created by . . on 12/23/25.
+//  Created by . . on 12/23/25.
 //
 
 import Foundation
 import SwiftUI
 
 struct RainForecastSurfaceRenderer {
-
     let intensities: [Double]
     let certainties: [Double]
     let configuration: RainForecastSurfaceConfiguration
@@ -18,17 +17,13 @@ struct RainForecastSurfaceRenderer {
     func render(in context: inout GraphicsContext, size: CGSize) {
         let chartRect = CGRect(origin: .zero, size: size)
 
-        // The template expects a dark chart region; this keeps blend modes predictable.
-        context.fill(Path(chartRect), with: .color(.black))
-
         guard chartRect.width > 2, chartRect.height > 2 else { return }
 
         guard !intensities.isEmpty else {
-            let y = RainSurfaceMath.alignToPixelCenter(chartRect.midY, displayScale: displayScale)
             RainSurfaceDrawing.drawBaseline(
                 in: &context,
                 chartRect: chartRect,
-                baselineY: y,
+                baselineY: RainSurfaceMath.alignToPixelCenter(chartRect.midY, displayScale: displayScale),
                 configuration: configuration,
                 displayScale: displayScale
             )
@@ -54,8 +49,6 @@ struct RainForecastSurfaceRenderer {
             return c
         }()
 
-        // MARK: - Geometry setup
-
         var baselineY = chartRect.minY + chartRect.height * configuration.baselineFractionFromTop
         baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
 
@@ -73,22 +66,28 @@ struct RainForecastSurfaceRenderer {
             return max(1.0, maxHeight * 0.55)
         }()
 
-        // MARK: - Intensity → height
-
         let nonNeg: [Double] = intensities.map { v in
             guard v.isFinite else { return 0.0 }
-            return (v > 0.0) ? v : 0.0
+            return v > 0.0 ? v : 0.0
         }
         let positive = nonNeg.filter { $0 > 0.0 }
 
+        // Intensity → height mapping.
+        //
+        // Flat-band cause:
+        // Normalising to a tight percentile window and clamping at 1.0 makes
+        // many wet minutes saturate at the same height, collapsing into a slab.
+        //
+        // Fix:
+        // Map against a single reference max, and do not clamp the upper bound.
         let referenceMaxMMPerHour: Double = {
             let ref = configuration.intensityReferenceMaxMMPerHour
-            if ref.isFinite, ref > 0.0 { return ref }
+            if ref.isFinite, ref > 0 { return ref }
 
             let p = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
             if !positive.isEmpty {
                 let robust = RainSurfaceMath.percentile(positive, p: p)
-                if robust.isFinite, robust > 0.0 { return robust }
+                if robust.isFinite, robust > 0 { return robust }
             }
 
             let fallback = positive.max() ?? 0.0
@@ -100,7 +99,7 @@ struct RainForecastSurfaceRenderer {
 
         let minuteHeights: [CGFloat] = (0..<nMinutes).map { i in
             let intensity = nonNeg[i]
-            if intensity <= 0.0 { return 0.0 }
+            guard intensity > 0 else { return 0 }
 
             var r = intensity * invReferenceMax
             if !r.isFinite { r = 0.0 }
@@ -112,20 +111,21 @@ struct RainForecastSurfaceRenderer {
             let certaintyWeight = 0.35 + 0.65 * pow(c, 0.70)
 
             let h = CGFloat(t) * heightScale * CGFloat(certaintyWeight)
-            guard h.isFinite else { return 0.0 }
-            return min(maxHeight, max(0.0, h))
+            guard h.isFinite else { return 0 }
+            return min(maxHeight, max(0, h))
         }
 
-        // Dense sampling scales with pixels, capped for widgets.
-        let scale = max(1.0, displayScale)
-        let denseFromPixels = Int(max(12.0, Double(chartRect.width * scale)))
-        let targetDense = max(12, min(configuration.maxDenseSamples, denseFromPixels))
+        let targetDense = max(
+            12,
+            min(configuration.maxDenseSamples, Int(max(12.0, chartRect.width * max(1.0, displayScale))))
+        )
 
         var denseHeights = RainSurfaceMath.resampleMonotoneCubic(minuteHeights, targetCount: targetDense)
-        var denseCertainties = RainSurfaceMath.resampleMonotoneCubic(safeCertainties, targetCount: targetDense)
-        denseCertainties = denseCertainties.map { RainSurfaceMath.clamp01($0) }
+        var denseCertainties = RainSurfaceMath.resampleMonotoneCubic(safeCertainties, targetCount: targetDense).map {
+            RainSurfaceMath.clamp01($0)
+        }
 
-        // Keep smoothing light; heavy smoothing makes low-variation hours read as a slab.
+        // Keep smoothing light; heavy smoothing reads as a slab.
         denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 1, passes: 1)
 
         RainSurfaceMath.applyEdgeEasing(
@@ -134,8 +134,7 @@ struct RainForecastSurfaceRenderer {
             power: configuration.edgeEasingPower
         )
 
-        let onePixel = 1.0 / max(1.0, scale)
-
+        let onePixel = 1.0 / max(1.0, displayScale)
         RainSurfaceMath.applyWetSegmentEasing(
             to: &denseHeights,
             threshold: onePixel * 0.10,
@@ -143,17 +142,17 @@ struct RainForecastSurfaceRenderer {
             power: configuration.edgeEasingPower
         )
 
-        // If the “core” of the wet region is effectively flat, add deterministic relief so it
-        // reads like a surface instead of a dead-straight band.
-        denseHeights = applyFlatPlateauReliefIfNeeded(
-            heights: denseHeights,
-            certainties: denseCertainties,
+        // Plateau relief:
+        // If the wet region is effectively flat, add subtle deterministic low-frequency modulation.
+        // This preserves wet/dry boundaries while avoiding the “single band” look.
+        applyPlateauReliefIfNeeded(
+            denseHeights: &denseHeights,
+            denseCertainties: &denseCertainties,
             maxHeight: maxHeight,
             heightScale: heightScale,
-            onePixel: onePixel
+            displayScale: displayScale,
+            noiseSeed: configuration.noiseSeed
         )
-
-        // MARK: - Draw
 
         let geometry = RainSurfaceGeometry(
             chartRect: chartRect,
@@ -179,123 +178,103 @@ struct RainForecastSurfaceRenderer {
         )
     }
 
-    // MARK: - Plateau relief
-
-    private func applyFlatPlateauReliefIfNeeded(
-        heights: [CGFloat],
-        certainties: [Double],
+    private func applyPlateauReliefIfNeeded(
+        denseHeights: inout [CGFloat],
+        denseCertainties: inout [Double],
         maxHeight: CGFloat,
         heightScale: CGFloat,
-        onePixel: CGFloat
-    ) -> [CGFloat] {
-        guard heights.count >= 24 else { return heights }
+        displayScale: CGFloat,
+        noiseSeed: UInt64
+    ) {
+        guard denseHeights.count >= 20 else { return }
+        guard maxHeight.isFinite, maxHeight > 1 else { return }
+        guard heightScale.isFinite, heightScale > 1 else { return }
 
-        let wetThreshold = onePixel * 0.12
+        let onePixel = 1.0 / max(1.0, displayScale)
+        let wetThreshold = max(onePixel * 0.25, heightScale * 0.010)
 
         var wetCount = 0
         var wetMin: CGFloat = .greatestFiniteMagnitude
-        var wetMax: CGFloat = 0.0
+        var wetMax: CGFloat = 0
 
-        for h in heights where h > wetThreshold {
+        for h in denseHeights where h > wetThreshold {
             wetCount += 1
             wetMin = min(wetMin, h)
             wetMax = max(wetMax, h)
         }
 
-        guard wetCount >= 14, wetMax > wetThreshold else { return heights }
+        guard wetCount >= 14, wetMax > wetThreshold else { return }
 
-        let flatTrigger = max(onePixel * 3.0, heightScale * 0.08)
+        // Detect a plateau by looking at the “core” near the maximum.
+        let flatTrigger = max(onePixel * 2.4, wetMax * 0.040)
 
-        var isEffectivelyFlat = (wetMax - wetMin) < flatTrigger
+        let coreCut = max(wetThreshold, wetMax * 0.78)
+        var coreMin: CGFloat = .greatestFiniteMagnitude
+        var coreMax: CGFloat = 0
+        var coreCount = 0
 
-        // Ends often taper (by design), which can hide a dead-flat middle if only wetMin/wetMax is checked.
-        // Detect a flat “core” by looking near the top of the wet envelope.
-        if !isEffectivelyFlat {
-            let coreCut = max(wetThreshold, wetMax * 0.75)
-
-            var coreMin: CGFloat = .greatestFiniteMagnitude
-            var coreMax: CGFloat = 0.0
-            var coreCount = 0
-
-            for h in heights where h > coreCut {
-                coreCount += 1
-                coreMin = min(coreMin, h)
-                coreMax = max(coreMax, h)
-            }
-
-            if coreCount >= 14 {
-                let coreRange = coreMax - coreMin
-                if coreRange < flatTrigger {
-                    isEffectivelyFlat = true
-                }
-            }
+        for h in denseHeights where h > coreCut {
+            coreCount += 1
+            coreMin = min(coreMin, h)
+            coreMax = max(coreMax, h)
         }
 
-        guard isEffectivelyFlat else { return heights }
+        guard coreCount >= 14 else { return }
+        let coreRange = coreMax - coreMin
+        guard coreRange < flatTrigger else { return }
 
-        // Deterministic amplitude: strong enough to break the slab, small enough to stay “physical”.
-        let amp = min(maxHeight * 0.16, max(onePixel * 4.0, wetMax * 0.10))
+        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(noiseSeed, 0xA1D3_CE55_9B27_4F1D))
+        let tau = Double.pi * 2.0
 
-        let meanCertainty: Double = {
-            guard !certainties.isEmpty else { return 1.0 }
-            let s = certainties.reduce(0.0, +)
-            return RainSurfaceMath.clamp01(s / Double(certainties.count))
-        }()
-        let certaintyMul = 0.70 + 0.30 * (1.0 - meanCertainty)   // [0.70, 1.0]
-        let finalAmp = amp * CGFloat(certaintyMul)
+        let phase1 = prng.nextFloat01() * tau
+        let phase2 = prng.nextFloat01() * tau
+        let phase3 = prng.nextFloat01() * tau
 
-        var prng = RainSurfacePRNG(
-            seed: RainSurfacePRNG.combine(configuration.noiseSeed, 0xA1D3_CE55_9B27_4F1D)
-        )
+        // Cycles across the chart width (low-frequency “natural” variation).
+        let f1 = 1.35 + prng.nextFloat01() * 0.55
+        let f2 = 2.60 + prng.nextFloat01() * 0.75
+        let f3 = 6.20 + prng.nextFloat01() * 1.10
 
-        // Smooth value-noise along X (two bands, mixed).
-        let n = heights.count
+        // Amplitude is intentionally small; enough to break a dead-flat slab.
+        var amp = max(onePixel * 1.25, min(wetMax * 0.060, heightScale * 0.035))
+        amp = min(amp, maxHeight * 0.070)
 
-        let cells1 = max(8, min(64, n / 10))
-        let step1 = Double(max(1, n - 1)) / Double(cells1)
-        var ctrl1: [CGFloat] = []
-        ctrl1.reserveCapacity(cells1 + 2)
-        for _ in 0..<(cells1 + 2) {
-            ctrl1.append(CGFloat(prng.nextSignedFloat()))
-        }
+        if !amp.isFinite || amp <= 0 { return }
 
-        let cells2 = max(8, min(96, n / 6))
-        let step2 = Double(max(1, n - 1)) / Double(cells2)
-        var ctrl2: [CGFloat] = []
-        ctrl2.reserveCapacity(cells2 + 2)
-        for _ in 0..<(cells2 + 2) {
-            ctrl2.append(CGFloat(prng.nextSignedFloat()))
-        }
-
-        @inline(__always)
-        func valueNoise(_ i: Int, ctrl: [CGFloat], step: Double) -> CGFloat {
-            let x = Double(i) / step
-            let k = max(0, min(ctrl.count - 2, Int(floor(x))))
-            let t = x - Double(k)
-            let s = RainSurfaceMath.smoothstep01(t)
-            return RainSurfaceMath.lerp(ctrl[k], ctrl[k + 1], CGFloat(s))
-        }
-
-        var out = heights
+        let n = denseHeights.count
+        let denom = Double(max(1, n - 1))
 
         for i in 0..<n {
-            let h = heights[i]
-            guard h > wetThreshold else { continue }
+            let base = denseHeights[i]
+            guard base > wetThreshold else { continue }
 
-            let n1 = valueNoise(i, ctrl: ctrl1, step: step1)
-            let n2 = valueNoise(i, ctrl: ctrl2, step: step2)
-            let noise = (0.70 * n1) + (0.30 * n2)   // ~[-1, 1]
+            let x = Double(i) / denom
 
-            // Weight noise by height so tapering ends stay clean.
-            let wn = RainSurfaceMath.clamp01((h - wetThreshold) / max(onePixel, wetMax - wetThreshold))
-            let w = 0.30 + 0.70 * pow(Double(wn), 0.85)
+            let n1 = sin((x * f1) * tau + phase1)
+            let n2 = sin((x * f2) * tau + phase2)
+            let n3 = sin((x * f3) * tau + phase3)
 
-            var nh = h + finalAmp * CGFloat(w) * noise
-            if !nh.isFinite { nh = h }
-            nh = min(maxHeight, max(0.0, nh))
-            out[i] = nh
+            let noise = (0.55 * n1 + 0.30 * n2 + 0.15 * n3)
+
+            // Envelope reduces modulation near the wet threshold.
+            let above = base - wetThreshold
+            let envDen = max(onePixel * 2.0, amp * 2.2)
+            let env = Double(RainSurfaceMath.clamp01(above / envDen))
+
+            let delta = CGFloat(noise) * amp * CGFloat(env)
+
+            var h = base + delta
+            if !h.isFinite { h = base }
+
+            h = max(0, min(maxHeight, h))
+
+            // Keep wet samples wet to avoid introducing gaps.
+            h = max(wetThreshold, h)
+
+            denseHeights[i] = h
         }
 
-        return out
+        // Light re-smooth to remove sharp wiggles.
+        denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 1, passes: 1)
     }
 }

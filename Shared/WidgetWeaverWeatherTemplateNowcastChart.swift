@@ -32,6 +32,7 @@ struct WeatherNowcastChart: View {
         var plotHorizontal: CGFloat
         var plotTop: CGFloat
         var plotBottom: CGFloat
+
         var axisHorizontal: CGFloat
         var axisTop: CGFloat
         var axisBottom: CGFloat
@@ -159,27 +160,29 @@ private struct WeatherNowcastSurfacePlot: View {
             let series = samples(from: points, targetMinutes: 60)
 
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
-            let maxI = max(0.0, maxI0)
+            let maxI = max(0.000_001, maxI0)
 
             let intensities: [Double] = series.map { p in
                 let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
                 let raw = raw0.isFinite ? raw0 : 0.0
                 let nonNeg = max(0.0, raw)
-                let clamped = min(nonNeg, maxI)
-                return WeatherNowcast.isWet(intensityMMPerHour: clamped) ? clamped : 0.0
+
+                // Keep chart aligned with the shared wetness definition.
+                // The renderer handles scaling; this only avoids nonsense and guards maxI.
+                let capped = min(nonNeg, maxI)
+                return WeatherNowcast.isWet(intensityMMPerHour: capped) ? capped : 0.0
             }
 
             let n = series.count
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
+
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
-
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
-
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
             }
 
@@ -190,25 +193,50 @@ private struct WeatherNowcastSurfacePlot: View {
                 longitude: locationLongitude
             )
 
+            let isExt = WidgetWeaverRuntime.isRunningInAppExtension
+
+            // Extension-safe budget: rainy paths do far more work than dry ones.
+            let widthPx = proxy.size.width * max(1.0, displayScale)
+            let heightPx = proxy.size.height * max(1.0, displayScale)
+            let areaPx = Double(max(1.0, widthPx * heightPx))
+
+            let denseSamplesBudget: Int = {
+                if isExt {
+                    // Smoother than a polyline, but well below “killed for being expensive”.
+                    let byWidth = Int(widthPx.rounded(.toNearestOrAwayFromZero))
+                    return max(96, min(140, byWidth))
+                } else {
+                    return 900
+                }
+            }()
+
+            let speckleBudget: Int = {
+                if isExt {
+                    // Scale with chart area, hard-capped.
+                    let scaled = Int((areaPx / 280.0).rounded(.toNearestOrAwayFromZero))
+                    return max(220, min(900, scaled))
+                } else {
+                    return 5200
+                }
+            }()
+
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
                 c.noiseSeed = seed
 
-                // Use the Nowcast “visual max” as the renderer’s reference max, so
-                // height is mapped as intensity / visualMax instead of percentile normalisation.
+                // Use the Nowcast “visual max” as the renderer’s reference max,
+                // so height is mapped as intensity / visualMax instead of percentile normalisation.
                 c.intensityReferenceMaxMMPerHour = maxI
 
-                let isExt = WidgetWeaverRuntime.isRunningInAppExtension
-                c.maxDenseSamples = isExt ? 180 : 900
-                c.fuzzSpeckleBudget = isExt ? 1800 : 5200
+                c.maxDenseSamples = denseSamplesBudget
+                c.fuzzSpeckleBudget = speckleBudget
 
                 // IMPORTANT:
                 // RainForecastSurfaceConfiguration changed meaning for:
                 // - topHeadroomFraction (now: fraction of baseline distance)
                 // - typicalPeakFraction (now: Y position as fraction from top)
                 //
-                // These values are converted from the legacy tuning that produced the
-                // “normal” shaped surface:
+                // Values converted from the legacy tuning:
                 // baseline = 0.90, headroom(top) = 0.05 of chart height,
                 // typical peak height = 0.80 of maxHeight.
                 let baselineFromTop: Double = 0.90
@@ -221,6 +249,7 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.62
+
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
@@ -233,37 +262,42 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-                c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
-                c.fuzzMaxOpacity = isExt ? 0.28 : 0.32
+
+                // Extension-safe tuning (keeps the look, avoids placeholder regressions).
+                c.fuzzMaxOpacity = isExt ? 0.25 : 0.32
                 c.fuzzWidthFraction = 0.18
                 c.fuzzWidthPixelsClamp = 10.0...90.0
-                c.fuzzBaseDensity = 0.90
 
-                c.fuzzHazeStrength = isExt ? 0.78 : 0.74
-                c.fuzzSpeckStrength = isExt ? 1.18 : 1.25
-                c.fuzzEdgePower = 1.65
-                c.fuzzClumpCellPixels = 12.0
-                c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
+                c.fuzzBaseDensity = isExt ? 0.82 : 0.90
+                c.fuzzHazeStrength = isExt ? 0.60 : 0.74
+                c.fuzzSpeckStrength = isExt ? 0.90 : 1.25
+
+                // Reduce blur cost in extensions.
+                c.fuzzHazeBlurFractionOfBand = isExt ? 0.24 : 0.36
+                c.fuzzHazeStrokeWidthFactor = isExt ? 1.10 : 1.35
+                c.fuzzInsideHazeStrokeWidthFactor = isExt ? 1.00 : 1.12
 
                 c.fuzzChanceThreshold = 0.60
                 c.fuzzChanceTransition = 0.14
                 c.fuzzChanceMinStrength = 0.26
-
                 c.fuzzUncertaintyFloor = 0.06
                 c.fuzzUncertaintyExponent = 2.15
+
                 c.fuzzLowHeightPower = 2.10
                 c.fuzzLowHeightBoost = 0.55
 
                 c.fuzzInsideWidthFactor = 0.72
-                c.fuzzInsideOpacityFactor = 0.62
-                c.fuzzInsideSpeckleFraction = 0.40
+                c.fuzzInsideOpacityFactor = isExt ? 0.45 : 0.62
+                c.fuzzInsideSpeckleFraction = isExt ? 0.22 : 0.40
 
                 c.fuzzDistancePowerOutside = 2.00
                 c.fuzzDistancePowerInside = 1.70
 
-                c.fuzzErodeEnabled = true
-                c.fuzzErodeStrength = 0.82
-                c.fuzzErodeEdgePower = 2.70
+                // The erosion pass is the most expensive part of the fuzzy edge.
+                // Disabling it in extensions prevents “rainy = placeholder” regressions.
+                c.fuzzErodeEnabled = isExt ? false : true
+                c.fuzzErodeStrength = isExt ? 0.60 : 0.82
+                c.fuzzErodeEdgePower = isExt ? 2.00 : 2.70
 
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20
