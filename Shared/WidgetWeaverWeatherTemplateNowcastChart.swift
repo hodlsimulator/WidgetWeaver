@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftUI
+
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -31,6 +32,7 @@ struct WeatherNowcastChart: View {
         var plotHorizontal: CGFloat
         var plotTop: CGFloat
         var plotBottom: CGFloat
+
         var axisHorizontal: CGFloat
         var axisTop: CGFloat
         var axisBottom: CGFloat
@@ -40,14 +42,42 @@ struct WeatherNowcastChart: View {
         #if canImport(WidgetKit)
         switch widgetFamily {
         case .systemSmall:
-            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 8,
+                plotBottom: showAxisLabels ? 0 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 10
+            )
         case .systemMedium:
-            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+            return Insets(
+                plotHorizontal: 10,
+                plotTop: 10,
+                plotBottom: showAxisLabels ? 0 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 12
+            )
         default:
-            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+            return Insets(
+                plotHorizontal: 12,
+                plotTop: 10,
+                plotBottom: showAxisLabels ? 1 : 8,
+                axisHorizontal: 18,
+                axisTop: 0,
+                axisBottom: 12
+            )
         }
         #else
-        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        return Insets(
+            plotHorizontal: 12,
+            plotTop: 10,
+            plotBottom: showAxisLabels ? 1 : 8,
+            axisHorizontal: 18,
+            axisTop: 0,
+            axisBottom: 12
+        )
         #endif
     }
 
@@ -162,7 +192,12 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
+
                 c.noiseSeed = seed
+
+                // FIX: Use the Nowcast “visual max” as the renderer’s reference max, so
+                // height is mapped as intensity / visualMax instead of percentile normalisation.
+                c.intensityReferenceMaxMMPerHour = maxI
 
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
                 c.maxDenseSamples = isExt ? 180 : 900
@@ -189,14 +224,15 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fuzzColor = accent
 
                 c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
-
                 c.fuzzMaxOpacity = isExt ? 0.28 : 0.32
+
                 c.fuzzWidthFraction = 0.18
                 c.fuzzWidthPixelsClamp = 10.0...90.0
 
                 c.fuzzBaseDensity = 0.90
                 c.fuzzHazeStrength = isExt ? 0.78 : 0.74
                 c.fuzzSpeckStrength = isExt ? 1.18 : 1.25
+
                 c.fuzzEdgePower = 1.65
                 c.fuzzClumpCellPixels = 12.0
                 c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
@@ -280,6 +316,7 @@ private struct WeatherNowcastSurfacePlot: View {
             let cal = Calendar.current
             let lastDate = out.last?.date ?? Date()
             let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
+
             let needed = targetMinutes - out.count
             for i in 1...needed {
                 let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
