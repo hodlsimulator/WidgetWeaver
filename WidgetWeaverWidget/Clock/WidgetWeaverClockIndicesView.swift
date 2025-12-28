@@ -156,6 +156,8 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
+        // Key point: rasterise the glyph itself (cheap: only 4 numerals).
+        // This plays nicely with the dial-level rasterisation in IconView.
         Text(text)
             .font(.system(size: fontSize, weight: .semibold))
             .foregroundColor(palette.numeralLight)
@@ -165,7 +167,8 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
                 x: px,
                 y: px
             )
-            .compositingGroup()
+            .blendMode(.normal)
+            .drawingGroup(opaque: false, colorMode: .linear)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

@@ -153,57 +153,47 @@ struct WidgetWeaverClockIconView: View {
             )
 
             ZStack {
+                // Dial subtree (includes Text numerals). We force a single resolved compositing result,
+                // then rasterise it. This avoids the WidgetKit “glyphs disappear” snapshot path.
                 ZStack {
-                    // IMPORTANT:
-                    // Put the dial’s blend-mode-heavy content into its own composited layer.
-                    // Then draw numerals above that in a separate composited layer.
-                    // This stops WidgetKit/SwiftUI flattening from “losing” Text.
-                    Group {
-                        WidgetWeaverClockDialFaceView(
-                            palette: palette,
-                            radius: R,
-                            occlusionWidth: occlusionWidth
-                        )
+                    WidgetWeaverClockDialFaceView(
+                        palette: palette,
+                        radius: R,
+                        occlusionWidth: occlusionWidth
+                    )
 
-                        WidgetWeaverClockMinuteDotsView(
-                            count: 60,
-                            radius: dotRadius,
-                            dotDiameter: dotDiameter,
-                            dotColour: palette.minuteDot,
-                            scale: displayScale
-                        )
+                    WidgetWeaverClockMinuteDotsView(
+                        count: 60,
+                        radius: dotRadius,
+                        dotDiameter: dotDiameter,
+                        dotColour: palette.minuteDot,
+                        scale: displayScale
+                    )
 
-                        WidgetWeaverClockHourIndicesView(
-                            palette: palette,
-                            dialDiameter: dialDiameter,
-                            centreRadius: batonCentreRadius,
-                            length: batonLength,
-                            width: batonWidth,
-                            capLength: capLength,
-                            capColour: palette.accent,
-                            scale: displayScale
-                        )
+                    WidgetWeaverClockHourIndicesView(
+                        palette: palette,
+                        dialDiameter: dialDiameter,
+                        centreRadius: batonCentreRadius,
+                        length: batonLength,
+                        width: batonWidth,
+                        capLength: capLength,
+                        capColour: palette.accent,
+                        scale: displayScale
+                    )
 
-                        WidgetWeaverClockCardinalPipsView(
-                            pipColour: palette.accent,
-                            side: pipSide,
-                            radius: pipRadius
-                        )
-                    }
-                    .compositingGroup()
+                    WidgetWeaverClockCardinalPipsView(
+                        pipColour: palette.accent,
+                        side: pipSide,
+                        radius: pipRadius
+                    )
 
-                    // Numerals isolated (separate composited layer, normal blend)
                     WidgetWeaverClockNumeralsView(
                         palette: palette,
                         radius: numeralsRadius,
                         fontSize: numeralsSize,
                         scale: displayScale
                     )
-                    .blendMode(.normal)
-                    .compositingGroup()
-                    .zIndex(10)
 
-                    // Hands above numerals
                     Group {
                         if showsHandShadows {
                             WidgetWeaverClockHandShadowsView(
@@ -263,10 +253,11 @@ struct WidgetWeaverClockIconView: View {
                         )
                     }
                     .opacity(handsOpacity)
-                    .zIndex(20)
                 }
                 .frame(width: dialDiameter, height: dialDiameter)
                 .clipShape(Circle())
+                .compositingGroup()
+                .drawingGroup(opaque: false, colorMode: .linear)
 
                 WidgetWeaverClockBezelView(
                     palette: palette,
