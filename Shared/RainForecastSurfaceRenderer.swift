@@ -67,7 +67,9 @@ struct RainForecastSurfaceRenderer {
         let heightScale = max(1.0, min(maxHeight, typicalHeight))
 
         // Robust max.
-        let nonNeg = intensities.map { max(0.0, $0) }
+        let nonNeg = intensities.map { v in
+            (v.isFinite && v > 0.0) ? v : 0.0
+        }
         let robustMax = max(0.000_001, RainSurfaceMath.percentile(nonNeg, p: configuration.robustMaxPercentile))
 
         // Map intensity → height (in points).

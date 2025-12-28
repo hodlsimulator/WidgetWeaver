@@ -9,8 +9,14 @@ import Foundation
 import SwiftUI
 
 enum RainSurfaceMath {
-    static func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
-    static func clamp01(_ x: CGFloat) -> CGFloat { max(0.0, min(1.0, x)) }
+    static func clamp01(_ x: Double) -> Double {
+        guard x.isFinite else { return 0.0 }
+        return max(0.0, min(1.0, x))
+    }
+    static func clamp01(_ x: CGFloat) -> CGFloat {
+        guard x.isFinite else { return 0.0 }
+        return max(0.0, min(1.0, x))
+    }
 
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
         a + (b - a) * t
@@ -40,9 +46,10 @@ enum RainSurfaceMath {
     }
 
     static func percentile(_ values: [Double], p: Double) -> Double {
-        guard !values.isEmpty else { return 0.0 }
+        let finite = values.filter { $0.isFinite }
+        guard !finite.isEmpty else { return 0.0 }
         let pp = clamp01(p)
-        let sorted = values.sorted()
+        let sorted = finite.sorted()
         if sorted.count == 1 { return sorted[0] }
         let idx = pp * Double(sorted.count - 1)
         let i0 = Int(floor(idx))
@@ -133,12 +140,13 @@ enum RainSurfaceMath {
 
     // Monotone cubic (Fritsch–Carlson) resampling.
     static func resampleMonotoneCubic(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
-        guard targetCount > 1 else { return values.isEmpty ? [] : [values[0]] }
-        guard values.count > 1 else { return Array(repeating: values.first ?? 0, count: targetCount) }
+        let v = values.map { $0.isFinite ? $0 : 0 }
+        guard targetCount > 1 else { return v.isEmpty ? [] : [v[0]] }
+        guard v.count > 1 else { return Array(repeating: v.first ?? 0, count: targetCount) }
 
-        let n = values.count
+        let n = v.count
         var d = Array(repeating: CGFloat(0), count: n - 1)
-        for i in 0..<(n - 1) { d[i] = values[i + 1] - values[i] }
+        for i in 0..<(n - 1) { d[i] = v[i + 1] - v[i] }
 
         var m = Array(repeating: CGFloat(0), count: n)
         m[0] = d[0]
@@ -172,18 +180,19 @@ enum RainSurfaceMath {
             let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
             let i0 = max(0, min(n - 2, Int(floor(u))))
             let t = CGFloat(u - Double(i0))
-            out.append(hermite(values[i0], values[i0 + 1], m[i0], m[i0 + 1], t))
+            out.append(hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t))
         }
         return out
     }
 
     static func resampleMonotoneCubic(_ values: [Double], targetCount: Int) -> [Double] {
-        guard targetCount > 1 else { return values.isEmpty ? [] : [values[0]] }
-        guard values.count > 1 else { return Array(repeating: values.first ?? 0, count: targetCount) }
+        let v = values.map { $0.isFinite ? $0 : 0 }
+        guard targetCount > 1 else { return v.isEmpty ? [] : [v[0]] }
+        guard v.count > 1 else { return Array(repeating: v.first ?? 0, count: targetCount) }
 
-        let n = values.count
+        let n = v.count
         var d = Array(repeating: 0.0, count: n - 1)
-        for i in 0..<(n - 1) { d[i] = values[i + 1] - values[i] }
+        for i in 0..<(n - 1) { d[i] = v[i + 1] - v[i] }
 
         var m = Array(repeating: 0.0, count: n)
         m[0] = d[0]
@@ -217,7 +226,7 @@ enum RainSurfaceMath {
             let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
             let i0 = max(0, min(n - 2, Int(floor(u))))
             let t = u - Double(i0)
-            out.append(hermite(values[i0], values[i0 + 1], m[i0], m[i0 + 1], t))
+            out.append(hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t))
         }
         return out
     }
