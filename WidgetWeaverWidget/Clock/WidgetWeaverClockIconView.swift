@@ -153,45 +153,55 @@ struct WidgetWeaverClockIconView: View {
             )
 
             ZStack {
+                // Dial stack is split into separate layers so the numerals are not inside the
+                // heavily clipped/blended subtree (WidgetKit can drop Text there).
                 ZStack {
-                    WidgetWeaverClockDialFaceView(
-                        palette: palette,
-                        radius: R,
-                        occlusionWidth: occlusionWidth
-                    )
+                    // 1) Dial + markers (clipped)
+                    ZStack {
+                        WidgetWeaverClockDialFaceView(
+                            palette: palette,
+                            radius: R,
+                            occlusionWidth: occlusionWidth
+                        )
 
-                    WidgetWeaverClockMinuteDotsView(
-                        count: 60,
-                        radius: dotRadius,
-                        dotDiameter: dotDiameter,
-                        dotColour: palette.minuteDot,
-                        scale: displayScale
-                    )
+                        WidgetWeaverClockMinuteDotsView(
+                            count: 60,
+                            radius: dotRadius,
+                            dotDiameter: dotDiameter,
+                            dotColour: palette.minuteDot,
+                            scale: displayScale
+                        )
 
-                    WidgetWeaverClockHourIndicesView(
-                        palette: palette,
-                        dialDiameter: dialDiameter,
-                        centreRadius: batonCentreRadius,
-                        length: batonLength,
-                        width: batonWidth,
-                        capLength: capLength,
-                        capColour: palette.accent,
-                        scale: displayScale
-                    )
+                        WidgetWeaverClockHourIndicesView(
+                            palette: palette,
+                            dialDiameter: dialDiameter,
+                            centreRadius: batonCentreRadius,
+                            length: batonLength,
+                            width: batonWidth,
+                            capLength: capLength,
+                            capColour: palette.accent,
+                            scale: displayScale
+                        )
 
-                    WidgetWeaverClockCardinalPipsView(
-                        pipColour: palette.accent,
-                        side: pipSide,
-                        radius: pipRadius
-                    )
+                        WidgetWeaverClockCardinalPipsView(
+                            pipColour: palette.accent,
+                            side: pipSide,
+                            radius: pipRadius
+                        )
+                    }
+                    .frame(width: dialDiameter, height: dialDiameter)
+                    .clipShape(Circle())
 
+                    // 2) Numerals (NOT clipped; intentionally simple Text pipeline)
                     WidgetWeaverClockNumeralsView(
                         palette: palette,
                         radius: numeralsRadius,
                         fontSize: numeralsSize,
                         scale: displayScale
                     )
+                    .frame(width: dialDiameter, height: dialDiameter)
 
+                    // 3) Hands + glows + hub (clipped)
                     Group {
                         if showsHandShadows {
                             WidgetWeaverClockHandShadowsView(
@@ -251,9 +261,10 @@ struct WidgetWeaverClockIconView: View {
                         )
                     }
                     .opacity(handsOpacity)
+                    .frame(width: dialDiameter, height: dialDiameter)
+                    .clipShape(Circle())
                 }
                 .frame(width: dialDiameter, height: dialDiameter)
-                .clipShape(Circle())
 
                 WidgetWeaverClockBezelView(
                     palette: palette,

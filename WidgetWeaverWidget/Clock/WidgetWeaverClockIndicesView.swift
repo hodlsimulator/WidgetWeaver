@@ -130,16 +130,16 @@ struct WidgetWeaverClockNumeralsView: View {
 
     var body: some View {
         ZStack {
-            WidgetWeaverClockEmbossedNumeral(text: "12", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockPlainNumeral(text: "12", palette: palette, fontSize: fontSize)
                 .offset(x: 0, y: -radius)
 
-            WidgetWeaverClockEmbossedNumeral(text: "3", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockPlainNumeral(text: "3", palette: palette, fontSize: fontSize)
                 .offset(x: radius, y: 0)
 
-            WidgetWeaverClockEmbossedNumeral(text: "6", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockPlainNumeral(text: "6", palette: palette, fontSize: fontSize)
                 .offset(x: 0, y: radius)
 
-            WidgetWeaverClockEmbossedNumeral(text: "9", palette: palette, fontSize: fontSize, scale: scale)
+            WidgetWeaverClockPlainNumeral(text: "9", palette: palette, fontSize: fontSize)
                 .offset(x: -radius, y: 0)
         }
         .allowsHitTesting(false)
@@ -147,28 +147,21 @@ struct WidgetWeaverClockNumeralsView: View {
     }
 }
 
-private struct WidgetWeaverClockEmbossedNumeral: View {
+private struct WidgetWeaverClockPlainNumeral: View {
     let text: String
     let palette: WidgetWeaverClockPalette
     let fontSize: CGFloat
-    let scale: CGFloat
 
     var body: some View {
-        let px = WWClock.px(scale: scale)
-
-        // `compositingGroup()` has been a common trigger for missing glyphs in WidgetKit snapshots.
-        // Keeping the numeral as a plain Text + shadow is the most reliable path.
+        // Intentionally minimal: no shadow, no compositingGroup, no masks, no blend modes.
+        // The goal is “always renders in WidgetKit”.
         Text(text)
             .font(.system(size: fontSize, weight: .semibold))
-            .foregroundColor(palette.numeralLight)
-            .shadow(
-                color: palette.numeralShadow,
-                radius: max(px, fontSize * 0.040),
-                x: px,
-                y: px
-            )
+            .foregroundStyle(palette.numeralLight)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .frame(width: fontSize * 1.8, height: fontSize * 1.3, alignment: .center)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
-    
