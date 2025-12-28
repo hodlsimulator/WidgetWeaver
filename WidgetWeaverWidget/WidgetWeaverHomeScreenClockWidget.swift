@@ -64,28 +64,30 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 60.0, colourScheme: .classic)
+        return Entry(date: now, anchorDate: now, tickSeconds: 15.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 60.0, colourScheme: configuration.colourScheme ?? .classic)
+        return Entry(
+            date: now,
+            anchorDate: now,
+            tickSeconds: 15.0,
+            colourScheme: configuration.colourScheme ?? .classic
+        )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
 
-        // Strategy:
-        // Use low-frequency WidgetKit entries (1 per minute) to trigger a long linear sweep.
-        // This avoids relying on TimelineView / onAppear timers (which don't run on the Home Screen),
-        // while still producing continuous motion via Core Animation between entries.
-        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 60.0
+        // 60s ticks can land on a 360° second-hand delta per entry (appears frozen).
+        // 15s ticks land on 90° deltas, which stays visually alive and still reloads only hourly.
+        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 15.0
 
         // Keep under the common ~250 entry ceiling.
-        // 240 * 60s = 4 hours of continuous sweep, then WidgetKit reloads the timeline.
+        // 240 * 15s = 3600s (≈ 1 hour horizon), then WidgetKit reloads the timeline.
         let maxEntries: Int = context.isPreview ? 30 : 240
 
-        // Anchor the timeline so angles stay monotonic/unbounded.
         let anchorDate: Date = Date()
 
         var entries: [Entry] = []

@@ -156,6 +156,8 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
+        // `compositingGroup()` has been a common trigger for missing glyphs in WidgetKit snapshots.
+        // Keeping the numeral as a plain Text + shadow is the most reliable path.
         Text(text)
             .font(.system(size: fontSize, weight: .semibold))
             .foregroundColor(palette.numeralLight)
@@ -165,8 +167,8 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
                 x: px,
                 y: px
             )
-            .compositingGroup()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
+    

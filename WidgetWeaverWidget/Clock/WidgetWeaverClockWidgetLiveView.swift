@@ -22,20 +22,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     /// Expected spacing between timeline entries.
     ///
-    /// Used as the animation duration so Core Animation can sweep the hands smoothly between entries.
+    /// Used as the animation duration so CoreAnimation can sweep the hands smoothly between entries.
     let tickSeconds: TimeInterval
 
     var body: some View {
         let base = WWClockBaseAngles(date: anchorDate)
         let dt = date.timeIntervalSince(anchorDate)
 
-        // Tiny epsilon prevents edge cases where an exact 360° delta could be treated as “no change”
-        // by some rotation interpolation paths.
-        let eps: Double = 1.0e-6
-
         let hourAngle = Angle.degrees(base.hour + dt * WWClockAngularVelocity.hourDegPerSecond)
         let minuteAngle = Angle.degrees(base.minute + dt * WWClockAngularVelocity.minuteDegPerSecond)
-        let secondAngle = Angle.degrees(base.second + dt * (WWClockAngularVelocity.secondDegPerSecond + eps))
+        let secondAngle = Angle.degrees(base.second + dt * WWClockAngularVelocity.secondDegPerSecond)
 
         WidgetWeaverClockIconView(
             palette: palette,
