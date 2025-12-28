@@ -64,7 +64,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 15.0, colourScheme: .classic)
+        return Entry(date: now, anchorDate: now, tickSeconds: 30.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
@@ -72,7 +72,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: now,
-            tickSeconds: 15.0,
+            tickSeconds: 30.0,
             colourScheme: configuration.colourScheme ?? .classic
         )
     }
@@ -80,12 +80,15 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
 
-        // 60s ticks can land on a 360° second-hand delta per entry (appears frozen).
-        // 15s ticks land on 90° deltas, which stays visually alive and still reloads only hourly.
-        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 15.0
+        // Budget-safe strategy:
+        // - Avoid 1 Hz WidgetKit timelines.
+        // - Use sparse entries plus a linear animation that spans the entire interval.
+        // - 60s ticks can land on a 360° second-hand delta per entry (can appear frozen).
+        // - 30s ticks land on 180° deltas, which stays visually alive while cutting update rate.
+        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 30.0
 
         // Keep under the common ~250 entry ceiling.
-        // 240 * 15s = 3600s (≈ 1 hour horizon), then WidgetKit reloads the timeline.
+        // 240 * 30s = 7200s (≈ 2 hours horizon), then WidgetKit reloads the timeline.
         let maxEntries: Int = context.isPreview ? 30 : 240
 
         let anchorDate: Date = Date()
@@ -139,7 +142,6 @@ private struct WidgetWeaverHomeScreenClockView: View {
                 anchorDate: entry.anchorDate,
                 tickSeconds: entry.tickSeconds
             )
-            // If WidgetKit is rendering in placeholder/redacted mode, this forces the real face to draw.
             .unredacted()
             .id(entry.anchorDate)
         }
