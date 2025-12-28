@@ -64,8 +64,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
-    private static let tickSeconds: TimeInterval = 2.0
-    private static let maxEntries: Int = 300 // 10 minutes @ 2s
+    private static let tickSeconds: TimeInterval = 1.0
+    private static let windowSeconds: TimeInterval = 120.0
+
+    private static var maxEntries: Int {
+        Int(windowSeconds / tickSeconds) + 1
+    }
 
     func placeholder(in context: Context) -> Entry {
         Entry(date: Date(), colourScheme: .classic)
@@ -87,7 +91,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             entries.append(Entry(date: d, colourScheme: scheme))
         }
 
-        return Timeline(entries: entries, policy: .atEnd)
+        let refresh = now.addingTimeInterval(Self.windowSeconds)
+        return Timeline(entries: entries, policy: .after(refresh))
     }
 }
 
@@ -124,12 +129,12 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            WidgetWeaverClockWidgetLiveView(palette: palette)
-                .wwWidgetContainerBackground {
-                    WidgetWeaverClockBackgroundView(palette: palette)
-                }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            renderDate: entry.date
+        )
+        .wwWidgetContainerBackground {
+            WidgetWeaverClockBackgroundView(palette: palette)
         }
     }
 }
- 

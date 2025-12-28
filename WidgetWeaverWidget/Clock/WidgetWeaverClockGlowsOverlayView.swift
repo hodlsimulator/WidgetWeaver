@@ -31,8 +31,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
     let secondWidth: CGFloat
     let secondTipSide: CGFloat
 
-    // Hub cut-out
-    let hubCutoutRadius: CGFloat
     let scale: CGFloat
 
     private let hourIndices: [Int] = [1, 2, 4, 5, 7, 8, 10, 11]
@@ -40,7 +38,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Tight glows only (single blur layer per element).
         let capGlowBlur = max(px, capLength * 0.18)
         let pipGlowBlur = max(px, pipSide * 0.20)
 
@@ -51,7 +48,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
         let secondTipGlowBlur = max(px, secondWidth * 1.05)
 
         ZStack {
-            // Cap glows (one layer each, symmetric).
             ForEach(hourIndices, id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
                 RoundedRectangle(cornerRadius: batonWidth * 0.18, style: .continuous)
@@ -63,7 +59,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     .blendMode(.screen)
             }
 
-            // Pip glows (tight, clipped by dial mask in the caller).
             ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
                 RoundedRectangle(cornerRadius: pipSide * 0.14, style: .continuous)
@@ -75,7 +70,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     .blendMode(.screen)
             }
 
-            // Minute-hand edge glow (one edge, ramping to tip; tight blur).
             Rectangle()
                 .fill(
                     LinearGradient(
@@ -96,7 +90,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                 .blur(radius: minuteGlowBlur)
                 .blendMode(.screen)
 
-            // Second-hand glow (minimal).
             Rectangle()
                 .fill(palette.accent.opacity(0.12))
                 .frame(width: secondWidth, height: secondLength)
@@ -105,7 +98,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                 .blur(radius: secondGlowBlur)
                 .blendMode(.screen)
 
-            // Terminal square glow only.
             Rectangle()
                 .fill(palette.accent.opacity(0.18))
                 .frame(width: secondTipSide, height: secondTipSide)
@@ -113,14 +105,7 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                 .rotationEffect(secondAngle)
                 .blur(radius: secondTipGlowBlur)
                 .blendMode(.screen)
-
-            // Hub cut-out to prevent glow painting over centre hardware.
-            Circle()
-                .fill(Color.black)
-                .frame(width: hubCutoutRadius * 2.0, height: hubCutoutRadius * 2.0)
-                .blendMode(.destinationOut)
         }
-        .compositingGroup()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

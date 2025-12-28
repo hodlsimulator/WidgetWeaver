@@ -15,6 +15,8 @@ struct WidgetWeaverClockIconView: View {
     let secondAngle: Angle
 
     let showsSecondHand: Bool
+    let showsHandShadows: Bool
+    let showsGlows: Bool
 
     let handsOpacity: Double
 
@@ -26,6 +28,8 @@ struct WidgetWeaverClockIconView: View {
         minuteAngle: Angle = .degrees(120.0),
         secondAngle: Angle = .degrees(180.0),
         showsSecondHand: Bool = true,
+        showsHandShadows: Bool = true,
+        showsGlows: Bool = true,
         handsOpacity: Double = 1.0
     ) {
         self.palette = palette
@@ -33,6 +37,8 @@ struct WidgetWeaverClockIconView: View {
         self.minuteAngle = minuteAngle
         self.secondAngle = secondAngle
         self.showsSecondHand = showsSecondHand
+        self.showsHandShadows = showsHandShadows
+        self.showsGlows = showsGlows
         self.handsOpacity = handsOpacity
     }
 
@@ -187,17 +193,19 @@ struct WidgetWeaverClockIconView: View {
                     )
 
                     Group {
-                        WidgetWeaverClockHandShadowsView(
-                            palette: palette,
-                            dialDiameter: dialDiameter,
-                            hourAngle: hourAngle,
-                            minuteAngle: minuteAngle,
-                            hourLength: hourLength,
-                            hourWidth: hourWidth,
-                            minuteLength: minuteLength,
-                            minuteWidth: minuteWidth,
-                            scale: displayScale
-                        )
+                        if showsHandShadows {
+                            WidgetWeaverClockHandShadowsView(
+                                palette: palette,
+                                dialDiameter: dialDiameter,
+                                hourAngle: hourAngle,
+                                minuteAngle: minuteAngle,
+                                hourLength: hourLength,
+                                hourWidth: hourWidth,
+                                minuteLength: minuteLength,
+                                minuteWidth: minuteWidth,
+                                scale: displayScale
+                            )
+                        }
 
                         WidgetWeaverClockHandsView(
                             palette: palette,
@@ -215,29 +223,30 @@ struct WidgetWeaverClockIconView: View {
                             scale: displayScale
                         )
 
+                        if showsGlows {
+                            WidgetWeaverClockGlowsOverlayView(
+                                palette: palette,
+                                hourCapCentreRadius: batonCentreRadius,
+                                batonLength: batonLength,
+                                batonWidth: batonWidth,
+                                capLength: capLength,
+                                pipSide: pipSide,
+                                pipRadius: pipRadius,
+                                minuteAngle: minuteAngle,
+                                minuteLength: minuteLength,
+                                minuteWidth: minuteWidth,
+                                secondAngle: secondAngle,
+                                secondLength: usedSecondLength,
+                                secondWidth: usedSecondWidth,
+                                secondTipSide: usedSecondTipSide,
+                                scale: displayScale
+                            )
+                        }
+
                         WidgetWeaverClockCentreHubView(
                             palette: palette,
                             baseRadius: hubBaseRadius,
                             capRadius: hubCapRadius,
-                            scale: displayScale
-                        )
-
-                        WidgetWeaverClockGlowsOverlayView(
-                            palette: palette,
-                            hourCapCentreRadius: batonCentreRadius,
-                            batonLength: batonLength,
-                            batonWidth: batonWidth,
-                            capLength: capLength,
-                            pipSide: pipSide,
-                            pipRadius: pipRadius,
-                            minuteAngle: minuteAngle,
-                            minuteLength: minuteLength,
-                            minuteWidth: minuteWidth,
-                            secondAngle: secondAngle,
-                            secondLength: usedSecondLength,
-                            secondWidth: usedSecondWidth,
-                            secondTipSide: usedSecondTipSide,
-                            hubCutoutRadius: hubBaseRadius + hubCapRadius * 0.12,
                             scale: displayScale
                         )
                     }

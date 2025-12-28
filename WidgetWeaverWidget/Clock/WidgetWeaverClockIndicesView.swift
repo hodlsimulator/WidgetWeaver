@@ -165,6 +165,7 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
                 x: px,
                 y: px
             )
+            .compositingGroup()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
