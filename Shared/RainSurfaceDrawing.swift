@@ -247,16 +247,24 @@ private extension RainSurfaceDrawing {
         bandWidthPx: CGFloat
     ) -> [Double] {
         let n = geometry.sampleCount
+        guard n > 0 else { return [] }
+
         let dxPt = geometry.dx
         let dxPx = dxPt * max(1.0, geometry.displayScale)
 
-        // Wet mask: height or a small chance gives a little tail after “stop”.
-        let epsilon = max(0.5, 0.25 * (1.0 / max(1.0, geometry.displayScale)))
+        // Wet mask should be driven by actual surface height.
+        // Otherwise (when chance is non-zero everywhere) fuzz can collapse into a flat baseline band.
+        let onePixelPt: CGFloat = 1.0 / max(1.0, geometry.displayScale)
+        let epsilon: CGFloat = max(onePixelPt * 0.75, 0.20)
+
         var wet: [Bool] = Array(repeating: false, count: n)
         for i in 0..<n {
-            let h = geometry.heights[i]
-            let c = geometry.certaintyAt(i)
-            wet[i] = (h > epsilon) || (c > 0.10)
+            wet[i] = geometry.heights[i] > epsilon
+        }
+
+        // No wet height => no fuzz band.
+        if !wet.contains(true) {
+            return Array(repeating: 0.0, count: n)
         }
 
         // Distance in samples to nearest wet.
@@ -280,7 +288,7 @@ private extension RainSurfaceDrawing {
             return max(0.0, 1.0 - t)
         }
 
-        // Chance -> fuzz.
+        // Chance -> fuzz (lower chance => more fuzz).
         let thr = cfg.fuzzChanceThreshold
         let trans = max(0.000_1, cfg.fuzzChanceTransition)
         let floorS = max(0.0, min(1.0, cfg.fuzzChanceFloor))
@@ -294,13 +302,22 @@ private extension RainSurfaceDrawing {
 
         for i in 0..<n {
             let chance = geometry.certaintyAt(i)
-            let u = max(0.0, (thr - chance) / trans)       // chance below threshold => positive
+
+            // chance below threshold => positive => stronger fuzz
+            let u = max(0.0, (thr - chance) / trans)
             var s = min(1.0, u)
             s = pow(s, expn)
-            s = max(s, floorS)
 
             let h01 = Double(max(0.0, min(1.0, geometry.heights[i] / baselineDist)))
-            let lowBoost = pow(max(0.0, 1.0 - h01), max(0.10, cfg.fuzzLowHeightPower)) * max(0.0, cfg.fuzzLowHeightBoost)
+
+            // Gate low-height reinforcement so fully-dry samples do not create a baseline fog field.
+            let wetGate = RainSurfaceMath.smoothstep01(RainSurfaceMath.clamp01(h01 / 0.10))
+
+            // Keep a small floor for high-certainty plateaus, but attenuate it at near-zero height.
+            s = max(s, floorS * (0.15 + 0.85 * wetGate))
+
+            let lowBoostBase = pow(max(0.0, 1.0 - h01), max(0.10, cfg.fuzzLowHeightPower)) * max(0.0, cfg.fuzzLowHeightBoost)
+            let lowBoost = lowBoostBase * wetGate
 
             var out = s + (1.0 - s) * lowBoost
             out *= wetFade(dist[i])
