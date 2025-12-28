@@ -16,7 +16,6 @@ struct RainForecastSurfaceRenderer {
 
     func render(in context: inout GraphicsContext, size: CGSize) {
         let chartRect = CGRect(origin: .zero, size: size)
-
         context.fill(Path(chartRect), with: .color(.black))
 
         guard chartRect.width > 2, chartRect.height > 2 else { return }
@@ -60,9 +59,6 @@ struct RainForecastSurfaceRenderer {
         let typicalPeakY = chartRect.minY + chartRect.height * configuration.typicalPeakFraction
         let typicalHeightRaw = baselineY - typicalPeakY
 
-        // Critical guard:
-        // If typicalPeakFraction ends up below the baseline (or equal), typicalHeightRaw <= 0 and the
-        // old logic collapses heightScale to ~1pt, producing a “flat band that only moves up/down”.
         let heightScale: CGFloat = {
             if typicalHeightRaw.isFinite, typicalHeightRaw > 1.0 {
                 return max(1.0, min(maxHeight, typicalHeightRaw))
@@ -72,19 +68,27 @@ struct RainForecastSurfaceRenderer {
 
         let nonNeg: [Double] = intensities.map { v in
             guard v.isFinite else { return 0.0 }
-            return (v > 0.0) ? v : 0.0
+            return v > 0.0 ? v : 0.0
         }
 
         let positive = nonNeg.filter { $0 > 0.0 }
-        let robustSource = positive.isEmpty ? nonNeg : positive
-        let robustMax = max(0.000_001, RainSurfaceMath.percentile(robustSource, p: configuration.robustMaxPercentile))
 
-        // A small low-percentile improves visible dynamics when the hour is “mostly the same”.
-        let robustMin: Double = {
+        // Robust window ignoring zeros (dry minutes).
+        let hiP = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
+        let loP = 0.20
+        let hiI: Double = {
             guard !positive.isEmpty else { return 0.0 }
-            return RainSurfaceMath.percentile(positive, p: 0.10)
+            return RainSurfaceMath.percentile(positive, p: hiP)
         }()
-        let denom = max(0.000_001, robustMax - robustMin)
+        let loI: Double = {
+            guard !positive.isEmpty else { return 0.0 }
+            return RainSurfaceMath.percentile(positive, p: loP)
+        }()
+
+        let fallbackMax = positive.max() ?? 0.0
+        let low = max(0.0, min(loI.isFinite ? loI : 0.0, fallbackMax))
+        let high = max(low, hiI.isFinite ? hiI : fallbackMax)
+        let denom = max(0.000_001, high - low)
 
         let gamma = max(0.10, min(2.50, configuration.intensityGamma))
 
@@ -92,18 +96,16 @@ struct RainForecastSurfaceRenderer {
             let intensity = nonNeg[i]
             guard intensity > 0 else { return 0 }
 
-            var t = (intensity - robustMin) / denom
+            var t = (intensity - low) / denom
             if !t.isFinite { t = 0.0 }
             t = max(0.0, min(1.0, t))
-
-            var h = pow(t, gamma) * Double(heightScale)
+            t = pow(t, gamma)
 
             let c = (i < safeCertainties.count) ? RainSurfaceMath.clamp01(safeCertainties[i]) : 1.0
-            let certaintyWeight = 0.30 + 0.70 * pow(c, 0.70)
-            h *= certaintyWeight
+            let certaintyWeight = 0.35 + 0.65 * pow(c, 0.70)
 
-            let hh = CGFloat(min(Double(maxHeight), h))
-            return hh.isFinite ? hh : 0
+            let h = CGFloat(t) * heightScale * CGFloat(certaintyWeight)
+            return h.isFinite ? min(maxHeight, max(0, h)) : 0
         }
 
         let targetDense = max(12, min(configuration.maxDenseSamples, Int(max(12.0, chartRect.width * displayScale))))
@@ -111,7 +113,8 @@ struct RainForecastSurfaceRenderer {
         var denseCertainties = RainSurfaceMath.resampleMonotoneCubic(safeCertainties, targetCount: targetDense)
         denseCertainties = denseCertainties.map { RainSurfaceMath.clamp01($0) }
 
-        denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 2, passes: 2)
+        // Keep this light; heavy smoothing makes low-variation hours read as a slab.
+        denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 1, passes: 1)
 
         RainSurfaceMath.applyEdgeEasing(
             to: &denseHeights,
@@ -131,6 +134,65 @@ struct RainForecastSurfaceRenderer {
             if !denseHeights[i].isFinite { denseHeights[i] = 0 }
             if denseHeights[i] < onePixel * 0.25 { denseHeights[i] = 0 }
             denseHeights[i] = min(maxHeight, max(0, denseHeights[i]))
+        }
+
+        // If WeatherKit delivers an effectively flat hour (constant intensity/chance),
+        // add deterministic “relief” so the ribbon is not a rectangle.
+        do {
+            let wetThreshold = onePixel * 0.60
+            var wetMin: CGFloat = .greatestFiniteMagnitude
+            var wetMax: CGFloat = 0
+            var wetCount = 0
+
+            for h in denseHeights where h > wetThreshold {
+                wetCount += 1
+                wetMin = min(wetMin, h)
+                wetMax = max(wetMax, h)
+            }
+
+            if wetCount >= 14 {
+                let range = wetMax - wetMin
+                let flatTrigger = max(onePixel * 3.0, heightScale * 0.08)
+
+                if range < flatTrigger {
+                    var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(configuration.noiseSeed, 0xA1D3_CE55_9B27_4F1D))
+
+                    var noise: [CGFloat] = []
+                    noise.reserveCapacity(denseHeights.count)
+                    for _ in 0..<denseHeights.count {
+                        noise.append(CGFloat(prng.nextSignedFloat()))
+                    }
+
+                    // Low-frequency curve.
+                    noise = RainSurfaceMath.smooth(noise, windowRadius: 10, passes: 2)
+
+                    let amp = min(
+                        maxHeight * 0.22,
+                        max(onePixel * 10.0, heightScale * 0.45)
+                    )
+
+                    let n = denseHeights.count
+                    for i in 0..<n {
+                        let h = denseHeights[i]
+                        if h <= wetThreshold { continue }
+
+                        let t = (n <= 1) ? 0.0 : Double(i) / Double(n - 1)
+                        let edgeL = RainSurfaceMath.smoothstep(0.0, 0.20, t)
+                        let edgeR = RainSurfaceMath.smoothstep(0.0, 0.20, 1.0 - t)
+                        let edgeW = CGFloat(edgeL * edgeR)
+
+                        let c = (i < denseCertainties.count) ? RainSurfaceMath.clamp01(denseCertainties[i]) : 1.0
+                        let uncertainty = CGFloat(0.45 + 0.55 * (1.0 - c))
+
+                        let delta = noise[i] * amp * edgeW * uncertainty
+                        var out = h + delta
+                        if !out.isFinite { out = h }
+                        denseHeights[i] = min(maxHeight, max(0.0, out))
+                    }
+
+                    denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 2, passes: 1)
+                }
+            }
         }
 
         let geometry = RainSurfaceGeometry(

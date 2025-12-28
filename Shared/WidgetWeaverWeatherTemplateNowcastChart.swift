@@ -141,9 +141,9 @@ private struct WeatherNowcastSurfacePlot: View {
             }
 
             let n = series.count
-
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
+
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
@@ -166,16 +166,17 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
                 c.maxDenseSamples = isExt ? 180 : 900
-
                 c.fuzzSpeckleBudget = isExt ? 1800 : 5200
 
-                // Geometry: baseline low, peak target well above it (no collapsed height scale).
+                // Baseline back near the bottom.
                 c.baselineFractionFromTop = 0.90
-                c.topHeadroomFraction = 0.08
-                c.typicalPeakFraction = 0.38
+
+                // Give the renderer a real “typical height” budget so variation can show.
+                c.topHeadroomFraction = 0.14
+                c.typicalPeakFraction = 0.55
 
                 c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.65
+                c.intensityGamma = 0.62
 
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
