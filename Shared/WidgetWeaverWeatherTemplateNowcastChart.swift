@@ -132,7 +132,7 @@ private struct WeatherNowcastSurfacePlot: View {
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
             let maxI = max(0.0, maxI0)
 
-            let rawIntensities: [Double] = series.map { p in
+            let intensities: [Double] = series.map { p in
                 let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
                 let raw = raw0.isFinite ? raw0 : 0.0
                 let nonNeg = max(0.0, raw)
@@ -153,14 +153,6 @@ private struct WeatherNowcastSurfacePlot: View {
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
             }
 
-            // Height uses a certainty-weighted intensity so near-constant intensity forecasts still show a readable taper.
-            let intensities: [Double] = rawIntensities.enumerated().map { idx, raw in
-                guard raw > 0 else { return 0.0 }
-                let c = (idx < certainties.count) ? certainties[idx] : 1.0
-                let w = 0.35 + 0.65 * sqrt(RainSurfaceMath.clamp01(c))
-                return raw * w
-            }
-
             let seed = makeNoiseSeed(
                 forecastStart: forecastStart,
                 widgetFamily: widgetFamilyValue,
@@ -178,13 +170,15 @@ private struct WeatherNowcastSurfacePlot: View {
                 // Keep rainy charts within WidgetKit’s render budget.
                 c.fuzzSpeckleBudget = isExt ? 1800 : 5200
 
-                c.baselineFractionFromTop = 0.90
-                c.topHeadroomFraction = 0.05
-                c.typicalPeakFraction = 0.80
-                c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.52
+                // Mock ratios (stop forcing the tiny 0.90/0.80 slab).
+                c.baselineFractionFromTop = 0.596
+                c.topHeadroomFraction = 0.30
+                c.typicalPeakFraction = 0.401
 
-                c.edgeEasingFraction = 0.18
+                c.robustMaxPercentile = 0.93
+                c.intensityGamma = 0.65
+
+                c.edgeEasingFraction = 0.22
                 c.edgeEasingPower = 1.45
 
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)

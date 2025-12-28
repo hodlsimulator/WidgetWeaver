@@ -23,7 +23,7 @@ struct RainForecastSurfaceConfiguration {
 
     // typicalPeakFraction: typical peak Y as fraction of chart height from top.
     // (Used as a geometric target for scaling; not a “cap”.)
-    var typicalPeakFraction: CGFloat = 0.195
+    var typicalPeakFraction: CGFloat = 0.401
 
     // Intensity mapping.
     var robustMaxPercentile: Double = 0.93
