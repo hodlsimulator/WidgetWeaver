@@ -53,6 +53,8 @@ public struct WidgetWeaverClockConfigurationIntent: AppIntent, WidgetConfigurati
 
 public struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     public let date: Date
+    public let anchorDate: Date
+    public let tickSeconds: TimeInterval
     public let colourScheme: WidgetWeaverClockColourScheme
 }
 
@@ -61,26 +63,38 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), colourScheme: .classic)
+        let now = Date()
+        return Entry(date: now, anchorDate: now, tickSeconds: 2.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
-        Entry(date: Date(), colourScheme: configuration.colourScheme ?? .classic)
+        let now = Date()
+        return Entry(date: now, anchorDate: now, tickSeconds: 2.0, colourScheme: configuration.colourScheme ?? .classic)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
-        let now = Date()
 
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
-        let startOfHour = cal.date(from: comps) ?? now
-        let nextHour = cal.date(byAdding: .hour, value: 1, to: startOfHour) ?? now.addingTimeInterval(3600)
+        // Strategy:
+        // Drive motion with frequent timeline entries (iOS may coalesce 1s to ~2s anyway),
+        // and let CoreAnimation sweep the hands smoothly between those entries.
+        let tickSeconds: TimeInterval = 2.0
 
-        let entries: [Entry] = [
-            Entry(date: now, colourScheme: scheme),
-            Entry(date: nextHour, colourScheme: scheme)
-        ]
+        // Keep the horizon short enough to respect WidgetKit budgets, but long enough that
+        // the widget keeps moving even if timeline reloads are delayed.
+        let maxEntries: Int = context.isPreview ? 30 : 180
+
+        // Important: anchor the whole timeline off a single base date so hand angles can be
+        // computed as monotonic (unbounded) values without wrap/jitter.
+        let anchorDate: Date = Date()
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(maxEntries)
+
+        for i in 0..<maxEntries {
+            let d = anchorDate.addingTimeInterval(TimeInterval(i) * tickSeconds)
+            entries.append(Entry(date: d, anchorDate: anchorDate, tickSeconds: tickSeconds, colourScheme: scheme))
+        }
 
         return Timeline(entries: entries, policy: .atEnd)
     }
@@ -115,10 +129,15 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            startDate: entry.date
-        )
+        WidgetWeaverRenderClock.withNow(entry.date) {
+            WidgetWeaverClockWidgetLiveView(
+                palette: palette,
+                date: entry.date,
+                anchorDate: entry.anchorDate,
+                tickSeconds: entry.tickSeconds
+            )
+            .id(entry.anchorDate)
+        }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }

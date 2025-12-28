@@ -2,19 +2,17 @@
 //  WidgetWeaverWeatherTemplateNowcastChart.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/20/25.
+//  Created by . . on 12/23/25.
 //
-//  Nowcast chart for the weather template.
+//  Nowcast chart container + axis labels.
+//  Chart area is dedicated to surface rendering; labels are outside.
 //
 
 import Foundation
 import SwiftUI
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
-
-// MARK: - Chart View
 
 struct WeatherNowcastChart: View {
     let points: [WidgetWeaverWeatherMinutePoint]
@@ -25,250 +23,270 @@ struct WeatherNowcastChart: View {
     let locationLatitude: Double?
     let locationLongitude: Double?
 
-    private var displayScale: CGFloat {
-        #if canImport(UIKit)
-        return UIScreen.main.scale
+    #if canImport(WidgetKit)
+    @Environment(\.widgetFamily) private var widgetFamily
+    #endif
+
+    private struct Insets {
+        var plotHorizontal: CGFloat
+        var plotTop: CGFloat
+        var plotBottom: CGFloat
+        var axisHorizontal: CGFloat
+        var axisTop: CGFloat
+        var axisBottom: CGFloat
+    }
+
+    private var insets: Insets {
+        #if canImport(WidgetKit)
+        switch widgetFamily {
+        case .systemSmall:
+            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
+        case .systemMedium:
+            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        default:
+            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        }
         #else
-        return 2.0
+        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         #endif
     }
 
     var body: some View {
-        WeatherNowcastSurfacePlot(
-            points: points,
-            maxIntensityMMPerHour: maxIntensityMMPerHour,
-            accent: accent,
-            showAxisLabels: showAxisLabels,
-            forecastStart: forecastStart,
-            locationLatitude: locationLatitude,
-            locationLongitude: locationLongitude
-        )
+        let insets = insets
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black)
+
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+
+            VStack(spacing: 0) {
+                WeatherNowcastSurfacePlot(
+                    points: points,
+                    maxIntensityMMPerHour: maxIntensityMMPerHour,
+                    accent: accent,
+                    forecastStart: forecastStart,
+                    locationLatitude: locationLatitude,
+                    locationLongitude: locationLongitude,
+                    widgetFamilyValue: widgetFamilySeedValue()
+                )
+                .padding(.horizontal, insets.plotHorizontal)
+                .padding(.top, insets.plotTop)
+                .padding(.bottom, insets.plotBottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if showAxisLabels {
+                    WeatherNowcastAxisLabels()
+                        .padding(.horizontal, insets.axisHorizontal)
+                        .padding(.top, insets.axisTop)
+                        .padding(.bottom, insets.axisBottom)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func widgetFamilySeedValue() -> UInt64 {
+        #if canImport(WidgetKit)
+        switch widgetFamily {
+        case .systemSmall: return 1
+        case .systemMedium: return 2
+        case .systemLarge: return 3
+        case .systemExtraLarge: return 4
+        default: return 0
+        }
+        #else
+        return 0
+        #endif
     }
 }
 
-// MARK: - Surface Plot
+private struct WeatherNowcastAxisLabels: View {
+    var body: some View {
+        HStack {
+            Text("Now")
+            Spacer(minLength: 0)
+            Text("60m")
+        }
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .foregroundColor(.white.opacity(0.55))
+    }
+}
 
 private struct WeatherNowcastSurfacePlot: View {
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
-    let showAxisLabels: Bool
     let forecastStart: Date
     let locationLatitude: Double?
     let locationLongitude: Double?
+    let widgetFamilyValue: UInt64
 
-    private var displayScale: CGFloat {
-        #if canImport(UIKit)
-        return UIScreen.main.scale
-        #else
-        return 2.0
-        #endif
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        GeometryReader { proxy in
+            let series = samples(from: points, targetMinutes: 60)
+
+            let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
+            let maxI = max(0.0, maxI0)
+
+            let intensities: [Double] = series.map { p in
+                let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
+                let raw = raw0.isFinite ? raw0 : 0.0
+                let nonNeg = max(0.0, raw)
+                let clamped = min(nonNeg, maxI)
+                return WeatherNowcast.isWet(intensityMMPerHour: clamped) ? clamped : 0.0
+            }
+
+            let n = series.count
+            let horizonStart: Double = 0.65
+            let horizonEndCertainty: Double = 0.72
+
+            let certainties: [Double] = series.enumerated().map { idx, p in
+                let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
+                let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
+                let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
+                let hs = RainSurfaceMath.smoothstep01(u)
+                let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
+                return RainSurfaceMath.clamp01(chance * horizonFactor)
+            }
+
+            let seed = makeNoiseSeed(
+                forecastStart: forecastStart,
+                widgetFamily: widgetFamilyValue,
+                latitude: locationLatitude,
+                longitude: locationLongitude
+            )
+
+            let cfg: RainForecastSurfaceConfiguration = {
+                var c = RainForecastSurfaceConfiguration()
+                c.noiseSeed = seed
+
+                let isExt = WidgetWeaverRuntime.isRunningInAppExtension
+                c.maxDenseSamples = isExt ? 180 : 900
+                c.fuzzSpeckleBudget = isExt ? 1800 : 5200
+
+                c.baselineFractionFromTop = 0.90
+                c.topHeadroomFraction = 0.14
+                c.typicalPeakFraction = 0.55
+
+                c.robustMaxPercentile = 0.93
+                c.intensityGamma = 0.62
+
+                c.edgeEasingFraction = 0.18
+                c.edgeEasingPower = 1.45
+
+                c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
+                c.coreTopColor = accent
+
+                c.rimEnabled = false
+                c.glossEnabled = false
+                c.glintEnabled = false
+
+                c.fuzzEnabled = true
+                c.fuzzColor = accent
+
+                c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
+
+                c.fuzzMaxOpacity = isExt ? 0.28 : 0.32
+                c.fuzzWidthFraction = 0.18
+                c.fuzzWidthPixelsClamp = 10.0...90.0
+
+                c.fuzzBaseDensity = 0.90
+                c.fuzzHazeStrength = isExt ? 0.78 : 0.74
+                c.fuzzSpeckStrength = isExt ? 1.18 : 1.25
+                c.fuzzEdgePower = 1.65
+                c.fuzzClumpCellPixels = 12.0
+                c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
+
+                c.fuzzChanceThreshold = 0.60
+                c.fuzzChanceTransition = 0.14
+                c.fuzzChanceMinStrength = 0.26
+
+                c.fuzzUncertaintyFloor = 0.06
+                c.fuzzUncertaintyExponent = 2.15
+
+                c.fuzzLowHeightPower = 2.10
+                c.fuzzLowHeightBoost = 0.55
+
+                c.fuzzInsideWidthFactor = 0.72
+                c.fuzzInsideOpacityFactor = 0.62
+                c.fuzzInsideSpeckleFraction = 0.40
+
+                c.fuzzDistancePowerOutside = 2.00
+                c.fuzzDistancePowerInside = 1.70
+
+                c.fuzzErodeEnabled = true
+                c.fuzzErodeStrength = 0.82
+                c.fuzzErodeEdgePower = 2.70
+
+                c.baselineColor = accent
+                c.baselineLineOpacity = 0.20
+                c.baselineEndFadeFraction = 0.035
+
+                return c
+            }()
+
+            RainForecastSurfaceView(
+                intensities: intensities,
+                certainties: certainties,
+                configuration: cfg
+            )
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+
+    private func makeNoiseSeed(
+        forecastStart: Date,
+        widgetFamily: UInt64,
+        latitude: Double?,
+        longitude: Double?
+    ) -> UInt64 {
+        let minute = Int64(floor(forecastStart.timeIntervalSince1970 / 60.0))
+        var seed = RainSurfacePRNG.combine(UInt64(bitPattern: minute), widgetFamily)
+
+        if let latitude, let longitude {
+            let latQ = Int64((latitude * 10_000.0).rounded())
+            let lonQ = Int64((longitude * 10_000.0).rounded())
+            seed = RainSurfacePRNG.combine(seed, UInt64(bitPattern: latQ))
+            seed = RainSurfacePRNG.combine(seed, UInt64(bitPattern: lonQ))
+        } else {
+            seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
+        }
+
+        return seed
     }
 
     private func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [WidgetWeaverWeatherMinutePoint] {
-        // If WeatherKit minute forecast isn't available, return empty samples.
-        guard !points.isEmpty else { return [] }
+        guard targetMinutes > 0 else { return [] }
 
-        // Ensure forward-ordered, clamped to the next targetMinutes.
+        guard !points.isEmpty else {
+            return Array(
+                repeating: WidgetWeaverWeatherMinutePoint(
+                    date: Date(),
+                    precipitationChance01: 0.0,
+                    precipitationIntensityMMPerHour: 0.0
+                ),
+                count: targetMinutes
+            )
+        }
+
         let sorted = points.sorted(by: { $0.date < $1.date })
-        let start = sorted.first?.date ?? forecastStart
-        let end = Calendar.current.date(byAdding: .minute, value: targetMinutes - 1, to: start) ?? start
+        var out: [WidgetWeaverWeatherMinutePoint] = Array(sorted.prefix(targetMinutes))
 
-        // Fill missing minutes with interpolated chance + zero intensity.
-        var byMinute: [Int: WidgetWeaverWeatherMinutePoint] = [:]
-        for p in sorted {
-            let delta = Int(p.date.timeIntervalSince(start) / 60.0)
-            if delta >= 0 && delta < targetMinutes {
-                byMinute[delta] = p
+        if out.count < targetMinutes {
+            let cal = Calendar.current
+            let lastDate = out.last?.date ?? Date()
+            let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
+            let needed = targetMinutes - out.count
+            for i in 1...needed {
+                let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
+                out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
             }
         }
 
-        var out: [WidgetWeaverWeatherMinutePoint] = []
-        out.reserveCapacity(targetMinutes)
-
-        for i in 0..<targetMinutes {
-            if let exact = byMinute[i] {
-                out.append(exact)
-            } else {
-                let d = Calendar.current.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(TimeInterval(i * 60))
-                out.append(
-                    WidgetWeaverWeatherMinutePoint(
-                        date: d,
-                        precipitationChance01: 0.0,
-                        precipitationIntensityMMPerHour: 0.0
-                    )
-                )
-            }
-        }
-
-        // Clamp to end.
-        return out.filter { $0.date <= end }
-    }
-
-    private func makeNoiseSeed(lat: Double?, lon: Double?, start: Date) -> UInt64 {
-        // A deterministic per-location/per-hour seed so the "surface relief" pattern is stable.
-        let hour = Calendar.current.dateInterval(of: .hour, for: start)?.start ?? start
-        let t = UInt64(max(0, Int(hour.timeIntervalSince1970)))
-
-        if let lat, let lon, lat.isFinite, lon.isFinite {
-            let key = String(format: "lat%.4f_lon%.4f_t%llu", lat, lon, t)
-            return RainSurfacePRNG.hashString64(key)
-        }
-
-        return RainSurfacePRNG.hashString64("no-location_t\(t)")
-    }
-
-    var body: some View {
-        let series = samples(from: points, targetMinutes: 60)
-
-        let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
-        let maxI = max(0.0, maxI0)
-
-        // Convert to arrays for the surface renderer.
-        let intensities: [Double] = series.map {
-            let raw0 = $0.precipitationIntensityMMPerHour ?? 0.0
-            let raw = raw0.isFinite ? raw0 : 0.0
-            let nonNeg = max(0.0, raw)
-            let clamped = min(nonNeg, maxI)
-            return WeatherNowcast.isWet(intensityMMPerHour: clamped) ? clamped : 0.0
-        }
-
-        let certainties: [Double] = series.enumerated().map { idx, p in
-            let c0 = p.precipitationChance01 ?? 0.0
-            let c = c0.isFinite ? max(0.0, min(1.0, c0)) : 0.0
-
-            // Apply a subtle horizon fade so the far-right fuzz isn't overpowering.
-            let t = Double(idx) / Double(max(1, series.count - 1))
-            let horizonFactor = 1.0 - 0.25 * pow(t, 1.6)
-            return max(0.0, min(1.0, c * horizonFactor))
-        }
-
-        let noiseSeed = makeNoiseSeed(lat: locationLatitude, lon: locationLongitude, start: forecastStart)
-
-        return GeometryReader { proxy in
-            let size = proxy.size
-
-            ZStack {
-                // Surface.
-                let cfg: RainForecastSurfaceConfiguration = {
-                    var c = RainForecastSurfaceConfiguration()
-
-                    c.maxDenseSamples = 900
-
-                    // Geometry tuned to match the mock.
-                    c.baselineFractionFromTop = 0.90
-
-                    // Give the renderer a real “typical height” budget so variation can show.
-                    c.topHeadroomFraction = 0.14
-                    c.typicalPeakFraction = 0.55
-
-                    c.robustMaxPercentile = 0.93
-                    c.intensityGamma = 0.62
-
-                    // Lock the renderer's normalisation to this chart's visual max so
-                    // steady/light rain does not collapse into a flat baseline band.
-                    c.intensityReferenceMaxMMPerHour = maxI
-
-                    c.edgeEasingFraction = 0.18
-                    c.edgeEasingPower = 1.45
-
-                    c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
-                    c.coreTopColor = accent
-                    c.coreTopMix = 0.0
-                    c.coreFadeFraction = 0.06
-
-                    c.rimEnabled = true
-                    c.rimColor = accent
-                    c.rimInnerOpacity = 0.10
-                    c.rimInnerWidthPixels = 1.0
-                    c.rimOuterOpacity = 0.045
-                    c.rimOuterWidthPixels = 16.0
-
-                    c.glossEnabled = false
-                    c.glintEnabled = false
-
-                    c.noiseSeed = noiseSeed
-
-                    c.canEnableFuzz = true
-                    c.fuzzEnabled = true
-                    c.fuzzColor = accent
-
-                    // Fuzz tuning (these are the knobs that were being adjusted).
-                    c.fuzzChanceThreshold = 0.60
-                    c.fuzzChanceTransition = 0.24
-                    c.fuzzChanceFloor = 0.22
-                    c.fuzzMaxOpacity = 0.34
-                    c.fuzzWidthFraction = 0.22
-                    c.fuzzErodeStrength = 0.95
-
-                    c.baselineEnabled = true
-                    c.baselineColor = accent
-                    c.baselineLineOpacity = 0.22
-                    c.baselineWidthPixels = 1.0
-                    c.baselineOffsetPixels = 0.0
-                    c.baselineEndFadeFraction = 0.035
-
-                    return c
-                }()
-
-                RainForecastSurfaceView(
-                    intensities: intensities,
-                    certainties: certainties,
-                    configuration: cfg
-                )
-                .frame(width: size.width, height: size.height)
-
-                // Optional axis labels.
-                if showAxisLabels {
-                    WeatherNowcastAxisOverlay(
-                        width: size.width,
-                        height: size.height,
-                        start: forecastStart,
-                        accent: accent
-                    )
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Axis Overlay
-
-private struct WeatherNowcastAxisOverlay: View {
-    let width: CGFloat
-    let height: CGFloat
-    let start: Date
-    let accent: Color
-
-    var body: some View {
-        let cal = Calendar.current
-        let base = cal.dateInterval(of: .hour, for: start)?.start ?? start
-
-        let t0 = base
-        let t30 = cal.date(byAdding: .minute, value: 30, to: base) ?? base.addingTimeInterval(60 * 30)
-        let t60 = cal.date(byAdding: .minute, value: 60, to: base) ?? base.addingTimeInterval(60 * 60)
-
-        let f = DateFormatter()
-        f.dateFormat = "h:mm"
-
-        let left = f.string(from: t0)
-        let mid = f.string(from: t30)
-        let right = f.string(from: t60)
-
-        return VStack {
-            Spacer(minLength: 0)
-
-            HStack {
-                Text(left)
-                Spacer(minLength: 0)
-                Text(mid)
-                Spacer(minLength: 0)
-                Text(right)
-            }
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundStyle(accent.opacity(0.75))
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
-        }
+        return out
     }
 }

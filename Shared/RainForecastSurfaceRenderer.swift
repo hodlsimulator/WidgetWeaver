@@ -32,7 +32,6 @@ struct RainForecastSurfaceRenderer {
         }
 
         let nMinutes = intensities.count
-        let onePixel = 1.0 / max(1.0, displayScale)
 
         let safeCertainties: [Double] = {
             if certainties.count == nMinutes {
@@ -73,64 +72,41 @@ struct RainForecastSurfaceRenderer {
         }
 
         let positive = nonNeg.filter { $0 > 0.0 }
+
+        // Robust window ignoring zeros (dry minutes).
+        let hiP = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
+        let loP = 0.20
+        let hiI: Double = {
+            guard !positive.isEmpty else { return 0.0 }
+            return RainSurfaceMath.percentile(positive, p: hiP)
+        }()
+        let loI: Double = {
+            guard !positive.isEmpty else { return 0.0 }
+            return RainSurfaceMath.percentile(positive, p: loP)
+        }()
+
         let fallbackMax = positive.max() ?? 0.0
 
-        // ---------------------------------------------------------------------
-        // Height mapping
-        //
-        // There are two modes:
-        // 1) Reference scaling: use a known "visual max" (mm/h) provided by the caller.
-        //    This keeps chart height tied to real intensity (drizzle stays small).
-        // 2) Robust window scaling: use percentiles of the wet minutes.
-        //
-        // Flat chart failure mode:
-        // If all wet intensities are identical, the percentile window collapses (low == high)
-        // and (intensity - low) becomes 0 for every wet minute. That yields a baseline-only
-        // surface and only the fuzz layer is visible as a flat band.
-        // ---------------------------------------------------------------------
+        var low = max(0.0, min(loI.isFinite ? loI : 0.0, fallbackMax))
+        var high = max(low, hiI.isFinite ? hiI : fallbackMax)
+        var denom = max(0.000_001, high - low)
 
-        var low: Double = 0.0
-        var high: Double = 0.0
-
-        let refMax0 = configuration.intensityReferenceMaxMMPerHour
-        let refMax = (refMax0.isFinite && refMax0 > 0.0) ? refMax0 : 0.0
-
-        if refMax > 0.0 {
-            low = 0.0
-            high = refMax
-        } else {
-            // Robust window ignoring zeros (dry minutes).
-            let hiP = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
-            let loP = 0.20
-
-            let hiI: Double = {
-                guard !positive.isEmpty else { return 0.0 }
-                return RainSurfaceMath.percentile(positive, p: hiP)
-            }()
-
-            let loI: Double = {
-                guard !positive.isEmpty else { return 0.0 }
-                return RainSurfaceMath.percentile(positive, p: loP)
-            }()
-
-            low = max(0.0, min(loI.isFinite ? loI : 0.0, fallbackMax))
-            high = max(low, hiI.isFinite ? hiI : fallbackMax)
-
-            // If the window collapses, fall back to a zero-based mapping.
-            if fallbackMax > 0.0 {
-                let range = high - low
-                let eps = max(0.000_000_001, fallbackMax * 0.0005) // 0.05% of max, with a tiny floor.
-                if !range.isFinite || range <= eps {
-                    low = 0.0
-                    high = max(fallbackMax, 0.000_001)
-                }
+        // Flat-band fix:
+        // If the wet intensities are effectively constant, percentile scaling collapses (high ≈ low)
+        // and (intensity - low) becomes ~0 for all wet minutes -> zero height -> flat band.
+        if fallbackMax > 0.0 {
+            let range = high - low
+            let eps = max(0.000_001, fallbackMax * 0.0005)
+            if !range.isFinite || range <= eps {
+                low = 0.0
+                high = max(fallbackMax, 0.000_001)
+                denom = max(0.000_001, high - low)
             }
         }
 
-        let denom = max(0.000_001, high - low)
         let gamma = max(0.10, min(2.50, configuration.intensityGamma))
 
-        var minuteHeights: [CGFloat] = (0..<nMinutes).map { i in
+        let minuteHeights: [CGFloat] = (0..<nMinutes).map { i in
             let intensity = nonNeg[i]
             guard intensity > 0 else { return 0 }
 
@@ -144,22 +120,6 @@ struct RainForecastSurfaceRenderer {
 
             let h = CGFloat(t) * heightScale * CGFloat(certaintyWeight)
             return h.isFinite ? min(maxHeight, max(0, h)) : 0
-        }
-
-        // If intensity is entirely missing/zeroed but chance is present, synthesise a subtle
-        // height from chance so the surface does not collapse to a straight baseline.
-        if positive.isEmpty && !certainties.isEmpty {
-            let cMax = safeCertainties.max() ?? 0.0
-            if cMax > 0.10 {
-                let chanceScale = heightScale * 0.30
-                minuteHeights = (0..<nMinutes).map { i in
-                    let c = RainSurfaceMath.clamp01(safeCertainties[i])
-                    let t = pow(c, 1.35)
-                    let h = CGFloat(t) * chanceScale
-                    if !h.isFinite { return 0 }
-                    return min(maxHeight, max(0, h))
-                }
-            }
         }
 
         let targetDense = max(12, min(configuration.maxDenseSamples, Int(max(12.0, chartRect.width * displayScale))))
@@ -176,6 +136,7 @@ struct RainForecastSurfaceRenderer {
             power: configuration.edgeEasingPower
         )
 
+        let onePixel = 1.0 / max(1.0, displayScale)
         RainSurfaceMath.applyWetSegmentEasing(
             to: &denseHeights,
             threshold: onePixel * 0.10,
