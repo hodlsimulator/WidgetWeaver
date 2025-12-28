@@ -31,7 +31,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .orchid: DisplayRepresentation(title: "Orchid"),
             .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: DisplayRepresentation(title: "Graphite")
+            .graphite: DisplayRepresentation(title: "Graphite"),
         ]
     }
 }
@@ -64,82 +64,102 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 2.0, colourScheme: .classic)
+        let tickSeconds: TimeInterval = 2.0
+        return Entry(
+            date: now,
+            anchorDate: alignedAnchor(now, tickSeconds: tickSeconds),
+            tickSeconds: tickSeconds,
+            colourScheme: .classic
+        )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 2.0, colourScheme: configuration.colourScheme ?? .classic)
+        let tickSeconds: TimeInterval = 2.0
+        return Entry(
+            date: now,
+            anchorDate: alignedAnchor(now, tickSeconds: tickSeconds),
+            tickSeconds: tickSeconds,
+            colourScheme: configuration.colourScheme ?? .classic
+        )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
+        let now = Date()
+        let tickSeconds: TimeInterval = 2.0
         let scheme = configuration.colourScheme ?? .classic
 
-        // Strategy:
-        // Drive motion with frequent timeline entries (iOS may coalesce 1s to ~2s anyway),
-        // and let CoreAnimation sweep the hands smoothly between those entries.
-        let tickSeconds: TimeInterval = 2.0
+        let anchorDate = alignedAnchor(now, tickSeconds: tickSeconds)
+        let nextRefresh = nextHourBoundary(after: now) ?? now.addingTimeInterval(3600)
 
-        // Keep the horizon short enough to respect WidgetKit budgets, but long enough that
-        // the widget keeps moving even if timeline reloads are delayed.
-        let maxEntries: Int = context.isPreview ? 30 : 180
+        let entry = Entry(
+            date: now,
+            anchorDate: anchorDate,
+            tickSeconds: tickSeconds,
+            colourScheme: scheme
+        )
 
-        // Important: anchor the whole timeline off a single base date so hand angles can be
-        // computed as monotonic (unbounded) values without wrap/jitter.
-        let anchorDate: Date = Date()
-
-        var entries: [Entry] = []
-        entries.reserveCapacity(maxEntries)
-
-        for i in 0..<maxEntries {
-            let d = anchorDate.addingTimeInterval(TimeInterval(i) * tickSeconds)
-            entries.append(Entry(date: d, anchorDate: anchorDate, tickSeconds: tickSeconds, colourScheme: scheme))
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
+        return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
-}
 
-struct WidgetWeaverHomeScreenClockWidget: Widget {
-    let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
+    private func alignedAnchor(_ now: Date, tickSeconds: TimeInterval) -> Date {
+        guard tickSeconds > 0 else { return now }
+        let t = now.timeIntervalSinceReferenceDate
+        let aligned = (t / tickSeconds).rounded(.up) * tickSeconds
+        return Date(timeIntervalSinceReferenceDate: aligned)
+    }
 
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: kind,
-            intent: WidgetWeaverClockConfigurationIntent.self,
-            provider: WidgetWeaverHomeScreenClockProvider()
-        ) { entry in
-            WidgetWeaverHomeScreenClockView(entry: entry)
-        }
-        .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
-        .supportedFamilies([.systemSmall])
-        .contentMarginsDisabled()
+    private func nextHourBoundary(after date: Date) -> Date? {
+        let cal = Calendar.autoupdatingCurrent
+        return cal.nextDate(
+            after: date,
+            matching: DateComponents(minute: 0, second: 0),
+            matchingPolicy: .nextTimePreservingSmallerComponents
+        )
     }
 }
 
 private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
-    @Environment(\.colorScheme) private var mode
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(
             scheme: entry.colourScheme,
-            mode: mode
+            mode: colorScheme
         )
 
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            WidgetWeaverClockWidgetLiveView(
-                palette: palette,
-                date: entry.date,
-                anchorDate: entry.anchorDate,
-                tickSeconds: entry.tickSeconds
-            )
-            .id(entry.anchorDate)
-        }
-        .wwWidgetContainerBackground {
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            anchorDate: entry.anchorDate,
+            tickSeconds: entry.tickSeconds
+        )
+        .padding(10)
+        .containerBackground(for: .widget) {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
+    }
+}
+
+public struct WidgetWeaverHomeScreenClockWidget: Widget {
+    public let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
+
+    public init() {}
+
+    public var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: kind,
+            intent: WidgetWeaverClockConfigurationIntent.self,
+            provider: WidgetWeaverHomeScreenClockProvider()
+        ) { entry in
+            WidgetWeaverRenderClock.withNow(entry.date) {
+                WidgetWeaverHomeScreenClockView(entry: entry)
+            }
+        }
+        .configurationDisplayName("Clock (Icon)")
+        .description("An analogue clock face with a configurable colour scheme.")
+        .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
