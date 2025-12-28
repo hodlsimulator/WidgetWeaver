@@ -32,7 +32,6 @@ struct WeatherNowcastChart: View {
         var plotHorizontal: CGFloat
         var plotTop: CGFloat
         var plotBottom: CGFloat
-
         var axisHorizontal: CGFloat
         var axisTop: CGFloat
         var axisBottom: CGFloat
@@ -173,13 +172,14 @@ private struct WeatherNowcastSurfacePlot: View {
             let n = series.count
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
+
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
+
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
             }
 
@@ -192,10 +192,9 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
-
                 c.noiseSeed = seed
 
-                // FIX: Use the Nowcast “visual max” as the renderer’s reference max, so
+                // Use the Nowcast “visual max” as the renderer’s reference max, so
                 // height is mapped as intensity / visualMax instead of percentile normalisation.
                 c.intensityReferenceMaxMMPerHour = maxI
 
@@ -203,13 +202,25 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.maxDenseSamples = isExt ? 180 : 900
                 c.fuzzSpeckleBudget = isExt ? 1800 : 5200
 
-                c.baselineFractionFromTop = 0.90
-                c.topHeadroomFraction = 0.14
-                c.typicalPeakFraction = 0.55
+                // IMPORTANT:
+                // RainForecastSurfaceConfiguration changed meaning for:
+                // - topHeadroomFraction (now: fraction of baseline distance)
+                // - typicalPeakFraction (now: Y position as fraction from top)
+                //
+                // These values are converted from the legacy tuning that produced the
+                // “normal” shaped surface:
+                // baseline = 0.90, headroom(top) = 0.05 of chart height,
+                // typical peak height = 0.80 of maxHeight.
+                let baselineFromTop: Double = 0.90
+                let legacyHeadroomFromTop: Double = 0.05
+                let legacyTypicalPeakHeightFraction: Double = 0.80
+
+                c.baselineFractionFromTop = baselineFromTop
+                c.topHeadroomFraction = legacyHeadroomFromTop / baselineFromTop
+                c.typicalPeakFraction = baselineFromTop - ((baselineFromTop - legacyHeadroomFromTop) * legacyTypicalPeakHeightFraction)
 
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.62
-
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
@@ -222,17 +233,14 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-
                 c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
                 c.fuzzMaxOpacity = isExt ? 0.28 : 0.32
-
                 c.fuzzWidthFraction = 0.18
                 c.fuzzWidthPixelsClamp = 10.0...90.0
-
                 c.fuzzBaseDensity = 0.90
+
                 c.fuzzHazeStrength = isExt ? 0.78 : 0.74
                 c.fuzzSpeckStrength = isExt ? 1.18 : 1.25
-
                 c.fuzzEdgePower = 1.65
                 c.fuzzClumpCellPixels = 12.0
                 c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
@@ -243,7 +251,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
                 c.fuzzUncertaintyFloor = 0.06
                 c.fuzzUncertaintyExponent = 2.15
-
                 c.fuzzLowHeightPower = 2.10
                 c.fuzzLowHeightBoost = 0.55
 
@@ -316,8 +323,8 @@ private struct WeatherNowcastSurfacePlot: View {
             let cal = Calendar.current
             let lastDate = out.last?.date ?? Date()
             let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
-
             let needed = targetMinutes - out.count
+
             for i in 1...needed {
                 let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
                 out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
