@@ -64,6 +64,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
+    private static let tickSeconds: TimeInterval = 2.0
+    private static let maxEntries: Int = 300 // 10 minutes @ 2s
+
     func placeholder(in context: Context) -> Entry {
         Entry(date: Date(), colourScheme: .classic)
     }
@@ -76,17 +79,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
-        let startOfHour = cal.date(from: comps) ?? now
-        let nextHour = cal.date(byAdding: .hour, value: 1, to: startOfHour) ?? now.addingTimeInterval(3600)
+        var entries: [Entry] = []
+        entries.reserveCapacity(Self.maxEntries)
 
-        let entries: [Entry] = [
-            Entry(date: now, colourScheme: scheme),
-            Entry(date: nextHour, colourScheme: scheme)
-        ]
+        for i in 0..<Self.maxEntries {
+            let d = now.addingTimeInterval(TimeInterval(i) * Self.tickSeconds)
+            entries.append(Entry(date: d, colourScheme: scheme))
+        }
 
-        // Hourly timeline reload stays within the normal WidgetKit budget envelope.
         return Timeline(entries: entries, policy: .atEnd)
     }
 }
@@ -124,12 +124,11 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            startDate: entry.date
-        )
-        .wwWidgetContainerBackground {
-            WidgetWeaverClockBackgroundView(palette: palette)
+        WidgetWeaverRenderClock.withNow(entry.date) {
+            WidgetWeaverClockWidgetLiveView(palette: palette)
+                .wwWidgetContainerBackground {
+                    WidgetWeaverClockBackgroundView(palette: palette)
+                }
         }
     }
 }
