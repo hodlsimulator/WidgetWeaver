@@ -150,25 +150,43 @@ struct RainForecastSurfaceRenderer {
             denseHeights[i] = min(maxHeight, max(0, denseHeights[i]))
         }
 
-        // If WeatherKit delivers an effectively flat hour (constant intensity/chance),
-        // add deterministic “relief” so the ribbon is not a rectangle.
+        // If WeatherKit delivers an effectively “plateaued” hour (very low variance once the ends are eased),
+        // add deterministic relief so the ribbon doesn't read as a flat slab.
         do {
             let wetThreshold = onePixel * 0.60
-            var wetMin: CGFloat = .greatestFiniteMagnitude
+
             var wetMax: CGFloat = 0
             var wetCount = 0
-
             for h in denseHeights where h > wetThreshold {
                 wetCount += 1
-                wetMin = min(wetMin, h)
                 wetMax = max(wetMax, h)
             }
 
-            if wetCount >= 14 {
-                let range = wetMax - wetMin
-                let flatTrigger = max(onePixel * 3.0, heightScale * 0.08)
+            // Measure flatness on the *core* of the ribbon.
+            // Using wetMin/wetMax across the whole segment fails because the edge easing produces
+            // large range even when the interior is perfectly flat.
+            if wetCount >= 14, wetMax > wetThreshold {
+                let coreCut = max(wetThreshold, wetMax * 0.70)
 
-                if range < flatTrigger {
+                var coreMin: CGFloat = .greatestFiniteMagnitude
+                var coreMax: CGFloat = 0
+                var coreCount = 0
+
+                for h in denseHeights where h >= coreCut {
+                    coreCount += 1
+                    coreMin = min(coreMin, h)
+                    coreMax = max(coreMax, h)
+                }
+
+                let coreRatio = (wetCount > 0) ? (Double(coreCount) / Double(wetCount)) : 0.0
+                let coreRange = coreMax - coreMin
+
+                let flatTrigger = max(
+                    onePixel * 2.5,
+                    max(wetMax * 0.06, heightScale * 0.06)
+                )
+
+                if coreCount >= 16, coreRatio >= 0.45, coreRange < flatTrigger {
                     var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(configuration.noiseSeed, 0xA1D3_CE55_9B27_4F1D))
 
                     var noise: [CGFloat] = []
@@ -177,12 +195,13 @@ struct RainForecastSurfaceRenderer {
                         noise.append(CGFloat(prng.nextSignedFloat()))
                     }
 
-                    // Low-frequency curve.
-                    noise = RainSurfaceMath.smooth(noise, windowRadius: 10, passes: 2)
+                    // Low-frequency curve (keep enough energy so it reads at widget scale).
+                    let r = max(4, min(12, denseHeights.count / 24))
+                    noise = RainSurfaceMath.smooth(noise, windowRadius: r, passes: 1)
 
                     let amp = min(
-                        maxHeight * 0.22,
-                        max(onePixel * 10.0, heightScale * 0.45)
+                        maxHeight * 0.26,
+                        max(onePixel * 14.0, max(wetMax * 0.32, heightScale * 0.50))
                     )
 
                     let n = denseHeights.count
@@ -195,16 +214,25 @@ struct RainForecastSurfaceRenderer {
                         let edgeR = RainSurfaceMath.smoothstep(0.0, 0.20, 1.0 - t)
                         let edgeW = CGFloat(edgeL * edgeR)
 
+                        // Focus the relief on the interior plateau (avoid making the tapered ends wobbly).
+                        let plateauW: CGFloat = {
+                            if wetMax <= coreCut { return 0 }
+                            let w = RainSurfaceMath.smoothstep(Double(coreCut), Double(wetMax), Double(h))
+                            return CGFloat(max(0.0, min(1.0, w)))
+                        }()
+
+                        if plateauW <= 0.0001 { continue }
+
                         let c = (i < denseCertainties.count) ? RainSurfaceMath.clamp01(denseCertainties[i]) : 1.0
                         let uncertainty = CGFloat(0.45 + 0.55 * (1.0 - c))
 
-                        let delta = noise[i] * amp * edgeW * uncertainty
+                        let delta = noise[i] * amp * edgeW * plateauW * uncertainty
                         var out = h + delta
                         if !out.isFinite { out = h }
                         denseHeights[i] = min(maxHeight, max(0.0, out))
                     }
 
-                    denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 2, passes: 1)
+                    denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 1, passes: 1)
                 }
             }
         }
