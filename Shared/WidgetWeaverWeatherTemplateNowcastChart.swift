@@ -167,18 +167,17 @@ private struct WeatherNowcastSurfacePlot: View {
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
                 c.maxDenseSamples = isExt ? 180 : 900
 
-                // Keep rainy charts within WidgetKit’s render budget.
                 c.fuzzSpeckleBudget = isExt ? 1800 : 5200
 
-                // Mock ratios (stop forcing the tiny 0.90/0.80 slab).
-                c.baselineFractionFromTop = 0.596
-                c.topHeadroomFraction = 0.30
-                c.typicalPeakFraction = 0.401
+                // Geometry: baseline low, peak target well above it (no collapsed height scale).
+                c.baselineFractionFromTop = 0.90
+                c.topHeadroomFraction = 0.08
+                c.typicalPeakFraction = 0.38
 
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.65
 
-                c.edgeEasingFraction = 0.22
+                c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
