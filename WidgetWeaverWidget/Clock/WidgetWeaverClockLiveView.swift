@@ -130,19 +130,19 @@ private struct WidgetWeaverClockBaseAngles {
     let second: Double
 
     init(date: Date) {
-        let tz = TimeInterval(TimeZone.autoupdatingCurrent.secondsFromGMT(for: date))
-        let local = date.timeIntervalSince1970 + tz
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
 
-        let sec = local.truncatingRemainder(dividingBy: 60.0)
-        let minTotal = (local / 60.0).truncatingRemainder(dividingBy: 60.0)
-        let hourTotal = (local / 3600.0).truncatingRemainder(dividingBy: 12.0)
+        let hour24 = Double(comps.hour ?? 0)
+        let minuteInt = Double(comps.minute ?? 0)
+        let secondInt = Double(comps.second ?? 0)
+        let nano = Double(comps.nanosecond ?? 0)
 
-        let secondDeg = sec * 6.0
-        let minuteDeg = (minTotal + sec / 60.0) * 6.0
-        let hourDeg = (hourTotal + minTotal / 60.0 + sec / 3600.0) * 30.0
+        let sec = secondInt + (nano / 1_000_000_000.0)
+        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        self.second = secondDeg
-        self.minute = minuteDeg
-        self.hour = hourDeg
+        self.second = sec * 6.0
+        self.minute = (minuteInt + sec / 60.0) * 6.0
+        self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
     }
 }
