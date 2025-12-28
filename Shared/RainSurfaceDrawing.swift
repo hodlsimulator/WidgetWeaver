@@ -37,16 +37,21 @@ enum RainSurfaceDrawing {
         let normals = computeOutwardNormals(points: surfacePoints)
 
         // ---- Core top inset (THIS is the “surface becomes fuzz” move) --------
-        // Pull the solid fill down/inward so it never meets the true surface.
-        // The fuzz band sits where the surface is.
-        let baseInset = bandWidthPt * CGFloat(max(0.10, min(1.25, cfg.fuzzInsideWidthFactor))) * 0.55
+        // Pull the solid fill slightly down/inward so it does not hard-meet the surface.
+        // Keep this subtle: too much inset makes fuzz look like it floats above the fill.
+        let insetFactor = CGFloat(max(0.10, min(1.25, cfg.fuzzInsideWidthFactor)))
+
+        // Small, scale-aware inset. Clamped so large charts do not create a big “gap”.
+        let baseInset = min(bandWidthPt * insetFactor * 0.18, 2.8)
 
         var insetTopPoints: [CGPoint] = []
         insetTopPoints.reserveCapacity(surfacePoints.count)
 
         for i in 0..<surfacePoints.count {
             let s = CGFloat(max(0.0, min(1.0, perPointStrength[i])))
-            let inset = baseInset * (0.35 + 0.65 * s)
+
+            // Inset LESS where fuzz is strong (so fuzz hugs the edge instead of floating).
+            let inset = max(0.0, baseInset * (0.25 + 0.75 * (1.0 - s)))
 
             let n = normals[i]
             let inward = CGVector(dx: -n.dx, dy: -n.dy)
@@ -514,21 +519,72 @@ private extension RainSurfaceDrawing {
             }
         }
 
+        let segCount = min(perSegmentStrength.count, max(0, surfacePoints.count - 1))
+        if segCount <= 0 { return }
+
+        // Bin strengths and build continuous subpaths per bin.
+        // This avoids “striping” from per-segment stroking on flat tops.
+        let bins = 5
+        let eps: Double = 0.000_1
+
+        var binPaths: [Path] = Array(repeating: Path(), count: bins)
+        var binAvgS: [Double] = Array(repeating: 0.0, count: bins)
+        var binCounts: [Int] = Array(repeating: 0, count: bins)
+
+        for b in 0..<bins {
+            var inRun = false
+            var sumS: Double = 0.0
+            var countS: Int = 0
+
+            for i in 0..<segCount {
+                let s = max(0.0, min(1.0, perSegmentStrength[i]))
+                if s <= eps {
+                    inRun = false
+                    continue
+                }
+
+                let segBin = min(bins - 1, max(0, Int(floor(s * Double(bins)))))
+                if segBin != b {
+                    inRun = false
+                    continue
+                }
+
+                let p0 = surfacePoints[i]
+                let p1 = surfacePoints[i + 1]
+
+                if !inRun {
+                    binPaths[b].move(to: p0)
+                    binPaths[b].addLine(to: p1)
+                    inRun = true
+                } else {
+                    binPaths[b].addLine(to: p1)
+                }
+
+                sumS += s
+                countS += 1
+            }
+
+            if countS > 0 {
+                binAvgS[b] = sumS / Double(countS)
+                binCounts[b] = countS
+            }
+        }
+
+        let style1 = StrokeStyle(lineWidth: w1, lineCap: .round, lineJoin: .round)
+        let style2 = StrokeStyle(lineWidth: w2, lineCap: .round, lineJoin: .round)
+
         // Two-pass haze to get a brighter “edge glow” with a softer outer bloom.
         context.drawLayer { layer in
             clipLayer(&layer)
             layer.blendMode = .plusLighter
             if blur1 > 0.001 { layer.addFilter(.blur(radius: blur1)) }
 
-            for i in 0..<(surfacePoints.count - 1) {
-                let s = max(0.0, min(1.0, perSegmentStrength[i]))
+            for b in 0..<bins {
+                if binCounts[b] == 0 { continue }
+                let s = binAvgS[b]
                 let op = hazeAlphaBase * 0.72 * s * opMul
                 if op <= 0.0001 { continue }
-
-                var seg = Path()
-                seg.move(to: surfacePoints[i])
-                seg.addLine(to: surfacePoints[i + 1])
-                layer.stroke(seg, with: .color(baseColor.opacity(op)), lineWidth: w1)
+                layer.stroke(binPaths[b], with: .color(baseColor.opacity(op)), style: style1)
             }
         }
 
@@ -537,15 +593,12 @@ private extension RainSurfaceDrawing {
             layer.blendMode = .plusLighter
             if blur2 > 0.001 { layer.addFilter(.blur(radius: blur2)) }
 
-            for i in 0..<(surfacePoints.count - 1) {
-                let s = max(0.0, min(1.0, perSegmentStrength[i]))
+            for b in 0..<bins {
+                if binCounts[b] == 0 { continue }
+                let s = binAvgS[b]
                 let op = hazeAlphaBase * 0.38 * s * opMul
                 if op <= 0.0001 { continue }
-
-                var seg = Path()
-                seg.move(to: surfacePoints[i])
-                seg.addLine(to: surfacePoints[i + 1])
-                layer.stroke(seg, with: .color(cfg.fuzzColor.opacity(op)), lineWidth: w2)
+                layer.stroke(binPaths[b], with: .color(cfg.fuzzColor.opacity(op)), style: style2)
             }
         }
     }
