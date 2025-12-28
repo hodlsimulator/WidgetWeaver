@@ -110,6 +110,13 @@ struct RainForecastSurfaceConfiguration {
     var fuzzSpeckleRadiusPixels: ClosedRange<CGFloat> = 0.50...1.20
     var fuzzSpeckleBudget: Int = 5200
 
+    // Legacy knobs kept for call-site compatibility (currently unused by the renderer).
+    var fuzzRasterMaxPixels: Int = 0
+    var fuzzEdgePower: Double = 0.0
+    var fuzzClumpCellPixels: CGFloat = 0.0
+    var fuzzMicroBlurPixels: CGFloat = 0.0
+    var fuzzChanceMinStrength: Double = 0.0
+
     // Core edge removal so fuzz “is” the surface (key to the mock).
     var fuzzErodeEnabled: Bool = true
     var fuzzErodeStrength: Double = 0.80
