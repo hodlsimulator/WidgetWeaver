@@ -31,7 +31,7 @@ public enum WidgetWeaverClockColourScheme: String, AppEnum, CaseIterable {
             .orchid: DisplayRepresentation(title: "Orchid"),
             .sunset: DisplayRepresentation(title: "Sunset"),
             .ember: DisplayRepresentation(title: "Ember"),
-            .graphite: DisplayRepresentation(title: "Graphite"),
+            .graphite: DisplayRepresentation(title: "Graphite")
         ]
     }
 }
@@ -64,102 +64,83 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let tickSeconds: TimeInterval = 2.0
-        return Entry(
-            date: now,
-            anchorDate: alignedAnchor(now, tickSeconds: tickSeconds),
-            tickSeconds: tickSeconds,
-            colourScheme: .classic
-        )
+        return Entry(date: now, anchorDate: now, tickSeconds: 60.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let tickSeconds: TimeInterval = 2.0
-        return Entry(
-            date: now,
-            anchorDate: alignedAnchor(now, tickSeconds: tickSeconds),
-            tickSeconds: tickSeconds,
-            colourScheme: configuration.colourScheme ?? .classic
-        )
+        return Entry(date: now, anchorDate: now, tickSeconds: 60.0, colourScheme: configuration.colourScheme ?? .classic)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
-        let now = Date()
-        let tickSeconds: TimeInterval = 2.0
         let scheme = configuration.colourScheme ?? .classic
 
-        let anchorDate = alignedAnchor(now, tickSeconds: tickSeconds)
-        let nextRefresh = nextHourBoundary(after: now) ?? now.addingTimeInterval(3600)
+        // Strategy:
+        // Use low-frequency WidgetKit entries (1 per minute) to trigger a long linear sweep.
+        // This avoids relying on TimelineView / onAppear timers (which don't run on the Home Screen),
+        // while still producing continuous motion via Core Animation between entries.
+        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 60.0
 
-        let entry = Entry(
-            date: now,
-            anchorDate: anchorDate,
-            tickSeconds: tickSeconds,
-            colourScheme: scheme
-        )
+        // Keep under the common ~250 entry ceiling.
+        // 240 * 60s = 4 hours of continuous sweep, then WidgetKit reloads the timeline.
+        let maxEntries: Int = context.isPreview ? 30 : 240
 
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+        // Anchor the timeline so angles stay monotonic/unbounded.
+        let anchorDate: Date = Date()
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(maxEntries)
+
+        for i in 0..<maxEntries {
+            let d = anchorDate.addingTimeInterval(TimeInterval(i) * tickSeconds)
+            entries.append(Entry(date: d, anchorDate: anchorDate, tickSeconds: tickSeconds, colourScheme: scheme))
+        }
+
+        let refreshDate = anchorDate.addingTimeInterval(TimeInterval(maxEntries) * tickSeconds)
+        return Timeline(entries: entries, policy: .after(refreshDate))
     }
+}
 
-    private func alignedAnchor(_ now: Date, tickSeconds: TimeInterval) -> Date {
-        guard tickSeconds > 0 else { return now }
-        let t = now.timeIntervalSinceReferenceDate
-        let aligned = (t / tickSeconds).rounded(.up) * tickSeconds
-        return Date(timeIntervalSinceReferenceDate: aligned)
-    }
+struct WidgetWeaverHomeScreenClockWidget: Widget {
+    let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
 
-    private func nextHourBoundary(after date: Date) -> Date? {
-        let cal = Calendar.autoupdatingCurrent
-        return cal.nextDate(
-            after: date,
-            matching: DateComponents(minute: 0, second: 0),
-            matchingPolicy: .nextTimePreservingSmallerComponents
-        )
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(
+            kind: kind,
+            intent: WidgetWeaverClockConfigurationIntent.self,
+            provider: WidgetWeaverHomeScreenClockProvider()
+        ) { entry in
+            WidgetWeaverHomeScreenClockView(entry: entry)
+        }
+        .configurationDisplayName("Clock (Icon)")
+        .description("A small analogue clock.")
+        .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
 private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorScheme) private var mode
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(
             scheme: entry.colourScheme,
-            mode: colorScheme
+            mode: mode
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            anchorDate: entry.anchorDate,
-            tickSeconds: entry.tickSeconds
-        )
-        .padding(10)
-        .containerBackground(for: .widget) {
+        WidgetWeaverRenderClock.withNow(entry.date) {
+            WidgetWeaverClockWidgetLiveView(
+                palette: palette,
+                date: entry.date,
+                anchorDate: entry.anchorDate,
+                tickSeconds: entry.tickSeconds
+            )
+            .id(entry.anchorDate)
+        }
+        .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
-    }
-}
-
-public struct WidgetWeaverHomeScreenClockWidget: Widget {
-    public let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
-
-    public init() {}
-
-    public var body: some WidgetConfiguration {
-        AppIntentConfiguration(
-            kind: kind,
-            intent: WidgetWeaverClockConfigurationIntent.self,
-            provider: WidgetWeaverHomeScreenClockProvider()
-        ) { entry in
-            WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverHomeScreenClockView(entry: entry)
-            }
-        }
-        .configurationDisplayName("Clock (Icon)")
-        .description("An analogue clock face with a configurable colour scheme.")
-        .supportedFamilies([.systemSmall])
-        .contentMarginsDisabled()
     }
 }
