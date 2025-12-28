@@ -26,6 +26,15 @@ struct RainForecastSurfaceConfiguration {
     var typicalPeakFraction: CGFloat = 0.401
 
     // Intensity mapping.
+    //
+    // If intensityReferenceMaxMMPerHour > 0, the renderer maps height as:
+    //   intensity / intensityReferenceMaxMMPerHour
+    // This keeps height tied to real-world intensity when the caller already provides a
+    // sensible "visual max" (eg. the Nowcast chart's quantised peak helper).
+    //
+    // If intensityReferenceMaxMMPerHour == 0, the renderer falls back to robust percentile
+    // normalisation of the wet minutes.
+    var intensityReferenceMaxMMPerHour: Double = 0.0
     var robustMaxPercentile: Double = 0.93
     var intensityGamma: Double = 0.65
 
