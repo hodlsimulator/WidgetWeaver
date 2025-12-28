@@ -152,63 +152,65 @@ private struct WeatherNowcastSurfacePlot: View {
     let locationLatitude: Double?
     let locationLongitude: Double?
     let widgetFamilyValue: UInt64
-    
+
     @Environment(\.displayScale) private var displayScale
-    
+
     var body: some View {
         GeometryReader { proxy in
             let series = samples(from: points, targetMinutes: 60)
-            
+
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
             let maxI = max(0.000_001, maxI0)
-            
+
             let intensities: [Double] = series.map { p in
                 let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
                 let raw = raw0.isFinite ? raw0 : 0.0
                 let nonNeg = max(0.0, raw)
-                
+
                 // Keep chart aligned with the shared wetness definition.
-                // Do not cap to maxI here: capping creates “storage tank” flat tops.
+                // Capping is intentionally avoided to prevent “storage tank” flat tops.
                 return WeatherNowcast.isWet(intensityMMPerHour: nonNeg) ? nonNeg : 0.0
             }
-            
+
             let n = series.count
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-            
+
             let certainties: [Double] = series.enumerated().map { idx, p in
                 let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
+
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
+
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
                 return RainSurfaceMath.clamp01(chance * horizonFactor)
             }
-            
+
             let seed = makeNoiseSeed(
                 forecastStart: forecastStart,
                 widgetFamily: widgetFamilyValue,
                 latitude: locationLatitude,
                 longitude: locationLongitude
             )
-            
+
             let isExt = WidgetWeaverRuntime.isRunningInAppExtension
-            
-            // Extension-safe budget: rainy paths do far more work than dry ones.
+
             let widthPx = proxy.size.width * max(1.0, displayScale)
             let heightPx = proxy.size.height * max(1.0, displayScale)
             let areaPx = Double(max(1.0, widthPx * heightPx))
-            
+
+            // Restores the smoother silhouette in the extension without going back to
+            // unbounded “widthPx” sampling. The cap here is the main shape fix.
             let denseSamplesBudget: Int = {
                 if isExt {
-                    // Smoother than a polyline, but well below “killed for being expensive”.
                     let byWidth = Int(widthPx.rounded(.toNearestOrAwayFromZero))
-                    return max(96, min(140, byWidth))
+                    return max(180, min(240, byWidth))
                 } else {
                     return 900
                 }
             }()
-            
+
             let speckleBudget: Int = {
                 if isExt {
                     // Scale with chart area, hard-capped.
@@ -218,95 +220,92 @@ private struct WeatherNowcastSurfacePlot: View {
                     return 5200
                 }
             }()
-            
+
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
+
                 c.noiseSeed = seed
-                
-                // Use the Nowcast “visual max” as the renderer’s reference max,
-                // so height is mapped as intensity / visualMax instead of percentile normalisation.
-                c.intensityReferenceMaxMMPerHour = maxI
-                
                 c.maxDenseSamples = denseSamplesBudget
                 c.fuzzSpeckleBudget = speckleBudget
-                
-                // IMPORTANT:
-                // RainForecastSurfaceConfiguration changed meaning for:
-                // - topHeadroomFraction (now: fraction of baseline distance)
-                // - typicalPeakFraction (now: Y position as fraction from top)
-                //
+
+                // Use the Nowcast “visual max” as a reference max to keep the chart stable.
+                c.intensityReferenceMaxMMPerHour = maxI
+
                 // Values converted from the legacy tuning:
                 // baseline = 0.90, headroom(top) = 0.05 of chart height,
                 // typical peak height = 0.80 of maxHeight.
                 let baselineFromTop: Double = 0.90
                 let legacyHeadroomFromTop: Double = 0.05
                 let legacyTypicalPeakHeightFraction: Double = 0.80
-                
+
                 c.baselineFractionFromTop = baselineFromTop
                 c.topHeadroomFraction = legacyHeadroomFromTop / baselineFromTop
                 c.typicalPeakFraction = baselineFromTop - ((baselineFromTop - legacyHeadroomFromTop) * legacyTypicalPeakHeightFraction)
-                
+
                 c.robustMaxPercentile = 0.93
-                c.intensityGamma = 0.62
-                
+
+                // Gentler shaping (restores rounder shoulders / less pointy peaks).
+                c.intensityGamma = 0.52
+
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
-                
+
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
-                
+
                 c.rimEnabled = false
                 c.glossEnabled = false
                 c.glintEnabled = false
-                
+
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
-                
+
                 // Extension-safe tuning (keeps the look, avoids placeholder regressions).
                 c.fuzzMaxOpacity = isExt ? 0.25 : 0.32
-                
+
                 // Keep the band from getting so wide it reads as “fog floating above the fill”.
                 c.fuzzWidthFraction = 0.15
                 c.fuzzWidthPixelsClamp = isExt ? (10.0...55.0) : (10.0...70.0)
-                
+
                 c.fuzzBaseDensity = isExt ? 0.82 : 0.90
                 c.fuzzHazeStrength = isExt ? 0.60 : 0.74
                 c.fuzzSpeckStrength = isExt ? 0.90 : 1.25
-                
+
                 // Reduce blur cost in extensions.
                 c.fuzzHazeBlurFractionOfBand = isExt ? 0.22 : 0.30
                 c.fuzzHazeStrokeWidthFactor = isExt ? 0.95 : 1.10
                 c.fuzzInsideHazeStrokeWidthFactor = isExt ? 0.90 : 1.00
-                
+
                 c.fuzzChanceThreshold = 0.60
                 c.fuzzChanceTransition = 0.14
                 c.fuzzChanceMinStrength = 0.26
+
                 c.fuzzUncertaintyFloor = 0.06
                 c.fuzzUncertaintyExponent = 2.15
-                
+
                 c.fuzzLowHeightPower = 2.10
                 c.fuzzLowHeightBoost = 0.55
-                
+
                 c.fuzzInsideWidthFactor = 0.72
                 c.fuzzInsideOpacityFactor = isExt ? 0.45 : 0.62
                 c.fuzzInsideSpeckleFraction = isExt ? 0.22 : 0.40
-                
+
                 c.fuzzDistancePowerOutside = 2.00
                 c.fuzzDistancePowerInside = 1.70
-                
+
                 // The erosion pass is the most expensive part of the fuzzy edge.
                 // Disabling it in extensions prevents “rainy = placeholder” regressions.
                 c.fuzzErodeEnabled = isExt ? false : true
                 c.fuzzErodeStrength = isExt ? 0.60 : 0.82
                 c.fuzzErodeEdgePower = isExt ? 2.00 : 2.70
-                
+
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.035
-                
+
                 return c
             }()
-            
+
             RainForecastSurfaceView(
                 intensities: intensities,
                 certainties: certainties,
@@ -315,7 +314,7 @@ private struct WeatherNowcastSurfacePlot: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
-    
+
     private func makeNoiseSeed(
         forecastStart: Date,
         widgetFamily: UInt64,
@@ -324,7 +323,7 @@ private struct WeatherNowcastSurfacePlot: View {
     ) -> UInt64 {
         let minute = Int64(floor(forecastStart.timeIntervalSince1970 / 60.0))
         var seed = RainSurfacePRNG.combine(UInt64(bitPattern: minute), widgetFamily)
-        
+
         if let latitude, let longitude {
             let latQ = Int64((latitude * 10_000.0).rounded())
             let lonQ = Int64((longitude * 10_000.0).rounded())
@@ -333,13 +332,13 @@ private struct WeatherNowcastSurfacePlot: View {
         } else {
             seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
         }
-        
+
         return seed
     }
-    
+
     private func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [WidgetWeaverWeatherMinutePoint] {
         guard targetMinutes > 0 else { return [] }
-        
+
         guard !points.isEmpty else {
             return Array(
                 repeating: WidgetWeaverWeatherMinutePoint(
@@ -350,22 +349,22 @@ private struct WeatherNowcastSurfacePlot: View {
                 count: targetMinutes
             )
         }
-        
+
         let sorted = points.sorted(by: { $0.date < $1.date })
         var out: [WidgetWeaverWeatherMinutePoint] = Array(sorted.prefix(targetMinutes))
-        
+
         if out.count < targetMinutes {
             let cal = Calendar.current
             let lastDate = out.last?.date ?? Date()
             let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
+
             let needed = targetMinutes - out.count
-            
             for i in 1...needed {
                 let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
                 out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
             }
         }
-        
+
         return out
     }
 }
