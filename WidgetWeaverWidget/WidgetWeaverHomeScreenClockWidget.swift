@@ -76,26 +76,18 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        // App Store-safe approach:
-        // Drive motion from WidgetKit timeline entries and animate between them.
-        // The system may throttle/coalesce; this is the best available lever.
-        let tickSeconds: TimeInterval = 2.0
-        let maxEntries: Int = 180 // ~6 minutes
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.year, .month, .day, .hour], from: now)
+        let startOfHour = cal.date(from: comps) ?? now
+        let nextHour = cal.date(byAdding: .hour, value: 1, to: startOfHour) ?? now.addingTimeInterval(3600)
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(maxEntries)
+        let entries: [Entry] = [
+            Entry(date: now, colourScheme: scheme),
+            Entry(date: nextHour, colourScheme: scheme)
+        ]
 
-        // Provide an immediate entry to render now.
-        entries.append(Entry(date: now, colourScheme: scheme))
-
-        // Then a short rolling window of frequent entries.
-        for i in 1..<maxEntries {
-            let d = now.addingTimeInterval(TimeInterval(i) * tickSeconds)
-            entries.append(Entry(date: d, colourScheme: scheme))
-        }
-
-        let refreshDate = now.addingTimeInterval(TimeInterval(maxEntries) * tickSeconds)
-        return Timeline(entries: entries, policy: .after(refreshDate))
+        // Hourly timeline reload stays within the normal WidgetKit budget envelope.
+        return Timeline(entries: entries, policy: .atEnd)
     }
 }
 
@@ -132,12 +124,12 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        // Ensure all time-dependent rendering uses the entry date (WidgetKit may pre-render).
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            WidgetWeaverClockWidgetLiveView(palette: palette)
-                .wwWidgetContainerBackground {
-                    WidgetWeaverClockBackgroundView(palette: palette)
-                }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            startDate: entry.date
+        )
+        .wwWidgetContainerBackground {
+            WidgetWeaverClockBackgroundView(palette: palette)
         }
     }
 }

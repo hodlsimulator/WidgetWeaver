@@ -158,7 +158,7 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
 
         Text(text)
             .font(.system(size: fontSize, weight: .semibold))
-            .foregroundStyle(palette.numeralLight)
+            .foregroundColor(palette.numeralLight)
             .shadow(
                 color: palette.numeralShadow,
                 radius: max(px, fontSize * 0.040),
