@@ -126,7 +126,11 @@ struct WeatherNowcast: Hashable {
             bucketSize = 1
         }
 
-        let intensities = points.map { max(0.0, $0.precipitationIntensityMMPerHour ?? 0.0) }
+        let intensities = points.map {
+            let raw0 = $0.precipitationIntensityMMPerHour ?? 0.0
+            let raw = raw0.isFinite ? raw0 : 0.0
+            return max(0.0, raw)
+        }
         let chances = points.map { WeatherNowcast.clamp01($0.precipitationChance01 ?? 0.0) }
 
         var out: [WeatherNowcastBucket] = []
@@ -229,7 +233,9 @@ struct WeatherNowcast: Hashable {
         }
 
         let samples: [Sample] = points.map { p in
-            let intensity = max(0.0, p.precipitationIntensityMMPerHour ?? 0.0)
+            let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
+            let raw = raw0.isFinite ? raw0 : 0.0
+            let intensity = max(0.0, raw)
             let chance = clamp01(p.precipitationChance01 ?? 0.0)
             let offsetM = max(0, Int(p.date.timeIntervalSince(now) / 60.0))
             return Sample(offsetM: offsetM, intensity: intensity, chance: chance)
@@ -240,9 +246,18 @@ struct WeatherNowcast: Hashable {
             return isWet(intensityMMPerHour: s.intensity) ? i : nil
         }
 
+        let peakIntensity = samples.map(\.intensity).max() ?? 0.0
+        let peakChance = samples.map(\.chance).max() ?? 0.0
+
         if wetIdx.isEmpty {
-            let peakChance = samples.map { $0.chance }.max() ?? 0.0
-            let secondary: String? = (peakChance > 0.15) ? "Low chance precipitation" : nil
+            let secondary: String? = {
+                // If rain is not present but there is a meaningful chance signal, show it.
+                if peakChance >= lowChanceWordingThreshold01 {
+                    let pct = Int((peakChance * 100).rounded())
+                    return "\(pct)% chance of rain"
+                }
+                return nil
+            }()
 
             return Analysis(
                 startOffsetMinutes: nil,
@@ -261,72 +276,51 @@ struct WeatherNowcast: Hashable {
         let startOffset = samples[startIndex].offsetM
         let endOffset = samples[endIndex].offsetM
 
-        let peakIntensity = wetIdx.map { samples[$0].intensity }.max() ?? 0.0
-        let peakChance = wetIdx.map { samples[$0].chance }.max() ?? 0.0
+        let startsNow = startOffset <= 1
+        let endsSoon = (endOffset <= 1)
 
-        let label = precipitationLabel(peakIntensity)
+        let intensityLabel = intensityLabelFor(peakIntensity: peakIntensity)
+        let primary: String = {
+            if startsNow { return "Rain now" }
+            if startOffset < 60 { return "Rain in \(startOffset)m" }
+            return "Rain later"
+        }()
 
-        let startTimeText: String?
-        if startOffset <= 0 {
-            startTimeText = "Now"
-        } else {
-            startTimeText = "Starts in \(startOffset)m"
-        }
-
-        if startOffset <= 0 {
-            let primary = "\(label) now"
-            let secondary: String?
-            if endOffset < 55 {
-                secondary = "Stopping in \(endOffset)m"
-            } else {
-                secondary = "Continuing for ~\(endOffset)m"
+        let secondary: String? = {
+            if startsNow {
+                if endsSoon { return "Ending now" }
+                if endOffset < 60 { return "Ends in \(endOffset)m" }
+                return intensityLabel
             }
 
-            return Analysis(
-                startOffsetMinutes: 0,
-                endOffsetMinutes: endOffset,
-                peakIntensityMMPerHour: peakIntensity,
-                peakChance01: peakChance,
-                primaryText: primary,
-                secondaryText: secondary,
-                startTimeText: startTimeText
-            )
-        }
-
-        if startOffset < 55 {
-            let isLowChance = (peakChance > 0.0 && peakChance < lowChanceWordingThreshold01)
-            let primary = isLowChance ? "\(label) possible in \(startOffset)m" : "\(label) in \(startOffset)m"
-
-            let secondary: String?
-            if endOffset < 55 {
-                secondary = "Ending in \(endOffset)m"
-            } else {
-                secondary = "Likely within the hour"
+            // Starts later.
+            if peakChance < lowChanceWordingThreshold01 {
+                let pct = Int((peakChance * 100).rounded())
+                return "\(pct)% chance"
             }
+            return intensityLabel
+        }()
 
-            return Analysis(
-                startOffsetMinutes: startOffset,
-                endOffsetMinutes: endOffset,
-                peakIntensityMMPerHour: peakIntensity,
-                peakChance01: peakChance,
-                primaryText: primary,
-                secondaryText: secondary,
-                startTimeText: startTimeText
-            )
-        }
+        let startTimeText: String? = {
+            if startsNow { return "Now" }
+            if startOffset < 60 { return "\(startOffset)m" }
+            return nil
+        }()
 
         return Analysis(
             startOffsetMinutes: startOffset,
-            endOffsetMinutes: endOffset,
+            endOffsetMinutes: endsSoon ? nil : endOffset,
             peakIntensityMMPerHour: peakIntensity,
             peakChance01: peakChance,
-            primaryText: "Light rain later",
-            secondaryText: nil,
+            primaryText: primary,
+            secondaryText: secondary,
             startTimeText: startTimeText
         )
     }
 
-    private static func precipitationLabel(_ intensity: Double) -> String {
+    private static func intensityLabelFor(peakIntensity intensity: Double) -> String {
+        if intensity < wetIntensityThresholdMMPerHour { return "No rain" }
+
         // Drizzle buckets
         if intensity < 0.05 { return "Light drizzle" }
         if intensity < 0.25 { return "Drizzle" }
@@ -339,7 +333,8 @@ struct WeatherNowcast: Hashable {
     }
 
     private static func clamp01(_ v: Double) -> Double {
-        max(0.0, min(1.0, v))
+        guard v.isFinite else { return 0.0 }
+        return max(0.0, min(1.0, v))
     }
 }
 
@@ -378,18 +373,5 @@ struct WeatherTomorrow: Hashable {
         let hiText = wwTempString(hi, unit: unit)
         let loText = wwTempString(lo, unit: unit)
         return "H \(hiText) L \(loText)"
-    }
-
-    init?(snapshot: WidgetWeaverWeatherSnapshot, now: Date) {
-        let cal = Calendar.current
-        let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now.addingTimeInterval(60 * 60 * 24)
-
-        if let match = snapshot.daily.first(where: { cal.isDate($0.date, inSameDayAs: tomorrow) }) {
-            self.day = match
-        } else if snapshot.daily.count >= 2 {
-            self.day = snapshot.daily[1]
-        } else {
-            return nil
-        }
     }
 }

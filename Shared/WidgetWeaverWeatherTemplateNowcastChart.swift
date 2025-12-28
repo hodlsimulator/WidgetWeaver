@@ -14,59 +14,40 @@ import SwiftUI
 import WidgetKit
 #endif
 
-struct WidgetWeaverWeatherTemplateNowcastChart: View {
-    struct Insets {
-        let plotHorizontal: CGFloat
-        let plotTop: CGFloat
-        let plotBottom: CGFloat
-        let axisHorizontal: CGFloat
-        let axisTop: CGFloat
-        let axisBottom: CGFloat
-
-        var plotInsets: EdgeInsets {
-            EdgeInsets(top: plotTop, leading: plotHorizontal, bottom: plotBottom, trailing: plotHorizontal)
-        }
-
-        var axisInsets: EdgeInsets {
-            EdgeInsets(top: axisTop, leading: axisHorizontal, bottom: axisBottom, trailing: axisHorizontal)
-        }
-    }
-
-    private static func insets(for family: WidgetFamily?, showsLabels: Bool) -> Insets {
-        #if canImport(WidgetKit)
-        switch family {
-        case .systemSmall:
-            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showsLabels ? 1 : 8, axisHorizontal: 12, axisTop: 0, axisBottom: 10)
-        case .systemMedium:
-            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showsLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
-        case .systemLarge:
-            return Insets(plotHorizontal: 14, plotTop: 12, plotBottom: showsLabels ? 1 : 10, axisHorizontal: 22, axisTop: 0, axisBottom: 14)
-        case .systemExtraLarge:
-            return Insets(plotHorizontal: 16, plotTop: 14, plotBottom: showsLabels ? 1 : 10, axisHorizontal: 24, axisTop: 0, axisBottom: 14)
-        default:
-            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showsLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
-        }
-        #else
-        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showsLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
-        #endif
-    }
-
-    let points: [WeatherNowcastPoint]
+struct WeatherNowcastChart: View {
+    let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
-    let showAxisLabels: Bool
     let accent: Color
+    let showAxisLabels: Bool
     let forecastStart: Date
     let locationLatitude: Double?
     let locationLongitude: Double?
-    let widgetFamilyValue: UInt64
 
-    @Environment(\.displayScale) private var displayScale
+    #if canImport(WidgetKit)
+    @Environment(\.widgetFamily) private var widgetFamily
+    #endif
+
+    private struct Insets {
+        var plotHorizontal: CGFloat
+        var plotTop: CGFloat
+        var plotBottom: CGFloat
+        var axisHorizontal: CGFloat
+        var axisTop: CGFloat
+        var axisBottom: CGFloat
+    }
 
     private var insets: Insets {
         #if canImport(WidgetKit)
-        return Self.insets(for: WidgetWeaverRuntime.widgetFamily, showsLabels: showAxisLabels)
+        switch widgetFamily {
+        case .systemSmall:
+            return Insets(plotHorizontal: 10, plotTop: 8, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 10)
+        case .systemMedium:
+            return Insets(plotHorizontal: 10, plotTop: 10, plotBottom: showAxisLabels ? 0 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        default:
+            return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
+        }
         #else
-        return Self.insets(for: nil, showsLabels: showAxisLabels)
+        return Insets(plotHorizontal: 12, plotTop: 10, plotBottom: showAxisLabels ? 1 : 8, axisHorizontal: 18, axisTop: 0, axisBottom: 12)
         #endif
     }
 
@@ -77,43 +58,64 @@ struct WidgetWeaverWeatherTemplateNowcastChart: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.black)
 
-            VStack(spacing: 0) {
-                ZStack {
-                    GeometryReader { proxy in
-                        let plotRect = CGRect(
-                            x: 0,
-                            y: 0,
-                            width: proxy.size.width,
-                            height: proxy.size.height
-                        )
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
 
-                        ZStack {
-                            NowcastSurfacePlot(
-                                points: points,
-                                maxIntensityMMPerHour: maxIntensityMMPerHour,
-                                accent: accent,
-                                forecastStart: forecastStart,
-                                locationLatitude: locationLatitude,
-                                locationLongitude: locationLongitude,
-                                widgetFamilyValue: widgetFamilyValue
-                            )
-                            .frame(width: plotRect.width, height: plotRect.height)
-                        }
-                    }
-                }
-                .padding(insets.plotInsets)
+            VStack(spacing: 0) {
+                WeatherNowcastSurfacePlot(
+                    points: points,
+                    maxIntensityMMPerHour: maxIntensityMMPerHour,
+                    accent: accent,
+                    forecastStart: forecastStart,
+                    locationLatitude: locationLatitude,
+                    locationLongitude: locationLongitude,
+                    widgetFamilyValue: widgetFamilySeedValue()
+                )
+                .padding(.horizontal, insets.plotHorizontal)
+                .padding(.top, insets.plotTop)
+                .padding(.bottom, insets.plotBottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if showAxisLabels {
-                    NowcastAxisLabels(accent: accent)
-                        .padding(insets.axisInsets)
+                    WeatherNowcastAxisLabels()
+                        .padding(.horizontal, insets.axisHorizontal)
+                        .padding(.top, insets.axisTop)
+                        .padding(.bottom, insets.axisBottom)
                 }
             }
         }
+        .accessibilityHidden(true)
+    }
+
+    private func widgetFamilySeedValue() -> UInt64 {
+        #if canImport(WidgetKit)
+        switch widgetFamily {
+        case .systemSmall: return 1
+        case .systemMedium: return 2
+        case .systemLarge: return 3
+        case .systemExtraLarge: return 4
+        default: return 0
+        }
+        #else
+        return 0
+        #endif
     }
 }
 
-private struct NowcastSurfacePlot: View {
-    let points: [WeatherNowcastPoint]
+private struct WeatherNowcastAxisLabels: View {
+    var body: some View {
+        HStack {
+            Text("Now")
+            Spacer(minLength: 0)
+            Text("60m")
+        }
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .foregroundColor(.white.opacity(0.55))
+    }
+}
+
+private struct WeatherNowcastSurfacePlot: View {
+    let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
     let forecastStart: Date
@@ -128,10 +130,14 @@ private struct NowcastSurfacePlot: View {
             let series = samples(from: points, targetMinutes: 60)
 
             let intensities: [Double] = series.map { p in
-                let raw = p.precipitationIntensityMMPerHour ?? 0.0
-                let finite = raw.isFinite ? raw : 0.0
-                let nonNeg = max(0.0, finite)
-                let clamped = min(nonNeg, maxIntensityMMPerHour)
+                let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
+                let raw = raw0.isFinite ? raw0 : 0.0
+                let nonNeg = max(0.0, raw)
+
+                let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
+                let maxI = max(0.0, maxI0)
+                let clamped = min(nonNeg, maxI)
+
                 return WeatherNowcast.isWet(intensityMMPerHour: clamped) ? clamped : 0.0
             }
 
@@ -141,8 +147,7 @@ private struct NowcastSurfacePlot: View {
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
             let certainties: [Double] = series.enumerated().map { idx, p in
-                let rawChance = p.precipitationChance01 ?? 0.0
-                let chance = RainSurfaceMath.clamp01(rawChance)
+                let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
@@ -259,60 +264,45 @@ private struct NowcastSurfacePlot: View {
         var seed = RainSurfacePRNG.combine(UInt64(bitPattern: minute), widgetFamily)
 
         if let latitude, let longitude {
-            let latBits = UInt64(bitPattern: Int64(latitude * 10_000))
-            let lonBits = UInt64(bitPattern: Int64(longitude * 10_000))
-            seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.combine(latBits, lonBits))
+            let latQ = Int64((latitude * 10_000.0).rounded())
+            let lonQ = Int64((longitude * 10_000.0).rounded())
+            seed = RainSurfacePRNG.combine(seed, UInt64(bitPattern: latQ))
+            seed = RainSurfacePRNG.combine(seed, UInt64(bitPattern: lonQ))
+        } else {
+            seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
         }
 
         return seed
     }
 
-    private func samples(from points: [WeatherNowcastPoint], targetMinutes: Int) -> [WeatherNowcastPoint] {
-        guard !points.isEmpty else { return [] }
-        if points.count == targetMinutes { return points }
-        if points.count < 2 {
-            return Array(repeating: points[0], count: targetMinutes)
+    private func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [WidgetWeaverWeatherMinutePoint] {
+        guard targetMinutes > 0 else { return [] }
+
+        guard !points.isEmpty else {
+            return Array(
+                repeating: WidgetWeaverWeatherMinutePoint(
+                    date: Date(),
+                    precipitationChance01: 0.0,
+                    precipitationIntensityMMPerHour: 0.0
+                ),
+                count: targetMinutes
+            )
         }
 
-        var out: [WeatherNowcastPoint] = []
-        out.reserveCapacity(targetMinutes)
+        let sorted = points.sorted(by: { $0.date < $1.date })
+        var out: [WidgetWeaverWeatherMinutePoint] = Array(sorted.prefix(targetMinutes))
 
-        for i in 0..<targetMinutes {
-            let t = Double(i) / Double(max(1, targetMinutes - 1))
-            let u = t * Double(points.count - 1)
-            let i0 = max(0, min(points.count - 2, Int(floor(u))))
-            let frac = u - Double(i0)
-            let a = points[i0]
-            let b = points[i0 + 1]
-            out.append(a.lerp(to: b, t: frac))
+        if out.count < targetMinutes {
+            let cal = Calendar.current
+            let lastDate = out.last?.date ?? Date()
+            let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
+            let needed = targetMinutes - out.count
+            for i in 1...needed {
+                let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
+                out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
+            }
         }
 
         return out
-    }
-}
-
-private struct NowcastAxisLabels: View {
-    let accent: Color
-
-    var body: some View {
-        HStack {
-            Text("Now")
-            Spacer(minLength: 6)
-            Text("60m")
-        }
-        .font(.system(size: 12, weight: .semibold, design: .rounded))
-        .foregroundStyle(accent.opacity(0.85))
-    }
-}
-
-// MARK: - WeatherNowcastPoint helpers
-
-private extension WeatherNowcastPoint {
-    func lerp(to other: WeatherNowcastPoint, t: Double) -> WeatherNowcastPoint {
-        WeatherNowcastPoint(
-            date: date.addingTimeInterval((other.date.timeIntervalSince(date)) * t),
-            precipitationIntensityMMPerHour: RainSurfaceMath.lerp(precipitationIntensityMMPerHour ?? 0.0, other.precipitationIntensityMMPerHour ?? 0.0, t),
-            precipitationChance01: RainSurfaceMath.lerp(precipitationChance01 ?? 0.0, other.precipitationChance01 ?? 0.0, t)
-        )
     }
 }

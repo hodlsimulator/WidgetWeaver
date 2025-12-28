@@ -110,7 +110,9 @@ struct RainForecastSurfaceConfiguration {
     var fuzzSpeckleRadiusPixels: ClosedRange<CGFloat> = 0.50...1.20
     var fuzzSpeckleBudget: Int = 5200
 
-    // Legacy knobs kept for call-site compatibility (currently unused by the renderer).
+
+    // Legacy raster/noise knobs (kept for call-site compatibility).
+    // These may be unused depending on the current fuzz implementation.
     var fuzzRasterMaxPixels: Int = 0
     var fuzzEdgePower: Double = 0.0
     var fuzzClumpCellPixels: CGFloat = 0.0

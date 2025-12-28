@@ -48,13 +48,16 @@ enum RainSurfaceMath {
     static func percentile(_ values: [Double], p: Double) -> Double {
         let finite = values.filter { $0.isFinite }
         guard !finite.isEmpty else { return 0.0 }
+
         let pp = clamp01(p)
         let sorted = finite.sorted()
         if sorted.count == 1 { return sorted[0] }
+
         let idx = pp * Double(sorted.count - 1)
         let i0 = Int(floor(idx))
         let i1 = min(sorted.count - 1, i0 + 1)
         let frac = idx - Double(i0)
+
         return sorted[i0] + (sorted[i1] - sorted[i0]) * frac
     }
 
@@ -141,6 +144,7 @@ enum RainSurfaceMath {
     // Monotone cubic (Fritsch–Carlson) resampling.
     static func resampleMonotoneCubic(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
         let v = values.map { $0.isFinite ? $0 : 0 }
+
         guard targetCount > 1 else { return v.isEmpty ? [] : [v[0]] }
         guard v.count > 1 else { return Array(repeating: v.first ?? 0, count: targetCount) }
 
@@ -187,6 +191,7 @@ enum RainSurfaceMath {
 
     static func resampleMonotoneCubic(_ values: [Double], targetCount: Int) -> [Double] {
         let v = values.map { $0.isFinite ? $0 : 0 }
+
         guard targetCount > 1 else { return v.isEmpty ? [] : [v[0]] }
         guard v.count > 1 else { return Array(repeating: v.first ?? 0, count: targetCount) }
 
