@@ -17,17 +17,26 @@ struct RainSurfaceGeometry {
 
     init(chartRect: CGRect, baselineY: CGFloat, heights: [CGFloat], certainties: [Double], displayScale: CGFloat) {
         self.chartRect = chartRect
-        self.baselineY = baselineY
-        self.heights = heights
-        self.certainties = certainties
-        self.displayScale = displayScale
+        self.baselineY = baselineY.isFinite ? baselineY : chartRect.maxY
+        self.displayScale = displayScale.isFinite ? displayScale : 1.0
+
+        self.heights = heights.map { h in
+            guard h.isFinite else { return 0 }
+            return max(0, h)
+        }
+
+        self.certainties = certainties.map { c in
+            guard c.isFinite else { return 0.0 }
+            return RainSurfaceMath.clamp01(c)
+        }
     }
 
     var sampleCount: Int { heights.count }
 
     var dx: CGFloat {
         guard sampleCount > 1 else { return 0 }
-        return chartRect.width / CGFloat(sampleCount - 1)
+        let w = chartRect.width.isFinite ? chartRect.width : 0
+        return w / CGFloat(sampleCount - 1)
     }
 
     func xAt(_ index: Int) -> CGFloat {
@@ -35,8 +44,10 @@ struct RainSurfaceGeometry {
     }
 
     func surfaceYAt(_ index: Int) -> CGFloat {
-        let h = max(0, heights[index])
-        return baselineY - h
+        guard index >= 0 && index < heights.count else { return baselineY }
+        let h = heights[index]
+        if !h.isFinite { return baselineY }
+        return baselineY - max(0, h)
     }
 
     func certaintyAt(_ index: Int) -> Double {
@@ -50,24 +61,28 @@ struct RainSurfaceGeometry {
 
     func sampleSurfaceY(atX x: CGFloat) -> CGFloat {
         guard sampleCount > 1 else { return baselineY }
-        let t = (x - chartRect.minX) / max(0.000_001, chartRect.width)
+        let denom = max(0.000_001, chartRect.width)
+        let t = (x - chartRect.minX) / denom
         let u = RainSurfaceMath.clamp01(Double(t)) * Double(sampleCount - 1)
         let i0 = max(0, min(sampleCount - 2, Int(floor(u))))
         let frac = CGFloat(u - Double(i0))
         let y0 = surfaceYAt(i0)
         let y1 = surfaceYAt(i0 + 1)
-        return y0 + (y1 - y0) * frac
+        let y = y0 + (y1 - y0) * frac
+        return y.isFinite ? y : baselineY
     }
 
     func sampleCertainty(atX x: CGFloat) -> Double {
         guard sampleCount > 1 else { return 1.0 }
-        let t = (x - chartRect.minX) / max(0.000_001, chartRect.width)
-        let u = RainSurfaceMath.clamp01(t) * Double(sampleCount - 1)
+        let denom = max(0.000_001, chartRect.width)
+        let t = (x - chartRect.minX) / denom
+        let u = RainSurfaceMath.clamp01(Double(t)) * Double(sampleCount - 1)
         let i0 = max(0, min(sampleCount - 2, Int(floor(u))))
         let frac = u - Double(i0)
         let c0 = certaintyAt(i0)
         let c1 = certaintyAt(i0 + 1)
-        return c0 + (c1 - c0) * frac
+        let c = c0 + (c1 - c0) * frac
+        return c.isFinite ? RainSurfaceMath.clamp01(c) : 0.0
     }
 
     func surfacePolylinePath() -> Path {
@@ -92,7 +107,6 @@ struct RainSurfaceGeometry {
             return (0..<sampleCount).map { surfacePointAt($0) }
         }()
 
-        // Start at baseline left, go up to surface, trace surface, then back down to baseline.
         p.move(to: CGPoint(x: chartRect.minX, y: baselineY))
         p.addLine(to: topPoints[0])
 

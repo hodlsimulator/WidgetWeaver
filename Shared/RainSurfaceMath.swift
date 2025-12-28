@@ -13,6 +13,7 @@ enum RainSurfaceMath {
         guard x.isFinite else { return 0.0 }
         return max(0.0, min(1.0, x))
     }
+
     static func clamp01(_ x: CGFloat) -> CGFloat {
         guard x.isFinite else { return 0.0 }
         return max(0.0, min(1.0, x))
@@ -62,8 +63,12 @@ enum RainSurfaceMath {
     }
 
     static func smooth(_ values: [CGFloat], windowRadius: Int, passes: Int) -> [CGFloat] {
-        guard values.count > 2, windowRadius > 0, passes > 0 else { return values }
-        var v = values
+        guard values.count > 2, windowRadius > 0, passes > 0 else {
+            return values.map { $0.isFinite ? $0 : 0 }
+        }
+
+        var v = values.map { $0.isFinite ? $0 : 0 }
+
         for _ in 0..<passes {
             var out = v
             for i in 0..<v.count {
@@ -76,7 +81,8 @@ enum RainSurfaceMath {
                     acc += v[j] * ww
                     w += ww
                 }
-                out[i] = acc / max(0.000_001, w)
+                out[i] = (w > 0.000_001) ? (acc / w) : 0
+                if !out[i].isFinite { out[i] = 0 }
             }
             v = out
         }
@@ -85,6 +91,11 @@ enum RainSurfaceMath {
 
     static func applyEdgeEasing(to heights: inout [CGFloat], fraction: CGFloat, power: Double) {
         guard heights.count > 2 else { return }
+
+        for i in 0..<heights.count {
+            if !heights[i].isFinite { heights[i] = 0 }
+        }
+
         let f = max(0.0, min(0.49, fraction))
         let n = heights.count
         let k = max(1, Int(round(CGFloat(n) * f)))
@@ -104,6 +115,11 @@ enum RainSurfaceMath {
 
     static func applyWetSegmentEasing(to heights: inout [CGFloat], threshold: CGFloat, fraction: CGFloat, power: Double) {
         guard heights.count > 4 else { return }
+
+        for i in 0..<heights.count {
+            if !heights[i].isFinite { heights[i] = 0 }
+        }
+
         let n = heights.count
         let ramp = max(2, Int(round(CGFloat(n) * max(0.05, min(0.40, fraction)))))
 
@@ -112,12 +128,10 @@ enum RainSurfaceMath {
             return CGFloat(pow(Double(tt), max(0.10, power)))
         }
 
-        // Detect transitions and apply ramps.
         for i in 0..<(n - 1) {
             let a = heights[i]
             let b = heights[i + 1]
 
-            // Dry -> Wet
             if a <= threshold && b > threshold {
                 for k in 0..<ramp {
                     let idx = i + 1 + k
@@ -128,7 +142,6 @@ enum RainSurfaceMath {
                 }
             }
 
-            // Wet -> Dry
             if a > threshold && b <= threshold {
                 for k in 0..<ramp {
                     let idx = i - k
@@ -184,7 +197,9 @@ enum RainSurfaceMath {
             let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
             let i0 = max(0, min(n - 2, Int(floor(u))))
             let t = CGFloat(u - Double(i0))
-            out.append(hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t))
+            var y = hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t)
+            if !y.isFinite { y = 0 }
+            out.append(y)
         }
         return out
     }
@@ -231,7 +246,9 @@ enum RainSurfaceMath {
             let u = Double(j) / Double(targetCount - 1) * Double(n - 1)
             let i0 = max(0, min(n - 2, Int(floor(u))))
             let t = u - Double(i0)
-            out.append(hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t))
+            var y = hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t)
+            if !y.isFinite { y = 0 }
+            out.append(y)
         }
         return out
     }

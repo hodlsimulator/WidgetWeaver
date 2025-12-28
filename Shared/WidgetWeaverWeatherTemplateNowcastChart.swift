@@ -129,21 +129,19 @@ private struct WeatherNowcastSurfacePlot: View {
         GeometryReader { proxy in
             let series = samples(from: points, targetMinutes: 60)
 
+            let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
+            let maxI = max(0.0, maxI0)
+
             let intensities: [Double] = series.map { p in
                 let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
                 let raw = raw0.isFinite ? raw0 : 0.0
                 let nonNeg = max(0.0, raw)
-
-                let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
-                let maxI = max(0.0, maxI0)
                 let clamped = min(nonNeg, maxI)
-
                 return WeatherNowcast.isWet(intensityMMPerHour: clamped) ? clamped : 0.0
             }
 
             let n = series.count
 
-            // Certainty tapers towards the horizon.
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
             let certainties: [Double] = series.enumerated().map { idx, p in
@@ -169,32 +167,25 @@ private struct WeatherNowcastSurfacePlot: View {
                 let isExt = WidgetWeaverRuntime.isRunningInAppExtension
                 c.maxDenseSamples = isExt ? 180 : 900
 
-                // Fill the available plot height.
+                // Keep rainy charts within WidgetKit’s render budget.
+                c.fuzzSpeckleBudget = isExt ? 1800 : 5200
+
                 c.baselineFractionFromTop = 0.90
                 c.topHeadroomFraction = 0.05
                 c.typicalPeakFraction = 0.80
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.52
 
-                // Keep endings tapered.
                 c.edgeEasingFraction = 0.18
                 c.edgeEasingPower = 1.45
 
-                // Core (solid).
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
                 c.coreTopColor = accent
 
-                // Edge treatments off; fuzz defines the surface.
                 c.rimEnabled = false
                 c.glossEnabled = false
                 c.glintEnabled = false
 
-                // ---------
-                // Fuzz tuned to the mockup:
-                // - Uses the new 2D distance-to-surface band, so it appears on vertical sides too.
-                // - Narrower and less “floor fog”.
-                // - Still replaces the surface via erosion.
-                // ---------
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
                 c.fuzzRasterMaxPixels = isExt ? 140_000 : 360_000
@@ -210,34 +201,27 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fuzzClumpCellPixels = 12.0
                 c.fuzzMicroBlurPixels = isExt ? 0.45 : 0.65
 
-                // Chance → fuzz.
                 c.fuzzChanceThreshold = 0.60
                 c.fuzzChanceTransition = 0.14
                 c.fuzzChanceMinStrength = 0.26
 
-                // Uncertainty shaping.
                 c.fuzzUncertaintyFloor = 0.06
                 c.fuzzUncertaintyExponent = 2.15
 
-                // Low-height reinforcement (keeps tapered ends fuzzy without creating a huge fog field).
                 c.fuzzLowHeightPower = 2.10
                 c.fuzzLowHeightBoost = 0.55
 
-                // Straddle the surface (some fuzz below), but not an 0.98-wide inside slab.
                 c.fuzzInsideWidthFactor = 0.72
                 c.fuzzInsideOpacityFactor = 0.62
                 c.fuzzInsideSpeckleFraction = 0.40
 
-                // Keep fuzz near the surface.
                 c.fuzzDistancePowerOutside = 2.00
                 c.fuzzDistancePowerInside = 1.70
 
-                // Erode the core near the surface so fuzz *is* the boundary.
                 c.fuzzErodeEnabled = true
                 c.fuzzErodeStrength = 0.82
                 c.fuzzErodeEdgePower = 2.70
 
-                // Baseline.
                 c.baselineColor = accent
                 c.baselineLineOpacity = 0.20
                 c.baselineEndFadeFraction = 0.035
