@@ -145,6 +145,8 @@ struct WidgetWeaverClockNumeralsView: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        // If WidgetKit is applying placeholder redaction, force these to render normally.
+        .unredacted()
     }
 }
 

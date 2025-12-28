@@ -139,6 +139,8 @@ private struct WidgetWeaverHomeScreenClockView: View {
                 anchorDate: entry.anchorDate,
                 tickSeconds: entry.tickSeconds
             )
+            // If WidgetKit is rendering in placeholder/redacted mode, this forces the real face to draw.
+            .unredacted()
             .id(entry.anchorDate)
         }
         .wwWidgetContainerBackground {
