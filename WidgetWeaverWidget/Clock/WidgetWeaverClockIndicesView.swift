@@ -156,17 +156,28 @@ private struct WidgetWeaverClockEmbossedNumeral: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        Text(text)
+        // Avoid `shadow` + `compositingGroup` here.
+        // In this widget stack, that combo can cause SwiftUI Text to disappear in WidgetKit renders.
+        let base = Text(text)
             .font(.system(size: fontSize, weight: .semibold))
-            .foregroundColor(palette.numeralLight)
-            .shadow(
-                color: palette.numeralShadow,
-                radius: max(px, fontSize * 0.040),
-                x: px,
-                y: px
-            )
-            .compositingGroup()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+            .fixedSize()
+
+        return ZStack {
+            // Inner shade (down-right)
+            base
+                .foregroundColor(palette.numeralInnerShade)
+                .offset(x: px, y: px)
+
+            // Inner highlight (up-left)
+            base
+                .foregroundColor(palette.numeralInnerHighlight)
+                .offset(x: -px, y: -px)
+
+            // Main face
+            base
+                .foregroundColor(palette.numeralLight)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
