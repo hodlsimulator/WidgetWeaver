@@ -153,11 +153,12 @@ struct WidgetWeaverClockIconView: View {
             )
 
             ZStack {
-                // Dial stack is split into separate layers so the numerals are not inside the
-                // heavily clipped/blended subtree (WidgetKit can drop Text there).
                 ZStack {
-                    // 1) Dial + markers (clipped)
-                    ZStack {
+                    // IMPORTANT:
+                    // Put the dial’s blend-mode-heavy content into its own composited layer.
+                    // Then draw numerals above that in a separate composited layer.
+                    // This stops WidgetKit/SwiftUI flattening from “losing” Text.
+                    Group {
                         WidgetWeaverClockDialFaceView(
                             palette: palette,
                             radius: R,
@@ -189,19 +190,20 @@ struct WidgetWeaverClockIconView: View {
                             radius: pipRadius
                         )
                     }
-                    .frame(width: dialDiameter, height: dialDiameter)
-                    .clipShape(Circle())
+                    .compositingGroup()
 
-                    // 2) Numerals (NOT clipped; intentionally simple Text pipeline)
+                    // Numerals isolated (separate composited layer, normal blend)
                     WidgetWeaverClockNumeralsView(
                         palette: palette,
                         radius: numeralsRadius,
                         fontSize: numeralsSize,
                         scale: displayScale
                     )
-                    .frame(width: dialDiameter, height: dialDiameter)
+                    .blendMode(.normal)
+                    .compositingGroup()
+                    .zIndex(10)
 
-                    // 3) Hands + glows + hub (clipped)
+                    // Hands above numerals
                     Group {
                         if showsHandShadows {
                             WidgetWeaverClockHandShadowsView(
@@ -261,10 +263,10 @@ struct WidgetWeaverClockIconView: View {
                         )
                     }
                     .opacity(handsOpacity)
-                    .frame(width: dialDiameter, height: dialDiameter)
-                    .clipShape(Circle())
+                    .zIndex(20)
                 }
                 .frame(width: dialDiameter, height: dialDiameter)
+                .clipShape(Circle())
 
                 WidgetWeaverClockBezelView(
                     palette: palette,

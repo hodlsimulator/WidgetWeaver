@@ -130,16 +130,16 @@ struct WidgetWeaverClockNumeralsView: View {
 
     var body: some View {
         ZStack {
-            WidgetWeaverClockPlainNumeral(text: "12", palette: palette, fontSize: fontSize)
+            WidgetWeaverClockEmbossedNumeral(text: "12", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: -radius)
 
-            WidgetWeaverClockPlainNumeral(text: "3", palette: palette, fontSize: fontSize)
+            WidgetWeaverClockEmbossedNumeral(text: "3", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: radius, y: 0)
 
-            WidgetWeaverClockPlainNumeral(text: "6", palette: palette, fontSize: fontSize)
+            WidgetWeaverClockEmbossedNumeral(text: "6", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: 0, y: radius)
 
-            WidgetWeaverClockPlainNumeral(text: "9", palette: palette, fontSize: fontSize)
+            WidgetWeaverClockEmbossedNumeral(text: "9", palette: palette, fontSize: fontSize, scale: scale)
                 .offset(x: -radius, y: 0)
         }
         .allowsHitTesting(false)
@@ -147,20 +147,25 @@ struct WidgetWeaverClockNumeralsView: View {
     }
 }
 
-private struct WidgetWeaverClockPlainNumeral: View {
+private struct WidgetWeaverClockEmbossedNumeral: View {
     let text: String
     let palette: WidgetWeaverClockPalette
     let fontSize: CGFloat
+    let scale: CGFloat
 
     var body: some View {
-        // Intentionally minimal: no shadow, no compositingGroup, no masks, no blend modes.
-        // The goal is “always renders in WidgetKit”.
+        let px = WWClock.px(scale: scale)
+
         Text(text)
             .font(.system(size: fontSize, weight: .semibold))
-            .foregroundStyle(palette.numeralLight)
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            .frame(width: fontSize * 1.8, height: fontSize * 1.3, alignment: .center)
+            .foregroundColor(palette.numeralLight)
+            .shadow(
+                color: palette.numeralShadow,
+                radius: max(px, fontSize * 0.040),
+                x: px,
+                y: px
+            )
+            .compositingGroup()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
