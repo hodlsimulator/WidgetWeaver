@@ -9,9 +9,11 @@ import Foundation
 import SwiftUI
 
 enum WidgetWeaverClockMotionConfig {
+    /// Keep seconds mode cheap until proven stable on device.
     static let secondsShowsGlows: Bool = false
     static let secondsShowsHandShadows: Bool = false
 
+    /// Minute mode can render the full look.
     static let minuteShowsGlows: Bool = true
     static let minuteShowsHandShadows: Bool = true
 
@@ -33,13 +35,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     var body: some View {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-        // IMPORTANT:
-        // Do not gate “seconds enabled” on Reduce Motion for now, because the main goal is to
-        // match Widgetsmith/Widgy behaviour reliably. Reduce Motion can be reintroduced later
-        // as a policy decision.
         let wantsSeconds = (tickMode == .secondsSweep)
-        let secondsEnabled = wantsSeconds && !isLowPower
+        let allowsAnimation = !reduceMotion && !isLowPower
+        let secondsEnabled = wantsSeconds && allowsAnimation
 
         ZStack(alignment: .bottomTrailing) {
             if secondsEnabled {
@@ -49,10 +47,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
                     showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows
                 )
-                // Restart the sweep each minute, when the timeline entry changes.
+                // Keep this id: if WidgetKit honours it, the sweep view will be recreated each minute.
+                // If it is ignored in a given host path, the sweep still restarts via onChange(of:).
                 .id(minuteAnchor.timeIntervalSinceReferenceDate)
             } else {
-                let angles = WWClockAnglesStepped(date: minuteAnchor)
+                let angles = WWClockAngles(date: minuteAnchor)
 
                 WidgetWeaverClockIconView(
                     palette: palette,
@@ -87,7 +86,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds sweep view (one sweep per minute)
+// MARK: - Seconds sweep view
 
 private struct WidgetWeaverClockSecondHandSweepView: View {
     let palette: WidgetWeaverClockPalette
@@ -95,37 +94,11 @@ private struct WidgetWeaverClockSecondHandSweepView: View {
     let showsGlows: Bool
     let showsHandShadows: Bool
 
-    @State private var secondAngleDegrees: Double
-    @State private var remainingSeconds: Double
-    @State private var started: Bool
-
-    init(
-        palette: WidgetWeaverClockPalette,
-        minuteAnchor: Date,
-        showsGlows: Bool,
-        showsHandShadows: Bool
-    ) {
-        self.palette = palette
-        self.minuteAnchor = minuteAnchor
-        self.showsGlows = showsGlows
-        self.showsHandShadows = showsHandShadows
-
-        let now = Date()
-        let nextMinute = minuteAnchor.addingTimeInterval(60.0)
-
-        let rawSeconds = now.timeIntervalSince(minuteAnchor)
-        let secondsIntoMinute = Self.clamp(rawSeconds, min: 0.0, max: 59.999)
-        let remaining = Self.clamp(nextMinute.timeIntervalSince(now), min: 0.0, max: 60.0)
-
-        // KEY FIX:
-        // Second hand is placed correctly immediately without needing onAppear.
-        _secondAngleDegrees = State(initialValue: secondsIntoMinute * 6.0)
-        _remainingSeconds = State(initialValue: remaining)
-        _started = State(initialValue: false)
-    }
+    @State private var secondAngleDegrees: Double = 0.0
+    @State private var lastConfiguredAnchorRef: TimeInterval = -1.0
 
     var body: some View {
-        let base = WWClockAnglesStepped(date: minuteAnchor)
+        let base = WWClockAngles(date: minuteAnchor)
 
         WidgetWeaverClockIconView(
             palette: palette,
@@ -138,23 +111,45 @@ private struct WidgetWeaverClockSecondHandSweepView: View {
             handsOpacity: 1.0
         )
         .onAppear {
-            startSweepIfNeeded()
+            configureAndStartSweepIfNeeded(for: minuteAnchor)
+        }
+        .onChange(of: minuteAnchor) { _, newAnchor in
+            configureAndStartSweepIfNeeded(for: newAnchor)
         }
     }
 
-    private func startSweepIfNeeded() {
-        guard !started else { return }
-        started = true
+    private func configureAndStartSweepIfNeeded(for anchor: Date) {
+        let anchorRef = anchor.timeIntervalSinceReferenceDate
+        guard anchorRef != lastConfiguredAnchorRef else { return }
+        lastConfiguredAnchorRef = anchorRef
 
-        // If we’re essentially at the minute boundary, avoid a weird long animation.
-        guard remainingSeconds > 0.05 else {
-            secondAngleDegrees = 360.0
+        let now = Date()
+        let nextMinute = anchor.addingTimeInterval(60.0)
+
+        let rawSeconds = now.timeIntervalSince(anchor)
+        let secondsIntoMinute = Self.clamp(rawSeconds, min: 0.0, max: 59.999)
+
+        let remainingRaw = nextMinute.timeIntervalSince(now)
+        let remaining = Self.clamp(remainingRaw, min: 0.0, max: 60.0)
+
+        // Place the hand immediately (no animation), then start the sweep.
+        var noAnim = Transaction()
+        noAnim.animation = nil
+        withTransaction(noAnim) {
+            secondAngleDegrees = secondsIntoMinute * 6.0
+        }
+
+        // If the remaining time is effectively zero, snap to 12 and wait for the next minuteAnchor.
+        guard remaining > 0.05 else {
+            withTransaction(noAnim) {
+                secondAngleDegrees = 360.0
+            }
             return
         }
 
-        // One linear sweep to 12 o’clock over the rest of the minute.
+        // Start a single CoreAnimation-backed sweep to 12 for the remainder of the minute.
         DispatchQueue.main.async {
-            withAnimation(.linear(duration: remainingSeconds)) {
+            withAnimation(.linear(duration: remaining)) {
                 secondAngleDegrees = 360.0
             }
         }
@@ -167,9 +162,9 @@ private struct WidgetWeaverClockSecondHandSweepView: View {
     }
 }
 
-// MARK: - Angle maths (stepped hour/minute)
+// MARK: - Angle maths
 
-private struct WWClockAnglesStepped {
+private struct WWClockAngles {
     let hour: Double
     let minute: Double
 
@@ -182,10 +177,10 @@ private struct WWClockAnglesStepped {
 
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        // Minute hand steps once per minute.
+        // Stepped minute hand: exact minute.
         self.minute = minuteInt * 6.0
 
-        // Hour hand moves in minute steps.
+        // Hour hand moves in minute steps (matches the “stepped hands” aesthetic).
         self.hour = (hour12 + minuteInt / 60.0) * 30.0
     }
 }
@@ -217,7 +212,7 @@ private struct WidgetWeaverClockSweepDebugOverlay: View {
             }
         }()
 
-        let secondsIntoMinuteNow = Int(max(0, now.timeIntervalSince(minuteAnchor)).truncatingRemainder(dividingBy: 60.0))
+        let secondsIntoMinute = Int(max(0, now.timeIntervalSince(minuteAnchor)).truncatingRemainder(dividingBy: 60.0))
 
         VStack(alignment: .trailing, spacing: 4) {
             Text("clock debug")
@@ -232,13 +227,13 @@ private struct WidgetWeaverClockSweepDebugOverlay: View {
             Text(reduceMotion ? "reduceMotion on" : "reduceMotion off")
                 .opacity(0.80)
 
-            Text("tickMode \(modeText)")
+            Text("mode \(modeText)")
                 .opacity(0.80)
 
             Text(secondsEnabled ? "secondsEnabled true" : "secondsEnabled false")
                 .opacity(0.80)
 
-            Text("secInMin \(secondsIntoMinuteNow)")
+            Text("secInMin \(secondsIntoMinute)")
                 .opacity(0.80)
 
             Text("entry \(entryDate, format: .dateTime.hour().minute().second())")
