@@ -62,9 +62,18 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
+    /// WidgetKit guidance is to keep timelines reasonably sized.
+    /// This caps per-second timelines to stay under common entry limits.
+    private static let maxSecondEntries: Int = 180   // 3 minutes at 1 Hz
+    private static let secondTick: TimeInterval = 1.0
+
+    /// Low Power Mode fallback: minute ticks for a longer span.
+    private static let lowPowerTick: TimeInterval = 60.0
+    private static let lowPowerEntries: Int = 180    // 3 hours at 1/min
+
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 1.0, colourScheme: .classic)
+        return Entry(date: now, anchorDate: now, tickSeconds: Self.secondTick, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
@@ -72,7 +81,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: now,
-            tickSeconds: 1.0,
+            tickSeconds: Self.secondTick,
             colourScheme: configuration.colourScheme ?? .classic
         )
     }
@@ -81,12 +90,29 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        // WidgetKit timeline stays sparse.
-        // On-screen ticking is requested by SwiftUI TimelineView inside the widget view.
-        let entry = Entry(date: now, anchorDate: now, tickSeconds: 1.0, colourScheme: scheme)
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let tick: TimeInterval = isLowPower ? Self.lowPowerTick : Self.secondTick
+        let entryCount: Int = isLowPower ? Self.lowPowerEntries : Self.maxSecondEntries
 
-        let reloadDate = now.addingTimeInterval(15.0 * 60.0)
-        return Timeline(entries: [entry], policy: .after(reloadDate))
+        let anchor = now
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(entryCount)
+
+        for i in 0..<entryCount {
+            let d = anchor.addingTimeInterval(TimeInterval(i) * tick)
+            entries.append(
+                Entry(
+                    date: d,
+                    anchorDate: anchor,
+                    tickSeconds: tick,
+                    colourScheme: scheme
+                )
+            )
+        }
+
+        let refreshDate = anchor.addingTimeInterval(TimeInterval(entryCount) * tick)
+        return Timeline(entries: entries, policy: .after(refreshDate))
     }
 }
 
