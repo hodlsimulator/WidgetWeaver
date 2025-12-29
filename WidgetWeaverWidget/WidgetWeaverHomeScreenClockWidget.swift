@@ -44,7 +44,7 @@ struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigur
     }
 
     @Parameter(title: "Colour Scheme")
-    var colourScheme: WidgetWeaverClockColourScheme
+    var colourScheme: WidgetWeaverClockColourScheme?
 
     init() {
         self.colourScheme = .classic
@@ -75,27 +75,28 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let scheme = configuration.colourScheme ?? .classic
 
         return Entry(
             date: now,
             anchorDate: Self.floorToWholeSecond(now),
             tickSeconds: isLowPower ? 60.0 : 1.0,
-            colourScheme: configuration.colourScheme
+            colourScheme: scheme
         )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let scheme = configuration.colourScheme ?? .classic
 
         let entry = Entry(
             date: now,
             anchorDate: Self.floorToWholeSecond(now),
             tickSeconds: isLowPower ? 60.0 : 1.0,
-            colourScheme: configuration.colourScheme
+            colourScheme: scheme
         )
 
-        // Budget-safe WidgetKit cadence; the clock view attempts to animate while visible.
         let refreshInterval: TimeInterval = isLowPower ? (2.0 * 60.0 * 60.0) : (60.0 * 60.0)
         let nextRefresh = now.addingTimeInterval(refreshInterval)
 
