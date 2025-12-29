@@ -36,8 +36,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let wantsSeconds = (tickMode == .secondsSweep)
-        let allowsAnimation = !reduceMotion && !isLowPower
-        let secondsEnabled = wantsSeconds && allowsAnimation
+
+        // IMPORTANT:
+        // Low Power Mode forces minute-only.
+        // Reduce Motion is reported in the debug overlay, but it does not currently gate seconds
+        // while the seconds mechanism is being proven reliable.
+        let secondsEnabled = wantsSeconds && !isLowPower
 
         ZStack(alignment: .bottomTrailing) {
             if secondsEnabled {
@@ -47,9 +51,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
                     showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows
                 )
-                // Keep this id: if WidgetKit honours it, the sweep view will be recreated each minute.
-                // If it is ignored in a given host path, the sweep still restarts via onChange(of:).
-                .id(minuteAnchor.timeIntervalSinceReferenceDate)
+                // No .id(minuteAnchor...) here.
+                // Restarting the sweep happens via onChange(of: minuteAnchor) inside the sweep view.
             } else {
                 let angles = WWClockAngles(date: minuteAnchor)
 
@@ -147,7 +150,7 @@ private struct WidgetWeaverClockSecondHandSweepView: View {
             return
         }
 
-        // Start a single CoreAnimation-backed sweep to 12 for the remainder of the minute.
+        // One linear sweep to 12 over the remainder of the minute.
         DispatchQueue.main.async {
             withAnimation(.linear(duration: remaining)) {
                 secondAngleDegrees = 360.0
@@ -180,7 +183,7 @@ private struct WWClockAngles {
         // Stepped minute hand: exact minute.
         self.minute = minuteInt * 6.0
 
-        // Hour hand moves in minute steps (matches the “stepped hands” aesthetic).
+        // Hour hand moves in minute steps.
         self.hour = (hour12 + minuteInt / 60.0) * 30.0
     }
 }
