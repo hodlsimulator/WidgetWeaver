@@ -131,6 +131,40 @@ enum RainSurfaceMath {
         return v
     }
 
+    static func smooth(_ values: [Double], windowRadius: Int, passes: Int) -> [Double] {
+        let sanitized = values.map { $0.isFinite ? $0 : 0.0 }
+        guard sanitized.count > 2, windowRadius > 0, passes > 0 else { return sanitized }
+
+        var v = sanitized
+        let n = v.count
+        let r = windowRadius
+
+        for _ in 0..<passes {
+            var out = Array(repeating: 0.0, count: n)
+
+            for i in 0..<n {
+                var acc: Double = 0.0
+                var wsum: Double = 0.0
+
+                for k in -r...r {
+                    let j = i + k
+                    if j < 0 || j >= n { continue }
+
+                    let w = Double(r - abs(k) + 1)
+                    acc += v[j] * w
+                    wsum += w
+                }
+
+                let y = (wsum > 0.0) ? (acc / wsum) : 0.0
+                out[i] = y.isFinite ? y : 0.0
+            }
+
+            v = out
+        }
+
+        return v
+    }
+
     // MARK: - Edge easing (chart ends)
 
     static func applyEdgeEasing(to heights: inout [CGFloat], fraction: CGFloat, power: Double) {
@@ -180,6 +214,7 @@ enum RainSurfaceMath {
         guard ramp >= 1 else { return }
 
         let p = max(0.10, power)
+        let minFactor: CGFloat = 0.12
 
         @inline(__always)
         func ease(_ t: CGFloat) -> CGFloat {
@@ -196,7 +231,8 @@ enum RainSurfaceMath {
                 for k in 0..<ramp {
                     let idx = min(n - 1, i + 1 + k)
                     let t = CGFloat(k + 1) / CGFloat(ramp)
-                    heights[idx] *= ease(t)
+                    let factor = minFactor + (1.0 - minFactor) * ease(t)
+                    heights[idx] *= factor
                 }
             }
 
@@ -205,7 +241,8 @@ enum RainSurfaceMath {
                 for k in 0..<ramp {
                     let idx = max(0, i - k)
                     let t = CGFloat(k + 1) / CGFloat(ramp)
-                    heights[idx] *= ease(1.0 - t)
+                    let factor = minFactor + (1.0 - minFactor) * ease(t)
+                    heights[idx] *= factor
                 }
             }
         }
@@ -530,6 +567,72 @@ enum RainSurfaceMath {
             let t = u - Double(i0)
             let y = hermite(v[i0], v[i0 + 1], m[i0], m[i0 + 1], t)
             out.append(y.isFinite ? y : 0.0)
+        }
+
+        return out
+    }
+
+    // MARK: - Soft compression helpers
+
+    static func asinh(_ x: Double) -> Double {
+        guard x.isFinite else { return 0.0 }
+        return log(x + sqrt(x * x + 1.0))
+    }
+
+    // MARK: - Missing bucket fill (rendering continuity only)
+
+    static func fillMissingLinearHoldEnds(_ values: [Double]) -> [Double] {
+        let n = values.count
+        guard n > 0 else { return [] }
+
+        var out = values.map { v -> Double in
+            guard v.isFinite else { return Double.nan }
+            return max(0.0, v)
+        }
+
+        var finiteIndices: [Int] = []
+        finiteIndices.reserveCapacity(n)
+
+        for i in 0..<n {
+            if out[i].isFinite {
+                finiteIndices.append(i)
+            }
+        }
+
+        guard let firstIdx = finiteIndices.first, let lastIdx = finiteIndices.last else {
+            return Array(repeating: 0.0, count: n)
+        }
+
+        let firstVal = out[firstIdx]
+        if firstIdx > 0 {
+            for i in 0..<firstIdx { out[i] = firstVal }
+        }
+
+        let lastVal = out[lastIdx]
+        if lastIdx < n - 1 {
+            for i in (lastIdx + 1)..<n { out[i] = lastVal }
+        }
+
+        if finiteIndices.count >= 2 {
+            for pair in 0..<(finiteIndices.count - 1) {
+                let i0 = finiteIndices[pair]
+                let i1 = finiteIndices[pair + 1]
+                if i1 <= i0 + 1 { continue }
+
+                let a = out[i0]
+                let b = out[i1]
+                let span = Double(i1 - i0)
+
+                for k in 1..<(i1 - i0) {
+                    let t = Double(k) / span
+                    out[i0 + k] = lerp(a, b, t)
+                }
+            }
+        }
+
+        for i in 0..<n {
+            if !out[i].isFinite { out[i] = 0.0 }
+            if out[i] < 0.0 { out[i] = 0.0 }
         }
 
         return out

@@ -155,36 +155,45 @@ private struct WeatherNowcastSurfacePlot: View {
 
     @Environment(\.displayScale) private var displayScale
 
+    private struct BucketedMinuteSeries {
+        let intensityMMPerHour: [Double]   // may contain NaN for unknown
+        let certainty01: [Double]          // may contain NaN for unknown
+    }
+
     var body: some View {
         GeometryReader { proxy in
-            let series = samples(from: points, targetMinutes: 60)
+            let series = bucketedMinuteSeries(from: points, forecastStart: forecastStart, targetMinutes: 60)
 
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
             let maxI = max(0.000_001, maxI0)
 
-            let intensities: [Double] = series.map { p in
-                let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
-                let raw = raw0.isFinite ? raw0 : 0.0
-                let nonNeg = max(0.0, raw)
-
-                // Keep chart aligned with the shared wetness definition.
-                // Capping is intentionally avoided to prevent “storage tank” flat tops.
-                return WeatherNowcast.isWet(intensityMMPerHour: nonNeg) ? nonNeg : 0.0
+            // Height semantics:
+            // - Unknown stays unknown (NaN).
+            // - Non-negative intensity drives height.
+            // - Tiny near-baseline noise can be snapped to zero using the shared wet threshold.
+            let intensities: [Double] = series.intensityMMPerHour.map { v in
+                guard v.isFinite else { return Double.nan }
+                let nonNeg = max(0.0, v)
+                if nonNeg < WeatherNowcast.wetIntensityThresholdMMPerHour { return 0.0 }
+                return nonNeg
             }
 
-            let n = series.count
+            // Styling semantics:
+            // - Certainty drives styling only (halo/fuzz/fade), not height.
+            // - Unknown stays unknown (NaN) and will fade out downstream.
+            let n = series.certainty01.count
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
 
-            let certainties: [Double] = series.enumerated().map { idx, p in
-                let chance = RainSurfaceMath.clamp01(p.precipitationChance01 ?? 0.0)
+            let certainties: [Double] = series.certainty01.enumerated().map { idx, c0 in
+                guard c0.isFinite else { return Double.nan }
 
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
 
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
-                return RainSurfaceMath.clamp01(chance * horizonFactor)
+                return RainSurfaceMath.clamp01(c0 * horizonFactor)
             }
 
             let seed = makeNoiseSeed(
@@ -218,6 +227,12 @@ private struct WeatherNowcastSurfacePlot: View {
                 }
             }()
 
+            let referenceMaxMMPerHour = robustReferenceMaxMMPerHour(
+                intensities: intensities,
+                robustPercentile: 0.93,
+                fallbackVisualMax: maxI
+            )
+
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
 
@@ -225,8 +240,8 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.maxDenseSamples = denseSamplesBudget
                 c.fuzzSpeckleBudget = speckleBudget
 
-                // Use the Nowcast “visual max” as a reference max to keep the chart stable.
-                c.intensityReferenceMaxMMPerHour = maxI
+                // Robust within-window reference max to prevent “slab” saturation and preserve structure.
+                c.intensityReferenceMaxMMPerHour = referenceMaxMMPerHour
 
                 // Values converted from the legacy tuning:
                 // baseline = 0.90, headroom(top) = 0.05 of chart height,
@@ -312,6 +327,24 @@ private struct WeatherNowcastSurfacePlot: View {
         }
     }
 
+    private func robustReferenceMaxMMPerHour(
+        intensities: [Double],
+        robustPercentile: Double,
+        fallbackVisualMax: Double
+    ) -> Double {
+        let positive = intensities.filter { $0.isFinite && $0 > 0.0 }
+        if !positive.isEmpty {
+            let p = RainSurfaceMath.percentile(positive, p: robustPercentile)
+            if p.isFinite, p > 0.0 {
+                return max(1.0, p)
+            }
+        }
+        if fallbackVisualMax.isFinite, fallbackVisualMax > 0.0 {
+            return max(1.0, fallbackVisualMax)
+        }
+        return 1.0
+    }
+
     private func makeNoiseSeed(
         forecastStart: Date,
         widgetFamily: UInt64,
@@ -333,35 +366,78 @@ private struct WeatherNowcastSurfacePlot: View {
         return seed
     }
 
-    private func samples(from points: [WidgetWeaverWeatherMinutePoint], targetMinutes: Int) -> [WidgetWeaverWeatherMinutePoint] {
-        guard targetMinutes > 0 else { return [] }
-
-        guard !points.isEmpty else {
-            return Array(
-                repeating: WidgetWeaverWeatherMinutePoint(
-                    date: Date(),
-                    precipitationChance01: 0.0,
-                    precipitationIntensityMMPerHour: 0.0
-                ),
-                count: targetMinutes
-            )
+    // Builds exactly 60 minute buckets aligned to forecastStart.
+    // Missing buckets stay unknown (NaN), never padded as zero.
+    private func bucketedMinuteSeries(
+        from points: [WidgetWeaverWeatherMinutePoint],
+        forecastStart: Date,
+        targetMinutes: Int
+    ) -> BucketedMinuteSeries {
+        guard targetMinutes > 0 else {
+            return BucketedMinuteSeries(intensityMMPerHour: [], certainty01: [])
         }
 
-        let sorted = points.sorted(by: { $0.date < $1.date })
-        var out: [WidgetWeaverWeatherMinutePoint] = Array(sorted.prefix(targetMinutes))
+        let sorted = points.sorted { $0.date < $1.date }
 
-        if out.count < targetMinutes {
-            let cal = Calendar.current
-            let lastDate = out.last?.date ?? Date()
-            let start = cal.dateInterval(of: .minute, for: lastDate)?.start ?? lastDate
+        var intensityOut: [Double] = []
+        var certaintyOut: [Double] = []
+        intensityOut.reserveCapacity(targetMinutes)
+        certaintyOut.reserveCapacity(targetMinutes)
 
-            let needed = targetMinutes - out.count
-            for i in 1...needed {
-                let d = cal.date(byAdding: .minute, value: i, to: start) ?? start.addingTimeInterval(Double(i) * 60.0)
-                out.append(.init(date: d, precipitationChance01: 0.0, precipitationIntensityMMPerHour: 0.0))
+        var idx = 0
+
+        for m in 0..<targetMinutes {
+            let bucketStart = forecastStart.addingTimeInterval(Double(m) * 60.0)
+            let bucketEnd = bucketStart.addingTimeInterval(60.0)
+
+            while idx < sorted.count && sorted[idx].date < bucketStart {
+                idx += 1
             }
+
+            var intensitySum: Double = 0.0
+            var intensityCount: Int = 0
+
+            var chanceSum: Double = 0.0
+            var chanceCount: Int = 0
+
+            var j = idx
+            while j < sorted.count && sorted[j].date < bucketEnd {
+                let p = sorted[j]
+
+                if let mmph = p.precipitationIntensityMMPerHour, mmph.isFinite {
+                    intensitySum += max(0.0, mmph)
+                    intensityCount += 1
+                }
+
+                if let c = p.precipitationChance01, c.isFinite {
+                    chanceSum += RainSurfaceMath.clamp01(c)
+                    chanceCount += 1
+                }
+
+                j += 1
+            }
+
+            idx = j
+
+            let intensity: Double = {
+                guard intensityCount > 0 else { return Double.nan }
+                let avg = intensitySum / Double(intensityCount)
+                return avg.isFinite ? max(0.0, avg) : Double.nan
+            }()
+
+            let certainty: Double = {
+                if chanceCount > 0 {
+                    let avg = chanceSum / Double(chanceCount)
+                    return avg.isFinite ? RainSurfaceMath.clamp01(avg) : Double.nan
+                }
+                if intensity.isFinite { return 1.0 }
+                return Double.nan
+            }()
+
+            intensityOut.append(intensity)
+            certaintyOut.append(certainty)
         }
 
-        return out
+        return BucketedMinuteSeries(intensityMMPerHour: intensityOut, certainty01: certaintyOut)
     }
 }
