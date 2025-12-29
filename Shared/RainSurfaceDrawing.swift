@@ -1,8 +1,8 @@
 //
-//  RainSurfaceDrawing.swift
-//  WidgetWeaver
+// RainSurfaceDrawing.swift
+// WidgetWeaver
 //
-//  Created by . . on 12/23/25.
+// Created by . . on 12/23/25.
 //
 
 import Foundation
@@ -13,6 +13,7 @@ import UIKit
 #endif
 
 enum RainSurfaceDrawing {
+
     static func drawSurface(
         in context: inout GraphicsContext,
         geometry: RainSurfaceGeometry,
@@ -25,62 +26,72 @@ enum RainSurfaceDrawing {
         // ---- Fuzz strength per point (0..1) ---------------------------------
         let bandWidthPx = fuzzBandWidthPixels(chartRect: chartRect, cfg: cfg, displayScale: displayScale)
         let bandWidthPt = bandWidthPx / max(1.0, displayScale)
-
         let perPointStrength = computeFuzzStrengthPerPoint(
             geometry: geometry,
             cfg: cfg,
             bandWidthPx: bandWidthPx
         )
 
-        // ---- Build normals along the surface --------------------------------
-        let surfacePoints = (0..<geometry.sampleCount).map { geometry.surfacePointAt($0) }
+        // ---- Surface points + outward normals --------------------------------
+        let surfacePoints: [CGPoint] = (0..<geometry.sampleCount).map { geometry.surfacePointAt($0) }
         let normals = computeOutwardNormals(points: surfacePoints)
 
-        // ---- Core top inset (THIS is the “surface becomes fuzz” move) --------
-        // Pull the solid fill slightly down/inward so it does not hard-meet the surface.
-        // Keep this subtle: too much inset makes fuzz look like it floats above the fill.
-        let insetFactor = CGFloat(max(0.10, min(1.25, cfg.fuzzInsideWidthFactor)))
-
-        // Scale-aware inset. Small enough that glow stays edge-hugging.
-        let baseInset = min(bandWidthPt * insetFactor * 0.16, 2.6)
-
-        var insetTopPoints: [CGPoint] = []
-        insetTopPoints.reserveCapacity(surfacePoints.count)
-
-        for i in 0..<surfacePoints.count {
-            let s = CGFloat(max(0.0, min(1.0, perPointStrength[i])))
-
-            // Inset LESS where fuzz is strong (so fuzz hugs the edge instead of floating).
-            let inset = max(0.0, baseInset * (0.18 + 0.82 * (1.0 - s)))
-
-            let n = normals[i]
-            let inward = CGVector(dx: -n.dx, dy: -n.dy)
-            var p = CGPoint(
-                x: surfacePoints[i].x + inward.dx * inset,
-                y: surfacePoints[i].y + inward.dy * inset
-            )
-
-            // Prevent the inset from crossing below baseline (keeps dry segments clean).
-            if p.y > geometry.baselineY { p.y = geometry.baselineY }
-            insetTopPoints.append(p)
+        // ---- Slightly inset the solid core so fuzz visually owns the boundary --
+        let insetPt = max(0.0, cfg.fuzzErodeRimInsetPixels) / max(1.0, displayScale)
+        var insetTopPoints: [CGPoint] = surfacePoints
+        if insetPt > 0.0001, insetTopPoints.count == geometry.sampleCount {
+            for i in 0..<insetTopPoints.count {
+                let s = CGFloat(RainSurfaceMath.clamp01(perPointStrength[i]))
+                let d = insetPt * (0.45 + 0.55 * s)
+                var p = surfacePoints[i]
+                let nrm = normals[i]
+                p.x += nrm.dx * d
+                p.y += nrm.dy * d
+                if p.y > geometry.baselineY { p.y = geometry.baselineY }
+                insetTopPoints[i] = p
+            }
         }
 
         let corePath = geometry.filledPath(usingInsetTopPoints: insetTopPoints)
         let surfacePath = geometry.surfacePolylinePath()
 
-        // ---- Core fill -------------------------------------------------------
+        // ---- Core fill --------------------------------------------------------
         context.fill(corePath, with: .color(cfg.coreBodyColor))
 
-        if cfg.coreTopMix > 0.001 {
-            // Subtle top tint overlay, clipped to core.
-            let mix = max(0.0, min(1.0, cfg.coreTopMix))
+        // Subtle internal top glow (clipped to core). Keeps mid-tones visible without lifting black.
+        let topMix = max(0.0, min(1.0, Double(cfg.coreTopMix)))
+        if topMix > 0.001 {
             context.drawLayer { layer in
                 layer.clip(to: corePath)
-                layer.fill(corePath, with: .color(cfg.coreTopColor.opacity(Double(mix))))
+                layer.blendMode = .plusLighter
+
+                let y0 = chartRect.minY
+                let y1 = min(chartRect.maxY, chartRect.minY + chartRect.height * 0.78)
+
+                var rect = Path()
+                rect.addRect(CGRect(x: chartRect.minX, y: y0, width: chartRect.width, height: y1 - y0))
+
+                let a0 = max(0.0, min(1.0, topMix * 0.90))
+                let a1 = max(0.0, min(1.0, topMix * 0.40))
+
+                let grad = Gradient(stops: [
+                    .init(color: cfg.coreTopColor.opacity(a0), location: 0.00),
+                    .init(color: cfg.coreTopColor.opacity(a1), location: 0.38),
+                    .init(color: cfg.coreTopColor.opacity(0.0), location: 1.00),
+                ])
+
+                layer.fill(
+                    rect,
+                    with: .linearGradient(
+                        grad,
+                        startPoint: CGPoint(x: chartRect.midX, y: y0),
+                        endPoint: CGPoint(x: chartRect.midX, y: y1)
+                    )
+                )
             }
         }
 
-        // Extra fade-out at the top of the core (helps the hard edge disappear).
+        // Optional top alpha fade (destinationOut). Keep small for a crisp edge.
         if cfg.coreFadeFraction > 0.0001 {
             let fadeH = max(1.0, chartRect.height * cfg.coreFadeFraction)
             let y0 = chartRect.minY
@@ -89,10 +100,9 @@ enum RainSurfaceDrawing {
             var fadeRect = Path()
             fadeRect.addRect(CGRect(x: chartRect.minX, y: y0, width: chartRect.width, height: y1 - y0))
 
-            // destinationOut removes alpha; a vertical gradient removes more near the top.
             let stops = Gradient(stops: [
                 .init(color: Color.white.opacity(1.0), location: 0.0),
-                .init(color: Color.white.opacity(0.0), location: 1.0)
+                .init(color: Color.white.opacity(0.0), location: 1.0),
             ])
 
             context.drawLayer { layer in
@@ -100,88 +110,89 @@ enum RainSurfaceDrawing {
                 layer.blendMode = .destinationOut
                 layer.fill(
                     fadeRect,
-                    with: .linearGradient(stops, startPoint: CGPoint(x: chartRect.midX, y: y0), endPoint: CGPoint(x: chartRect.midX, y: y1))
+                    with: .linearGradient(
+                        stops,
+                        startPoint: CGPoint(x: chartRect.midX, y: y0),
+                        endPoint: CGPoint(x: chartRect.midX, y: y1)
+                    )
                 )
             }
         }
 
-        // ---- Fuzz: haze + speckles + erosion --------------------------------
-        let fuzzAllowed = cfg.canEnableFuzz && cfg.fuzzEnabled
+        // ---- Fuzz: erosion + tight haze + dense speckles ----------------------
+        let fuzzAllowed = cfg.canEnableFuzz && cfg.fuzzEnabled && (cfg.fuzzMaxOpacity > 0.0001)
         if fuzzAllowed {
-            // 1) Erode the core edge even more (removes any remaining “solid outline” feel).
-            if cfg.fuzzErodeEnabled {
+            let perSeg = segmentStrengths(from: perPointStrength)
+
+            // Erosion is the most expensive piece; caller can disable in extensions.
+            if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
                 drawCoreErosion(
                     in: &context,
                     corePath: corePath,
                     surfacePoints: surfacePoints,
-                    perSegmentStrength: segmentStrengths(from: perPointStrength),
+                    perSegmentStrength: perSeg,
                     cfg: cfg,
-                    bandWidthPx: bandWidthPx
+                    bandWidthPx: bandWidthPx,
+                    displayScale: displayScale
                 )
             }
 
-            // 2) Outside haze (glow).
-            drawFuzzHaze(
-                in: &context,
-                chartRect: chartRect,
-                clipOutsideCore: corePath,
-                surfacePoints: surfacePoints,
-                perSegmentStrength: segmentStrengths(from: perPointStrength),
-                cfg: cfg,
-                bandWidthPx: bandWidthPx,
-                inside: false
-            )
+            // Tight haze only (no big aura). Outside + a faint inside weld.
+            if cfg.fuzzHazeStrength > 0.0001 {
+                drawFuzzHaze(
+                    in: &context,
+                    chartRect: chartRect,
+                    corePath: corePath,
+                    surfacePoints: surfacePoints,
+                    perSegmentStrength: perSeg,
+                    cfg: cfg,
+                    bandWidthPx: bandWidthPx,
+                    displayScale: displayScale,
+                    inside: false
+                )
+                drawFuzzHaze(
+                    in: &context,
+                    chartRect: chartRect,
+                    corePath: corePath,
+                    surfacePoints: surfacePoints,
+                    perSegmentStrength: perSeg,
+                    cfg: cfg,
+                    bandWidthPx: bandWidthPx,
+                    displayScale: displayScale,
+                    inside: true
+                )
+            }
 
-            // 3) Inside haze (glow within the fill near the edge).
-            drawFuzzHaze(
-                in: &context,
-                chartRect: chartRect,
-                clipInsideCore: corePath,
-                surfacePoints: surfacePoints,
-                perSegmentStrength: segmentStrengths(from: perPointStrength),
-                cfg: cfg,
-                bandWidthPx: bandWidthPx,
-                inside: true
-            )
+            // Granular speckles (primary glow look).
+            if cfg.fuzzSpeckStrength > 0.0001, cfg.fuzzSpeckleBudget > 0 {
+                drawFuzzSpeckles(
+                    in: &context,
+                    chartRect: chartRect,
+                    corePath: corePath,
+                    surfacePoints: surfacePoints,
+                    normals: normals,
+                    perSegmentStrength: perSeg,
+                    cfg: cfg,
+                    bandWidthPx: bandWidthPx,
+                    displayScale: displayScale
+                )
+            }
+        }
 
-            // 4) Speckles (outside + a smaller portion inside).
-            drawFuzzSpeckles(
+        // ---- Gloss (optional) -------------------------------------------------
+        if cfg.glossEnabled, cfg.glossMaxOpacity > 0.0001 {
+            drawGloss(
                 in: &context,
-                chartRect: chartRect,
                 corePath: corePath,
-                surfacePoints: surfacePoints,
-                normals: normals,
-                perSegmentStrength: segmentStrengths(from: perPointStrength),
+                surfacePath: surfacePath,
+                chartRect: chartRect,
                 cfg: cfg,
-                bandWidthPx: bandWidthPx,
                 displayScale: displayScale
             )
         }
 
-        // ---- Gloss (optional) ------------------------------------------------
-        if cfg.glossEnabled, cfg.glossMaxOpacity > 0.0001 {
-            let depth = max(1.0, cfg.glossDepthPixels / max(1.0, displayScale))
-            let blur = max(0.0, cfg.glossBlurPixels / max(1.0, displayScale))
-            let offset = chartRect.height * cfg.glossVerticalOffsetFraction
-
-            context.drawLayer { layer in
-                layer.clip(to: corePath)
-                layer.blendMode = .plusLighter
-                if blur > 0.001 { layer.addFilter(.blur(radius: blur)) }
-
-                // A soft band just below the surface.
-                var glossPath = Path()
-                for i in 0..<surfacePoints.count {
-                    let p = surfacePoints[i]
-                    glossPath.addEllipse(in: CGRect(x: p.x - depth, y: p.y + offset - depth, width: depth * 2, height: depth * 2))
-                }
-
-                layer.fill(glossPath, with: .color(cfg.coreTopColor.opacity(cfg.glossMaxOpacity)))
-            }
-        }
-
-        // ---- Glints (optional) ----------------------------------------------
-        if cfg.glintEnabled, cfg.glintCount > 0, cfg.glintMaxOpacity > 0.0001 {
+        // ---- Glints (optional) ------------------------------------------------
+        if cfg.glintEnabled, cfg.glintMaxOpacity > 0.0001, cfg.glintCount > 0 {
             drawGlints(
                 in: &context,
                 surfacePoints: surfacePoints,
@@ -190,7 +201,7 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // ---- Rim (kept subtle; fuzz should “be” the edge) --------------------
+        // ---- Rim (crisp edge) -------------------------------------------------
         if cfg.rimEnabled {
             drawRim(
                 in: &context,
@@ -210,7 +221,10 @@ enum RainSurfaceDrawing {
     ) {
         guard cfg.baselineEnabled else { return }
 
-        let y = RainSurfaceMath.alignToPixelCenter(baselineY + (cfg.baselineOffsetPixels / max(1.0, displayScale)), displayScale: displayScale)
+        let y = RainSurfaceMath.alignToPixelCenter(
+            baselineY + (cfg.baselineOffsetPixels / max(1.0, displayScale)),
+            displayScale: displayScale
+        )
         let w = max(1.0, cfg.baselineWidthPixels / max(1.0, displayScale))
 
         var p = Path()
@@ -231,15 +245,19 @@ enum RainSurfaceDrawing {
 
         context.stroke(
             p,
-            with: .linearGradient(grad, startPoint: CGPoint(x: chartRect.minX, y: y), endPoint: CGPoint(x: chartRect.maxX, y: y)),
+            with: .linearGradient(
+                grad,
+                startPoint: CGPoint(x: chartRect.minX, y: y),
+                endPoint: CGPoint(x: chartRect.maxX, y: y)
+            ),
             lineWidth: w
         )
     }
 }
 
 // MARK: - Internals
-
 private extension RainSurfaceDrawing {
+
     static func fuzzBandWidthPixels(chartRect: CGRect, cfg: RainForecastSurfaceConfiguration, displayScale: CGFloat) -> CGFloat {
         let pxFromFraction = chartRect.height * cfg.fuzzWidthFraction * max(1.0, displayScale)
         let clamped = min(max(pxFromFraction, cfg.fuzzWidthPixelsClamp.lowerBound), cfg.fuzzWidthPixelsClamp.upperBound)
@@ -258,21 +276,18 @@ private extension RainSurfaceDrawing {
         let dxPx = geometry.dx * scale
         let bandPt = bandWidthPx / scale
 
-        // Height threshold: below this, values behave like zero at the current scale.
         let epsilonHeightPt: CGFloat = max(0.06, 0.35 / scale)
-
         let maxHeightPt = geometry.heights.max() ?? 0
         let maxHeightPx = maxHeightPt * scale
 
-        // Prevents a fuzzy baseline when the surface is effectively absent.
+        // Avoids a fuzzy baseline when the surface is effectively absent.
         if maxHeightPx < 0.20 {
             return Array(repeating: 0.0, count: n)
         }
 
-        // Very thin ribbons benefit from chance-driven wet detection.
+        // Thin ribbons benefit from chance-driven wet detection.
         let lowHeightMode = maxHeightPx < 1.75
 
-        // Primary wet detection from height.
         var wetByHeight: [Bool] = Array(repeating: false, count: n)
         for i in 0..<n {
             wetByHeight[i] = geometry.heights[i] > epsilonHeightPt
@@ -282,36 +297,24 @@ private extension RainSurfaceDrawing {
         var distToHeightWet = Array(repeating: Int.max / 4, count: n)
         var last = -1
         for i in 0..<n {
-            if wetByHeight[i] {
-                last = i
-                distToHeightWet[i] = 0
-            } else if last >= 0 {
-                distToHeightWet[i] = i - last
-            }
+            if wetByHeight[i] { last = i }
+            if last >= 0 { distToHeightWet[i] = i - last }
         }
         last = -1
         for i in stride(from: n - 1, through: 0, by: -1) {
             if wetByHeight[i] { last = i }
-            if last >= 0 {
-                distToHeightWet[i] = min(distToHeightWet[i], last - i)
-            }
+            if last >= 0 { distToHeightWet[i] = min(distToHeightWet[i], last - i) }
         }
 
         let tailChanceThreshold: Double = lowHeightMode ? 0.20 : 0.10
-        let tailDistancePx: CGFloat = max(bandWidthPx * 2.1, 26.0)
+
+        // Extended tail distance to keep endings readable against black (styling-only).
+        let tailDistancePx: CGFloat = max(bandWidthPx * 2.6, 34.0)
 
         // Wet mask used for fading + keeping fuzz alive at tapered ends.
-        // - In low-height mode: chance can define wet regions.
-        // - Otherwise: chance only extends tails near a true height-wet run.
         var wet: [Bool] = Array(repeating: false, count: n)
         for i in 0..<n {
-            if wetByHeight[i] {
-                wet[i] = true
-                continue
-            }
-
-            let c = RainSurfaceMath.clamp01(geometry.certaintyAt(i))
-
+            let c = geometry.certaintyAt(i)
             if lowHeightMode {
                 wet[i] = c > tailChanceThreshold
             } else {
@@ -324,41 +327,34 @@ private extension RainSurfaceDrawing {
         var distToWet = Array(repeating: Int.max / 4, count: n)
         last = -1
         for i in 0..<n {
-            if wet[i] {
-                last = i
-                distToWet[i] = 0
-            } else if last >= 0 {
-                distToWet[i] = i - last
-            }
+            if wet[i] { last = i }
+            if last >= 0 { distToWet[i] = i - last }
         }
         last = -1
         for i in stride(from: n - 1, through: 0, by: -1) {
             if wet[i] { last = i }
-            if last >= 0 {
-                distToWet[i] = min(distToWet[i], last - i)
-            }
+            if last >= 0 { distToWet[i] = min(distToWet[i], last - i) }
         }
 
-        // Fade distance: fuzz should stop shortly after wet ends.
-        let fadeDistancePx = max(bandWidthPx * 1.9, 18.0)
+        // Extended fade distance keeps the “it ends soon” tail visible.
+        let fadeDistancePx = max(bandWidthPx * 2.3, 24.0)
         let safeDxPx = max(0.000_001, dxPx)
+
         func wetFade(_ dSamples: Int) -> Double {
             let dPx = Double(CGFloat(dSamples)) * Double(safeDxPx)
             let t = RainSurfaceMath.smoothstep(0.0, Double(fadeDistancePx), dPx)
             return max(0.0, 1.0 - t)
         }
 
-        // Chance -> fuzz.
+        // Chance -> fuzz mapping.
         let thr = cfg.fuzzChanceThreshold
         let trans = max(0.000_1, cfg.fuzzChanceTransition)
-
         let floorFromChance = max(0.0, min(1.0, cfg.fuzzChanceFloor))
         let floorFromMin = max(0.0, min(1.0, cfg.fuzzChanceMinStrength))
         let floorS = max(floorFromChance, floorFromMin)
-
         let expn = max(0.10, cfg.fuzzChanceExponent)
 
-        // Height boost (tails).
+        // Low-height boost (tapered ends).
         let baselineDist = max(1.0, geometry.baselineY - geometry.chartRect.minY)
         let lowPower = max(0.10, cfg.fuzzLowHeightPower)
         let lowBoostMax = max(0.0, cfg.fuzzLowHeightBoost)
@@ -367,45 +363,45 @@ private extension RainSurfaceDrawing {
         let slopeDenom = max(0.08, bandPt * 0.65)
         let slopeBoostMax = max(0.0, min(0.62, 0.18 + 0.46 * lowBoostMax))
 
-        var strength: [Double] = []
-        strength.reserveCapacity(n)
+        let density = max(0.0, min(2.0, cfg.fuzzDensity))
 
+        var strength: [Double] = Array(repeating: 0.0, count: n)
         for i in 0..<n {
-            let c = RainSurfaceMath.clamp01(geometry.certaintyAt(i))
+            if !wet[i] && !lowHeightMode {
+                strength[i] = 0.0
+                continue
+            }
 
-            // Higher fuzz when chance is low (uncertain).
-            var u = (thr - c) / trans
-            if !u.isFinite { u = 0.0 }
-            u = max(0.0, min(1.0, u))
+            let c = geometry.certaintyAt(i)
+            let fromChance: Double = {
+                let t = RainSurfaceMath.clamp01((thr - c) / trans)
+                let shaped = pow(t, expn)
+                return floorS + (1.0 - floorS) * shaped
+            }()
 
-            var s = pow(u, expn)
-            s = max(s, floorS)
+            var s = fromChance * wetFade(distToWet[i])
 
-            // Low-height reinforcement keeps tapered ends and long slopes fuzzy.
-            let h01 = Double(max(0.0, min(1.0, geometry.heights[i] / baselineDist)))
-            let lowBoost = pow(max(0.0, 1.0 - h01), lowPower) * lowBoostMax
+            // Low height boost.
+            let h = geometry.heights[i]
+            let h01 = Double(max(0.0, min(1.0, h / baselineDist)))
+            let low = pow(1.0 - h01, lowPower)
+            s *= (1.0 + lowBoostMax * low)
 
-            var out = s + (1.0 - s) * lowBoost
-
-            // Shoulder reinforcement (local slope).
+            // Slope boost.
             let hPrev = geometry.heights[max(0, i - 1)]
             let hNext = geometry.heights[min(n - 1, i + 1)]
-            let dh = abs(hNext - hPrev)
-            var slope01 = Double(dh / slopeDenom)
-            if !slope01.isFinite { slope01 = 0.0 }
-            slope01 = max(0.0, min(1.0, slope01))
-            out = out + (1.0 - out) * slope01 * slopeBoostMax
+            let slope = Double(abs(hNext - hPrev)) / Double(slopeDenom)
+            let slopeT = min(1.0, max(0.0, slope))
+            s *= (1.0 + slopeBoostMax * pow(slopeT, 0.85))
 
-            out *= wetFade(distToWet[i])
-            out = max(0.0, min(1.0, out))
-            strength.append(out)
+            // Global density scaling.
+            s *= (0.72 + 0.28 * density)
+
+            strength[i] = RainSurfaceMath.clamp01(s)
         }
 
-        if strength.count >= 8 {
-            strength = RainSurfaceMath.smooth(strength, windowRadius: 2, passes: 1)
-                .map { RainSurfaceMath.clamp01($0) }
-        }
-
+        // Smooth to avoid seam artefacts.
+        strength = RainSurfaceMath.smooth(strength, windowRadius: 2, passes: 1).map { RainSurfaceMath.clamp01($0) }
         return strength
     }
 
@@ -421,7 +417,9 @@ private extension RainSurfaceDrawing {
 
     static func computeOutwardNormals(points: [CGPoint]) -> [CGVector] {
         let n = points.count
-        guard n >= 2 else { return Array(repeating: CGVector(dx: 0, dy: -1), count: n) }
+        guard n >= 2 else {
+            return Array(repeating: CGVector(dx: 0, dy: -1), count: n)
+        }
 
         func norm(_ v: CGVector) -> CGVector {
             let len = sqrt(v.dx * v.dx + v.dy * v.dy)
@@ -430,37 +428,89 @@ private extension RainSurfaceDrawing {
         }
 
         var normals: [CGVector] = Array(repeating: CGVector(dx: 0, dy: -1), count: n)
-
         for i in 0..<n {
             let p0 = points[max(0, i - 1)]
             let p1 = points[min(n - 1, i + 1)]
-            let t = norm(CGVector(dx: p1.x - p0.x, dy: p1.y - p0.y))
+            let t = CGVector(dx: p1.x - p0.x, dy: p1.y - p0.y)
 
-            // Outward normal for a left->right polyline: (dy, -dx)
-            var nrm = CGVector(dx: t.dy, dy: -t.dx)
+            // Right-side normal for a left->right polyline: (dy, -dx)
+            var nn = norm(CGVector(dx: t.dy, dy: -t.dx))
 
-            // Ensure it generally points “out” (upward for the top curve).
-            if nrm.dy > 0 {
-                nrm = CGVector(dx: -nrm.dx, dy: -nrm.dy)
+            // Ensure it generally points outward (upward) for the top curve.
+            if nn.dy > 0 {
+                nn = CGVector(dx: -nn.dx, dy: -nn.dy)
             }
-            normals[i] = norm(nrm)
+            normals[i] = nn
         }
         return normals
     }
 
-    static func boostedFuzzColor(_ color: Color) -> Color {
+    static func boostedFuzzColor(_ cfg: RainForecastSurfaceConfiguration) -> Color {
         #if canImport(UIKit)
-        let ui = UIColor(color)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-        ui.getRed(&r, green: &g, blue: &b, alpha: &a)
-
-        let rr = max(0, min(1, r * 0.78))
-        let gg = max(0, min(1, g * 0.88))
-        let bb = max(0, min(1, b * 1.18 + 0.04))
-        return Color(red: rr, green: gg, blue: bb).opacity(Double(a))
+        let ui = UIColor(cfg.fuzzColor)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
+            let rr = min(1.0, r * 1.00)
+            let gg = min(1.0, g * 1.05)
+            let bb = min(1.0, b * 1.18)
+            return Color(red: Double(rr), green: Double(gg), blue: Double(bb), opacity: Double(a))
+        }
+        return cfg.fuzzColor
         #else
-        return color
+        return cfg.fuzzColor
         #endif
+    }
+
+    static func buildBinnedSegmentPaths(
+        points: [CGPoint],
+        perSegmentStrength: [Double],
+        bins: Int
+    ) -> (paths: [Path], avg: [Double]) {
+        guard bins >= 2, points.count >= 2, perSegmentStrength.count == points.count - 1 else {
+            return (Array(repeating: Path(), count: max(2, bins)), Array(repeating: 0.0, count: max(2, bins)))
+        }
+
+        var paths = Array(repeating: Path(), count: bins)
+        var sum = Array(repeating: 0.0, count: bins)
+        var cnt = Array(repeating: 0, count: bins)
+
+        var currentBin: Int? = nil
+        var currentPath = Path()
+
+        for i in 0..<perSegmentStrength.count {
+            let s = RainSurfaceMath.clamp01(perSegmentStrength[i])
+            let bin = min(bins - 1, max(0, Int(floor(s * Double(bins)))))
+
+            if currentBin == nil || currentBin != bin {
+                if let cb = currentBin {
+                    paths[cb].addPath(currentPath)
+                }
+                currentBin = bin
+                currentPath = Path()
+                currentPath.move(to: points[i])
+            }
+            currentPath.addLine(to: points[i + 1])
+
+            sum[bin] += s
+            cnt[bin] += 1
+        }
+
+        if let cb = currentBin {
+            paths[cb].addPath(currentPath)
+        }
+
+        var avg = Array(repeating: 0.0, count: bins)
+        for i in 0..<bins {
+            if cnt[i] > 0 {
+                avg[i] = sum[i] / Double(cnt[i])
+            } else {
+                avg[i] = 0.0
+            }
+        }
+        return (paths, avg)
     }
 
     static func drawCoreErosion(
@@ -469,26 +519,42 @@ private extension RainSurfaceDrawing {
         surfacePoints: [CGPoint],
         perSegmentStrength: [Double],
         cfg: RainForecastSurfaceConfiguration,
-        bandWidthPx: CGFloat
+        bandWidthPx: CGFloat,
+        displayScale: CGFloat
     ) {
-        let widthPt = (bandWidthPx / max(1.0, context.environment.displayScale)) * CGFloat(max(0.20, min(1.5, cfg.fuzzInsideWidthFactor))) * 1.05
-        let blurPt = max(0.0, widthPt * 0.35)
+        let scale = max(1.0, displayScale)
+        let bandPt = bandWidthPx / scale
+        let insideWidth = bandPt * CGFloat(max(0.0, cfg.fuzzInsideWidthFactor))
+
+        let w = max(0.65, min(14.0, insideWidth * 0.55))
+        let blur = max(0.0, min(10.0, insideWidth * 0.30))
+
+        let baseAlpha = max(0.0, min(1.0, cfg.fuzzMaxOpacity * cfg.fuzzErodeStrength))
+        if baseAlpha < 0.0001 { return }
+
+        let bins = 6
+        let binned = buildBinnedSegmentPaths(points: surfacePoints, perSegmentStrength: perSegmentStrength, bins: bins)
 
         context.drawLayer { layer in
             layer.clip(to: corePath)
             layer.blendMode = .destinationOut
-            if blurPt > 0.001 { layer.addFilter(.blur(radius: blurPt)) }
+            if blur > 0.001 {
+                layer.addFilter(.blur(radius: blur))
+            }
 
-            for i in 0..<(surfacePoints.count - 1) {
-                let s = pow(max(0.0, min(1.0, perSegmentStrength[i])), max(0.10, cfg.fuzzErodeEdgePower))
-                let op = cfg.fuzzErodeStrength * s
-                if op <= 0.0001 { continue }
+            for i in 0..<bins {
+                let s = max(0.0, min(1.0, binned.avg[i]))
+                if s <= 0.0001 { continue }
 
-                var seg = Path()
-                seg.move(to: surfacePoints[i])
-                seg.addLine(to: surfacePoints[i + 1])
+                let shaped = pow(s, max(0.10, cfg.fuzzErodeEdgePower))
+                let a = max(0.0, min(1.0, baseAlpha * (0.18 + 0.82 * shaped)))
+                if a <= 0.0001 { continue }
 
-                layer.stroke(seg, with: .color(Color.white.opacity(op)), lineWidth: widthPt)
+                layer.stroke(
+                    binned.paths[i],
+                    with: .color(Color.white.opacity(a)),
+                    lineWidth: w
+                )
             }
         }
     }
@@ -496,172 +562,63 @@ private extension RainSurfaceDrawing {
     static func drawFuzzHaze(
         in context: inout GraphicsContext,
         chartRect: CGRect,
-        clipOutsideCore corePathOutside: Path? = nil,
-        clipInsideCore corePathInside: Path? = nil,
+        corePath: Path,
         surfacePoints: [CGPoint],
         perSegmentStrength: [Double],
         cfg: RainForecastSurfaceConfiguration,
         bandWidthPx: CGFloat,
+        displayScale: CGFloat,
         inside: Bool
     ) {
-        let scale = max(1.0, context.environment.displayScale)
+        let scale = max(1.0, displayScale)
         let bandPt = bandWidthPx / scale
 
-        let isTightBudget = (cfg.fuzzSpeckleBudget <= 1100) || (cfg.maxDenseSamples <= 300)
+        let baseAlpha0 = cfg.fuzzMaxOpacity * cfg.fuzzHazeStrength
+        if baseAlpha0 < 0.0001 { return }
 
-        let hazeAlphaBase = cfg.fuzzMaxOpacity * cfg.fuzzHazeStrength
-        if hazeAlphaBase <= 0.0001 { return }
+        // Tight haze only (no big halo).
+        let blur = max(0.0, min(12.0, bandPt * CGFloat(max(0.02, min(0.35, cfg.fuzzHazeBlurFractionOfBand))) * (inside ? 0.55 : 0.70)))
+        let strokeW = max(0.6, min(18.0, bandPt * CGFloat(inside ? cfg.fuzzInsideHazeStrokeWidthFactor : cfg.fuzzHazeStrokeWidthFactor) * (inside ? 0.85 : 0.90)))
 
-        let opMul = inside ? cfg.fuzzInsideOpacityFactor : 1.0
-        if opMul <= 0.0001 { return }
-
-        func clipLayer(_ layer: inout GraphicsContext) {
-            if inside {
-                if let corePathInside {
-                    layer.clip(to: corePathInside)
-                }
-            } else {
-                if let corePathOutside {
-                    let bleed = max(0.0, bandPt * 3.0)
-                    var outside = Path()
-                    outside.addRect(chartRect.insetBy(dx: -bleed, dy: -bleed))
-                    outside.addPath(corePathOutside)
-                    layer.clip(to: outside, style: FillStyle(eoFill: true))
-                }
-            }
-        }
-
-        let segCount = min(perSegmentStrength.count, max(0, surfacePoints.count - 1))
-        if segCount <= 0 { return }
-
-        // Bin strengths and build continuous subpaths per bin to avoid striping.
         let bins = 6
-        let eps: Double = 0.000_1
+        let binned = buildBinnedSegmentPaths(points: surfacePoints, perSegmentStrength: perSegmentStrength, bins: bins)
+        let hazeColor = boostedFuzzColor(cfg)
 
-        var binPaths: [Path] = Array(repeating: Path(), count: bins)
-        var binAvgS: [Double] = Array(repeating: 0.0, count: bins)
-        var binCounts: [Int] = Array(repeating: 0, count: bins)
+        context.drawLayer { layer in
+            if inside {
+                layer.clip(to: corePath)
+            } else {
+                let bleed = max(0.0, bandPt * 3.0)
+                var outside = Path()
+                outside.addRect(chartRect.insetBy(dx: -bleed, dy: -bleed))
+                outside.addPath(corePath)
+                layer.clip(to: outside, style: FillStyle(eoFill: true))
+            }
 
-        for b in 0..<bins {
-            var inRun = false
-            var sumS: Double = 0.0
-            var countS: Int = 0
+            layer.blendMode = .plusLighter
+            if blur > 0.001 {
+                layer.addFilter(.blur(radius: blur))
+            }
 
-            for i in 0..<segCount {
-                let s0 = max(0.0, min(1.0, perSegmentStrength[i]))
-                if s0 <= eps {
-                    inRun = false
-                    continue
-                }
+            for i in 0..<bins {
+                let s = max(0.0, min(1.0, binned.avg[i]))
+                if s <= 0.0001 { continue }
 
-                let segBin = min(bins - 1, max(0, Int(floor(s0 * Double(bins)))))
-                if segBin != b {
-                    inRun = false
-                    continue
-                }
-
-                let p0 = surfacePoints[i]
-                let p1 = surfacePoints[i + 1]
-
-                if !inRun {
-                    binPaths[b].move(to: p0)
-                    binPaths[b].addLine(to: p1)
-                    inRun = true
+                let shaped = pow(s, 1.05)
+                var a = baseAlpha0 * (0.10 + 0.90 * shaped)
+                if inside {
+                    a *= max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor)) * 0.65
                 } else {
-                    binPaths[b].addLine(to: p1)
+                    a *= 0.55
                 }
+                a = max(0.0, min(1.0, a))
+                if a <= 0.0001 { continue }
 
-                sumS += s0
-                countS += 1
-            }
-
-            if countS > 0 {
-                binAvgS[b] = sumS / Double(countS)
-                binCounts[b] = countS
-            }
-        }
-
-        let baseColor = boostedFuzzColor(cfg.fuzzColor)
-
-        if inside {
-            let blur = max(0.0, bandPt * CGFloat(max(0.04, cfg.fuzzHazeBlurFractionOfBand)) * (isTightBudget ? 0.78 : 0.90))
-            let w = max(0.5, bandPt * CGFloat(max(0.18, cfg.fuzzInsideHazeStrokeWidthFactor)) * 0.90)
-
-            let style = StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
-
-            context.drawLayer { layer in
-                clipLayer(&layer)
-                layer.blendMode = .plusLighter
-                if blur > 0.001 { layer.addFilter(.blur(radius: blur)) }
-
-                for b in 0..<bins {
-                    if binCounts[b] == 0 { continue }
-                    let s = binAvgS[b]
-                    let op = hazeAlphaBase * 0.22 * pow(s, 0.95) * opMul
-                    if op <= 0.0001 { continue }
-                    layer.stroke(binPaths[b], with: .color(baseColor.opacity(op)), style: style)
-                }
-            }
-
-            return
-        }
-
-        // Outside-only: 3-layer glow (tight edge + mid bloom + soft aura).
-        let blurTight = max(0.0, bandPt * (isTightBudget ? 0.050 : 0.070))
-        let blurMid = max(0.0, bandPt * CGFloat(max(0.05, cfg.fuzzHazeBlurFractionOfBand)) * (isTightBudget ? 0.85 : 1.10))
-        let blurAura = max(0.0, bandPt * 0.30)
-
-        let wTight = max(0.55, bandPt * (isTightBudget ? 0.14 : 0.18))
-        let wMid = max(wTight, bandPt * CGFloat(max(0.20, cfg.fuzzHazeStrokeWidthFactor)) * (isTightBudget ? 0.95 : 1.20))
-        let wAura = max(wMid, bandPt * 2.05)
-
-        let styleTight = StrokeStyle(lineWidth: wTight, lineCap: .round, lineJoin: .round)
-        let styleMid = StrokeStyle(lineWidth: wMid, lineCap: .round, lineJoin: .round)
-        let styleAura = StrokeStyle(lineWidth: wAura, lineCap: .round, lineJoin: .round)
-
-        if !isTightBudget {
-            context.drawLayer { layer in
-                clipLayer(&layer)
-                layer.blendMode = .plusLighter
-                if blurAura > 0.001 { layer.addFilter(.blur(radius: blurAura)) }
-
-                for b in 0..<bins {
-                    if binCounts[b] == 0 { continue }
-                    let s = binAvgS[b]
-                    let op = hazeAlphaBase * 0.30 * pow(s, 0.90)
-                    if op <= 0.0001 { continue }
-                    layer.stroke(binPaths[b], with: .color(cfg.fuzzColor.opacity(op)), style: styleAura)
-                }
-            }
-        }
-
-        context.drawLayer { layer in
-            clipLayer(&layer)
-            layer.blendMode = .plusLighter
-            if blurMid > 0.001 { layer.addFilter(.blur(radius: blurMid)) }
-
-            for b in 0..<bins {
-                if binCounts[b] == 0 { continue }
-                let s = binAvgS[b]
-                let op = hazeAlphaBase * (isTightBudget ? 0.56 : 0.62) * pow(s, 0.88)
-                if op <= 0.0001 { continue }
-                layer.stroke(binPaths[b], with: .color(baseColor.opacity(op)), style: styleMid)
-            }
-        }
-
-        context.drawLayer { layer in
-            clipLayer(&layer)
-            layer.blendMode = .plusLighter
-            if blurTight > 0.001 { layer.addFilter(.blur(radius: blurTight)) }
-
-            for b in 0..<bins {
-                if binCounts[b] == 0 { continue }
-                let s = binAvgS[b]
-                let op = hazeAlphaBase * (isTightBudget ? 0.74 : 0.86) * pow(s, 0.82)
-                if op <= 0.0001 { continue }
-
-                layer.stroke(binPaths[b], with: .color(baseColor.opacity(op * 0.65)), style: styleTight)
-                layer.stroke(binPaths[b], with: .color(Color.white.opacity(op * 0.22)), style: styleTight)
+                layer.stroke(
+                    binned.paths[i],
+                    with: .color(hazeColor.opacity(a)),
+                    lineWidth: strokeW
+                )
             }
         }
     }
@@ -677,97 +634,94 @@ private extension RainSurfaceDrawing {
         bandWidthPx: CGFloat,
         displayScale: CGFloat
     ) {
+        guard surfacePoints.count >= 2, normals.count == surfacePoints.count else { return }
+
         let scale = max(1.0, displayScale)
         let bandPt = bandWidthPx / scale
+        let outsideWidth = max(0.000_1, bandPt)
+        let insideWidth = max(0.0, bandPt * CGFloat(max(0.0, cfg.fuzzInsideWidthFactor)))
 
-        let isTightBudget = (cfg.fuzzSpeckleBudget <= 1100) || (cfg.maxDenseSamples <= 300)
+        let isTightBudget = (cfg.fuzzSpeckleBudget <= 1200) || (cfg.maxDenseSamples <= 280)
 
-        let insideWidth = bandPt * CGFloat(max(0.05, min(2.0, cfg.fuzzInsideWidthFactor)))
-        let outsideWidth = bandPt
+        let baseCount = max(0, min(6500, cfg.fuzzSpeckleBudget))
+        if baseCount == 0 { return }
 
-        // Segment weights (more speckles where fuzz is strong).
-        var weights: [Double] = []
-        weights.reserveCapacity(perSegmentStrength.count)
-        var totalW: Double = 0
-        for s0 in perSegmentStrength {
-            let s = max(0.0, min(1.0, s0))
-            let w = max(0.000_01, 0.15 * s + 0.85 * s * s)
-            weights.append(w)
+        let density = max(0.0, min(2.0, cfg.fuzzDensity))
+        let boostedColor = boostedFuzzColor(cfg)
+        let baseSpeckAlpha = max(0.0, min(1.0, cfg.fuzzMaxOpacity * cfg.fuzzSpeckStrength))
+
+        let rPx0 = max(0.25, min(3.0, cfg.fuzzSpeckleRadiusPixels.lowerBound))
+        let rPx1 = max(rPx0, min(5.0, cfg.fuzzSpeckleRadiusPixels.upperBound))
+        let r0 = rPx0 / scale
+        let r1 = rPx1 / scale
+
+        // Build segment CDF (weighted by strength).
+        let segCount = perSegmentStrength.count
+        var segCDF: [Double] = Array(repeating: 0.0, count: segCount)
+        var totalW: Double = 0.0
+        for i in 0..<segCount {
+            let s = RainSurfaceMath.clamp01(perSegmentStrength[i])
+            let w = 0.002 + (0.998 * s)
             totalW += w
+            segCDF[i] = totalW
         }
         if totalW <= 0.000_001 { return }
 
-        var prefix: [Double] = Array(repeating: 0, count: weights.count)
-        var acc: Double = 0
-        for i in 0..<weights.count {
-            acc += weights[i]
-            prefix[i] = acc
-        }
-
-        func pickSegment(_ r: Double) -> Int {
-            let x = r * acc
+        func pickSegmentIndex(_ u01: Double) -> Int {
+            let target = u01 * totalW
             var lo = 0
-            var hi = prefix.count - 1
+            var hi = segCDF.count - 1
             while lo < hi {
                 let mid = (lo + hi) >> 1
-                if x <= prefix[mid] { hi = mid } else { lo = mid + 1 }
+                if segCDF[mid] >= target {
+                    hi = mid
+                } else {
+                    lo = mid + 1
+                }
             }
-            return lo
+            return max(0, min(segCount - 1, lo))
         }
 
-        let glowColor = boostedFuzzColor(cfg.fuzzColor)
-        let baseSpeckAlpha = cfg.fuzzMaxOpacity * cfg.fuzzSpeckStrength
-
-        // Radii in points.
-        let r0 = cfg.fuzzSpeckleRadiusPixels.lowerBound / scale
-        let r1 = cfg.fuzzSpeckleRadiusPixels.upperBound / scale
-
-        let baseCount = max(0, cfg.fuzzSpeckleBudget)
-        let count = min(6500, baseCount)
-        if count == 0 { return }
-
-        // Binned paths for performance.
-        let bins = 6
-        var outsideBins: [Path] = Array(repeating: Path(), count: bins)
-        var insideBins: [Path] = Array(repeating: Path(), count: bins)
-
-        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0xC0FFEE_BAAD_F00D))
+        let seed = RainSurfacePRNG.combine(cfg.noiseSeed, 0xC0FFEE_BAAD_F00D)
+        var prng = RainSurfacePRNG(seed: seed)
 
         let xBleed = bandPt * 1.6
         let yBleedTop = bandPt * 2.9
         let yBleedBottom = bandPt * 1.2
 
+        let bins = 6
+        var outsideBins: [Path] = Array(repeating: Path(), count: bins)
+        var insideBins: [Path] = Array(repeating: Path(), count: bins)
+
         // Base speckle field (distributed through the band).
-        for _ in 0..<count {
-            let segIdx = pickSegment(prng.nextFloat01())
-            let sSeg = max(0.0, min(1.0, perSegmentStrength[segIdx]))
-            if sSeg <= 0.000_1 { continue }
+        for _ in 0..<baseCount {
+            let si = pickSegmentIndex(prng.nextFloat01())
+            let sSeg = RainSurfaceMath.clamp01(perSegmentStrength[si])
 
-            let p0 = surfacePoints[segIdx]
-            let p1 = surfacePoints[segIdx + 1]
-            let n0 = normals[segIdx]
-            let n1 = normals[segIdx + 1]
+            // Prefer stronger segments; weak segments can still contribute a little.
+            let accept = (0.18 + 0.82 * sSeg)
+            if prng.nextFloat01() > accept { continue }
 
+            let p0 = surfacePoints[si]
+            let p1 = surfacePoints[si + 1]
             let t = CGFloat(prng.nextFloat01())
             let px = p0.x + (p1.x - p0.x) * t
             let py = p0.y + (p1.y - p0.y) * t
 
-            // Interpolate normal and compute tangent.
-            let nx = n0.dx + (n1.dx - n0.dx) * t
-            let ny = n0.dy + (n1.dy - n0.dy) * t
+            let n0 = normals[si]
+            let n1 = normals[si + 1]
+            var nx = n0.dx + (n1.dx - n0.dx) * t
+            var ny = n0.dy + (n1.dy - n0.dy) * t
             let nrmLen = sqrt(nx * nx + ny * ny)
-            let nn = nrmLen > 0.000_001 ? CGVector(dx: nx / nrmLen, dy: ny / nrmLen) : CGVector(dx: 0, dy: -1)
+            let nn: CGVector = (nrmLen > 0.000_001) ? CGVector(dx: nx / nrmLen, dy: ny / nrmLen) : CGVector(dx: 0, dy: -1)
             let tan = CGVector(dx: -nn.dy, dy: nn.dx)
 
-            // Decide inside/outside.
             let insidePick = prng.nextFloat01() < max(0.0, min(1.0, cfg.fuzzInsideSpeckleFraction))
-
             let powOutside = max(0.10, cfg.fuzzDistancePowerOutside)
             let powInside = max(0.10, cfg.fuzzDistancePowerInside)
 
             let u = prng.nextFloat01()
             let d01 = pow(u, insidePick ? powInside : (powOutside * 1.08))
-
             let dist = CGFloat(d01) * (insidePick ? insideWidth : outsideWidth)
             var signedDist = insidePick ? -dist : dist
 
@@ -776,10 +730,9 @@ private extension RainSurfaceDrawing {
             var cx = px + nn.dx * signedDist + tan.dx * jitter
             var cy = py + nn.dy * signedDist + tan.dy * jitter
 
-            // Occasional macro grains add volume to the aura (app-only).
+            // Occasional macro grains add volume to the outside fuzz (non-tight budgets only).
             var rr = r0 + (r1 - r0) * CGFloat(prng.nextFloat01())
             var alphaMul: Double = 1.0
-
             if !isTightBudget, !insidePick, prng.nextFloat01() < 0.055 {
                 rr *= 2.25
                 alphaMul *= 0.55
@@ -788,7 +741,6 @@ private extension RainSurfaceDrawing {
                 cy = py + nn.dy * signedDist + tan.dy * (jitter * 1.15)
             }
 
-            // Keep within a soft chart bleed.
             if cx < chartRect.minX - xBleed || cx > chartRect.maxX + xBleed { continue }
             if cy < chartRect.minY - yBleedTop || cy > chartRect.maxY + yBleedBottom { continue }
 
@@ -801,14 +753,17 @@ private extension RainSurfaceDrawing {
             }()
 
             var alpha = baseSpeckAlpha * (0.22 + 0.78 * sSeg) * distWeight * alphaMul
-            if insidePick { alpha *= cfg.fuzzInsideOpacityFactor }
+            if insidePick {
+                alpha *= max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor))
+            }
+
+            // Small density scaling (keeps budgets stable; density mostly affects brightness).
+            alpha *= (0.78 + 0.22 * density)
 
             alpha = max(0.0, min(1.0, alpha))
-
-            // Bin by alpha.
             let bin = min(bins - 1, max(0, Int(floor(alpha * Double(bins)))))
-            let rect = CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)
 
+            let rect = CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)
             if insidePick {
                 insideBins[bin].addEllipse(in: rect)
             } else {
@@ -829,15 +784,38 @@ private extension RainSurfaceDrawing {
                 perPointS[surfacePoints.count - 1] = max(0.0, min(1.0, perSegmentStrength[perSegmentStrength.count - 1]))
             }
 
-            let density = max(0.0, min(2.0, cfg.fuzzDensity))
+            // Point CDF.
+            var ptCDF: [Double] = Array(repeating: 0.0, count: perPointS.count)
+            var totalPt: Double = 0.0
+            for i in 0..<perPointS.count {
+                let s = max(0.0, min(1.0, perPointS[i]))
+                let w = 0.002 + (0.998 * s)
+                totalPt += w
+                ptCDF[i] = totalPt
+            }
+
+            func pickPointIndex(_ u01: Double) -> Int {
+                let target = u01 * totalPt
+                var lo = 0
+                var hi = ptCDF.count - 1
+                while lo < hi {
+                    let mid = (lo + hi) >> 1
+                    if ptCDF[mid] >= target {
+                        hi = mid
+                    } else {
+                        lo = mid + 1
+                    }
+                }
+                return max(0, min(ptCDF.count - 1, lo))
+            }
+
             let beadCap = isTightBudget ? 520 : 2600
             let beadBase = Int(Double(surfacePoints.count) * (isTightBudget ? 3.2 : 6.3) * (0.70 + 0.30 * density))
             let beadBudget = min(beadCap, max(140, beadBase))
 
             for _ in 0..<beadBudget {
-                let idx = Int(prng.nextFloat01() * Double(max(1, surfacePoints.count - 1)))
-                let i = max(0, min(surfacePoints.count - 1, idx))
-                let s = perPointS[i]
+                let i = pickPointIndex(prng.nextFloat01())
+                let s = max(0.0, min(1.0, perPointS[i]))
                 if prng.nextFloat01() > (0.20 + 0.80 * s) { continue }
 
                 let p = surfacePoints[i]
@@ -848,7 +826,6 @@ private extension RainSurfaceDrawing {
                 let d = outsideWidth * 0.52 * CGFloat(pow(u, 2.7))
 
                 let jitter = CGFloat(prng.nextSignedFloat()) * bandPt * CGFloat(max(0.0, cfg.fuzzAlongTangentJitter)) * 0.18
-
                 let cx = p.x + nn.dx * d + tan.dx * jitter
                 let cy = p.y + nn.dy * d + tan.dy * jitter
 
@@ -863,8 +840,8 @@ private extension RainSurfaceDrawing {
                     let t = max(0.0, min(1.0, 1.0 - Double(d / max(0.000_1, outsideWidth * 0.52))))
                     return pow(t, 1.55)
                 }()
-
                 a *= edgeW
+                a *= (0.82 + 0.18 * density)
 
                 if !isTightBudget, prng.nextFloat01() < 0.07 {
                     rr *= 1.85
@@ -884,36 +861,76 @@ private extension RainSurfaceDrawing {
             outside.addRect(chartRect.insetBy(dx: -bleed, dy: -bleed))
             outside.addPath(corePath)
             layer.clip(to: outside, style: FillStyle(eoFill: true))
-
             layer.blendMode = .plusLighter
+
             if !isTightBudget {
                 let microBlur = max(0.0, bandPt * 0.055)
-                if microBlur > 0.001 { layer.addFilter(.blur(radius: microBlur)) }
+                if microBlur > 0.001 {
+                    layer.addFilter(.blur(radius: microBlur))
+                }
             }
 
             for b in 0..<bins {
+                if outsideBins[b].isEmpty { continue }
                 let t = Double(b + 1) / Double(bins)
-                let shaped = pow(t, 1.35)
-                let op = shaped * cfg.fuzzMaxOpacity * (isTightBudget ? 1.06 : 1.16)
-                if op <= 0.0001 { continue }
-                layer.fill(outsideBins[b], with: .color(glowColor.opacity(op)))
-                if b == bins - 1 {
-                    layer.fill(outsideBins[b], with: .color(Color.white.opacity(op * 0.16)))
-                }
+                let a = max(0.0, min(1.0, t))
+                layer.fill(outsideBins[b], with: .color(boostedColor.opacity(a)))
             }
         }
 
         context.drawLayer { layer in
+            guard insideWidth > 0.000_01 else { return }
             layer.clip(to: corePath)
             layer.blendMode = .plusLighter
 
-            for b in 0..<bins {
-                let t = Double(b + 1) / Double(bins)
-                let shaped = pow(t, 1.28)
-                let op = shaped * cfg.fuzzMaxOpacity * cfg.fuzzInsideOpacityFactor * (isTightBudget ? 0.78 : 0.88)
-                if op <= 0.0001 { continue }
-                layer.fill(insideBins[b], with: .color(cfg.fuzzColor.opacity(op)))
+            if !isTightBudget {
+                let microBlur = max(0.0, bandPt * 0.050)
+                if microBlur > 0.001 {
+                    layer.addFilter(.blur(radius: microBlur))
+                }
             }
+
+            for b in 0..<bins {
+                if insideBins[b].isEmpty { continue }
+                let t = Double(b + 1) / Double(bins)
+                let a = max(0.0, min(1.0, t)) * max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor))
+                layer.fill(insideBins[b], with: .color(boostedColor.opacity(a)))
+            }
+        }
+    }
+
+    static func drawGloss(
+        in context: inout GraphicsContext,
+        corePath: Path,
+        surfacePath: Path,
+        chartRect: CGRect,
+        cfg: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
+    ) {
+        let scale = max(1.0, displayScale)
+        let depth = max(1.0, cfg.glossDepthPixels / scale)
+        let blur = max(0.0, cfg.glossBlurPixels / scale)
+        let offset = chartRect.height * cfg.glossVerticalOffsetFraction
+
+        let a = max(0.0, min(1.0, cfg.glossMaxOpacity))
+        if a <= 0.0001 { return }
+
+        context.drawLayer { layer in
+            layer.clip(to: corePath)
+            layer.blendMode = .plusLighter
+            if blur > 0.001 {
+                layer.addFilter(.blur(radius: blur))
+            }
+
+            // Soft band just below the surface.
+            var shifted = surfacePath
+            shifted = shifted.offsetBy(dx: 0, dy: offset)
+
+            layer.stroke(
+                shifted,
+                with: .color(cfg.coreTopColor.opacity(a)),
+                lineWidth: depth
+            )
         }
     }
 
@@ -924,20 +941,33 @@ private extension RainSurfaceDrawing {
         displayScale: CGFloat
     ) {
         let scale = max(1.0, displayScale)
-
+        let outerW = max(0.5, cfg.rimOuterWidthPixels / scale)
         let innerW = max(0.5, cfg.rimInnerWidthPixels / scale)
-        let outerW = max(innerW, cfg.rimOuterWidthPixels / scale)
 
         if cfg.rimOuterOpacity > 0.0001 {
             context.drawLayer { layer in
                 layer.blendMode = .plusLighter
-                layer.addFilter(.blur(radius: max(0.0, outerW * 0.35)))
-                layer.stroke(surfacePath, with: .color(cfg.rimColor.opacity(cfg.rimOuterOpacity)), lineWidth: outerW)
+                let blur = max(0.0, outerW * 0.32)
+                if blur > 0.001 {
+                    layer.addFilter(.blur(radius: blur))
+                }
+                layer.stroke(
+                    surfacePath,
+                    with: .color(cfg.rimColor.opacity(cfg.rimOuterOpacity)),
+                    lineWidth: outerW
+                )
             }
         }
 
         if cfg.rimInnerOpacity > 0.0001 {
-            context.stroke(surfacePath, with: .color(cfg.rimColor.opacity(cfg.rimInnerOpacity)), lineWidth: innerW)
+            context.drawLayer { layer in
+                layer.blendMode = .plusLighter
+                layer.stroke(
+                    surfacePath,
+                    with: .color(cfg.rimColor.opacity(cfg.rimInnerOpacity)),
+                    lineWidth: innerW
+                )
+            }
         }
     }
 
@@ -947,6 +977,8 @@ private extension RainSurfaceDrawing {
         cfg: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
+        guard !surfacePoints.isEmpty else { return }
+
         let scale = max(1.0, displayScale)
         let sigma = max(0.5, cfg.glintSigmaPixels / scale)
         let offsetY = cfg.glintVerticalOffsetPixels / scale
@@ -955,28 +987,32 @@ private extension RainSurfaceDrawing {
         var prng = RainSurfacePRNG(seed: seed)
 
         let n = max(1, cfg.glintCount)
-        guard !surfacePoints.isEmpty else { return }
+        let a0 = max(0.0, min(1.0, cfg.glintMaxOpacity))
 
-        for _ in 0..<n {
-            let i = Int(prng.nextFloat01() * Double(max(1, surfacePoints.count - 1)))
-            let p = surfacePoints[max(0, min(surfacePoints.count - 1, i))]
+        context.drawLayer { layer in
+            layer.blendMode = .plusLighter
+            layer.addFilter(.blur(radius: max(0.0, sigma * 0.60)))
 
-            let dx = CGFloat(prng.nextSignedFloat()) * sigma * 1.25
-            let dy = CGFloat(prng.nextSignedFloat()) * sigma * 0.65
+            for _ in 0..<n {
+                let idx = max(0, min(surfacePoints.count - 1, Int(floor(prng.nextFloat01() * Double(surfacePoints.count)))))
+                let p = surfacePoints[idx]
 
-            let rect = CGRect(
-                x: p.x + dx - sigma,
-                y: p.y + dy + offsetY - sigma,
-                width: sigma * 2,
-                height: sigma * 2
-            )
+                let jitterX = CGFloat(prng.nextSignedFloat()) * sigma * 0.65
+                let jitterY = CGFloat(prng.nextSignedFloat()) * sigma * 0.35
 
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                layer.addFilter(.blur(radius: sigma * 0.65))
-                var circle = Path()
-                circle.addEllipse(in: rect)
-                layer.fill(circle, with: .color(Color.white.opacity(cfg.glintMaxOpacity)))
+                let r = sigma * (0.80 + 0.55 * CGFloat(prng.nextFloat01()))
+                let rect = CGRect(
+                    x: (p.x + jitterX) - r,
+                    y: (p.y + offsetY + jitterY) - r,
+                    width: r * 2,
+                    height: r * 2
+                )
+
+                var path = Path()
+                path.addEllipse(in: rect)
+
+                let a = a0 * (0.35 + 0.65 * prng.nextFloat01())
+                layer.fill(path, with: .color(cfg.rimColor.opacity(a)))
             }
         }
     }

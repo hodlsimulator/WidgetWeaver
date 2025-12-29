@@ -1,11 +1,11 @@
 //
-//  WidgetWeaverWeatherTemplateNowcastChart.swift
-//  WidgetWeaver
+// WidgetWeaverWeatherTemplateNowcastChart.swift
+// WidgetWeaver
 //
-//  Created by . . on 12/23/25.
+// Created by . . on 12/23/25.
 //
-//  Nowcast chart container + axis labels.
-//  Chart area is dedicated to surface rendering; labels are outside.
+// Nowcast chart container + axis labels.
+// Chart area is dedicated to surface rendering; labels are outside.
 //
 
 import Foundation
@@ -32,7 +32,6 @@ struct WeatherNowcastChart: View {
         var plotHorizontal: CGFloat
         var plotTop: CGFloat
         var plotBottom: CGFloat
-
         var axisHorizontal: CGFloat
         var axisTop: CGFloat
         var axisBottom: CGFloat
@@ -83,7 +82,6 @@ struct WeatherNowcastChart: View {
 
     var body: some View {
         let insets = insets
-
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.black)
@@ -156,8 +154,8 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     private struct BucketedMinuteSeries {
-        let intensityMMPerHour: [Double]   // may contain NaN for unknown
-        let certainty01: [Double]          // may contain NaN for unknown
+        let intensityMMPerHour: [Double] // may contain NaN for unknown
+        let certainty01: [Double]        // may contain NaN for unknown
     }
 
     var body: some View {
@@ -169,29 +167,23 @@ private struct WeatherNowcastSurfacePlot: View {
 
             // Height semantics:
             // - Unknown stays unknown (NaN).
-            // - Non-negative intensity drives height.
-            // - Tiny near-baseline noise can be snapped to zero using the shared wet threshold.
+            // - Intensity drives HEIGHT only.
             let intensities: [Double] = series.intensityMMPerHour.map { v in
                 guard v.isFinite else { return Double.nan }
-                let nonNeg = max(0.0, v)
-                if nonNeg < WeatherNowcast.wetIntensityThresholdMMPerHour { return 0.0 }
-                return nonNeg
+                return max(0.0, v)
             }
 
             // Styling semantics:
-            // - Certainty drives styling only (halo/fuzz/fade), not height.
+            // - Certainty drives styling only (opacity/edge/fuzz), never height.
             // - Unknown stays unknown (NaN) and will fade out downstream.
             let n = series.certainty01.count
             let horizonStart: Double = 0.65
             let horizonEndCertainty: Double = 0.72
-
             let certainties: [Double] = series.certainty01.enumerated().map { idx, c0 in
                 guard c0.isFinite else { return Double.nan }
-
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
-
                 let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
                 return RainSurfaceMath.clamp01(c0 * horizonFactor)
             }
@@ -204,7 +196,6 @@ private struct WeatherNowcastSurfacePlot: View {
             )
 
             let isExt = WidgetWeaverRuntime.isRunningInAppExtension
-
             let widthPx = proxy.size.width * max(1.0, displayScale)
             let heightPx = proxy.size.height * max(1.0, displayScale)
             let areaPx = Double(max(1.0, widthPx * heightPx))
@@ -218,10 +209,11 @@ private struct WeatherNowcastSurfacePlot: View {
                 }
             }()
 
+            // Denser than stock, still hard-capped for widget safety.
             let speckleBudget: Int = {
                 if isExt {
-                    let scaled = Int((areaPx / 280.0).rounded(.toNearestOrAwayFromZero))
-                    return max(220, min(900, scaled))
+                    let scaled = Int((areaPx / 185.0).rounded(.toNearestOrAwayFromZero))
+                    return max(450, min(1200, scaled))
                 } else {
                     return 5200
                 }
@@ -235,7 +227,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let cfg: RainForecastSurfaceConfiguration = {
                 var c = RainForecastSurfaceConfiguration()
-
                 c.noiseSeed = seed
                 c.maxDenseSamples = denseSamplesBudget
                 c.fuzzSpeckleBudget = speckleBudget
@@ -262,68 +253,73 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.edgeEasingFraction = 0.0
                 c.edgeEasingPower = 1.45
 
-                c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
+                // Body: brighter mid-tones + internal top glow (clipped), background stays pure black.
+                c.coreBodyColor = Color(red: 0.00, green: 0.14, blue: 0.62)
                 c.coreTopColor = accent
+                c.coreTopMix = isExt ? 0.28 : 0.32
+                c.coreFadeFraction = isExt ? 0.012 : 0.015
 
-                c.rimEnabled = false
+                // Crisp edge (thin rim light) + dense granular fuzz does most of the “glow” work.
+                c.rimEnabled = true
+                c.rimColor = accent
+                c.rimInnerOpacity = isExt ? 0.34 : 0.38
+                c.rimInnerWidthPixels = 1.0
+                c.rimOuterOpacity = isExt ? 0.07 : 0.09
+                c.rimOuterWidthPixels = isExt ? 9.0 : 11.0
+
                 c.glossEnabled = false
                 c.glintEnabled = false
 
+                // Fuzz (primary volume). No big halo: haze is tight + low strength; speckles carry the look.
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
+                c.fuzzMaxOpacity = isExt ? 0.30 : 0.38
 
-                // Extension-safe tuning (keeps the look, avoids placeholder regressions).
-                c.fuzzMaxOpacity = isExt ? 0.25 : 0.32
+                c.fuzzWidthFraction = 0.20
+                c.fuzzWidthPixelsClamp = isExt ? (10.0...58.0) : (10.0...78.0)
 
-                // Keep the band from getting so wide it reads as “fog floating above the fill”.
-                c.fuzzWidthFraction = 0.15
-                c.fuzzWidthPixelsClamp = isExt ? (10.0...55.0) : (10.0...70.0)
+                c.fuzzDensity = isExt ? 1.05 : 1.20
+                c.fuzzHazeStrength = isExt ? 0.35 : 0.42
+                c.fuzzSpeckStrength = isExt ? 1.45 : 1.60
 
-                c.fuzzBaseDensity = isExt ? 0.82 : 0.90
-                c.fuzzHazeStrength = isExt ? 0.60 : 0.74
-                c.fuzzSpeckStrength = isExt ? 0.90 : 1.25
+                c.fuzzHazeBlurFractionOfBand = isExt ? 0.16 : 0.20
+                c.fuzzHazeStrokeWidthFactor = isExt ? 0.88 : 0.98
+                c.fuzzInsideHazeStrokeWidthFactor = isExt ? 0.75 : 0.85
 
-                // Reduce blur cost in extensions.
-                c.fuzzHazeBlurFractionOfBand = isExt ? 0.22 : 0.30
-                c.fuzzHazeStrokeWidthFactor = isExt ? 0.95 : 1.10
-                c.fuzzInsideHazeStrokeWidthFactor = isExt ? 0.90 : 1.00
-
+                // Styling-only taper: keep tails readable even when certainty is high.
                 c.fuzzChanceThreshold = 0.60
-                c.fuzzChanceTransition = 0.14
-                c.fuzzChanceMinStrength = 0.26
+                c.fuzzChanceTransition = 0.20
+                c.fuzzChanceExponent = 2.10
+                c.fuzzChanceFloor = 0.18
+                c.fuzzChanceMinStrength = 0.44
 
-                c.fuzzUncertaintyFloor = 0.06
-                c.fuzzUncertaintyExponent = 2.15
+                c.fuzzLowHeightPower = 2.05
+                c.fuzzLowHeightBoost = isExt ? 0.98 : 1.08
 
-                c.fuzzLowHeightPower = 2.10
-                c.fuzzLowHeightBoost = 0.55
+                // Inside weld (prevents “floating” fuzz).
+                c.fuzzInsideWidthFactor = 0.78
+                c.fuzzInsideOpacityFactor = isExt ? 0.55 : 0.72
+                c.fuzzInsideSpeckleFraction = isExt ? 0.26 : 0.34
 
-                c.fuzzInsideWidthFactor = 0.72
-                c.fuzzInsideOpacityFactor = isExt ? 0.45 : 0.62
-                c.fuzzInsideSpeckleFraction = isExt ? 0.22 : 0.40
+                c.fuzzDistancePowerOutside = 2.25
+                c.fuzzDistancePowerInside = 1.80
+                c.fuzzAlongTangentJitter = 0.95
 
-                c.fuzzDistancePowerOutside = 2.00
-                c.fuzzDistancePowerInside = 1.70
-
-                // The erosion pass is the most expensive part of the fuzzy edge.
-                // Disabling it in extensions prevents “rainy = placeholder” regressions.
+                // Core edge removal so fuzz “is” the surface (disabled in extensions for safety).
                 c.fuzzErodeEnabled = isExt ? false : true
-                c.fuzzErodeStrength = isExt ? 0.60 : 0.82
-                c.fuzzErodeEdgePower = isExt ? 2.00 : 2.70
+                c.fuzzErodeStrength = isExt ? 0.60 : 0.80
+                c.fuzzErodeEdgePower = isExt ? 2.10 : 2.50
+                c.fuzzErodeRimInsetPixels = isExt ? 1.6 : 1.9
 
                 c.baselineColor = accent
-                c.baselineLineOpacity = 0.20
+                c.baselineLineOpacity = 0.22
                 c.baselineEndFadeFraction = 0.035
 
                 return c
             }()
 
-            RainForecastSurfaceView(
-                intensities: intensities,
-                certainties: certainties,
-                configuration: cfg
-            )
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
+                .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
@@ -362,7 +358,6 @@ private struct WeatherNowcastSurfacePlot: View {
         } else {
             seed = RainSurfacePRNG.combine(seed, RainSurfacePRNG.hashString64("no-location"))
         }
-
         return seed
     }
 
@@ -385,53 +380,47 @@ private struct WeatherNowcastSurfacePlot: View {
         certaintyOut.reserveCapacity(targetMinutes)
 
         var idx = 0
-
         for m in 0..<targetMinutes {
             let bucketStart = forecastStart.addingTimeInterval(Double(m) * 60.0)
             let bucketEnd = bucketStart.addingTimeInterval(60.0)
 
-            while idx < sorted.count && sorted[idx].date < bucketStart {
+            var intensitySum: Double = 0.0
+            var intensityCount = 0
+            var chanceSum: Double = 0.0
+            var chanceCount = 0
+
+            while idx < sorted.count, sorted[idx].date < bucketEnd {
+                if sorted[idx].date >= bucketStart {
+                    if let v = sorted[idx].precipitationIntensityMMPerHour, v.isFinite {
+                        intensitySum += max(0.0, v)
+                        intensityCount += 1
+                    }
+
+                    if let c = sorted[idx].precipitationChance01, c.isFinite {
+                        chanceSum += RainSurfaceMath.clamp01(c)
+                        chanceCount += 1
+                    }
+                }
                 idx += 1
             }
 
-            var intensitySum: Double = 0.0
-            var intensityCount: Int = 0
-
-            var chanceSum: Double = 0.0
-            var chanceCount: Int = 0
-
-            var j = idx
-            while j < sorted.count && sorted[j].date < bucketEnd {
-                let p = sorted[j]
-
-                if let mmph = p.precipitationIntensityMMPerHour, mmph.isFinite {
-                    intensitySum += max(0.0, mmph)
-                    intensityCount += 1
-                }
-
-                if let c = p.precipitationChance01, c.isFinite {
-                    chanceSum += RainSurfaceMath.clamp01(c)
-                    chanceCount += 1
-                }
-
-                j += 1
-            }
-
-            idx = j
-
             let intensity: Double = {
-                guard intensityCount > 0 else { return Double.nan }
-                let avg = intensitySum / Double(intensityCount)
-                return avg.isFinite ? max(0.0, avg) : Double.nan
+                if intensityCount > 0 {
+                    let avg = intensitySum / Double(intensityCount)
+                    return avg.isFinite ? max(0.0, avg) : Double.nan
+                }
+                return Double.nan
             }()
 
+            // If intensity is unknown, certainty must also be unknown so the renderer can fade it out
+            // (and avoid accidentally showing filled continuity for missing buckets).
             let certainty: Double = {
+                guard intensity.isFinite else { return Double.nan }
                 if chanceCount > 0 {
                     let avg = chanceSum / Double(chanceCount)
                     return avg.isFinite ? RainSurfaceMath.clamp01(avg) : Double.nan
                 }
-                if intensity.isFinite { return 1.0 }
-                return Double.nan
+                return 1.0
             }()
 
             intensityOut.append(intensity)

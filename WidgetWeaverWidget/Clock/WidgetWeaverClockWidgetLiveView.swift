@@ -10,43 +10,26 @@ import SwiftUI
 
 // MARK: - Motion configuration
 
-/// Implementation choices for the Home Screen clock motion experiments.
 enum WidgetWeaverClockMotionImplementation {
-    /// Prefer widget-host time-driven primitives (budget-safe when supported by the host).
     case timeDrivenPrimitives
-
-    /// Use a short, tightly capped 1 Hz WidgetKit burst, then minute-level entries.
     case burstTimelineHybrid
 }
 
-/// Shared switches and constants for the clock motion experiments.
-///
-/// Keep values here deterministic and easy to adjust during on-device testing.
 enum WidgetWeaverClockMotionConfig {
-    /// Single switch: choose the motion implementation.
     static let implementation: WidgetWeaverClockMotionImplementation = .timeDrivenPrimitives
 
-    /// While proving motion, keep rendering cheap (disable glows and heavy shadows).
+    /// While proving motion, keep rendering cheap.
     static let lightweightRendering: Bool = true
 
     /// Time window used by the ProgressView time driver.
-    /// This must stay ahead of any sparse WidgetKit timeline refresh.
     static let timeDriverWindowSeconds: TimeInterval = 60.0 * 60.0 * 24.0 // 24 hours
 
-    /// Hybrid burst window length (seconds).
     static let burstSeconds: Int = 120
-
-    /// Minimum spacing between bursts (seconds).
-    static let burstMinSpacingSeconds: TimeInterval = 60.0 * 30.0 // 30 minutes
-
-    /// Hard cap for bursts per local calendar day.
+    static let burstMinSpacingSeconds: TimeInterval = 60.0 * 30.0
     static let burstMaxPerDay: Int = 8
-
-    /// Horizon covered by minute-level entries in hybrid burst mode.
-    static let burstTimelineHorizonSeconds: TimeInterval = 60.0 * 60.0 * 6.0 // 6 hours
+    static let burstTimelineHorizonSeconds: TimeInterval = 60.0 * 60.0 * 6.0
 
     #if DEBUG
-    /// Debug overlay for verifying time-driven primitive refresh behaviour.
     static let debugOverlayEnabled: Bool = true
     #else
     static let debugOverlayEnabled: Bool = false
@@ -57,16 +40,8 @@ enum WidgetWeaverClockMotionConfig {
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
-
-    /// The current WidgetKit timeline entry date.
     let date: Date
-
-    /// Anchor date (kept for compatibility / future use).
     let anchorDate: Date
-
-    /// Desired tick interval indicated by the timeline strategy.
-    /// - <= 1.0: seconds visible
-    /// - > 1.0: minute-level (or slower) display
     let tickSeconds: TimeInterval
 
     var body: some View {
@@ -97,18 +72,20 @@ struct WidgetWeaverClockWidgetLiveView: View {
             if showsSecondHand, !ProcessInfo.processInfo.isLowPowerModeEnabled {
                 timerDrivenClock(showsSecondHand: true)
             } else {
-                // Low Power Mode (or minute-only): rely on timeline entries.
                 clock(at: date, showsSecondHand: showsSecondHand)
             }
 
         case .burstTimelineHybrid:
-            // In hybrid burst mode, the timeline entries are authoritative.
             clock(at: date, showsSecondHand: showsSecondHand)
         }
     }
 
+    /// Attempts to tick by making the clock a pure function of a host-driven time primitive.
+    ///
+    /// Important: the interval start is anchored to the snapshot render time (Date()) to avoid
+    /// “ENTRY is stale” effects while testing.
     private func timerDrivenClock(showsSecondHand: Bool) -> some View {
-        let start = date
+        let start = Self.floorToWholeSecond(Date())
         let end = start.addingTimeInterval(WidgetWeaverClockMotionConfig.timeDriverWindowSeconds)
         let interval: ClosedRange<Date> = start...end
 
@@ -143,6 +120,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
             handsOpacity: 1.0
         )
     }
+
+    private static func floorToWholeSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        return Date(timeIntervalSinceReferenceDate: floor(t))
+    }
 }
 
 // MARK: - Timer-driven progress style
@@ -156,22 +138,34 @@ private struct WWClockTimerDrivenProgressStyle: ProgressViewStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let rawFraction = configuration.fractionCompleted ?? 0.0
-        let fraction = WWClockTimerDrivenProgressStyle.clamp01(rawFraction)
+        let fraction = Self.clamp01(rawFraction)
         let driverDate = intervalStart.addingTimeInterval(intervalSeconds * fraction)
 
         let angles = WWClockBaseAngles(date: driverDate)
 
-        return WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: .degrees(angles.hour),
-            minuteAngle: .degrees(angles.minute),
-            secondAngle: .degrees(angles.second),
-            showsSecondHand: showsSecondHand,
-            showsHandShadows: !lightweightRendering,
-            showsGlows: !lightweightRendering,
-            handsOpacity: 1.0
+        if lightweightRendering {
+            return AnyView(
+                WWClockUltraLightView(
+                    hourAngleDegrees: angles.hour,
+                    minuteAngleDegrees: angles.minute,
+                    secondAngleDegrees: angles.second,
+                    showsSecondHand: showsSecondHand
+                )
+            )
+        }
+
+        return AnyView(
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(angles.hour),
+                minuteAngle: .degrees(angles.minute),
+                secondAngle: .degrees(angles.second),
+                showsSecondHand: showsSecondHand,
+                showsHandShadows: true,
+                showsGlows: true,
+                handsOpacity: 1.0
+            )
         )
-        .accessibilityHidden(true)
     }
 
     @inline(__always)
@@ -180,6 +174,63 @@ private struct WWClockTimerDrivenProgressStyle: ProgressViewStyle {
         if x <= 0.0 { return 0.0 }
         if x >= 1.0 { return 1.0 }
         return x
+    }
+}
+
+// MARK: - Ultra-light ticking clock (diagnostic-friendly)
+
+private struct WWClockUltraLightView: View {
+    let hourAngleDegrees: Double
+    let minuteAngleDegrees: Double
+    let secondAngleDegrees: Double
+    let showsSecondHand: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let centreDot = side * 0.06
+
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.primary.opacity(0.22), lineWidth: max(1.0, side * 0.035))
+
+                hand(
+                    width: max(1.0, side * 0.06),
+                    length: side * 0.27,
+                    angle: hourAngleDegrees,
+                    opacity: 0.85
+                )
+
+                hand(
+                    width: max(1.0, side * 0.045),
+                    length: side * 0.38,
+                    angle: minuteAngleDegrees,
+                    opacity: 0.85
+                )
+
+                if showsSecondHand {
+                    hand(
+                        width: max(1.0, side * 0.02),
+                        length: side * 0.42,
+                        angle: secondAngleDegrees,
+                        opacity: 0.75
+                    )
+                }
+
+                Circle()
+                    .fill(Color.primary.opacity(0.9))
+                    .frame(width: centreDot, height: centreDot)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+
+    private func hand(width: CGFloat, length: CGFloat, angle: Double, opacity: Double) -> some View {
+        Rectangle()
+            .fill(Color.primary.opacity(opacity))
+            .frame(width: width, height: length)
+            .offset(y: -length / 2.0)
+            .rotationEffect(.degrees(angle))
     }
 }
 
@@ -209,7 +260,7 @@ private struct WWClockBaseAngles {
 }
 
 #if DEBUG
-// MARK: - Motion debug overlay
+// MARK: - Debug overlay
 
 private struct WidgetWeaverClockMotionDebugOverlay: View {
     let entryDate: Date
@@ -217,36 +268,73 @@ private struct WidgetWeaverClockMotionDebugOverlay: View {
     let tickSeconds: TimeInterval
 
     var body: some View {
+        let snapNow = Self.floorToWholeSecond(Date())
+        let snapRange = snapNow...snapNow.addingTimeInterval(60.0)
+
+        let entryRange = anchorDate...anchorDate.addingTimeInterval(60.0)
+
+        let entryAge = snapNow.timeIntervalSince(entryDate)
+        let entryAgeInt = Int(entryAge.rounded())
+
         VStack(alignment: .trailing, spacing: 4) {
+            Text(WidgetWeaverClockMotionConfig.implementation == .timeDrivenPrimitives ? "mode time-driver" : "mode burst")
+                .opacity(0.8)
+
+            Text("entryAge \(entryAgeInt)s")
+                .opacity(0.8)
+
+            // Timer text anchored to SNAP (should visibly change if Text(timerInterval:) is supported)
             HStack(spacing: 6) {
-                Text("timer")
+                Text("SNAP")
                     .opacity(0.7)
 
-                // Visible timer-based primitive (not derived from Date()).
-                Text(timerInterval: anchorDate...Date.distantFuture, countsDown: false)
+                Text(timerInterval: snapRange, countsDown: false)
                     .monospacedDigit()
             }
 
-            // Visible ProgressView(timerInterval:) primitive.
-            ProgressView(timerInterval: anchorDate...anchorDate.addingTimeInterval(60.0), countsDown: false) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
-            }
-            .progressViewStyle(.linear)
-            .frame(width: 72)
+            // Timer text anchored to ENTRY (reveals stale-entry behaviour)
+            HStack(spacing: 6) {
+                Text("ENTRY")
+                    .opacity(0.7)
 
-            Text("entry \(entryDate, format: .dateTime.hour().minute().second())")
-                .opacity(0.7)
+                Text(timerInterval: entryRange, countsDown: false)
+                    .monospacedDigit()
+            }
+
+            // Standard progress bars
+            VStack(alignment: .trailing, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("SNAP bar")
+                        .opacity(0.7)
+                    ProgressView(timerInterval: snapRange, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                        .progressViewStyle(.linear)
+                        .frame(width: 86)
+                }
+
+                HStack(spacing: 6) {
+                    Text("ENTRY bar")
+                        .opacity(0.7)
+                    ProgressView(timerInterval: entryRange, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                        .progressViewStyle(.linear)
+                        .frame(width: 86)
+                }
+
+                // Custom-style fraction readout: if this DOES NOT change while SNAP bar moves,
+                // the host is animating the native bar without updating configuration.fractionCompleted.
+                HStack(spacing: 6) {
+                    Text("SNAP frac")
+                        .opacity(0.7)
+                    ProgressView(timerInterval: snapRange, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                        .progressViewStyle(WWDebugFractionProgressStyle())
+                        .frame(width: 86, height: 12)
+                }
+            }
 
             Text("tick \(tickSeconds, format: .number.precision(.fractionLength(0)))s")
                 .opacity(0.7)
-
-            Text(WidgetWeaverClockMotionConfig.implementation == .timeDrivenPrimitives ? "mode time-driver" : "mode burst")
-                .opacity(0.7)
         }
         .font(.system(size: 9, weight: .regular, design: .monospaced))
-        .foregroundStyle(.primary.opacity(0.85))
+        .foregroundStyle(.primary.opacity(0.86))
         .padding(6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -257,6 +345,47 @@ private struct WidgetWeaverClockMotionDebugOverlay: View {
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         )
         .accessibilityHidden(true)
+    }
+
+    private static func floorToWholeSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        return Date(timeIntervalSinceReferenceDate: floor(t))
+    }
+}
+
+private struct WWDebugFractionProgressStyle: ProgressViewStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let raw = configuration.fractionCompleted ?? 0.0
+        let f = Self.clamp01(raw)
+        let pct = Int((f * 100.0).rounded())
+
+        return GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let fillW = max(0.0, min(w, w * CGFloat(f)))
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.25), lineWidth: 1)
+
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.primary.opacity(0.35))
+                    .frame(width: fillW, height: h)
+
+                Text("\(pct)%")
+                    .font(.system(size: 8, weight: .regular, design: .monospaced))
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .frame(width: w, height: h, alignment: .center)
+            }
+        }
+    }
+
+    @inline(__always)
+    private static func clamp01(_ x: Double) -> Double {
+        if x.isNaN || x.isInfinite { return 0.0 }
+        if x <= 0.0 { return 0.0 }
+        if x >= 1.0 { return 1.0 }
+        return x
     }
 }
 #endif
