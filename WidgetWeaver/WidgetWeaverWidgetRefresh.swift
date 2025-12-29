@@ -11,7 +11,6 @@ import WidgetKit
 public enum WidgetWeaverWidgetRefresh {
     private static let lastKickKey = "widgetweaver.widgetRefresh.lastKick"
 
-    // One-shot “wake” window consumed by the widget provider.
     private static let clockWakeRequestUntilKey = "widgetweaver.clock.wake.request.until"
 
     @MainActor
@@ -55,18 +54,12 @@ public enum WidgetWeaverWidgetRefresh {
         }
     }
 
-    /// Requests a “wake” for the Home Screen clock.
-    ///
-    /// The widget provider consumes this as a one-shot and starts a burst session if allowed
-    /// by the session caps.
     @MainActor
     public static func wakeHomeScreenClock() {
         let defaults = AppGroup.userDefaults
         let now = Date()
 
-        // Short window; the provider only needs a signal that “wake was requested recently”.
-        defaults.set(now.addingTimeInterval(60), forKey: clockWakeRequestUntilKey)
-
+        defaults.set(now.addingTimeInterval(60.0), forKey: clockWakeRequestUntilKey)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
     }
 

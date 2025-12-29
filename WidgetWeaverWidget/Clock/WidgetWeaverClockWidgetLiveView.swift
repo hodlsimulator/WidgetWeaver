@@ -11,44 +11,14 @@ import SwiftUI
 // MARK: - Motion configuration
 
 enum WidgetWeaverClockMotionImplementation {
-    /// Seconds are delivered only by timeline entries (burst + minute fallback).
     case burstTimelineHybrid
 }
 
 enum WidgetWeaverClockMotionConfig {
-    /// Shipping path (time-driven primitives are not viable on this device/OS state).
     static let implementation: WidgetWeaverClockMotionImplementation = .burstTimelineHybrid
 
-    /// Keep seconds renders cheap.
-    static let lightweightDuringSeconds: Bool = true
-
-    /// 1 Hz burst length for each burst timeline.
-    static let burstSeconds: Int = 120
-
-    /// When chaining bursts, WidgetKit is asked for a new timeline at burst end.
-    ///
-    /// This is the only remaining lever to approximate “ticks while visible”.
-    #if DEBUG
-    static let burstChainingEnabled: Bool = true
-    #else
-    static let burstChainingEnabled: Bool = true
-    #endif
-
-    /// Hard cap for how long chained bursts are allowed to continue.
-    static let burstSessionMaxSeconds: TimeInterval = 60.0 * 30.0 // 30 minutes
-
-    /// Hard cap for sessions per local day.
-    static let burstSessionMaxPerDay: Int = 2
-
-    /// Minimum spacing between session starts.
-    static let burstSessionMinSpacingSeconds: TimeInterval = 60.0 * 60.0 * 4.0 // 4 hours
-
-    /// Minute timeline horizon (used outside bursts, and after bursts).
-    /// Keep this modest to avoid very large timelines.
-    static let minuteHorizonSeconds: TimeInterval = 60.0 * 60.0 * 2.0 // 2 hours
-
-    /// Keep timelines bounded to avoid silent failures on device.
-    static let maxTimelineEntries: Int = 240
+    /// Seconds mode uses a cheap renderer to avoid widget host placeholder fallback.
+    static let lightweightSecondsRendering: Bool = true
 
     #if DEBUG
     static let debugOverlayEnabled: Bool = true
@@ -65,24 +35,33 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let anchorDate: Date
     let tickSeconds: TimeInterval
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        let showsSecondHand = tickSeconds <= 1.0
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let lightweight = (WidgetWeaverClockMotionConfig.lightweightDuringSeconds && showsSecondHand) || isLowPower
+        let isSeconds = (tickSeconds <= 1.0) && !isLowPower
 
         ZStack(alignment: .bottomTrailing) {
-            let angles = WWClockBaseAngles(date: date)
+            if isSeconds && WidgetWeaverClockMotionConfig.lightweightSecondsRendering {
+                WidgetWeaverClockSecondsLiteView(
+                    palette: palette,
+                    date: date,
+                    showsSecondHand: true
+                )
+            } else {
+                let angles = WWClockBaseAngles(date: date)
 
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: .degrees(angles.hour),
-                minuteAngle: .degrees(angles.minute),
-                secondAngle: .degrees(angles.second),
-                showsSecondHand: showsSecondHand && !isLowPower,
-                showsHandShadows: !lightweight,
-                showsGlows: !lightweight,
-                handsOpacity: 1.0
-            )
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: .degrees(angles.hour),
+                    minuteAngle: .degrees(angles.minute),
+                    secondAngle: .degrees(angles.second),
+                    showsSecondHand: isSeconds,
+                    showsHandShadows: !isSeconds,
+                    showsGlows: !isSeconds,
+                    handsOpacity: 1.0
+                )
+            }
 
             #if DEBUG
             if WidgetWeaverClockMotionConfig.debugOverlayEnabled {
@@ -91,11 +70,87 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     tickSeconds: tickSeconds
                 )
                 .padding(6)
+                .unredacted()
             }
             #endif
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Ultra-light seconds clock
+
+private struct WidgetWeaverClockSecondsLiteView: View {
+    let palette: WidgetWeaverClockPalette
+    let date: Date
+    let showsSecondHand: Bool
+
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        let angles = WWClockBaseAngles(date: date)
+
+        return GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let ring = WWClock.pixel(max(1.0, side * 0.045), scale: displayScale)
+
+            let hourLen = side * 0.22
+            let minLen = side * 0.32
+            let secLen = side * 0.36
+
+            let hourW = WWClock.pixel(max(1.0, side * 0.060), scale: displayScale)
+            let minW = WWClock.pixel(max(1.0, side * 0.045), scale: displayScale)
+            let secW = WWClock.pixel(max(1.0, side * 0.016), scale: displayScale)
+
+            let hub = WWClock.pixel(max(2.0, side * 0.085), scale: displayScale)
+
+            ZStack {
+                Circle()
+                    .fill(palette.dialEdge)
+
+                Circle()
+                    .strokeBorder(palette.separatorRing.opacity(0.55), lineWidth: ring)
+
+                // Hour hand
+                hand(
+                    colour: palette.handMid.opacity(0.95),
+                    width: hourW,
+                    length: hourLen,
+                    angleDegrees: angles.hour
+                )
+
+                // Minute hand
+                hand(
+                    colour: palette.handLight.opacity(0.95),
+                    width: minW,
+                    length: minLen,
+                    angleDegrees: angles.minute
+                )
+
+                if showsSecondHand {
+                    hand(
+                        colour: palette.accent.opacity(0.95),
+                        width: secW,
+                        length: secLen,
+                        angleDegrees: angles.second
+                    )
+                }
+
+                Circle()
+                    .fill(palette.hubBase.opacity(0.95))
+                    .frame(width: hub, height: hub)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+
+    private func hand(colour: Color, width: CGFloat, length: CGFloat, angleDegrees: Double) -> some View {
+        Rectangle()
+            .fill(colour)
+            .frame(width: width, height: length)
+            .offset(y: -length / 2.0)
+            .rotationEffect(.degrees(angleDegrees))
     }
 }
 
@@ -131,53 +186,52 @@ private struct WidgetWeaverClockHybridDebugOverlay: View {
     let entryDate: Date
     let tickSeconds: TimeInterval
 
+    @Environment(\.redactionReasons) private var redactionReasons
+
     var body: some View {
-        let defaults = AppGroup.userDefaults
         let now = Date()
+        let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
+
+        let cal = Calendar.autoupdatingCurrent
+        let s = cal.component(.second, from: entryDate)
+
+        let defaults = AppGroup.userDefaults
         let dayKey = Self.dayKey(for: now)
 
-        let timelineCount = defaults.integer(forKey: "widgetweaver.clock.timelineBuild.count.\(dayKey)")
-        let sessionCount = defaults.integer(forKey: "widgetweaver.clock.session.count.\(dayKey)")
-
-        let lastTimelineBuild = (defaults.object(forKey: "widgetweaver.clock.timelineBuild.last") as? Date) ?? .distantPast
         let sessionUntil = (defaults.object(forKey: "widgetweaver.clock.session.until") as? Date) ?? .distantPast
-        let sessionRemaining = max(0, Int(sessionUntil.timeIntervalSince(now).rounded(.down)))
+        let sessionActive = sessionUntil > now
+        let sessionLeft = max(0, Int(sessionUntil.timeIntervalSince(now).rounded(.down)))
 
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let isSeconds = tickSeconds <= 1.0
+        let buildsToday = defaults.integer(forKey: "widgetweaver.clock.timelineBuild.count.\(dayKey)")
+        let sessionsToday = defaults.integer(forKey: "widgetweaver.clock.session.count.\(dayKey)")
 
         VStack(alignment: .trailing, spacing: 4) {
-            Text("mode burst-hybrid")
+            Text("clock debug")
                 .opacity(0.85)
 
-            Text(isLowPower ? "LPM on" : "LPM off")
+            Text(isPlaceholderRedacted ? "redacted: placeholder" : "redacted: none")
+                .opacity(0.80)
+
+            Text("tickSeconds \(Int(tickSeconds.rounded()))")
+                .opacity(0.80)
+
+            Text("entrySec \(String(format: "%02d", s))")
+                .opacity(0.80)
+
+            Text(sessionActive ? "session active" : "session inactive")
+                .opacity(0.80)
+
+            Text("sessionLeft \(sessionLeft)s")
+                .opacity(0.80)
+
+            Text("buildsToday \(buildsToday)")
                 .opacity(0.75)
 
-            Text(isSeconds ? "ticks: seconds" : "ticks: minute")
+            Text("sessionsToday \(sessionsToday)")
                 .opacity(0.75)
-
-            Text("entry \(entryDate, format: .dateTime.hour().minute().second())")
-                .opacity(0.75)
-
-            Text("lastBuild \(lastTimelineBuild, format: .dateTime.hour().minute().second())")
-                .opacity(0.75)
-
-            Text("buildsToday \(timelineCount)")
-                .opacity(0.75)
-
-            Text("sessionsToday \(sessionCount)")
-                .opacity(0.75)
-
-            if sessionUntil > now {
-                Text("sessionLeft \(sessionRemaining)s")
-                    .opacity(0.85)
-            } else {
-                Text("sessionLeft 0s")
-                    .opacity(0.75)
-            }
         }
         .font(.system(size: 9, weight: .regular, design: .monospaced))
-        .foregroundStyle(.primary.opacity(0.86))
+        .foregroundStyle(.primary.opacity(0.88))
         .padding(6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
