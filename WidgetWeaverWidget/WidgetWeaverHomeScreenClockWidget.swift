@@ -19,9 +19,7 @@ enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable {
     case ember
     case graphite
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation {
-        "Clock Colour Scheme"
-    }
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Clock Colour Scheme" }
 
     static var caseDisplayRepresentations: [WidgetWeaverClockColourScheme: DisplayRepresentation] {
         [
@@ -31,17 +29,14 @@ enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable {
             .orchid: "Orchid",
             .sunset: "Sunset",
             .ember: "Ember",
-            .graphite: "Graphite"
+            .graphite: "Graphite",
         ]
     }
 }
 
 struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "Clock" }
-
-    static var description: IntentDescription {
-        IntentDescription("Configure the clock widget.")
-    }
+    static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
     @Parameter(title: "Colour Scheme")
     var colourScheme: WidgetWeaverClockColourScheme?
@@ -64,8 +59,8 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    // Keep comfortably under the “too many entries” danger zone.
-    // 120 entries = 2 hours of minute boundaries.
+    /// Keep comfortably under the “too many entries” danger zone.
+    /// 120 entries = 2 hours of minute boundaries.
     static let maxEntriesPerTimeline: Int = 120
 
     static let defaultTickMode: WidgetWeaverClockTickMode = .secondsSweep
@@ -109,14 +104,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
         // Previews should stay cheap and predictable.
-        if context.isPreview {
-            return makeMinuteTimeline(now: now, colourScheme: scheme)
-        }
+        if context.isPreview { return makeMinuteTimeline(now: now, colourScheme: scheme) }
 
-        if isLowPower {
-            return makeMinuteTimeline(now: now, colourScheme: scheme)
-        }
+        // Low Power Mode forces minute-only.
+        if isLowPower { return makeMinuteTimeline(now: now, colourScheme: scheme) }
 
+        // Shipping path: still minute-boundary entries, but the view attempts seconds sweep.
         return makeSecondsSweepTimeline(now: now, colourScheme: scheme)
     }
 
@@ -128,24 +121,27 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // IMPORTANT:
         // Use minute boundary dates for entries so WidgetKit’s “current entry” switches are clean.
         // Minute hand steps once per minute.
-        entries.append(Entry(
-            date: minuteAnchorNow,
-            minuteAnchor: minuteAnchorNow,
-            tickMode: .minuteOnly,
-            colourScheme: colourScheme
-        ))
+        entries.append(
+            Entry(
+                date: minuteAnchorNow,
+                minuteAnchor: minuteAnchorNow,
+                tickMode: .minuteOnly,
+                colourScheme: colourScheme
+            )
+        )
 
         var next = minuteAnchorNow.addingTimeInterval(60.0)
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
-            entries.append(Entry(
-                date: next,
-                minuteAnchor: next,
-                tickMode: .minuteOnly,
-                colourScheme: colourScheme
-            ))
+            entries.append(
+                Entry(
+                    date: next,
+                    minuteAnchor: next,
+                    tickMode: .minuteOnly,
+                    colourScheme: colourScheme
+                )
+            )
             next = next.addingTimeInterval(60.0)
         }
 
@@ -158,31 +154,30 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Same minute-boundary behaviour, but the view uses a seconds sweep animation.
-        entries.append(Entry(
-            date: minuteAnchorNow,
-            minuteAnchor: minuteAnchorNow,
-            tickMode: .secondsSweep,
-            colourScheme: colourschemeSafe(colourScheme)
-        ))
+        // Same minute-boundary behaviour, but the view attempts a seconds sweep animation.
+        entries.append(
+            Entry(
+                date: minuteAnchorNow,
+                minuteAnchor: minuteAnchorNow,
+                tickMode: .secondsSweep,
+                colourScheme: colourScheme
+            )
+        )
 
         var next = minuteAnchorNow.addingTimeInterval(60.0)
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
-            entries.append(Entry(
-                date: next,
-                minuteAnchor: next,
-                tickMode: .secondsSweep,
-                colourScheme: colourschemeSafe(colourScheme)
-            ))
+            entries.append(
+                Entry(
+                    date: next,
+                    minuteAnchor: next,
+                    tickMode: .secondsSweep,
+                    colourScheme: colourScheme
+                )
+            )
             next = next.addingTimeInterval(60.0)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
-    }
-
-    // This exists only to avoid accidental future crashes if the enum gains new cases.
-    private func colourschemeSafe(_ scheme: WidgetWeaverClockColourScheme) -> WidgetWeaverClockColourScheme {
-        scheme
     }
 
     // MARK: - Time helpers
@@ -206,7 +201,6 @@ private enum WWClockInstrumentation {
 
         let dayKey = Self.dayKey(for: now)
         let countKey = countPrefix + dayKey
-
         let c = defaults.integer(forKey: countKey)
         defaults.set(c + 1, forKey: countKey)
     }
@@ -214,11 +208,9 @@ private enum WWClockInstrumentation {
     private static func dayKey(for date: Date) -> String {
         let cal = Calendar.autoupdatingCurrent
         let comps = cal.dateComponents([.year, .month, .day], from: date)
-
         let y = comps.year ?? 0
         let m = comps.month ?? 0
         let d = comps.day ?? 0
-
         return String(format: "%04d%02d%02d", y, m, d)
     }
 }

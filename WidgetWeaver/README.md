@@ -74,9 +74,12 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
 
 Notes:
 
-- Calendar widgets render from a cache. If the widget looks stale:
-  - refresh the Calendar snapshot (Next Up refresh action), then
-  - refresh widget timelines (Editor → … → Refresh Widgets).
+- Calendar widgets render from a cache.
+
+If the widget looks stale:
+
+- refresh the Calendar snapshot (Next Up refresh action), then
+- refresh widget timelines (Editor → … → Refresh Widgets).
 
 ---
 
@@ -118,11 +121,13 @@ Notes:
 
 ## Featured — Clock (Home Screen)
 
-WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style sweeping second hand.
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style second hand.
 
 ### Why the clock is tricky
 
-WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled. On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
+WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled.
+
+On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
 
 ### Clock animation strategies (history + trade-offs)
 
@@ -150,18 +155,30 @@ Status: not reliably animated on Home Screen; the hosting view can be paused/fro
 
 Status: can render but has been unreliable; the clock can stop even after a widget kind bump.
 
-4) **Long single sweep per interval** (current code path)
+4) **Long single sweep per interval** (previous attempt)
 
 - Provider emits an immediate “now” entry plus hour-boundary entries; each entry carries `intervalStart` and `intervalEnd`.
 - The view snaps hands to real current time on appear, then attempts a single long `.linear` animation towards `intervalEnd` using monotonic (unbounded) angle maths.
 
 Status: snaps correctly but often remains stopped (no ongoing animation).
 
+5) **Minute-boundary timelines + stable tree + second-hand experiments** (current strategy)
+
+- Provider emits **minute-boundary** timeline entries (for example: 60–120 entries ≈ 1–2 hours), policy `.atEnd`.
+- Goal: the minute hand updates reliably while avoiding whole-widget “blink”.
+- Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
+- Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
+- Findings so far:
+  - `ProgressView(timerInterval: ...)` can animate visually, but `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress, so it cannot drive a custom second hand (symptom: second hand stuck at 12).
+  - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
+- Status: minute stepping is reliable and does not blink; second-hand motion is still under investigation.
+
 ### Files
 
-- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` — timeline generation (`date` + `endDate`)
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` — current long-interval sweep attempt
+- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` — minute-boundary timeline generation (entry cap, policy `.atEnd`)
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` — stable-tree clock rendering + second-hand experiments
 - `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` — experimental Widgy-style `repeatForever` driver
+- `Shared/WidgetWeaverRenderClock.swift` — helpers for injecting a deterministic “now” into rendering
 
 ### Sweeping second hand (time maths)
 
@@ -182,7 +199,9 @@ If a clock widget remains stuck after code changes, bump the clock widget kind s
 
 ### RenderClock recursion pitfall
 
-`WidgetWeaverRenderClockScope.body` must not call `WidgetWeaverRenderClock.withNow(...)` from inside the scope. Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI view recursion and a black Home Screen widget.
+`WidgetWeaverRenderClockScope.body` must not call `WidgetWeaverRenderClock.withNow(...)` from inside the scope.
+
+Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI view recursion and a black Home Screen widget.
 
 ---
 
@@ -212,7 +231,7 @@ If a clock widget remains stuck after code changes, bump the clock widget kind s
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
-- 🧪 **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); sweeping second hand is experimental (see Clock section)
+- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); sweeping second hand is experimental (see Clock section)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group

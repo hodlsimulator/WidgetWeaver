@@ -7,7 +7,6 @@
 //  Converts minute intensities -> surface geometry and draws using RainSurfaceDrawing.
 //
 
-import Foundation
 import SwiftUI
 
 struct RainForecastSurfaceRenderer {
@@ -17,271 +16,397 @@ struct RainForecastSurfaceRenderer {
     let displayScale: CGFloat
 
     func render(in context: inout GraphicsContext, size: CGSize) {
+        guard size.width.isFinite, size.height.isFinite, size.width > 0.5, size.height > 0.5 else { return }
+
+        let cfg = configuration
+        let scale = max(1.0, displayScale)
+
         let chartRect = CGRect(origin: .zero, size: size)
-        guard chartRect.width > 2, chartRect.height > 2 else { return }
+
+        let baselineY0 = chartRect.minY + chartRect.height * CGFloat(cfg.baselineFractionFromTop)
+        let baselineY = RainSurfaceMath.alignToPixelCenter(baselineY0, displayScale: scale)
 
         guard !intensities.isEmpty else {
             RainSurfaceDrawing.drawBaseline(
                 in: &context,
                 chartRect: chartRect,
-                baselineY: RainSurfaceMath.alignToPixelCenter(chartRect.midY, displayScale: displayScale),
-                configuration: configuration,
-                displayScale: displayScale
+                baselineY: baselineY,
+                configuration: cfg,
+                displayScale: scale
             )
             return
         }
 
         let nMinutes = intensities.count
-
-        // Preserve unknown buckets as NaN.
-        let rawIntensities: [Double] = intensities.map { v in
-            guard v.isFinite else { return Double.nan }
-            return max(0.0, v)
+        let rawIntensity: [Double] = intensities.map { v in
+            if v.isFinite { return max(0.0, v) }
+            return Double.nan
         }
 
-        // Rendering continuity only: fill unknowns by interpolation/hold, but fade them out via certainty.
-        let filledIntensities = RainSurfaceMath.fillMissingLinearHoldEnds(rawIntensities)
-        let minuteCertainties = makeMinuteCertainties(rawIntensities: rawIntensities, inputCertainties: certainties)
+        let filled = fillMissingLinearHoldEnds(rawIntensity)
+        let minuteHeights = makeMinuteHeights(
+            filledIntensity: filled.filled,
+            chartRect: chartRect,
+            baselineY: baselineY,
+            cfg: cfg,
+            displayScale: scale
+        )
 
-        var baselineY = chartRect.minY + chartRect.height * configuration.baselineFractionFromTop
-        baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
+        let minuteCertainties = makeMinuteCertainties(
+            rawIntensity: rawIntensity,
+            inputCertainties: certainties,
+            minuteCount: nMinutes
+        )
 
-        let baselineDistanceFromTop = max(0.0, baselineY - chartRect.minY)
-        let topHeadroom = baselineDistanceFromTop * configuration.topHeadroomFraction
-        let maxHeight = max(0.0, baselineDistanceFromTop - topHeadroom)
-
-        let typicalPeakY = chartRect.minY + chartRect.height * configuration.typicalPeakFraction
-        let typicalHeightRaw = baselineY - typicalPeakY
-
-        let heightScale: CGFloat = {
-            if typicalHeightRaw.isFinite, typicalHeightRaw > 1.0 {
-                return max(1.0, min(maxHeight, typicalHeightRaw))
+        // Determine the last wet minute using height semantics (intensity-only) and known (non-missing) minutes.
+        let onePx = 1.0 / max(1.0, scale)
+        let wetEps = CGFloat(onePx * 0.5)
+        var lastWetMinuteIndex: Int? = nil
+        if nMinutes >= 1 {
+            for i in 0..<nMinutes {
+                if rawIntensity[i].isFinite, minuteHeights[i] > wetEps {
+                    lastWetMinuteIndex = i
+                }
             }
-            return max(1.0, maxHeight * 0.55)
-        }()
-
-        let positiveKnown = rawIntensities.filter { $0.isFinite && $0 > 0.0 }
-        let referenceMaxMMPerHour: Double = {
-            let ref = configuration.intensityReferenceMaxMMPerHour
-            if ref.isFinite, ref > 0.0 { return max(1.0, ref) }
-
-            let p = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
-            if !positiveKnown.isEmpty {
-                let robust = RainSurfaceMath.percentile(positiveKnown, p: p)
-                if robust.isFinite, robust > 0.0 { return max(1.0, robust) }
-            }
-
-            let fallback = positiveKnown.max() ?? 0.0
-            return max(1.0, fallback)
-        }()
-
-        let invReferenceMax = 1.0 / max(0.000_001, referenceMaxMMPerHour)
-        let gamma = max(0.10, min(2.50, configuration.intensityGamma))
-        let onePixel = 1.0 / max(1.0, displayScale)
-
-        @inline(__always)
-        func softCeil(_ h: CGFloat, ceiling: CGFloat) -> CGFloat {
-            guard h.isFinite, ceiling.isFinite, ceiling > 0 else { return 0.0 }
-            if h <= ceiling { return max(0.0, h) }
-
-            // Soft-knee near the top avoids hard clipping artefacts when intensity exceeds the reference max.
-            let kneeStartFraction: CGFloat = 0.92
-            let kneeStart = ceiling * kneeStartFraction
-            if h <= kneeStart { return h }
-
-            let available = ceiling - kneeStart
-            if available <= max(onePixel, 0.000_5) { return ceiling }
-
-            let x = (h - kneeStart) / available
-            let y = kneeStart + available * CGFloat(tanh(Double(x)))
-            return min(ceiling, max(0.0, y.isFinite ? y : ceiling))
         }
 
-        let asinh1 = RainSurfaceMath.asinh(1.0)
-
-        // Height is driven by intensity only (unknowns filled for continuity).
-        let minuteHeights: [CGFloat] = filledIntensities.map { intensity in
-            guard intensity.isFinite, intensity > 0.0 else { return 0.0 }
-
-            var r = intensity * invReferenceMax
-            if !r.isFinite { r = 0.0 }
-            r = max(0.0, r)
-
-            let t: Double
-            if r <= 1.0 {
-                t = pow(r, gamma)
+        let tailMinutes = max(2, min(6, cfg.fuzzTailMinutes))
+        let minuteDx = (nMinutes <= 1) ? chartRect.width : (chartRect.width / CGFloat(nMinutes - 1))
+        let tailStartX: CGFloat?
+        let tailEndX: CGFloat?
+        if let lastWetMinuteIndex, nMinutes >= 2, tailMinutes > 0 {
+            let sx = chartRect.minX + CGFloat(lastWetMinuteIndex) * minuteDx
+            let ex = min(chartRect.maxX, sx + CGFloat(tailMinutes) * minuteDx)
+            if ex > sx + onePx {
+                tailStartX = sx
+                tailEndX = ex
             } else {
-                let compressed = (asinh1 > 0.0) ? (RainSurfaceMath.asinh(r) / asinh1) : r
-                t = pow(max(0.0, compressed), gamma)
+                tailStartX = nil
+                tailEndX = nil
             }
-
-            var h = CGFloat(t) * heightScale
-            if !h.isFinite { h = 0.0 }
-            h = max(0.0, h)
-            return softCeil(h, ceiling: maxHeight)
+        } else {
+            tailStartX = nil
+            tailEndX = nil
         }
 
-        let targetDense = max(
-            12,
-            min(configuration.maxDenseSamples, Int(max(12.0, chartRect.width * max(1.0, displayScale))))
+        // Dense resample (budgeted).
+        let denseCount = denseSampleCount(
+            minuteCount: nMinutes,
+            widthPx: chartRect.width * scale,
+            maxDenseSamples: cfg.maxDenseSamples
         )
 
-        var denseHeights = RainSurfaceMath.resampleMonotoneCubicCenters(minuteHeights, targetCount: targetDense)
-        var denseCertainties = RainSurfaceMath.resampleMonotoneCubicCenters(minuteCertainties, targetCount: targetDense)
-            .map { RainSurfaceMath.clamp01($0) }
-
-        // Small smoothing keeps fades continuous and reduces seam artefacts.
-        denseCertainties = RainSurfaceMath.smooth(denseCertainties, windowRadius: 2, passes: 1)
-            .map { RainSurfaceMath.clamp01($0) }
-
-        // Minimal smoothing; keeps the curve faithful to minute data while avoiding pixel jitter.
-        denseHeights = RainSurfaceMath.smooth(denseHeights, windowRadius: 1, passes: 1)
-
-        // Optional easing (caller-controlled via configuration.edgeEasingFraction).
-        RainSurfaceMath.applyEdgeEasing(
-            to: &denseHeights,
-            fraction: configuration.edgeEasingFraction,
-            power: configuration.edgeEasingPower
+        let denseHeights = resampleMonotoneCubicCenters(minuteHeights, targetCount: denseCount)
+        let denseCertainties = smoothDouble(
+            resampleLinearCenters(minuteCertainties, targetCount: denseCount),
+            radius: 2
         )
 
-        // Always apply a tiny local easing at wet boundaries to avoid guillotine-looking drops.
-        let minBoundaryFraction = CGFloat(2.0) / CGFloat(max(1, nMinutes))
-        RainSurfaceMath.applyWetSegmentEasing(
-            to: &denseHeights,
-            threshold: onePixel * 0.10,
-            fraction: max(configuration.edgeEasingFraction, minBoundaryFraction),
-            power: configuration.edgeEasingPower
-        )
-
-        // Snap sub-pixel heights to zero to avoid a faint “baseline band”.
-        if onePixel.isFinite {
-            let snap = onePixel * 0.10
-            for i in 0..<denseHeights.count {
-                if denseHeights[i] < snap { denseHeights[i] = 0.0 }
-            }
+        let easedHeights = applyEdgeEasing(
+            smoothCGFloat(denseHeights, radius: 2),
+            fraction: cfg.edgeEasingFraction,
+            power: cfg.edgeEasingPower
+        ).map { h in
+            (h < wetEps) ? 0.0 : h
         }
 
         let geometry = RainSurfaceGeometry(
             chartRect: chartRect,
             baselineY: baselineY,
-            heights: denseHeights,
+            heights: easedHeights,
             certainties: denseCertainties,
-            displayScale: displayScale
+            displayScale: scale,
+            sourceMinuteCount: nMinutes,
+            tailStartX: tailStartX,
+            tailEndX: tailEndX
         )
 
-        let maskStopsCap: Int = (configuration.maxDenseSamples <= 280) ? 220 : 360
-        let needsMask: Bool = denseCertainties.contains { maskAlpha(from: $0) < 0.999 }
+        RainSurfaceDrawing.drawSurface(in: &context, geometry: geometry, configuration: cfg)
+        RainSurfaceDrawing.drawBaseline(in: &context, chartRect: chartRect, baselineY: baselineY, configuration: cfg, displayScale: scale)
+    }
+}
 
-        context.drawLayer { layer in
-            var layerCtx = layer
-            RainSurfaceDrawing.drawSurface(
-                in: &layerCtx,
-                geometry: geometry,
-                configuration: configuration,
-                displayScale: displayScale
-            )
-
-            if needsMask {
-                layerCtx.blendMode = .destinationIn
-                let grad = makeMaskGradient(denseCertainties: denseCertainties, maxStops: maskStopsCap)
-
-                var rectPath = Path()
-                rectPath.addRect(chartRect)
-
-                layerCtx.fill(
-                    rectPath,
-                    with: .linearGradient(
-                        grad,
-                        startPoint: CGPoint(x: chartRect.minX, y: chartRect.midY),
-                        endPoint: CGPoint(x: chartRect.maxX, y: chartRect.midY)
-                    )
-                )
-            }
-        }
-
-        RainSurfaceDrawing.drawBaseline(
-            in: &context,
-            chartRect: chartRect,
-            baselineY: baselineY,
-            configuration: configuration,
-            displayScale: displayScale
-        )
+// MARK: - Internals
+private extension RainForecastSurfaceRenderer {
+    struct FilledSeries {
+        let filled: [Double]
+        let wasMissing: [Bool]
     }
 
-    private func makeMinuteCertainties(rawIntensities: [Double], inputCertainties: [Double]) -> [Double] {
-        let n = rawIntensities.count
-        let aligned: [Double] = {
-            if inputCertainties.count == n { return inputCertainties }
-            if inputCertainties.isEmpty { return Array(repeating: Double.nan, count: n) }
-            var c = inputCertainties
-            if c.count < n {
-                c.append(contentsOf: Array(repeating: c.last ?? Double.nan, count: n - c.count))
-            } else if c.count > n {
-                c = Array(c.prefix(n))
+    func fillMissingLinearHoldEnds(_ raw: [Double]) -> FilledSeries {
+        let n = raw.count
+        guard n > 0 else { return FilledSeries(filled: [], wasMissing: []) }
+
+        let wasMissing = raw.map { !$0.isFinite }
+
+        guard let firstKnown = raw.firstIndex(where: { $0.isFinite }) else {
+            return FilledSeries(filled: Array(repeating: 0.0, count: n), wasMissing: wasMissing)
+        }
+
+        var out = raw
+
+        // Leading hold.
+        let firstVal = raw[firstKnown]
+        if firstKnown > 0 {
+            for i in 0..<firstKnown { out[i] = firstVal }
+        }
+
+        // Interior linear fill.
+        var prevKnown = firstKnown
+        var i = firstKnown + 1
+        while i < n {
+            if raw[i].isFinite {
+                let nextKnown = i
+                let a = raw[prevKnown]
+                let b = raw[nextKnown]
+                let gap = nextKnown - prevKnown
+                if gap >= 2 {
+                    for k in 1..<(gap) {
+                        let t = Double(k) / Double(gap)
+                        out[prevKnown + k] = a + (b - a) * t
+                    }
+                }
+                prevKnown = nextKnown
             }
-            return c
-        }()
+            i += 1
+        }
 
-        var out: [Double] = []
-        out.reserveCapacity(n)
+        // Trailing hold.
+        let lastKnown = prevKnown
+        let lastVal = raw[lastKnown]
+        if lastKnown < n - 1 {
+            for j in (lastKnown + 1)..<n { out[j] = lastVal }
+        }
 
-        for i in 0..<n {
-            let intensityKnown = rawIntensities[i].isFinite
-            if !intensityKnown {
-                out.append(0.0)
+        // Ensure finite.
+        out = out.map { v in
+            if v.isFinite { return max(0.0, v) }
+            return 0.0
+        }
+
+        return FilledSeries(filled: out, wasMissing: wasMissing)
+    }
+
+    func makeMinuteCertainties(rawIntensity: [Double], inputCertainties: [Double], minuteCount: Int) -> [Double] {
+        var out: [Double] = Array(repeating: 0.0, count: minuteCount)
+
+        for i in 0..<minuteCount {
+            // Missing intensity buckets fade via styling.
+            if i < rawIntensity.count, !rawIntensity[i].isFinite {
+                out[i] = 0.0
                 continue
             }
 
-            let c = aligned[i]
-            if c.isFinite {
-                out.append(RainSurfaceMath.clamp01(c))
+            if i < inputCertainties.count, inputCertainties[i].isFinite {
+                out[i] = RainSurfaceMath.clamp01(inputCertainties[i])
             } else {
-                out.append(1.0)
+                out[i] = 1.0
             }
         }
-
         return out
     }
 
-    private func makeMaskGradient(denseCertainties: [Double], maxStops: Int) -> Gradient {
-        let n = denseCertainties.count
-        guard n > 1 else {
-            let a = maskAlpha(from: denseCertainties.first ?? 1.0)
-            return Gradient(stops: [
-                .init(color: Color.white.opacity(a), location: 0.0),
-                .init(color: Color.white.opacity(a), location: 1.0)
-            ])
-        }
+    func robustReferenceMax(intensities: [Double], cfg: RainForecastSurfaceConfiguration) -> Double {
+        let fallback = max(1.0, cfg.intensityReferenceMaxMMPerHour.isFinite ? cfg.intensityReferenceMaxMMPerHour : 1.0)
+        let positive = intensities.filter { $0.isFinite && $0 > 0.0 }
+        guard !positive.isEmpty else { return fallback }
 
-        let stopCount = max(6, min(maxStops, n))
-        var stops: [Gradient.Stop] = []
-        stops.reserveCapacity(stopCount)
-
-        if stopCount == n {
-            for i in 0..<n {
-                let loc = Double(i) / Double(n - 1)
-                let a = maskAlpha(from: denseCertainties[i])
-                stops.append(.init(color: Color.white.opacity(a), location: loc))
-            }
-        } else {
-            let step = Double(n - 1) / Double(stopCount - 1)
-            for j in 0..<stopCount {
-                let idx = max(0, min(n - 1, Int(round(Double(j) * step))))
-                let loc = Double(idx) / Double(n - 1)
-                let a = maskAlpha(from: denseCertainties[idx])
-                stops.append(.init(color: Color.white.opacity(a), location: loc))
-            }
-        }
-
-        return Gradient(stops: stops)
+        let p = RainSurfaceMath.percentile(positive, p: RainSurfaceMath.clamp01(cfg.robustMaxPercentile))
+        if p.isFinite, p > 0.0 { return max(1.0, p) }
+        return fallback
     }
 
-    private func maskAlpha(from certainty: Double) -> Double {
-        let c = RainSurfaceMath.clamp01(certainty)
-        if c <= 0.000_5 { return 0.0 }
+    func makeMinuteHeights(
+        filledIntensity: [Double],
+        chartRect: CGRect,
+        baselineY: CGFloat,
+        cfg: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
+    ) -> [CGFloat] {
+        let n = filledIntensity.count
+        guard n > 0 else { return [] }
 
-        // Lift mid certainties to avoid crushed interiors; preserves 0 for missing/unknown.
-        let exponent: Double = 0.55
-        return RainSurfaceMath.clamp01(pow(c, exponent))
+        let scale = max(1.0, displayScale)
+        let onePx = 1.0 / scale
+
+        let baselineDist = max(onePx, baselineY - chartRect.minY)
+        let headroom = max(0.0, baselineDist * CGFloat(max(0.0, cfg.topHeadroomFraction)))
+        let maxHeight = max(onePx, baselineDist - headroom)
+
+        let typicalPeakY = chartRect.minY + chartRect.height * CGFloat(cfg.typicalPeakFraction)
+        let typicalPeakHeight = max(onePx, baselineY - typicalPeakY)
+        let targetPeakHeight = min(maxHeight, typicalPeakHeight)
+
+        let refMax = robustReferenceMax(intensities: filledIntensity, cfg: cfg)
+        let gamma = max(0.08, cfg.intensityGamma)
+
+        func softSaturate(_ hRaw: CGFloat, cap: CGFloat) -> CGFloat {
+            let c = max(onePx, cap)
+            let x = max(0.0, hRaw)
+            // Smooth saturation; linear near 0, asymptotic near cap.
+            return c * (1.0 - exp(-x / c))
+        }
+
+        var heights: [CGFloat] = Array(repeating: 0.0, count: n)
+        for i in 0..<n {
+            let v = filledIntensity[i]
+            if !v.isFinite || v <= 0.0 {
+                heights[i] = 0.0
+                continue
+            }
+
+            let norm = max(0.0, v / max(0.000_001, refMax))
+            let shaped = pow(norm, gamma)
+
+            let hRaw = CGFloat(shaped) * targetPeakHeight
+            heights[i] = softSaturate(hRaw, cap: maxHeight)
+        }
+        return heights
+    }
+
+    func denseSampleCount(minuteCount: Int, widthPx: CGFloat, maxDenseSamples: Int) -> Int {
+        let w = Int(max(12.0, widthPx.rounded(.toNearestOrAwayFromZero)))
+        let cap = max(12, maxDenseSamples)
+        let base = max(12, max(minuteCount, w))
+        return max(12, min(cap, base))
+    }
+
+    func resampleLinearCenters(_ values: [Double], targetCount: Int) -> [Double] {
+        let n = values.count
+        guard targetCount > 0 else { return [] }
+        guard n >= 2 else { return Array(repeating: (n == 1 ? values[0] : 0.0), count: targetCount) }
+        guard targetCount >= 2 else { return [values[0]] }
+
+        let maxX = Double(n - 1)
+        var out: [Double] = Array(repeating: 0.0, count: targetCount)
+        for j in 0..<targetCount {
+            let x = (Double(j) / Double(targetCount - 1)) * maxX
+            let i = Int(floor(x))
+            let t = x - Double(i)
+            if i >= n - 1 {
+                out[j] = values[n - 1]
+            } else {
+                let a = values[i]
+                let b = values[i + 1]
+                out[j] = a + (b - a) * t
+            }
+        }
+        return out
+    }
+
+    func resampleMonotoneCubicCenters(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
+        let n = values.count
+        guard targetCount > 0 else { return [] }
+        guard n >= 2 else { return Array(repeating: (n == 1 ? values[0] : 0.0), count: targetCount) }
+        guard targetCount >= 2 else { return [values[0]] }
+
+        // Uniform x spacing (dx = 1).
+        var d: [CGFloat] = Array(repeating: 0.0, count: n - 1)
+        for i in 0..<(n - 1) { d[i] = values[i + 1] - values[i] }
+
+        var m: [CGFloat] = Array(repeating: 0.0, count: n)
+        m[0] = d[0]
+        m[n - 1] = d[n - 2]
+        if n >= 3 {
+            for i in 1..<(n - 1) {
+                let a = d[i - 1]
+                let b = d[i]
+                if a == 0.0 || b == 0.0 || (a > 0 && b < 0) || (a < 0 && b > 0) {
+                    m[i] = 0.0
+                } else {
+                    // Harmonic mean.
+                    m[i] = (2.0 * a * b) / (a + b)
+                }
+            }
+        }
+
+        func hermite(_ y0: CGFloat, _ y1: CGFloat, _ m0: CGFloat, _ m1: CGFloat, _ t: CGFloat) -> CGFloat {
+            let t2 = t * t
+            let t3 = t2 * t
+            let h00 = 2.0 * t3 - 3.0 * t2 + 1.0
+            let h10 = t3 - 2.0 * t2 + t
+            let h01 = -2.0 * t3 + 3.0 * t2
+            let h11 = t3 - t2
+            return h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1
+        }
+
+        let maxX = CGFloat(n - 1)
+        var out: [CGFloat] = Array(repeating: 0.0, count: targetCount)
+        for j in 0..<targetCount {
+            let x = (CGFloat(j) / CGFloat(targetCount - 1)) * maxX
+            let i = Int(floor(Double(x)))
+            let t = x - CGFloat(i)
+            if i >= n - 1 {
+                out[j] = values[n - 1]
+            } else {
+                out[j] = hermite(values[i], values[i + 1], m[i], m[i + 1], t)
+            }
+        }
+
+        // Clamp to non-negative.
+        return out.map { $0.isFinite ? max(0.0, $0) : 0.0 }
+    }
+
+    func smoothCGFloat(_ values: [CGFloat], radius: Int) -> [CGFloat] {
+        let n = values.count
+        guard n > 0, radius > 0 else { return values }
+        let r = min(12, radius)
+
+        var prefix: [CGFloat] = Array(repeating: 0.0, count: n + 1)
+        for i in 0..<n { prefix[i + 1] = prefix[i] + values[i] }
+
+        func sum(_ a: Int, _ b: Int) -> CGFloat { prefix[b] - prefix[a] }
+
+        var out: [CGFloat] = Array(repeating: 0.0, count: n)
+        for i in 0..<n {
+            let lo = max(0, i - r)
+            let hi = min(n, i + r + 1)
+            let c = CGFloat(hi - lo)
+            out[i] = sum(lo, hi) / max(1.0, c)
+        }
+        return out
+    }
+
+    func smoothDouble(_ values: [Double], radius: Int) -> [Double] {
+        let n = values.count
+        guard n > 0, radius > 0 else { return values }
+        let r = min(12, radius)
+
+        var prefix: [Double] = Array(repeating: 0.0, count: n + 1)
+        for i in 0..<n { prefix[i + 1] = prefix[i] + values[i] }
+
+        func sum(_ a: Int, _ b: Int) -> Double { prefix[b] - prefix[a] }
+
+        var out: [Double] = Array(repeating: 0.0, count: n)
+        for i in 0..<n {
+            let lo = max(0, i - r)
+            let hi = min(n, i + r + 1)
+            let c = Double(hi - lo)
+            out[i] = sum(lo, hi) / max(1.0, c)
+        }
+        return out.map { $0.isFinite ? RainSurfaceMath.clamp01($0) : 0.0 }
+    }
+
+    func applyEdgeEasing(_ values: [CGFloat], fraction: Double, power: Double) -> [CGFloat] {
+        let n = values.count
+        guard n >= 2 else { return values }
+        let f = max(0.0, min(0.45, fraction))
+        guard f > 0.000_1 else { return values }
+
+        let p = max(0.10, power)
+
+        var out = values
+        for i in 0..<n {
+            let t = Double(i) / Double(n - 1)
+            let left = RainSurfaceMath.clamp01(t / max(0.000_001, f))
+            let right = RainSurfaceMath.clamp01((1.0 - t) / max(0.000_001, f))
+
+            let wL = pow(RainSurfaceMath.smoothstep01(left), p)
+            let wR = pow(RainSurfaceMath.smoothstep01(right), p)
+
+            let w = min(1.0, wL * wR)
+            out[i] = out[i] * CGFloat(w)
+        }
+        return out
     }
 }
