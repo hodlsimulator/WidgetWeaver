@@ -33,10 +33,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.redactionReasons) private var redactionReasons
 
-    // Model value for the sweep target (usually 360.0).
-    // The Home Screen host (when cooperative) runs CoreAnimation interpolation without 1 Hz re-renders.
     @State private var secondHandTargetDegrees: Double = 0.0
-
     @State private var secondsDriverDebug: WWClockSecondsDriverDebugState = .empty
 
     var body: some View {
@@ -99,7 +96,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds sweep (CoreAnimation segment per minute + ProgressView “engine”)
+// MARK: - Seconds sweep (per-minute CA segment + “heartbeat” primitives)
 
 private struct WWClockSecondsSweepClock: View {
     let palette: WidgetWeaverClockPalette
@@ -129,31 +126,36 @@ private struct WWClockSecondsSweepClock: View {
             )
             .animation(nil, value: minuteAnchor)
 
-            // Invisible-but-present engine: keeps a timer-driven primitive in the render graph.
-            WWClockSecondsEngine(minuteAnchor: minuteAnchor, opacity: 0.02)
-                .frame(width: 24, height: 4)
+            // Timer-style heartbeat kept in the render graph.
+            // This stays extremely cheap and helps keep widget hosting in a “live” mode.
+            WWClockWidgetHeartbeat(start: Date())
+
+            // Another time-driven primitive, present but visually negligible.
+            // Uses a relative interval so it can animate even if minuteAnchor is treated as a frozen date.
+            WWClockSecondsEngine(opacity: 0.02)
+                .frame(width: 24, height: 6)
                 .clipped()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
         .onAppear {
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 startOrResyncSweep(reason: "onAppear")
             }
         }
-        .task(id: minuteAnchor) {
-            await MainActor.run {
-                startOrResyncSweep(reason: "task(id:minuteAnchor)")
+        .onChange(of: minuteAnchor) {
+            DispatchQueue.main.async {
+                startOrResyncSweep(reason: "onChange(minuteAnchor)")
             }
         }
-        .onChange(of: minuteAnchor) {
-            Task { @MainActor in
-                startOrResyncSweep(reason: "onChange(minuteAnchor)")
+        .task {
+            // Some widget hosting paths can skip onAppear.
+            DispatchQueue.main.async {
+                startOrResyncSweep(reason: "task")
             }
         }
     }
 
-    @MainActor
     private func startOrResyncSweep(reason: String) {
         let now = Date()
 
@@ -196,13 +198,26 @@ private struct WWClockSecondsSweepClock: View {
     }
 }
 
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct WWClockSecondsEngine: View {
-    let minuteAnchor: Date
     let opacity: Double
 
     var body: some View {
-        let start = minuteAnchor
-        let end = minuteAnchor.addingTimeInterval(60.0)
+        let start = Date()
+        let end = start.addingTimeInterval(60.0)
 
         ProgressView(timerInterval: start...end, countsDown: false)
             .progressViewStyle(.linear)
@@ -256,7 +271,7 @@ private struct WWClockSecondsDriverDebugState: Equatable {
     var lastCallWasSkipped: Bool
 
     static let empty = WWClockSecondsDriverDebugState(
-        driverKind: "CA sweep + engine",
+        driverKind: "CA sweep + heartbeat",
         lastStartReason: "inactive",
         lastStartWallNow: .distantPast,
         lastStartMinuteAnchor: .distantPast,
@@ -296,7 +311,7 @@ private struct WWClockSecondsDriverDebugState: Equatable {
 
 private struct WWClockSecondsDriverCallCounts: Equatable {
     var onAppear: Int = 0
-    var taskId: Int = 0
+    var task: Int = 0
     var onChange: Int = 0
     var other: Int = 0
 
@@ -305,8 +320,8 @@ private struct WWClockSecondsDriverCallCounts: Equatable {
             onAppear += 1
             return
         }
-        if reason.hasPrefix("task(") {
-            taskId += 1
+        if reason.hasPrefix("task") {
+            task += 1
             return
         }
         if reason.hasPrefix("onChange") {
@@ -384,7 +399,7 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
 
                 Spacer(minLength: 6)
 
-                WWClockDebugEngineStrip(minuteAnchor: minuteAnchor)
+                WWClockDebugEngineStrip()
                     .accessibilityHidden(true)
 
                 WWClockDebugSweepMarker(targetDegrees: secondHandTargetDegrees)
@@ -402,7 +417,7 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
             Text("pwr LPM:\(isLowPower ? "1" : "0") RM:\(reduceMotion ? "1" : "0") red:\(isPlaceholderRedacted ? "1" : "0")")
                 .opacity(0.78)
 
-            Text("drv \(startedText) r\(driverDebug.restarts) ap\(driverDebug.callCounts.onAppear) t\(driverDebug.callCounts.taskId) c\(driverDebug.callCounts.onChange)")
+            Text("drv \(startedText) r\(driverDebug.restarts) ap\(driverDebug.callCounts.onAppear) t\(driverDebug.callCounts.task) c\(driverDebug.callCounts.onChange)")
                 .opacity(0.76)
 
             Text(String(format: "off %.2fs start %.0f° rem %.2fs", driverDebug.lastStartSecondsIntoMinute, driverDebug.lastStartAngleDegrees, driverDebug.lastStartRemainingSeconds))
@@ -427,16 +442,14 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
 }
 
 private struct WWClockDebugEngineStrip: View {
-    let minuteAnchor: Date
-
     var body: some View {
-        let start = minuteAnchor
-        let end = minuteAnchor.addingTimeInterval(60.0)
+        let start = Date()
+        let end = start.addingTimeInterval(60.0)
 
         ProgressView(timerInterval: start...end, countsDown: false)
             .progressViewStyle(.linear)
             .tint(Color.white.opacity(0.90))
-            .frame(width: 46, height: 4)
+            .frame(width: 46, height: 6)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.white.opacity(0.16))
