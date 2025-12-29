@@ -39,20 +39,18 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
         // IMPORTANT:
         // Low Power Mode forces minute-only.
-        // Reduce Motion is reported in the debug overlay, but it does not currently gate seconds
-        // while the seconds mechanism is being proven reliable.
+        // Reduce Motion is reported in the debug overlay, but does not currently gate seconds
+        // while the mechanism is being proven reliable.
         let secondsEnabled = wantsSeconds && !isLowPower
 
         ZStack(alignment: .bottomTrailing) {
             if secondsEnabled {
-                WidgetWeaverClockSecondHandSweepView(
+                WidgetWeaverClockSecondHandProgressDrivenView(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
                     showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
                     showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows
                 )
-                // No .id(minuteAnchor...) here.
-                // Restarting the sweep happens via onChange(of: minuteAnchor) inside the sweep view.
             } else {
                 let angles = WWClockAngles(date: minuteAnchor)
 
@@ -70,7 +68,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
             #if DEBUG
             if WidgetWeaverClockMotionConfig.debugOverlayEnabled {
-                WidgetWeaverClockSweepDebugOverlay(
+                WidgetWeaverClockClockDebugOverlay(
                     entryDate: entryDate,
                     minuteAnchor: minuteAnchor,
                     tickMode: tickMode,
@@ -89,73 +87,94 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds sweep view
+// MARK: - Seconds via ProgressView(timerInterval:...)
 
-private struct WidgetWeaverClockSecondHandSweepView: View {
+private struct WidgetWeaverClockSecondHandProgressDrivenView: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
     let showsGlows: Bool
     let showsHandShadows: Bool
 
-    @State private var secondAngleDegrees: Double = 0.0
-    @State private var lastConfiguredAnchorRef: TimeInterval = -1.0
-
     var body: some View {
+        let start = minuteAnchor
+        let end = minuteAnchor.addingTimeInterval(60.0)
+
+        // The Home Screen host will animate time-driven primitives (like ProgressView(timerInterval:...))
+        // while the widget is visible. This avoids 1 Hz WidgetKit timelines.
+        ProgressView(timerInterval: start...end, countsDown: false)
+            .progressViewStyle(
+                WidgetWeaverClockSecondHandProgressStyle(
+                    palette: palette,
+                    minuteAnchor: minuteAnchor,
+                    showsGlows: showsGlows,
+                    showsHandShadows: showsHandShadows
+                )
+            )
+    }
+}
+
+private struct WidgetWeaverClockSecondHandProgressStyle: ProgressViewStyle {
+    let palette: WidgetWeaverClockPalette
+    let minuteAnchor: Date
+    let showsGlows: Bool
+    let showsHandShadows: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let fracRaw = configuration.fractionCompleted ?? 0.0
+        let frac = Self.clamp(fracRaw, min: 0.0, max: 1.0)
+
+        // Discrete “tick” seconds (0...60). At 1.0, show 60 -> 360° (hand at 12).
+        let tickSeconds = Int((frac * 60.0).rounded(.down))
+        let tickSecondsClamped = max(0, min(60, tickSeconds))
+        let secondAngleDegrees = Double(tickSecondsClamped) * 6.0
+
         let base = WWClockAngles(date: minuteAnchor)
 
-        WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: .degrees(base.hour),
-            minuteAngle: .degrees(base.minute),
-            secondAngle: .degrees(secondAngleDegrees),
-            showsSecondHand: true,
-            showsHandShadows: showsHandShadows,
-            showsGlows: showsGlows,
-            handsOpacity: 1.0
-        )
-        .onAppear {
-            configureAndStartSweepIfNeeded(for: minuteAnchor)
-        }
-        .onChange(of: minuteAnchor) { _, newAnchor in
-            configureAndStartSweepIfNeeded(for: newAnchor)
-        }
-    }
+        return ZStack(alignment: .bottomTrailing) {
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(base.hour),
+                minuteAngle: .degrees(base.minute),
+                secondAngle: .degrees(secondAngleDegrees),
+                showsSecondHand: true,
+                showsHandShadows: showsHandShadows,
+                showsGlows: showsGlows,
+                handsOpacity: 1.0
+            )
 
-    private func configureAndStartSweepIfNeeded(for anchor: Date) {
-        let anchorRef = anchor.timeIntervalSinceReferenceDate
-        guard anchorRef != lastConfiguredAnchorRef else { return }
-        lastConfiguredAnchorRef = anchorRef
+            #if DEBUG
+            if WidgetWeaverClockMotionConfig.debugOverlayEnabled {
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("driver progress")
+                        .opacity(0.85)
 
-        let now = Date()
-        let nextMinute = anchor.addingTimeInterval(60.0)
+                    Text(String(format: "frac %.3f", frac))
+                        .opacity(0.80)
 
-        let rawSeconds = now.timeIntervalSince(anchor)
-        let secondsIntoMinute = Self.clamp(rawSeconds, min: 0.0, max: 59.999)
+                    Text("tickSec \(tickSecondsClamped)")
+                        .opacity(0.80)
 
-        let remainingRaw = nextMinute.timeIntervalSince(now)
-        let remaining = Self.clamp(remainingRaw, min: 0.0, max: 60.0)
-
-        // Place the hand immediately (no animation), then start the sweep.
-        var noAnim = Transaction()
-        noAnim.animation = nil
-        withTransaction(noAnim) {
-            secondAngleDegrees = secondsIntoMinute * 6.0
-        }
-
-        // If the remaining time is effectively zero, snap to 12 and wait for the next minuteAnchor.
-        guard remaining > 0.05 else {
-            withTransaction(noAnim) {
-                secondAngleDegrees = 360.0
+                    Text(String(format: "secDeg %.1f", secondAngleDegrees))
+                        .opacity(0.75)
+                }
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .foregroundStyle(.primary.opacity(0.88))
+                .padding(6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(0.22))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .padding(6)
+                .accessibilityHidden(true)
             }
-            return
+            #endif
         }
-
-        // One linear sweep to 12 over the remainder of the minute.
-        DispatchQueue.main.async {
-            withAnimation(.linear(duration: remaining)) {
-                secondAngleDegrees = 360.0
-            }
-        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private static func clamp(_ x: Double, min a: Double, max b: Double) -> Double {
@@ -189,9 +208,9 @@ private struct WWClockAngles {
 }
 
 #if DEBUG
-// MARK: - Debug overlay
+// MARK: - Debug overlay (entry + timeline build counters)
 
-private struct WidgetWeaverClockSweepDebugOverlay: View {
+private struct WidgetWeaverClockClockDebugOverlay: View {
     let entryDate: Date
     let minuteAnchor: Date
     let tickMode: WidgetWeaverClockTickMode
@@ -215,6 +234,8 @@ private struct WidgetWeaverClockSweepDebugOverlay: View {
             }
         }()
 
+        // This is only a coarse “what minute are we in” value.
+        // Seconds motion is driven by ProgressView(timerInterval:...) above.
         let secondsIntoMinute = Int(max(0, now.timeIntervalSince(minuteAnchor)).truncatingRemainder(dividingBy: 60.0))
 
         VStack(alignment: .trailing, spacing: 4) {
