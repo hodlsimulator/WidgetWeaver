@@ -20,23 +20,34 @@ struct WidgetWeaverClockWidgetLiveView: View {
     /// at second/minute boundaries.
     let anchorDate: Date
 
-    /// Expected spacing between timeline entries.
+    /// Desired tick interval for on-screen updates.
     ///
-    /// Used as the animation duration so CoreAnimation can sweep the hands smoothly between entries.
-    ///
-    /// When set to `0`, SwiftUI animations are disabled and the widget uses Core Animation layers
-    /// for continuous ticking.
+    /// When `<= 1`, the widget uses an in-view periodic TimelineView at 1 Hz (WidgetKit timeline remains sparse).
+    /// When `> 1`, the view animates between WidgetKit timeline entries.
     let tickSeconds: TimeInterval
 
     var body: some View {
+        let wantsOneHz = (tickSeconds <= 1.0)
+
+        if wantsOneHz {
+            TimelineView(.periodic(from: date, by: 1.0)) { context in
+                clock(at: context.date)
+                    .animation(.linear(duration: 1.0), value: context.date)
+            }
+        } else {
+            clock(at: date)
+                .animation(.linear(duration: max(0.0, tickSeconds)), value: date)
+        }
+    }
+
+    @ViewBuilder
+    private func clock(at now: Date) -> some View {
         let base = WWClockBaseAngles(date: anchorDate)
-        let dt = date.timeIntervalSince(anchorDate)
+        let dt = now.timeIntervalSince(anchorDate)
 
         let hourAngle = Angle.degrees(base.hour + dt * WWClockAngularVelocity.hourDegPerSecond)
         let minuteAngle = Angle.degrees(base.minute + dt * WWClockAngularVelocity.minuteDegPerSecond)
         let secondAngle = Angle.degrees(base.second + dt * WWClockAngularVelocity.secondDegPerSecond)
-
-        let usesCoreAnimationHands = (tickSeconds <= 0.0)
 
         WidgetWeaverClockIconView(
             palette: palette,
@@ -44,15 +55,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
             minuteAngle: minuteAngle,
             secondAngle: secondAngle,
             showsSecondHand: true,
-            showsHandShadows: usesCoreAnimationHands ? false : true,
-            showsGlows: usesCoreAnimationHands ? false : true,
-            handsOpacity: 1.0,
-            usesCoreAnimationHands: usesCoreAnimationHands,
-            coreAnimationDate: usesCoreAnimationHands ? date : nil
+            handsOpacity: 1.0
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(tickSeconds > 0 ? .linear(duration: tickSeconds) : nil, value: date)
     }
 }
 

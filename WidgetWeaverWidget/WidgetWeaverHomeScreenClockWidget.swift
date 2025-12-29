@@ -64,7 +64,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 0.0, colourScheme: .classic)
+        return Entry(date: now, anchorDate: now, tickSeconds: 1.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
@@ -72,7 +72,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: now,
-            tickSeconds: 0.0,
+            tickSeconds: 1.0,
             colourScheme: configuration.colourScheme ?? .classic
         )
     }
@@ -81,11 +81,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let scheme = configuration.colourScheme ?? .classic
         let now = Date()
 
-        // Budget-safe strategy:
-        // - WidgetKit timeline stays sparse (no per-second entries).
-        // - Hands animate via Core Animation layers (started inside the view).
-        // - A periodic reload re-syncs after long pauses and picks up configuration changes.
-        let entry = Entry(date: now, anchorDate: now, tickSeconds: 0.0, colourScheme: scheme)
+        // WidgetKit timeline stays sparse.
+        // On-screen ticking is requested by SwiftUI TimelineView inside the widget view.
+        let entry = Entry(date: now, anchorDate: now, tickSeconds: 1.0, colourScheme: scheme)
 
         let reloadDate = now.addingTimeInterval(15.0 * 60.0)
         return Timeline(entries: [entry], policy: .after(reloadDate))
@@ -121,15 +119,13 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            WidgetWeaverClockWidgetLiveView(
-                palette: palette,
-                date: entry.date,
-                anchorDate: entry.anchorDate,
-                tickSeconds: entry.tickSeconds
-            )
-            .unredacted()
-        }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            date: entry.date,
+            anchorDate: entry.anchorDate,
+            tickSeconds: entry.tickSeconds
+        )
+        .unredacted()
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }

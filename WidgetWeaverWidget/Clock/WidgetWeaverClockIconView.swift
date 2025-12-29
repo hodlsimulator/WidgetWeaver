@@ -20,13 +20,6 @@ struct WidgetWeaverClockIconView: View {
 
     let handsOpacity: Double
 
-    /// When enabled, hour/minute/second hands are rendered by a Core Animation overlay
-    /// that rotates layers continuously without WidgetKit per-second timelines.
-    let usesCoreAnimationHands: Bool
-
-    /// The render-time date used to initialise the Core Animation hand phases.
-    let coreAnimationDate: Date?
-
     @Environment(\.displayScale) private var displayScale
 
     init(
@@ -37,9 +30,7 @@ struct WidgetWeaverClockIconView: View {
         showsSecondHand: Bool = true,
         showsHandShadows: Bool = true,
         showsGlows: Bool = true,
-        handsOpacity: Double = 1.0,
-        usesCoreAnimationHands: Bool = false,
-        coreAnimationDate: Date? = nil
+        handsOpacity: Double = 1.0
     ) {
         self.palette = palette
         self.hourAngle = hourAngle
@@ -49,8 +40,6 @@ struct WidgetWeaverClockIconView: View {
         self.showsHandShadows = showsHandShadows
         self.showsGlows = showsGlows
         self.handsOpacity = handsOpacity
-        self.usesCoreAnimationHands = usesCoreAnimationHands
-        self.coreAnimationDate = coreAnimationDate
     }
 
     var body: some View {
@@ -204,72 +193,54 @@ struct WidgetWeaverClockIconView: View {
                     )
 
                     Group {
-                        if usesCoreAnimationHands, let caDate = coreAnimationDate {
-                            WidgetWeaverClockCoreAnimationHandsOverlayView(
-                                palette: palette,
-                                date: caDate,
-                                hourLength: hourLength,
-                                hourWidth: hourWidth,
-                                minuteLength: minuteLength,
-                                minuteWidth: minuteWidth,
-                                secondLength: usedSecondLength,
-                                secondWidth: usedSecondWidth,
-                                secondTipSide: usedSecondTipSide,
-                                showsSecondHand: showsSecondHand,
-                                scale: displayScale
-                            )
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                        } else {
-                            if showsHandShadows {
-                                WidgetWeaverClockHandShadowsView(
-                                    palette: palette,
-                                    dialDiameter: dialDiameter,
-                                    hourAngle: hourAngle,
-                                    minuteAngle: minuteAngle,
-                                    hourLength: hourLength,
-                                    hourWidth: hourWidth,
-                                    minuteLength: minuteLength,
-                                    minuteWidth: minuteWidth,
-                                    scale: displayScale
-                                )
-                            }
-
-                            WidgetWeaverClockHandsView(
+                        if showsHandShadows {
+                            WidgetWeaverClockHandShadowsView(
                                 palette: palette,
                                 dialDiameter: dialDiameter,
                                 hourAngle: hourAngle,
                                 minuteAngle: minuteAngle,
-                                secondAngle: secondAngle,
                                 hourLength: hourLength,
                                 hourWidth: hourWidth,
                                 minuteLength: minuteLength,
                                 minuteWidth: minuteWidth,
+                                scale: displayScale
+                            )
+                        }
+
+                        WidgetWeaverClockHandsView(
+                            palette: palette,
+                            dialDiameter: dialDiameter,
+                            hourAngle: hourAngle,
+                            minuteAngle: minuteAngle,
+                            secondAngle: secondAngle,
+                            hourLength: hourLength,
+                            hourWidth: hourWidth,
+                            minuteLength: minuteLength,
+                            minuteWidth: minuteWidth,
+                            secondLength: usedSecondLength,
+                            secondWidth: usedSecondWidth,
+                            secondTipSide: usedSecondTipSide,
+                            scale: displayScale
+                        )
+
+                        if showsGlows {
+                            WidgetWeaverClockGlowsOverlayView(
+                                palette: palette,
+                                hourCapCentreRadius: batonCentreRadius,
+                                batonLength: batonLength,
+                                batonWidth: batonWidth,
+                                capLength: capLength,
+                                pipSide: pipSide,
+                                pipRadius: pipRadius,
+                                minuteAngle: minuteAngle,
+                                minuteLength: minuteLength,
+                                minuteWidth: minuteWidth,
+                                secondAngle: secondAngle,
                                 secondLength: usedSecondLength,
                                 secondWidth: usedSecondWidth,
                                 secondTipSide: usedSecondTipSide,
                                 scale: displayScale
                             )
-
-                            if showsGlows {
-                                WidgetWeaverClockGlowsOverlayView(
-                                    palette: palette,
-                                    hourCapCentreRadius: batonCentreRadius,
-                                    batonLength: batonLength,
-                                    batonWidth: batonWidth,
-                                    capLength: capLength,
-                                    pipSide: pipSide,
-                                    pipRadius: pipRadius,
-                                    minuteAngle: minuteAngle,
-                                    minuteLength: minuteLength,
-                                    minuteWidth: minuteWidth,
-                                    secondAngle: secondAngle,
-                                    secondLength: usedSecondLength,
-                                    secondWidth: usedSecondWidth,
-                                    secondTipSide: usedSecondTipSide,
-                                    scale: displayScale
-                                )
-                            }
                         }
 
                         WidgetWeaverClockCentreHubView(
