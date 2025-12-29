@@ -154,8 +154,8 @@ private struct WeatherNowcastSurfacePlot: View {
     @Environment(\.displayScale) private var displayScale
 
     private struct BucketedMinuteSeries {
-        let intensityMMPerHour: [Double] // may contain NaN for unknown
-        let certainty01: [Double]        // may contain NaN for unknown
+        let intensityMMPerHour: [Double] // finite
+        let probability01: [Double]      // finite, 0..1 (drives styling only)
     }
 
     var body: some View {
@@ -165,27 +165,22 @@ private struct WeatherNowcastSurfacePlot: View {
             let maxI0 = maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0
             let maxI = max(0.000_001, maxI0)
 
-            // Height semantics:
-            // - Unknown stays unknown (NaN).
-            // - Intensity drives HEIGHT only.
             let intensities: [Double] = series.intensityMMPerHour.map { v in
-                guard v.isFinite else { return Double.nan }
+                if !v.isFinite { return 0.0 }
                 return max(0.0, v)
             }
 
-            // Styling semantics:
-            // - Certainty drives styling only (opacity/edge/fuzz), never height.
-            // - Unknown stays unknown (NaN) and will fade out downstream.
-            let n = series.certainty01.count
+            // Styling horizon fade (kept subtle). Probability remains styling-only.
+            let n = series.probability01.count
             let horizonStart: Double = 0.65
-            let horizonEndCertainty: Double = 0.72
-            let certainties: [Double] = series.certainty01.enumerated().map { idx, c0 in
-                guard c0.isFinite else { return Double.nan }
+            let horizonEnd: Double = 0.72
+            let probabilities: [Double] = series.probability01.enumerated().map { idx, p0 in
+                let p = RainSurfaceMath.clamp01(p0)
                 let t = (n <= 1) ? 0.0 : (Double(idx) / Double(n - 1))
                 let u = RainSurfaceMath.clamp01((t - horizonStart) / max(0.000_001, (1.0 - horizonStart)))
                 let hs = RainSurfaceMath.smoothstep01(u)
-                let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEndCertainty, hs)
-                return RainSurfaceMath.clamp01(c0 * horizonFactor)
+                let horizonFactor = RainSurfaceMath.lerp(1.0, horizonEnd, hs)
+                return RainSurfaceMath.clamp01(p * horizonFactor)
             }
 
             let seed = makeNoiseSeed(
@@ -209,11 +204,11 @@ private struct WeatherNowcastSurfacePlot: View {
                 }
             }()
 
-            // Denser than stock, still hard-capped for widget safety.
             let speckleBudget: Int = {
                 if isExt {
-                    let scaled = Int((areaPx / 185.0).rounded(.toNearestOrAwayFromZero))
-                    return max(450, min(1200, scaled))
+                    // Lower ceiling to stay WidgetKit-safe; density is handled by strength + beads.
+                    let scaled = Int((areaPx / 240.0).rounded(.toNearestOrAwayFromZero))
+                    return max(320, min(850, scaled))
                 } else {
                     return 5200
                 }
@@ -231,7 +226,6 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.maxDenseSamples = denseSamplesBudget
                 c.fuzzSpeckleBudget = speckleBudget
 
-                // Robust within-window reference max to prevent “slab” saturation and preserve structure.
                 c.intensityReferenceMaxMMPerHour = referenceMaxMMPerHour
 
                 // Values converted from the legacy tuning:
@@ -248,18 +242,17 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.robustMaxPercentile = 0.93
                 c.intensityGamma = 0.52
 
-                // Accuracy: do not taper the chart at the left/right edges.
-                // (“Now” can be wet; “60m” can be wet.)
+                // Do not taper at edges.
                 c.edgeEasingFraction = 0.0
                 c.edgeEasingPower = 1.45
 
-                // Body: brighter mid-tones + internal top glow (clipped), background stays pure black.
+                // Brighter body + clipped top glow (background remains pure black).
                 c.coreBodyColor = Color(red: 0.00, green: 0.14, blue: 0.62)
                 c.coreTopColor = accent
                 c.coreTopMix = isExt ? 0.28 : 0.32
                 c.coreFadeFraction = isExt ? 0.012 : 0.015
 
-                // Crisp edge (thin rim light) + dense granular fuzz does most of the “glow” work.
+                // Crisp rim (thin; the “volume” comes from granular fuzz).
                 c.rimEnabled = true
                 c.rimColor = accent
                 c.rimInnerOpacity = isExt ? 0.34 : 0.38
@@ -270,7 +263,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.glossEnabled = false
                 c.glintEnabled = false
 
-                // Fuzz (primary volume). No big halo: haze is tight + low strength; speckles carry the look.
+                // Fuzz: probability (chance) drives strength positively.
                 c.fuzzEnabled = true
                 c.fuzzColor = accent
                 c.fuzzMaxOpacity = isExt ? 0.30 : 0.38
@@ -286,26 +279,28 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.fuzzHazeStrokeWidthFactor = isExt ? 0.88 : 0.98
                 c.fuzzInsideHazeStrokeWidthFactor = isExt ? 0.75 : 0.85
 
-                // Styling-only taper: keep tails readable even when certainty is high.
-                c.fuzzChanceThreshold = 0.60
-                c.fuzzChanceTransition = 0.20
-                c.fuzzChanceExponent = 2.10
-                c.fuzzChanceFloor = 0.18
-                c.fuzzChanceMinStrength = 0.44
+                // Chance mapping (dry => no fuzz).
+                c.fuzzChanceThreshold = 0.18
+                c.fuzzChanceTransition = 0.55
+                c.fuzzChanceExponent = 1.35
+                c.fuzzChanceFloor = 0.0
+
+                // Ensures a tapered fuzzy “tail” right after rain ends (styling-only).
+                c.fuzzChanceMinStrength = isExt ? 0.22 : 0.28
 
                 c.fuzzLowHeightPower = 2.05
                 c.fuzzLowHeightBoost = isExt ? 0.98 : 1.08
 
-                // Inside weld (prevents “floating” fuzz).
+                // Inside weld.
                 c.fuzzInsideWidthFactor = 0.78
                 c.fuzzInsideOpacityFactor = isExt ? 0.55 : 0.72
-                c.fuzzInsideSpeckleFraction = isExt ? 0.26 : 0.34
+                c.fuzzInsideSpeckleFraction = isExt ? 0.18 : 0.26
 
                 c.fuzzDistancePowerOutside = 2.25
                 c.fuzzDistancePowerInside = 1.80
                 c.fuzzAlongTangentJitter = 0.95
 
-                // Core edge removal so fuzz “is” the surface (disabled in extensions for safety).
+                // Core erosion disabled in extensions for safety.
                 c.fuzzErodeEnabled = isExt ? false : true
                 c.fuzzErodeStrength = isExt ? 0.60 : 0.80
                 c.fuzzErodeEdgePower = isExt ? 2.10 : 2.50
@@ -318,7 +313,7 @@ private struct WeatherNowcastSurfacePlot: View {
                 return c
             }()
 
-            RainForecastSurfaceView(intensities: intensities, certainties: certainties, configuration: cfg)
+            RainForecastSurfaceView(intensities: intensities, certainties: probabilities, configuration: cfg)
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
@@ -362,22 +357,21 @@ private struct WeatherNowcastSurfacePlot: View {
     }
 
     // Builds exactly 60 minute buckets aligned to forecastStart.
-    // Missing buckets stay unknown (NaN), never padded as zero.
+    // Missing intensity buckets are filled by interpolation to preserve silhouette continuity.
+    // Probability is set to 0 for buckets with missing source intensity (styling-only fade).
     private func bucketedMinuteSeries(
         from points: [WidgetWeaverWeatherMinutePoint],
         forecastStart: Date,
         targetMinutes: Int
     ) -> BucketedMinuteSeries {
         guard targetMinutes > 0 else {
-            return BucketedMinuteSeries(intensityMMPerHour: [], certainty01: [])
+            return BucketedMinuteSeries(intensityMMPerHour: [], probability01: [])
         }
 
         let sorted = points.sorted { $0.date < $1.date }
 
-        var intensityOut: [Double] = []
-        var certaintyOut: [Double] = []
-        intensityOut.reserveCapacity(targetMinutes)
-        certaintyOut.reserveCapacity(targetMinutes)
+        var rawIntensity: [Double] = Array(repeating: Double.nan, count: targetMinutes)
+        var rawProb: [Double] = Array(repeating: Double.nan, count: targetMinutes)
 
         var idx = 0
         for m in 0..<targetMinutes {
@@ -386,8 +380,8 @@ private struct WeatherNowcastSurfacePlot: View {
 
             var intensitySum: Double = 0.0
             var intensityCount = 0
-            var chanceSum: Double = 0.0
-            var chanceCount = 0
+            var probSum: Double = 0.0
+            var probCount = 0
 
             while idx < sorted.count, sorted[idx].date < bucketEnd {
                 if sorted[idx].date >= bucketStart {
@@ -395,38 +389,111 @@ private struct WeatherNowcastSurfacePlot: View {
                         intensitySum += max(0.0, v)
                         intensityCount += 1
                     }
-
-                    if let c = sorted[idx].precipitationChance01, c.isFinite {
-                        chanceSum += RainSurfaceMath.clamp01(c)
-                        chanceCount += 1
+                    if let p = sorted[idx].precipitationChance01, p.isFinite {
+                        probSum += RainSurfaceMath.clamp01(p)
+                        probCount += 1
                     }
                 }
                 idx += 1
             }
 
-            let intensity: Double = {
-                if intensityCount > 0 {
-                    let avg = intensitySum / Double(intensityCount)
-                    return avg.isFinite ? max(0.0, avg) : Double.nan
-                }
-                return Double.nan
-            }()
+            if intensityCount > 0 {
+                rawIntensity[m] = max(0.0, intensitySum / Double(intensityCount))
+            } else {
+                rawIntensity[m] = Double.nan
+            }
 
-            // If intensity is unknown, certainty must also be unknown so the renderer can fade it out
-            // (and avoid accidentally showing filled continuity for missing buckets).
-            let certainty: Double = {
-                guard intensity.isFinite else { return Double.nan }
-                if chanceCount > 0 {
-                    let avg = chanceSum / Double(chanceCount)
-                    return avg.isFinite ? RainSurfaceMath.clamp01(avg) : Double.nan
-                }
-                return 1.0
-            }()
-
-            intensityOut.append(intensity)
-            certaintyOut.append(certainty)
+            if probCount > 0 {
+                rawProb[m] = RainSurfaceMath.clamp01(probSum / Double(probCount))
+            } else {
+                rawProb[m] = Double.nan
+            }
         }
 
-        return BucketedMinuteSeries(intensityMMPerHour: intensityOut, certainty01: certaintyOut)
+        let filled = fillMissingIntensities(rawIntensity)
+
+        var intensityOut = filled.filled
+        var probOut: [Double] = Array(repeating: 0.0, count: targetMinutes)
+        for i in 0..<targetMinutes {
+            intensityOut[i] = intensityOut[i].isFinite ? max(0.0, intensityOut[i]) : 0.0
+
+            if filled.wasMissing[i] {
+                // Missing source intensity => styling fade only.
+                probOut[i] = 0.0
+            } else {
+                // Known intensity => use probability if present, otherwise assume fully certain.
+                if rawProb[i].isFinite {
+                    probOut[i] = RainSurfaceMath.clamp01(rawProb[i])
+                } else {
+                    probOut[i] = 1.0
+                }
+            }
+        }
+
+        return BucketedMinuteSeries(intensityMMPerHour: intensityOut, probability01: probOut)
+    }
+
+    private func fillMissingIntensities(_ raw: [Double]) -> (filled: [Double], wasMissing: [Bool]) {
+        let n = raw.count
+        guard n > 0 else { return ([], []) }
+
+        var filled = raw
+        let wasMissing = raw.map { !$0.isFinite }
+
+        guard let firstKnown = raw.firstIndex(where: { $0.isFinite }) else {
+            return (Array(repeating: 0.0, count: n), Array(repeating: true, count: n))
+        }
+
+        // Leading fill.
+        let firstVal = raw[firstKnown]
+        if firstKnown > 0 {
+            for i in 0..<firstKnown {
+                filled[i] = firstVal
+            }
+        }
+
+        var i = firstKnown
+        while i < n {
+            if raw[i].isFinite {
+                filled[i] = raw[i]
+                i += 1
+                continue
+            }
+
+            // raw[i] missing; interpolate until next known.
+            let leftIndex = i - 1
+            let leftVal = filled[leftIndex]
+
+            var j = i + 1
+            while j < n, !raw[j].isFinite {
+                j += 1
+            }
+
+            if j >= n {
+                // Trailing fill.
+                for k in i..<n {
+                    filled[k] = leftVal
+                }
+                break
+            } else {
+                let rightVal = raw[j]
+                let span = Double(j - leftIndex)
+                for k in (leftIndex + 1)..<j {
+                    let t = Double(k - leftIndex) / span
+                    filled[k] = leftVal + (rightVal - leftVal) * t
+                }
+                filled[j] = rightVal
+                i = j + 1
+            }
+        }
+
+        // Clamp any remaining non-finite.
+        for idx in 0..<n {
+            if !filled[idx].isFinite {
+                filled[idx] = 0.0
+            }
+        }
+
+        return (filled, wasMissing)
     }
 }
