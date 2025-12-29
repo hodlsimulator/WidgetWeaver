@@ -150,7 +150,7 @@ private struct WWClockSecondsSweepClock: View {
                 startOrResyncSweep(reason: "task(id:minuteAnchor)")
             }
         }
-        .onChange(of: minuteAnchor) { _ in
+        .onChange(of: minuteAnchor) { _, _ in
             Task { @MainActor in
                 startOrResyncSweep(reason: "onChange(minuteAnchor)")
             }

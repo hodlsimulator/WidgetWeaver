@@ -15,7 +15,20 @@ struct RainSurfaceGeometry {
     let certainties: [Double]
     let displayScale: CGFloat
 
-    init(chartRect: CGRect, baselineY: CGFloat, heights: [CGFloat], certainties: [Double], displayScale: CGFloat) {
+    let sourceMinuteCount: Int
+    let tailStartX: CGFloat?
+    let tailEndX: CGFloat?
+
+    init(
+        chartRect: CGRect,
+        baselineY: CGFloat,
+        heights: [CGFloat],
+        certainties: [Double],
+        displayScale: CGFloat,
+        sourceMinuteCount: Int = 0,
+        tailStartX: CGFloat? = nil,
+        tailEndX: CGFloat? = nil
+    ) {
         self.chartRect = chartRect
         self.baselineY = baselineY.isFinite ? baselineY : chartRect.maxY
         self.displayScale = displayScale.isFinite ? displayScale : 1.0
@@ -28,6 +41,24 @@ struct RainSurfaceGeometry {
         self.certainties = certainties.map { c in
             guard c.isFinite else { return 0.0 }
             return RainSurfaceMath.clamp01(c)
+        }
+
+        self.sourceMinuteCount = max(0, sourceMinuteCount)
+
+        let minSpan = 1.0 / max(1.0, self.displayScale)
+        if let s = tailStartX, let e = tailEndX, s.isFinite, e.isFinite, e > s {
+            let cs = min(max(chartRect.minX, s), chartRect.maxX)
+            let ce = min(max(chartRect.minX, e), chartRect.maxX)
+            if ce > cs + minSpan {
+                self.tailStartX = cs
+                self.tailEndX = ce
+            } else {
+                self.tailStartX = nil
+                self.tailEndX = nil
+            }
+        } else {
+            self.tailStartX = nil
+            self.tailEndX = nil
         }
     }
 
