@@ -21,8 +21,8 @@ struct RainSurfaceGeometry {
         self.displayScale = displayScale.isFinite ? displayScale : 1.0
 
         self.heights = heights.map { h in
-            guard h.isFinite else { return 0 }
-            return max(0, h)
+            guard h.isFinite else { return 0.0 }
+            return max(0.0, h)
         }
 
         self.certainties = certainties.map { c in
@@ -34,8 +34,8 @@ struct RainSurfaceGeometry {
     var sampleCount: Int { heights.count }
 
     var dx: CGFloat {
-        guard sampleCount > 1 else { return 0 }
-        let w = chartRect.width.isFinite ? chartRect.width : 0
+        guard sampleCount > 1 else { return 0.0 }
+        let w = chartRect.width.isFinite ? chartRect.width : 0.0
         return w / CGFloat(sampleCount - 1)
     }
 
@@ -46,8 +46,8 @@ struct RainSurfaceGeometry {
     func surfaceYAt(_ index: Int) -> CGFloat {
         guard index >= 0 && index < heights.count else { return baselineY }
         let h = heights[index]
-        if !h.isFinite { return baselineY }
-        return baselineY - max(0, h)
+        guard h.isFinite else { return baselineY }
+        return baselineY - max(0.0, h)
     }
 
     func certaintyAt(_ index: Int) -> Double {
@@ -64,8 +64,10 @@ struct RainSurfaceGeometry {
         let denom = max(0.000_001, chartRect.width)
         let t = (x - chartRect.minX) / denom
         let u = RainSurfaceMath.clamp01(Double(t)) * Double(sampleCount - 1)
+
         let i0 = max(0, min(sampleCount - 2, Int(floor(u))))
         let frac = CGFloat(u - Double(i0))
+
         let y0 = surfaceYAt(i0)
         let y1 = surfaceYAt(i0 + 1)
         let y = y0 + (y1 - y0) * frac
@@ -77,8 +79,10 @@ struct RainSurfaceGeometry {
         let denom = max(0.000_001, chartRect.width)
         let t = (x - chartRect.minX) / denom
         let u = RainSurfaceMath.clamp01(Double(t)) * Double(sampleCount - 1)
+
         let i0 = max(0, min(sampleCount - 2, Int(floor(u))))
         let frac = u - Double(i0)
+
         let c0 = certaintyAt(i0)
         let c1 = certaintyAt(i0 + 1)
         let c = c0 + (c1 - c0) * frac
@@ -107,17 +111,17 @@ struct RainSurfaceGeometry {
             return (0..<sampleCount).map { surfacePointAt($0) }
         }()
 
-        p.move(to: CGPoint(x: chartRect.minX, y: baselineY))
-        p.addLine(to: topPoints[0])
-
+        p.move(to: topPoints[0])
         if sampleCount > 1 {
             for i in 1..<sampleCount {
                 p.addLine(to: topPoints[i])
             }
         }
 
-        p.addLine(to: CGPoint(x: chartRect.maxX, y: baselineY))
+        p.addLine(to: CGPoint(x: xAt(sampleCount - 1), y: baselineY))
+        p.addLine(to: CGPoint(x: xAt(0), y: baselineY))
         p.closeSubpath()
+
         return p
     }
 }

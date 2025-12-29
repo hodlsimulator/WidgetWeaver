@@ -41,11 +41,7 @@ struct RainForecastSurfaceRenderer {
 
         // Rendering continuity only: fill unknowns by interpolation/hold, but fade them out via certainty.
         let filledIntensities = RainSurfaceMath.fillMissingLinearHoldEnds(rawIntensities)
-
-        let minuteCertainties = makeMinuteCertainties(
-            rawIntensities: rawIntensities,
-            inputCertainties: certainties
-        )
+        let minuteCertainties = makeMinuteCertainties(rawIntensities: rawIntensities, inputCertainties: certainties)
 
         var baselineY = chartRect.minY + chartRect.height * configuration.baselineFractionFromTop
         baselineY = RainSurfaceMath.alignToPixelCenter(baselineY, displayScale: displayScale)
@@ -65,19 +61,14 @@ struct RainForecastSurfaceRenderer {
         }()
 
         let positiveKnown = rawIntensities.filter { $0.isFinite && $0 > 0.0 }
-
         let referenceMaxMMPerHour: Double = {
             let ref = configuration.intensityReferenceMaxMMPerHour
-            if ref.isFinite, ref > 0.0 {
-                return max(1.0, ref)
-            }
+            if ref.isFinite, ref > 0.0 { return max(1.0, ref) }
 
             let p = RainSurfaceMath.clamp01(configuration.robustMaxPercentile)
             if !positiveKnown.isEmpty {
                 let robust = RainSurfaceMath.percentile(positiveKnown, p: p)
-                if robust.isFinite, robust > 0.0 {
-                    return max(1.0, robust)
-                }
+                if robust.isFinite, robust > 0.0 { return max(1.0, robust) }
             }
 
             let fallback = positiveKnown.max() ?? 0.0
@@ -86,7 +77,6 @@ struct RainForecastSurfaceRenderer {
 
         let invReferenceMax = 1.0 / max(0.000_001, referenceMaxMMPerHour)
         let gamma = max(0.10, min(2.50, configuration.intensityGamma))
-
         let onePixel = 1.0 / max(1.0, displayScale)
 
         @inline(__always)
@@ -128,7 +118,6 @@ struct RainForecastSurfaceRenderer {
             var h = CGFloat(t) * heightScale
             if !h.isFinite { h = 0.0 }
             h = max(0.0, h)
-
             return softCeil(h, ceiling: maxHeight)
         }
 
@@ -138,11 +127,10 @@ struct RainForecastSurfaceRenderer {
         )
 
         var denseHeights = RainSurfaceMath.resampleMonotoneCubicCenters(minuteHeights, targetCount: targetDense)
-
-        var denseCertainties = RainSurfaceMath.resampleMonotoneCubic(minuteCertainties, targetCount: targetDense)
+        var denseCertainties = RainSurfaceMath.resampleMonotoneCubicCenters(minuteCertainties, targetCount: targetDense)
             .map { RainSurfaceMath.clamp01($0) }
 
-        // Small smoothing keeps fades continuous and prevents “seam” artefacts.
+        // Small smoothing keeps fades continuous and reduces seam artefacts.
         denseCertainties = RainSurfaceMath.smooth(denseCertainties, windowRadius: 2, passes: 1)
             .map { RainSurfaceMath.clamp01($0) }
 
@@ -156,8 +144,7 @@ struct RainForecastSurfaceRenderer {
             power: configuration.edgeEasingPower
         )
 
-        // Always apply a tiny local easing at wet boundaries to avoid guillotine-looking drops,
-        // without tapering the chart ends.
+        // Always apply a tiny local easing at wet boundaries to avoid guillotine-looking drops.
         let minBoundaryFraction = CGFloat(2.0) / CGFloat(max(1, nMinutes))
         RainSurfaceMath.applyWetSegmentEasing(
             to: &denseHeights,
@@ -170,9 +157,7 @@ struct RainForecastSurfaceRenderer {
         if onePixel.isFinite {
             let snap = onePixel * 0.10
             for i in 0..<denseHeights.count {
-                if denseHeights[i] < snap {
-                    denseHeights[i] = 0.0
-                }
+                if denseHeights[i] < snap { denseHeights[i] = 0.0 }
             }
         }
 
@@ -184,34 +169,34 @@ struct RainForecastSurfaceRenderer {
             displayScale: displayScale
         )
 
-        RainSurfaceDrawing.drawSurface(
-            in: &context,
-            geometry: geometry,
-            configuration: configuration,
-            displayScale: displayScale
-        )
+        let maskStopsCap: Int = (configuration.maxDenseSamples <= 280) ? 220 : 360
+        let needsMask: Bool = denseCertainties.contains { maskAlpha(from: $0) < 0.999 }
 
-        let needsMask: Bool = {
-            if rawIntensities.contains(where: { !$0.isFinite }) { return true }
-            if denseCertainties.contains(where: { $0 < 0.999 }) { return true }
-            return false
-        }()
-
-        if needsMask {
-            let previousBlend = context.blendMode
-            context.blendMode = .destinationIn
-
-            let gradient = uncertaintyMaskGradient(from: denseCertainties)
-            context.fill(
-                Path(chartRect),
-                with: .linearGradient(
-                    gradient,
-                    startPoint: CGPoint(x: chartRect.minX, y: chartRect.midY),
-                    endPoint: CGPoint(x: chartRect.maxX, y: chartRect.midY)
-                )
+        context.drawLayer { layer in
+            var layerCtx = layer
+            RainSurfaceDrawing.drawSurface(
+                in: &layerCtx,
+                geometry: geometry,
+                configuration: configuration,
+                displayScale: displayScale
             )
 
-            context.blendMode = previousBlend
+            if needsMask {
+                layerCtx.blendMode = .destinationIn
+                let grad = makeMaskGradient(denseCertainties: denseCertainties, maxStops: maskStopsCap)
+
+                var rectPath = Path()
+                rectPath.addRect(chartRect)
+
+                layerCtx.fill(
+                    rectPath,
+                    with: .linearGradient(
+                        grad,
+                        startPoint: CGPoint(x: chartRect.minX, y: chartRect.midY),
+                        endPoint: CGPoint(x: chartRect.maxX, y: chartRect.midY)
+                    )
+                )
+            }
         }
 
         RainSurfaceDrawing.drawBaseline(
@@ -223,16 +208,11 @@ struct RainForecastSurfaceRenderer {
         )
     }
 
-    private func makeMinuteCertainties(
-        rawIntensities: [Double],
-        inputCertainties: [Double]
-    ) -> [Double] {
+    private func makeMinuteCertainties(rawIntensities: [Double], inputCertainties: [Double]) -> [Double] {
         let n = rawIntensities.count
-
         let aligned: [Double] = {
             if inputCertainties.count == n { return inputCertainties }
             if inputCertainties.isEmpty { return Array(repeating: Double.nan, count: n) }
-
             var c = inputCertainties
             if c.count < n {
                 c.append(contentsOf: Array(repeating: c.last ?? Double.nan, count: n - c.count))
@@ -246,20 +226,24 @@ struct RainForecastSurfaceRenderer {
         out.reserveCapacity(n)
 
         for i in 0..<n {
-            let hasKnownIntensity = rawIntensities[i].isFinite
-            let c = aligned[i]
+            let intensityKnown = rawIntensities[i].isFinite
+            if !intensityKnown {
+                out.append(0.0)
+                continue
+            }
 
+            let c = aligned[i]
             if c.isFinite {
                 out.append(RainSurfaceMath.clamp01(c))
             } else {
-                out.append(hasKnownIntensity ? 1.0 : 0.0)
+                out.append(1.0)
             }
         }
 
         return out
     }
 
-    private func uncertaintyMaskGradient(from denseCertainties: [Double]) -> Gradient {
+    private func makeMaskGradient(denseCertainties: [Double], maxStops: Int) -> Gradient {
         let n = denseCertainties.count
         guard n > 1 else {
             let a = maskAlpha(from: denseCertainties.first ?? 1.0)
@@ -269,16 +253,24 @@ struct RainForecastSurfaceRenderer {
             ])
         }
 
-        let stopCount = min(24, max(6, n / 10))
+        let stopCount = max(6, min(maxStops, n))
         var stops: [Gradient.Stop] = []
         stops.reserveCapacity(stopCount)
 
-        for i in 0..<stopCount {
-            let t = (stopCount == 1) ? 0.0 : (Double(i) / Double(stopCount - 1))
-            let idx = Int(round(t * Double(n - 1)))
-            let c = RainSurfaceMath.clamp01(denseCertainties[max(0, min(n - 1, idx))])
-            let a = maskAlpha(from: c)
-            stops.append(.init(color: Color.white.opacity(a), location: t))
+        if stopCount == n {
+            for i in 0..<n {
+                let loc = Double(i) / Double(n - 1)
+                let a = maskAlpha(from: denseCertainties[i])
+                stops.append(.init(color: Color.white.opacity(a), location: loc))
+            }
+        } else {
+            let step = Double(n - 1) / Double(stopCount - 1)
+            for j in 0..<stopCount {
+                let idx = max(0, min(n - 1, Int(round(Double(j) * step))))
+                let loc = Double(idx) / Double(n - 1)
+                let a = maskAlpha(from: denseCertainties[idx])
+                stops.append(.init(color: Color.white.opacity(a), location: loc))
+            }
         }
 
         return Gradient(stops: stops)
@@ -288,8 +280,8 @@ struct RainForecastSurfaceRenderer {
         let c = RainSurfaceMath.clamp01(certainty)
         if c <= 0.000_5 { return 0.0 }
 
-        // Gentle lift of mid certainties; unknown/missing stays at 0.
-        let exponent: Double = 0.70
+        // Lift mid certainties to avoid crushed interiors; preserves 0 for missing/unknown.
+        let exponent: Double = 0.55
         return RainSurfaceMath.clamp01(pow(c, exponent))
     }
 }

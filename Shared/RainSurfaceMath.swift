@@ -75,6 +75,7 @@ enum RainSurfaceMath {
         let pp = clamp01(p)
         let sorted = finite.sorted()
         if sorted.count == 1 { return sorted[0] }
+
         let idx = pp * Double(sorted.count - 1)
         let i0 = Int(floor(idx))
         let i1 = min(sorted.count - 1, i0 + 1)
@@ -88,6 +89,7 @@ enum RainSurfaceMath {
         let pp = clamp01(p)
         let sorted = finite.sorted()
         if sorted.count == 1 { return sorted[0] }
+
         let idx = Double(pp) * Double(sorted.count - 1)
         let i0 = Int(floor(idx))
         let i1 = min(sorted.count - 1, i0 + 1)
@@ -107,24 +109,18 @@ enum RainSurfaceMath {
 
         for _ in 0..<passes {
             var out = Array(repeating: CGFloat(0.0), count: n)
-
             for i in 0..<n {
                 var acc: Double = 0.0
                 var wsum: Double = 0.0
-
-                for k in -r...r {
-                    let j = i + k
-                    if j < 0 || j >= n { continue }
-
+                for k in (-r)...r {
+                    let j = max(0, min(n - 1, i + k))
                     let w = Double(r - abs(k) + 1)
                     acc += Double(v[j]) * w
                     wsum += w
                 }
-
                 let y = (wsum > 0.0) ? (acc / wsum) : 0.0
                 out[i] = y.isFinite ? CGFloat(y) : 0.0
             }
-
             v = out
         }
 
@@ -141,24 +137,18 @@ enum RainSurfaceMath {
 
         for _ in 0..<passes {
             var out = Array(repeating: 0.0, count: n)
-
             for i in 0..<n {
                 var acc: Double = 0.0
                 var wsum: Double = 0.0
-
-                for k in -r...r {
-                    let j = i + k
-                    if j < 0 || j >= n { continue }
-
+                for k in (-r)...r {
+                    let j = max(0, min(n - 1, i + k))
                     let w = Double(r - abs(k) + 1)
                     acc += v[j] * w
                     wsum += w
                 }
-
                 let y = (wsum > 0.0) ? (acc / wsum) : 0.0
                 out[i] = y.isFinite ? y : 0.0
             }
-
             v = out
         }
 
@@ -179,6 +169,7 @@ enum RainSurfaceMath {
         guard ramp >= 1 else { return }
 
         let p = max(0.10, power)
+        let minFactor: CGFloat = 0.12
 
         @inline(__always)
         func ease(_ t: CGFloat) -> CGFloat {
@@ -187,24 +178,18 @@ enum RainSurfaceMath {
         }
 
         for i in 0..<ramp {
-            let t = CGFloat(i + 1) / CGFloat(ramp)
-            heights[i] *= ease(t)
-        }
-
-        if ramp > 0 {
-            for i in 0..<ramp {
-                let idx = (n - 1) - i
-                let t = CGFloat(i + 1) / CGFloat(ramp)
-                heights[idx] *= ease(t)
-            }
+            let t = CGFloat(i) / CGFloat(ramp)
+            let w = minFactor + (1.0 - minFactor) * ease(t)
+            heights[i] *= w
+            heights[n - 1 - i] *= w
         }
     }
 
-    // MARK: - Wet-segment easing (start/stop of rain)
+    // MARK: - Wet boundary easing (local)
 
     static func applyWetSegmentEasing(to heights: inout [CGFloat], threshold: CGFloat, fraction: CGFloat, power: Double) {
         let n = heights.count
-        guard n > 4 else { return }
+        guard n > 3 else { return }
 
         let f = max(0.0, min(0.49, fraction))
         guard f > 0.000_01 else { return }
@@ -222,6 +207,8 @@ enum RainSurfaceMath {
             return CGFloat(pow(Double(tt), p))
         }
 
+        var factors = Array(repeating: CGFloat(1.0), count: n)
+
         for i in 0..<(n - 1) {
             let a = heights[i]
             let b = heights[i + 1]
@@ -231,8 +218,8 @@ enum RainSurfaceMath {
                 for k in 0..<ramp {
                     let idx = min(n - 1, i + 1 + k)
                     let t = CGFloat(k + 1) / CGFloat(ramp)
-                    let factor = minFactor + (1.0 - minFactor) * ease(t)
-                    heights[idx] *= factor
+                    let w = minFactor + (1.0 - minFactor) * ease(t)
+                    factors[idx] = min(factors[idx], w)
                 }
             }
 
@@ -241,14 +228,18 @@ enum RainSurfaceMath {
                 for k in 0..<ramp {
                     let idx = max(0, i - k)
                     let t = CGFloat(k + 1) / CGFloat(ramp)
-                    let factor = minFactor + (1.0 - minFactor) * ease(t)
-                    heights[idx] *= factor
+                    let w = minFactor + (1.0 - minFactor) * ease(t)
+                    factors[idx] = min(factors[idx], w)
                 }
             }
         }
+
+        for i in 0..<n {
+            heights[i] *= factors[i]
+        }
     }
 
-    // MARK: - Resampling (monotone cubic / Fritsch–Carlson)
+    // MARK: - Resampling (monotone cubic)
 
     static func resampleMonotoneCubic(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
         let v = values.map { $0.isFinite ? $0 : 0.0 }
@@ -259,6 +250,7 @@ enum RainSurfaceMath {
         var d = Array(repeating: CGFloat(0.0), count: n - 1)
         for i in 0..<(n - 1) { d[i] = v[i + 1] - v[i] }
 
+        // Fritsch–Carlson tangents.
         var m = Array(repeating: CGFloat(0.0), count: n)
         m[0] = d[0]
         m[n - 1] = d[n - 2]
@@ -275,6 +267,7 @@ enum RainSurfaceMath {
             }
         }
 
+        // Prevent overshoot.
         for i in 0..<(n - 1) {
             let di = d[i]
             if abs(di) < 0.000_001 {
@@ -362,20 +355,20 @@ enum RainSurfaceMath {
                 continue
             }
 
-            let a = m[i] / di
-            let b = m[i + 1] / di
+            let ai = m[i] / di
+            let bi = m[i + 1] / di
 
-            if a < 0.0 || b < 0.0 {
+            if ai < 0.0 || bi < 0.0 {
                 m[i] = 0.0
                 m[i + 1] = 0.0
                 continue
             }
 
-            let sumSq = a * a + b * b
+            let sumSq = ai * ai + bi * bi
             if sumSq > 9.0 {
                 let t = 3.0 / sqrt(sumSq)
-                m[i] = (t * a) * di
-                m[i + 1] = (t * b) * di
+                m[i] = (t * ai) * di
+                m[i + 1] = (t * bi) * di
             }
         }
 
@@ -409,16 +402,12 @@ enum RainSurfaceMath {
     }
 
     // MARK: - Resampling (centre-sampled)
-    //
-    // This samples the interpolant slightly inside the endpoints. It helps avoid “straight ramps”
-    // when dense sample budgets are low (eg. widgets), without changing the underlying minutes.
 
     static func resampleMonotoneCubicCenters(_ values: [CGFloat], targetCount: Int) -> [CGFloat] {
         let v = values.map { $0.isFinite ? $0 : 0.0 }
         guard targetCount > 1 else { return v.isEmpty ? [] : [v[0]] }
         guard v.count > 1 else { return Array(repeating: v.first ?? 0.0, count: targetCount) }
 
-        // Build the standard monotone cubic tangents once.
         let n = v.count
         var d = Array(repeating: CGFloat(0.0), count: n - 1)
         for i in 0..<(n - 1) { d[i] = v[i + 1] - v[i] }
@@ -599,20 +588,17 @@ enum RainSurfaceMath {
             }
         }
 
-        guard let firstIdx = finiteIndices.first, let lastIdx = finiteIndices.last else {
+        guard let first = finiteIndices.first else {
             return Array(repeating: 0.0, count: n)
         }
 
-        let firstVal = out[firstIdx]
-        if firstIdx > 0 {
-            for i in 0..<firstIdx { out[i] = firstVal }
+        // Hold the first/last finite values to the ends.
+        for i in 0..<first { out[i] = out[first] }
+        if let last = finiteIndices.last, last < (n - 1) {
+            for i in (last + 1)..<n { out[i] = out[last] }
         }
 
-        let lastVal = out[lastIdx]
-        if lastIdx < n - 1 {
-            for i in (lastIdx + 1)..<n { out[i] = lastVal }
-        }
-
+        // Linear interpolation between known buckets.
         if finiteIndices.count >= 2 {
             for pair in 0..<(finiteIndices.count - 1) {
                 let i0 = finiteIndices[pair]
@@ -630,9 +616,9 @@ enum RainSurfaceMath {
             }
         }
 
+        // Replace any remaining NaN with 0.
         for i in 0..<n {
             if !out[i].isFinite { out[i] = 0.0 }
-            if out[i] < 0.0 { out[i] = 0.0 }
         }
 
         return out
