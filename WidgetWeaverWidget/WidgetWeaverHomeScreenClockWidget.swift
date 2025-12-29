@@ -68,8 +68,12 @@ private enum WWClockBurstConfig {
 
     #if DEBUG
     static let autoStartSessionInDebug: Bool = true
+    static let debugIgnoreSessionCaps: Bool = true
+    static let debugInactiveRetrySeconds: TimeInterval = 10.0
     #else
     static let autoStartSessionInDebug: Bool = false
+    static let debugIgnoreSessionCaps: Bool = false
+    static let debugInactiveRetrySeconds: TimeInterval = 60.0 * 60.0
     #endif
 }
 
@@ -84,7 +88,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: Self.floorToWholeSecond(now),
-            tickSeconds: isLowPower ? 60.0 : 1.0,
+            tickSeconds: isLowPower ? 60.0 : 60.0,
             colourScheme: .classic
         )
     }
@@ -97,7 +101,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: Self.floorToWholeSecond(now),
-            tickSeconds: isLowPower ? 60.0 : 1.0,
+            tickSeconds: isLowPower ? 60.0 : 60.0,
             colourScheme: scheme
         )
     }
@@ -109,11 +113,24 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        if isLowPower {
-            return makeMinuteTimeline(now: now, colourScheme: scheme, policyAfter: now.addingTimeInterval(60.0 * 60.0))
+        // Never start seconds bursts in previews (widget gallery / template contexts).
+        if context.isPreview {
+            return makeMinuteTimeline(
+                now: now,
+                colourScheme: scheme,
+                policyAfter: now.addingTimeInterval(60.0 * 60.0)
+            )
         }
 
-        let plan = WWClockBurstSession.sessionPlan(now: now)
+        if isLowPower {
+            return makeMinuteTimeline(
+                now: now,
+                colourScheme: scheme,
+                policyAfter: now.addingTimeInterval(60.0 * 60.0)
+            )
+        }
+
+        let plan = WWClockBurstSession.sessionPlan(now: now, isPreview: context.isPreview)
 
         if plan.sessionActive {
             return makeBurstThenMinuteTimeline(
@@ -123,7 +140,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                 allowChaining: plan.allowChaining
             )
         } else {
-            return makeMinuteTimeline(now: now, colourScheme: scheme, policyAfter: now.addingTimeInterval(60.0 * 60.0))
+            // In DEBUG, retry soon so seconds mode can kick in without waiting for a long policy delay.
+            let retryAfter = now.addingTimeInterval(WWClockBurstConfig.debugInactiveRetrySeconds)
+
+            return makeMinuteTimeline(
+                now: now,
+                colourScheme: scheme,
+                policyAfter: retryAfter
+            )
         }
     }
 
@@ -168,6 +192,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(burstSeconds + 80)
 
+        // 1 Hz seconds
         for i in 0..<burstSeconds {
             let t = now.addingTimeInterval(TimeInterval(i))
             entries.append(Entry(
@@ -178,6 +203,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             ))
         }
 
+        // Immediately fall back to minute-mode entry after the burst
         entries.append(Entry(
             date: burstEnd,
             anchorDate: Self.floorToWholeSecond(burstEnd),
@@ -198,6 +224,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             next = next.addingTimeInterval(60.0)
         }
 
+        // Chaining: ask WidgetKit for another timeline exactly at burst end, but only within the session window.
         let chainAllowedNow = allowChaining && (burstEnd < sessionUntil)
         let policyAfter = chainAllowedNow ? burstEnd : horizonEnd
 
@@ -261,8 +288,12 @@ private enum WWClockBurstSession {
         let sessionUntil: Date
     }
 
-    static func sessionPlan(now: Date) -> Plan {
+    static func sessionPlan(now: Date, isPreview: Bool) -> Plan {
         let defaults = AppGroup.userDefaults
+
+        if isPreview {
+            return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
+        }
 
         let existingUntil = (defaults.object(forKey: sessionUntilKey) as? Date) ?? .distantPast
         if existingUntil > now {
@@ -276,7 +307,7 @@ private enum WWClockBurstSession {
         }
 
         if wakeRequested {
-            if let until = tryBeginSession(now: now) {
+            if let until = tryBeginSession(now: now, ignoreCaps: WWClockBurstConfig.debugIgnoreSessionCaps) {
                 return Plan(sessionActive: true, allowChaining: true, sessionUntil: until)
             } else {
                 return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
@@ -284,7 +315,7 @@ private enum WWClockBurstSession {
         }
 
         if WWClockBurstConfig.autoStartSessionInDebug {
-            if let until = tryBeginSession(now: now) {
+            if let until = tryBeginSession(now: now, ignoreCaps: WWClockBurstConfig.debugIgnoreSessionCaps) {
                 return Plan(sessionActive: true, allowChaining: true, sessionUntil: until)
             } else {
                 return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
@@ -294,16 +325,19 @@ private enum WWClockBurstSession {
         return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
     }
 
-    private static func tryBeginSession(now: Date) -> Date? {
+    private static func tryBeginSession(now: Date, ignoreCaps: Bool) -> Date? {
         let defaults = AppGroup.userDefaults
         let dayKey = Self.dayKey(for: now)
 
         let countKey = sessionCountPrefix + dayKey
         let sessionsToday = defaults.integer(forKey: countKey)
-        guard sessionsToday < WWClockBurstConfig.sessionMaxPerDay else { return nil }
 
-        let lastStart = (defaults.object(forKey: sessionLastStartKey) as? Date) ?? .distantPast
-        guard now.timeIntervalSince(lastStart) >= WWClockBurstConfig.sessionMinSpacingSeconds else { return nil }
+        if !ignoreCaps {
+            guard sessionsToday < WWClockBurstConfig.sessionMaxPerDay else { return nil }
+
+            let lastStart = (defaults.object(forKey: sessionLastStartKey) as? Date) ?? .distantPast
+            guard now.timeIntervalSince(lastStart) >= WWClockBurstConfig.sessionMinSpacingSeconds else { return nil }
+        }
 
         let until = now.addingTimeInterval(WWClockBurstConfig.sessionMaxSeconds)
 

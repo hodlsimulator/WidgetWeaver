@@ -8,16 +8,12 @@
 import Foundation
 import SwiftUI
 
-// MARK: - Motion configuration
-
 enum WidgetWeaverClockMotionImplementation {
     case burstTimelineHybrid
 }
 
 enum WidgetWeaverClockMotionConfig {
     static let implementation: WidgetWeaverClockMotionImplementation = .burstTimelineHybrid
-
-    /// Seconds mode uses a cheap renderer to avoid widget host placeholder fallback.
     static let lightweightSecondsRendering: Bool = true
 
     #if DEBUG
@@ -27,15 +23,11 @@ enum WidgetWeaverClockMotionConfig {
     #endif
 }
 
-// MARK: - Widget clock view
-
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
     let date: Date
     let anchorDate: Date
     let tickSeconds: TimeInterval
-
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -79,8 +71,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Ultra-light seconds clock
-
 private struct WidgetWeaverClockSecondsLiteView: View {
     let palette: WidgetWeaverClockPalette
     let date: Date
@@ -112,7 +102,6 @@ private struct WidgetWeaverClockSecondsLiteView: View {
                 Circle()
                     .strokeBorder(palette.separatorRing.opacity(0.55), lineWidth: ring)
 
-                // Hour hand
                 hand(
                     colour: palette.handMid.opacity(0.95),
                     width: hourW,
@@ -120,7 +109,6 @@ private struct WidgetWeaverClockSecondsLiteView: View {
                     angleDegrees: angles.hour
                 )
 
-                // Minute hand
                 hand(
                     colour: palette.handLight.opacity(0.95),
                     width: minW,
@@ -154,8 +142,6 @@ private struct WidgetWeaverClockSecondsLiteView: View {
     }
 }
 
-// MARK: - Angle maths
-
 private struct WWClockBaseAngles {
     let hour: Double
     let minute: Double
@@ -180,8 +166,6 @@ private struct WWClockBaseAngles {
 }
 
 #if DEBUG
-// MARK: - Debug overlay
-
 private struct WidgetWeaverClockHybridDebugOverlay: View {
     let entryDate: Date
     let tickSeconds: TimeInterval
@@ -191,6 +175,9 @@ private struct WidgetWeaverClockHybridDebugOverlay: View {
     var body: some View {
         let now = Date()
         let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
+
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let isSeconds = (tickSeconds <= 1.0) && !isLowPower
 
         let cal = Calendar.autoupdatingCurrent
         let s = cal.component(.second, from: entryDate)
@@ -210,6 +197,12 @@ private struct WidgetWeaverClockHybridDebugOverlay: View {
                 .opacity(0.85)
 
             Text(isPlaceholderRedacted ? "redacted: placeholder" : "redacted: none")
+                .opacity(0.80)
+
+            Text(isLowPower ? "LPM on" : "LPM off")
+                .opacity(0.80)
+
+            Text(isSeconds ? "mode: seconds" : "mode: minute")
                 .opacity(0.80)
 
             Text("tickSeconds \(Int(tickSeconds.rounded()))")
