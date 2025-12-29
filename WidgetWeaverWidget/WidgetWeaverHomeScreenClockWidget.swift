@@ -58,22 +58,16 @@ enum WidgetWeaverClockTickMode: Int {
 
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
-
-    /// Minute anchor used for stepped hour/minute hands.
     let minuteAnchor: Date
-
-    /// Display mode for this entry.
     let tickMode: WidgetWeaverClockTickMode
-
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
 private enum WWClockTimelineConfig {
-    /// Keep under the commonly observed “~250 entries” failure zone.
-    /// 240 entries ~= 4 hours of minute boundaries (+ an immediate entry).
-    static let maxEntriesPerTimeline: Int = 240
+    // Keep comfortably under the “too many entries” danger zone.
+    // 120 entries = 2 hours of minute boundaries.
+    static let maxEntriesPerTimeline: Int = 120
 
-    /// Whether to show seconds by default in normal power.
     static let defaultTickMode: WidgetWeaverClockTickMode = .secondsSweep
 }
 
@@ -83,10 +77,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
+        let minuteAnchor = Self.floorToMinute(now)
+
         return Entry(
-            date: now,
-            minuteAnchor: Self.floorToMinute(now),
-            tickMode: .minuteOnly,
+            date: minuteAnchor,
+            minuteAnchor: minuteAnchor,
+            tickMode: .secondsSweep,
             colourScheme: .classic
         )
     }
@@ -94,11 +90,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
+        let minuteAnchor = Self.floorToMinute(now)
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
         return Entry(
-            date: now,
-            minuteAnchor: Self.floorToMinute(now),
+            date: minuteAnchor,
+            minuteAnchor: minuteAnchor,
             tickMode: isLowPower ? .minuteOnly : WWClockTimelineConfig.defaultTickMode,
             colourScheme: scheme
         )
@@ -111,7 +108,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        // Avoid seconds in preview contexts.
+        // Previews should stay cheap and predictable.
         if context.isPreview {
             return makeMinuteTimeline(now: now, colourScheme: scheme)
         }
@@ -131,9 +128,11 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate correctness.
+        // IMPORTANT:
+        // Use minute boundary dates for entries so WidgetKit’s “current entry” switches are clean.
+        // Minute hand steps once per minute.
         entries.append(Entry(
-            date: now,
+            date: minuteAnchorNow,
             minuteAnchor: minuteAnchorNow,
             tickMode: .minuteOnly,
             colourScheme: colourScheme
@@ -159,27 +158,31 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate correctness. Minute hand is anchored to the current minute start.
+        // Same minute-boundary behaviour, but the view uses a seconds sweep animation.
         entries.append(Entry(
-            date: now,
+            date: minuteAnchorNow,
             minuteAnchor: minuteAnchorNow,
             tickMode: .secondsSweep,
-            colourScheme: colourScheme
+            colourScheme: colourschemeSafe(colourScheme)
         ))
 
-        // Minute boundary entries restart the seconds sweep each minute.
         var next = minuteAnchorNow.addingTimeInterval(60.0)
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(Entry(
                 date: next,
                 minuteAnchor: next,
                 tickMode: .secondsSweep,
-                colourScheme: colourScheme
+                colourScheme: colourschemeSafe(colourScheme)
             ))
             next = next.addingTimeInterval(60.0)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
+    }
+
+    // This exists only to avoid accidental future crashes if the enum gains new cases.
+    private func colourschemeSafe(_ scheme: WidgetWeaverClockColourScheme) -> WidgetWeaverClockColourScheme {
+        scheme
     }
 
     // MARK: - Time helpers
