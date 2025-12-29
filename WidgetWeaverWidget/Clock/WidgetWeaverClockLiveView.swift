@@ -23,7 +23,9 @@ struct WidgetWeaverClockLiveView: View {
     @State private var minPhase: Double = 0
     @State private var hourPhase: Double = 0
 
+    #if DEBUG
     @State private var debugPulse: Double = 0
+    #endif
 
     init(palette: WidgetWeaverClockPalette, startDate: Date) {
         self.palette = palette
@@ -46,6 +48,11 @@ struct WidgetWeaverClockLiveView: View {
                 secondAngle: secondAngle
             )
 
+            // Heartbeat:
+            // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
+            // This helps CoreAnimation-backed repeatForever rotations keep running on the Home Screen.
+            WWClockWidgetHeartbeat(start: baseDate)
+
             #if DEBUG
             VStack(alignment: .trailing, spacing: 2) {
                 HStack(spacing: 6) {
@@ -53,7 +60,7 @@ struct WidgetWeaverClockLiveView: View {
                         .frame(width: 6, height: 6)
                         .opacity(0.15 + debugPulse * 0.85)
 
-                    // Counts up from the last re-sync. This should tick if the widget host is live.
+                    // Counts up from the last re-sync.
                     Text(timerInterval: baseDate...Date.distantFuture, countsDown: false)
                 }
 
@@ -72,14 +79,12 @@ struct WidgetWeaverClockLiveView: View {
         }
         .onAppear {
             appeared = true
-            // Start on the next runloop tick so CoreAnimation gets a clean “from” state.
             DispatchQueue.main.async {
                 syncAndStartIfNeeded()
             }
         }
         .task {
-            // Some WidgetKit hosting paths reuse snapshots in ways that can skip onAppear.
-            // Running the same guarded start logic here is harmless.
+            // Some widget hosting paths can skip onAppear.
             DispatchQueue.main.async {
                 syncAndStartIfNeeded()
             }
@@ -90,19 +95,19 @@ struct WidgetWeaverClockLiveView: View {
         let now = Date()
 
         // Start once per view lifetime, but also re-sync if the anchor is stale.
-        // This covers cases where WidgetKit reuses a previously rendered snapshot and then the view becomes visible later.
         let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > 1.0)
         guard shouldResync else { return }
 
         started = true
         baseDate = now
 
-        // Reset phases without animation.
         withAnimation(.none) {
             secPhase = 0
             minPhase = 0
             hourPhase = 0
+            #if DEBUG
             debugPulse = 0
+            #endif
         }
 
         // CoreAnimation-backed infinite sweeps.
@@ -121,6 +126,24 @@ struct WidgetWeaverClockLiveView: View {
             debugPulse = 1
         }
         #endif
+    }
+}
+
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        // Keeping this extremely cheap:
+        // - very small font
+        // - clipped to a 1x1 region
+        // - almost transparent
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
