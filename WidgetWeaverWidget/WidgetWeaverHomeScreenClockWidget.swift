@@ -64,7 +64,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: 30.0, colourScheme: .classic)
+        return Entry(date: now, anchorDate: now, tickSeconds: 0.0, colourScheme: .classic)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
@@ -72,37 +72,25 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         return Entry(
             date: now,
             anchorDate: now,
-            tickSeconds: 30.0,
+            tickSeconds: 0.0,
             colourScheme: configuration.colourScheme ?? .classic
         )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let scheme = configuration.colourScheme ?? .classic
+        let now = Date()
 
-        // Budget-safe strategy:
-        // - Avoid 1 Hz WidgetKit timelines.
-        // - Use sparse entries plus a linear animation that spans the entire interval.
-        // - 60s ticks can land on a 360° second-hand delta per entry (can appear frozen).
-        // - 30s ticks land on 180° deltas, which stays visually alive while cutting update rate.
-        let tickSeconds: TimeInterval = context.isPreview ? 2.0 : 30.0
+        // Budget-safe:
+        // - Keep WidgetKit timelines sparse.
+        // - The view itself is responsible for per-second ticking (TimelineView inside the widget view).
+        // - Still provide a periodic reload so the system can re-request a fresh timeline.
+        let entry = Entry(date: now, anchorDate: now, tickSeconds: 0.0, colourScheme: scheme)
 
-        // Keep under the common ~250 entry ceiling.
-        // 240 * 30s = 7200s (≈ 2 hours horizon), then WidgetKit reloads the timeline.
-        let maxEntries: Int = context.isPreview ? 30 : 240
-
-        let anchorDate: Date = Date()
-
-        var entries: [Entry] = []
-        entries.reserveCapacity(maxEntries)
-
-        for i in 0..<maxEntries {
-            let d = anchorDate.addingTimeInterval(TimeInterval(i) * tickSeconds)
-            entries.append(Entry(date: d, anchorDate: anchorDate, tickSeconds: tickSeconds, colourScheme: scheme))
-        }
-
-        let refreshDate = anchorDate.addingTimeInterval(TimeInterval(maxEntries) * tickSeconds)
-        return Timeline(entries: entries, policy: .after(refreshDate))
+        // Reload occasionally to keep WidgetKit happy and to pick up any environment changes.
+        // This does NOT drive the second-hand ticking.
+        let reloadDate = now.addingTimeInterval(60.0 * 60.0)
+        return Timeline(entries: [entry], policy: .after(reloadDate))
     }
 }
 
@@ -128,6 +116,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
     let entry: WidgetWeaverHomeScreenClockEntry
 
     @Environment(\.colorScheme) private var mode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(
@@ -135,15 +124,34 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: mode
         )
 
-        WidgetWeaverRenderClock.withNow(entry.date) {
-            WidgetWeaverClockWidgetLiveView(
-                palette: palette,
-                date: entry.date,
-                anchorDate: entry.anchorDate,
-                tickSeconds: entry.tickSeconds
-            )
-            .unredacted()
-            .id(entry.anchorDate)
+        Group {
+            if reduceMotion {
+                TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
+                    let now = timeline.date
+                    WidgetWeaverRenderClock.withNow(now) {
+                        WidgetWeaverClockWidgetLiveView(
+                            palette: palette,
+                            date: now,
+                            anchorDate: now,
+                            tickSeconds: 0.0
+                        )
+                        .unredacted()
+                    }
+                }
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0, paused: false)) { timeline in
+                    let now = timeline.date
+                    WidgetWeaverRenderClock.withNow(now) {
+                        WidgetWeaverClockWidgetLiveView(
+                            palette: palette,
+                            date: now,
+                            anchorDate: now,
+                            tickSeconds: 0.0
+                        )
+                        .unredacted()
+                    }
+                }
+            }
         }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)

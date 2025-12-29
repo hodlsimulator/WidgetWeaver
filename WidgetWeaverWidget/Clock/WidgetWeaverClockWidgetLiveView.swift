@@ -23,6 +23,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
     /// Expected spacing between timeline entries.
     ///
     /// Used as the animation duration so CoreAnimation can sweep the hands smoothly between entries.
+    ///
+    /// When set to `0`, animations are disabled (useful when a `TimelineView` is driving per-second updates).
     let tickSeconds: TimeInterval
 
     var body: some View {
@@ -43,7 +45,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(.linear(duration: max(0.0, tickSeconds)), value: date)
+        .animation(tickSeconds > 0 ? .linear(duration: tickSeconds) : nil, value: date)
     }
 }
 
