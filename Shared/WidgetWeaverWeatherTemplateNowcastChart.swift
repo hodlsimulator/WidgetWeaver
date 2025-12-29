@@ -200,8 +200,6 @@ private struct WeatherNowcastSurfacePlot: View {
             let heightPx = proxy.size.height * max(1.0, displayScale)
             let areaPx = Double(max(1.0, widthPx * heightPx))
 
-            // Restores the smoother silhouette in the extension without going back to
-            // unbounded “widthPx” sampling. The cap here is the main shape fix.
             let denseSamplesBudget: Int = {
                 if isExt {
                     let byWidth = Int(widthPx.rounded(.toNearestOrAwayFromZero))
@@ -213,7 +211,6 @@ private struct WeatherNowcastSurfacePlot: View {
 
             let speckleBudget: Int = {
                 if isExt {
-                    // Scale with chart area, hard-capped.
                     let scaled = Int((areaPx / 280.0).rounded(.toNearestOrAwayFromZero))
                     return max(220, min(900, scaled))
                 } else {
@@ -243,11 +240,11 @@ private struct WeatherNowcastSurfacePlot: View {
                 c.typicalPeakFraction = baselineFromTop - ((baselineFromTop - legacyHeadroomFromTop) * legacyTypicalPeakHeightFraction)
 
                 c.robustMaxPercentile = 0.93
-
-                // Gentler shaping (restores rounder shoulders / less pointy peaks).
                 c.intensityGamma = 0.52
 
-                c.edgeEasingFraction = 0.18
+                // Accuracy: do not taper the chart at the left/right edges.
+                // (“Now” can be wet; “60m” can be wet.)
+                c.edgeEasingFraction = 0.0
                 c.edgeEasingPower = 1.45
 
                 c.coreBodyColor = Color(red: 0.00, green: 0.10, blue: 0.42)
