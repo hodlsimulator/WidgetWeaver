@@ -5,147 +5,150 @@
 //  Created by . . on 12/23/25.
 //
 
+import Foundation
 import SwiftUI
 
-enum RainSurfaceDrawing {
+#if canImport(UIKit)
+import UIKit
+#endif
 
+struct RainSurfaceDrawing {
     static func drawSurface(
         in context: inout GraphicsContext,
         geometry: RainSurfaceGeometry,
-        cfg: RainForecastSurfaceConfiguration
+        configuration cfg: RainForecastSurfaceConfiguration
     ) {
         let chartRect = geometry.chartRect
-        let baselineY = geometry.baselineY
-        let displayScale = max(1.0, geometry.displayScale)
+        guard chartRect.width > 0.5, chartRect.height > 0.5, geometry.sampleCount >= 2 else { return }
 
-        if cfg.fillBackgroundBlack {
-            context.fill(Path(chartRect), with: .color(.black))
-        }
+        let scale = max(1.0, geometry.displayScale)
 
-        // Build core shape.
-        let corePath = buildCorePath(
-            chartRect: chartRect,
-            baselineY: baselineY,
-            xPositions: geometry.xPositions,
-            heights: geometry.heights,
-            topSmoothing: cfg.topSmoothing
-        )
+        let bandWidthPx = fuzzBandWidthPixels(chartRect: chartRect, cfg: cfg, displayScale: scale)
+        let bandPt = bandWidthPx / scale
 
-        let coreFillColor = cfg.coreBodyColor
-        let coreFillOpacity = min(1.0, max(0.0, cfg.coreOpacity))
-
-        // Fill core body.
-        context.fill(corePath, with: .color(coreFillColor.opacity(coreFillOpacity)))
-
-        // Surface sampling for fuzz/rim.
-        let surfacePoints = buildSurfacePoints(
-            chartRect: chartRect,
-            baselineY: baselineY,
-            xPositions: geometry.xPositions,
-            heights: geometry.heights,
-            topSmoothing: cfg.topSmoothing
-        )
-        if surfacePoints.count < 3 { return }
-
-        let normals = computeNormals(for: surfacePoints)
-
-        // Band width (points + pixels) for fuzz sizing.
-        let bandWidthPt = max(1.0, chartRect.height * CGFloat(cfg.fuzzWidthFraction))
-        let bandWidthPx = bandWidthPt * displayScale
-        let scale = Double(displayScale)
-        let bandPt = CGFloat(Double(bandWidthPx) / scale)
-
-        let isTightBudget = isTightBudgetMode(cfg: cfg)
-
-        // Strength mapping per sample point (0..1).
         let perPointStrength = computeFuzzStrengthPerPoint(
             geometry: geometry,
             cfg: cfg,
-            bandWidthPt: bandPt
+            bandWidthPx: bandWidthPx
         )
-        if perPointStrength.allSatisfy({ $0 <= 0.000_01 }) {
-            // Still allow baseline grain and rim if configured, but skip heavy work.
-        }
-
-        let perSeg = computePerSegmentStrength(perPoint: perPointStrength)
         let maxStrength = perPointStrength.max() ?? 0.0
 
-        // Inset the surface (let fuzz own the boundary when strong).
-        let insetSurfacePoints = insetTopPoints(
-            surfacePoints: surfacePoints,
-            normals: normals,
-            perPointStrength: perPointStrength,
-            cfg: cfg,
-            bandWidthPt: bandPt
-        )
-        let insetCorePath = buildCorePath(
-            chartRect: chartRect,
-            baselineY: baselineY,
-            xPositions: insetSurfacePoints.map { $0.x },
-            heights: insetSurfacePoints.map { baselineY - $0.y },
-            topSmoothing: 0
-        )
+        let surfacePoints: [CGPoint] = (0..<geometry.sampleCount).map { geometry.surfacePointAt($0) }
+        let normals = computeOutwardNormals(points: surfacePoints)
+        let perSeg = computePerSegmentStrength(perPoint: perPointStrength)
 
-        // Top lift (keeps mid-tones readable).
-        if cfg.coreTopLiftEnabled {
-            drawCoreTopLift(
-                in: &context,
-                corePath: insetCorePath,
-                chartRect: chartRect,
-                baselineY: baselineY,
-                cfg: cfg
-            )
+        let isTightBudget = isTightBudgetMode(cfg)
+
+        let fuzzAllowed: Bool = cfg.fuzzEnabled
+            && cfg.canEnableFuzz
+            && (cfg.fuzzMaxOpacity > 0.000_1)
+            && (cfg.fuzzSpeckStrength > 0.000_1)
+            && (maxStrength > 0.01)
+            && (bandWidthPx > 0.5)
+
+        // Slight inset so fuzz owns the boundary (cheap, no raster).
+        let insetPt = CGFloat(max(0.0, cfg.fuzzErodeRimInsetPixels)) / scale
+        var insetTopPoints = surfacePoints
+
+        if fuzzAllowed,
+           insetPt > 0.000_1,
+           normals.count == insetTopPoints.count,
+           perPointStrength.count == insetTopPoints.count
+        {
+            let edgePow = max(0.10, cfg.fuzzErodeEdgePower)
+            let insetMul = isTightBudget ? 0.70 : 1.0
+
+            for i in 0..<insetTopPoints.count {
+                let s = RainSurfaceMath.clamp01(perPointStrength[i])
+                if s <= 0.000_5 { continue }
+
+                let w = pow(s, edgePow) * insetMul
+                let n = normals[i]
+
+                let dx: CGFloat = n.dx * insetPt * CGFloat(w)
+                let dy: CGFloat = n.dy * insetPt * CGFloat(w)
+
+                insetTopPoints[i] = CGPoint(
+                    x: insetTopPoints[i].x - dx,
+                    y: insetTopPoints[i].y - dy
+                )
+            }
         }
 
-        // Core edge fade (reduce the clean vector rim).
-        if !isTightBudget, cfg.coreFadeFraction > 0.000_1 {
+        let corePath = geometry.filledPath(usingInsetTopPoints: insetTopPoints)
+        if corePath.isEmpty { return }
+
+        let surfacePath = geometry.surfacePolylinePath()
+
+        // ---- Core fill -------------------------------------------------------------------------
+        context.fill(corePath, with: .color(cfg.coreBodyColor))
+
+        // Top lift + inside weld (subtle; avoids floating fuzz).
+        drawCoreTopLift(
+            in: &context,
+            corePath: corePath,
+            surfacePath: surfacePath,
+            chartRect: chartRect,
+            baselineY: geometry.baselineY,
+            cfg: cfg,
+            bandWidthPt: bandPt,
+            displayScale: scale,
+            maxStrength: maxStrength,
+            fuzzAllowed: fuzzAllowed,
+            isTightBudget: isTightBudget
+        )
+
+        // Extra fade-out at the top edge inside the core (filtered layer); skip in tight budgets.
+        if !isTightBudget {
             drawCoreEdgeFade(
                 in: &context,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
-                perSegmentStrength: perSeg,
-                cfg: cfg,
-                bandWidthPt: bandPt
-            )
-        }
-
-        let fuzzAllowed = cfg.fuzzSpeckStrength > 0.000_1 && cfg.fuzzMaxOpacity > 0.000_1
-
-        // Haze (optional).
-        if fuzzAllowed, !isTightBudget, cfg.fuzzHazeStrength > 0.000_1 {
-            drawFuzzHaze(
-                in: &context,
-                chartRect: chartRect,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
-                perSegmentStrength: perSeg,
+                corePath: corePath,
+                surfacePath: surfacePath,
                 cfg: cfg,
                 bandWidthPt: bandPt,
-                maxStrength: maxStrength,
-                isTightBudget: isTightBudget
-            )
-        }
-
-        // Erode core (optional; blurred destinationOut).
-        if fuzzAllowed, !isTightBudget, cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.000_1 {
-            drawCoreErosion(
-                in: &context,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
-                perSegmentStrength: perSeg,
-                cfg: cfg,
-                bandWidthPt: bandPt,
+                displayScale: scale,
                 maxStrength: maxStrength
             )
         }
 
-        // Dissolve the smooth core into particulate near the rim (cheap; keeps fuzz from floating).
-        if fuzzAllowed {
-            drawCoreDissolvePerforation(
+        // ---- Fuzz -----------------------------------------------------------------------------
+        // Haze + erosion removed first under budget pressure.
+        if fuzzAllowed, !isTightBudget, cfg.fuzzHazeStrength > 0.000_1 {
+            drawFuzzHaze(
                 in: &context,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
+                chartRect: chartRect,
+                corePath: corePath,
+                surfacePoints: surfacePoints,
+                perSegmentStrength: perSeg,
+                cfg: cfg,
+                bandWidthPt: bandPt,
+                displayScale: scale,
+                maxStrength: maxStrength
+            )
+        }
+
+        if fuzzAllowed, !isTightBudget, cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.000_1 {
+            drawCoreErosion(
+                in: &context,
+                corePath: corePath,
+                surfacePoints: surfacePoints,
+                perSegmentStrength: perSeg,
+                cfg: cfg,
+                bandWidthPt: bandPt,
+                displayScale: scale,
+                maxStrength: maxStrength
+            )
+        }
+
+        // Speckles (primary dense particulate band).
+        if fuzzAllowed, cfg.fuzzSpeckleBudget > 0, cfg.fuzzSpeckStrength > 0.000_1 {
+            drawFuzzSpeckles(
+                in: &context,
+                chartRect: chartRect,
+                corePath: corePath,
+                surfacePoints: surfacePoints,
                 normals: normals,
+                perPointStrength: perPointStrength,
                 perSegmentStrength: perSeg,
                 cfg: cfg,
                 bandWidthPt: bandPt,
@@ -155,120 +158,90 @@ enum RainSurfaceDrawing {
             )
         }
 
-        // Speckles (primary particulate fuzz).
-        if fuzzAllowed {
-            drawFuzzSpeckles(
+        // Under-grain near baseline (cheap; clipped to core).
+        drawBaselineGrain(
+            in: &context,
+            chartRect: chartRect,
+            corePath: corePath,
+            baselineY: geometry.baselineY,
+            cfg: cfg,
+            displayScale: scale,
+            maxStrength: maxStrength,
+            isTightBudget: isTightBudget
+        )
+
+        // Optional gloss + glints.
+        if cfg.glossEnabled, cfg.glossMaxOpacity > 0.000_1 {
+            drawGloss(
                 in: &context,
+                corePath: corePath,
+                surfacePath: surfacePath,
                 chartRect: chartRect,
-                baselineY: geometry.baselineY,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
-                normals: normals,
-                perPointStrength: perPointStrength,
-                perSegmentStrength: perSeg,
                 cfg: cfg,
-                bandWidthPt: bandPt,
-                displayScale: displayScale,
-                maxStrength: maxStrength,
-                isTightBudget: isTightBudget
+                displayScale: scale
             )
         }
 
-        // Baseline grain (subtle) to avoid a “flat slab”.
-        if cfg.baselineGrainEnabled {
-            drawBaselineGrain(
-                in: &context,
-                chartRect: chartRect,
-                baselineY: baselineY,
-                corePath: insetCorePath,
-                cfg: cfg,
-                displayScale: displayScale
-            )
+        if cfg.glintEnabled, cfg.glintMaxOpacity > 0.000_1, cfg.glintCount > 0 {
+            drawGlints(in: &context, surfacePoints: surfacePoints, cfg: cfg, displayScale: scale)
         }
 
-        // Rim (thin luminous edge; beads + micro strokes, no halo).
-        if cfg.rimEnabled {
+        // Rim: luminous boundary band + micro-grain (avoid “stroke line” look).
+        if cfg.rimEnabled, maxStrength > 0.01 {
             drawRim(
                 in: &context,
                 chartRect: chartRect,
-                corePath: insetCorePath,
-                surfacePoints: insetSurfacePoints,
+                corePath: corePath,
+                surfacePoints: surfacePoints,
                 normals: normals,
                 perPointStrength: perPointStrength,
                 perSegmentStrength: perSeg,
                 cfg: cfg,
                 bandWidthPt: bandPt,
+                displayScale: scale,
                 maxStrength: maxStrength,
                 isTightBudget: isTightBudget
             )
         }
     }
 
-    static func isTightBudgetMode(cfg: RainForecastSurfaceConfiguration) -> Bool {
-        // Treat widget extension as tight: fewer samples and reduced extras.
-        // Note: This is only a coarse knob; budgets are clamped per-layer.
-        if cfg.maxDenseSamples <= 280 { return true }
-        if cfg.fuzzSpeckleBudget <= 900 { return true }
-        return false
-    }
-
-    // MARK: - Baseline grain
-
-    static func drawBaselineGrain(
+    static func drawBaseline(
         in context: inout GraphicsContext,
         chartRect: CGRect,
         baselineY: CGFloat,
-        corePath: Path,
-        cfg: RainForecastSurfaceConfiguration,
+        configuration cfg: RainForecastSurfaceConfiguration,
         displayScale: CGFloat
     ) {
+        guard cfg.baselineEnabled else { return }
+
         let scale = max(1.0, displayScale)
+        let y = RainSurfaceMath.alignToPixelCenter(baselineY + (cfg.baselineOffsetPixels / scale), displayScale: displayScale)
+        let w = max(1.0, cfg.baselineWidthPixels / scale)
 
-        let grains = max(0, min(900, cfg.baselineGrainBudget))
-        if grains <= 0 { return }
+        var p = Path()
+        p.move(to: CGPoint(x: chartRect.minX, y: y))
+        p.addLine(to: CGPoint(x: chartRect.maxX, y: y))
 
-        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0xBADA55))
+        let fade = max(0.0, min(0.49, cfg.baselineEndFadeFraction))
+        let leftA = fade
+        let rightA = 1.0 - fade
 
-        let r0 = max(0.18, min(2.4, cfg.baselineGrainRadiusPixels.lowerBound)) / scale
-        let r1 = max(r0, min(3.0, cfg.baselineGrainRadiusPixels.upperBound)) / scale
+        let color = cfg.baselineColor.opacity(cfg.baselineLineOpacity)
+        let grad = Gradient(stops: [
+            .init(color: color.opacity(0.0), location: 0.0),
+            .init(color: color, location: leftA),
+            .init(color: color, location: rightA),
+            .init(color: color.opacity(0.0), location: 1.0)
+        ])
 
-        let x0 = chartRect.minX
-        let x1 = chartRect.maxX
-        let y0 = baselineY - max(0.0, cfg.baselineGrainYOffsetPixels.lowerBound) / scale
-        let y1 = baselineY + max(0.0, cfg.baselineGrainYOffsetPixels.upperBound) / scale
-
-        let bins = 3
-        var paths: [Path] = Array(repeating: Path(), count: bins)
-
-        for _ in 0..<grains {
-            let x = CGFloat(prng.nextFloat01()) * (x1 - x0) + x0
-            let y = CGFloat(prng.nextFloat01()) * (y1 - y0) + y0
-            let rrT = CGFloat(pow(prng.nextFloat01(), 2.6))
-            let r = r0 + (r1 - r0) * rrT
-            let a = 0.35 + 0.65 * prng.nextFloat01()
-            let bin = min(bins - 1, max(0, Int(floor(a * Double(bins)))))
-            paths[bin].addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
-        }
-
-        if paths.allSatisfy({ $0.isEmpty }) { return }
-
-        let alpha = max(0.0, min(1.0, cfg.baselineGrainOpacity))
-        if alpha <= 0.000_1 { return }
-
-        context.drawLayer { layer in
-            let bleed: CGFloat = 8.0
-            var outside = Path()
-            outside.addRect(chartRect.insetBy(dx: -bleed, dy: -bleed))
-            outside.addPath(corePath)
-            layer.clip(to: outside, style: FillStyle(eoFill: true))
-
-            layer.blendMode = .plusLighter
-
-            for b in 0..<bins {
-                if paths[b].isEmpty { continue }
-                let a = (Double(b + 1) / Double(bins)) * alpha
-                layer.fill(paths[b], with: .color(cfg.baselineGrainColor.opacity(a)))
-            }
-        }
+        context.stroke(
+            p,
+            with: .linearGradient(
+                grad,
+                startPoint: CGPoint(x: chartRect.minX, y: y),
+                endPoint: CGPoint(x: chartRect.maxX, y: y)
+            ),
+            lineWidth: w
+        )
     }
 }

@@ -33,9 +33,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.redactionReasons) private var redactionReasons
 
-    @State private var secondHandTargetDegrees: Double = 0.0
-    @State private var secondsDriverDebug: WWClockSecondsDriverDebugState = .empty
-
     var body: some View {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
@@ -49,13 +46,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
         ZStack(alignment: .bottomTrailing) {
             if eligibility.enabled {
-                WWClockSecondsSweepClock(
+                WWClockSecondsTimelineClock(
                     palette: palette,
-                    minuteAnchor: minuteAnchor,
-                    showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
-                    showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows,
-                    secondHandTargetDegrees: $secondHandTargetDegrees,
-                    driverDebug: $secondsDriverDebug
+                    minuteAnchor: minuteAnchor
                 )
             } else {
                 let base = WWClockAngles(date: minuteAnchor)
@@ -75,19 +68,37 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
             #if DEBUG
             if WidgetWeaverClockMotionConfig.debugOverlayEnabled {
-                WidgetWeaverClockWidgetDebugOverlay(
-                    entryDate: entryDate,
-                    minuteAnchor: minuteAnchor,
-                    tickMode: tickMode,
-                    secondsEligibility: eligibility,
-                    reduceMotion: reduceMotion,
-                    isLowPower: isLowPower,
-                    isPlaceholderRedacted: isPlaceholderRedacted,
-                    driverDebug: secondsDriverDebug,
-                    secondHandTargetDegrees: secondHandTargetDegrees
-                )
-                .padding(6)
-                .unredacted()
+                if eligibility.enabled {
+                    TimelineView(.animation) { context in
+                        WidgetWeaverClockWidgetDebugOverlay(
+                            entryDate: entryDate,
+                            minuteAnchor: minuteAnchor,
+                            tickMode: tickMode,
+                            secondsEligibility: eligibility,
+                            reduceMotion: reduceMotion,
+                            isLowPower: isLowPower,
+                            isPlaceholderRedacted: isPlaceholderRedacted,
+                            driverKind: "TimelineView(.animation)",
+                            driverNow: context.date
+                        )
+                        .padding(6)
+                        .unredacted()
+                    }
+                } else {
+                    WidgetWeaverClockWidgetDebugOverlay(
+                        entryDate: entryDate,
+                        minuteAnchor: minuteAnchor,
+                        tickMode: tickMode,
+                        secondsEligibility: eligibility,
+                        reduceMotion: reduceMotion,
+                        isLowPower: isLowPower,
+                        isPlaceholderRedacted: isPlaceholderRedacted,
+                        driverKind: "static",
+                        driverNow: nil
+                    )
+                    .padding(6)
+                    .unredacted()
+                }
             }
             #endif
         }
@@ -96,133 +107,133 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds sweep (per-minute CA segment + “heartbeat” primitives)
+// MARK: - Seconds driver: TimelineView(.animation)
 
-private struct WWClockSecondsSweepClock: View {
+private struct WWClockSecondsTimelineClock: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
-    let showsGlows: Bool
-    let showsHandShadows: Bool
 
-    @Binding var secondHandTargetDegrees: Double
-    @Binding var driverDebug: WWClockSecondsDriverDebugState
-
-    @State private var lastStartAnchor: Date = .distantPast
-    @State private var lastStartWallNow: Date = .distantPast
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        let base = WWClockAngles(date: minuteAnchor)
+        GeometryReader { proxy in
+            let metrics = WWClockSecondHandMetrics(size: proxy.size, scale: displayScale)
+            let base = WWClockAngles(date: minuteAnchor)
 
-        ZStack {
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: .degrees(base.hour),
-                minuteAngle: .degrees(base.minute),
-                secondAngle: .degrees(secondHandTargetDegrees),
-                showsSecondHand: true,
-                showsHandShadows: showsHandShadows,
-                showsGlows: showsGlows,
-                handsOpacity: 1.0
-            )
-            .animation(nil, value: minuteAnchor)
+            ZStack {
+                // Base clock: static face + stepped hour/minute hands.
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: .degrees(base.hour),
+                    minuteAngle: .degrees(base.minute),
+                    secondAngle: .degrees(0.0),
+                    showsSecondHand: false,
+                    showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows,
+                    showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
+                    handsOpacity: 1.0
+                )
+                .animation(nil, value: minuteAnchor)
 
-            // Timer-style heartbeat kept in the render graph.
-            // This stays extremely cheap and helps keep widget hosting in a “live” mode.
-            WWClockWidgetHeartbeat(start: Date())
+                // Second hand only: updated by the TimelineView context date.
+                TimelineView(.animation) { context in
+                    let angle = WWClockSecondHandMath.secondHandDegrees(now: context.date)
 
-            // Another time-driven primitive, present but visually negligible.
-            // Uses a relative interval so it can animate even if minuteAnchor is treated as a frozen date.
-            WWClockSecondsEngine(opacity: 0.02)
-                .frame(width: 24, height: 6)
-                .clipped()
+                    WidgetWeaverClockSecondHandView(
+                        colour: palette.accent,
+                        width: metrics.secondWidth,
+                        length: metrics.secondLength,
+                        angle: .degrees(angle),
+                        tipSide: metrics.secondTipSide,
+                        scale: displayScale
+                    )
+                    .frame(width: metrics.dialDiameter, height: metrics.dialDiameter)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+
+                // Hub overlay on top so the second hand never covers the centre.
+                WidgetWeaverClockCentreHubView(
+                    palette: palette,
+                    baseRadius: metrics.hubBaseRadius,
+                    capRadius: metrics.hubCapRadius,
+                    scale: displayScale
+                )
+                .frame(width: metrics.dialDiameter, height: metrics.dialDiameter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-        }
-        .onAppear {
-            DispatchQueue.main.async {
-                startOrResyncSweep(reason: "onAppear")
             }
-        }
-        .onChange(of: minuteAnchor) {
-            DispatchQueue.main.async {
-                startOrResyncSweep(reason: "onChange(minuteAnchor)")
-            }
-        }
-        .task {
-            // Some widget hosting paths can skip onAppear.
-            DispatchQueue.main.async {
-                startOrResyncSweep(reason: "task")
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
+}
 
-    private func startOrResyncSweep(reason: String) {
-        let now = Date()
+private struct WWClockSecondHandMetrics: Equatable {
+    let dialDiameter: CGFloat
+    let secondLength: CGFloat
+    let secondWidth: CGFloat
+    let secondTipSide: CGFloat
+    let hubBaseRadius: CGFloat
+    let hubCapRadius: CGFloat
 
-        // Avoid immediate double-start (onAppear + task) producing a visible jump.
-        if lastStartAnchor == minuteAnchor, now.timeIntervalSince(lastStartWallNow) < 0.15 {
-            driverDebug.recordCall(reason: reason, skipped: true)
-            return
-        }
+    init(size: CGSize, scale: CGFloat) {
+        let s = min(size.width, size.height)
 
-        lastStartAnchor = minuteAnchor
-        lastStartWallNow = now
+        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+        let outerRadius = outerDiameter * 0.5
 
-        // “Catch up” offset when returning to Home Screen after time away.
-        let rawOffset = now.timeIntervalSince(minuteAnchor)
-        let secondsIntoMinute = WWClockSecondsMath.clamp(rawOffset, min: 0.0, max: 59.999)
+        let metalThicknessRatio: CGFloat = 0.062
+        let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
-        let startAngle = secondsIntoMinute * 6.0
-        let remaining = max(0.001, 60.0 - secondsIntoMinute)
-
-        driverDebug.recordStart(
-            reason: reason,
-            wallNow: now,
-            minuteAnchor: minuteAnchor,
-            secondsIntoMinute: secondsIntoMinute,
-            startAngleDegrees: startAngle,
-            remainingSeconds: remaining
+        let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
+        let ringC = WWClock.pixel(
+            WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+            scale: scale
         )
 
-        // Jump to correct in-minute position with no animation.
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            secondHandTargetDegrees = startAngle
-        }
+        let minB = WWClock.px(scale: scale)
+        let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
 
-        // Single linear segment to 360° for the remainder of the minute.
-        withAnimation(.linear(duration: remaining)) {
-            secondHandTargetDegrees = 360.0
-        }
+        let R = outerRadius - ringA - ringB - ringC
+        dialDiameter = R * 2.0
+
+        secondLength = WWClock.pixel(
+            WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+            scale: scale
+        )
+        secondWidth = WWClock.pixel(
+            WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+            scale: scale
+        )
+        secondTipSide = WWClock.pixel(
+            WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+            scale: scale
+        )
+
+        hubBaseRadius = WWClock.pixel(
+            WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+            scale: scale
+        )
+        hubCapRadius = WWClock.pixel(
+            WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+            scale: scale
+        )
     }
 }
 
-private struct WWClockWidgetHeartbeat: View {
-    let start: Date
-
-    var body: some View {
-        Text(timerInterval: start...Date.distantFuture, countsDown: false)
-            .font(.system(size: 1))
-            .foregroundStyle(Color.primary.opacity(0.001))
-            .frame(width: 1, height: 1)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+private enum WWClockSecondHandMath {
+    /// Returns a smooth second hand angle in degrees (0-360), derived from wall-clock time.
+    /// Uses fractional seconds so motion remains continuous.
+    static func secondHandDegrees(now: Date) -> Double {
+        let t = now.timeIntervalSinceReferenceDate
+        let secondsIntoMinute = t - floor(t / 60.0) * 60.0
+        return secondsIntoMinute * 6.0
     }
-}
 
-private struct WWClockSecondsEngine: View {
-    let opacity: Double
-
-    var body: some View {
-        let start = Date()
-        let end = start.addingTimeInterval(60.0)
-
-        ProgressView(timerInterval: start...end, countsDown: false)
-            .progressViewStyle(.linear)
-            .opacity(opacity)
-            .accessibilityHidden(true)
+    static func secondsIntoMinute(now: Date) -> Double {
+        let t = now.timeIntervalSinceReferenceDate
+        return t - floor(t / 60.0) * 60.0
     }
 }
 
@@ -254,95 +265,7 @@ private struct WWClockSecondsEligibility: Equatable {
     }
 }
 
-// MARK: - Debug state
-
-private struct WWClockSecondsDriverDebugState: Equatable {
-    var driverKind: String
-
-    var lastStartReason: String
-    var lastStartWallNow: Date
-    var lastStartMinuteAnchor: Date
-    var lastStartSecondsIntoMinute: Double
-    var lastStartAngleDegrees: Double
-    var lastStartRemainingSeconds: Double
-
-    var restarts: Int
-    var callCounts: WWClockSecondsDriverCallCounts
-    var lastCallWasSkipped: Bool
-
-    static let empty = WWClockSecondsDriverDebugState(
-        driverKind: "CA sweep + heartbeat",
-        lastStartReason: "inactive",
-        lastStartWallNow: .distantPast,
-        lastStartMinuteAnchor: .distantPast,
-        lastStartSecondsIntoMinute: 0.0,
-        lastStartAngleDegrees: 0.0,
-        lastStartRemainingSeconds: 0.0,
-        restarts: 0,
-        callCounts: WWClockSecondsDriverCallCounts(),
-        lastCallWasSkipped: true
-    )
-
-    mutating func recordStart(
-        reason: String,
-        wallNow: Date,
-        minuteAnchor: Date,
-        secondsIntoMinute: Double,
-        startAngleDegrees: Double,
-        remainingSeconds: Double
-    ) {
-        restarts += 1
-        lastStartReason = reason
-        lastStartWallNow = wallNow
-        lastStartMinuteAnchor = minuteAnchor
-        lastStartSecondsIntoMinute = secondsIntoMinute
-        lastStartAngleDegrees = startAngleDegrees
-        lastStartRemainingSeconds = remainingSeconds
-        lastCallWasSkipped = false
-        callCounts.bump(reason: reason)
-    }
-
-    mutating func recordCall(reason: String, skipped: Bool) {
-        lastStartReason = reason
-        lastCallWasSkipped = skipped
-        callCounts.bump(reason: reason)
-    }
-}
-
-private struct WWClockSecondsDriverCallCounts: Equatable {
-    var onAppear: Int = 0
-    var task: Int = 0
-    var onChange: Int = 0
-    var other: Int = 0
-
-    mutating func bump(reason: String) {
-        if reason.hasPrefix("onAppear") {
-            onAppear += 1
-            return
-        }
-        if reason.hasPrefix("task") {
-            task += 1
-            return
-        }
-        if reason.hasPrefix("onChange") {
-            onChange += 1
-            return
-        }
-        other += 1
-    }
-}
-
-// MARK: - Maths
-
-private enum WWClockSecondsMath {
-    static func clamp(_ x: Double, min a: Double, max b: Double) -> Double {
-        if x < a { return a }
-        if x > b { return b }
-        return x
-    }
-}
-
-// MARK: - Angles (minute-stepped base hands)
+// MARK: - Base angles (minute-stepped)
 
 private struct WWClockAngles {
     let hour: Double
@@ -362,7 +285,7 @@ private struct WWClockAngles {
 }
 
 #if DEBUG
-// MARK: - Debug overlay (compact; always fits in systemSmall)
+// MARK: - Debug overlay
 
 private struct WidgetWeaverClockWidgetDebugOverlay: View {
     let entryDate: Date
@@ -372,8 +295,9 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
     let reduceMotion: Bool
     let isLowPower: Bool
     let isPlaceholderRedacted: Bool
-    let driverDebug: WWClockSecondsDriverDebugState
-    let secondHandTargetDegrees: Double
+
+    let driverKind: String
+    let driverNow: Date?
 
     var body: some View {
         let modeText: String = {
@@ -384,50 +308,57 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
         }()
 
         let secsText = secondsEligibility.enabled ? "ON" : "OFF"
-        let startedText = driverDebug.restarts > 0 ? "on" : "off"
+
+        let entryText: String = entryDate.formatted(.dateTime.hour().minute().second())
+        let anchorText: String = minuteAnchor.formatted(.dateTime.hour().minute().second())
 
         let reasonShort: String = {
             let s = secondsEligibility.reason
-            if s.count <= 26 { return s }
-            return String(s.prefix(26)) + "…"
+            if s.count <= 28 { return s }
+            return String(s.prefix(28)) + "…"
+        }()
+
+        let nowText: String = {
+            guard let d = driverNow else { return "—" }
+            return d.formatted(.dateTime.hour().minute().second())
+        }()
+
+        let secondsIntoMinuteText: String = {
+            guard let d = driverNow else { return "—" }
+            return String(format: "%.2f", WWClockSecondHandMath.secondsIntoMinute(now: d))
+        }()
+
+        let driftText: String = {
+            guard let driverNow else { return "—" }
+            let wallNow = Date()
+            let ms = (wallNow.timeIntervalSince(driverNow) * 1000.0)
+            return String(format: "%.0fms", ms)
         }()
 
         VStack(alignment: .trailing, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("dbg \(modeText) secs \(secsText)")
-                    .opacity(0.92)
-
-                Spacer(minLength: 6)
-
-                WWClockDebugEngineStrip()
-                    .accessibilityHidden(true)
-
-                WWClockDebugSweepMarker(targetDegrees: secondHandTargetDegrees)
-                    .frame(width: 12, height: 12)
-                    .opacity(0.92)
-                    .accessibilityHidden(true)
-            }
+            Text("dbg \(modeText) secs \(secsText)")
+                .opacity(0.92)
 
             Text("why \(reasonShort)")
                 .opacity(0.86)
 
-            Text("anch \(minuteAnchor, format: .dateTime.hour().minute().second())")
+            Text("e \(entryText) a \(anchorText)")
                 .opacity(0.82)
 
-            Text("pwr LPM:\(isLowPower ? "1" : "0") RM:\(reduceMotion ? "1" : "0") red:\(isPlaceholderRedacted ? "1" : "0")")
+            Text("drv \(driverKind)")
+                .opacity(0.80)
+
+            Text("now \(nowText) off \(secondsIntoMinuteText)s Δ \(driftText)")
                 .opacity(0.78)
 
-            Text("drv \(startedText) r\(driverDebug.restarts) ap\(driverDebug.callCounts.onAppear) t\(driverDebug.callCounts.task) c\(driverDebug.callCounts.onChange)")
+            Text("pwr LPM:\(isLowPower ? "1" : "0") RM:\(reduceMotion ? "1" : "0") red:\(isPlaceholderRedacted ? "1" : "0")")
                 .opacity(0.76)
-
-            Text(String(format: "off %.2fs start %.0f° rem %.2fs", driverDebug.lastStartSecondsIntoMinute, driverDebug.lastStartAngleDegrees, driverDebug.lastStartRemainingSeconds))
-                .opacity(0.74)
         }
         .font(.system(size: 7, weight: .regular, design: .monospaced))
         .dynamicTypeSize(.xSmall)
         .lineLimit(1)
         .minimumScaleFactor(0.5)
-        .frame(maxWidth: 150, alignment: .trailing)
+        .frame(maxWidth: 160, alignment: .trailing)
         .padding(5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -438,45 +369,6 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         )
         .accessibilityHidden(true)
-    }
-}
-
-private struct WWClockDebugEngineStrip: View {
-    var body: some View {
-        let start = Date()
-        let end = start.addingTimeInterval(60.0)
-
-        ProgressView(timerInterval: start...end, countsDown: false)
-            .progressViewStyle(.linear)
-            .tint(Color.white.opacity(0.90))
-            .frame(width: 46, height: 6)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(0.16))
-            )
-            .clipShape(Capsule(style: .continuous))
-            .opacity(0.95)
-    }
-}
-
-private struct WWClockDebugSweepMarker: View {
-    let targetDegrees: Double
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
-
-            Rectangle()
-                .fill(Color.white.opacity(0.85))
-                .frame(width: 1.1, height: 5.8)
-                .offset(y: -2.9)
-                .rotationEffect(.degrees(targetDegrees), anchor: .center)
-
-            Circle()
-                .fill(Color.white.opacity(0.75))
-                .frame(width: 2.4, height: 2.4)
-        }
     }
 }
 #endif
