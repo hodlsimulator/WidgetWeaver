@@ -24,7 +24,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
     ///
     /// Used as the animation duration so CoreAnimation can sweep the hands smoothly between entries.
     ///
-    /// When set to `0`, animations are disabled (useful when a `TimelineView` is driving per-second updates).
+    /// When set to `0`, SwiftUI animations are disabled and the widget uses Core Animation layers
+    /// for continuous ticking.
     let tickSeconds: TimeInterval
 
     var body: some View {
@@ -35,13 +36,19 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let minuteAngle = Angle.degrees(base.minute + dt * WWClockAngularVelocity.minuteDegPerSecond)
         let secondAngle = Angle.degrees(base.second + dt * WWClockAngularVelocity.secondDegPerSecond)
 
+        let usesCoreAnimationHands = (tickSeconds <= 0.0)
+
         WidgetWeaverClockIconView(
             palette: palette,
             hourAngle: hourAngle,
             minuteAngle: minuteAngle,
             secondAngle: secondAngle,
             showsSecondHand: true,
-            handsOpacity: 1.0
+            showsHandShadows: usesCoreAnimationHands ? false : true,
+            showsGlows: usesCoreAnimationHands ? false : true,
+            handsOpacity: 1.0,
+            usesCoreAnimationHands: usesCoreAnimationHands,
+            coreAnimationDate: usesCoreAnimationHands ? date : nil
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
