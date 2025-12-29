@@ -11,40 +11,39 @@ import Foundation
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
 
-    /// The current timeline entry date.
+    /// The current WidgetKit timeline entry date (used as a fallback).
     let date: Date
 
-    /// A stable anchor for monotonic hand angles across timeline entries.
+    /// Anchor date (kept for compatibility / future use).
     let anchorDate: Date
 
-    /// The timeline spacing (seconds per entry).
+    /// Desired on-screen tick interval while visible.
     let tickSeconds: TimeInterval
 
     var body: some View {
-        let base = WWClockBaseAngles(date: anchorDate)
-        let dt = date.timeIntervalSince(anchorDate)
+        let showsSecondHand = tickSeconds <= 1.0
+        let effectiveTick = max(1.0, tickSeconds)
 
-        let hourAngle = Angle.degrees(base.hour + dt * WWClockAngularVelocity.hourDegPerSecond)
-        let minuteAngle = Angle.degrees(base.minute + dt * WWClockAngularVelocity.minuteDegPerSecond)
-        let secondAngle = Angle.degrees(base.second + dt * WWClockAngularVelocity.secondDegPerSecond)
-
-        WidgetWeaverClockIconView(
-            palette: palette,
-            hourAngle: hourAngle,
-            minuteAngle: minuteAngle,
-            secondAngle: secondAngle,
-            showsSecondHand: tickSeconds <= 1.0,
-            handsOpacity: 1.0
-        )
+        TimelineView(.animation(minimumInterval: effectiveTick, paused: false)) { context in
+            clock(at: context.date, showsSecondHand: showsSecondHand)
+        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
-}
 
-private enum WWClockAngularVelocity {
-    static let secondDegPerSecond: Double = 360.0 / 60.0
-    static let minuteDegPerSecond: Double = 360.0 / 3600.0
-    static let hourDegPerSecond: Double = 360.0 / 43200.0
+    @ViewBuilder
+    private func clock(at now: Date, showsSecondHand: Bool) -> some View {
+        let angles = WWClockBaseAngles(date: now)
+
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: .degrees(angles.hour),
+            minuteAngle: .degrees(angles.minute),
+            secondAngle: .degrees(angles.second),
+            showsSecondHand: showsSecondHand,
+            handsOpacity: 1.0
+        )
+    }
 }
 
 private struct WWClockBaseAngles {

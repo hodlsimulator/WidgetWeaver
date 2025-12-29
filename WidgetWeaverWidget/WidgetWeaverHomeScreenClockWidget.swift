@@ -62,45 +62,59 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverClockConfigurationIntent
 
-    /// WidgetKit guidance is to keep timelines reasonably sized.
-    /// This caps per-second timelines to stay under common entry limits.
-    private static let maxSecondEntries: Int = 180   // 3 minutes at 1 Hz
-    private static let secondTick: TimeInterval = 1.0
+    /// On-screen tick while visible (driven by SwiftUI TimelineView).
+    private static let normalOnScreenTick: TimeInterval = 1.0
 
-    /// Low Power Mode fallback: minute ticks for a longer span.
-    private static let lowPowerTick: TimeInterval = 60.0
-    private static let lowPowerEntries: Int = 180    // 3 hours at 1/min
+    /// Low Power Mode: reduce on-screen churn + hide second hand.
+    private static let lowPowerOnScreenTick: TimeInterval = 60.0
+
+    /// WidgetKit refresh cadence (budget-safe).
+    /// The view itself will tick while visible; this is just a periodic resync.
+    private static let widgetKitResyncInterval: TimeInterval = 60.0 * 60.0 // 1 hour
+    private static let widgetKitTimelineHorizon: TimeInterval = 24.0 * 60.0 * 60.0 // 24 hours
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        return Entry(date: now, anchorDate: now, tickSeconds: Self.secondTick, colourScheme: .classic)
+        let anchor = Self.floorToWholeSecond(now)
+        return Entry(
+            date: now,
+            anchorDate: anchor,
+            tickSeconds: Self.normalOnScreenTick,
+            colourScheme: .classic
+        )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
+        let anchor = Self.floorToWholeSecond(now)
+        let scheme = configuration.colourScheme ?? .classic
+
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let tick = isLowPower ? Self.lowPowerOnScreenTick : Self.normalOnScreenTick
+
         return Entry(
             date: now,
-            anchorDate: now,
-            tickSeconds: Self.secondTick,
-            colourScheme: configuration.colourScheme ?? .classic
+            anchorDate: anchor,
+            tickSeconds: tick,
+            colourScheme: scheme
         )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
-        let scheme = configuration.colourScheme ?? .classic
         let now = Date()
+        let anchor = Self.floorToWholeSecond(now)
+        let scheme = configuration.colourScheme ?? .classic
 
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let tick: TimeInterval = isLowPower ? Self.lowPowerTick : Self.secondTick
-        let entryCount: Int = isLowPower ? Self.lowPowerEntries : Self.maxSecondEntries
+        let tick = isLowPower ? Self.lowPowerOnScreenTick : Self.normalOnScreenTick
 
-        let anchor = now
+        let entryCount = Int(Self.widgetKitTimelineHorizon / Self.widgetKitResyncInterval) + 1
 
         var entries: [Entry] = []
         entries.reserveCapacity(entryCount)
 
         for i in 0..<entryCount {
-            let d = anchor.addingTimeInterval(TimeInterval(i) * tick)
+            let d = anchor.addingTimeInterval(TimeInterval(i) * Self.widgetKitResyncInterval)
             entries.append(
                 Entry(
                     date: d,
@@ -111,8 +125,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         }
 
-        let refreshDate = anchor.addingTimeInterval(TimeInterval(entryCount) * tick)
-        return Timeline(entries: entries, policy: .after(refreshDate))
+        return Timeline(entries: entries, policy: .atEnd)
+    }
+
+    private static func floorToWholeSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        return Date(timeIntervalSinceReferenceDate: floor(t))
     }
 }
 
