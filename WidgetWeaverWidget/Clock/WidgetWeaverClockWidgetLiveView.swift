@@ -8,13 +8,14 @@
 import Foundation
 import SwiftUI
 
-enum WidgetWeaverClockMotionImplementation {
-    case burstTimelineHybrid
-}
-
 enum WidgetWeaverClockMotionConfig {
-    static let implementation: WidgetWeaverClockMotionImplementation = .burstTimelineHybrid
-    static let lightweightSecondsRendering: Bool = true
+    /// Keep seconds mode cheap until proven stable on device.
+    static let secondsShowsGlows: Bool = false
+    static let secondsShowsHandShadows: Bool = false
+
+    /// Minute mode can render the full look.
+    static let minuteShowsGlows: Bool = true
+    static let minuteShowsHandShadows: Bool = true
 
     #if DEBUG
     static let debugOverlayEnabled: Bool = true
@@ -25,41 +26,52 @@ enum WidgetWeaverClockMotionConfig {
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
-    let date: Date
-    let anchorDate: Date
-    let tickSeconds: TimeInterval
+    let entryDate: Date
+    let minuteAnchor: Date
+    let tickMode: WidgetWeaverClockTickMode
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.redactionReasons) private var redactionReasons
 
     var body: some View {
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let isSeconds = (tickSeconds <= 1.0) && !isLowPower
+        let wantsSeconds = (tickMode == .secondsSweep)
+        let allowsAnimation = !reduceMotion && !isLowPower
+        let secondsEnabled = wantsSeconds && allowsAnimation
 
         ZStack(alignment: .bottomTrailing) {
-            if isSeconds && WidgetWeaverClockMotionConfig.lightweightSecondsRendering {
-                WidgetWeaverClockSecondsLiteView(
+            if secondsEnabled {
+                WidgetWeaverClockSecondHandSweepView(
                     palette: palette,
-                    date: date,
-                    showsSecondHand: true
+                    minuteAnchor: minuteAnchor,
+                    showsGlows: WidgetWeaverClockMotionConfig.secondsShowsGlows,
+                    showsHandShadows: WidgetWeaverClockMotionConfig.secondsShowsHandShadows
                 )
+                .id(minuteAnchor.timeIntervalSinceReferenceDate)
             } else {
-                let angles = WWClockBaseAngles(date: date)
+                let angles = WWClockAngles(date: minuteAnchor)
 
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(angles.hour),
                     minuteAngle: .degrees(angles.minute),
-                    secondAngle: .degrees(angles.second),
-                    showsSecondHand: isSeconds,
-                    showsHandShadows: !isSeconds,
-                    showsGlows: !isSeconds,
+                    secondAngle: .degrees(0.0),
+                    showsSecondHand: false,
+                    showsHandShadows: WidgetWeaverClockMotionConfig.minuteShowsHandShadows,
+                    showsGlows: WidgetWeaverClockMotionConfig.minuteShowsGlows,
                     handsOpacity: 1.0
                 )
             }
 
             #if DEBUG
             if WidgetWeaverClockMotionConfig.debugOverlayEnabled {
-                WidgetWeaverClockHybridDebugOverlay(
-                    entryDate: date,
-                    tickSeconds: tickSeconds
+                WidgetWeaverClockSweepDebugOverlay(
+                    entryDate: entryDate,
+                    minuteAnchor: minuteAnchor,
+                    tickMode: tickMode,
+                    isLowPower: isLowPower,
+                    reduceMotion: reduceMotion,
+                    isPlaceholderRedacted: redactionReasons.contains(.placeholder)
                 )
                 .padding(6)
                 .unredacted()
@@ -71,126 +83,114 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-private struct WidgetWeaverClockSecondsLiteView: View {
-    let palette: WidgetWeaverClockPalette
-    let date: Date
-    let showsSecondHand: Bool
+// MARK: - Seconds sweep view
 
-    @Environment(\.displayScale) private var displayScale
+private struct WidgetWeaverClockSecondHandSweepView: View {
+    let palette: WidgetWeaverClockPalette
+    let minuteAnchor: Date
+    let showsGlows: Bool
+    let showsHandShadows: Bool
+
+    @State private var secondAngleDegrees: Double = 0.0
 
     var body: some View {
-        let angles = WWClockBaseAngles(date: date)
+        let base = WWClockAngles(date: minuteAnchor)
 
-        return GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            let ring = WWClock.pixel(max(1.0, side * 0.045), scale: displayScale)
-
-            let hourLen = side * 0.22
-            let minLen = side * 0.32
-            let secLen = side * 0.36
-
-            let hourW = WWClock.pixel(max(1.0, side * 0.060), scale: displayScale)
-            let minW = WWClock.pixel(max(1.0, side * 0.045), scale: displayScale)
-            let secW = WWClock.pixel(max(1.0, side * 0.016), scale: displayScale)
-
-            let hub = WWClock.pixel(max(2.0, side * 0.085), scale: displayScale)
-
-            ZStack {
-                Circle()
-                    .fill(palette.dialEdge)
-
-                Circle()
-                    .strokeBorder(palette.separatorRing.opacity(0.55), lineWidth: ring)
-
-                hand(
-                    colour: palette.handMid.opacity(0.95),
-                    width: hourW,
-                    length: hourLen,
-                    angleDegrees: angles.hour
-                )
-
-                hand(
-                    colour: palette.handLight.opacity(0.95),
-                    width: minW,
-                    length: minLen,
-                    angleDegrees: angles.minute
-                )
-
-                if showsSecondHand {
-                    hand(
-                        colour: palette.accent.opacity(0.95),
-                        width: secW,
-                        length: secLen,
-                        angleDegrees: angles.second
-                    )
-                }
-
-                Circle()
-                    .fill(palette.hubBase.opacity(0.95))
-                    .frame(width: hub, height: hub)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: .degrees(base.hour),
+            minuteAngle: .degrees(base.minute),
+            secondAngle: .degrees(secondAngleDegrees),
+            showsSecondHand: true,
+            showsHandShadows: showsHandShadows,
+            showsGlows: showsGlows,
+            handsOpacity: 1.0
+        )
+        .onAppear {
+            configureAndStartSweep()
         }
     }
 
-    private func hand(colour: Color, width: CGFloat, length: CGFloat, angleDegrees: Double) -> some View {
-        Rectangle()
-            .fill(colour)
-            .frame(width: width, height: length)
-            .offset(y: -length / 2.0)
-            .rotationEffect(.degrees(angleDegrees))
+    private func configureAndStartSweep() {
+        let now = Date()
+        let nextMinute = minuteAnchor.addingTimeInterval(60.0)
+
+        let rawSeconds = now.timeIntervalSince(minuteAnchor)
+        let secondsIntoMinute = Self.clamp(rawSeconds, min: 0.0, max: 59.999)
+        let remaining = Self.clamp(nextMinute.timeIntervalSince(now), min: 0.0, max: 60.0)
+
+        secondAngleDegrees = secondsIntoMinute * 6.0
+
+        // If the remaining time is effectively zero, snapping to 12 avoids a long/odd animation.
+        guard remaining > 0.05 else {
+            secondAngleDegrees = 360.0
+            return
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(.linear(duration: remaining)) {
+                secondAngleDegrees = 360.0
+            }
+        }
+    }
+
+    private static func clamp(_ x: Double, min a: Double, max b: Double) -> Double {
+        if x < a { return a }
+        if x > b { return b }
+        return x
     }
 }
 
-private struct WWClockBaseAngles {
+// MARK: - Angle maths
+
+private struct WWClockAngles {
     let hour: Double
     let minute: Double
-    let second: Double
 
     init(date: Date) {
         let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let comps = cal.dateComponents([.hour, .minute], from: date)
 
         let hour24 = Double(comps.hour ?? 0)
         let minuteInt = Double(comps.minute ?? 0)
-        let secondInt = Double(comps.second ?? 0)
-        let nano = Double(comps.nanosecond ?? 0)
 
-        let sec = secondInt + (nano / 1_000_000_000.0)
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        self.second = sec * 6.0
-        self.minute = (minuteInt + sec / 60.0) * 6.0
-        self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
+        // Stepped minute hand: exact minute.
+        self.minute = minuteInt * 6.0
+
+        // Hour hand moves in minute steps (matches the “stepped hands” aesthetic).
+        self.hour = (hour12 + minuteInt / 60.0) * 30.0
     }
 }
 
 #if DEBUG
-private struct WidgetWeaverClockHybridDebugOverlay: View {
-    let entryDate: Date
-    let tickSeconds: TimeInterval
+// MARK: - Debug overlay
 
-    @Environment(\.redactionReasons) private var redactionReasons
+private struct WidgetWeaverClockSweepDebugOverlay: View {
+    let entryDate: Date
+    let minuteAnchor: Date
+    let tickMode: WidgetWeaverClockTickMode
+    let isLowPower: Bool
+    let reduceMotion: Bool
+    let isPlaceholderRedacted: Bool
 
     var body: some View {
         let now = Date()
-        let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
-
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let isSeconds = (tickSeconds <= 1.0) && !isLowPower
-
-        let cal = Calendar.autoupdatingCurrent
-        let s = cal.component(.second, from: entryDate)
-
         let defaults = AppGroup.userDefaults
         let dayKey = Self.dayKey(for: now)
 
-        let sessionUntil = (defaults.object(forKey: "widgetweaver.clock.session.until") as? Date) ?? .distantPast
-        let sessionActive = sessionUntil > now
-        let sessionLeft = max(0, Int(sessionUntil.timeIntervalSince(now).rounded(.down)))
-
         let buildsToday = defaults.integer(forKey: "widgetweaver.clock.timelineBuild.count.\(dayKey)")
-        let sessionsToday = defaults.integer(forKey: "widgetweaver.clock.session.count.\(dayKey)")
+        let lastBuild = (defaults.object(forKey: "widgetweaver.clock.timelineBuild.last") as? Date) ?? .distantPast
+
+        let modeText: String = {
+            switch tickMode {
+            case .minuteOnly: return "minute"
+            case .secondsSweep: return "secondsSweep"
+            }
+        }()
+
+        let secondsIntoMinute = Int(max(0, now.timeIntervalSince(minuteAnchor)).truncatingRemainder(dividingBy: 60.0))
 
         VStack(alignment: .trailing, spacing: 4) {
             Text("clock debug")
@@ -202,25 +202,25 @@ private struct WidgetWeaverClockHybridDebugOverlay: View {
             Text(isLowPower ? "LPM on" : "LPM off")
                 .opacity(0.80)
 
-            Text(isSeconds ? "mode: seconds" : "mode: minute")
+            Text(reduceMotion ? "reduceMotion on" : "reduceMotion off")
                 .opacity(0.80)
 
-            Text("tickSeconds \(Int(tickSeconds.rounded()))")
+            Text("mode \(modeText)")
                 .opacity(0.80)
 
-            Text("entrySec \(String(format: "%02d", s))")
+            Text("secInMin \(secondsIntoMinute)")
                 .opacity(0.80)
 
-            Text(sessionActive ? "session active" : "session inactive")
-                .opacity(0.80)
-
-            Text("sessionLeft \(sessionLeft)s")
-                .opacity(0.80)
-
-            Text("buildsToday \(buildsToday)")
+            Text("entry \(entryDate, format: .dateTime.hour().minute().second())")
                 .opacity(0.75)
 
-            Text("sessionsToday \(sessionsToday)")
+            Text("anchor \(minuteAnchor, format: .dateTime.hour().minute().second())")
+                .opacity(0.75)
+
+            Text("lastBuild \(lastBuild, format: .dateTime.hour().minute().second())")
+                .opacity(0.75)
+
+            Text("buildsToday \(buildsToday)")
                 .opacity(0.75)
         }
         .font(.system(size: 9, weight: .regular, design: .monospaced))

@@ -51,30 +51,30 @@ struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigur
     }
 }
 
+enum WidgetWeaverClockTickMode: Int {
+    case minuteOnly = 0
+    case secondsSweep = 1
+}
+
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
-    let anchorDate: Date
-    let tickSeconds: TimeInterval
+
+    /// Minute anchor used for stepped hour/minute hands.
+    let minuteAnchor: Date
+
+    /// Display mode for this entry.
+    let tickMode: WidgetWeaverClockTickMode
+
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
-private enum WWClockBurstConfig {
-    static let burstSeconds: Int = 60
-    static let minuteHorizonSeconds: TimeInterval = 60.0 * 60.0 // 1 hour
+private enum WWClockTimelineConfig {
+    /// Keep under the commonly observed “~250 entries” failure zone.
+    /// 240 entries ~= 4 hours of minute boundaries (+ an immediate entry).
+    static let maxEntriesPerTimeline: Int = 240
 
-    static let sessionMaxSeconds: TimeInterval = 60.0 * 30.0 // 30 minutes
-    static let sessionMaxPerDay: Int = 2
-    static let sessionMinSpacingSeconds: TimeInterval = 60.0 * 60.0 * 4.0 // 4 hours
-
-    #if DEBUG
-    static let autoStartSessionInDebug: Bool = true
-    static let debugIgnoreSessionCaps: Bool = true
-    static let debugInactiveRetrySeconds: TimeInterval = 10.0
-    #else
-    static let autoStartSessionInDebug: Bool = false
-    static let debugIgnoreSessionCaps: Bool = false
-    static let debugInactiveRetrySeconds: TimeInterval = 60.0 * 60.0
-    #endif
+    /// Whether to show seconds by default in normal power.
+    static let defaultTickMode: WidgetWeaverClockTickMode = .secondsSweep
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -83,169 +83,115 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
         return Entry(
             date: now,
-            anchorDate: Self.floorToWholeSecond(now),
-            tickSeconds: isLowPower ? 60.0 : 60.0,
+            minuteAnchor: Self.floorToMinute(now),
+            tickMode: .minuteOnly,
             colourScheme: .classic
         )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let scheme = configuration.colourScheme ?? .classic
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
         return Entry(
             date: now,
-            anchorDate: Self.floorToWholeSecond(now),
-            tickSeconds: isLowPower ? 60.0 : 60.0,
+            minuteAnchor: Self.floorToMinute(now),
+            tickMode: isLowPower ? .minuteOnly : WWClockTimelineConfig.defaultTickMode,
             colourScheme: scheme
         )
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let scheme = configuration.colourScheme ?? .classic
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        // Never start seconds bursts in previews (widget gallery / template contexts).
+        // Avoid seconds in preview contexts.
         if context.isPreview {
-            return makeMinuteTimeline(
-                now: now,
-                colourScheme: scheme,
-                policyAfter: now.addingTimeInterval(60.0 * 60.0)
-            )
+            return makeMinuteTimeline(now: now, colourScheme: scheme)
         }
 
         if isLowPower {
-            return makeMinuteTimeline(
-                now: now,
-                colourScheme: scheme,
-                policyAfter: now.addingTimeInterval(60.0 * 60.0)
-            )
+            return makeMinuteTimeline(now: now, colourScheme: scheme)
         }
 
-        let plan = WWClockBurstSession.sessionPlan(now: now, isPreview: context.isPreview)
-
-        if plan.sessionActive {
-            return makeBurstThenMinuteTimeline(
-                now: now,
-                sessionUntil: plan.sessionUntil,
-                colourScheme: scheme,
-                allowChaining: plan.allowChaining
-            )
-        } else {
-            // In DEBUG, retry soon so seconds mode can kick in without waiting for a long policy delay.
-            let retryAfter = now.addingTimeInterval(WWClockBurstConfig.debugInactiveRetrySeconds)
-
-            return makeMinuteTimeline(
-                now: now,
-                colourScheme: scheme,
-                policyAfter: retryAfter
-            )
-        }
+        return makeSecondsSweepTimeline(now: now, colourScheme: scheme)
     }
 
-    // MARK: - Timeline builders
+    // MARK: - Timelines
 
-    private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme, policyAfter: Date) -> Timeline<Entry> {
+    private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+        let minuteAnchorNow = Self.floorToMinute(now)
+
         var entries: [Entry] = []
-        entries.reserveCapacity(70)
+        entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
+        // Immediate correctness.
         entries.append(Entry(
             date: now,
-            anchorDate: Self.floorToWholeSecond(now),
-            tickSeconds: 60.0,
+            minuteAnchor: minuteAnchorNow,
+            tickMode: .minuteOnly,
             colourScheme: colourScheme
         ))
 
-        let horizonEnd = now.addingTimeInterval(WWClockBurstConfig.minuteHorizonSeconds)
-
-        var next = Self.nextMinuteBoundary(after: now)
-        while next <= horizonEnd {
+        var next = minuteAnchorNow.addingTimeInterval(60.0)
+        while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(Entry(
                 date: next,
-                anchorDate: Self.floorToWholeSecond(next),
-                tickSeconds: 60.0,
+                minuteAnchor: next,
+                tickMode: .minuteOnly,
                 colourScheme: colourScheme
             ))
             next = next.addingTimeInterval(60.0)
         }
 
-        return Timeline(entries: entries, policy: .after(policyAfter))
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
-    private func makeBurstThenMinuteTimeline(
-        now: Date,
-        sessionUntil: Date,
-        colourScheme: WidgetWeaverClockColourScheme,
-        allowChaining: Bool
-    ) -> Timeline<Entry> {
-        let burstSeconds = max(1, WWClockBurstConfig.burstSeconds)
-        let burstEnd = now.addingTimeInterval(TimeInterval(burstSeconds))
+    private func makeSecondsSweepTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+        let minuteAnchorNow = Self.floorToMinute(now)
 
         var entries: [Entry] = []
-        entries.reserveCapacity(burstSeconds + 80)
+        entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // 1 Hz seconds
-        for i in 0..<burstSeconds {
-            let t = now.addingTimeInterval(TimeInterval(i))
-            entries.append(Entry(
-                date: t,
-                anchorDate: Self.floorToWholeSecond(t),
-                tickSeconds: 1.0,
-                colourScheme: colourScheme
-            ))
-        }
-
-        // Immediately fall back to minute-mode entry after the burst
+        // Immediate correctness. Minute hand is anchored to the current minute start.
         entries.append(Entry(
-            date: burstEnd,
-            anchorDate: Self.floorToWholeSecond(burstEnd),
-            tickSeconds: 60.0,
+            date: now,
+            minuteAnchor: minuteAnchorNow,
+            tickMode: .secondsSweep,
             colourScheme: colourScheme
         ))
 
-        let horizonEnd = now.addingTimeInterval(WWClockBurstConfig.minuteHorizonSeconds)
-
-        var next = Self.nextMinuteBoundary(after: burstEnd)
-        while next <= horizonEnd {
+        // Minute boundary entries restart the seconds sweep each minute.
+        var next = minuteAnchorNow.addingTimeInterval(60.0)
+        while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(Entry(
                 date: next,
-                anchorDate: Self.floorToWholeSecond(next),
-                tickSeconds: 60.0,
+                minuteAnchor: next,
+                tickMode: .secondsSweep,
                 colourScheme: colourScheme
             ))
             next = next.addingTimeInterval(60.0)
         }
 
-        // Chaining: ask WidgetKit for another timeline exactly at burst end, but only within the session window.
-        let chainAllowedNow = allowChaining && (burstEnd < sessionUntil)
-        let policyAfter = chainAllowedNow ? burstEnd : horizonEnd
-
-        return Timeline(entries: entries, policy: .after(policyAfter))
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     // MARK: - Time helpers
 
-    private static func floorToWholeSecond(_ date: Date) -> Date {
+    private static func floorToMinute(_ date: Date) -> Date {
         let t = date.timeIntervalSinceReferenceDate
-        return Date(timeIntervalSinceReferenceDate: floor(t))
-    }
-
-    private static func nextMinuteBoundary(after date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let next = (floor(t / 60.0) + 1.0) * 60.0
-        return Date(timeIntervalSinceReferenceDate: next)
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
 
-// MARK: - Instrumentation
+// MARK: - Instrumentation (App Group)
 
 private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
@@ -260,92 +206,6 @@ private enum WWClockInstrumentation {
 
         let c = defaults.integer(forKey: countKey)
         defaults.set(c + 1, forKey: countKey)
-    }
-
-    private static func dayKey(for date: Date) -> String {
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.year, .month, .day], from: date)
-
-        let y = comps.year ?? 0
-        let m = comps.month ?? 0
-        let d = comps.day ?? 0
-
-        return String(format: "%04d%02d%02d", y, m, d)
-    }
-}
-
-// MARK: - Session planner
-
-private enum WWClockBurstSession {
-    private static let sessionUntilKey = "widgetweaver.clock.session.until"
-    private static let sessionLastStartKey = "widgetweaver.clock.session.lastStart"
-    private static let sessionCountPrefix = "widgetweaver.clock.session.count."
-    private static let wakeRequestKey = "widgetweaver.clock.wake.request.until"
-
-    struct Plan {
-        let sessionActive: Bool
-        let allowChaining: Bool
-        let sessionUntil: Date
-    }
-
-    static func sessionPlan(now: Date, isPreview: Bool) -> Plan {
-        let defaults = AppGroup.userDefaults
-
-        if isPreview {
-            return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
-        }
-
-        let existingUntil = (defaults.object(forKey: sessionUntilKey) as? Date) ?? .distantPast
-        if existingUntil > now {
-            return Plan(sessionActive: true, allowChaining: true, sessionUntil: existingUntil)
-        }
-
-        let wakeUntil = (defaults.object(forKey: wakeRequestKey) as? Date) ?? .distantPast
-        let wakeRequested = wakeUntil > now
-        if wakeRequested {
-            defaults.set(Date.distantPast, forKey: wakeRequestKey)
-        }
-
-        if wakeRequested {
-            if let until = tryBeginSession(now: now, ignoreCaps: WWClockBurstConfig.debugIgnoreSessionCaps) {
-                return Plan(sessionActive: true, allowChaining: true, sessionUntil: until)
-            } else {
-                return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
-            }
-        }
-
-        if WWClockBurstConfig.autoStartSessionInDebug {
-            if let until = tryBeginSession(now: now, ignoreCaps: WWClockBurstConfig.debugIgnoreSessionCaps) {
-                return Plan(sessionActive: true, allowChaining: true, sessionUntil: until)
-            } else {
-                return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
-            }
-        }
-
-        return Plan(sessionActive: false, allowChaining: false, sessionUntil: .distantPast)
-    }
-
-    private static func tryBeginSession(now: Date, ignoreCaps: Bool) -> Date? {
-        let defaults = AppGroup.userDefaults
-        let dayKey = Self.dayKey(for: now)
-
-        let countKey = sessionCountPrefix + dayKey
-        let sessionsToday = defaults.integer(forKey: countKey)
-
-        if !ignoreCaps {
-            guard sessionsToday < WWClockBurstConfig.sessionMaxPerDay else { return nil }
-
-            let lastStart = (defaults.object(forKey: sessionLastStartKey) as? Date) ?? .distantPast
-            guard now.timeIntervalSince(lastStart) >= WWClockBurstConfig.sessionMinSpacingSeconds else { return nil }
-        }
-
-        let until = now.addingTimeInterval(WWClockBurstConfig.sessionMaxSeconds)
-
-        defaults.set(until, forKey: sessionUntilKey)
-        defaults.set(now, forKey: sessionLastStartKey)
-        defaults.set(sessionsToday + 1, forKey: countKey)
-
-        return until
     }
 
     private static func dayKey(for date: Date) -> String {
@@ -391,9 +251,9 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
-            date: entry.date,
-            anchorDate: entry.anchorDate,
-            tickSeconds: entry.tickSeconds
+            entryDate: entry.date,
+            minuteAnchor: entry.minuteAnchor,
+            tickMode: entry.tickMode
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
