@@ -6,12 +6,18 @@
 //
 
 import AppIntents
+import Foundation
 import SwiftUI
 import WidgetKit
 
-enum WidgetWeaverClockColourScheme: Int, AppEnum {
-    case now
-    case vibrant
+enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable {
+    case classic
+    case ocean
+    case mint
+    case orchid
+    case sunset
+    case ember
+    case graphite
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
         "Clock Colour Scheme"
@@ -19,85 +25,91 @@ enum WidgetWeaverClockColourScheme: Int, AppEnum {
 
     static var caseDisplayRepresentations: [WidgetWeaverClockColourScheme: DisplayRepresentation] {
         [
-            .now: "Now",
-            .vibrant: "Vibrant"
+            .classic: "Classic",
+            .ocean: "Ocean",
+            .mint: "Mint",
+            .orchid: "Orchid",
+            .sunset: "Sunset",
+            .ember: "Ember",
+            .graphite: "Graphite"
         ]
+    }
+}
+
+struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
+    static var title: LocalizedStringResource { "Clock" }
+
+    static var description: IntentDescription {
+        IntentDescription("Configure the clock widget.")
+    }
+
+    @Parameter(title: "Colour Scheme")
+    var colourScheme: WidgetWeaverClockColourScheme
+
+    init() {
+        self.colourScheme = .classic
     }
 }
 
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
     let anchorDate: Date
-
-    /// Kept for compatibility with the existing clock renderer, but no longer used to drive WidgetKit refreshes.
-    /// The view decides whether to show seconds based on TimelineView cadence.
     let tickSeconds: TimeInterval
-
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
+    typealias Entry = WidgetWeaverHomeScreenClockEntry
+    typealias Intent = WidgetWeaverHomeScreenClockConfigurationIntent
 
-    func placeholder(in context: Context) -> WidgetWeaverHomeScreenClockEntry {
+    func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let anchor = Self.roundedDownToSecond(now)
-
-        return WidgetWeaverHomeScreenClockEntry(
+        return Entry(
             date: now,
-            anchorDate: anchor,
-            tickSeconds: 60.0,
-            colourScheme: .now
+            anchorDate: Self.floorToWholeSecond(now),
+            tickSeconds: ProcessInfo.processInfo.isLowPowerModeEnabled ? 60.0 : 1.0,
+            colourScheme: .classic
         )
     }
 
-    func snapshot(
-        for configuration: WidgetWeaverHomeScreenClockConfigurationIntent,
-        in context: Context
-    ) async -> WidgetWeaverHomeScreenClockEntry {
+    func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let anchor = Self.roundedDownToSecond(now)
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
-        return WidgetWeaverHomeScreenClockEntry(
+        return Entry(
             date: now,
-            anchorDate: anchor,
-            tickSeconds: 60.0,
+            anchorDate: Self.floorToWholeSecond(now),
+            tickSeconds: isLowPower ? 60.0 : 1.0,
             colourScheme: configuration.colourScheme
         )
     }
 
-    func timeline(
-        for configuration: WidgetWeaverHomeScreenClockConfigurationIntent,
-        in context: Context
-    ) async -> Timeline<WidgetWeaverHomeScreenClockEntry> {
-
+    func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let anchor = Self.roundedDownToSecond(now)
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
-        // Only one entry. The “ticking” is done by TimelineView inside the widget view.
-        let entry = WidgetWeaverHomeScreenClockEntry(
+        let entry = Entry(
             date: now,
-            anchorDate: anchor,
-            tickSeconds: 60.0,
+            anchorDate: Self.floorToWholeSecond(now),
+            tickSeconds: isLowPower ? 60.0 : 1.0,
             colourScheme: configuration.colourScheme
         )
 
-        // Budget-safe: schedule an infrequent reload to pick up intent/appearance changes and keep things fresh.
-        // Low Power Mode: refresh less often.
-        let isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let refreshInterval: TimeInterval = isLowPowerMode ? (2 * 60 * 60) : (60 * 60)
+        // Budget-safe WidgetKit cadence; the clock view attempts to animate while visible.
+        let refreshInterval: TimeInterval = isLowPower ? (2.0 * 60.0 * 60.0) : (60.0 * 60.0)
         let nextRefresh = now.addingTimeInterval(refreshInterval)
 
         return Timeline(entries: [entry], policy: .after(nextRefresh))
     }
 
-    private static func roundedDownToSecond(_ date: Date) -> Date {
-        let t = floor(date.timeIntervalSince1970)
-        return Date(timeIntervalSince1970: t)
+    private static func floorToWholeSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        return Date(timeIntervalSinceReferenceDate: floor(t))
     }
 }
 
 struct WidgetWeaverHomeScreenClockWidget: Widget {
-    let kind: String = "WidgetWeaverHomeScreenClockWidget"
+    let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
 
     var body: some WidgetConfiguration {
         AppIntentConfiguration(
@@ -108,8 +120,9 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             WidgetWeaverHomeScreenClockView(entry: entry)
         }
         .configurationDisplayName("Clock (Icon)")
-        .description("A tiny analogue clock.")
+        .description("A small analogue clock.")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
@@ -118,38 +131,18 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private func shouldShowSecondHand(_ cadence: TimelineView.Context.Cadence) -> Bool {
-        switch cadence {
-        case .live, .seconds:
-            return true
-        case .minutes:
-            return false
-        @unknown default:
-            return false
-        }
-    }
-
     var body: some View {
         let palette = WidgetWeaverClockPalette.resolve(
             scheme: entry.colourScheme,
             mode: colorScheme
         )
 
-        // This is the key: the widget “ticks” using SwiftUI’s TimelineView.
-        // The system controls cadence (seconds when visible, slower when not).
-        TimelineView(.periodic(from: entry.anchorDate, by: 1.0)) { context in
-            let showSeconds = shouldShowSecondHand(context.cadence)
-
-            WidgetWeaverClockWidgetLiveView(
-                palette: palette,
-                date: context.date,
-                anchorDate: entry.anchorDate,
-                tickSeconds: showSeconds ? 1.0 : 60.0
-            )
-            .transaction { transaction in
-                transaction.animation = nil
-            }
-        }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            date: entry.date,
+            anchorDate: entry.anchorDate,
+            tickSeconds: entry.tickSeconds
+        )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
