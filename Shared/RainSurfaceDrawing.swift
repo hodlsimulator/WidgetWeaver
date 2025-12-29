@@ -744,7 +744,7 @@ private extension RainSurfaceDrawing {
                 : CGVector(dx: 0, dy: -1)
             let tan = CGVector(dx: -nn.dy, dy: nn.dx)
 
-            var insidePick = (prng.nextFloat01() < insideFraction) && (insideWidth > 0.000_01)
+            let insidePick = (prng.nextFloat01() < insideFraction) && (insideWidth > 0.000_01)
             let u = prng.nextFloat01()
             let d01 = pow(u, insidePick ? powInside : (powOutside * 1.08))
             let dist = CGFloat(d01) * (insidePick ? insideWidth : outsideWidth)
