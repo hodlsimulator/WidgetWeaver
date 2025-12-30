@@ -4,12 +4,11 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Rim + optional glints.
-//
 
 import SwiftUI
 
 extension RainSurfaceDrawing {
+
     static func drawRim(
         in context: inout GraphicsContext,
         surfacePoints: [CGPoint],
@@ -17,38 +16,35 @@ extension RainSurfaceDrawing {
         displayScale: CGFloat,
         cfg: RainForecastSurfaceConfiguration
     ) {
-        guard surfacePoints.count >= 2 else { return }
+        guard cfg.rimEnabled else { return }
+        guard maxStrength > 0.06 else { return }
+        guard surfacePoints.count > 2 else { return }
 
         let onePx = 1.0 / max(1.0, displayScale)
-
-        // Build a single polyline path for the rim strokes (kept subtle).
-        var poly = Path()
-        poly.move(to: surfacePoints[0])
-        for i in 1..<surfacePoints.count {
-            poly.addLine(to: surfacePoints[i])
-        }
-
         let innerW = max(onePx, CGFloat(cfg.rimInnerWidthPixels) / displayScale)
         let outerW = max(onePx, CGFloat(cfg.rimOuterWidthPixels) / displayScale)
 
-        let innerA = max(0.0, min(1.0, cfg.rimInnerOpacity)) * (0.55 + 0.45 * Double(maxStrength))
-        let outerA = max(0.0, min(1.0, cfg.rimOuterOpacity)) * (0.55 + 0.45 * Double(maxStrength))
+        var p = Path()
+        p.move(to: surfacePoints[0])
+        for i in 1..<surfacePoints.count { p.addLine(to: surfacePoints[i]) }
 
-        // Outer glow (blurred, very low alpha to avoid lifting black background).
+        let innerA = max(0.0, min(1.0, cfg.rimInnerOpacity)) * Double(maxStrength)
+        let outerA = max(0.0, min(1.0, cfg.rimOuterOpacity)) * Double(maxStrength)
+
         if outerA > 0.0001 {
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                layer.addFilter(.blur(radius: min(2.0, outerW * 0.55)))
-                layer.stroke(poly, with: .color(cfg.rimColor.opacity(outerA)), style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round))
-            }
+            context.stroke(
+                p,
+                with: .color(cfg.rimColor.opacity(outerA)),
+                style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round)
+            )
         }
 
-        // Inner highlight (thin, minimal).
         if innerA > 0.0001 {
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                layer.stroke(poly, with: .color(cfg.rimColor.opacity(innerA)), style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round))
-            }
+            context.stroke(
+                p,
+                with: .color(cfg.rimColor.opacity(innerA)),
+                style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round)
+            )
         }
     }
 
@@ -65,20 +61,28 @@ extension RainSurfaceDrawing {
     ) {
         guard cfg.glintEnabled else { return }
         guard surfacePoints.count == perPointStrength.count else { return }
-        guard surfacePoints.count > 6 else { return }
+        guard surfacePoints.count > 4 else { return }
 
+        // Candidate indices: strong, wet, and not too close to ends.
         let onePx = 1.0 / max(1.0, displayScale)
+        let wetEps = max(onePx * 0.5, 0.0001)
 
-        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, cfg.glintSeed ^ 0x91BADD_12345678))
-
-        // Pick a few indices in strong regions.
         var candidates: [Int] = []
-        candidates.reserveCapacity(surfacePoints.count / 3)
+        candidates.reserveCapacity(12)
 
-        for i in 0..<perPointStrength.count {
-            if perPointStrength[i] > 0.32 {
-                candidates.append(i)
-            }
+        for i in 3..<(surfacePoints.count - 3) {
+            let h = baselineY - surfacePoints[i].y
+            if h <= wetEps { continue }
+
+            let s = perPointStrength[i]
+            if s < 0.35 { continue }
+
+            // Avoid cramped glints on steep spikes by preferring moderate slopes.
+            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
+            let up = max(0.0, -n.y)
+            if up < 0.25 { continue }
+
+            candidates.append(i)
         }
         if candidates.isEmpty { return }
 
@@ -89,10 +93,11 @@ extension RainSurfaceDrawing {
         let glintW = max(onePx, bandWidthPt * 0.16)
         let glintL = max(onePx * 4.0, bandWidthPt * 0.65)
 
+        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0x9117_1234_55AA_7788))
         var p = Path()
 
         for _ in 0..<count {
-            let idx = Int(prng.nextUInt32() % UInt32(candidates.count))
+            let idx = Int(prng.nextUInt64() % UInt64(candidates.count))
             let i = candidates[idx]
 
             let base = surfacePoints[i]
@@ -108,26 +113,27 @@ extension RainSurfaceDrawing {
                 y: base.y + n.y * offsetN + t.y * offsetT
             )
 
-            // Small capsule-ish glint built from a rounded rect rotated along tangent.
-            // Approximate by drawing a thin line segment (blurred).
-            let a = Double(perPointStrength[i])
-            let half = glintL * CGFloat(0.45 + 0.30 * Double(prng.nextFloat01()))
-            let a0 = CGPoint(x: c.x - t.x * half, y: c.y - t.y * half)
-            let a1 = CGPoint(x: c.x + t.x * half, y: c.y + t.y * half)
+            // Orientation aligned to tangent.
+            let halfL = glintL * CGFloat(0.45 + 0.55 * Double(prng.nextFloat01()))
+            let halfW = glintW * CGFloat(0.70 + 0.30 * Double(prng.nextFloat01()))
 
-            p.move(to: a0)
-            p.addLine(to: a1)
+            let a = CGPoint(x: c.x - t.x * halfL - n.x * halfW, y: c.y - t.y * halfL - n.y * halfW)
+            let b = CGPoint(x: c.x + t.x * halfL - n.x * halfW, y: c.y + t.y * halfL - n.y * halfW)
+            let d = CGPoint(x: c.x - t.x * halfL + n.x * halfW, y: c.y - t.y * halfL + n.y * halfW)
+            let e = CGPoint(x: c.x + t.x * halfL + n.x * halfW, y: c.y + t.y * halfL + n.y * halfW)
 
-            _ = a
+            p.move(to: a)
+            p.addLine(to: b)
+            p.addLine(to: e)
+            p.addLine(to: d)
+            p.closeSubpath()
         }
 
-        context.drawLayer { layer in
-            layer.blendMode = .plusLighter
-            layer.addFilter(.blur(radius: min(1.6, glintW * 0.75)))
-            layer.stroke(p, with: .color(cfg.rimColor.opacity(maxA)), style: StrokeStyle(lineWidth: glintW, lineCap: .round))
-        }
+        if p.isEmpty { return }
+
+        // Use rimColor for glints (glintColor does not exist in configuration at this ref).
+        context.fill(p, with: .color(cfg.rimColor.opacity(maxA * 0.35)))
 
         _ = chartRect
-        _ = baselineY
     }
 }

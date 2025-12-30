@@ -10,12 +10,15 @@
 import SwiftUI
 
 struct WeatherNowcastChart: View {
-    let nowcast: WeatherNowcast
-    let style: WidgetWeaverWeatherTemplateStyle
+    let points: [WidgetWeaverWeatherMinutePoint]
+    let maxIntensityMMPerHour: Double
+    let accent: Color
+    let showAxisLabels: Bool
+    let forecastStart: Date
+    let locationLatitude: Double?
+    let locationLongitude: Double?
 
     var body: some View {
-        let points = nowcast.points
-
         let intensities: [Double] = points.map { p in
             if let v = p.precipitationIntensityMMPerHour, v.isFinite {
                 return max(0.0, v)
@@ -27,13 +30,14 @@ struct WeatherNowcastChart: View {
             if let c = p.precipitationChance01, c.isFinite {
                 return min(1.0, max(0.0, c))
             }
+            // Missing/unknown minutes fade via styling only.
             return 0.0
         }
 
         var cfg = RainForecastSurfaceConfiguration()
 
         // Scale so drizzle doesn’t become a slab.
-        cfg.intensityReferenceMaxMMPerHour = WeatherNowcast.visualMaxIntensityMMPerHour(forPeak: nowcast.peakIntensityMMPerHour)
+        cfg.intensityReferenceMaxMMPerHour = max(1.0, maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0)
         cfg.robustMaxPercentile = 0.92
         cfg.intensityGamma = 0.60
 
@@ -61,6 +65,7 @@ struct WeatherNowcastChart: View {
         cfg.fuzzChanceFloor = 0.06
         cfg.fuzzChanceMinStrength = 0.00
 
+        // Bidirectional tails at wet↔dry edges (implemented in the renderer).
         cfg.fuzzTailMinutes = 6
         cfg.fuzzLowHeightPower = 2.05
         cfg.fuzzLowHeightBoost = 0.95
@@ -107,11 +112,29 @@ struct WeatherNowcastChart: View {
 
         return ZStack {
             Color.black
+
             RainForecastSurfaceView(
                 intensities: intensities,
                 certainties: certainties,
                 configuration: cfg
             )
+
+            if showAxisLabels {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+
+                    HStack {
+                        Text("Now")
+                        Spacer(minLength: 0)
+                        Text("60m")
+                    }
+                    .font(.system(size: 18, weight: .regular, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.45))
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 2)
+                }
+                .allowsHitTesting(false)
+            }
         }
     }
 }

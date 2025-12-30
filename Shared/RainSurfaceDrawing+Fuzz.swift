@@ -4,118 +4,211 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Fuzz / haze / particulate drawing.
-//
 
 import SwiftUI
 
 extension RainSurfaceDrawing {
-    static func drawCoreEdgeFade(
+
+    // MARK: - Fuzz Haze (kept near-zero for widget-safe, black background)
+    static func drawFuzzHaze(
         in context: inout GraphicsContext,
+        chartRect: CGRect,
+        corePath: Path,
         surfacePoints: [CGPoint],
         perSegmentStrength: [CGFloat],
+        cfg: RainForecastSurfaceConfiguration,
+        bandWidthPt: CGFloat,
+        maxStrength: CGFloat,
+        isTightBudget: Bool
+    ) {
+        let hazeStrength = max(0.0, min(1.0, cfg.fuzzHazeStrength))
+        guard hazeStrength > 0.0001 else { return }
+        guard maxStrength > 0.10 else { return }
+        guard !isTightBudget else { return }
+
+        // Intentionally minimal. (At this ref, haze is disabled by default in nowcast.)
+        // Keeping a stub avoids accidental regressions reintroducing background lift.
+        _ = (context, chartRect, corePath, surfacePoints, perSegmentStrength, cfg, bandWidthPt)
+    }
+
+    // MARK: - Core Edge Fade (softens “solid fill” dominance near rim)
+    static func drawCoreEdgeFade(
+        in context: inout GraphicsContext,
+        corePath: Path,
+        surfacePoints: [CGPoint],
+        perSegmentStrength: [CGFloat],
+        cfg: RainForecastSurfaceConfiguration,
         bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration
+        maxStrength: CGFloat
     ) {
-        let fade = max(0.0, min(1.0, cfg.coreFadeFraction))
-        guard fade > 0.0001 else { return }
+        guard cfg.fuzzEnabled, cfg.canEnableFuzz else { return }
+        guard cfg.fuzzInsideOpacityFactor > 0.0001 else { return }
+        guard maxStrength > 0.10 else { return }
+        guard !surfacePoints.isEmpty else { return }
 
         let onePx = 1.0 / max(1.0, displayScale)
-        let blur = min(2.2, max(onePx, bandWidthPt * CGFloat(0.35 * fade)))
-        let lineWidth = max(onePx, bandWidthPt * CGFloat(0.70 * fade))
+        let fadeW = max(onePx, bandWidthPt * 0.85)
 
-        let bins = 8
-        let paths = buildBinnedSegmentPaths(points: surfacePoints, perSegmentStrength: perSegmentStrength, binCount: bins)
+        // Build a gradient “mask” via destinationOut strokes clipped to the core.
+        // Stronger where fuzz strength is high (tails, low heights, low certainty).
+        let levels: [Double] = [0.06, 0.10, 0.16]
+        var paths: [Path] = Array(repeating: Path(), count: levels.count)
+
+        for i in 1..<surfacePoints.count {
+            let s = (i < perSegmentStrength.count) ? Double(perSegmentStrength[i]) : 0.0
+            if s < 0.04 { continue }
+
+            let w = fadeW * CGFloat(0.55 + 0.70 * s)
+            if w <= onePx * 0.2 { continue }
+
+            // Bin by strength to reduce draw calls.
+            let bin: Int
+            if s < 0.20 { bin = 0 }
+            else if s < 0.45 { bin = 1 }
+            else { bin = 2 }
+
+            var p = paths[bin]
+            p.move(to: surfacePoints[i - 1])
+            p.addLine(to: surfacePoints[i])
+            paths[bin] = p
+        }
+
+        let opacityFactor = max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor))
 
         context.drawLayer { layer in
+            layer.clip(to: corePath)
             layer.blendMode = .destinationOut
-            layer.addFilter(.blur(radius: blur))
 
-            for b in 0..<bins {
-                let rep = (Double(b) + 0.5) / Double(bins)
-                let alpha = min(0.55, rep * 0.55)
-                if alpha < 0.02 { continue }
-                layer.stroke(paths[b], with: .color(Color.white.opacity(alpha)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            for (idx, alpha0) in levels.enumerated() {
+                if paths[idx].isEmpty { continue }
+                let a = min(0.35, alpha0 * opacityFactor * Double(maxStrength))
+                let w = fadeW * CGFloat(0.70 + 0.45 * Double(idx))
+                layer.stroke(
+                    paths[idx],
+                    with: .color(Color.white.opacity(a)),
+                    style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
+                )
             }
         }
     }
 
+    // MARK: - Core Erosion (vector “dusty” breakup along rim; widget-safe)
     static func drawCoreErosion(
         in context: inout GraphicsContext,
+        corePath: Path,
         surfacePoints: [CGPoint],
         normals: [CGPoint],
         perSegmentStrength: [CGFloat],
+        cfg: RainForecastSurfaceConfiguration,
         bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration,
+        maxStrength: CGFloat,
         isTightBudget: Bool
     ) {
-        let strength = max(0.0, min(1.0, cfg.fuzzErodeStrength))
-        guard strength > 0.0001 else { return }
+        guard cfg.fuzzEnabled, cfg.canEnableFuzz else { return }
+        guard cfg.fuzzErodeEnabled else { return }
+        guard maxStrength > 0.10 else { return }
+        guard surfacePoints.count > 2 else { return }
 
         let onePx = 1.0 / max(1.0, displayScale)
-        let inset = max(0.0, CGFloat(cfg.fuzzErodeRimInsetPixels) / displayScale)
+        let blurW = max(onePx, bandWidthPt * max(0.0, min(0.50, cfg.fuzzErodeBlurFractionOfBand)))
 
-        var insetPoints: [CGPoint] = []
-        insetPoints.reserveCapacity(surfacePoints.count)
-        for i in 0..<surfacePoints.count {
-            let p = surfacePoints[i]
-            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-            insetPoints.append(CGPoint(x: p.x - n.x * inset, y: p.y - n.y * inset))
-        }
+        // Tight budgets: keep erosion but reduce passes and width.
+        let passes = isTightBudget ? 1 : 2
+        let width = max(onePx, bandWidthPt * max(0.18, min(0.60, cfg.fuzzErodeStrokeWidthFactor)))
 
-        let strokeWidth = max(onePx, bandWidthPt * CGFloat(max(0.10, cfg.fuzzErodeStrokeWidthFactor)))
-        let blur = isTightBudget ? 0.0 : min(2.3, max(onePx, bandWidthPt * CGFloat(max(0.0, cfg.fuzzErodeBlurFractionOfBand))))
-        let edgePower = max(0.10, cfg.fuzzErodeEdgePower)
+        var edgePath = Path()
+        edgePath.move(to: surfacePoints[0])
+        for i in 1..<surfacePoints.count { edgePath.addLine(to: surfacePoints[i]) }
 
-        let bins = 10
-        let paths = buildBinnedSegmentPaths(points: insetPoints, perSegmentStrength: perSegmentStrength, binCount: bins)
+        // The erosion is done by “scrubbing” the rim with destinationOut strokes,
+        // with tiny normal jitter via PRNG to avoid a clean vector edge.
+        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0xE0DE_900D_1234))
+        let rimInset = max(0.0, cfg.fuzzErodeRimInsetPixels) / displayScale
 
         context.drawLayer { layer in
+            layer.clip(to: corePath)
             layer.blendMode = .destinationOut
-            if blur > 0.0001 { layer.addFilter(.blur(radius: blur)) }
 
-            for b in 0..<bins {
-                let rep = (Double(b) + 0.5) / Double(bins) // 0..1
-                let a = strength * pow(rep, edgePower)
-                if a < 0.02 { continue }
-                layer.stroke(paths[b], with: .color(Color.white.opacity(min(0.95, a))), style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+            for _ in 0..<passes {
+                var p = Path()
+                p.move(to: surfacePoints[0])
+
+                for i in 1..<surfacePoints.count {
+                    let s = (i < perSegmentStrength.count) ? Double(perSegmentStrength[i]) : 0.0
+                    if s < 0.04 {
+                        p.addLine(to: surfacePoints[i])
+                        continue
+                    }
+
+                    let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
+                    let jitterT = Double(prng.nextSignedFloat()) * 0.20
+                    let jitterN = Double(prng.nextSignedFloat()) * 0.18
+
+                    let t = CGPoint(x: n.y, y: -n.x)
+                    let along = CGFloat(jitterT) * bandWidthPt * 0.18
+                    let outward = CGFloat(jitterN) * bandWidthPt * 0.18
+
+                    let pt = surfacePoints[i]
+                    let moved = CGPoint(
+                        x: pt.x + t.x * along - n.x * rimInset + n.x * outward,
+                        y: pt.y + t.y * along - n.y * rimInset + n.y * outward
+                    )
+                    p.addLine(to: moved)
+                }
+
+                // Removal amount: strength-biased and clamped.
+                let baseA = max(0.0, min(1.0, cfg.fuzzErodeStrength))
+                let a = min(0.40, 0.10 + 0.34 * baseA * Double(maxStrength))
+
+                layer.stroke(
+                    p,
+                    with: .color(Color.white.opacity(a)),
+                    style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
+                )
+
+                if blurW > onePx * 0.5 {
+                    layer.stroke(
+                        p,
+                        with: .color(Color.white.opacity(a * 0.35)),
+                        style: StrokeStyle(lineWidth: width + blurW, lineCap: .round, lineJoin: .round)
+                    )
+                }
             }
         }
     }
 
+    // MARK: - Core Dissolve Perforation (tiny destinationOut holes near rim)
     static func drawCoreDissolvePerforation(
         in context: inout GraphicsContext,
         corePath: Path,
         surfacePoints: [CGPoint],
         normals: [CGPoint],
         perPointStrength: [CGFloat],
+        cfg: RainForecastSurfaceConfiguration,
         bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration,
+        maxStrength: CGFloat,
         isTightBudget: Bool
     ) {
-        guard surfacePoints.count == perPointStrength.count else { return }
         guard cfg.fuzzEnabled, cfg.canEnableFuzz else { return }
+        guard maxStrength > 0.12 else { return }
+        guard surfacePoints.count == perPointStrength.count else { return }
+        guard surfacePoints.count > 2 else { return }
 
         let onePx = 1.0 / max(1.0, displayScale)
-        let baselineY = (surfacePoints.first?.y ?? 0) + 10_000 // dummy init; replaced below
 
-        _ = baselineY
+        let baseBudget = max(0, min(2200, cfg.fuzzSpeckleBudget / 2))
+        let budget = isTightBudget ? Int(Double(baseBudget) * 0.55) : baseBudget
+        if budget < 120 { return }
 
-        // Budget scaled by strength + quality.
-        let maxS = Double(perPointStrength.max() ?? 0)
-        if maxS < 0.10 { return }
+        // Only perforate when fuzz is meaningfully strong.
+        let attempts = budget * 2
 
-        let baseBudget = min(1300, max(140, Int(Double(cfg.fuzzSpeckleBudget) * 0.20)))
-        let scaled = Int(Double(baseBudget) * min(1.0, maxS * 1.15) * max(0.35, cfg.fuzzErodeStrength))
-        let budget = max(80, min(baseBudget, scaled))
-        let attempts = isTightBudget ? budget * 2 : budget * 3
-
-        let rMinPx = max(0.10, cfg.fuzzSpeckleRadiusPixels.lowerBound)
-        let rMaxPx = max(rMinPx, min(cfg.fuzzSpeckleRadiusPixels.upperBound, 1.35))
-        let microMaxPx = min(rMaxPx, max(rMinPx + 0.08, 0.95))
+        // Radius in device pixels (very tiny).
+        let rMinPx = max(0.12, cfg.fuzzSpeckleRadiusPixels.lowerBound)
+        let microMaxPx = min(1.05, max(rMinPx + 0.20, min(cfg.fuzzSpeckleRadiusPixels.upperBound, 1.35)))
 
         // Prefer wet/strong indices (avoid perforating in flat dry zones).
         var strongWet: [Int] = []
@@ -140,9 +233,11 @@ extension RainSurfaceDrawing {
         // Bucket holes into a few opacity bins to cut draw calls.
         let levels: [Double] = [0.10, 0.18, 0.28]
         var holePaths: [Path] = Array(repeating: Path(), count: levels.count)
+        var made = 0
+
 
         func pickIndex() -> Int {
-            let j = Int(prng.nextUInt32() % UInt32(strongWet.count))
+            let j = Int(prng.nextUInt64() % UInt64(strongWet.count))
             return strongWet[j]
         }
 
@@ -153,7 +248,7 @@ extension RainSurfaceDrawing {
         }
 
         for _ in 0..<attempts {
-            if holePaths.reduce(0, { $0 + $1.isEmpty ? 0 : 0 }) >= budget { break }
+            if made >= budget { break }
 
             let i = pickIndex()
             let s = Double(perPointStrength[i])
@@ -184,6 +279,7 @@ extension RainSurfaceDrawing {
             var p = holePaths[bin]
             p.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
             holePaths[bin] = p
+            made += 1
         }
 
         context.drawLayer { layer in
@@ -197,61 +293,24 @@ extension RainSurfaceDrawing {
         }
     }
 
-    static func drawFuzzHaze(
-        in context: inout GraphicsContext,
-        surfacePoints: [CGPoint],
-        normals: [CGPoint],
-        perSegmentStrength: [CGFloat],
-        bandWidthPt: CGFloat,
-        displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration
-    ) {
-        let haze = max(0.0, min(1.0, cfg.fuzzHazeStrength))
-        guard haze > 0.0001 else { return }
-
-        let onePx = 1.0 / max(1.0, displayScale)
-        let blur = min(2.2, max(onePx, bandWidthPt * CGFloat(max(0.0, cfg.fuzzHazeBlurFractionOfBand))))
-        let width = max(onePx, bandWidthPt * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor)))
-
-        // Slight outward offset to keep haze outside the core.
-        let offset = max(0.0, bandWidthPt * 0.12)
-
-        var outPts: [CGPoint] = []
-        outPts.reserveCapacity(surfacePoints.count)
-        for i in 0..<surfacePoints.count {
-            let p = surfacePoints[i]
-            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-            outPts.append(CGPoint(x: p.x + n.x * offset, y: p.y + n.y * offset))
-        }
-
-        let bins = 8
-        let paths = buildBinnedSegmentPaths(points: outPts, perSegmentStrength: perSegmentStrength, binCount: bins)
-
-        context.drawLayer { layer in
-            layer.blendMode = .plusLighter
-            layer.addFilter(.blur(radius: blur))
-
-            for b in 0..<bins {
-                let rep = (Double(b) + 0.5) / Double(bins)
-                let a = haze * rep * 0.20
-                if a < 0.01 { continue }
-                layer.stroke(paths[b], with: .color(cfg.fuzzColor.opacity(a)), style: StrokeStyle(lineWidth: width, lineCap: .round))
-            }
-        }
-    }
-
+    // MARK: - Speckles (outside dust + inside weld; fine grain)
     static func drawFuzzSpeckles(
         in context: inout GraphicsContext,
         chartRect: CGRect,
         baselineY: CGFloat,
+        corePath: Path,
         surfacePoints: [CGPoint],
         normals: [CGPoint],
         perPointStrength: [CGFloat],
+        perSegmentStrength: [CGFloat],
+        cfg: RainForecastSurfaceConfiguration,
         bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration,
+        maxStrength: CGFloat,
         isTightBudget: Bool
     ) {
+        guard cfg.fuzzEnabled, cfg.canEnableFuzz else { return }
+        guard maxStrength > 0.06 else { return }
         guard surfacePoints.count == perPointStrength.count else { return }
         guard surfacePoints.count > 2 else { return }
 
@@ -299,14 +358,14 @@ extension RainSurfaceDrawing {
         var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0x51EC7_ABCDE123))
 
         func pick(_ list: [Int]) -> Int {
-            let j = Int(prng.nextUInt32() % UInt32(max(1, list.count)))
+            let j = Int(prng.nextUInt64() % UInt64(max(1, list.count)))
             return list[j]
         }
 
         func sampleRadius(macroAllowed: Bool) -> CGFloat {
             if macroAllowed, !isTightBudget {
                 let macroChance: UInt32 = 7 // ~2.7% with mod 256
-                if (prng.nextUInt32() & 255) < macroChance {
+                if (prng.nextUInt64() & 255) < UInt64(macroChance) {
                     // Macro grain (rare)
                     let u = CGFloat(prng.nextFloat01())
                     let t = pow(u, 1.15)
@@ -339,8 +398,8 @@ extension RainSurfaceDrawing {
             for _ in 0..<attempts {
                 if made >= outsideDustCount { break }
 
-                let useStrong = (prng.nextUInt32() & 255) < 210
-                let i = useStrong ? pick(strongAny) : Int(prng.nextUInt32() % UInt32(perPointStrength.count))
+                let useStrong = (prng.nextUInt64() & 255) < 210
+                let i = useStrong ? pick(strongAny) : Int(prng.nextUInt64() % UInt64(perPointStrength.count))
 
                 let s = Double(perPointStrength[i])
                 if s < 0.06 { continue }
@@ -379,105 +438,108 @@ extension RainSurfaceDrawing {
 
         // EDGE BEADS (textured luminous rim; avoids “stroked line” look)
         do {
-            let beadAlphaLevels: [Double] = [0.10, 0.16, 0.24].map { $0 * max(0.0, min(1.0, cfg.rimOuterOpacity)) }
-            var beadPaths: [Path] = Array(repeating: Path(), count: beadAlphaLevels.count)
+            if beadCount > 0 {
+                let beadLevels: [Double] = [0.28, 0.48, 0.72].map { $0 * maxOpacity }
+                var beadPaths: [Path] = Array(repeating: Path(), count: beadLevels.count)
 
-            let attempts = beadCount * (isTightBudget ? 2 : 3)
-            var made = 0
+                let attempts = beadCount * (isTightBudget ? 2 : 3)
+                var made = 0
+                for _ in 0..<attempts {
+                    if made >= beadCount { break }
 
-            for _ in 0..<attempts {
-                if made >= beadCount { break }
+                    let i = pick(strongAny)
+                    let s = Double(perPointStrength[i])
+                    if s < 0.10 { continue }
 
-                let i = pick(strongAny)
-                let s = Double(perPointStrength[i])
-                if s < 0.10 { continue }
+                    let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
+                    let t = CGPoint(x: n.y, y: -n.x)
 
-                let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-                let t = CGPoint(x: n.y, y: -n.x)
+                    let u = Double(prng.nextFloat01())
+                    let dist = CGFloat(pow(u, 1.7)) * bandWidthPt * 0.28
+                    let jitter = CGFloat((Double(prng.nextSignedFloat()) * 0.50)) * bandWidthPt * 0.18
 
-                // Keep beads very close to edge.
-                let u = Double(prng.nextFloat01())
-                let dist = CGFloat(pow(u, 2.6)) * (bandWidthPt * 0.28)
+                    let base = surfacePoints[i]
+                    let center = CGPoint(x: base.x + n.x * dist + t.x * jitter, y: base.y + n.y * dist + t.y * jitter)
 
-                let jitter = CGFloat((Double(prng.nextSignedFloat()) * cfg.fuzzAlongTangentJitter)) * bandWidthPt * 0.55
-                let base = surfacePoints[i]
-                let center = CGPoint(x: base.x + n.x * dist + t.x * jitter, y: base.y + n.y * dist + t.y * jitter)
+                    let uR = CGFloat(prng.nextFloat01())
+                    let r = max(onePx * 0.30, (rMinPt + (microMaxPt - rMinPt) * pow(uR, 2.2)) * 0.85)
+                    if r < onePx * 0.22 { continue }
 
-                // Tiny radii
-                let r = min(sampleRadius(macroAllowed: false), microMaxPt * 0.85)
-                if r < onePx * 0.15 { continue }
+                    var a = maxOpacity * min(1.0, 0.55 + 0.85 * s)
+                    a *= (0.65 + 0.35 * Double(prng.nextFloat01()))
+                    if a < maxOpacity * 0.08 { continue }
 
-                let a = min(1.0, 0.30 + 0.70 * s) * (0.65 + 0.35 * Double(prng.nextFloat01()))
-                let bin: Int
-                if a < 0.45 { bin = 0 }
-                else if a < 0.72 { bin = 1 }
-                else { bin = 2 }
+                    let bin: Int
+                    if a < maxOpacity * 0.26 { bin = 0 }
+                    else if a < maxOpacity * 0.45 { bin = 1 }
+                    else { bin = 2 }
 
-                var p = beadPaths[bin]
-                p.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
-                beadPaths[bin] = p
-                made += 1
-            }
+                    var p = beadPaths[bin]
+                    p.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
+                    beadPaths[bin] = p
+                    made += 1
+                }
 
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                for (idx, alpha) in beadAlphaLevels.enumerated() {
+                for (idx, alpha) in beadLevels.enumerated() {
                     if beadPaths[idx].isEmpty { continue }
-                    layer.fill(beadPaths[idx], with: .color(cfg.rimColor.opacity(alpha)))
+                    context.fill(beadPaths[idx], with: .color(cfg.rimColor.opacity(alpha)))
                 }
             }
         }
 
-        // INSIDE DUST (only for wet indices; prevents “floating fuzz” in dry gaps)
-        if insideBudget > 60, !strongWet.isEmpty {
-            let insideOpacity = maxOpacity * max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor))
-            let insideLevels: [Double] = [0.16, 0.26, 0.40, 0.58].map { $0 * insideOpacity }
-            var paths: [Path] = Array(repeating: Path(), count: insideLevels.count)
+        // INSIDE DUST (weld band)
+        do {
+            if insideBudget > 0, !strongWet.isEmpty {
+                let insideLevels: [Double] = [0.14, 0.24, 0.40, 0.62].map { $0 * maxOpacity * max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor)) }
+                var insidePaths: [Path] = Array(repeating: Path(), count: insideLevels.count)
 
-            let attempts = insideBudget * (isTightBudget ? 2 : 3)
-            var made = 0
+                let attempts = insideBudget * (isTightBudget ? 2 : 3)
+                var made = 0
 
-            for _ in 0..<attempts {
-                if made >= insideBudget { break }
+                for _ in 0..<attempts {
+                    if made >= insideBudget { break }
 
-                let i = pick(strongWet)
-                let s = Double(perPointStrength[i])
-                if s < 0.08 { continue }
+                    let i = pick(strongWet)
+                    let s = Double(perPointStrength[i])
+                    if s < 0.10 { continue }
 
-                let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-                let t = CGPoint(x: n.y, y: -n.x)
+                    let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
+                    let t = CGPoint(x: n.y, y: -n.x)
 
-                let insideBand = max(onePx, bandWidthPt * cfg.fuzzInsideWidthFactor)
-                let u = Double(prng.nextFloat01())
-                let distFrac = pow(u, cfg.fuzzDistancePowerInside)
-                let dist = CGFloat(distFrac) * insideBand
+                    let u = Double(prng.nextFloat01())
+                    let insideBand = max(onePx, bandWidthPt * cfg.fuzzInsideWidthFactor)
+                    let distFrac = pow(u, cfg.fuzzDistancePowerInside)
+                    let dist = CGFloat(distFrac) * insideBand
 
-                let jitter = CGFloat((Double(prng.nextSignedFloat()) * cfg.fuzzAlongTangentJitter)) * bandWidthPt * 0.40
-                let base = surfacePoints[i]
-                let center = CGPoint(x: base.x - n.x * dist + t.x * jitter, y: base.y - n.y * dist + t.y * jitter)
+                    let jitter = CGFloat((Double(prng.nextSignedFloat()) * cfg.fuzzAlongTangentJitter)) * bandWidthPt * 0.30
+                    let base = surfacePoints[i]
+                    let center = CGPoint(x: base.x - n.x * dist + t.x * jitter, y: base.y - n.y * dist + t.y * jitter)
 
-                let r = min(sampleRadius(macroAllowed: false), microMaxPt * 0.92)
-                if r < onePx * 0.15 { continue }
+                    let r = sampleRadius(macroAllowed: false)
+                    if r < onePx * 0.20 { continue }
 
-                var a = insideOpacity * s * max(0.0, cfg.fuzzSpeckStrength)
-                a *= (0.40 + 0.60 * (1.0 - distFrac))
-                a *= (0.72 + 0.35 * Double(prng.nextFloat01()))
-                if a < insideOpacity * 0.07 { continue }
+                    var a = maxOpacity * s * max(0.0, cfg.fuzzSpeckStrength) * max(0.0, min(1.0, cfg.fuzzInsideOpacityFactor))
+                    a *= (0.55 + 0.45 * (1.0 - distFrac))
+                    a *= (0.75 + 0.35 * Double(prng.nextFloat01()))
+                    if a < maxOpacity * 0.07 { continue }
 
-                let bin = bucketIndex(a / max(0.0001, insideOpacity))
-                var p = paths[bin]
-                p.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
-                paths[bin] = p
-                made += 1
-            }
+                    let bin = bucketIndex(a / max(0.0001, maxOpacity))
+                    var p = insidePaths[bin]
+                    p.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
+                    insidePaths[bin] = p
+                    made += 1
+                }
 
-            context.drawLayer { layer in
-                layer.blendMode = .plusLighter
-                for (idx, alpha) in insideLevels.enumerated() {
-                    if paths[idx].isEmpty { continue }
-                    layer.fill(paths[idx], with: .color(cfg.fuzzColor.opacity(alpha)))
+                context.drawLayer { layer in
+                    layer.clip(to: corePath)
+                    for (idx, alpha) in insideLevels.enumerated() {
+                        if insidePaths[idx].isEmpty { continue }
+                        layer.fill(insidePaths[idx], with: .color(cfg.fuzzColor.opacity(alpha)))
+                    }
                 }
             }
         }
+
+        _ = perSegmentStrength
     }
 }
