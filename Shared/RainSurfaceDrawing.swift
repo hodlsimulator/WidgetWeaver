@@ -39,6 +39,9 @@ enum RainSurfaceDrawing {
 
         let corePath = buildCorePath(geometry: geometry, smoothingWindowRadius: 1, smoothingPasses: 1)
 
+        let fuzzAllowed = (cfg.fuzzEnabled && cfg.canEnableFuzz)
+        let tightBudget = fuzzAllowed ? isTightBudget(chartRect: chartRect, displayScale: displayScale, cfg: cfg) : false
+
         // Draw core fill in its own layer so destinationOut operations only affect the core.
         context.drawLayer { layer in
             let shading = coreShading(chartRect: chartRect, baselineY: geometry.baselineY, cfg: cfg)
@@ -47,27 +50,29 @@ enum RainSurfaceDrawing {
             // Always soften the edge slightly so fuzz can “own” the silhouette when needed.
             drawCoreEdgeFade(
                 in: &layer,
+                corePath: corePath,
                 surfacePoints: surfacePoints,
                 perSegmentStrength: perSegmentStrength,
+                cfg: cfg,
                 bandWidthPt: bandWidthPt,
                 displayScale: displayScale,
-                cfg: cfg
+                maxStrength: maxStrength
             )
 
             // Dissolution near rim (only when fuzz is enabled + allowed).
-            if cfg.fuzzEnabled, cfg.canEnableFuzz {
-                let tight = isTightBudget(chartRect: chartRect, displayScale: displayScale, cfg: cfg)
-
+            if fuzzAllowed {
                 if cfg.fuzzErodeEnabled {
                     drawCoreErosion(
                         in: &layer,
+                        corePath: corePath,
                         surfacePoints: surfacePoints,
                         normals: normals,
                         perSegmentStrength: perSegmentStrength,
+                        cfg: cfg,
                         bandWidthPt: bandWidthPt,
                         displayScale: displayScale,
-                        cfg: cfg,
-                        isTightBudget: tight
+                        maxStrength: maxStrength,
+                        isTightBudget: tightBudget
                     )
                 }
 
@@ -77,40 +82,44 @@ enum RainSurfaceDrawing {
                     surfacePoints: surfacePoints,
                     normals: normals,
                     perPointStrength: perPointStrength,
+                    cfg: cfg,
                     bandWidthPt: bandWidthPt,
                     displayScale: displayScale,
-                    cfg: cfg,
-                    isTightBudget: tight
+                    maxStrength: maxStrength,
+                    isTightBudget: tightBudget
                 )
             }
         }
 
         // Fuzz (particulates) drawn above the core.
-        if cfg.fuzzEnabled, cfg.canEnableFuzz {
-            let tight = isTightBudget(chartRect: chartRect, displayScale: displayScale, cfg: cfg)
-
+        if fuzzAllowed {
             drawFuzzSpeckles(
                 in: &context,
                 chartRect: chartRect,
                 baselineY: geometry.baselineY,
+                corePath: corePath,
                 surfacePoints: surfacePoints,
                 normals: normals,
                 perPointStrength: perPointStrength,
+                perSegmentStrength: perSegmentStrength,
+                cfg: cfg,
                 bandWidthPt: bandWidthPt,
                 displayScale: displayScale,
-                cfg: cfg,
-                isTightBudget: tight
+                maxStrength: maxStrength,
+                isTightBudget: tightBudget
             )
 
-            if cfg.fuzzHazeStrength > 0.0001, maxStrength > 0.02, !tight {
+            if cfg.fuzzHazeStrength > 0.0001, maxStrength > 0.02, !tightBudget {
                 drawFuzzHaze(
                     in: &context,
+                    chartRect: chartRect,
+                    corePath: corePath,
                     surfacePoints: surfacePoints,
-                    normals: normals,
                     perSegmentStrength: perSegmentStrength,
+                    cfg: cfg,
                     bandWidthPt: bandWidthPt,
-                    displayScale: displayScale,
-                    cfg: cfg
+                    maxStrength: maxStrength,
+                    isTightBudget: tightBudget
                 )
             }
         }
@@ -145,8 +154,8 @@ enum RainSurfaceDrawing {
             in: &context,
             chartRect: chartRect,
             baselineY: geometry.baselineY,
-            displayScale: displayScale,
-            cfg: cfg
+            configuration: cfg,
+            displayScale: displayScale
         )
 
         _ = onePx
@@ -156,8 +165,8 @@ enum RainSurfaceDrawing {
         in context: inout GraphicsContext,
         chartRect: CGRect,
         baselineY: CGFloat,
-        displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration
+        configuration cfg: RainForecastSurfaceConfiguration,
+        displayScale: CGFloat
     ) {
         guard cfg.baselineEnabled else { return }
         guard chartRect.width > 1 else { return }
