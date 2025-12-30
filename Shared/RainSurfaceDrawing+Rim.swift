@@ -2,162 +2,132 @@
 //  RainSurfaceDrawing+Rim.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/29/25.
+//  Created by . . on 12/23/25.
+//
+//  Rim + optional glints.
 //
 
-import Foundation
 import SwiftUI
 
 extension RainSurfaceDrawing {
-    // MARK: - Rim (no stroke-line look)
     static func drawRim(
         in context: inout GraphicsContext,
-        chartRect: CGRect,
-        corePath: Path,
         surfacePoints: [CGPoint],
-        normals: [CGVector],
-        perPointStrength: [Double],
-        perSegmentStrength: [Double],
-        cfg: RainForecastSurfaceConfiguration,
-        bandWidthPt: CGFloat,
+        maxStrength: CGFloat,
         displayScale: CGFloat,
-        maxStrength: Double,
-        isTightBudget: Bool
+        cfg: RainForecastSurfaceConfiguration
     ) {
         guard surfacePoints.count >= 2 else { return }
 
-        let scale = max(1.0, displayScale)
+        let onePx = 1.0 / max(1.0, displayScale)
 
-        func outsideClip(_ layer: inout GraphicsContext) {
-            let bleed = max(0.0, bandWidthPt * 3.0)
-            var outside = Path()
-            outside.addRect(chartRect.insetBy(dx: -bleed, dy: -bleed))
-            outside.addPath(corePath)
-            layer.clip(to: outside, style: FillStyle(eoFill: true))
+        // Build a single polyline path for the rim strokes (kept subtle).
+        var poly = Path()
+        poly.move(to: surfacePoints[0])
+        for i in 1..<surfacePoints.count {
+            poly.addLine(to: surfacePoints[i])
         }
 
-        let outerW = max(1.0, CGFloat(cfg.rimOuterWidthPixels) / scale)
-        let outerA = max(0.0, min(1.0, cfg.rimOuterOpacity))
+        let innerW = max(onePx, CGFloat(cfg.rimInnerWidthPixels) / displayScale)
+        let outerW = max(onePx, CGFloat(cfg.rimOuterWidthPixels) / displayScale)
 
-        if outerA > 0.000_1, outerW > 0.25 {
-            let bins = isTightBudget ? 4 : 6
-            let binned = buildBinnedSegmentPaths(points: surfacePoints, perSegmentStrength: perSegmentStrength, bins: bins)
+        let innerA = max(0.0, min(1.0, cfg.rimInnerOpacity)) * (0.55 + 0.45 * Double(maxStrength))
+        let outerA = max(0.0, min(1.0, cfg.rimOuterOpacity)) * (0.55 + 0.45 * Double(maxStrength))
 
+        // Outer glow (blurred, very low alpha to avoid lifting black background).
+        if outerA > 0.0001 {
             context.drawLayer { layer in
-                outsideClip(&layer)
                 layer.blendMode = .plusLighter
-
-                let blur = isTightBudget ? 0.0 : max(0.0, min(3.0, outerW * 0.18))
-                if blur > 0.001 { layer.addFilter(.blur(radius: blur)) }
-
-                for i in 0..<bins {
-                    let s = binned.avg[i]
-                    if s <= 0.000_01 { continue }
-                    let a = outerA * (0.30 + 0.70 * s) * (0.70 + 0.30 * maxStrength)
-                    if a <= 0.000_1 { continue }
-                    layer.stroke(binned.paths[i], with: .color(cfg.rimColor.opacity(a)), lineWidth: outerW)
-                }
+                layer.addFilter(.blur(radius: min(2.0, outerW * 0.55)))
+                layer.stroke(poly, with: .color(cfg.rimColor.opacity(outerA)), style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round))
             }
         }
 
-        let beadBaseOpacity = max(0.0, min(1.0, cfg.rimInnerOpacity)) * 0.20
-
-        if beadBaseOpacity > 0.000_1,
-           perPointStrength.count == surfacePoints.count,
-           normals.count == surfacePoints.count
-        {
-            var cdf: [Double] = Array(repeating: 0.0, count: perPointStrength.count)
-            var total: Double = 0.0
-            let floorForNonZero = isTightBudget ? 0.070 : 0.050
-
-            for i in 0..<perPointStrength.count {
-                let s = RainSurfaceMath.clamp01(perPointStrength[i])
-                if s <= 0.000_01 {
-                    cdf[i] = total
-                    continue
-                }
-                total += (floorForNonZero + s) * (0.45 + 0.55 * s)
-                cdf[i] = total
-            }
-
-            if total > 0.000_001 {
-                func pick(_ u01: Double) -> Int {
-                    let target = u01 * total
-                    var lo = 0
-                    var hi = cdf.count - 1
-                    while lo < hi {
-                        let mid = (lo + hi) >> 1
-                        if cdf[mid] >= target { hi = mid } else { lo = mid + 1 }
-                    }
-                    return max(0, min(cdf.count - 1, lo))
-                }
-
-                // Fixed: valid hex literal (previously contained non-hex “R”).
-                let seed = RainSurfacePRNG.combine(cfg.noiseSeed, 0xA11CEE11_8100_0001)
-                var prng = RainSurfacePRNG(seed: seed)
-
-                let beadCap = isTightBudget ? 320 : 2400
-                let beadBase = Int((Double(surfacePoints.count) * (isTightBudget ? 1.6 : 3.6) * (0.45 + 0.55 * maxStrength)).rounded(.toNearestOrAwayFromZero))
-                let beadCount = min(beadCap, max(0, beadBase))
-
-                let r0 = 0.20 / scale
-                let r1 = 0.55 / scale
-                let jitterT = (isTightBudget ? 0.10 : 0.14) * bandWidthPt
-
-                let bins = isTightBudget ? 3 : 5
-                var beadBins: [Path] = Array(repeating: Path(), count: bins)
-
-                for _ in 0..<beadCount {
-                    let i = pick(prng.nextFloat01())
-                    let s = RainSurfaceMath.clamp01(perPointStrength[i])
-                    if s <= 0.000_01 { continue }
-
-                    let p = surfacePoints[i]
-                    let n = normals[i]
-                    let tan = CGVector(dx: -n.dy, dy: n.dx)
-
-                    let d = CGFloat(pow(prng.nextFloat01(), 2.6)) * bandWidthPt * 0.18
-                    let jt = CGFloat(prng.nextSignedFloat()) * jitterT
-
-                    // Fixed: break into simple CGFloat sub-expressions (avoids type-check timeout).
-                    let nx: CGFloat = n.dx
-                    let ny: CGFloat = n.dy
-                    let tx: CGFloat = tan.dx
-                    let ty: CGFloat = tan.dy
-
-                    let nxd: CGFloat = nx * d
-                    let nyd: CGFloat = ny * d
-                    let txj: CGFloat = tx * jt
-                    let tyj: CGFloat = ty * jt
-
-                    let cx: CGFloat = p.x + nxd + txj
-                    let cy: CGFloat = p.y + nyd + tyj
-
-                    var rr = r0 + (r1 - r0) * CGFloat(prng.nextFloat01())
-                    var a = beadBaseOpacity * (0.45 + 0.55 * s) * (0.75 + 0.25 * maxStrength)
-
-                    if !isTightBudget, prng.nextFloat01() < 0.10 {
-                        rr *= 1.70
-                        a *= 0.58
-                    }
-
-                    a = max(0.0, min(1.0, a))
-                    let bin = min(bins - 1, max(0, Int(floor(a * Double(bins)))))
-                    beadBins[bin].addEllipse(in: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2))
-                }
-
-                context.drawLayer { layer in
-                    outsideClip(&layer)
-                    layer.blendMode = .plusLighter
-
-                    for b in 0..<bins {
-                        if beadBins[b].isEmpty { continue }
-                        let a = (Double(b + 1) / Double(bins)) * beadBaseOpacity
-                        let aa = max(0.0, min(1.0, a))
-                        layer.fill(beadBins[b], with: .color(cfg.rimColor.opacity(aa)))
-                    }
-                }
+        // Inner highlight (thin, minimal).
+        if innerA > 0.0001 {
+            context.drawLayer { layer in
+                layer.blendMode = .plusLighter
+                layer.stroke(poly, with: .color(cfg.rimColor.opacity(innerA)), style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round))
             }
         }
+    }
+
+    static func drawGlints(
+        in context: inout GraphicsContext,
+        chartRect: CGRect,
+        baselineY: CGFloat,
+        surfacePoints: [CGPoint],
+        normals: [CGPoint],
+        perPointStrength: [CGFloat],
+        bandWidthPt: CGFloat,
+        displayScale: CGFloat,
+        cfg: RainForecastSurfaceConfiguration
+    ) {
+        guard cfg.glintEnabled else { return }
+        guard surfacePoints.count == perPointStrength.count else { return }
+        guard surfacePoints.count > 6 else { return }
+
+        let onePx = 1.0 / max(1.0, displayScale)
+
+        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, cfg.glintSeed ^ 0x91BADD_12345678))
+
+        // Pick a few indices in strong regions.
+        var candidates: [Int] = []
+        candidates.reserveCapacity(surfacePoints.count / 3)
+
+        for i in 0..<perPointStrength.count {
+            if perPointStrength[i] > 0.32 {
+                candidates.append(i)
+            }
+        }
+        if candidates.isEmpty { return }
+
+        let count = max(0, min(cfg.glintCount, 6))
+        if count == 0 { return }
+
+        let maxA = max(0.0, min(1.0, cfg.glintMaxOpacity))
+        let glintW = max(onePx, bandWidthPt * 0.16)
+        let glintL = max(onePx * 4.0, bandWidthPt * 0.65)
+
+        var p = Path()
+
+        for _ in 0..<count {
+            let idx = Int(prng.nextUInt32() % UInt32(candidates.count))
+            let i = candidates[idx]
+
+            let base = surfacePoints[i]
+            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
+            let t = CGPoint(x: n.y, y: -n.x)
+
+            // Place slightly outward and along tangent.
+            let offsetN = CGFloat(0.10 + 0.25 * Double(prng.nextFloat01())) * bandWidthPt
+            let offsetT = CGFloat(Double(prng.nextSignedFloat())) * bandWidthPt * 0.35
+
+            let c = CGPoint(
+                x: base.x + n.x * offsetN + t.x * offsetT,
+                y: base.y + n.y * offsetN + t.y * offsetT
+            )
+
+            // Small capsule-ish glint built from a rounded rect rotated along tangent.
+            // Approximate by drawing a thin line segment (blurred).
+            let a = Double(perPointStrength[i])
+            let half = glintL * CGFloat(0.45 + 0.30 * Double(prng.nextFloat01()))
+            let a0 = CGPoint(x: c.x - t.x * half, y: c.y - t.y * half)
+            let a1 = CGPoint(x: c.x + t.x * half, y: c.y + t.y * half)
+
+            p.move(to: a0)
+            p.addLine(to: a1)
+
+            _ = a
+        }
+
+        context.drawLayer { layer in
+            layer.blendMode = .plusLighter
+            layer.addFilter(.blur(radius: min(1.6, glintW * 0.75)))
+            layer.stroke(p, with: .color(cfg.rimColor.opacity(maxA)), style: StrokeStyle(lineWidth: glintW, lineCap: .round))
+        }
+
+        _ = chartRect
+        _ = baselineY
     }
 }

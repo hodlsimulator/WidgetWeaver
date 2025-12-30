@@ -33,98 +33,101 @@ struct RainForecastSurfaceView: View {
 struct RainForecastSurfaceConfiguration {
     // MARK: - Geometry
     var baselineFractionFromTop: Double = 0.88
-    var topHeadroomFraction: Double = 0.08
-    var typicalPeakFraction: Double = 0.22
-    var edgeEasingFraction: Double = 0.10
-    var edgeEasingPower: Double = 1.8
+    var topHeadroomFraction: Double = 0.10
+    var typicalPeakFraction: Double = 0.55
+    var edgeEasingFraction: Double = 0.07
+    var edgeEasingPower: Double = 1.6
 
-    // MARK: - Intensity scaling (height is intensity-driven only)
-    var intensityReferenceMaxMMPerHour: Double = 6.0
-    var robustMaxPercentile: Double = 0.93
+    // MARK: - Intensity scaling
+    var intensityReferenceMaxMMPerHour: Double = 18.0
+    var robustMaxPercentile: Double = 0.92
     var intensityGamma: Double = 0.60
 
     // MARK: - Core (fill)
-    var coreBodyColor: Color = Color(red: 0.00, green: 0.10, blue: 0.42)
-    var coreTopColor: Color = Color(red: 0.20, green: 0.70, blue: 1.00)
+    var coreBodyColor: Color = Color(red: 0.00, green: 0.14, blue: 0.55)
+    var coreTopColor: Color = Color(red: 0.35, green: 0.85, blue: 1.00)
     var coreTopMix: Double = 0.55
     var coreFadeFraction: Double = 0.06
 
-    // MARK: - Fuzz (styling only)
+    // MARK: - Fuzz (styling only; never height)
     var fuzzEnabled: Bool = true
     var canEnableFuzz: Bool = true
-    var fuzzColor: Color = Color(red: 0.20, green: 0.70, blue: 1.00)
-    var fuzzMaxOpacity: Double = 0.28
+    var fuzzColor: Color = Color(red: 0.45, green: 0.88, blue: 1.00)
+    var fuzzMaxOpacity: Double = 0.24
+
     var fuzzWidthFraction: CGFloat = 0.12
-    var fuzzWidthPixelsClamp: ClosedRange<CGFloat> = (7.0...52.0)
+    var fuzzWidthPixelsClamp: ClosedRange<Double> = 7.0...52.0
+
     var fuzzDensity: Double = 1.0
 
-    // Chance → strength mapping (styling only)
+    // Chance → strength mapping (lower chance => more fuzz). This is *styling only*.
     var fuzzChanceThreshold: Double = 0.60
     var fuzzChanceTransition: Double = 0.24
     var fuzzChanceExponent: Double = 2.25
     var fuzzChanceFloor: Double = 0.16
-    var fuzzChanceMinStrength: Double = 0.0
+    var fuzzChanceMinStrength: Double = 0.00
 
-    // Styling-only tail after the last wet minute (minutes). Recommended 2–6.
-    var fuzzTailMinutes: Int = 4
+    // Tail length (minutes). Applied as styling into adjacent dry samples (both sides).
+    var fuzzTailMinutes: Int = 5
 
-    // Low height + shoulder boost (styling only)
-    var fuzzLowHeightPower: Double = 1.8
-    var fuzzLowHeightBoost: Double = 0.72
+    // Extra boost for low heights (helps tapered blob beginnings/ends)
+    var fuzzLowHeightPower: Double = 1.75
+    var fuzzLowHeightBoost: Double = 0.70
 
-    // Haze (outside-heavy; optional)
-    var fuzzHazeStrength: Double = 0.36
-    var fuzzHazeBlurFractionOfBand: Double = 0.13
-    var fuzzHazeStrokeWidthFactor: Double = 0.70
-    var fuzzInsideHazeStrokeWidthFactor: Double = 0.60
-    var fuzzInsideWidthFactor: CGFloat = 0.68
-    var fuzzInsideOpacityFactor: Double = 0.70
+    // Haze (optional; keep low to avoid lifting black background)
+    var fuzzHazeStrength: Double = 0.12
+    var fuzzHazeBlurFractionOfBand: Double = 0.18
+    var fuzzHazeStrokeWidthFactor: Double = 1.15
+    var fuzzInsideHazeStrokeWidthFactor: Double = 0.90
 
-    // Speckles (outside-heavy particulate)
+    var fuzzInsideWidthFactor: CGFloat = 0.60
+    var fuzzInsideOpacityFactor: Double = 0.55
+
+    // Speckles
     var fuzzSpeckStrength: Double = 1.0
     var fuzzSpeckleBudget: Int = 5200
-    var fuzzSpeckleRadiusPixels: ClosedRange<CGFloat> = (0.25...2.3)
+    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.25...2.3
     var fuzzInsideSpeckleFraction: Double = 0.40
-    var fuzzDistancePowerOutside: Double = 2.2
-    var fuzzDistancePowerInside: Double = 1.5
-    var fuzzAlongTangentJitter: Double = 0.75
+    var fuzzDistancePowerOutside: Double = 2.4
+    var fuzzDistancePowerInside: Double = 1.6
+    var fuzzAlongTangentJitter: Double = 0.85
 
-    // Erode / inset (optional)
+    // Core erosion (destinationOut) for dissolution near the rim
     var fuzzErodeEnabled: Bool = true
-    var fuzzErodeStrength: Double = 0.70
-    var fuzzErodeBlurFractionOfBand: Double = 0.18
-    var fuzzErodeStrokeWidthFactor: Double = 1.05
-    var fuzzErodeEdgePower: Double = 2.5
+    var fuzzErodeStrength: Double = 0.80
+    var fuzzErodeBlurFractionOfBand: Double = 0.16
+    var fuzzErodeStrokeWidthFactor: Double = 0.95
+    var fuzzErodeEdgePower: Double = 2.2
     var fuzzErodeRimInsetPixels: Double = 1.4
 
-    // Gloss (optional)
-    var glossEnabled: Bool = true
-    var glossMaxOpacity: Double = 0.10
-    var glossHeightFraction: Double = 0.38
+    // MARK: - Gloss
+    var glossEnabled: Bool = false
+    var glossMaxOpacity: Double = 0.12
+    var glossHeightFraction: Double = 0.32
 
-    // Glints (optional)
+    // MARK: - Glints
     var glintEnabled: Bool = false
-    var glintMaxOpacity: Double = 0.16
-    var glintCount: Int = 14
-    var glintSeed: UInt64 = 0
+    var glintMaxOpacity: Double = 0.12
+    var glintCount: Int = 2
+    var glintSeed: UInt64 = 0xC0FFEE
 
-    // Rim (styling only)
+    // MARK: - Rim
     var rimEnabled: Bool = true
-    var rimColor: Color = Color(red: 0.30, green: 0.85, blue: 1.0)
-    var rimInnerOpacity: Double = 0.10
-    var rimInnerWidthPixels: Double = 1.25
-    var rimOuterOpacity: Double = 0.14
-    var rimOuterWidthPixels: Double = 3.0
+    var rimColor: Color = Color(red: 0.68, green: 0.95, blue: 1.00)
+    var rimInnerOpacity: Double = 0.06
+    var rimInnerWidthPixels: Double = 1.2
+    var rimOuterOpacity: Double = 0.10
+    var rimOuterWidthPixels: Double = 2.6
 
-    // Baseline
+    // MARK: - Baseline
     var baselineEnabled: Bool = true
-    var baselineColor: Color = Color.white
-    var baselineLineOpacity: Double = 0.10
+    var baselineColor: Color = .white
+    var baselineLineOpacity: Double = 0.12
     var baselineWidthPixels: Double = 1.0
     var baselineOffsetPixels: Double = 0.0
-    var baselineEndFadeFraction: Double = 0.05
+    var baselineEndFadeFraction: Double = 0.18
 
-    // Misc / budgets
+    // MARK: - Misc
     var maxDenseSamples: Int = 900
-    var noiseSeed: UInt64 = 0
+    var noiseSeed: UInt64 = 0xA11CE
 }
