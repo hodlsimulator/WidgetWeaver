@@ -49,8 +49,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
-                // Base clock: hour + minute are minute-boundary timeline-driven.
-                // Hide centre hub only when seconds are enabled, so the second hand can sit under it.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(baseAngles.hour),
@@ -67,22 +65,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 if secondsEnabled {
                     let endOfMinute = minuteAnchor.addingTimeInterval(60.0)
 
-                    // Host-driven tick source.
-                    // The second hand is drawn inside the ProgressViewStyle, so it updates as the host advances progress.
                     ProgressView(timerInterval: minuteAnchor...endOfMinute, countsDown: false)
-                        .progressViewStyle(
-                            WWClockSecondHandOnlyProgressStyle(
-                                palette: palette,
-                                startOfMinute: minuteAnchor,
-                                scale: displayScale
-                            )
-                        )
+                        .progressViewStyle(.linear)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(handsOpacity)
+                        .opacity(0.001)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
 
-                    // Hub on top (drawn once).
+                    WWClockSecondHandMinuteSweepOverlay(
+                        palette: palette,
+                        startOfMinute: minuteAnchor,
+                        scale: displayScale
+                    )
+                    .opacity(handsOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
                     WWClockCentreHubOverlay(palette: palette, scale: displayScale)
                         .opacity(handsOpacity)
                         .privacySensitive(isPrivacy)
@@ -93,38 +91,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Second hand (host-driven ProgressViewStyle)
+// MARK: - Second hand (minute sweep)
 
-private struct WWClockSecondHandOnlyProgressStyle: ProgressViewStyle {
+private struct WWClockSecondHandMinuteSweepOverlay: View {
     let palette: WidgetWeaverClockPalette
     let startOfMinute: Date
     let scale: CGFloat
 
-    func makeBody(configuration: Configuration) -> some View {
-        WWClockSecondHandOnlyProgressBody(
-            palette: palette,
-            startOfMinute: startOfMinute,
-            scale: scale,
-            fractionCompleted: configuration.fractionCompleted
-        )
-    }
-}
-
-private struct WWClockSecondHandOnlyProgressBody: View {
-    let palette: WidgetWeaverClockPalette
-    let startOfMinute: Date
-    let scale: CGFloat
-    let fractionCompleted: Double?
+    @State private var phase: Double = 0.0
+    @State private var activeAnchor: Date = .distantPast
 
     var body: some View {
         GeometryReader { proxy in
-            let fraction = resolvedFraction(fractionCompleted, startOfMinute: startOfMinute)
-            let clamped = max(0.0, min(fraction, 0.999999))
-            let angle = Angle.degrees(clamped * 360.0)
+            let angle = Angle.degrees(max(0.0, min(phase, 0.999999)) * 360.0)
 
             let s = min(proxy.size.width, proxy.size.height)
 
-            // Mirror the second-hand geometry used by WidgetWeaverClockIconView
             let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
             let outerRadius = outerDiameter * 0.5
 
@@ -164,20 +146,41 @@ private struct WWClockSecondHandOnlyProgressBody: View {
             )
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        .onAppear {
+            DispatchQueue.main.async {
+                startOrResyncIfNeeded(for: startOfMinute)
+            }
+        }
+        .task {
+            DispatchQueue.main.async {
+                startOrResyncIfNeeded(for: startOfMinute)
+            }
+        }
+        .onChange(of: startOfMinute) { _, newValue in
+            DispatchQueue.main.async {
+                startOrResyncIfNeeded(for: newValue)
+            }
+        }
     }
 
-    private func resolvedFraction(_ fractionCompleted: Double?, startOfMinute: Date) -> Double {
-        if let f = fractionCompleted {
-            return f
+    private func startOrResyncIfNeeded(for anchor: Date) {
+        guard anchor != activeAnchor else { return }
+        activeAnchor = anchor
+
+        let now = Date()
+        let elapsed = now.timeIntervalSince(anchor)
+        let clamped = max(0.0, min(elapsed, 60.0))
+
+        let startPhase = clamped / 60.0
+        let remaining = max(0.01, 60.0 - clamped)
+
+        withAnimation(.none) {
+            phase = startPhase
         }
 
-        // Fallback (should rarely be needed). If the host doesn’t provide fractionCompleted,
-        // derive it from wall clock time for an initial placement.
-        let now = Date()
-        let elapsed = now.timeIntervalSince(startOfMinute)
-        return max(0.0, min(elapsed / 60.0, 1.0))
+        withAnimation(.linear(duration: remaining)) {
+            phase = 1.0
+        }
     }
 }
 
