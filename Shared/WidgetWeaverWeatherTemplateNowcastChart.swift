@@ -20,16 +20,12 @@ struct WeatherNowcastChart: View {
 
     var body: some View {
         let intensities: [Double] = points.map { p in
-            if let v = p.precipitationIntensityMMPerHour, v.isFinite {
-                return max(0.0, v)
-            }
+            if let v = p.precipitationIntensityMMPerHour, v.isFinite { return max(0.0, v) }
             return Double.nan
         }
 
         let certainties: [Double] = points.map { p in
-            if let c = p.precipitationChance01, c.isFinite {
-                return min(1.0, max(0.0, c))
-            }
+            if let c = p.precipitationChance01, c.isFinite { return min(1.0, max(0.0, c)) }
             // Missing/unknown minutes fade via styling only.
             return 0.0
         }
@@ -50,10 +46,8 @@ struct WeatherNowcastChart: View {
         // Fuzz: dense + fine grain, strong at tapered ends + into gaps (styling only).
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
-
         cfg.fuzzColor = Color(red: 0.52, green: 0.92, blue: 1.00)
         cfg.fuzzMaxOpacity = 0.26
-
         cfg.fuzzWidthFraction = 0.13
         cfg.fuzzWidthPixelsClamp = 8.0...56.0
         cfg.fuzzDensity = 1.05
@@ -72,10 +66,8 @@ struct WeatherNowcastChart: View {
 
         // Haze kept near-zero to avoid lifting black background.
         cfg.fuzzHazeStrength = 0.00
-
         cfg.fuzzInsideWidthFactor = 0.62
         cfg.fuzzInsideOpacityFactor = 0.62
-
         cfg.fuzzSpeckStrength = 1.15
         cfg.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? 3600 : 4600
         cfg.fuzzSpeckleRadiusPixels = 0.14...1.75
@@ -122,7 +114,6 @@ struct WeatherNowcastChart: View {
             if showAxisLabels {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-
                     HStack {
                         Text("Now")
                         Spacer(minLength: 0)

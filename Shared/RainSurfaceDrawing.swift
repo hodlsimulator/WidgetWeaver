@@ -8,13 +8,11 @@
 //
 
 import SwiftUI
-
 #if canImport(UIKit)
 import UIKit
 #endif
 
 enum RainSurfaceDrawing {
-
     static func drawSurface(
         in context: inout GraphicsContext,
         geometry: RainSurfaceGeometry,
@@ -43,47 +41,20 @@ enum RainSurfaceDrawing {
         let perSegmentStrength = computePerSegmentStrength(perPointStrength: perPointStrength)
         let maxStrength = perPointStrength.max() ?? 0.0
 
-        // Core path (kept smooth-ish; dissolution owns the edge later).
+        // Single core fill path only (avoid internal terraces from stacked fills).
         let corePath = buildCorePath(
             geometry: geometry,
             smoothingWindowRadius: 1,
             smoothingPasses: 1
         )
 
+        let shouldFuzz = cfg.fuzzEnabled && cfg.canEnableFuzz && maxStrength > 0.001
+
         let gradientTopY = geometry.chartRect.minY
         let gradientBottomY = geometry.baselineY
 
-        // Core fill is drawn in its own layer, then destinationOut operations erode it *within the same layer*.
         context.drawLayer { layer in
-            // Baseline fade (clipped safely using a nested layer so the clip doesn't leak).
-            if cfg.coreFadeFraction > 0.0001 {
-                let fadeH = geometry.chartRect.height * CGFloat(clamp01(cfg.coreFadeFraction))
-                let fadeTop = max(geometry.chartRect.minY, geometry.baselineY - fadeH)
-
-                let fadeRect = CGRect(
-                    x: geometry.chartRect.minX,
-                    y: fadeTop,
-                    width: geometry.chartRect.width,
-                    height: geometry.baselineY - fadeTop
-                )
-
-                layer.drawLayer { inner in
-                    inner.clip(to: corePath)
-                    inner.fill(
-                        Path(fadeRect),
-                        with: .linearGradient(
-                            Gradient(colors: [
-                                cfg.coreBodyColor,
-                                cfg.coreBodyColor.opacity(0.0)
-                            ]),
-                            startPoint: CGPoint(x: fadeRect.midX, y: fadeRect.minY),
-                            endPoint: CGPoint(x: fadeRect.midX, y: fadeRect.maxY)
-                        )
-                    )
-                }
-            }
-
-            // Core shading (subtle vertical blend).
+            // Core shading: single vertical gradient.
             let topMix = CGFloat(clamp01(cfg.coreTopMix))
             let body = cfg.coreBodyColor
             let top = cfg.coreTopColor
@@ -95,38 +66,27 @@ enum RainSurfaceDrawing {
                     Gradient(stops: [
                         .init(color: top, location: 0.0),
                         .init(color: mid, location: 0.30),
-                        .init(color: body, location: 1.0)
+                        .init(color: body, location: 1.0),
                     ]),
                     startPoint: CGPoint(x: geometry.chartRect.midX, y: gradientTopY),
                     endPoint: CGPoint(x: geometry.chartRect.midX, y: gradientBottomY)
                 )
             )
 
-            // Edge dissolution and perforation (destinationOut) must happen on the SAME layer as the core fill.
-            if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.001 {
-                drawCoreEdgeFade(
-                    in: &layer,
-                    surfacePoints: surfacePoints,
-                    perSegmentStrength: perSegmentStrength,
-                    bandWidthPt: bandWidthPt,
-                    displayScale: geometry.displayScale,
-                    cfg: cfg
-                )
+            // Dissolve must happen on the same layer as the fill (destinationOut).
+            guard shouldFuzz else { return }
 
-                if cfg.fuzzErodeEnabled {
-                    drawCoreErosion(
-                        in: &layer,
-                        corePath: corePath,
-                        surfacePoints: surfacePoints,
-                        normals: normals,
-                        perPointStrength: perPointStrength,
-                        bandWidthPt: bandWidthPt,
-                        displayScale: geometry.displayScale,
-                        cfg: cfg
-                    )
-                }
+            drawCoreEdgeFade(
+                in: &layer,
+                surfacePoints: surfacePoints,
+                perSegmentStrength: perSegmentStrength,
+                bandWidthPt: bandWidthPt,
+                displayScale: geometry.displayScale,
+                cfg: cfg
+            )
 
-                drawCoreDissolvePerforation(
+            if cfg.fuzzErodeEnabled {
+                drawCoreErosion(
                     in: &layer,
                     corePath: corePath,
                     surfacePoints: surfacePoints,
@@ -137,10 +97,21 @@ enum RainSurfaceDrawing {
                     cfg: cfg
                 )
             }
+
+            drawCoreDissolvePerforation(
+                in: &layer,
+                corePath: corePath,
+                surfacePoints: surfacePoints,
+                normals: normals,
+                perPointStrength: perPointStrength,
+                bandWidthPt: bandWidthPt,
+                displayScale: geometry.displayScale,
+                cfg: cfg
+            )
         }
 
-        // Fuzz (outside dust + beads + inside weld) drawn on the main context (above the core layer).
-        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.001 {
+        // Fuzz particles: outside cloud + dominant rim beads + inside weld.
+        if shouldFuzz {
             drawFuzzSpeckles(
                 in: &context,
                 corePath: corePath,
@@ -152,9 +123,8 @@ enum RainSurfaceDrawing {
                 cfg: cfg
             )
 
-            // Haze stays effectively disabled (implementation is a no-op) to prevent halo/fog.
-            if cfg.fuzzHazeStrength > 0.0001,
-               !isTightBudget(chartRect: geometry.chartRect, displayScale: geometry.displayScale, cfg: cfg) {
+            // Haze intentionally suppressed to keep background pure black.
+            if cfg.fuzzHazeStrength > 0.0001, !isTightBudget(chartRect: geometry.chartRect, displayScale: geometry.displayScale, cfg: cfg) {
                 drawFuzzHaze(
                     in: &context,
                     corePath: corePath,
@@ -168,7 +138,7 @@ enum RainSurfaceDrawing {
             }
         }
 
-        // Rim/glints are suppressed whenever fuzz meaningfully owns the edge.
+        // Rim/glints: suppressed by Rim.swift when fuzz owns the silhouette.
         drawRim(
             in: &context,
             surfacePoints: surfacePoints,
@@ -219,11 +189,9 @@ enum RainSurfaceDrawing {
 
             let g = Gradient(stops: [
                 .init(color: cfg.baselineColor.opacity(0.0), location: 0.0),
-                .init(color: cfg.baselineColor.opacity(cfg.baselineLineOpacity),
-                      location: Double(clamp01(Double(leftFadeW / w)))),
-                .init(color: cfg.baselineColor.opacity(cfg.baselineLineOpacity),
-                      location: Double(clamp01(Double(1.0 - rightFadeW / w)))),
-                .init(color: cfg.baselineColor.opacity(0.0), location: 1.0)
+                .init(color: cfg.baselineColor.opacity(cfg.baselineLineOpacity), location: Double(clamp01(Double(leftFadeW / w)))),
+                .init(color: cfg.baselineColor.opacity(cfg.baselineLineOpacity), location: Double(clamp01(Double(1.0 - rightFadeW / w)))),
+                .init(color: cfg.baselineColor.opacity(0.0), location: 1.0),
             ])
 
             context.stroke(
@@ -249,10 +217,8 @@ enum RainSurfaceDrawing {
     static func computeBandWidthPt(chartRect: CGRect, displayScale: CGFloat, cfg: RainForecastSurfaceConfiguration) -> CGFloat {
         let wPx = Double(max(1.0, chartRect.width * displayScale))
         let fraction = max(0.001, cfg.fuzzWidthFraction)
-
         let unclampedPx = wPx * fraction
         let clampedPx = min(max(unclampedPx, cfg.fuzzWidthPixelsClamp.lowerBound), cfg.fuzzWidthPixelsClamp.upperBound)
-
         return CGFloat(clampedPx) / max(1.0, displayScale)
     }
 
@@ -260,7 +226,6 @@ enum RainSurfaceDrawing {
         let wPx = Double(max(1.0, chartRect.width * displayScale))
         let hPx = Double(max(1.0, chartRect.height * displayScale))
         let px = wPx * hPx
-
         if px > 220_000.0 { return true }
         if cfg.fuzzSpeckleBudget > 8_500 { return true }
         return false
@@ -279,17 +244,14 @@ enum RainSurfaceDrawing {
 }
 
 private extension Color {
-
     static func blend(a: Color, b: Color, t: Double) -> Color {
         let tt = max(0.0, min(1.0, t))
-
         #if canImport(UIKit)
         let ua = UIColor(a)
         let ub = UIColor(b)
 
         var ra: CGFloat = 0.0, ga: CGFloat = 0.0, ba: CGFloat = 0.0, aa: CGFloat = 0.0
         var rb: CGFloat = 0.0, gb: CGFloat = 0.0, bb: CGFloat = 0.0, ab: CGFloat = 0.0
-
         _ = ua.getRed(&ra, green: &ga, blue: &ba, alpha: &aa)
         _ = ub.getRed(&rb, green: &gb, blue: &bb, alpha: &ab)
 
