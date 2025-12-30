@@ -2,21 +2,11 @@
 //  WidgetWeaverClockWidgetLiveView.swift
 //  WidgetWeaverWidget
 //
-//  Created by . . on 12/25/25.
+//  Created by . . on 12/29/25.
 //
 
 import Foundation
 import SwiftUI
-
-private struct WWClockSecondsMotion: Equatable {
-    let wantsSweep: Bool
-    let enabled: Bool
-    let reasonShort: String
-    let isLowPowerMode: Bool
-    let reduceMotion: Bool
-    let isPlaceholderRedacted: Bool
-    let redactionReasonsDebug: String
-}
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
@@ -24,284 +14,237 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let minuteAnchor: Date
     let tickMode: WidgetWeaverClockTickMode
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
 
-    private static let secondsTipEpsilon: TimeInterval = 0.45
+    init(
+        palette: WidgetWeaverClockPalette,
+        entryDate: Date,
+        minuteAnchor: Date,
+        tickMode: WidgetWeaverClockTickMode
+    ) {
+        self.palette = palette
+        self.entryDate = entryDate
+        self.minuteAnchor = minuteAnchor
+        self.tickMode = tickMode
+    }
 
     var body: some View {
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
+        WidgetWeaverRenderClock.withNow(entryDate) {
+            let now = WidgetWeaverRenderClock.now
 
-        let motion = Self.computeMotion(
-            tickMode: tickMode,
-            isLowPowerMode: isLowPower,
-            reduceMotion: reduceMotion,
-            isPlaceholderRedacted: isPlaceholderRedacted,
-            redactionReasons: redactionReasons
-        )
+            let cal = Calendar.autoupdatingCurrent
+            let hours = cal.component(.hour, from: minuteAnchor) % 12
+            let minutes = cal.component(.minute, from: minuteAnchor)
 
-        GeometryReader { proxy in
-            let base = WWClockAngles(date: minuteAnchor)
-            let dialDiameter = Self.dialDiameterAlignedToIconView(for: proxy.size, scale: displayScale)
+            let hourAngle = Angle.degrees((Double(hours) + (Double(minutes) / 60.0)) * 30.0)
+            let minuteAngle = Angle.degrees(Double(minutes) * 6.0)
 
-            ZStack(alignment: .bottomLeading) {
-                // Base clock remains timeline-driven (minuteAnchor only).
+            let motion = WWClockMotion(
+                tickMode: tickMode,
+                redactionReasons: redactionReasons,
+                isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                isReduceMotionEnabled: reduceMotion
+            )
+
+            ZStack {
                 WidgetWeaverClockIconView(
                     palette: palette,
-                    hourAngle: .degrees(base.hour),
-                    minuteAngle: .degrees(base.minute),
-                    secondAngle: .degrees(0.0),
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: .zero,
                     showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
-                    handsOpacity: 1.0
+                    handsOpacity: motion.handsOpacity
                 )
-                .animation(nil, value: minuteAnchor)
 
-                // Seconds “hand” driven by a host-animated timer primitive.
-                // NOTE: This is a “tip” (short moving arc/dot) rather than a full needle.
-                if motion.enabled {
-                    WWClockSecondsProgressTipHand(
+                if motion.secondsEnabled {
+                    WWClockSecondsProgressSecondHandOverlay(
                         minuteAnchor: minuteAnchor,
-                        dialDiameter: dialDiameter,
-                        colour: palette.accent,
-                        epsilon: Self.secondsTipEpsilon
+                        palette: palette,
+                        style: motion.secondsStyle,
+                        scale: displayScale
                     )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
                 }
-
-                #if DEBUG
-                WWClockDebugOverlay(
-                    palette: palette,
-                    entryDate: entryDate,
-                    minuteAnchor: minuteAnchor,
-                    tickMode: tickMode,
-                    motion: motion,
-                    dialDiameter: dialDiameter,
-                    epsilon: Self.secondsTipEpsilon
-                )
-                .padding(6)
-                .unredacted()
-                #endif
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            #if DEBUG
+            .overlay(alignment: .bottomLeading) {
+                WWClockDebugOverlay(
+                    now: now,
+                    minuteAnchor: minuteAnchor,
+                    motion: motion,
+                    redactionReasons: redactionReasons
+                )
+            }
+            #endif
         }
+    }
+}
+
+private struct WWClockMotion {
+    enum SecondsStyle: String {
+        case secondHandOnly = "secondHand"
+        case secondHandPlusTip = "tip"
+    }
+
+    let secondsEnabled: Bool
+    let secondsStyle: SecondsStyle
+    let handsOpacity: Double
+    let debugWhy: String
+
+    init(
+        tickMode: WidgetWeaverClockTickMode,
+        redactionReasons: RedactionReasons,
+        isLowPowerModeEnabled: Bool,
+        isReduceMotionEnabled: Bool
+    ) {
+        let isPlaceholder = redactionReasons.contains(.placeholder)
+        let isPrivacy = redactionReasons.contains(.privacy)
+
+        let wantsSeconds = (tickMode == .secondsSweep)
+
+        let enabled = wantsSeconds
+            && (isPlaceholder == false)
+            && (isPrivacy == false)
+            && (isLowPowerModeEnabled == false)
+            && (isReduceMotionEnabled == false)
+
+        self.secondsEnabled = enabled
+        self.secondsStyle = .secondHandPlusTip
+
+        self.handsOpacity = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
+
+        if isPlaceholder { self.debugWhy = "placeholder" }
+        else if isPrivacy { self.debugWhy = "privacy" }
+        else if isLowPowerModeEnabled { self.debugWhy = "low_power" }
+        else if isReduceMotionEnabled { self.debugWhy = "reduce_motion" }
+        else if wantsSeconds == false { self.debugWhy = "minuteOnly" }
+        else { self.debugWhy = "enabled" }
+    }
+}
+
+// MARK: - Seconds overlay driven by ProgressView(timerInterval:)
+
+private struct WWClockSecondsProgressSecondHandOverlay: View {
+    let minuteAnchor: Date
+    let palette: WidgetWeaverClockPalette
+    let style: WWClockMotion.SecondsStyle
+    let scale: CGFloat
+
+    private let epsilon: TimeInterval = 0.15
+
+    private var interval: ClosedRange<Date> {
+        let start = minuteAnchor
+        let end = minuteAnchor.addingTimeInterval(60.0 - epsilon)
+        return start...end
+    }
+
+    var body: some View {
+        ProgressView(
+            timerInterval: interval,
+            countsDown: false
+        )
+        .progressViewStyle(
+            WWClockSecondsProgressSecondHandStyle(
+                palette: palette,
+                style: style,
+                scale: scale
+            )
+        )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+}
 
-    private static func computeMotion(
-        tickMode: WidgetWeaverClockTickMode,
-        isLowPowerMode: Bool,
-        reduceMotion: Bool,
-        isPlaceholderRedacted: Bool,
-        redactionReasons: RedactionReasons
-    ) -> WWClockSecondsMotion {
-        let wantsSweep = (tickMode == .secondsSweep)
+private struct WWClockSecondsProgressSecondHandStyle: ProgressViewStyle {
+    let palette: WidgetWeaverClockPalette
+    let style: WWClockMotion.SecondsStyle
+    let scale: CGFloat
 
-        let reasonsDebug: String = {
-            var parts: [String] = []
-            if redactionReasons.contains(.placeholder) { parts.append("placeholder") }
-            if redactionReasons.contains(.privacy) { parts.append("privacy") }
-            if redactionReasons.contains(.invalidated) { parts.append("invalidated") }
-            if parts.isEmpty { return "none" }
-            return parts.joined(separator: ",")
-        }()
+    func makeBody(configuration: Configuration) -> some View {
+        let rawFraction = configuration.fractionCompleted ?? 0
+        let fraction = min(max(rawFraction, 0), 1)
 
-        if !wantsSweep {
-            return WWClockSecondsMotion(
-                wantsSweep: wantsSweep,
-                enabled: false,
-                reasonShort: "tickMode",
-                isLowPowerMode: isLowPowerMode,
-                reduceMotion: reduceMotion,
-                isPlaceholderRedacted: isPlaceholderRedacted,
-                redactionReasonsDebug: reasonsDebug
+        let secondAngle = Angle.degrees(fraction * 360.0)
+
+        return ZStack {
+            WidgetWeaverClockSecondHandView(
+                colour: palette.accent,
+                width: 2.0,
+                length: 0.825,
+                angle: secondAngle,
+                tipSide: 0.10,
+                scale: scale
             )
+
+            if style == .secondHandPlusTip {
+                WWClockSecondsProgressTipHand(
+                    palette: palette,
+                    fractionCompleted: fraction
+                )
+            }
         }
-
-        if isLowPowerMode {
-            return WWClockSecondsMotion(
-                wantsSweep: wantsSweep,
-                enabled: false,
-                reasonShort: "LPM",
-                isLowPowerMode: isLowPowerMode,
-                reduceMotion: reduceMotion,
-                isPlaceholderRedacted: isPlaceholderRedacted,
-                redactionReasonsDebug: reasonsDebug
-            )
-        }
-
-        if reduceMotion {
-            return WWClockSecondsMotion(
-                wantsSweep: wantsSweep,
-                enabled: false,
-                reasonShort: "RM",
-                isLowPowerMode: isLowPowerMode,
-                reduceMotion: reduceMotion,
-                isPlaceholderRedacted: isPlaceholderRedacted,
-                redactionReasonsDebug: reasonsDebug
-            )
-        }
-
-        // Placeholder redaction means the host isn’t running a real timeline render.
-        if isPlaceholderRedacted {
-            return WWClockSecondsMotion(
-                wantsSweep: wantsSweep,
-                enabled: false,
-                reasonShort: "placeholder",
-                isLowPowerMode: isLowPowerMode,
-                reduceMotion: reduceMotion,
-                isPlaceholderRedacted: isPlaceholderRedacted,
-                redactionReasonsDebug: reasonsDebug
-            )
-        }
-
-        return WWClockSecondsMotion(
-            wantsSweep: wantsSweep,
-            enabled: true,
-            reasonShort: "enabled",
-            isLowPowerMode: isLowPowerMode,
-            reduceMotion: reduceMotion,
-            isPlaceholderRedacted: isPlaceholderRedacted,
-            redactionReasonsDebug: reasonsDebug
-        )
-    }
-
-    /// Matches the dial diameter computed inside `WidgetWeaverClockIconView` (2R),
-    /// so the seconds ring/tip aligns with the face.
-    private static func dialDiameterAlignedToIconView(for size: CGSize, scale: CGFloat) -> CGFloat {
-        let s = min(size.width, size.height)
-
-        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
-        let outerRadius = outerDiameter * 0.5
-
-        let metalThicknessRatio: CGFloat = 0.062
-        let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
-
-        let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
-        let ringC = WWClock.pixel(
-            WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
-            scale: scale
-        )
-
-        let minB = WWClock.px(scale: scale)
-        let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
-
-        let R = outerRadius - ringA - ringB - ringC
-        return R * 2.0
     }
 }
 
-// MARK: - Seconds driver: host-animated tip using ProgressView(timerInterval:)
-
 private struct WWClockSecondsProgressTipHand: View {
-    let minuteAnchor: Date
-    let dialDiameter: CGFloat
-    let colour: Color
-    let epsilon: TimeInterval
+    let palette: WidgetWeaverClockPalette
+    let fractionCompleted: Double
 
     var body: some View {
-        let start = minuteAnchor
-        let end = minuteAnchor.addingTimeInterval(60.0)
-
-        let lagStart = start.addingTimeInterval(epsilon)
-        let lagEnd = end.addingTimeInterval(epsilon)
-
         ZStack {
-            ProgressView(timerInterval: start...end, countsDown: false)
+            ProgressView(value: fractionCompleted)
                 .progressViewStyle(.circular)
-                .tint(colour)
-                .labelsHidden()
+                .tint(palette.accent)
+                .controlSize(.mini)
 
-            ProgressView(timerInterval: lagStart...lagEnd, countsDown: false)
+            ProgressView(value: fractionCompleted)
                 .progressViewStyle(.circular)
-                .tint(colour)
-                .labelsHidden()
+                .tint(Color.black)
+                .controlSize(.mini)
+                .scaleEffect(0.62)
                 .blendMode(.destinationOut)
         }
         .compositingGroup()
-        .controlSize(.mini)
-        .frame(width: dialDiameter, height: dialDiameter)
-    }
-}
-
-// MARK: - Base angles (minute-stepped)
-
-private struct WWClockAngles {
-    let hour: Double
-    let minute: Double
-
-    init(date: Date) {
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute], from: date)
-
-        let hour24 = Double(comps.hour ?? 0)
-        let minuteInt = Double(comps.minute ?? 0)
-        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
-
-        minute = minuteInt * 6.0
-        hour = (hour12 + minuteInt / 60.0) * 30.0
+        .rotationEffect(.degrees(90))
+        .scaleEffect(0.50)
+        .offset(x: 74)
     }
 }
 
 #if DEBUG
 private struct WWClockDebugOverlay: View {
-    let palette: WidgetWeaverClockPalette
-    let entryDate: Date
+    let now: Date
     let minuteAnchor: Date
-    let tickMode: WidgetWeaverClockTickMode
-    let motion: WWClockSecondsMotion
-    let dialDiameter: CGFloat
-    let epsilon: TimeInterval
+    let motion: WWClockMotion
+    let redactionReasons: RedactionReasons
 
     var body: some View {
-        let tickLabel = (tickMode == .secondsSweep) ? "sweep" : "minute"
-        let secsLabel = motion.enabled ? "ON" : "OFF"
-
         VStack(alignment: .leading, spacing: 2) {
-            Text("dbg \(tickLabel) secs \(secsLabel)")
-            Text("why \(motion.reasonShort)  LPM:\(motion.isLowPowerMode ? 1 : 0) RM:\(motion.reduceMotion ? 1 : 0) ph:\(motion.isPlaceholderRedacted ? 1 : 0)")
-            Text("red \(motion.redactionReasonsDebug)")
-            Text("e \(fmt(entryDate))  a \(fmt(minuteAnchor))")
-            Text("drv ProgressView(timerInterval) tip ε=\(String(format: "%.2fs", epsilon))")
-
-            ProgressView(timerInterval: minuteAnchor...(minuteAnchor.addingTimeInterval(60.0)), countsDown: false)
-                .progressViewStyle(.linear)
-                .labelsHidden()
-                .frame(width: 150, height: 4)
-                .tint(palette.accent)
-
-            WWClockSecondsProgressTipHand(
-                minuteAnchor: minuteAnchor,
-                dialDiameter: 18,
-                colour: palette.accent,
-                epsilon: epsilon
-            )
-            .frame(width: 18, height: 18)
-            .opacity(motion.enabled ? 1.0 : 0.35)
+            Text("dbg  sweep secs \(motion.secondsEnabled ? "ON" : "OFF")")
+            Text("why  \(motion.debugWhy)")
+            Text("red  \(redactionReasonsDescription)")
+            Text("e \(now, format: .dateTime.hour().minute().second())  a \(minuteAnchor, format: .dateTime.hour().minute().second())")
+            Text("drv  ProgressView(timerInterval)  \(motion.secondsStyle.rawValue)")
         }
-        .font(.system(size: 9, weight: .regular, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.92))
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-        .padding(6)
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(Color.white.opacity(0.85))
+        .padding(8)
         .background(.black.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(8)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
-    private static let df: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
-
-    private func fmt(_ d: Date) -> String {
-        Self.df.string(from: d)
+    private var redactionReasonsDescription: String {
+        var parts: [String] = []
+        if redactionReasons.contains(.placeholder) { parts.append("placeholder") }
+        if redactionReasons.contains(.privacy) { parts.append("privacy") }
+        if parts.isEmpty { return "none" }
+        return parts.joined(separator: ",")
     }
 }
 #endif
