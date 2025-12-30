@@ -4,14 +4,17 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Rebuilt renderer for the nowcast “rain surface” chart.
+//  Nowcast “rain surface” chart renderer.
 //  Goals:
-//  - Pure black background (handled by caller, but renderer assumes it)
+//  - Pure black background (handled by caller, renderer assumes it)
 //  - Soft blue core mound
-//  - Fuzzy, speckled uncertainty band (cheap enough for WidgetKit)
-//  - Hard clamps + graceful degradation to avoid WidgetKit placeholder fallbacks
+//  - Fuzzy, dissipating uncertainty band that stays inside WidgetKit budgets
+//
+//  This version replaces “thousands of tiny vector circles” with a two-pass,
+//  texture-masked band. Draw calls stay bounded and do not scale with rain amount.
 //
 
+import Foundation
 import SwiftUI
 
 #if canImport(UIKit)
@@ -54,22 +57,18 @@ struct RainForecastSurfaceRenderer {
         let ds: CGFloat = (displayScale.isFinite && displayScale > 0) ? displayScale : 1.0
         let onePx: CGFloat = 1.0 / max(1.0, ds)
 
-        // Always avoid blur in WidgetKit paths (big offscreen cost).
+        // WidgetKit safety clamps.
         if isExtension {
             cfg.fuzzHazeBlurFractionOfBand = 0.0
             cfg.glossEnabled = false
             cfg.glintEnabled = false
         }
-
-        // Hard caps (Regression A guardrails).
         cfg.maxDenseSamples = max(120, min(cfg.maxDenseSamples, isExtension ? 620 : 900))
-        cfg.fuzzSpeckleBudget = max(0, min(cfg.fuzzSpeckleBudget, isExtension ? 1800 : 4200))
 
         let chartRect = rect
-
         let baselineY = chartRect.minY
-            + chartRect.height * CGFloat(Self.clamp01(cfg.baselineFractionFromTop))
-            + CGFloat(cfg.baselineOffsetPixels) / max(1.0, ds)
+        + chartRect.height * CGFloat(Self.clamp01(cfg.baselineFractionFromTop))
+        + CGFloat(cfg.baselineOffsetPixels) / max(1.0, ds)
 
         // No data: baseline only.
         guard !intensities.isEmpty else {
@@ -77,10 +76,8 @@ struct RainForecastSurfaceRenderer {
             return
         }
 
-        // Fill missing (NaN/±inf) so the silhouette is coherent.
         let filledIntensities = Self.fillMissingLinearHoldEnds(intensities)
 
-        // Scale intensity -> height using robust max so a single spike doesn’t flatten everything.
         let referenceMax = Self.robustReferenceMaxMMPerHour(
             values: filledIntensities,
             defaultMax: cfg.intensityReferenceMaxMMPerHour,
@@ -113,31 +110,30 @@ struct RainForecastSurfaceRenderer {
         var denseHeights = Self.resampleLinear(values: minuteHeights, targetCount: denseCount)
         let denseCertainties = Self.resampleLinear(values: minuteCertainties, targetCount: denseCount)
 
-        // Rounded silhouette.
         let smoothRadius = max(1, min(5, Int(round(Double(denseCount) / 180.0))))
         denseHeights = Self.smooth(denseHeights, windowRadius: smoothRadius, passes: 2)
 
         let curvePoints = Self.makeCurvePoints(rect: chartRect, baselineY: baselineY, heights: denseHeights)
+        let corePath = Self.buildCoreFillPath(rect: chartRect, baselineY: baselineY, curvePoints: curvePoints)
 
         // Core mound.
-        let corePath = Self.buildCoreFillPath(rect: chartRect, baselineY: baselineY, curvePoints: curvePoints)
         Self.drawCore(in: &context, corePath: corePath, rect: chartRect, baselineY: baselineY, configuration: cfg)
 
-        // Rim highlight (subtle).
+        // Rim highlight.
         Self.drawRim(in: &context, rect: chartRect, curvePoints: curvePoints, displayScale: ds, configuration: cfg)
 
-        // Fuzzy uncertainty band.
+        // Fuzz / dissipation.
         if cfg.fuzzEnabled && cfg.canEnableFuzz {
-            let bandWidthPt = Self.computeBandWidthPt(rect: chartRect, displayScale: ds, cfg: cfg)
-            if bandWidthPt > onePx * 2.0 {
-                Self.drawFuzz(
+            let bandHalfWidth = Self.computeBandHalfWidthPt(rect: chartRect, displayScale: ds, cfg: cfg)
+            if bandHalfWidth > onePx * 2.0 {
+                Self.drawFuzzTexture(
                     in: &context,
                     rect: chartRect,
                     baselineY: baselineY,
                     curvePoints: curvePoints,
                     heights: denseHeights,
                     certainties: denseCertainties,
-                    bandWidthPt: bandWidthPt,
+                    bandHalfWidth: bandHalfWidth,
                     displayScale: ds,
                     configuration: cfg,
                     isExtension: isExtension
@@ -163,14 +159,12 @@ private extension RainForecastSurfaceRenderer {
     ) {
         let top = cfg.coreTopColor
         let body = cfg.coreBodyColor
-
-        // mid mixes body->top using coreTopMix
         let mid = Color.blend(a: body, b: top, t: cfg.coreTopMix)
 
         let gradient = Gradient(stops: [
             .init(color: top, location: 0.0),
             .init(color: mid, location: 0.28),
-            .init(color: body, location: 1.0)
+            .init(color: body, location: 1.0),
         ])
 
         context.fill(
@@ -182,10 +176,10 @@ private extension RainForecastSurfaceRenderer {
             )
         )
 
-        // Optional gentle gloss (kept off by default).
+        // Optional gloss (kept off by default).
         if cfg.glossEnabled && cfg.glossMaxOpacity > 0.0001 {
-            let opacity = CGFloat(clamp01(cfg.glossMaxOpacity))
-            let glossColor = Color.white.opacity(Double(opacity))
+            let opacity = clamp01(cfg.glossMaxOpacity)
+            let glossColor = Color.white.opacity(opacity)
             let glossY = rect.minY + (baselineY - rect.minY) * 0.26
 
             var p = Path()
@@ -205,7 +199,7 @@ private extension RainForecastSurfaceRenderer {
             context.blendMode = .normal
         }
 
-        // Subtle darkening at extreme ends (mock tail softness).
+        // Subtle darkening at extreme ends (tail softness).
         if cfg.coreFadeFraction > 0.0001 {
             let fade = CGFloat(clamp01(cfg.coreFadeFraction))
             let w = max(1.0, rect.width)
@@ -215,7 +209,7 @@ private extension RainForecastSurfaceRenderer {
                 .init(color: Color.black.opacity(0.0), location: 0.0),
                 .init(color: Color.black.opacity(0.11), location: Double(clamp01(Double(fadeW / w)))),
                 .init(color: Color.black.opacity(0.11), location: Double(clamp01(Double(1.0 - fadeW / w)))),
-                .init(color: Color.black.opacity(0.0), location: 1.0)
+                .init(color: Color.black.opacity(0.0), location: 1.0),
             ])
 
             context.blendMode = .multiply
@@ -245,12 +239,10 @@ private extension RainForecastSurfaceRenderer {
 
         let innerOpacity = clamp01(cfg.rimInnerOpacity)
         let outerOpacity = clamp01(cfg.rimOuterOpacity)
-
         guard innerOpacity > 0.0001 || outerOpacity > 0.0001 else { return }
 
         let curvePath = buildCurveStrokePath(curvePoints: curvePoints)
 
-        // Outer rim
         if outerOpacity > 0.0001, cfg.rimOuterWidthPixels > 0.01 {
             let w = max(onePx, CGFloat(cfg.rimOuterWidthPixels) / ds)
             context.blendMode = .screen
@@ -258,7 +250,6 @@ private extension RainForecastSurfaceRenderer {
             context.blendMode = .normal
         }
 
-        // Inner rim
         if innerOpacity > 0.0001, cfg.rimInnerWidthPixels > 0.01 {
             let w = max(onePx, CGFloat(cfg.rimInnerWidthPixels) / ds)
             context.blendMode = .screen
@@ -268,54 +259,54 @@ private extension RainForecastSurfaceRenderer {
     }
 }
 
-// MARK: - Fuzz
+// MARK: - Fuzz (texture band)
 
 private extension RainForecastSurfaceRenderer {
 
-    static func drawFuzz(
+    static func drawFuzzTexture(
         in context: inout GraphicsContext,
         rect: CGRect,
         baselineY: CGFloat,
         curvePoints: [CGPoint],
         heights: [CGFloat],
         certainties: [Double],
-        bandWidthPt: CGFloat,
+        bandHalfWidth: CGFloat,
         displayScale: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration,
         isExtension: Bool
     ) {
-        guard curvePoints.count >= 2, curvePoints.count == heights.count, certainties.count == heights.count else { return }
+        guard curvePoints.count >= 2,
+              curvePoints.count == heights.count,
+              certainties.count == heights.count
+        else { return }
 
         let ds = max(1.0, displayScale)
         let onePx: CGFloat = 1.0 / ds
-        let wetEps: CGFloat = max(onePx * 0.55, 0.000_1)
+        let wetEps: CGFloat = max(onePx * 0.35, 0.000_1)
 
-        let (tangents, normals) = computeTangentsAndNormals(curvePoints: curvePoints)
-
-        // Strength per sample (0...1) representing uncertainty.
+        // Strength (0...1) along the curve.
         var strength = computeFuzzStrengthPerPoint(
             heights: heights,
             certainties: certainties,
             wetEps: wetEps,
-            rect: rect,
-            displayScale: ds,
             cfg: cfg
         )
 
-        // Kill far-from-wet zones so baseline doesn’t get peppered.
+        // Suppress far-from-wet regions so fuzz does not pepper dry baseline.
         let samplesPerPx = Double(max(1, curvePoints.count - 1)) / Double(max(1.0, rect.width * ds))
         let edgeWindowSamples = max(1, Int(round(max(0.0, cfg.fuzzEdgeWindowPx) * samplesPerPx)))
 
         let wetMask = heights.map { $0 > wetEps }
         let distToWet = distanceToNearestTrue(wetMask)
-
-        for i in 0..<strength.count {
-            if distToWet[i] > edgeWindowSamples {
-                strength[i] = 0.0
+        if distToWet.count == strength.count {
+            for i in 0..<strength.count {
+                if distToWet[i] > edgeWindowSamples {
+                    strength[i] = 0.0
+                }
             }
         }
 
-        // Boost around wet↔dry transitions.
+        // Boost around wet↔dry transitions (tail fuzz).
         if cfg.fuzzTailMinutes > 0.001 {
             applyTailBoost(
                 strength: &strength,
@@ -328,204 +319,160 @@ private extension RainForecastSurfaceRenderer {
         let maxStrength = strength.max() ?? 0.0
         guard maxStrength > 0.0005 else { return }
 
-        // Budget (hard clamped).
-        let density = max(0.0, cfg.fuzzDensity)
-        var budget = max(0, Int(round(Double(cfg.fuzzSpeckleBudget) * density)))
-
-        // Additional clamp: keep WidgetKit safe even if cfg is cranked.
-        budget = min(budget, isExtension ? 1400 : 2600)
-        guard budget > 0 else { return }
-
-        // Optional cheap “haze” stroke (no blur).
-        if cfg.fuzzHazeStrength > 0.0001 {
-            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(cfg.fuzzMaxOpacity) * 0.45
-            if hazeAlpha > 0.0001 {
-                let strokeW = max(onePx, bandWidthPt * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor)))
-                let hazePath = buildCurveStrokePath(curvePoints: curvePoints)
-                context.blendMode = .screen
-                context.stroke(hazePath, with: .color(cfg.fuzzColor.opacity(hazeAlpha)), lineWidth: strokeW)
-                context.blendMode = .normal
-            }
-        }
-
-        // Weights for distributing particles along the curve.
-        var weights = Array(repeating: 0.0, count: strength.count)
-        var totalW = 0.0
-        for i in 0..<strength.count {
-            // Slight exponent to push particles into higher-uncertainty regions.
-            let w = pow(Double(strength[i]), 1.25)
-            weights[i] = w
-            totalW += w
-        }
-        guard totalW > 0.0 else { return }
-
-        // Allocate counts per sample (O(n), deterministic).
-        let counts = allocateCounts(budget: budget, weights: weights, totalWeight: totalW)
-
-        // Particle parameters.
+        // Final alpha scale.
         let maxAlpha = clamp01(cfg.fuzzMaxOpacity) * max(0.0, cfg.fuzzSpeckStrength)
         guard maxAlpha > 0.0001 else { return }
 
-        let insideFraction = clamp01(cfg.fuzzInsideSpeckleFraction)
-        let insideWidthFactor = max(0.0, cfg.fuzzInsideWidthFactor)
-        let insideOpacityFactor = max(0.0, cfg.fuzzInsideOpacityFactor)
+        // Clip fuzz to the chart area above the baseline (keeps labels clean).
+        let clipH = max(0.0, min(rect.height, baselineY - rect.minY))
+        guard clipH > onePx else { return }
+        let clipRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: clipH)
 
-        let distPowOut = max(0.10, cfg.fuzzDistancePowerOutside)
-        let distPowIn = max(0.10, cfg.fuzzDistancePowerInside)
+        let curvePath = buildCurveStrokePath(curvePoints: curvePoints)
 
-        let tangentJitter = max(0.0, cfg.fuzzAlongTangentJitter)
+        // Noise textures (cached).
+        let seedBase = RainSurfacePRNG.combine(cfg.noiseSeed, UInt64(curvePoints.count &* 977))
+        let tilePx = max(32, min(cfg.fuzzTextureTilePixels, 512))
+        let innerNoise = FuzzNoiseCache.shared.image(pixels: tilePx, seed: RainSurfacePRNG.combine(seedBase, 0x1111_2222_3333_4444), cut: 0.48)
+        let outerNoise = FuzzNoiseCache.shared.image(pixels: tilePx, seed: RainSurfacePRNG.combine(seedBase, 0x9999_AAAA_BBBB_CCCC), cut: 0.72)
 
-        let rPx = cfg.fuzzSpeckleRadiusPixels
-        let minR = max(0.05, rPx.lowerBound) / Double(ds)
-        let maxR = max(minR, rPx.upperBound) / Double(ds)
+        let innerResolved = innerNoise.flatMap { context.resolve($0) }
+        let outerResolved = outerNoise.flatMap { context.resolve($0) }
 
-        // Quantised radii (reduces draw calls massively).
-        let radiusBucketCount = isExtension ? 4 : 5
-        let alphaBucketCount = isExtension ? 7 : 8
-
-        let radii = makeGeometricBuckets(min: minR, max: maxR, count: radiusBucketCount)
-
-        let keyCount = radiusBucketCount * alphaBucketCount
-        var paths = Array(repeating: Path(), count: keyCount)
-        var bucketHitCount = Array(repeating: 0, count: keyCount)
-
-        // Deterministic PRNG.
-        let seed = RainSurfacePRNG.combine(
-            cfg.noiseSeed,
-            UInt64(curvePoints.count &* 9973) ^ UInt64(budget &* 31337)
+        // Gradient stops (bounded).
+        let stopsCount = max(8, min(cfg.fuzzTextureGradientStops, 64))
+        let alphaGradient = makeAlphaGradient(
+            color: cfg.fuzzColor,
+            strength: strength,
+            maxAlpha: maxAlpha,
+            stops: stopsCount
         )
+
+        // Pass parameters.
+        let innerBandMul = max(0.1, cfg.fuzzTextureInnerBandMultiplier)
+        let outerBandMul = max(0.1, cfg.fuzzTextureOuterBandMultiplier)
+        let innerOpacityMul = max(0.0, cfg.fuzzTextureInnerOpacityMultiplier)
+        let outerOpacityMul = max(0.0, cfg.fuzzTextureOuterOpacityMultiplier)
+
+        // Outer pass: wider + lower opacity (the “dissipating” slope dust).
+        drawNoiseBandPass(
+            in: &context,
+            clipRect: clipRect,
+            curvePath: curvePath,
+            bandHalfWidth: bandHalfWidth * CGFloat(outerBandMul),
+            alphaGradient: alphaGradient,
+            alphaMultiplier: outerOpacityMul,
+            resolvedNoise: outerResolved,
+            seed: RainSurfacePRNG.combine(seedBase, 0x0BAD_F00D),
+            rect: rect
+        )
+
+        // Inner pass: tighter + stronger (edge coherence).
+        drawNoiseBandPass(
+            in: &context,
+            clipRect: clipRect,
+            curvePath: curvePath,
+            bandHalfWidth: bandHalfWidth * CGFloat(innerBandMul),
+            alphaGradient: alphaGradient,
+            alphaMultiplier: innerOpacityMul,
+            resolvedNoise: innerResolved,
+            seed: RainSurfacePRNG.combine(seedBase, 0xFEED_FACE),
+            rect: rect
+        )
+
+        // Cheap haze stroke to keep the band visually continuous (no blur).
+        if cfg.fuzzHazeStrength > 0.0001 {
+            let meanStrength = average(strength)
+            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * maxAlpha * (0.55 + 0.45 * meanStrength)
+            if hazeAlpha > 0.0001 {
+                let strokeW = max(onePx, (bandHalfWidth * 2.0) * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor)))
+
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.blendMode = .screen
+                    layer.stroke(curvePath, with: .color(cfg.fuzzColor.opacity(hazeAlpha)), lineWidth: strokeW)
+                    layer.blendMode = .normal
+                }
+            }
+        }
+    }
+
+    static func drawNoiseBandPass(
+        in context: inout GraphicsContext,
+        clipRect: CGRect,
+        curvePath: Path,
+        bandHalfWidth: CGFloat,
+        alphaGradient: Gradient,
+        alphaMultiplier: Double,
+        resolvedNoise: GraphicsContext.ResolvedImage?,
+        seed: UInt64,
+        rect: CGRect
+    ) {
+        guard bandHalfWidth.isFinite, bandHalfWidth > 0.25 else { return }
+        guard alphaMultiplier > 0.0001 else { return }
+
+        let lineWidth = max(0.5, bandHalfWidth * 2.0)
+
+        // A small, deterministic offset prevents the noise from feeling “stuck”.
         var rng = RainSurfacePRNG(seed: seed)
+        let ox = CGFloat(rng.nextSignedFloat()) * rect.width * 0.12
+        let oy = CGFloat(rng.nextSignedFloat()) * rect.height * 0.10
+        let drawRect = rect.offsetBy(dx: ox, dy: oy)
 
         context.drawLayer { layer in
-            layer.clip(to: Path(rect))
+            layer.clip(to: Path(clipRect))
 
-            for i in 0..<counts.count {
-                let c = counts[i]
-                if c <= 0 { continue }
+            let strokeRegion = curvePath.strokedPath(
+                StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+            )
+            layer.clip(to: strokeRegion)
 
-                let s = Double(strength[i])
-                if s <= 0.0001 { continue }
+            // Strength gradient (screen blend over black/core).
+            layer.blendMode = .screen
 
-                let p0 = curvePoints[i]
-                let n = normals[i]
-                let t = tangents[i]
+            let scaledGradient = Gradient(stops: alphaGradient.stops.map { stop in
+                .init(color: stop.color.opacity(alphaMultiplier), location: stop.location)
+            })
 
-                for _ in 0..<c {
-                    let isInside = (rng.nextFloat01() < insideFraction)
-                    let sign: CGFloat = isInside ? -1.0 : 1.0
+            layer.fill(
+                Path(drawRect),
+                with: .linearGradient(
+                    scaledGradient,
+                    startPoint: CGPoint(x: rect.minX, y: rect.midY),
+                    endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+                )
+            )
 
-                    // Distance from curve.
-                    let u = rng.nextFloat01()
-                    let distNorm = isInside ? pow(u, distPowIn) : pow(u, distPowOut)
-                    let width = isInside ? bandWidthPt * CGFloat(insideWidthFactor) : bandWidthPt
-                    let signedDist = sign * width * CGFloat(distNorm)
-
-                    // Tangential jitter (keeps the band “cloudy”).
-                    let tanJ = CGFloat(rng.nextSignedFloat()) * bandWidthPt * CGFloat(tangentJitter) * 0.35
-
-                    // Small grain jitter to break uniformity.
-                    let grainJx = CGFloat(rng.nextSignedFloat()) * onePx * 0.9
-                    let grainJy = CGFloat(rng.nextSignedFloat()) * onePx * 0.9
-
-                    let x = p0.x + n.x * signedDist + t.x * tanJ + grainJx
-                    let y = p0.y + n.y * signedDist + t.y * tanJ + grainJy
-
-                    // Edge factor: particles closer to the curve boundary read “sharper”.
-                    let edgeFactor = pow(max(0.0, 1.0 - Double(abs(signedDist) / max(onePx, width))), 0.55)
-
-                    var a = maxAlpha * s * edgeFactor
-                    if isInside {
-                        a *= insideOpacityFactor
-                    }
-                    if a <= 0.00015 { continue }
-
-                    // Radius biased small, then quantised to a small bucket set.
-                    let rr = rng.nextFloat01()
-                    let radius = sampleRadius(min: minR, max: maxR, u: rr)
-                    let rIdx = bucketIndexForValue(radius, buckets: radii)
-
-                    let alphaBucket = bucketIndexForAlpha(alpha: a, maxAlpha: maxAlpha, bucketCount: alphaBucketCount)
-                    let key = rIdx * alphaBucketCount + alphaBucket
-
-                    let bucketRadius = CGFloat(radii[rIdx])
-                    let ellipse = CGRect(
-                        x: x - bucketRadius,
-                        y: y - bucketRadius,
-                        width: bucketRadius * 2.0,
-                        height: bucketRadius * 2.0
-                    )
-
-                    paths[key].addEllipse(in: ellipse)
-                    bucketHitCount[key] += 1
-                }
+            // Apply noise alpha as a mask to create grain.
+            if let resolvedNoise {
+                layer.blendMode = .destinationIn
+                layer.draw(resolvedNoise, in: drawRect)
             }
 
-            // Draw buckets: faint first, bright last; large first, small last.
-            for alphaBucket in 0..<alphaBucketCount {
-                let alpha = bucketAlphaValue(bucket: alphaBucket, maxAlpha: maxAlpha, bucketCount: alphaBucketCount)
-
-                for rIdx in stride(from: radiusBucketCount - 1, through: 0, by: -1) {
-                    let key = rIdx * alphaBucketCount + alphaBucket
-                    if bucketHitCount[key] <= 0 { continue }
-
-                    layer.fill(paths[key], with: .color(cfg.fuzzColor.opacity(alpha)))
-                }
-            }
+            layer.blendMode = .normal
         }
     }
 
-    static func sampleRadius(min: Double, max: Double, u: Double) -> Double {
-        // Bias strongly towards smaller speckles.
-        let t = pow(clamp01(u), 1.85)
-        return min + (max - min) * t
-    }
+    static func makeAlphaGradient(
+        color: Color,
+        strength: [Double],
+        maxAlpha: Double,
+        stops: Int
+    ) -> Gradient {
+        let n = strength.count
+        let sCount = max(2, stops)
 
-    static func makeGeometricBuckets(min: Double, max: Double, count: Int) -> [Double] {
-        let c = Swift.max(2, count)
-        guard max > min else { return Array(repeating: min, count: c) }
-        let ratio = pow(max / min, 1.0 / Double(c - 1))
-        var out: [Double] = []
-        out.reserveCapacity(c)
-        var v = min
-        for _ in 0..<c {
-            out.append(v)
-            v *= ratio
-        }
-        out[c - 1] = max
-        return out
-    }
+        var out: [Gradient.Stop] = []
+        out.reserveCapacity(sCount)
 
-    static func bucketIndexForValue(_ v: Double, buckets: [Double]) -> Int {
-        // buckets are ascending.
-        if v <= buckets.first ?? v { return 0 }
-        if v >= buckets.last ?? v { return max(0, buckets.count - 1) }
-
-        var lo = 0
-        var hi = buckets.count - 1
-        while lo + 1 < hi {
-            let mid = (lo + hi) / 2
-            if v < buckets[mid] { hi = mid } else { lo = mid }
+        for i in 0..<sCount {
+            let t = (sCount <= 1) ? 0.0 : (Double(i) / Double(sCount - 1))
+            let idx = max(0, min(n - 1, Int(round(t * Double(max(0, n - 1))))))
+            let a = clamp01(strength[idx]) * clamp01(maxAlpha)
+            out.append(.init(color: color.opacity(a), location: t))
         }
 
-        // Choose nearest of lo/hi.
-        let dlo = abs(v - buckets[lo])
-        let dhi = abs(v - buckets[hi])
-        return (dhi < dlo) ? hi : lo
-    }
-
-    static func bucketIndexForAlpha(alpha: Double, maxAlpha: Double, bucketCount: Int) -> Int {
-        let bc = max(2, bucketCount)
-        let t = clamp01(alpha / max(0.000_001, maxAlpha))
-        let idx = Int(floor(t * Double(bc - 1) + 0.000_001))
-        return max(0, min(bc - 1, idx))
-    }
-
-    static func bucketAlphaValue(bucket: Int, maxAlpha: Double, bucketCount: Int) -> Double {
-        let bc = max(2, bucketCount)
-        let b = max(0, min(bc - 1, bucket))
-        // Middle of the bucket.
-        let t = (Double(b) + 0.55) / Double(bc)
-        return clamp01(maxAlpha) * t
+        return Gradient(stops: out)
     }
 }
 
@@ -544,8 +491,8 @@ private extension RainForecastSurfaceRenderer {
 
         let ds = max(1.0, displayScale)
         let onePx = 1.0 / ds
-
         let width = max(onePx, CGFloat(cfg.baselineWidthPixels) / ds)
+
         let opacity = clamp01(cfg.baselineLineOpacity)
         guard opacity > 0.0001, width > 0.0001 else { return }
 
@@ -560,7 +507,7 @@ private extension RainForecastSurfaceRenderer {
                 .init(color: cfg.baselineColor.opacity(0.0), location: 0.0),
                 .init(color: cfg.baselineColor.opacity(opacity), location: fadeFrac),
                 .init(color: cfg.baselineColor.opacity(opacity), location: 1.0 - fadeFrac),
-                .init(color: cfg.baselineColor.opacity(0.0), location: 1.0)
+                .init(color: cfg.baselineColor.opacity(0.0), location: 1.0),
             ])
 
             context.stroke(
@@ -582,7 +529,7 @@ private extension RainForecastSurfaceRenderer {
 
 private extension RainForecastSurfaceRenderer {
 
-    static func computeBandWidthPt(rect: CGRect, displayScale: CGFloat, cfg: RainForecastSurfaceConfiguration) -> CGFloat {
+    static func computeBandHalfWidthPt(rect: CGRect, displayScale: CGFloat, cfg: RainForecastSurfaceConfiguration) -> CGFloat {
         let ds = max(1.0, displayScale)
         let minDim = min(rect.height * 0.28, rect.width * 0.10)
         let unclamped = minDim * CGFloat(max(0.0, cfg.fuzzWidthFraction))
@@ -601,6 +548,7 @@ private extension RainForecastSurfaceRenderer {
 
     static func makeMinuteHeights(intensities: [Double], referenceMax: Double, maxHeight: CGFloat, gamma: Double) -> [CGFloat] {
         guard !intensities.isEmpty else { return [] }
+
         let ref = max(0.000_001, referenceMax)
         let g = max(0.10, gamma)
 
@@ -651,6 +599,7 @@ private extension RainForecastSurfaceRenderer {
             let y = baselineY - heights[i]
             pts.append(CGPoint(x: x, y: y))
         }
+
         return pts
     }
 
@@ -660,18 +609,9 @@ private extension RainForecastSurfaceRenderer {
         return Path { p in
             p.move(to: CGPoint(x: rect.minX, y: baselineY))
             p.addLine(to: first)
-
-            if curvePoints.count >= 2 {
-                var prev = curvePoints[0]
-                for i in 1..<curvePoints.count {
-                    let cur = curvePoints[i]
-                    let mid = CGPoint(x: (prev.x + cur.x) * 0.5, y: (prev.y + cur.y) * 0.5)
-                    p.addQuadCurve(to: mid, control: prev)
-                    prev = cur
-                }
-                p.addQuadCurve(to: last, control: last)
+            for pt in curvePoints.dropFirst() {
+                p.addLine(to: pt)
             }
-
             p.addLine(to: CGPoint(x: rect.maxX, y: baselineY))
             p.closeSubpath()
         }
@@ -679,52 +619,13 @@ private extension RainForecastSurfaceRenderer {
 
     static func buildCurveStrokePath(curvePoints: [CGPoint]) -> Path {
         guard let first = curvePoints.first else { return Path() }
-
         return Path { p in
             p.move(to: first)
             if curvePoints.count == 1 { return }
-
-            var prev = curvePoints[0]
-            for i in 1..<curvePoints.count {
-                let cur = curvePoints[i]
-                let mid = CGPoint(x: (prev.x + cur.x) * 0.5, y: (prev.y + cur.y) * 0.5)
-                p.addQuadCurve(to: mid, control: prev)
-                prev = cur
-            }
-            p.addQuadCurve(to: curvePoints.last ?? prev, control: curvePoints.last ?? prev)
-        }
-    }
-
-    static func computeTangentsAndNormals(curvePoints: [CGPoint]) -> (tangents: [CGPoint], normals: [CGPoint]) {
-        let n = curvePoints.count
-        guard n > 1 else {
-            return ([CGPoint(x: 1, y: 0)], [CGPoint(x: 0, y: -1)])
-        }
-
-        var tangents = Array(repeating: CGPoint(x: 1, y: 0), count: n)
-        var normals = Array(repeating: CGPoint(x: 0, y: -1), count: n)
-
-        for i in 0..<n {
-            let a = curvePoints[max(0, i - 1)]
-            let b = curvePoints[min(n - 1, i + 1)]
-            let dx = b.x - a.x
-            let dy = b.y - a.y
-            let len = sqrt(dx * dx + dy * dy)
-
-            if len > 0.000_01 {
-                let tx = dx / len
-                let ty = dy / len
-                tangents[i] = CGPoint(x: tx, y: ty)
-
-                // Normal points “outward” (upwards) for a typical y(x) graph.
-                normals[i] = CGPoint(x: ty, y: -tx)
-            } else {
-                tangents[i] = CGPoint(x: 1, y: 0)
-                normals[i] = CGPoint(x: 0, y: -1)
+            for pt in curvePoints.dropFirst() {
+                p.addLine(to: pt)
             }
         }
-
-        return (tangents, normals)
     }
 }
 
@@ -736,8 +637,6 @@ private extension RainForecastSurfaceRenderer {
         heights: [CGFloat],
         certainties: [Double],
         wetEps: CGFloat,
-        rect: CGRect,
-        displayScale: CGFloat,
         cfg: RainForecastSurfaceConfiguration
     ) -> [Double] {
         let n = heights.count
@@ -749,6 +648,7 @@ private extension RainForecastSurfaceRenderer {
         let thr = clamp01(cfg.fuzzChanceThreshold)
         let trans = max(0.000_1, cfg.fuzzChanceTransition)
         let exp = max(0.10, cfg.fuzzChanceExponent)
+
         let floorBase = clamp01(cfg.fuzzChanceFloor)
         let minStrength = clamp01(cfg.fuzzChanceMinStrength)
 
@@ -766,7 +666,7 @@ private extension RainForecastSurfaceRenderer {
 
             let chance = clamp01(certainties[i])
 
-            // Lower chance => stronger fuzz.
+            // Lower chance -> stronger fuzz.
             let t = clamp01((thr - chance) / trans)
             var s = floorBase + (1.0 - floorBase) * pow(t, exp)
 
@@ -798,34 +698,35 @@ private extension RainForecastSurfaceRenderer {
         let samplesPerMinute = Double(n - 1) / Double(denom)
         let tailSamples = max(1, Int(round(tailMinutes * samplesPerMinute)))
 
-        // Detect transitions.
-        var transitionIndices: [Int] = []
-        transitionIndices.reserveCapacity(8)
-
-        for i in 1..<n {
+        // Transition indices (wet↔dry).
+        var transitions: [Int] = []
+        transitions.reserveCapacity(8)
+        for i in 1..<wetMask.count {
             if wetMask[i] != wetMask[i - 1] {
-                transitionIndices.append(i)
+                transitions.append(i)
             }
         }
+        guard !transitions.isEmpty else { return }
 
-        if transitionIndices.isEmpty { return }
+        for tIdx in transitions {
+            for k in 0...tailSamples {
+                let w = 1.0 - (Double(k) / Double(max(1, tailSamples)))
+                let boost = 1.0 + 0.85 * pow(w, 1.25)
 
-        for idx in transitionIndices {
-            let lo = max(0, idx - tailSamples)
-            let hi = min(n - 1, idx + tailSamples)
-
-            for j in lo...hi {
-                let d = abs(j - idx)
-                let w = 1.0 - (Double(d) / Double(tailSamples))
-                // Strong but bounded boost.
-                let boost = 1.0 + 0.85 * max(0.0, w)
-                strength[j] = clamp01(strength[j] * boost)
+                let a = tIdx - k
+                if a >= 0 && a < n {
+                    strength[a] = clamp01(strength[a] * boost)
+                }
+                let b = tIdx + k
+                if b >= 0 && b < n {
+                    strength[b] = clamp01(strength[b] * boost)
+                }
             }
         }
     }
 }
 
-// MARK: - Utilities
+// MARK: - Misc helpers
 
 private extension RainForecastSurfaceRenderer {
 
@@ -868,9 +769,9 @@ private extension RainForecastSurfaceRenderer {
             for i in (li + 1)..<n { out[i] = v }
         }
 
-        // Linear fill gaps.
+        // Linear fill between known points.
         var i = fi
-        while i < li {
+        while i <= li {
             if out[i].isFinite {
                 i += 1
                 continue
@@ -886,26 +787,23 @@ private extension RainForecastSurfaceRenderer {
             let a = out[start]
             let b = out[end]
             let span = Double(end - start)
-
             if span > 0 {
                 for k in (start + 1)..<end {
                     let t = Double(k - start) / span
                     out[k] = a + (b - a) * t
                 }
             }
-
             i = end + 1
         }
 
+        // Final sanitise.
         return out.map { $0.isFinite ? max(0.0, $0) : 0.0 }
     }
 
     static func robustReferenceMaxMMPerHour(values: [Double], defaultMax: Double, percentile: Double) -> Double {
         let p = clamp01(percentile)
         var v = values.filter { $0.isFinite && $0 > 0.0 }
-        if v.isEmpty {
-            return max(0.25, defaultMax)
-        }
+        if v.isEmpty { return max(0.25, defaultMax) }
         v.sort()
         let idx = Int(round(p * Double(max(0, v.count - 1))))
         let ref = v[max(0, min(v.count - 1, idx))]
@@ -922,20 +820,19 @@ private extension RainForecastSurfaceRenderer {
         let k = max(1, Int(round(Double(n) * f)))
         let p = max(0.10, power)
 
-        // Left.
-        if k > 0 {
-            for i in 0..<min(k, n) {
-                let t = Double(i) / Double(max(1, k))
-                let s = pow(clamp01(t), p)
-                heights[i] *= CGFloat(s)
-            }
-            // Right.
-            for j in 0..<min(k, n) {
-                let i = n - 1 - j
-                let t = Double(j) / Double(max(1, k))
-                let s = pow(clamp01(t), p)
-                heights[i] *= CGFloat(s)
-            }
+        // Left ramp.
+        for i in 0..<min(k, n) {
+            let t = Double(i) / Double(max(1, k))
+            let e = pow(t, p)
+            heights[i] *= CGFloat(e)
+        }
+
+        // Right ramp.
+        for i in 0..<min(k, n) {
+            let idx = n - 1 - i
+            let t = Double(i) / Double(max(1, k))
+            let e = pow(t, p)
+            heights[idx] *= CGFloat(e)
         }
     }
 
@@ -951,13 +848,13 @@ private extension RainForecastSurfaceRenderer {
         out.reserveCapacity(targetCount)
 
         for i in 0..<targetCount {
-            let t = Double(i) * denom / Double(max(1, targetCount - 1))
-            let i0 = Int(floor(t))
-            let i1 = min(n - 1, i0 + 1)
-            let frac = t - Double(i0)
-            let a = Double(values[i0])
-            let b = Double(values[i1])
-            out.append(CGFloat(a + (b - a) * frac))
+            let t = (targetCount <= 1) ? 0.0 : Double(i) / Double(targetCount - 1)
+            let u = t * denom
+            let i0 = max(0, min(n - 2, Int(floor(u))))
+            let frac = CGFloat(u - Double(i0))
+            let a = values[i0]
+            let b = values[i0 + 1]
+            out.append(a + (b - a) * frac)
         }
 
         return out
@@ -975,12 +872,12 @@ private extension RainForecastSurfaceRenderer {
         out.reserveCapacity(targetCount)
 
         for i in 0..<targetCount {
-            let t = Double(i) * denom / Double(max(1, targetCount - 1))
-            let i0 = Int(floor(t))
-            let i1 = min(n - 1, i0 + 1)
-            let frac = t - Double(i0)
+            let t = (targetCount <= 1) ? 0.0 : Double(i) / Double(targetCount - 1)
+            let u = t * denom
+            let i0 = max(0, min(n - 2, Int(floor(u))))
+            let frac = u - Double(i0)
             let a = values[i0]
-            let b = values[i1]
+            let b = values[i0 + 1]
             out.append(a + (b - a) * frac)
         }
 
@@ -992,25 +889,26 @@ private extension RainForecastSurfaceRenderer {
         if n <= 2 { return values }
         let r = max(0, windowRadius)
         if r == 0 { return values }
-
-        var cur = values
         let p = max(1, passes)
 
+        var cur = values
         for _ in 0..<p {
-            var next = cur
+            var out = Array(repeating: CGFloat(0.0), count: n)
             for i in 0..<n {
+                var acc: CGFloat = 0.0
+                var wsum: CGFloat = 0.0
                 let lo = max(0, i - r)
                 let hi = min(n - 1, i + r)
-                var sum: CGFloat = 0.0
-                let count = CGFloat(hi - lo + 1)
                 for j in lo...hi {
-                    sum += cur[j]
+                    // Triangular weights.
+                    let w = CGFloat((r + 1) - abs(i - j))
+                    acc += cur[j] * w
+                    wsum += w
                 }
-                next[i] = sum / max(1.0, count)
+                out[i] = (wsum > 0.0) ? (acc / wsum) : cur[i]
             }
-            cur = next
+            cur = out
         }
-
         return cur
     }
 
@@ -1019,23 +917,27 @@ private extension RainForecastSurfaceRenderer {
         guard n > 0, budget > 0, totalWeight > 0.0 else { return Array(repeating: 0, count: n) }
 
         var out = Array(repeating: 0, count: n)
-
         var carry = 0.0
         var used = 0
 
         for i in 0..<n {
-            let desired = Double(budget) * (weights[i] / totalWeight)
-            carry += desired
-            let target = Int(floor(carry + 1e-9))
-            let c = max(0, target - used)
-            out[i] = c
-            used += c
+            let w = max(0.0, weights[i])
+            let exact = (w / totalWeight) * Double(budget)
+            let base = Int(floor(exact))
+            let frac = exact - Double(base)
+
+            out[i] = base
+            used += base
+
+            carry += frac
+            if carry >= 1.0 {
+                out[i] += 1
+                used += 1
+                carry -= 1.0
+            }
         }
 
-        // Fix rounding drift.
-        if used < budget {
-            out[n - 1] += (budget - used)
-        } else if used > budget {
+        if used > budget {
             var extra = used - budget
             for i in stride(from: n - 1, through: 0, by: -1) {
                 if extra <= 0 { break }
@@ -1078,6 +980,13 @@ private extension RainForecastSurfaceRenderer {
         return dist
     }
 
+    static func average(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0.0 }
+        var s = 0.0
+        for v in values { s += v }
+        return s / Double(values.count)
+    }
+
     static func clamp01(_ x: Double) -> Double {
         if x < 0.0 { return 0.0 }
         if x > 1.0 { return 1.0 }
@@ -1085,17 +994,114 @@ private extension RainForecastSurfaceRenderer {
     }
 }
 
+// MARK: - Noise cache
+
+private final class FuzzNoiseCache: @unchecked Sendable {
+
+    static let shared = FuzzNoiseCache()
+
+    private struct Key: Hashable {
+        let pixels: Int
+        let seed: UInt64
+        let cutBucket: Int
+    }
+
+    private let lock = NSLock()
+    private var cache: [Key: CGImage] = [:]
+
+    func image(pixels: Int, seed: UInt64, cut: Double) -> Image? {
+        let cutBucket = Int(round(max(0.0, min(1.0, cut)) * 1000.0))
+        let key = Key(pixels: pixels, seed: seed, cutBucket: cutBucket)
+
+        let cg: CGImage? = lock.withLock {
+            if let existing = cache[key] { return existing }
+            let made = Self.makeNoiseCGImage(pixels: pixels, seed: seed, cut: cut)
+            if let made { cache[key] = made }
+            return made
+        }
+
+        guard let cg else { return nil }
+        return Image(decorative: cg, scale: 1.0, orientation: .up)
+    }
+
+    private static func makeNoiseCGImage(pixels: Int, seed: UInt64, cut: Double) -> CGImage? {
+        let w = max(16, min(pixels, 1024))
+        let h = w
+
+        let bytesPerPixel = 4
+        let bytesPerRow = w * bytesPerPixel
+        var data = [UInt8](repeating: 0, count: h * bytesPerRow)
+
+        let c = max(0.0, min(0.98, cut))
+        var rng = RainSurfacePRNG(seed: seed)
+
+        for y in 0..<h {
+            for x in 0..<w {
+                let u = rng.nextFloat01()
+
+                // Sparse speckles: most pixels fully transparent.
+                let a: UInt8
+                if u < c {
+                    a = 0
+                } else {
+                    let t = (u - c) / max(0.000_001, (1.0 - c))
+                    // Bias towards brighter specks.
+                    let shaped = pow(max(0.0, min(1.0, t)), 0.35)
+                    a = UInt8(max(0, min(255, Int(round(shaped * 255.0)))))
+                }
+
+                let i = y * bytesPerRow + x * 4
+                data[i + 0] = 255
+                data[i + 1] = 255
+                data[i + 2] = 255
+                data[i + 3] = a
+            }
+        }
+
+        let cfData = Data(data) as CFData
+        guard let provider = CGDataProvider(data: cfData) else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        return CGImage(
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
+    }
+}
+
 // MARK: - Color blending
 
 private extension Color {
+
     static func blend(a: Color, b: Color, t: Double) -> Color {
         let tt = max(0.0, min(1.0, t))
 
         #if canImport(UIKit)
         let ua = UIColor(a)
         let ub = UIColor(b)
+
         var ra: CGFloat = 0, ga: CGFloat = 0, ba: CGFloat = 0, aa: CGFloat = 0
         var rb: CGFloat = 0, gb: CGFloat = 0, bb: CGFloat = 0, ab: CGFloat = 0
+
         _ = ua.getRed(&ra, green: &ga, blue: &ba, alpha: &aa)
         _ = ub.getRed(&rb, green: &gb, blue: &bb, alpha: &ab)
 

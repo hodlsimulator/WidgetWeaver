@@ -5,10 +5,6 @@
 //  Created by . . on 12/29/25.
 //
 //  Nowcast chart for the weather template.
-//  Tuned to match the mockup:
-//  - baseline near ~0.83 height (leaves room for “Now / 60m”)
-//  - deep blue core gradient
-//  - speckled fuzz band (uncertainty) that remains WidgetKit-safe
 //
 
 import SwiftUI
@@ -43,39 +39,43 @@ struct WeatherNowcastChart: View {
 
         var cfg = RainForecastSurfaceConfiguration()
 
-        // Geometry: match mock baseline position.
+        // Geometry.
         cfg.baselineFractionFromTop = 0.83
         cfg.topHeadroomFraction = 0.075
         cfg.typicalPeakFraction = 0.78
 
-        // Intensity shaping: keep drizzle readable.
+        // Intensity shaping.
         cfg.intensityReferenceMaxMMPerHour = max(1.0, maxIntensityMMPerHour.isFinite ? maxIntensityMMPerHour : 1.0)
         cfg.robustMaxPercentile = 0.92
         cfg.intensityGamma = 0.62
 
-        // Core colours: bright cyan top into deep blue body.
+        // Core colours.
         cfg.coreBodyColor = Color(red: 0.02, green: 0.22, blue: 0.86).opacity(0.84)
         cfg.coreTopColor = Color(red: 0.46, green: 0.90, blue: 1.00).opacity(0.98)
         cfg.coreTopMix = 0.64
         cfg.coreFadeFraction = 0.10
 
-        // Fuzz: the key look.
+        // Fuzz: main look.
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
         cfg.fuzzColor = Color(red: 0.52, green: 0.93, blue: 1.00)
-        cfg.fuzzMaxOpacity = 0.42
+        cfg.fuzzMaxOpacity = 0.44
 
-        // Band width close to mock (avoid cartoon “thick cloud”).
-        cfg.fuzzWidthFraction = 0.10
-        cfg.fuzzWidthPixelsClamp = 6.0...38.0
+        // Wider band is now safe (texture-based, bounded draw calls).
+        cfg.fuzzWidthFraction = 0.18
+        cfg.fuzzWidthPixelsClamp = 10.0...72.0
 
-        // Keep WidgetKit safe: lower draw complexity in extensions.
+        // Prefer texture fuzz in widgets.
+        cfg.fuzzTextureEnabled = true
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 320
+        cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 26 : 34
+        cfg.fuzzTextureInnerBandMultiplier = 1.35
+        cfg.fuzzTextureOuterBandMultiplier = 2.75
+        cfg.fuzzTextureInnerOpacityMultiplier = 0.85
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.48
+
+        // Keep silhouette sampling reasonable in extensions.
         cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 520 : 780
-
-        // Budget is hard-clamped again in the renderer (Regression A guardrails).
-        cfg.fuzzDensity = 0.90
-        cfg.fuzzSpeckleBudget = WidgetWeaverRuntime.isRunningInAppExtension ? 1300 : 2200
-        cfg.fuzzSpeckleRadiusPixels = 0.25...2.40
 
         // Uncertainty mapping.
         cfg.fuzzChanceThreshold = 0.70
@@ -84,26 +84,17 @@ struct WeatherNowcastChart: View {
         cfg.fuzzChanceFloor = 0.20
         cfg.fuzzChanceMinStrength = 0.06
 
-        // Fuzz blooms at wet↔dry transitions and at low heights (mock tails).
+        // Tail bloom + low-height emphasis.
         cfg.fuzzTailMinutes = 7.0
         cfg.fuzzLowHeightPower = 1.85
-        cfg.fuzzLowHeightBoost = 1.15
+        cfg.fuzzLowHeightBoost = 1.20
 
-        // Cheap haze stroke (no blur) to make the band feel “continuous” with fewer speckles.
-        cfg.fuzzHazeStrength = 0.10
+        // Cheap haze stroke (no blur).
+        cfg.fuzzHazeStrength = 0.12
         cfg.fuzzHazeBlurFractionOfBand = 0.0
-        cfg.fuzzHazeStrokeWidthFactor = 1.15
+        cfg.fuzzHazeStrokeWidthFactor = 1.20
 
-        // Inside vs outside balance.
-        cfg.fuzzInsideWidthFactor = 0.62
-        cfg.fuzzInsideOpacityFactor = 0.60
-        cfg.fuzzInsideSpeckleFraction = WidgetWeaverRuntime.isRunningInAppExtension ? 0.34 : 0.44
-
-        cfg.fuzzDistancePowerOutside = 1.60
-        cfg.fuzzDistancePowerInside = 1.15
-        cfg.fuzzAlongTangentJitter = 0.55
-
-        // Rim: subtle.
+        // Rim.
         cfg.rimEnabled = true
         cfg.rimColor = Color(red: 0.72, green: 0.96, blue: 1.00)
         cfg.rimInnerOpacity = 0.05
@@ -111,7 +102,7 @@ struct WeatherNowcastChart: View {
         cfg.rimOuterOpacity = 0.10
         cfg.rimOuterWidthPixels = 2.6
 
-        // Baseline: subtle with faded ends.
+        // Baseline.
         cfg.baselineEnabled = true
         cfg.baselineColor = Color(red: 0.76, green: 0.92, blue: 1.00)
         cfg.baselineLineOpacity = 0.10
@@ -119,7 +110,7 @@ struct WeatherNowcastChart: View {
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
 
-        // Deterministic noise.
+        // Deterministic noise seed.
         cfg.noiseSeed = 0xBADC0DE
 
         return ZStack {

@@ -11,6 +11,7 @@
 import SwiftUI
 
 struct RainForecastSurfaceView: View {
+
     @Environment(\.displayScale) private var displayScale
     @Environment(\.redactionReasons) private var redactionReasons
     @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
@@ -76,6 +77,7 @@ struct RainForecastSurfaceView: View {
 // MARK: - Configuration
 
 struct RainForecastSurfaceConfiguration {
+
     // Layout
     var baselineFractionFromTop: Double = 0.68
     var topHeadroomFraction: Double = 0.07
@@ -123,17 +125,17 @@ struct RainForecastSurfaceConfiguration {
     var fuzzHazeStrokeWidthFactor: Double = 1.10
     var fuzzInsideHazeStrokeWidthFactor: Double = 0.55
 
-    // Inside speckles
+    // Inside speckles (legacy knobs retained)
     var fuzzInsideWidthFactor: Double = 0.62
     var fuzzInsideOpacityFactor: Double = 0.88
 
-    // Particle speckles
+    // Particle speckles (legacy knobs retained; texture fuzz path ignores these)
     var fuzzSpeckStrength: Double = 1.35
     var fuzzSpeckleBudget: Int = 7800
     var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.30...2.0
     var fuzzInsideSpeckleFraction: Double = 0.55
 
-    // Distance distributions
+    // Distance distributions (legacy knobs retained)
     var fuzzDistancePowerOutside: Double = 1.10
     var fuzzDistancePowerInside: Double = 0.75
     var fuzzAlongTangentJitter: Double = 0.35
@@ -141,6 +143,15 @@ struct RainForecastSurfaceConfiguration {
     // Edge suppression window (prevents peppering far-away dry baseline)
     var fuzzSlopeReferenceBandFraction: Double = 0.25
     var fuzzEdgeWindowPx: Double = 12.0
+
+    // NEW: Texture-based fuzz (WidgetKit-safe, “dissipation” look)
+    var fuzzTextureEnabled: Bool = true
+    var fuzzTextureTilePixels: Int = 256
+    var fuzzTextureGradientStops: Int = 28
+    var fuzzTextureInnerBandMultiplier: Double = 1.35
+    var fuzzTextureOuterBandMultiplier: Double = 2.60
+    var fuzzTextureInnerOpacityMultiplier: Double = 0.85
+    var fuzzTextureOuterOpacityMultiplier: Double = 0.45
 
     // Legacy knobs (kept for compatibility with existing code; renderer ignores these for now)
     var fuzzErodeEnabled: Bool = true
@@ -160,7 +171,7 @@ struct RainForecastSurfaceConfiguration {
     var glintMaxOpacity: Double = 0.18
     var glintRadiusPixels: ClosedRange<Double> = 0.7...2.2
 
-    // Rim (legacy)
+    // Rim
     var rimEnabled: Bool = true
     var rimColor: Color = Color(red: 0.55, green: 0.95, blue: 1.00)
     var rimOpacity: Double = 0.18
@@ -191,15 +202,15 @@ struct RainForecastSurfaceConfiguration {
 // MARK: - Budget guardrails (WidgetKit placeholder / previews)
 
 private extension RainForecastSurfaceConfiguration {
+
     mutating func applyWidgetPlaceholderBudgetGuardrails(
         isLowBudget: Bool,
         displayScale: CGFloat,
         size: CGSize
     ) {
-        // Hard clamps that should hold in all contexts.
-        // Avoids accidental unbounded work (especially via editor sliders).
         let ds = (displayScale.isFinite && displayScale > 0) ? displayScale : 1.0
 
+        // Hard clamps that should hold in all contexts.
         maxDenseSamples = max(120, min(maxDenseSamples, 900))
 
         let hardMaxSpeckles: Int = 9000
@@ -216,6 +227,14 @@ private extension RainForecastSurfaceConfiguration {
         rimOuterOpacity = max(0.0, min(rimOuterOpacity, 1.0))
         baselineLineOpacity = max(0.0, min(baselineLineOpacity, 1.0))
 
+        // Texture fuzz clamps.
+        fuzzTextureTilePixels = max(32, min(fuzzTextureTilePixels, 512))
+        fuzzTextureGradientStops = max(8, min(fuzzTextureGradientStops, 64))
+        fuzzTextureInnerBandMultiplier = max(0.1, min(fuzzTextureInnerBandMultiplier, 6.0))
+        fuzzTextureOuterBandMultiplier = max(0.1, min(fuzzTextureOuterBandMultiplier, 8.0))
+        fuzzTextureInnerOpacityMultiplier = max(0.0, min(fuzzTextureInnerOpacityMultiplier, 2.0))
+        fuzzTextureOuterOpacityMultiplier = max(0.0, min(fuzzTextureOuterOpacityMultiplier, 2.0))
+
         // WidgetKit placeholder / preview rendering is very budget constrained.
         // Degrade visuals by removing extras first.
         guard isLowBudget else { return }
@@ -229,19 +248,17 @@ private extension RainForecastSurfaceConfiguration {
         fuzzHazeBlurFractionOfBand = 0.0
 
         // 3) Clamp work proportional to width.
-        // Keep a stable O(n) silhouette while reducing any higher-cost sampling.
         let wPx = max(1.0, Double(size.width * ds))
         let conservativeDense = max(120, min(Int(wPx * 0.6), 260))
         maxDenseSamples = min(maxDenseSamples, conservativeDense)
 
-        // 4) Reduce particle budget even if fuzz remains enabled.
+        // 4) Reduce particle knobs (legacy; texture path ignores, but keep sane).
         fuzzSpeckleBudget = min(fuzzSpeckleBudget, 650)
         fuzzDensity = min(fuzzDensity, 0.85)
         fuzzInsideSpeckleFraction = min(fuzzInsideSpeckleFraction, 0.25)
         fuzzAlongTangentJitter = min(fuzzAlongTangentJitter, 0.35)
 
         // 5) Final degrade: disable fuzz entirely for placeholder/previews.
-        // The core mound still conveys "rain now" without risking WidgetKit budget blowups.
         canEnableFuzz = false
     }
 }
