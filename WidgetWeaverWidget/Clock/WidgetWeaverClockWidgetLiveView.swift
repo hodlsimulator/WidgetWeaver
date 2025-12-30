@@ -146,6 +146,7 @@ private struct WWClockSecondsProgressSecondHandOverlay: View {
             timerInterval: interval,
             countsDown: false
         )
+        .labelsHidden()
         .progressViewStyle(
             WWClockSecondsProgressSecondHandStyle(
                 palette: palette,
@@ -172,10 +173,10 @@ private struct WWClockSecondsProgressSecondHandStyle: ProgressViewStyle {
         return ZStack {
             WidgetWeaverClockSecondHandView(
                 colour: palette.accent,
-                width: 2.0,
-                length: 0.825,
+                width: 1.6,
+                length: 0.92,
                 angle: secondAngle,
-                tipSide: 0.10,
+                tipSide: 0.08,
                 scale: scale
             )
 
