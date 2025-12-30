@@ -20,6 +20,12 @@ extension RainSurfaceDrawing {
         guard maxStrength > 0.06 else { return }
         guard surfacePoints.count > 2 else { return }
 
+        // When fuzz is available + enabled, the edge should read as particulate (speckles),
+        // not as a stroked outline.
+        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 {
+            return
+        }
+
         let onePx = 1.0 / max(1.0, displayScale)
         let innerW = max(onePx, CGFloat(cfg.rimInnerWidthPixels) / displayScale)
         let outerW = max(onePx, CGFloat(cfg.rimOuterWidthPixels) / displayScale)

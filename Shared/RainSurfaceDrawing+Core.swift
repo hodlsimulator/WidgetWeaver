@@ -112,15 +112,13 @@ extension RainSurfaceDrawing {
 
         // Wet mask (height > 0).
         var isWet: [Bool] = Array(repeating: false, count: n)
-        for i in 0..<n {
-            let h = baselineY - surfacePoints[i].y
-            isWet[i] = (h > wetEps)
-        }
-
-        // Max height for low-height boost + slope reference.
+        var heights: [CGFloat] = Array(repeating: 0.0, count: n)
         var maxHeight: CGFloat = 0
+
         for i in 0..<n {
-            let h = max(0, baselineY - surfacePoints[i].y)
+            let h = max(0.0, baselineY - surfacePoints[i].y)
+            heights[i] = h
+            isWet[i] = (h > wetEps)
             if h > maxHeight { maxHeight = h }
         }
 
@@ -201,25 +199,39 @@ extension RainSurfaceDrawing {
             var s = chanceFloor + (1.0 - chanceFloor) * mapped
             s = max(minStrength, min(1.0, s))
 
+            let h = heights[i]
+            let hn = (maxHeight > 0.0001) ? min(1.0, Double(h / maxHeight)) : 1.0
+
             // Low-height boost (stronger at tapered ends).
             if maxHeight > 0.0001 {
-                let h = max(0, baselineY - surfacePoints[i].y)
-                let hn = min(1.0, Double(h / maxHeight))
                 let low = pow(max(0.0, 1.0 - hn), max(0.1, cfg.fuzzLowHeightPower))
                 let boost = 1.0 + max(0.0, cfg.fuzzLowHeightBoost) * low
                 s *= boost
             }
 
-            // Slope dampener (suppresses pepper on long flat ridges).
-            let i0 = max(0, i - 1)
-            let i1 = min(n - 1, i + 1)
-            let h0 = max(0, baselineY - surfacePoints[i0].y)
-            let h1 = max(0, baselineY - surfacePoints[i1].y)
-            let dh = abs(h1 - h0)
-            let slope = dh / max(onePx, CGFloat(2) * geometry.dx)
-            let sn = min(1.0, max(0.0, Double(slope / max(onePx, slopeRef))))
-            let slopeFactor = 0.35 + 0.65 * pow(sn, 0.70)
-            s *= slopeFactor
+            // Slope dampener (suppresses pepper on long flat ridges) –
+            // only apply once the surface is reasonably “up” (avoid killing tapered ends).
+            if hn > 0.35 {
+                let i0 = max(0, i - 1)
+                let i1 = min(n - 1, i + 1)
+                let h0 = heights[i0]
+                let h1 = heights[i1]
+                let dh = abs(h1 - h0)
+
+                let slope = Double(dh / max(onePx, CGFloat(2) * geometry.dx))
+                let denom = Double(max(onePx, slopeRef))
+                let sn = min(1.0, max(0.0, slope / max(0.000_001, denom)))
+
+                var plateau = 0.0
+                if maxHeight > 0.0001 {
+                    plateau = smoothstep01((hn - 0.48) / (0.86 - 0.48))
+                    plateau = pow(plateau, 1.35)
+                }
+
+                let minSlope = 0.55 - 0.20 * plateau // 0.35 … 0.55
+                let slopeFactor = minSlope + (1.0 - minSlope) * pow(sn, 0.75)
+                s *= slopeFactor
+            }
 
             // Edge emphasis inside wet region (boost near wet/dry boundaries).
             let dl = distToDryLeft[i]
@@ -228,8 +240,12 @@ extension RainSurfaceDrawing {
             if d < edgeWindowSamples {
                 let t = 1.0 - Double(d) / Double(edgeWindowSamples)
                 let edge = smoothstep01(t)
-                s *= (1.0 + 0.70 * pow(edge, 0.85))
+                s *= (1.0 + 1.15 * pow(edge, 0.85))
             }
+
+            // Visibility floor so fuzz systems don’t get gated off in common high-certainty cases.
+            let visibilityFloor = max(0.045, chanceFloor * 0.35)
+            s = max(s, visibilityFloor)
 
             baseWet[i] = CGFloat(min(1.0, max(0.0, s)))
         }
@@ -239,7 +255,8 @@ extension RainSurfaceDrawing {
             if dist <= 0 { return 1 }
             if dist >= tailSamples { return 0 }
             let t = 1.0 - Double(dist) / Double(tailSamples)
-            return CGFloat(smoothstep01(t))
+            let w = smoothstep01(t)
+            return CGFloat(pow(w, 0.85))
         }
 
         var out: [CGFloat] = Array(repeating: 0, count: n)
@@ -265,6 +282,14 @@ extension RainSurfaceDrawing {
                 if wi >= 0 {
                     s = max(s, baseWet[wi] * tailWeight(dist: dr))
                 }
+            }
+
+            // Extra emphasis close to boundaries so both ends of gaps read “fuzzy”.
+            let d = min(dl, dr)
+            if s > 0.0001, d < edgeWindowSamples {
+                let t = 1.0 - Double(d) / Double(edgeWindowSamples)
+                let edge = smoothstep01(t)
+                s *= (1.0 + 0.55 * CGFloat(pow(edge, 0.85)))
             }
 
             out[i] = min(1.0, max(0.0, s))
