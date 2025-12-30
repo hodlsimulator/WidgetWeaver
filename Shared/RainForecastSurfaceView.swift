@@ -117,6 +117,13 @@ struct RainForecastSurfaceConfiguration {
     var rimOpacity: Double = 0.18
     var rimWidthPixels: Double = 1.0
 
+    // Legacy/compat knobs referenced by WidgetWeaverWeatherTemplateNowcastChart.swift.
+    // Current rendering suppresses rim when fuzz owns the silhouette, but these must exist.
+    var rimInnerOpacity: Double = 0.10
+    var rimInnerWidthPixels: Double = 1.0
+    var rimOuterOpacity: Double = 0.06
+    var rimOuterWidthPixels: Double = 2.0
+
     var baselineEnabled: Bool = true
     var baselineColor: Color = Color.white
     var baselineLineOpacity: Double = 0.05

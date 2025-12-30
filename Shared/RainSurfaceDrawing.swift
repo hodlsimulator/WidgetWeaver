@@ -57,7 +57,6 @@ enum RainSurfaceDrawing {
         context.drawLayer { layer in
             // Baseline fade (clipped safely using a nested layer so the clip doesn't leak).
             if cfg.coreFadeFraction > 0.0001 {
-                let ds = max(1.0, geometry.displayScale)
                 let fadeH = geometry.chartRect.height * CGFloat(clamp01(cfg.coreFadeFraction))
                 let fadeTop = max(geometry.chartRect.minY, geometry.baselineY - fadeH)
 
