@@ -68,7 +68,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     ProgressView(timerInterval: minuteAnchor...endOfMinute, countsDown: false)
                         .progressViewStyle(.linear)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(0.001)
+                        .opacity(1.000)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
 
