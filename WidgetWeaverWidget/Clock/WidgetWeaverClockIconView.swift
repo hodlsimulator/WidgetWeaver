@@ -17,6 +17,7 @@ struct WidgetWeaverClockIconView: View {
     let showsSecondHand: Bool
     let showsHandShadows: Bool
     let showsGlows: Bool
+    let showsCentreHub: Bool
 
     let handsOpacity: Double
 
@@ -30,6 +31,7 @@ struct WidgetWeaverClockIconView: View {
         showsSecondHand: Bool = true,
         showsHandShadows: Bool = true,
         showsGlows: Bool = true,
+        showsCentreHub: Bool = true,
         handsOpacity: Double = 1.0
     ) {
         self.palette = palette
@@ -39,6 +41,7 @@ struct WidgetWeaverClockIconView: View {
         self.showsSecondHand = showsSecondHand
         self.showsHandShadows = showsHandShadows
         self.showsGlows = showsGlows
+        self.showsCentreHub = showsCentreHub
         self.handsOpacity = handsOpacity
     }
 
@@ -243,12 +246,14 @@ struct WidgetWeaverClockIconView: View {
                             )
                         }
 
-                        WidgetWeaverClockCentreHubView(
-                            palette: palette,
-                            baseRadius: hubBaseRadius,
-                            capRadius: hubCapRadius,
-                            scale: displayScale
-                        )
+                        if showsCentreHub {
+                            WidgetWeaverClockCentreHubView(
+                                palette: palette,
+                                baseRadius: hubBaseRadius,
+                                capRadius: hubCapRadius,
+                                scale: displayScale
+                            )
+                        }
                     }
                     .opacity(handsOpacity)
                 }
