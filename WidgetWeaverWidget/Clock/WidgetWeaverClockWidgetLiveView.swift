@@ -46,7 +46,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
         ZStack(alignment: .bottomTrailing) {
             if eligibility.enabled {
-                WWClockSecondsPerMinuteImplicitAnimationClock(
+                WWClockSecondsSweepClock(
                     palette: palette,
                     minuteAnchor: minuteAnchor
                 )
@@ -76,7 +76,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     reduceMotion: reduceMotion,
                     isLowPower: isLowPower,
                     isPlaceholderRedacted: isPlaceholderRedacted,
-                    driverKind: eligibility.enabled ? "Implicit per-minute anim(timeSeconds)" : "static",
+                    driverKind: eligibility.enabled ? "ProgressView heartbeat + per-minute sweep" : "static",
                     animatesSeconds: eligibility.enabled
                 )
                 .padding(6)
@@ -89,13 +89,29 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds driver: implicit animation from minuteAnchor -> minuteAnchor+60
+// MARK: - Seconds driver (per-minute sweep, kicked off via task(id: minuteAnchor))
 
-private struct WWClockSecondsPerMinuteImplicitAnimationClock: View {
+private struct WWClockSecondsSweepClock: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
 
     @Environment(\.displayScale) private var displayScale
+
+    @State private var sweepTimeSeconds: Double
+
+    init(palette: WidgetWeaverClockPalette, minuteAnchor: Date) {
+        self.palette = palette
+        self.minuteAnchor = minuteAnchor
+
+        // Start at “now” (clamped into this minute’s [anchor, anchor+60]) so the hand is correct immediately
+        // even if the widget is first rendered mid-minute.
+        let anchorSeconds = minuteAnchor.timeIntervalSinceReferenceDate
+        let endSeconds = anchorSeconds + 60.0
+        let nowSeconds = Date().timeIntervalSinceReferenceDate
+        let startSeconds = min(max(nowSeconds, anchorSeconds), endSeconds)
+
+        _sweepTimeSeconds = State(initialValue: startSeconds)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -103,9 +119,14 @@ private struct WWClockSecondsPerMinuteImplicitAnimationClock: View {
             let base = WWClockAngles(date: minuteAnchor)
 
             let anchorSeconds = minuteAnchor.timeIntervalSinceReferenceDate
+            let endSeconds = anchorSeconds + 60.0
+
+            // Monotonic 0...60 within this minute; avoids modulo wrap artefacts.
+            let secondsIntoMinute = WWClock.clamp(CGFloat(sweepTimeSeconds - anchorSeconds), min: 0.0, max: 60.0)
+            let secondDegrees = Double(secondsIntoMinute) * 6.0
 
             ZStack {
-                // Base clock: static face + stepped hour/minute hands.
+                // Base clock: stable face + stepped hour/minute hands.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
@@ -118,66 +139,69 @@ private struct WWClockSecondsPerMinuteImplicitAnimationClock: View {
                 )
                 .animation(nil, value: minuteAnchor)
 
-                // Second hand:
-                // - No TimelineView, no timers, no onAppear/task dependence.
-                // - Animate an animatable "timeSeconds" scalar from (minuteAnchor) -> (minuteAnchor+60).
-                // - Angle is derived from the animated scalar, producing a continuous sweep.
-                WWClockSecondHandTimeSweepLayer(
-                    palette: palette,
-                    metrics: metrics,
-                    anchorSeconds: anchorSeconds,
+                // The “keep-alive” driver the Home Screen host is willing to animate.
+                // Keep it in the render graph with very low (non-zero) opacity.
+                WWClockSecondsHeartbeatProgressView(minuteAnchor: minuteAnchor)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(4)
+
+                // Second hand itself: driven by sweepTimeSeconds animation (not by Date() ticking).
+                WidgetWeaverClockSecondHandView(
+                    colour: palette.accent,
+                    width: metrics.secondWidth,
+                    length: metrics.secondLength,
+                    angle: .degrees(secondDegrees),
+                    tipSide: metrics.secondTipSide,
                     scale: displayScale
                 )
-                .animation(.linear(duration: 60.0), value: minuteAnchor)
+                .frame(width: metrics.dialDiameter, height: metrics.dialDiameter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task(id: minuteAnchor) {
+                await startOrResyncSweep(anchorSeconds: anchorSeconds, endSeconds: endSeconds)
+            }
+        }
+    }
+
+    @MainActor
+    private func startOrResyncSweep(anchorSeconds: Double, endSeconds: Double) async {
+        let nowSeconds = Date().timeIntervalSinceReferenceDate
+        let startSeconds = min(max(nowSeconds, anchorSeconds), endSeconds)
+        let remaining = max(0.05, endSeconds - startSeconds)
+
+        // Hard-set without animation, then animate to end-of-minute.
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            sweepTimeSeconds = startSeconds
+        }
+
+        withAnimation(.linear(duration: remaining)) {
+            sweepTimeSeconds = endSeconds
         }
     }
 }
 
-private struct WWClockSecondHandTimeSweepLayer: View {
-    let palette: WidgetWeaverClockPalette
-    let metrics: WWClockSecondHandMetrics
-    let anchorSeconds: Double
-    let scale: CGFloat
+private struct WWClockSecondsHeartbeatProgressView: View {
+    let minuteAnchor: Date
 
     var body: some View {
-        WidgetWeaverClockSecondHandView(
-            colour: palette.accent,
-            width: metrics.secondWidth,
-            length: metrics.secondLength,
-            angle: .degrees(0.0),
-            tipSide: metrics.secondTipSide,
-            scale: scale
+        // Important details:
+        // - Non-zero opacity (0.0 risks pruning / snapshot optimisation).
+        // - Small & cheap.
+        // - No custom ProgressViewStyle.
+        ProgressView(
+            timerInterval: minuteAnchor...(minuteAnchor.addingTimeInterval(60.0)),
+            countsDown: false
         )
-        .modifier(
-            WWClockSecondHandTimeSecondsRotationModifier(timeSeconds: anchorSeconds)
-        )
-        .frame(width: metrics.dialDiameter, height: metrics.dialDiameter)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .progressViewStyle(.linear)
+        .frame(width: 44, height: 3)
+        .opacity(0.02)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// Animates `timeSeconds` (seconds since reference date) linearly between minute anchors.
-/// The second hand angle is derived from the animated intermediate values, yielding a sweep.
-/// Strict concurrency fix: this modifier’s protocol witnesses are `nonisolated`.
-private struct WWClockSecondHandTimeSecondsRotationModifier: AnimatableModifier {
-
-    // With default main-actor isolation enabled, this stored value would otherwise be main-actor isolated,
-    // which breaks the Animatable conformance under strict concurrency checking.
-    nonisolated(unsafe) var timeSeconds: Double
-
-    nonisolated var animatableData: Double {
-        get { timeSeconds }
-        set { timeSeconds = newValue }
-    }
-
-    nonisolated func body(content: Content) -> some View {
-        let secondsIntoMinute = timeSeconds - floor(timeSeconds / 60.0) * 60.0
-        let degrees = secondsIntoMinute * 6.0
-        return content.rotationEffect(.degrees(degrees))
     }
 }
 
@@ -284,7 +308,7 @@ private struct WWClockAngles {
 }
 
 #if DEBUG
-// MARK: - Debug overlay (does not rely on Date() ticking)
+// MARK: - Debug overlay (compact + includes visible ProgressView driver)
 
 private struct WidgetWeaverClockWidgetDebugOverlay: View {
     let entryDate: Date
@@ -307,65 +331,124 @@ private struct WidgetWeaverClockWidgetDebugOverlay: View {
         }()
 
         let secsText = secondsEligibility.enabled ? "ON" : "OFF"
-
-        let entryText: String = entryDate.formatted(.dateTime.hour().minute().second())
         let anchorText: String = minuteAnchor.formatted(.dateTime.hour().minute().second())
 
         let reasonShort: String = {
             let s = secondsEligibility.reason
-            if s.count <= 24 { return s }
-            return String(s.prefix(24)) + "…"
+            if s.count <= 22 { return s }
+            return String(s.prefix(22)) + "…"
         }()
 
-        let probeAnchorSeconds = minuteAnchor.timeIntervalSinceReferenceDate
-
-        VStack(alignment: .trailing, spacing: 2) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 10, height: 10)
-
-                    Circle()
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: 3, height: 3)
-                        .offset(y: -5)
-                        .modifier(WWClockSecondHandTimeSecondsRotationModifier(timeSeconds: probeAnchorSeconds))
-                        .animation(.linear(duration: 60.0), value: minuteAnchor)
-                }
-                .opacity(animatesSeconds ? 1.0 : 0.35)
-
                 Text("dbg \(modeText) secs \(secsText)")
-                    .opacity(0.92)
+                    .opacity(0.95)
+
+                Spacer(minLength: 6)
+
+                WWClockDebugProbeDot(minuteAnchor: minuteAnchor, isActive: animatesSeconds)
             }
 
             Text("why \(reasonShort)")
                 .opacity(0.86)
 
-            Text("e \(entryText) a \(anchorText)")
+            Text("anch \(anchorText)")
                 .opacity(0.82)
 
+            // Visible driver probe: if this bar doesn’t move, the host isn’t animating timerInterval primitives.
+            ProgressView(
+                timerInterval: minuteAnchor...(minuteAnchor.addingTimeInterval(60.0)),
+                countsDown: false
+            )
+            .progressViewStyle(.linear)
+            .frame(width: 108, height: 4)
+            .opacity(animatesSeconds ? 0.95 : 0.35)
+
             Text("drv \(driverKind)")
-                .opacity(0.80)
+                .opacity(0.78)
 
             Text("pwr LPM:\(isLowPower ? "1" : "0") RM:\(reduceMotion ? "1" : "0") red:\(isPlaceholderRedacted ? "1" : "0")")
-                .opacity(0.76)
+                .opacity(0.72)
         }
         .font(.system(size: 7, weight: .regular, design: .monospaced))
         .dynamicTypeSize(.xSmall)
         .lineLimit(1)
-        .minimumScaleFactor(0.5)
-        .frame(maxWidth: 165, alignment: .trailing)
-        .padding(5)
+        .minimumScaleFactor(0.65)
+        .frame(maxWidth: 150, alignment: .leading)
+        .padding(6)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.black.opacity(0.22))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
         )
         .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockDebugProbeDot: View {
+    let minuteAnchor: Date
+    let isActive: Bool
+
+    @State private var probeTimeSeconds: Double
+
+    init(minuteAnchor: Date, isActive: Bool) {
+        self.minuteAnchor = minuteAnchor
+        self.isActive = isActive
+
+        let anchorSeconds = minuteAnchor.timeIntervalSinceReferenceDate
+        let endSeconds = anchorSeconds + 60.0
+        let nowSeconds = Date().timeIntervalSinceReferenceDate
+        let startSeconds = min(max(nowSeconds, anchorSeconds), endSeconds)
+
+        _probeTimeSeconds = State(initialValue: startSeconds)
+    }
+
+    var body: some View {
+        let anchorSeconds = minuteAnchor.timeIntervalSinceReferenceDate
+        let endSeconds = anchorSeconds + 60.0
+
+        let secs = WWClock.clamp(CGFloat(probeTimeSeconds - anchorSeconds), min: 0.0, max: 60.0)
+        let degrees = Double(secs) * 6.0
+
+        return ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 10, height: 10)
+
+            Circle()
+                .fill(Color.white.opacity(0.90))
+                .frame(width: 3, height: 3)
+                .offset(y: -5)
+                .rotationEffect(.degrees(degrees))
+        }
+        .opacity(isActive ? 1.0 : 0.35)
+        .task(id: minuteAnchor) {
+            await startOrResyncProbe(anchorSeconds: anchorSeconds, endSeconds: endSeconds)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @MainActor
+    private func startOrResyncProbe(anchorSeconds: Double, endSeconds: Double) async {
+        guard isActive else { return }
+
+        let nowSeconds = Date().timeIntervalSinceReferenceDate
+        let startSeconds = min(max(nowSeconds, anchorSeconds), endSeconds)
+        let remaining = max(0.05, endSeconds - startSeconds)
+
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            probeTimeSeconds = startSeconds
+        }
+
+        withAnimation(.linear(duration: remaining)) {
+            probeTimeSeconds = endSeconds
+        }
     }
 }
 #endif
