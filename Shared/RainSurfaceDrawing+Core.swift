@@ -295,6 +295,6 @@ extension RainSurfaceDrawing {
             }
         }
 
-        return geometry.coreAreaPath(insetTop: top)
+        return geometry.filledPath(usingInsetTopPoints: top)
     }
 }
