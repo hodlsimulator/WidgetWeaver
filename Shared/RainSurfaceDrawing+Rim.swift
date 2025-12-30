@@ -4,142 +4,104 @@
 //
 //  Created by . . on 12/23/25.
 //
+//  Rim + glint treatment (kept subtle; fuzz owns the edge).
+//
 
 import SwiftUI
 
 extension RainSurfaceDrawing {
-
     static func drawRim(
         in context: inout GraphicsContext,
         surfacePoints: [CGPoint],
-        maxStrength: CGFloat,
+        perSegmentStrength: [CGFloat],
+        bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration
+        cfg: RainForecastSurfaceConfiguration,
+        maxStrength: CGFloat
     ) {
         guard cfg.rimEnabled else { return }
-        guard maxStrength > 0.06 else { return }
-        guard surfacePoints.count > 2 else { return }
+        guard surfacePoints.count >= 2 else { return }
 
-        // When fuzz is available + enabled, the edge should read as particulate (speckles),
-        // not as a stroked outline.
+        // When fuzz is active, suppress rim to avoid a "stroke line" look.
         if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 {
             return
         }
 
-        let onePx = 1.0 / max(1.0, displayScale)
-        let innerW = max(onePx, CGFloat(cfg.rimInnerWidthPixels) / displayScale)
-        let outerW = max(onePx, CGFloat(cfg.rimOuterWidthPixels) / displayScale)
+        let ds = max(1.0, displayScale)
+        let onePx = 1.0 / ds
+        let w = max(onePx, CGFloat(cfg.rimWidthPixels) / ds)
+        let a = clamp01(cfg.rimOpacity)
+
+        if a <= 0.0001 { return }
 
         var p = Path()
         p.move(to: surfacePoints[0])
         for i in 1..<surfacePoints.count { p.addLine(to: surfacePoints[i]) }
 
-        let innerA = max(0.0, min(1.0, cfg.rimInnerOpacity)) * Double(maxStrength)
-        let outerA = max(0.0, min(1.0, cfg.rimOuterOpacity)) * Double(maxStrength)
-
-        if outerA > 0.0001 {
-            context.stroke(
-                p,
-                with: .color(cfg.rimColor.opacity(outerA)),
-                style: StrokeStyle(lineWidth: outerW, lineCap: .round, lineJoin: .round)
-            )
-        }
-
-        if innerA > 0.0001 {
-            context.stroke(
-                p,
-                with: .color(cfg.rimColor.opacity(innerA)),
-                style: StrokeStyle(lineWidth: innerW, lineCap: .round, lineJoin: .round)
-            )
-        }
+        context.blendMode = .plusLighter
+        context.stroke(p, with: .color(cfg.rimColor.opacity(a)), lineWidth: w)
+        context.blendMode = .normal
     }
 
     static func drawGlints(
         in context: inout GraphicsContext,
-        chartRect: CGRect,
-        baselineY: CGFloat,
+        geometry: RainSurfaceGeometry,
         surfacePoints: [CGPoint],
-        normals: [CGPoint],
         perPointStrength: [CGFloat],
         bandWidthPt: CGFloat,
         displayScale: CGFloat,
-        cfg: RainForecastSurfaceConfiguration
+        cfg: RainForecastSurfaceConfiguration,
+        maxStrength: CGFloat
     ) {
         guard cfg.glintEnabled else { return }
-        guard surfacePoints.count == perPointStrength.count else { return }
-        guard surfacePoints.count > 4 else { return }
+        guard surfacePoints.count >= 3 else { return }
 
-        // Candidate indices: strong, wet, and not too close to ends.
-        let onePx = 1.0 / max(1.0, displayScale)
-        let wetEps = max(onePx * 0.5, 0.0001)
+        // Glints are a highlight pass; avoid when fuzz is active.
+        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 {
+            return
+        }
 
-        var candidates: [Int] = []
-        candidates.reserveCapacity(12)
+        let ds = max(1.0, displayScale)
+        let onePx = 1.0 / ds
 
-        for i in 3..<(surfacePoints.count - 3) {
-            let h = baselineY - surfacePoints[i].y
-            if h <= wetEps { continue }
+        let count = max(0, cfg.glintCount)
+        if count == 0 { return }
 
-            let s = perPointStrength[i]
-            if s < 0.35 { continue }
+        let maxA = clamp01(cfg.glintMaxOpacity)
+        if maxA <= 0.0001 { return }
 
-            // Avoid cramped glints on steep spikes by preferring moderate slopes.
-            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-            let up = max(0.0, -n.y)
-            if up < 0.25 { continue }
+        let minR = max(onePx, CGFloat(cfg.glintRadiusPixels.lowerBound) / ds)
+        let maxR = max(minR, CGFloat(cfg.glintRadiusPixels.upperBound) / ds)
 
-            candidates.append(i)
+        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0x91A7_91A7_0000_0001))
+
+        // Prefer points with low fuzz (cheap).
+        let candidates = surfacePoints.indices.filter { i in
+            let s = (i < perPointStrength.count) ? perPointStrength[i] : 0.0
+            return s < 0.08
         }
         if candidates.isEmpty { return }
 
-        let count = max(0, min(cfg.glintCount, 6))
-        if count == 0 { return }
-
-        let maxA = max(0.0, min(1.0, cfg.glintMaxOpacity))
-        let glintW = max(onePx, bandWidthPt * 0.16)
-        let glintL = max(onePx * 4.0, bandWidthPt * 0.65)
-
-        var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0x9117_1234_55AA_7788))
-        var p = Path()
+        context.blendMode = .plusLighter
 
         for _ in 0..<count {
-            let idx = Int(prng.nextUInt64() % UInt64(candidates.count))
-            let i = candidates[idx]
+            let idx = candidates[Int(prng.nextUInt64() % UInt64(candidates.count))]
+            let p = surfacePoints[idx]
 
-            let base = surfacePoints[i]
-            let n = (i < normals.count) ? normals[i] : CGPoint(x: 0, y: -1)
-            let t = CGPoint(x: n.y, y: -n.x)
+            let u = Double(prng.nextFloat01())
+            let rr = minR + (maxR - minR) * CGFloat(pow(u, 2.0))
+            let a = maxA * (0.55 + 0.45 * Double(prng.nextFloat01()))
 
-            // Place slightly outward and along tangent.
-            let offsetN = CGFloat(0.10 + 0.25 * Double(prng.nextFloat01())) * bandWidthPt
-            let offsetT = CGFloat(Double(prng.nextSignedFloat())) * bandWidthPt * 0.35
-
-            let c = CGPoint(
-                x: base.x + n.x * offsetN + t.x * offsetT,
-                y: base.y + n.y * offsetN + t.y * offsetT
-            )
-
-            // Orientation aligned to tangent.
-            let halfL = glintL * CGFloat(0.45 + 0.55 * Double(prng.nextFloat01()))
-            let halfW = glintW * CGFloat(0.70 + 0.30 * Double(prng.nextFloat01()))
-
-            let a = CGPoint(x: c.x - t.x * halfL - n.x * halfW, y: c.y - t.y * halfL - n.y * halfW)
-            let b = CGPoint(x: c.x + t.x * halfL - n.x * halfW, y: c.y + t.y * halfL - n.y * halfW)
-            let d = CGPoint(x: c.x - t.x * halfL + n.x * halfW, y: c.y - t.y * halfL + n.y * halfW)
-            let e = CGPoint(x: c.x + t.x * halfL + n.x * halfW, y: c.y + t.y * halfL + n.y * halfW)
-
-            p.move(to: a)
-            p.addLine(to: b)
-            p.addLine(to: e)
-            p.addLine(to: d)
-            p.closeSubpath()
+            let rect = CGRect(x: p.x - rr, y: p.y - rr, width: rr * 2, height: rr * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(cfg.rimColor.opacity(a)))
         }
 
-        if p.isEmpty { return }
+        context.blendMode = .normal
+    }
 
-        // Use rimColor for glints (glintColor does not exist in configuration at this ref).
-        context.fill(p, with: .color(cfg.rimColor.opacity(maxA * 0.35)))
-
-        _ = chartRect
+    private static func clamp01(_ x: Double) -> Double {
+        if x <= 0.0 { return 0.0 }
+        if x >= 1.0 { return 1.0 }
+        return x
     }
 }
