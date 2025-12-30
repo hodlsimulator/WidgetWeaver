@@ -60,7 +60,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 )
                 .animation(nil, value: minuteAnchor)
 
-                // Seconds “hand” driven by the same host mechanism as ProgressView(timerInterval:).
+                // Seconds “hand” driven by a host-animated timer primitive.
                 // NOTE: This is a “tip” (short moving arc/dot) rather than a full needle.
                 if motion.enabled {
                     WWClockSecondsProgressTipHand(
@@ -147,8 +147,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
             )
         }
 
-        // Only treat *placeholder* redaction as “preview mode”.
-        // Privacy redaction can appear in some host contexts and should not disable seconds.
+        // Placeholder redaction means the host isn’t running a real timeline render.
         if isPlaceholderRedacted {
             return WWClockSecondsMotion(
                 wantsSweep: wantsSweep,
@@ -199,8 +198,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
 // MARK: - Seconds driver: host-animated tip using ProgressView(timerInterval:)
 
-/// Creates a moving “tip” by subtracting a slightly delayed circular progress from the leading one.
-/// Host-driven (like the linear timer bar); does not require SwiftUI to tick.
 private struct WWClockSecondsProgressTipHand: View {
     let minuteAnchor: Date
     let dialDiameter: CGFloat
@@ -252,8 +249,6 @@ private struct WWClockAngles {
 }
 
 #if DEBUG
-// MARK: - Debug overlay
-
 private struct WWClockDebugOverlay: View {
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
