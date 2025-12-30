@@ -10,6 +10,7 @@
 import SwiftUI
 
 extension RainSurfaceDrawing {
+
     static func drawRim(
         in context: inout GraphicsContext,
         surfacePoints: [CGPoint],
@@ -23,24 +24,34 @@ extension RainSurfaceDrawing {
         guard surfacePoints.count >= 2 else { return }
 
         // When fuzz is active, suppress rim to avoid a "stroke line" look.
-        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 {
-            return
-        }
+        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 { return }
 
         let ds = max(1.0, displayScale)
         let onePx = 1.0 / ds
         let w = max(onePx, CGFloat(cfg.rimWidthPixels) / ds)
-        let a = clamp01(cfg.rimOpacity)
 
+        let a = RainSurfaceMath.clamp01(cfg.rimOpacity)
         if a <= 0.0001 { return }
 
         var p = Path()
         p.move(to: surfacePoints[0])
-        for i in 1..<surfacePoints.count { p.addLine(to: surfacePoints[i]) }
+        for i in 1..<surfacePoints.count {
+            p.addLine(to: surfacePoints[i])
+        }
 
+        let prevBlend = context.blendMode
         context.blendMode = .plusLighter
-        context.stroke(p, with: .color(cfg.rimColor.opacity(a)), lineWidth: w)
-        context.blendMode = .normal
+
+        context.stroke(
+            p,
+            with: .color(cfg.rimColor.opacity(a)),
+            style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
+        )
+
+        context.blendMode = prevBlend
+
+        _ = perSegmentStrength
+        _ = bandWidthPt
     }
 
     static func drawGlints(
@@ -54,12 +65,10 @@ extension RainSurfaceDrawing {
         maxStrength: CGFloat
     ) {
         guard cfg.glintEnabled else { return }
-        guard surfacePoints.count >= 3 else { return }
+        guard surfacePoints.count >= 2 else { return }
 
-        // Glints are a highlight pass; avoid when fuzz is active.
-        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 {
-            return
-        }
+        // Avoid when fuzz is active.
+        if cfg.fuzzEnabled, cfg.canEnableFuzz, maxStrength > 0.02 { return }
 
         let ds = max(1.0, displayScale)
         let onePx = 1.0 / ds
@@ -67,7 +76,7 @@ extension RainSurfaceDrawing {
         let count = max(0, cfg.glintCount)
         if count == 0 { return }
 
-        let maxA = clamp01(cfg.glintMaxOpacity)
+        let maxA = RainSurfaceMath.clamp01(cfg.glintMaxOpacity)
         if maxA <= 0.0001 { return }
 
         let minR = max(onePx, CGFloat(cfg.glintRadiusPixels.lowerBound) / ds)
@@ -75,33 +84,40 @@ extension RainSurfaceDrawing {
 
         var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(cfg.noiseSeed, 0x91A7_91A7_0000_0001))
 
-        // Prefer points with low fuzz (cheap).
+        // Prefer points with low fuzz.
         let candidates = surfacePoints.indices.filter { i in
             let s = (i < perPointStrength.count) ? perPointStrength[i] : 0.0
             return s < 0.08
         }
         if candidates.isEmpty { return }
 
+        let prevBlend = context.blendMode
         context.blendMode = .plusLighter
 
         for _ in 0..<count {
             let idx = candidates[Int(prng.nextUInt64() % UInt64(candidates.count))]
             let p = surfacePoints[idx]
 
-            let u = Double(prng.nextFloat01())
-            let rr = minR + (maxR - minR) * CGFloat(pow(u, 2.0))
-            let a = maxA * (0.55 + 0.45 * Double(prng.nextFloat01()))
+            let rrUnit = prng.nextFloat01()
+            let rr = minR + (maxR - minR) * CGFloat(pow(rrUnit, 1.35))
 
-            let rect = CGRect(x: p.x - rr, y: p.y - rr, width: rr * 2, height: rr * 2)
-            context.fill(Path(ellipseIn: rect), with: .color(cfg.rimColor.opacity(a)))
+            let aUnit = prng.nextFloat01()
+            let a = maxA * (0.30 + 0.70 * aUnit)
+
+            let q = CGPoint(
+                x: p.x + CGFloat(prng.nextSignedFloat()) * rr * 0.35,
+                y: p.y + CGFloat(prng.nextSignedFloat()) * rr * 0.20
+            )
+
+            context.fill(
+                Path(ellipseIn: CGRect(x: q.x - rr, y: q.y - rr, width: rr * 2, height: rr * 2)),
+                with: .color(Color.white.opacity(a))
+            )
         }
 
-        context.blendMode = .normal
-    }
+        context.blendMode = prevBlend
 
-    private static func clamp01(_ x: Double) -> Double {
-        if x <= 0.0 { return 0.0 }
-        if x >= 1.0 { return 1.0 }
-        return x
+        _ = geometry
+        _ = bandWidthPt
     }
 }
