@@ -7,6 +7,7 @@
 
 import SwiftUI
 import WidgetKit
+import UIKit
 import Foundation
 
 struct WidgetWeaverClockWidgetLiveView: View {
@@ -16,7 +17,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickMode: WidgetWeaverClockTickMode
 
     @Environment(\.redactionReasons) private var redactionReasons
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         palette: WidgetWeaverClockPalette,
@@ -32,15 +32,23 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
-            let motion = computeMotion(
-                tickMode: tickMode,
-                redactionReasons: redactionReasons,
-                isReduceMotion: reduceMotion
-            )
+            let isPlaceholder = redactionReasons.contains(.placeholder)
+            let isPrivacy = redactionReasons.contains(.privacy)
+            let isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+            let isReduceMotion = UIAccessibility.isReduceMotionEnabled
 
-            // Hour + minute are anchored to the entry’s minute anchor.
-            // The widget only needs a fresh timeline entry once per minute.
-            let baseAngles = WidgetWeaverClockBaseAngles(date: minuteAnchor)
+            // Seconds are only enabled for the sweep mode and when the system is not redacting.
+            let secondsEnabled =
+                (tickMode == .secondsSweep)
+                && !isPlaceholder
+                && !isPrivacy
+                && !isLowPowerMode
+                && !isReduceMotion
+
+            let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
+
+            // Base clock: draw hour + minute using the timeline’s minute anchor (cheap; updates once per minute).
+            let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
                 WidgetWeaverClockIconView(
@@ -51,14 +59,15 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
-                    handsOpacity: motion.handsOpacity
+                    handsOpacity: handsOpacity
                 )
-                .privacySensitive(motion.isPlaceholderRedacted || motion.isPrivacyRedacted)
+                .privacySensitive(isPrivacy)
 
-                if motion.secondsEnabled {
-                    WWClockSecondsDriver(
-                        minuteAnchor: minuteAnchor,
-                        palette: palette
+                // Seconds overlay: driven by ProgressView(timerInterval:), rendered as a normal needle.
+                if secondsEnabled {
+                    WWClockSecondsSweepOverlay(
+                        startOfMinute: minuteAnchor,
+                        colour: palette.accent
                     )
                 }
             }
@@ -67,86 +76,84 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds driver (ProgressView(timerInterval:) so it runs on the Home Screen)
+// MARK: - Seconds sweep overlay
 
-private struct WWClockSecondsDriver: View {
-    let minuteAnchor: Date
-    let palette: WidgetWeaverClockPalette
+private struct WWClockSecondsSweepOverlay: View {
+    let startOfMinute: Date
+    let colour: Color
 
     var body: some View {
         ProgressView(
-            timerInterval: minuteAnchor...minuteAnchor.addingTimeInterval(60),
+            timerInterval: startOfMinute...startOfMinute.addingTimeInterval(60),
             countsDown: false
         )
-        .labelsHidden()
-        .progressViewStyle(WWClockSecondsProgressStyle(palette: palette))
-        // Critical: make the driver fill the widget so the GeometryReader-based hand
-        // draws at full clock size instead of the ProgressView’s tiny intrinsic size.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .progressViewStyle(
+            WWClockSecondsNeedleProgressStyle(colour: colour)
+        )
+        .tint(.clear)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }
 
-private struct WWClockSecondsProgressStyle: ProgressViewStyle {
-    let palette: WidgetWeaverClockPalette
+private struct WWClockSecondsNeedleProgressStyle: ProgressViewStyle {
+    let colour: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        let rawFraction = configuration.fractionCompleted ?? 0
-        let fraction = min(max(rawFraction, 0), 1)
+        let raw = configuration.fractionCompleted ?? 0
+        let fraction = min(max(raw, 0), 1)
 
-        // 0...1 over the minute -> 0...360° for the seconds hand.
-        let secondAngle = Angle.degrees(fraction * 360.0)
+        // 0...1 over the minute -> 0...360 degrees.
+        let angle = Angle.degrees(fraction * 360.0)
 
-        return WidgetWeaverClockSecondHandView(
-            colour: palette.accent,
-            width: 1.6,
-            length: 0.90,
-            angle: secondAngle,
-            tipSide: 0.075,
-            scale: 1.0
+        return WWClockSecondHandNeedleView(
+            angle: angle,
+            colour: colour
         )
     }
 }
 
-// MARK: - Motion gating
+// MARK: - Needle drawing
 
-private struct WWClockMotion {
-    let secondsEnabled: Bool
-    let isPlaceholderRedacted: Bool
-    let isPrivacyRedacted: Bool
-    let isLowPowerMode: Bool
-    let isReduceMotion: Bool
-    let handsOpacity: Double
+private struct WWClockSecondHandNeedleView: View {
+    let angle: Angle
+    let colour: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+
+            // Tuned by eye for your watch-face proportions.
+            let handLength = side * 0.46
+            let handWidth = max(1.0, side * 0.0075)
+
+            // Slightly extend past the hub so the join looks clean under the existing center cap.
+            let hubOverlap = handWidth * 1.5
+
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(colour)
+                    .frame(width: handWidth, height: handLength + hubOverlap)
+                    .offset(y: -(handLength / 2.0))
+                    .rotationEffect(angle)
+                    .shadow(
+                        color: Color.black.opacity(0.22),
+                        radius: max(0.5, handWidth * 0.35),
+                        x: 0,
+                        y: max(0.25, handWidth * 0.2)
+                    )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .compositingGroup()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
-private func computeMotion(
-    tickMode: WidgetWeaverClockTickMode,
-    redactionReasons: RedactionReasons,
-    isReduceMotion: Bool
-) -> WWClockMotion {
-    let isPlaceholder = redactionReasons.contains(.placeholder)
-    let isPrivacy = redactionReasons.contains(.privacy)
-    let lpm = ProcessInfo.processInfo.isLowPowerModeEnabled
+// MARK: - Base angles
 
-    let wantsSweepSeconds = (tickMode == .secondsSweep)
-    let secondsEnabled = wantsSweepSeconds && !isPlaceholder && !isPrivacy && !lpm && !isReduceMotion
-
-    let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
-
-    return WWClockMotion(
-        secondsEnabled: secondsEnabled,
-        isPlaceholderRedacted: isPlaceholder,
-        isPrivacyRedacted: isPrivacy,
-        isLowPowerMode: lpm,
-        isReduceMotion: isReduceMotion,
-        handsOpacity: handsOpacity
-    )
-}
-
-// MARK: - Angle maths
-
-private struct WidgetWeaverClockBaseAngles {
+private struct WWClockBaseAngles {
     let hour: Double
     let minute: Double
 
@@ -159,7 +166,8 @@ private struct WidgetWeaverClockBaseAngles {
 
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
+        // Degrees with 0 at 12 o’clock.
         self.minute = minuteInt * 6.0
-        self.hour = (hour12 + minuteInt / 60.0) * 30.0
+        self.hour = (hour12 + (minuteInt / 60.0)) * 30.0
     }
 }
