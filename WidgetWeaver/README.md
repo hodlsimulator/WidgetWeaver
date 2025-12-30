@@ -168,10 +168,11 @@ Status: snaps correctly but often remains stopped (no ongoing animation).
 - Goal: the minute hand updates reliably while avoiding whole-widget “blink”.
 - Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
 - Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
+- Current approach: keep the timeline minute-boundary and attempt to drive the second hand from a host-animated primitive (`ProgressView(timerInterval: minuteAnchor...minuteAnchor+60)`), not from SwiftUI timers.
 - Findings so far:
-  - `ProgressView(timerInterval: ...)` can animate visually, but `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress, so it cannot drive a custom second hand (symptom: second hand stuck at 12).
-  - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
-- Status: minute stepping is reliable and does not blink; second-hand motion is still under investigation.
+  - The host will animate `ProgressView(timerInterval: ...)` in some real device contexts (Release-signed), but `ProgressViewStyle.Configuration.fractionCompleted` is often not updated for date-range progress. Any custom seconds hand that derives its angle from `fractionCompleted` can stick at 12 even while the ProgressView animates.
+  - In some debug builds the widget can remain in placeholder/privacy redaction on Home Screen; when that happens WidgetKit may not advance minute-boundary entries, so `minuteAnchor` doesn’t change and “reset each minute” tests are misleading.
+- Status: minute stepping is reliable and does not blink; second hand is currently stuck at 12 in the latest sweep attempts and still needs a host-driven solution that doesn’t depend on `fractionCompleted`.
 
 ### Files
 
