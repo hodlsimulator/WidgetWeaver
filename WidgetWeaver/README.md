@@ -51,6 +51,103 @@ Notes:
 - Widgets refresh on a schedule, but **WidgetKit may throttle updates**.
 - Weather UI provides “Update now” to refresh the cached snapshot used by widgets.
 
+### Nowcast rain surface chart rendering
+
+The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-safe rendering pipeline.
+
+**Used (current path)**
+
+- `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift` — builds a `RainForecastSurfaceConfiguration` tuned for the nowcast chart and renders `RainForecastSurfaceView`.
+- `Shared/RainForecastSurfaceView.swift` — `Canvas` wrapper that fills a pure black background, applies WidgetKit budget guardrails, then calls the renderer.
+- `Shared/RainForecastSurfaceRenderer.swift` — procedural core mound + speckled fuzz band (uncertainty); deterministic and budget-clamped.
+- `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for speckle placement.
+
+**Not used for the Weather nowcast chart (legacy / experiments)**
+
+- `Shared/RainSurfaceDrawing.swift`
+- `Shared/RainSurfaceDrawing+Core.swift`
+- `Shared/RainSurfaceDrawing+Fuzz.swift`
+- `Shared/RainSurfaceDrawing+Rim.swift`
+- `Shared/RainSurfaceGeometry.swift`
+- `Shared/RainSurfaceMath.swift`
+- `Shared/RainSurfaceStyleHarness.swift`
+
+Notes:
+
+- `RainForecastSurfaceConfiguration` still contains several legacy knobs (for compatibility). The current renderer ignores any `fuzzErode*` settings.
+- If the chart appearance needs tuning, start with the config values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`, then adjust sampling/fuzz in `Shared/RainForecastSurfaceRenderer.swift`. Avoid editing the legacy `RainSurfaceDrawing*` files for this chart.
+
+### Regression A — WidgetKit placeholder (crash/budget blow) for rainy locations
+
+This is the most important pitfall for the nowcast chart.
+
+When the nowcast chart is “heavy” (lots of rain + lots of fuzz work), WidgetKit can decide the widget render exceeded its time/memory budget (or crashed) and it will fall back to a **placeholder snapshot**. That can appear as a skeleton-like widget or a generic placeholder look where the rain chart never appears correctly for rainy locations.
+
+#### Symptoms
+
+- Weather widget shows a placeholder-style UI only when rain is present (dry locations render fine).
+- The nowcast chart area becomes blank/grey/skeleton-like, or the entire widget looks like a placeholder.
+- The placeholder persists even after waiting, until a fresh snapshot is produced.
+
+#### Root causes (what to avoid)
+
+Avoid any rendering approach that can trigger expensive rasterisation or too many draw calls:
+
+- Large offscreen bitmaps (for example, trying to render into big images for compositing)
+- Repeated big blurs (especially `GraphicsContext.Filter.blur` or large `shadow`/`blur` chains)
+- Per-pixel loops or CPU “image processing” in the widget render path
+- Unbounded work tied to area (for example `speckCount ∝ width * height`)
+- Thousands of individual shape fills/strokes per frame (draw-call explosion)
+- Any accidental “budget scaling” that increases work when rain is heavier (worst-case input)
+
+#### Guardrails (what the current path enforces)
+
+The nowcast renderer is designed to stay inside WidgetKit budgets by construction:
+
+- The silhouette is **O(n)** in samples.
+- The fuzz is **bounded O(m)** particles with hard clamps (budget never grows with area).
+- Speckles are drawn using **bucketed fills** (a handful of `Path` fills), not one fill per speckle.
+- Blur is avoided; any “coherence” is done via a cheap stroke haze (no blur), and only when enabled.
+- In WidgetKit placeholder/preview contexts, the chart should **degrade** by removing extras first:
+  - disable gloss/glint
+  - disable haze/blur
+  - reduce dense samples
+  - reduce particle budget
+  - if needed: disable fuzz entirely (core-only render is better than placeholder)
+
+Implementation notes:
+
+- `RainForecastSurfaceView` detects placeholder/preview contexts via environment signals (including `.redactionReasons`) and applies `RainForecastSurfaceConfiguration.applyWidgetPlaceholderBudgetGuardrails(...)`.
+- `WidgetWeaverWidget.swift` treats `snapshot(...)` renders as low-budget so WidgetKit snapshots cannot accidentally trigger expensive rain rendering.
+
+#### How to fix it (when you see a placeholder)
+
+If the placeholder shows up during development, follow this order:
+
+1) **Force a fresh widget render**
+   - In the app: Editor → … → **Refresh Widgets** (reload timelines).
+   - Remove the widget from the Home Screen and add it again (forces a new snapshot path).
+
+2) **Flush archived WidgetKit snapshots**
+   - Bump the relevant widget kind string so WidgetKit treats it as a “new” widget and re-archives cleanly:
+     - For the main widget: `Shared/WidgetWeaverWidgetKinds.swift` (the `main` kind).
+     - For the lock screen weather widget: the lock screen weather kind.
+   - Rebuild and run on a physical device.
+
+3) **Reduce nowcast cost (stay inside the guardrails)**
+   - Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
+     - `fuzzSpeckleBudget`
+     - `maxDenseSamples`
+     - `fuzzHazeStrength` (ideally keep haze at 0 in widgets)
+     - `fuzzWidthFraction` / `fuzzWidthPixelsClamp`
+   - Confirm the renderer still clamps budgets in `Shared/RainForecastSurfaceRenderer.swift`.
+
+4) **Last resort recovery**
+   - Reboot the device (WidgetKit can get stuck with a bad snapshot state during heavy iteration).
+   - If a widget is permanently stuck in placeholder after many builds: remove it, reboot, re-add.
+
+The goal is always: a simple core-only chart is acceptable, but a placeholder is not. If budgets get tight, degrade the visual effects first.
+
 ---
 
 ## Featured — Next Up (Calendar)
@@ -168,11 +265,10 @@ Status: snaps correctly but often remains stopped (no ongoing animation).
 - Goal: the minute hand updates reliably while avoiding whole-widget “blink”.
 - Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
 - Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
-- Current approach: keep the timeline minute-boundary and attempt to drive the second hand from a host-animated primitive (`ProgressView(timerInterval: minuteAnchor...minuteAnchor+60)`), not from SwiftUI timers.
 - Findings so far:
-  - The host will animate `ProgressView(timerInterval: ...)` in some real device contexts (Release-signed), but `ProgressViewStyle.Configuration.fractionCompleted` is often not updated for date-range progress. Any custom seconds hand that derives its angle from `fractionCompleted` can stick at 12 even while the ProgressView animates.
-  - In some debug builds the widget can remain in placeholder/privacy redaction on Home Screen; when that happens WidgetKit may not advance minute-boundary entries, so `minuteAnchor` doesn’t change and “reset each minute” tests are misleading.
-- Status: minute stepping is reliable and does not blink; second hand is currently stuck at 12 in the latest sweep attempts and still needs a host-driven solution that doesn’t depend on `fractionCompleted`.
+  - `ProgressView(timerInterval: ...)` can animate visually, but `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress, so it cannot drive a custom second hand (symptom: second hand stuck at 12).
+  - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
+- Status: minute stepping is reliable and does not blink; second-hand motion is still under investigation.
 
 ### Files
 
