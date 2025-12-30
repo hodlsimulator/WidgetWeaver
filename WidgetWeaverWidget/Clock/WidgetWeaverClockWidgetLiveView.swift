@@ -14,7 +14,8 @@ private struct WWClockSecondsMotion: Equatable {
     let reasonShort: String
     let isLowPowerMode: Bool
     let reduceMotion: Bool
-    let isRedacted: Bool
+    let isPlaceholderRedacted: Bool
+    let redactionReasonsDebug: String
 }
 
 struct WidgetWeaverClockWidgetLiveView: View {
@@ -30,16 +31,20 @@ struct WidgetWeaverClockWidgetLiveView: View {
     private static let secondsTipEpsilon: TimeInterval = 0.45
 
     var body: some View {
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let isPlaceholderRedacted = redactionReasons.contains(.placeholder)
+
         let motion = Self.computeMotion(
             tickMode: tickMode,
-            isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            isLowPowerMode: isLowPower,
             reduceMotion: reduceMotion,
-            isRedacted: !redactionReasons.isEmpty
+            isPlaceholderRedacted: isPlaceholderRedacted,
+            redactionReasons: redactionReasons
         )
 
         GeometryReader { proxy in
             let base = WWClockAngles(date: minuteAnchor)
-            let dialDiameter = Self.dialDiameter(for: proxy.size, scale: displayScale)
+            let dialDiameter = Self.dialDiameterAlignedToIconView(for: proxy.size, scale: displayScale)
 
             ZStack(alignment: .bottomLeading) {
                 // Base clock remains timeline-driven (minuteAnchor only).
@@ -56,6 +61,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 .animation(nil, value: minuteAnchor)
 
                 // Seconds “hand” driven by the same host mechanism as ProgressView(timerInterval:).
+                // NOTE: This is a “tip” (short moving arc/dot) rather than a full needle.
                 if motion.enabled {
                     WWClockSecondsProgressTipHand(
                         minuteAnchor: minuteAnchor,
@@ -91,9 +97,19 @@ struct WidgetWeaverClockWidgetLiveView: View {
         tickMode: WidgetWeaverClockTickMode,
         isLowPowerMode: Bool,
         reduceMotion: Bool,
-        isRedacted: Bool
+        isPlaceholderRedacted: Bool,
+        redactionReasons: RedactionReasons
     ) -> WWClockSecondsMotion {
         let wantsSweep = (tickMode == .secondsSweep)
+
+        let reasonsDebug: String = {
+            var parts: [String] = []
+            if redactionReasons.contains(.placeholder) { parts.append("placeholder") }
+            if redactionReasons.contains(.privacy) { parts.append("privacy") }
+            if redactionReasons.contains(.invalidated) { parts.append("invalidated") }
+            if parts.isEmpty { return "none" }
+            return parts.joined(separator: ",")
+        }()
 
         if !wantsSweep {
             return WWClockSecondsMotion(
@@ -102,7 +118,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 reasonShort: "tickMode",
                 isLowPowerMode: isLowPowerMode,
                 reduceMotion: reduceMotion,
-                isRedacted: isRedacted
+                isPlaceholderRedacted: isPlaceholderRedacted,
+                redactionReasonsDebug: reasonsDebug
             )
         }
 
@@ -113,7 +130,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 reasonShort: "LPM",
                 isLowPowerMode: isLowPowerMode,
                 reduceMotion: reduceMotion,
-                isRedacted: isRedacted
+                isPlaceholderRedacted: isPlaceholderRedacted,
+                redactionReasonsDebug: reasonsDebug
             )
         }
 
@@ -124,18 +142,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 reasonShort: "RM",
                 isLowPowerMode: isLowPowerMode,
                 reduceMotion: reduceMotion,
-                isRedacted: isRedacted
+                isPlaceholderRedacted: isPlaceholderRedacted,
+                redactionReasonsDebug: reasonsDebug
             )
         }
 
-        if isRedacted {
+        // Only treat *placeholder* redaction as “preview mode”.
+        // Privacy redaction can appear in some host contexts and should not disable seconds.
+        if isPlaceholderRedacted {
             return WWClockSecondsMotion(
                 wantsSweep: wantsSweep,
                 enabled: false,
-                reasonShort: "redact",
+                reasonShort: "placeholder",
                 isLowPowerMode: isLowPowerMode,
                 reduceMotion: reduceMotion,
-                isRedacted: isRedacted
+                isPlaceholderRedacted: isPlaceholderRedacted,
+                redactionReasonsDebug: reasonsDebug
             )
         }
 
@@ -145,22 +167,40 @@ struct WidgetWeaverClockWidgetLiveView: View {
             reasonShort: "enabled",
             isLowPowerMode: isLowPowerMode,
             reduceMotion: reduceMotion,
-            isRedacted: isRedacted
+            isPlaceholderRedacted: isPlaceholderRedacted,
+            redactionReasonsDebug: reasonsDebug
         )
     }
 
-    private static func dialDiameter(for size: CGSize, scale: CGFloat) -> CGFloat {
-        // Keep this aligned with the clock’s rendered dial scale.
-        // The previous clock view uses ~0.925 of the shortest side.
+    /// Matches the dial diameter computed inside `WidgetWeaverClockIconView` (2R),
+    /// so the seconds ring/tip aligns with the face.
+    private static func dialDiameterAlignedToIconView(for size: CGSize, scale: CGFloat) -> CGFloat {
         let s = min(size.width, size.height)
-        return WWClock.pixel(s * 0.925, scale: scale)
+
+        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+        let outerRadius = outerDiameter * 0.5
+
+        let metalThicknessRatio: CGFloat = 0.062
+        let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
+
+        let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
+        let ringC = WWClock.pixel(
+            WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+            scale: scale
+        )
+
+        let minB = WWClock.px(scale: scale)
+        let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
+
+        let R = outerRadius - ringA - ringB - ringC
+        return R * 2.0
     }
 }
 
 // MARK: - Seconds driver: host-animated tip using ProgressView(timerInterval:)
 
 /// Creates a moving “tip” by subtracting a slightly delayed circular progress from the leading one.
-/// This is host-driven (like your moving linear progress bar) and does not require SwiftUI to tick.
+/// Host-driven (like the linear timer bar); does not require SwiftUI to tick.
 private struct WWClockSecondsProgressTipHand: View {
     let minuteAnchor: Date
     let dialDiameter: CGFloat
@@ -178,10 +218,12 @@ private struct WWClockSecondsProgressTipHand: View {
             ProgressView(timerInterval: start...end, countsDown: false)
                 .progressViewStyle(.circular)
                 .tint(colour)
+                .labelsHidden()
 
             ProgressView(timerInterval: lagStart...lagEnd, countsDown: false)
                 .progressViewStyle(.circular)
                 .tint(colour)
+                .labelsHidden()
                 .blendMode(.destinationOut)
         }
         .compositingGroup()
@@ -227,17 +269,17 @@ private struct WWClockDebugOverlay: View {
 
         VStack(alignment: .leading, spacing: 2) {
             Text("dbg \(tickLabel) secs \(secsLabel)")
-            Text("why \(motion.reasonShort)  LPM:\(motion.isLowPowerMode ? 1 : 0) RM:\(motion.reduceMotion ? 1 : 0) red:\(motion.isRedacted ? 1 : 0)")
+            Text("why \(motion.reasonShort)  LPM:\(motion.isLowPowerMode ? 1 : 0) RM:\(motion.reduceMotion ? 1 : 0) ph:\(motion.isPlaceholderRedacted ? 1 : 0)")
+            Text("red \(motion.redactionReasonsDebug)")
             Text("e \(fmt(entryDate))  a \(fmt(minuteAnchor))")
             Text("drv ProgressView(timerInterval) tip ε=\(String(format: "%.2fs", epsilon))")
 
-            // Known-good moving probe (your screenshot already proved this animates).
             ProgressView(timerInterval: minuteAnchor...(minuteAnchor.addingTimeInterval(60.0)), countsDown: false)
                 .progressViewStyle(.linear)
-                .frame(width: 140, height: 4)
+                .labelsHidden()
+                .frame(width: 150, height: 4)
                 .tint(palette.accent)
 
-            // Small circular probe: should move if circular timer progress is animated.
             WWClockSecondsProgressTipHand(
                 minuteAnchor: minuteAnchor,
                 dialDiameter: 18,
