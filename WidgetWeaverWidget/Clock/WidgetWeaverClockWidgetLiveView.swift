@@ -63,7 +63,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 )
                 .privacySensitive(isPrivacy)
 
-                // Seconds overlay: driven by ProgressView(timerInterval:), rendered as a normal needle.
+                // Seconds overlay: driven by TimelineView, rendered as a normal needle.
                 if secondsEnabled {
                     WWClockSecondsSweepOverlay(
                         startOfMinute: minuteAnchor,
@@ -83,33 +83,22 @@ private struct WWClockSecondsSweepOverlay: View {
     let colour: Color
 
     var body: some View {
-        ProgressView(
-            timerInterval: startOfMinute...startOfMinute.addingTimeInterval(60),
-            countsDown: false
-        )
-        .progressViewStyle(
-            WWClockSecondsNeedleProgressStyle(colour: colour)
-        )
-        .tint(.clear)
+        // ProgressView(timerInterval:) does not provide a usable fractionCompleted to custom ProgressViewStyle
+        // implementations, so TimelineView is used to compute the angle directly from time.
+        TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSince(startOfMinute)
+            let clamped = max(0.0, min(elapsed, 60.0))
+
+            // 0...60 seconds -> 0...360 degrees (allowing 360 avoids a backwards wrap at the top).
+            let angle = Angle.degrees((clamped / 60.0) * 360.0)
+
+            WWClockSecondHandNeedleView(
+                angle: angle,
+                colour: colour
+            )
+        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-private struct WWClockSecondsNeedleProgressStyle: ProgressViewStyle {
-    let colour: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        let raw = configuration.fractionCompleted ?? 0
-        let fraction = min(max(raw, 0), 1)
-
-        // 0...1 over the minute -> 0...360 degrees.
-        let angle = Angle.degrees(fraction * 360.0)
-
-        return WWClockSecondHandNeedleView(
-            angle: angle,
-            colour: colour
-        )
     }
 }
 
