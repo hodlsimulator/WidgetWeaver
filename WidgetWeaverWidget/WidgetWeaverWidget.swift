@@ -18,10 +18,15 @@ public struct WidgetWeaverEntry: TimelineEntry {
     public let family: WidgetFamily
     public let spec: WidgetSpec
 
-    public init(date: Date, family: WidgetFamily, spec: WidgetSpec) {
+    // WidgetKit preview/placeholder rendering has tighter time and memory budgets.
+    // Use this flag to disable expensive visuals (e.g. heavy rain fuzz) only for previews.
+    public let isWidgetKitPreview: Bool
+
+    public init(date: Date, family: WidgetFamily, spec: WidgetSpec, isWidgetKitPreview: Bool = false) {
         self.date = date
         self.family = family
         self.spec = spec
+        self.isWidgetKitPreview = isWidgetKitPreview
     }
 }
 
@@ -90,12 +95,12 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     typealias Intent = WidgetWeaverDesignSelectionIntent
 
     func placeholder(in context: Context) -> Entry {
-        Entry(date: Date(), family: context.family, spec: WidgetSpec.defaultSpec())
+        Entry(date: Date(), family: context.family, spec: WidgetSpec.defaultSpec(), isWidgetKitPreview: true)
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let spec = resolveSpec(for: configuration)
-        return Entry(date: Date(), family: context.family, spec: spec)
+        return Entry(date: Date(), family: context.family, spec: spec, isWidgetKitPreview: context.isPreview)
     }
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
@@ -154,7 +159,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         for i in 0..<count {
             let d = base.addingTimeInterval(TimeInterval(i) * refreshSeconds)
-            entries.append(Entry(date: d, family: context.family, spec: spec))
+            entries.append(Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: context.isPreview))
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -185,6 +190,7 @@ struct WidgetWeaverWidget: Widget {
             WidgetWeaverRenderClock.withNow(entry.date) {
                 let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
                 WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
+                    .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
             }
             .id(entry.date)
         }

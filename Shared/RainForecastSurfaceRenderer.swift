@@ -378,11 +378,11 @@ private extension RainForecastSurfaceRenderer {
                     let grainJx = CGFloat(rng.nextSignedDouble()) * (maxR * 0.40)
                     let grainJy = CGFloat(rng.nextSignedDouble()) * (maxR * 0.40)
 
-                    var x = p0.x + n.x * signedDist + t.x * tanJ + grainJx
-                    var y = p0.y + n.y * signedDist + t.y * tanJ + grainJy
+                    let x = p0.x + n.x * signedDist + t.x * tanJ + grainJx
+                    let y0 = p0.y + n.y * signedDist + t.y * tanJ + grainJy
 
                     // Keep fuzz above the baseline line.
-                    y = min(y, baselineY - onePx * 0.5)
+                    let y = min(y0, baselineY - onePx * 0.5)
 
                     // Radius.
                     let rr = minR + (maxR - minR) * CGFloat(w)

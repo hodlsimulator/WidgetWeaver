@@ -12,6 +12,9 @@ import SwiftUI
 
 struct RainForecastSurfaceView: View {
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
+    @Environment(\.wwLowGraphicsBudget) private var lowGraphicsBudget
 
     private let intensities: [Double]
     private let certainties: [Double]
@@ -44,15 +47,29 @@ struct RainForecastSurfaceView: View {
             var ctx = context
             ctx.fill(Path(rect), with: .color(.black))
 
+            var cfg = configuration
+            cfg.applyWidgetPlaceholderBudgetGuardrails(
+                isLowBudget: isLowBudgetRender,
+                displayScale: displayScale,
+                size: size
+            )
+
             let renderer = RainForecastSurfaceRenderer(
                 intensities: intensities,
                 certainties: certainties,
-                configuration: configuration
+                configuration: cfg
             )
 
             renderer.render(in: &ctx, rect: rect, displayScale: displayScale)
         }
         .background(Color.black)
+    }
+
+    private var isLowBudgetRender: Bool {
+        if redactionReasons.contains(.placeholder) { return true }
+        if !thumbnailRenderingEnabled { return true }
+        if lowGraphicsBudget { return true }
+        return false
     }
 }
 
@@ -169,4 +186,62 @@ struct RainForecastSurfaceConfiguration {
 
     // Deterministic noise
     var noiseSeed: UInt64 = 0xF00D_F00D_CAFE_BEEF
+}
+
+// MARK: - Budget guardrails (WidgetKit placeholder / previews)
+
+private extension RainForecastSurfaceConfiguration {
+    mutating func applyWidgetPlaceholderBudgetGuardrails(
+        isLowBudget: Bool,
+        displayScale: CGFloat,
+        size: CGSize
+    ) {
+        // Hard clamps that should hold in all contexts.
+        // Avoids accidental unbounded work (especially via editor sliders).
+        let ds = (displayScale.isFinite && displayScale > 0) ? displayScale : 1.0
+
+        maxDenseSamples = max(120, min(maxDenseSamples, 900))
+
+        let hardMaxSpeckles: Int = 9000
+        fuzzSpeckleBudget = max(0, min(fuzzSpeckleBudget, hardMaxSpeckles))
+
+        // Clamp fuzz width pixels to sane values so it can't explode with a large preview rect.
+        let minW = max(0.0, min(fuzzWidthPixelsClamp.lowerBound, fuzzWidthPixelsClamp.upperBound))
+        let maxW = max(minW, fuzzWidthPixelsClamp.upperBound)
+        fuzzWidthPixelsClamp = minW...maxW
+
+        // Ensure no negative widths/opacities.
+        fuzzMaxOpacity = max(0.0, min(fuzzMaxOpacity, 1.0))
+        rimInnerOpacity = max(0.0, min(rimInnerOpacity, 1.0))
+        rimOuterOpacity = max(0.0, min(rimOuterOpacity, 1.0))
+        baselineLineOpacity = max(0.0, min(baselineLineOpacity, 1.0))
+
+        // WidgetKit placeholder / preview rendering is very budget constrained.
+        // Degrade visuals by removing extras first.
+        guard isLowBudget else { return }
+
+        // 1) Remove optional highlights.
+        glossEnabled = false
+        glintEnabled = false
+
+        // 2) Remove any haze/blur paths that can trigger expensive rasterisation.
+        fuzzHazeStrength = 0.0
+        fuzzHazeBlurFractionOfBand = 0.0
+
+        // 3) Clamp work proportional to width.
+        // Keep a stable O(n) silhouette while reducing any higher-cost sampling.
+        let wPx = max(1.0, Double(size.width * ds))
+        let conservativeDense = max(120, min(Int(wPx * 0.6), 260))
+        maxDenseSamples = min(maxDenseSamples, conservativeDense)
+
+        // 4) Reduce particle budget even if fuzz remains enabled.
+        fuzzSpeckleBudget = min(fuzzSpeckleBudget, 650)
+        fuzzDensity = min(fuzzDensity, 0.85)
+        fuzzInsideSpeckleFraction = min(fuzzInsideSpeckleFraction, 0.25)
+        fuzzAlongTangentJitter = min(fuzzAlongTangentJitter, 0.35)
+
+        // 5) Final degrade: disable fuzz entirely for placeholder/previews.
+        // The core mound still conveys "rain now" without risking WidgetKit budget blowups.
+        canEnableFuzz = false
+    }
 }
