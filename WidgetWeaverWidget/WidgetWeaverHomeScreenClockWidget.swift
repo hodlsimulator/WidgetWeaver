@@ -59,14 +59,8 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    /// Keep comfortably under the “too many entries” danger zone.
     static let maxEntriesPerTimeline: Int = 120
-
-    /// Budget-safe second-hand movement: a short tick interval + linear interpolation.
-    /// 10s * 120 entries = 20 minutes of coverage per timeline.
-    static let secondsTickSeconds: TimeInterval = 10.0
-
-    static let defaultTickMode: WidgetWeaverClockTickMode = .secondsSweep
+    static let minuteStep: TimeInterval = 60.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -75,10 +69,11 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
+        let minuteAnchor = Self.floorToMinute(now)
         return Entry(
-            date: now,
+            date: minuteAnchor,
             tickMode: .secondsSweep,
-            tickSeconds: WWClockTimelineConfig.secondsTickSeconds,
+            tickSeconds: WWClockTimelineConfig.minuteStep,
             colourScheme: .classic
         )
     }
@@ -86,15 +81,13 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
+        let minuteAnchor = Self.floorToMinute(now)
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
-        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : WWClockTimelineConfig.defaultTickMode
-        let tickSeconds: TimeInterval = (tickMode == .secondsSweep) ? WWClockTimelineConfig.secondsTickSeconds : 60.0
-
         return Entry(
-            date: now,
-            tickMode: tickMode,
-            tickSeconds: tickSeconds,
+            date: minuteAnchor,
+            tickMode: isLowPower ? .minuteOnly : .secondsSweep,
+            tickSeconds: WWClockTimelineConfig.minuteStep,
             colourScheme: scheme
         )
     }
@@ -106,92 +99,44 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        // Previews should stay cheap and predictable.
-        if context.isPreview { return makeMinuteTimeline(now: now, colourScheme: scheme) }
+        // Previews: keep cheap and deterministic.
+        if context.isPreview {
+            return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: .minuteOnly)
+        }
 
-        // Low Power Mode forces minute-only.
-        if isLowPower { return makeMinuteTimeline(now: now, colourScheme: scheme) }
-
-        // Shipping path: short tick entries + linear sweep between entries.
-        return makeSecondsSweepTimeline(now: now, colourScheme: scheme)
+        // Shipping: minute-boundary entries. Seconds are rendered via ProgressView wedge in-view.
+        return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: isLowPower ? .minuteOnly : .secondsSweep)
     }
 
-    // MARK: - Timelines
-
-    private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+    private func makeMinuteTimeline(
+        now: Date,
+        colourScheme: WidgetWeaverClockColourScheme,
+        tickMode: WidgetWeaverClockTickMode
+    ) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        entries.append(
-            Entry(
-                date: minuteAnchorNow,
-                tickMode: .minuteOnly,
-                tickSeconds: 60.0,
-                colourScheme: colourScheme
-            )
-        )
-
-        var next = minuteAnchorNow.addingTimeInterval(60.0)
+        var t = minuteAnchorNow
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
-                    date: next,
-                    tickMode: .minuteOnly,
-                    tickSeconds: 60.0,
+                    date: t,
+                    tickMode: tickMode,
+                    tickSeconds: WWClockTimelineConfig.minuteStep,
                     colourScheme: colourScheme
                 )
             )
-            next = next.addingTimeInterval(60.0)
+            t = t.addingTimeInterval(WWClockTimelineConfig.minuteStep)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
     }
-
-    private func makeSecondsSweepTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
-        let tick = WWClockTimelineConfig.secondsTickSeconds
-        let start = Self.floorToSecond(now)
-
-        var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
-
-        entries.append(
-            Entry(
-                date: start,
-                tickMode: .secondsSweep,
-                tickSeconds: tick,
-                colourScheme: colourScheme
-            )
-        )
-
-        var next = start.addingTimeInterval(tick)
-        while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
-            entries.append(
-                Entry(
-                    date: next,
-                    tickMode: .secondsSweep,
-                    tickSeconds: tick,
-                    colourScheme: colourScheme
-                )
-            )
-            next = next.addingTimeInterval(tick)
-        }
-
-        return Timeline(entries: entries, policy: .atEnd)
-    }
-
-    // MARK: - Time helpers
 
     private static func floorToMinute(_ date: Date) -> Date {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
-        return Date(timeIntervalSinceReferenceDate: floored)
-    }
-
-    private static func floorToSecond(_ date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t)
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 }

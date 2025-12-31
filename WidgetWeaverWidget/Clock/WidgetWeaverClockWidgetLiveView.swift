@@ -17,6 +17,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickSeconds: TimeInterval
 
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.displayScale) private var displayScale
 
     init(
         palette: WidgetWeaverClockPalette,
@@ -35,46 +36,253 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let isPlaceholder = redactionReasons.contains(.placeholder)
             let isPrivacy = redactionReasons.contains(.privacy)
             let isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-            let isReduceMotion = UIAccessibility.isReduceMotionEnabled
 
+            // Reduce Motion must not hide seconds (per requirement).
+            // Budget guardrails still apply for placeholder/privacy/low power.
             let secondsEnabled =
                 (tickMode == .secondsSweep)
                 && !isPlaceholder
                 && !isPrivacy
                 && !isLowPowerMode
-                && !isReduceMotion
 
             let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
+            let baseAngles = WWClockBaseAngles(date: entryDate)
 
-            let base = WWClockBaseAngles(date: entryDate)
-            let sweep = WWClockMonotonicAngles(date: entryDate)
+            ZStack(alignment: .bottomTrailing) {
+                // Base clock: hour/minute only (stable).
+                // Centre hub is suppressed when the seconds overlay is active so it can be drawn above it.
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: .degrees(baseAngles.hour),
+                    minuteAngle: .degrees(baseAngles.minute),
+                    secondAngle: .degrees(0),
+                    showsSecondHand: false,
+                    showsHandShadows: true,
+                    showsGlows: true,
+                    showsCentreHub: !secondsEnabled,
+                    handsOpacity: handsOpacity
+                )
+                .privacySensitive(isPrivacy)
 
-            let hourDeg = secondsEnabled ? sweep.hour : base.hour
-            let minuteDeg = secondsEnabled ? sweep.minute : base.minute
-            let secondDeg = secondsEnabled ? sweep.second : 0.0
+                if secondsEnabled {
+                    ZStack {
+                        WWClockSecondHandWedgeTickOverlay(
+                            palette: palette,
+                            startOfMinute: entryDate,
+                            handsOpacity: handsOpacity
+                        )
 
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: .degrees(hourDeg),
-                minuteAngle: .degrees(minuteDeg),
-                secondAngle: .degrees(secondDeg),
-                showsSecondHand: secondsEnabled,
-                showsHandShadows: true,
-                showsGlows: true,
-                showsCentreHub: true,
-                handsOpacity: handsOpacity
-            )
-            .privacySensitive(isPrivacy)
-            .animation(
-                secondsEnabled ? .linear(duration: max(1.0, tickSeconds)) : nil,
-                value: secondDeg
-            )
+                        // Draw hub above the overlay so the hand “pins” correctly.
+                        GeometryReader { proxy in
+                            let geo = WWClockDialGeometry(containerSize: min(proxy.size.width, proxy.size.height), scale: displayScale)
+
+                            WidgetWeaverClockCentreHubView(
+                                palette: palette,
+                                baseRadius: geo.hubBaseRadius,
+                                capRadius: geo.hubCapRadius,
+                                scale: displayScale
+                            )
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .opacity(handsOpacity)
+                        }
+                    }
+                }
+
+                // Heartbeat: keeps the hosting path “live” without timeline spam.
+                WWClockWidgetHeartbeat(start: entryDate)
+            }
             .widgetURL(URL(string: "widgetweaver://clock"))
         }
     }
 }
 
-// MARK: - Angles
+// MARK: - Geometry
+
+private struct WWClockDialGeometry {
+    let dialDiameter: CGFloat
+    let radius: CGFloat
+
+    let secondLength: CGFloat
+    let secondWidth: CGFloat
+    let secondTipSide: CGFloat
+
+    let hubBaseRadius: CGFloat
+    let hubCapRadius: CGFloat
+
+    init(containerSize s: CGFloat, scale: CGFloat) {
+        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+        let outerRadius = outerDiameter * 0.5
+
+        let metalThicknessRatio: CGFloat = 0.062
+        let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
+
+        let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
+        let ringC = WWClock.pixel(
+            WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+            scale: scale
+        )
+
+        let minB = WWClock.px(scale: scale)
+        let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
+
+        let R = outerRadius - ringA - ringB - ringC
+        self.radius = R
+        self.dialDiameter = R * 2.0
+
+        self.secondLength = WWClock.pixel(
+            WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+            scale: scale
+        )
+        self.secondWidth = WWClock.pixel(
+            WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+            scale: scale
+        )
+        self.secondTipSide = WWClock.pixel(
+            WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+            scale: scale
+        )
+
+        self.hubBaseRadius = WWClock.pixel(
+            WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+            scale: scale
+        )
+        self.hubCapRadius = WWClock.pixel(
+            WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+            scale: scale
+        )
+    }
+}
+
+// MARK: - Seconds overlay (ProgressView wedge reveal)
+
+private struct WWClockSecondHandWedgeTickOverlay: View {
+    let palette: WidgetWeaverClockPalette
+    let startOfMinute: Date
+    let handsOpacity: Double
+
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        GeometryReader { proxy in
+            let geo = WWClockDialGeometry(containerSize: min(proxy.size.width, proxy.size.height), scale: displayScale)
+            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
+
+            ZStack {
+                // 60 pre-rotated hands.
+                ZStack {
+                    ForEach(0..<60, id: \.self) { tick in
+                        let angle = Angle.degrees(Double(tick) * 6.0)
+                        WidgetWeaverClockSecondHandView(
+                            colour: palette.accent,
+                            width: geo.secondWidth,
+                            length: geo.secondLength,
+                            angle: angle,
+                            tipSide: geo.secondTipSide,
+                            scale: displayScale
+                        )
+                    }
+                }
+                .opacity(handsOpacity)
+
+                // Cut away everything except the moving wedge window.
+                WWClockSecondHandOutsideWedgeMatte(
+                    startOfMinute: startOfMinute,
+                    endOfMinute: endOfMinute,
+                    dialDiameter: geo.dialDiameter,
+                    windowSeconds: 1.0
+                )
+                .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .frame(width: geo.dialDiameter, height: geo.dialDiameter)
+            .clipShape(Circle())
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+private struct WWClockSecondHandOutsideWedgeMatte: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    var body: some View {
+        ZStack {
+            Color.white
+
+            WWClockSecondHandWedgeMask(
+                startOfMinute: startOfMinute,
+                endOfMinute: endOfMinute,
+                dialDiameter: dialDiameter,
+                windowSeconds: windowSeconds
+            )
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: dialDiameter, height: dialDiameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockSecondHandWedgeMask: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    // Render tiny, then scale up so the circular stroke becomes a wedge that reaches the centre.
+    private let baseDiameter: CGFloat = 2.0
+
+    var body: some View {
+        let scale = dialDiameter / baseDiameter
+
+        let behindStart = startOfMinute.addingTimeInterval(windowSeconds)
+        let behindEnd = endOfMinute.addingTimeInterval(windowSeconds)
+
+        ZStack {
+            ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+                .frame(width: dialDiameter, height: dialDiameter)
+
+            ProgressView(timerInterval: behindStart...behindEnd, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+                .frame(width: dialDiameter, height: dialDiameter)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: dialDiameter, height: dialDiameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Heartbeat
+
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Base angles (minute-anchored)
 
 private struct WWClockBaseAngles {
     let hour: Double
@@ -86,25 +294,9 @@ private struct WWClockBaseAngles {
 
         let hour24 = Double(comps.hour ?? 0)
         let minuteInt = Double(comps.minute ?? 0)
-
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
         self.minute = minuteInt * 6.0
         self.hour = (hour12 + (minuteInt / 60.0)) * 30.0
-    }
-}
-
-private struct WWClockMonotonicAngles {
-    let hour: Double
-    let minute: Double
-    let second: Double
-
-    init(date: Date) {
-        let tz = TimeZone.autoupdatingCurrent
-        let local = date.timeIntervalSince1970 + TimeInterval(tz.secondsFromGMT(for: date))
-
-        self.second = local * 6.0
-        self.minute = local * (360.0 / 3600.0)
-        self.hour = local * (360.0 / 43200.0)
     }
 }
