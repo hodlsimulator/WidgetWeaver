@@ -81,6 +81,8 @@
 		E1C835C82F03250800E3AA98 /* RainSurfaceDrawing+Fuzz.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835C62F03250600E3AA98 /* RainSurfaceDrawing+Fuzz.swift */; };
 		E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835C92F03256400E3AA98 /* RainSurfaceDrawing+Rim.swift */; };
 		E1C835CB2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835C92F03256400E3AA98 /* RainSurfaceDrawing+Rim.swift */; };
+		E1C835CD2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */; };
+		E1C835CE2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -151,6 +153,7 @@
 		E1C835C32F0324B300E3AA98 /* RainSurfaceDrawing+Core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainSurfaceDrawing+Core.swift"; sourceTree = "<group>"; };
 		E1C835C62F03250600E3AA98 /* RainSurfaceDrawing+Fuzz.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainSurfaceDrawing+Fuzz.swift"; sourceTree = "<group>"; };
 		E1C835C92F03256400E3AA98 /* RainSurfaceDrawing+Rim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainSurfaceDrawing+Rim.swift"; sourceTree = "<group>"; };
+		E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainSurfaceDissipationNoise.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -247,15 +250,16 @@
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C834CD2EFAAF3600E3AA98 /* RainForecastSurfaceView.swift */,
-				E1C835BC2EFF427000E3AA98 /* RainSurfaceStyleHarness.swift */,
+				E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */,
 				E1C834D92EFB33EF00E3AA98 /* RainSurfaceDrawing.swift */,
 				E1C835C32F0324B300E3AA98 /* RainSurfaceDrawing+Core.swift */,
 				E1C835C62F03250600E3AA98 /* RainSurfaceDrawing+Fuzz.swift */,
 				E1C835C92F03256400E3AA98 /* RainSurfaceDrawing+Rim.swift */,
 				E1C834DC2EFB341300E3AA98 /* RainSurfaceGeometry.swift */,
 				E1C834DF2EFB343900E3AA98 /* RainSurfaceMath.swift */,
-				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
 				E1C834E22EFB345700E3AA98 /* RainSurfacePRNG.swift */,
+				E1C835BC2EFF427000E3AA98 /* RainSurfaceStyleHarness.swift */,
+				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
 				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
 				F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */,
 				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
@@ -408,6 +412,7 @@
 				8C6FB7B23D0C4E3F88E52DD1 /* WidgetSpec+Image.swift in Sources */,
 				E12EAD5A2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */,
 				E1C835BE2EFF427300E3AA98 /* RainSurfaceStyleHarness.swift in Sources */,
+				E1C835CD2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */,
 				E1C835C42F0324B600E3AA98 /* RainSurfaceDrawing+Core.swift in Sources */,
 				E1785EB52EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				E15B0BB42EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
@@ -463,6 +468,7 @@
 				E1C835CB2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
 				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				E12EAD582EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
+				E1C835CE2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */,
 				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
 				4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
 				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
