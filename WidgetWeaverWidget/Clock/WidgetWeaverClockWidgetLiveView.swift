@@ -17,6 +17,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickMode: WidgetWeaverClockTickMode
 
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.displayScale) private var displayScale
 
     init(
         palette: WidgetWeaverClockPalette,
@@ -45,10 +46,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 && !isReduceMotion
 
             let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
-
             let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
+                // Hour + minute are minute-boundary timeline-driven.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(baseAngles.hour),
@@ -57,16 +58,24 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
+                    showsCentreHub: !secondsEnabled,
                     handsOpacity: handsOpacity
                 )
                 .privacySensitive(isPrivacy)
 
                 if secondsEnabled {
-                    WWClockSecondHandHostDrivenNeedleOverlay(
+                    // Lightweight, host-animated seconds indicator (keeps the widget stable).
+                    WWClockSecondsRingOverlay(
                         palette: palette,
                         startOfMinute: minuteAnchor,
-                        handsOpacity: handsOpacity
+                        scale: displayScale,
+                        opacity: handsOpacity
                     )
+
+                    // Hub drawn once on top.
+                    WWClockCentreHubOverlay(palette: palette, scale: displayScale)
+                        .opacity(handsOpacity)
+                        .privacySensitive(isPrivacy)
                 }
             }
             .widgetURL(URL(string: "widgetweaver://clock"))
@@ -74,116 +83,100 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Host-driven seconds "needle" (no fractionCompleted dependency)
+// MARK: - Seconds indicator (host-animated, widget-safe)
 
-private struct WWClockSecondHandHostDrivenNeedleOverlay: View {
+private struct WWClockSecondsRingOverlay: View {
     let palette: WidgetWeaverClockPalette
     let startOfMinute: Date
-    let handsOpacity: Double
-
-    @Environment(\.displayScale) private var displayScale
-
-    // Controls the visible “tail” size of the moving segment.
-    // Larger = thicker/brighter needle, smaller = finer needle.
-    private let trailSeconds: Double = 0.28
-
-    // Controls how solid the needle looks.
-    // More samples = more solid (but more expensive).
-    private let radialSamples: Int = 14
-
-    // Controls how close to centre the needle extends.
-    // Smaller = extends closer to centre.
-    private let innerScale: CGFloat = 0.20
+    let scale: CGFloat
+    let opacity: Double
 
     var body: some View {
-        GeometryReader { proxy in
+        let endOfMinute = startOfMinute.addingTimeInterval(60.0)
+
+        return GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
 
-            // Mirror the clock geometry used by WidgetWeaverClockIconView.
-            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
+            let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
             let outerRadius = outerDiameter * 0.5
 
             let metalThicknessRatio: CGFloat = 0.062
             let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
-            let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
+            let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
             let ringC = WWClock.pixel(
                 WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
-                scale: displayScale
+                scale: scale
             )
-            let minB = WWClock.px(scale: displayScale)
-            let ringB = WWClock.pixel(
-                max(minB, outerRadius - provisionalR - ringA - ringC),
-                scale: displayScale
-            )
+            let minB = WWClock.px(scale: scale)
+            let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
 
             let R = outerRadius - ringA - ringB - ringC
 
             let secondLength = WWClock.pixel(
                 WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
-                scale: displayScale
+                scale: scale
             )
 
-            let needleDiameter = secondLength * 2.0
+            let diameter = secondLength * 2.0
 
-            let frontStart = startOfMinute
-            let frontEnd = startOfMinute.addingTimeInterval(60.0)
-
-            // Lagging copy used to carve out only the leading edge segment.
-            let backStart = frontStart.addingTimeInterval(trailSeconds)
-            let backEnd = frontEnd.addingTimeInterval(trailSeconds)
-
-            ZStack {
-                ForEach(0..<max(radialSamples, 1), id: \.self) { i in
-                    let denom = CGFloat(max(radialSamples - 1, 1))
-                    let t = CGFloat(i) / denom
-                    let scale = innerScale + (1.0 - innerScale) * t
-
-                    WWClockLeadingProgressSegment(
-                        palette: palette,
-                        front: frontStart...frontEnd,
-                        back: backStart...backEnd
-                    )
-                    .frame(width: needleDiameter, height: needleDiameter)
-                    .scaleEffect(scale)
-                }
-            }
-            .frame(width: s, height: s)
-            .opacity(handsOpacity)
-            .compositingGroup()
-            .overlay {
-                // Centre cut-out keeps the hub from being occluded by the moving overlay.
-                let cutoutDiameter = WWClock.pixel(R * 0.22, scale: displayScale)
-                Circle()
-                    .frame(width: cutoutDiameter, height: cutoutDiameter)
-                    .blendMode(.destinationOut)
-            }
-            .compositingGroup()
+            ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(palette.accent)
+                .frame(width: diameter, height: diameter)
+                .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
+                .opacity(opacity * 0.55)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
-private struct WWClockLeadingProgressSegment: View {
+// MARK: - Centre hub (drawn once on top)
+
+private struct WWClockCentreHubOverlay: View {
     let palette: WidgetWeaverClockPalette
-    let front: ClosedRange<Date>
-    let back: ClosedRange<Date>
+    let scale: CGFloat
 
     var body: some View {
-        ZStack {
-            ProgressView(timerInterval: front, countsDown: false)
-                .progressViewStyle(.circular)
-                .tint(palette.accent)
+        GeometryReader { proxy in
+            let s = min(proxy.size.width, proxy.size.height)
 
-            ProgressView(timerInterval: back, countsDown: false)
-                .progressViewStyle(.circular)
-                .tint(palette.accent)
-                .blendMode(.destinationOut)
+            let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+            let outerRadius = outerDiameter * 0.5
+
+            let metalThicknessRatio: CGFloat = 0.062
+            let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
+
+            let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
+            let ringC = WWClock.pixel(
+                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+                scale: scale
+            )
+            let minB = WWClock.px(scale: scale)
+            let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
+
+            let R = outerRadius - ringA - ringB - ringC
+
+            let hubBaseRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+                scale: scale
+            )
+            let hubCapRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+                scale: scale
+            )
+
+            WidgetWeaverClockCentreHubView(
+                palette: palette,
+                baseRadius: hubBaseRadius,
+                capRadius: hubCapRadius,
+                scale: scale
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .compositingGroup()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
