@@ -52,7 +52,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
             ZStack {
                 // Draw the static clock face + hour/minute hands.
                 // When the host-driven seconds overlay is enabled, the centre hub is drawn in its own
-                // layer so it stays crisp while the seconds mask animates.
+                // layer so it stays crisp while the seconds matte animates.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(baseAngles.hour),
@@ -74,7 +74,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                             handsOpacity: handsOpacity
                         )
 
-                        // Centre hub in its own layer (avoids being blurred/rasterised along with the mask).
+                        // Centre hub in its own layer (avoids being blurred/rasterised along with the matte).
                         GeometryReader { proxy in
                             let s = min(proxy.size.width, proxy.size.height)
                             let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
@@ -198,44 +198,45 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
                 scale: displayScale
             )
 
-            // The ProgressView is the host-driven tick source.
-            // A moving wedge mask reveals one of 60 pre-rotated hands (ticking seconds needle).
+            // Important:
+            // Avoid `.mask(...)` here. On Home Screen hosting paths the mask subtree can get cached,
+            // freezing the ProgressView(timerInterval:) at its initial state (tick stuck at 12).
             //
-            // IMPORTANT:
-            // Using `.mask(...)` here can cause WidgetKit to treat the ProgressView subtree as a static
-            // pre-render (symptom: seconds stuck at 12). Doing the masking via a compositing group +
-            // `blendMode(.destinationIn)` keeps the ProgressView “live”.
+            // Instead, cut the needle stack down to the wedge by subtracting an "outside matte":
+            // outside matte = solid fill minus wedge. Apply it with `.destinationOut` inside a
+            // compositing group so it only affects the needle layer.
             ZStack {
                 ZStack {
-                    ForEach(0..<60, id: \.self) { tick in
-                        let angle = Angle.degrees(Double(tick) * 6.0)
-                        WidgetWeaverClockSecondHandView(
-                            colour: palette.accent,
-                            width: secondWidth,
-                            length: secondLength,
-                            angle: angle,
-                            tipSide: secondTipSide,
-                            scale: displayScale
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ZStack {
+                        ForEach(0..<60, id: \.self) { tick in
+                            let angle = Angle.degrees(Double(tick) * 6.0)
+                            WidgetWeaverClockSecondHandView(
+                                colour: palette.accent,
+                                width: secondWidth,
+                                length: secondLength,
+                                angle: angle,
+                                tipSide: secondTipSide,
+                                scale: displayScale
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                }
-                .opacity(handsOpacity)
+                    .opacity(handsOpacity)
 
-                WWClockSecondHandWedgeMask(
-                    startOfMinute: startOfMinute,
-                    endOfMinute: endOfMinute,
-                    dialDiameter: outerDiameter,
-                    windowSeconds: 1.0
-                )
-                .blendMode(.destinationIn)
+                    WWClockSecondHandOutsideWedgeMatte(
+                        startOfMinute: startOfMinute,
+                        endOfMinute: endOfMinute,
+                        dialDiameter: outerDiameter,
+                        windowSeconds: 1.0
+                    )
+                    .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+                .frame(width: proxy.size.width, height: proxy.size.height)
+
+                WWClockSecondsHeartbeat(start: startOfMinute)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottomTrailing)
             }
-            .compositingGroup()
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .overlay(
-                WWClockSecondsHeartbeat(start: startOfMinute),
-                alignment: .bottomTrailing
-            )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -246,10 +247,6 @@ private struct WWClockSecondsHeartbeat: View {
     let start: Date
 
     var body: some View {
-        // Heartbeat:
-        // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
-        // This helps host-driven timerInterval ProgressViews keep animating even when used
-        // for compositing/blending tricks.
         Text(timerInterval: start...Date.distantFuture, countsDown: false)
             .font(.system(size: 1))
             .foregroundStyle(Color.primary.opacity(0.001))
@@ -257,6 +254,29 @@ private struct WWClockSecondsHeartbeat: View {
             .clipped()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockSecondHandOutsideWedgeMatte: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    var body: some View {
+        ZStack {
+            Color.white
+
+            WWClockSecondHandWedgeMask(
+                startOfMinute: startOfMinute,
+                endOfMinute: endOfMinute,
+                dialDiameter: dialDiameter,
+                windowSeconds: windowSeconds
+            )
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -269,9 +289,8 @@ private struct WWClockSecondHandWedgeMask: View {
     // Rendering the ProgressView very small then scaling up makes the stroke thick enough
     // that the resulting wedge reaches through the centre (useful as a mask).
     //
-    // The mask must expand its layout bounds to the dial size before compositing, otherwise
-    // the scaled ProgressView is clipped to its tiny (unscaled) layout box and the seconds
-    // hand layer is fully masked out.
+    // The view expands its layout bounds to the dial size before compositing, otherwise
+    // the scaled ProgressView is clipped to its tiny (unscaled) layout box.
     private let baseDiameter: CGFloat = 2.0
 
     var body: some View {
