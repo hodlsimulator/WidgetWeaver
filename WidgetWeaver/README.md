@@ -59,8 +59,8 @@ The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-sa
 
 - `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift` — builds a `RainForecastSurfaceConfiguration` tuned for the nowcast chart and renders `RainForecastSurfaceView`.
 - `Shared/RainForecastSurfaceView.swift` — `Canvas` wrapper that fills a pure black background, applies WidgetKit budget guardrails, then calls the renderer.
-- `Shared/RainForecastSurfaceRenderer.swift` — procedural core mound + speckled fuzz band (uncertainty); deterministic and budget-clamped.
-- `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for speckle placement.
+- `Shared/RainForecastSurfaceRenderer.swift` — procedural core mound + **asset-driven subtractive dissipation** (the body “evaporates” into grain on the slopes); deterministic and budget-clamped.
+- `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for stable jitter/offsets.
 
 **Not used for the Weather nowcast chart (legacy / experiments)**
 
@@ -72,16 +72,70 @@ The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-sa
 - `Shared/RainSurfaceMath.swift`
 - `Shared/RainSurfaceStyleHarness.swift`
 
+#### Technique (current): asset-driven subtractive dissipation
+
+We changed approach because “adding fuzz” kept reading like an outline/halo and was hard to push without triggering WidgetKit placeholders.
+
+The current technique is:
+
+- Draw the **core body** normally (a filled mound with a vertical gradient).
+- Then make the body **dissipate** by **subtracting opacity** near the contour:
+  - A wide, soft erosion band establishes the fade into the slope.
+  - A narrower erosion band is masked by a tiled speckle texture so the fade breaks into grain.
+- Optional: a very faint continuation outside the body (“outer dust”) can be used, but it is treated as a budget risk in widgets and may be disabled or heavily clamped.
+
+Key property:
+- This technique does **not** add a coloured fuzz layer. It primarily removes alpha from the body, so the surface looks like it is dissolving into black.
+- The goal is: **the body dissipates** (not a cyan halo, not a sharp outline).
+
+#### Noise assets (required for the new look)
+
+The dissipation grain comes from small tileable alpha textures derived from the mockup:
+
+- `RainFuzzNoise` (normal)
+- `RainFuzzNoise_Sparse`
+- `RainFuzzNoise_Dense`
+
+Important:
+- The widget extension is a separate bundle. These image sets must exist in the **widget extension’s** asset catalogue (and in the app’s if the app preview uses them).
+- If the assets do not load in the widget bundle, the erosion still happens but the “grain” component becomes subtle, and the chart can look very close to the previous commit.
+
 Notes:
 
-- `RainForecastSurfaceConfiguration` still contains several legacy knobs (for compatibility). The current renderer ignores any `fuzzErode*` settings.
-- If the chart appearance needs tuning, start with the config values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`, then adjust sampling/fuzz in `Shared/RainForecastSurfaceRenderer.swift`. Avoid editing the legacy `RainSurfaceDrawing*` files for this chart.
+- `RainForecastSurfaceConfiguration` still contains several legacy knobs (for compatibility). The renderer uses a subset of fuzz/dissipation knobs and ignores unrelated legacy settings.
+- If the chart appearance needs tuning, start with the config values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`, then adjust dissipation behaviour in `Shared/RainForecastSurfaceRenderer.swift`. Avoid editing the legacy `RainSurfaceDrawing*` files for this chart.
+
+#### Current status of visual fidelity (and what to expect)
+
+The current output is still not matching the mockup, and it can look “nearly unchanged” if the erosion is too conservative or if the noise assets are not being loaded by the widget bundle.
+
+Can this technique reach mockup fidelity?
+- **Yes, this is the correct foundation** for the mockup look, because the mockup’s slopes are primarily an **alpha structure** problem (solid → grain → nothing), not a “draw more fuzz” problem.
+- The remaining gap is mostly:
+  - tuning the erosion width/strength so the dissipation reaches into the slope (not just the edge), and
+  - ensuring the tile textures have the right character (fine grain, sparse, no seams) and are consistently loaded.
+
+What may remain constrained by WidgetKit budgets:
+- Very large “outer dust clouds” can be risky in widgets. The primary requirement is **body dissipation**, which is achievable with bounded erosion passes.
+
+#### Troubleshooting: “no visible difference” and “wrong colour”
+
+If the chart looks almost identical to the older path:
+
+- Confirm `RainFuzzNoise*` image sets exist in the **widget extension** asset catalogue (not just the app).
+- Ensure names match exactly (case-sensitive).
+- Ensure the tile textures are truly sparse (mostly transparent). If the tile is too opaque, the effect reads as a smooth fade instead of grain.
+- Increase erosion width/strength in the nowcast configuration. A narrow band reads like a softened outline, not dissipation.
+
+If you see cyan/halo-like colour:
+- That indicates an additive blend (for example “screen”) or a haze stroke that is too strong, or the dissipation colour being sourced incorrectly.
+- The intended look is a blue body that dissolves; the dissipation should not introduce a new hue.
 
 ### Regression A — WidgetKit placeholder (crash/budget blow) for rainy locations
 
 This is the most important pitfall for the nowcast chart.
 
-When the nowcast chart is “heavy” (lots of rain + lots of fuzz work), WidgetKit can decide the widget render exceeded its time/memory budget (or crashed) and it will fall back to a **placeholder snapshot**. That can appear as a skeleton-like widget or a generic placeholder look where the rain chart never appears correctly for rainy locations.
+When the nowcast chart is “heavy” (lots of rain + expensive rendering), WidgetKit can decide the widget render exceeded its time/memory budget (or crashed) and it will fall back to a **placeholder snapshot**. That can appear as a skeleton-like widget or a generic placeholder look where the rain chart never appears correctly for rainy locations.
 
 #### Symptoms
 
@@ -96,7 +150,7 @@ Avoid any rendering approach that can trigger expensive rasterisation or too man
 - Large offscreen bitmaps (for example, trying to render into big images for compositing)
 - Repeated big blurs (especially `GraphicsContext.Filter.blur` or large `shadow`/`blur` chains)
 - Per-pixel loops or CPU “image processing” in the widget render path
-- Unbounded work tied to area (for example `speckCount ∝ width * height`)
+- Unbounded work tied to area (for example work ∝ width * height)
 - Thousands of individual shape fills/strokes per frame (draw-call explosion)
 - Any accidental “budget scaling” that increases work when rain is heavier (worst-case input)
 
@@ -105,15 +159,15 @@ Avoid any rendering approach that can trigger expensive rasterisation or too man
 The nowcast renderer is designed to stay inside WidgetKit budgets by construction:
 
 - The silhouette is **O(n)** in samples.
-- The fuzz is **bounded O(m)** particles with hard clamps (budget never grows with area).
-- Speckles are drawn using **bucketed fills** (a handful of `Path` fills), not one fill per speckle.
-- Blur is avoided; any “coherence” is done via a cheap stroke haze (no blur), and only when enabled.
+- Dissipation is a **bounded number of passes** (small constant number of clipped fills).
+- Grain uses small **asset-backed tile textures**, not per-speckle procedural loops.
+- Blur is avoided; any “coherence” should be a cheap stroke haze (and is best kept off in widgets).
 - In WidgetKit placeholder/preview contexts, the chart should **degrade** by removing extras first:
   - disable gloss/glint
   - disable haze/blur
   - reduce dense samples
-  - reduce particle budget
-  - if needed: disable fuzz entirely (core-only render is better than placeholder)
+  - reduce dissipation passes / disable “outer dust”
+  - if needed: disable dissipation entirely (core-only render is better than placeholder)
 
 Implementation notes:
 
@@ -141,11 +195,11 @@ If the placeholder shows up during development, follow this order:
 3) **Reduce nowcast cost (stay inside the guardrails)**
 
 - Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
-  - `fuzzSpeckleBudget`
   - `maxDenseSamples`
-  - `fuzzHazeStrength` (ideally keep haze at 0 in widgets)
-  - `fuzzWidthFraction` / `fuzzWidthPixelsClamp`
-- Confirm the renderer still clamps budgets in `Shared/RainForecastSurfaceRenderer.swift`.
+  - dissipation width/strength (erosion band width, number of passes)
+  - disable “outer dust” in widgets
+  - keep any haze at 0 in widgets
+- Confirm the renderer stays bounded in `Shared/RainForecastSurfaceRenderer.swift`.
 
 4) **Last resort recovery**
 

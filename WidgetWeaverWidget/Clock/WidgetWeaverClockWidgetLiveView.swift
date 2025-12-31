@@ -200,6 +200,11 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
 
             // The ProgressView is the host-driven tick source.
             // A moving wedge mask reveals one of 60 pre-rotated hands (ticking seconds needle).
+            //
+            // IMPORTANT:
+            // Using `.mask(...)` here can cause WidgetKit to treat the ProgressView subtree as a static
+            // pre-render (symptom: seconds stuck at 12). Doing the masking via a compositing group +
+            // `blendMode(.destinationIn)` keeps the ProgressView “live”.
             ZStack {
                 ZStack {
                     ForEach(0..<60, id: \.self) { tick in
@@ -216,19 +221,42 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
                     }
                 }
                 .opacity(handsOpacity)
-                .mask(
-                    WWClockSecondHandWedgeMask(
-                        startOfMinute: startOfMinute,
-                        endOfMinute: endOfMinute,
-                        dialDiameter: outerDiameter,
-                        windowSeconds: 1.0
-                    )
+
+                WWClockSecondHandWedgeMask(
+                    startOfMinute: startOfMinute,
+                    endOfMinute: endOfMinute,
+                    dialDiameter: outerDiameter,
+                    windowSeconds: 1.0
                 )
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                .blendMode(.destinationIn)
             }
+            .compositingGroup()
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .overlay(
+                WWClockSecondsHeartbeat(start: startOfMinute),
+                alignment: .bottomTrailing
+            )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+}
+
+private struct WWClockSecondsHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        // Heartbeat:
+        // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
+        // This helps host-driven timerInterval ProgressViews keep animating even when used
+        // for compositing/blending tricks.
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
