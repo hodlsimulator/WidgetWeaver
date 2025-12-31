@@ -25,6 +25,8 @@ extension RainForecastSurfaceRenderer {
         heights: [CGFloat],
         certainties01: [CGFloat],
         bandHalfWidth: CGFloat,
+        gradientStartX: CGFloat,
+        gradientEndX: CGFloat,
         displayScale ds: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration
     ) {
@@ -34,59 +36,82 @@ extension RainForecastSurfaceRenderer {
 
         let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
 
+        let segmentMinX = min(gradientStartX, gradientEndX)
+        let segmentMaxX = max(gradientStartX, gradientEndX)
+        let segmentWidth = max(1.0, segmentMaxX - segmentMinX)
+
         let curvePath = buildCurveStrokePath(curvePoints: curvePoints)
 
+        let clipTop = rect.minY
+        let clipHeight = max(0.0, baselineY - clipTop)
+
+        let maxPad = rect.width * 0.22
+        let pad = min(maxPad, bandHalfWidth * CGFloat(max(2.0, cfg.fuzzTextureOuterBandMultiplier)))
+        let clipMinX = max(rect.minX, segmentMinX - pad)
+        let clipMaxX = min(rect.maxX, segmentMaxX + pad)
+
         let clipRect = CGRect(
-            x: rect.minX,
-            y: rect.minY,
-            width: rect.width,
-            height: max(0.0, baselineY - rect.minY)
+            x: clipMinX,
+            y: clipTop,
+            width: max(0.0, clipMaxX - clipMinX),
+            height: clipHeight
         )
 
-        var strength = computeFuzzStrengthPerPoint(
+        let baseStrength = computeFuzzStrengthPerPoint(
             heights: heights,
             certainties01: certainties01.map { Double($0) },
             configuration: cfg
         )
 
+        guard !baseStrength.isEmpty else { return }
+
+        var erosionStrength = baseStrength
+        var dustStrength = baseStrength
+
+        // Suppress effects far from any wet point (prevents baseline haze across long dry spans).
         let wetEps = max(0.5 / max(1.0, Double(ds)), 0.0001)
         let wetMask = heights.map { Double($0) > wetEps }
         let distToWet = distanceToNearestTrue(wetMask)
 
-        let samplesPerPx = Double(heights.count) / max(1.0, Double(rect.width))
+        let samplesPerPx = Double(heights.count) / max(1.0, Double(segmentWidth))
         let edgeWindowSamples = max(1, Int(round(cfg.fuzzEdgeWindowPx * samplesPerPx)))
 
-        if distToWet.count == strength.count {
-            for i in 0..<strength.count where distToWet[i] > edgeWindowSamples {
-                strength[i] = 0.0
+        if distToWet.count == erosionStrength.count {
+            for i in 0..<erosionStrength.count where distToWet[i] > edgeWindowSamples {
+                erosionStrength[i] = 0.0
+                dustStrength[i] = 0.0
             }
         }
 
+        // Boost near wet<->dry transitions for a more obvious tapered dissolve.
         let tailMinutes = max(0.0, cfg.fuzzTailMinutes)
         if tailMinutes > 0.01 {
-            let tailSamples = max(1, Int(round(tailMinutes / 60.0 * Double(strength.count))))
+            let tailSamples = max(1, Int(round(tailMinutes / 60.0 * Double(erosionStrength.count))))
             if tailSamples > 0 {
-                for i in 1..<strength.count {
+                for i in 1..<erosionStrength.count {
                     let prevWet = wetMask[i - 1]
                     let curWet = wetMask[i]
                     if prevWet != curWet {
                         let start = max(0, i - tailSamples)
-                        let end = min(strength.count - 1, i + tailSamples)
+                        let end = min(erosionStrength.count - 1, i + tailSamples)
                         for j in start...end {
                             let d = Double(abs(j - i))
                             let t = 1.0 - clamp01(d / Double(tailSamples))
-                            strength[j] *= (1.0 + 0.65 * pow(t, 1.25))
+                            let bump = (1.0 + 0.75 * pow(t, 1.20))
+                            erosionStrength[j] *= bump
+                            dustStrength[j] *= bump
                         }
                     }
                 }
             }
         }
 
+        // Height and slope shaping.
         let maxH = max(0.0001, Double(heights.max() ?? 0.0))
         let invMaxH = 1.0 / maxH
 
         var maxSlope: Double = 0.0
-        let dx = max(1e-6, Double(rect.width) / Double(max(1, heights.count - 1)))
+        let dx = max(1e-6, Double(segmentWidth) / Double(max(1, heights.count - 1)))
         var slopes = Array(repeating: 0.0, count: heights.count)
 
         for i in 0..<heights.count {
@@ -97,59 +122,68 @@ extension RainForecastSurfaceRenderer {
             maxSlope = max(maxSlope, s)
         }
 
-        for i in 0..<strength.count {
+        for i in 0..<erosionStrength.count {
             let hn = clamp01(Double(heights[i]) * invMaxH)
+
+            // Erosion: strongest low on the slope + where slope changes quickly.
             let low = pow(max(0.0, 1.0 - hn), max(0.05, cfg.fuzzLowHeightPower))
-            let heightFade = 0.12 + 0.88 * low
-            strength[i] *= heightFade
+            let erosionHeightFade = 0.10 + 0.90 * low
+            erosionStrength[i] *= erosionHeightFade
+
+            // Dust: prefer mid heights, and avoid lifting the baseline.
+            let mid = pow(max(0.0, hn * (1.0 - hn)), 0.38)
+            let dustHeightFade = pow(hn, 0.55) * (0.30 + 1.25 * mid)
+            dustStrength[i] *= dustHeightFade
 
             if maxSlope > 0.000001 {
                 let sn = clamp01(slopes[i] / maxSlope)
-                let slopeFactor = 0.22 + 0.78 * pow(sn, 0.65)
-                strength[i] *= slopeFactor
+                let slopeFactor = 0.20 + 0.80 * pow(sn, 0.70)
+                erosionStrength[i] *= slopeFactor
+                dustStrength[i] *= slopeFactor
             }
         }
 
-        let maxStrength = strength.max() ?? 0.0
-        guard maxStrength > 0.00001 else { return }
+        let maxErosion = erosionStrength.max() ?? 0.0
+        let maxDust = dustStrength.max() ?? 0.0
+        guard maxErosion > 0.00001 || maxDust > 0.00001 else { return }
 
         var maxAlpha = clamp01(cfg.fuzzMaxOpacity)
         maxAlpha *= max(0.0, cfg.fuzzSpeckStrength)
 
         let maxStopCap = isExtension ? 18 : 64
-        let stopCount = max(8, min(cfg.fuzzTextureGradientStops, maxStopCap))
+        let stopCount = max(10, min(cfg.fuzzTextureGradientStops, maxStopCap))
 
         let dissipationColor = cfg.coreBodyColor
 
-        let colourGradient = makeAlphaGradient(
+        let dustGradient = makeAlphaGradient(
             baseColor: dissipationColor,
-            strength: strength,
+            strength: dustStrength,
             maxAlpha: maxAlpha,
             stops: stopCount
         )
 
-        let maskGradient = makeAlphaGradient(
+        let erosionMaskGradient = makeAlphaGradient(
             baseColor: Color.white,
-            strength: strength,
+            strength: erosionStrength,
             maxAlpha: 1.0,
             stops: stopCount
         )
 
         let tilePx = max(32, min(cfg.fuzzTextureTilePixels, isExtension ? 256 : 512))
         let baseNoiseTileScale = fuzzNoiseTileScale(desiredTilePixels: tilePx)
-        let erodeNoiseTileScale = baseNoiseTileScale * 0.82
-        let dustNoiseTileScale = baseNoiseTileScale
+        let erodeNoiseTileScale = baseNoiseTileScale * 0.78
+        let dustNoiseTileScale = baseNoiseTileScale * 1.00
 
         let baseSeed = RainSurfacePRNG.combine(
             cfg.noiseSeed,
             UInt64(curvePoints.count &* 977) &+ 0xA5A5_A5A5_A5A5_A5A5
         )
 
-        // Sparse breakup is required for the mockup look.
+        // Sparse breakup is required for the mock-style dissipation.
         let dustNoise = fuzzNoiseImage(preferred: .sparse)
         let erodeNoise = fuzzNoiseImage(preferred: .sparse)
 
-        if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
+        if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001, maxErosion > 0.00001 {
             applyEdgeErosion(
                 in: &context,
                 rect: rect,
@@ -157,16 +191,18 @@ extension RainForecastSurfaceRenderer {
                 corePath: corePath,
                 curvePath: curvePath,
                 bandHalfWidth: bandHalfWidth,
-                maskGradient: maskGradient,
+                maskGradient: erosionMaskGradient,
                 noiseImage: erodeNoise,
                 noiseTileScale: erodeNoiseTileScale,
+                gradientStartX: segmentMinX,
+                gradientEndX: segmentMaxX,
                 configuration: cfg,
                 seed: RainSurfacePRNG.combine(baseSeed, 0xBEE1_BEE1_BEE1_BEE1)
             )
         }
 
         let allowOuterDust = cfg.fuzzOuterDustEnabled && (!isExtension || cfg.fuzzOuterDustEnabledInAppExtension)
-        if allowOuterDust {
+        if allowOuterDust, maxDust > 0.00001 {
             let passCount = isExtension ? cfg.fuzzOuterDustPassCountInAppExtension : cfg.fuzzOuterDustPassCount
             if passCount > 0 {
                 drawOuterDust(
@@ -176,18 +212,21 @@ extension RainForecastSurfaceRenderer {
                     corePath: corePath,
                     curvePath: curvePath,
                     bandHalfWidth: bandHalfWidth,
-                    colourGradient: colourGradient,
+                    colourGradient: dustGradient,
                     noiseImage: dustNoise,
                     noiseTileScale: dustNoiseTileScale,
                     passCount: passCount,
+                    gradientStartX: segmentMinX,
+                    gradientEndX: segmentMaxX,
                     configuration: cfg,
                     seed: RainSurfacePRNG.combine(baseSeed, 0xD005_700D_D005_700D)
                 )
             }
         }
 
-        if !isExtension, cfg.fuzzHazeStrength > 0.0001 {
-            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(maxStrength) * maxAlpha
+        // Cheap coherence haze (no blur). Keep disabled by default in the template config.
+        if !isExtension, cfg.fuzzHazeStrength > 0.0001, maxDust > 0.00001 {
+            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(maxDust) * maxAlpha
             if hazeAlpha > 0.00001 {
                 context.blendMode = .normal
                 context.stroke(
@@ -210,16 +249,22 @@ extension RainForecastSurfaceRenderer {
         maskGradient: Gradient,
         noiseImage: SwiftUI.Image?,
         noiseTileScale: CGFloat,
+        gradientStartX: CGFloat,
+        gradientEndX: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration,
         seed: UInt64
     ) {
-        let strength = clamp01(cfg.fuzzErodeStrength)
-        guard strength > 0.0001 else { return }
+        let erodeStrength = clamp01(cfg.fuzzErodeStrength)
+        guard erodeStrength > 0.0001 else { return }
 
         let narrowMul = max(0.10, cfg.fuzzErodeStrokeWidthFactor)
-        let wideMul = max(narrowMul * 4.50, narrowMul + 2.00)
+        let midMul = max(narrowMul * 1.95, narrowMul + 0.85)
+        let wideMul = max(midMul * 2.00, midMul + 1.60)
 
-        // Wide smooth subtraction establishes the slope fade.
+        let startPt = CGPoint(x: gradientStartX, y: rect.midY)
+        let endPt = CGPoint(x: gradientEndX, y: rect.midY)
+
+        // Wide smooth subtraction establishes the main fade zone.
         context.blendMode = .destinationOut
         context.drawLayer { layer in
             layer.clip(to: Path(clipRect))
@@ -228,58 +273,93 @@ extension RainForecastSurfaceRenderer {
             let wideStroke = curvePath.strokedPath(
                 StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wideMul), lineCap: .round, lineJoin: .round)
             )
-            let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.55 * strength)
+
+            let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.72 * erodeStrength)
 
             layer.fill(
                 wideStroke,
                 with: .linearGradient(
                     wideGrad,
-                    startPoint: CGPoint(x: rect.minX, y: rect.midY),
-                    endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+                    startPoint: startPt,
+                    endPoint: endPt
                 )
             )
         }
         context.blendMode = .normal
 
-        // Narrow grain subtraction breaks the fade into speckles.
-        context.blendMode = .destinationOut
-        context.drawLayer { layer in
-            layer.clip(to: Path(clipRect))
-            layer.clip(to: corePath)
+        guard let noiseImage else { return }
 
-            let narrowStroke = curvePath.strokedPath(
-                StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(narrowMul), lineCap: .round, lineJoin: .round)
-            )
-            let narrowGrad = scaledGradient(maskGradient, alphaMultiplier: 1.25 * strength)
+        let grainPasses = WidgetWeaverRuntime.isRunningInAppExtension ? 1 : 2
 
-            layer.fill(
-                narrowStroke,
-                with: .linearGradient(
-                    narrowGrad,
-                    startPoint: CGPoint(x: rect.minX, y: rect.midY),
-                    endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+        func grainPass(
+            widthMul: Double,
+            alphaMul: Double,
+            tileMul: Double,
+            jitter: Double,
+            seedMix: UInt64
+        ) {
+            context.blendMode = .destinationOut
+            context.drawLayer { layer in
+                layer.clip(to: Path(clipRect))
+                layer.clip(to: corePath)
+
+                let stroke = curvePath.strokedPath(
+                    StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(widthMul), lineCap: .round, lineJoin: .round)
                 )
-            )
 
-            if let noiseImage {
-                var prng = RainSurfacePRNG(seed: seed)
-                let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.95
-                let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.95
+                let grad = scaledGradient(maskGradient, alphaMultiplier: alphaMul * erodeStrength)
+
+                layer.fill(
+                    stroke,
+                    with: .linearGradient(
+                        grad,
+                        startPoint: startPt,
+                        endPoint: endPt
+                    )
+                )
+
+                var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(seed, seedMix))
+                let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * CGFloat(jitter)
+                let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * CGFloat(jitter)
 
                 let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
                 let shading = GraphicsContext.Shading.tiledImage(
                     noiseImage,
                     origin: origin,
                     sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-                    scale: noiseTileScale
+                    scale: noiseTileScale * CGFloat(tileMul)
                 )
 
                 layer.blendMode = .destinationIn
-                layer.fill(Path(rect), with: shading)
+                layer.fill(Path(clipRect), with: shading)
                 layer.blendMode = .normal
             }
+            context.blendMode = .normal
         }
-        context.blendMode = .normal
+
+        // Coarse grain (bites into the slope).
+        grainPass(
+            widthMul: Double(midMul),
+            alphaMul: 1.05,
+            tileMul: 1.05,
+            jitter: 0.95,
+            seedMix: 0x1111_2222_3333_4444
+        )
+
+        // Fine grain (breaks the edge into speckles). Multiple passes reduce tiling artefacts.
+        for i in 0..<grainPasses {
+            let t = Double(i) / Double(max(1, grainPasses - 1))
+            let a = lerp(1.35, 0.85, t)
+            let tile = lerp(0.78, 0.58, t)
+            let jit = lerp(0.95, 0.70, t)
+            grainPass(
+                widthMul: Double(narrowMul),
+                alphaMul: a,
+                tileMul: tile,
+                jitter: jit,
+                seedMix: 0xAAAA_BBBB_CCCC_DDDD &+ UInt64(i &* 977)
+            )
+        }
     }
 
     static func drawOuterDust(
@@ -293,17 +373,24 @@ extension RainForecastSurfaceRenderer {
         noiseImage: SwiftUI.Image?,
         noiseTileScale: CGFloat,
         passCount: Int,
+        gradientStartX: CGFloat,
+        gradientEndX: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration,
         seed: UInt64
     ) {
         let passes = max(0, min(passCount, 4))
         guard passes > 0 else { return }
 
+        let layerCount = WidgetWeaverRuntime.isRunningInAppExtension ? 1 : 2
+
         let innerW = max(0.10, cfg.fuzzTextureInnerBandMultiplier)
         let outerW = max(innerW, cfg.fuzzTextureOuterBandMultiplier)
 
         let innerA = max(0.0, cfg.fuzzTextureInnerOpacityMultiplier)
         let outerA = max(0.0, cfg.fuzzTextureOuterOpacityMultiplier)
+
+        let startPt = CGPoint(x: gradientStartX, y: rect.midY)
+        let endPt = CGPoint(x: gradientEndX, y: rect.midY)
 
         let ts: [Double] = {
             switch passes {
@@ -314,54 +401,57 @@ extension RainForecastSurfaceRenderer {
             }
         }()
 
-        context.blendMode = .normal
-        context.drawLayer { layer in
-            layer.clip(to: Path(clipRect))
+        for layerIndex in 0..<layerCount {
+            context.blendMode = .normal
+            context.drawLayer { layer in
+                layer.clip(to: Path(clipRect))
 
-            for t in ts {
-                let wMul = lerp(innerW, outerW, t)
-                let aMul = lerp(innerA, outerA, t)
-                if aMul <= 0.00001 { continue }
+                for t in ts {
+                    let wMul = lerp(innerW, outerW, t)
+                    let aMul = lerp(innerA, outerA, t)
+                    if aMul <= 0.00001 { continue }
 
-                let stroke = curvePath.strokedPath(
-                    StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wMul), lineCap: .round, lineJoin: .round)
-                )
-
-                let g = scaledGradient(colourGradient, alphaMultiplier: aMul)
-
-                layer.fill(
-                    stroke,
-                    with: .linearGradient(
-                        g,
-                        startPoint: CGPoint(x: rect.minX, y: rect.midY),
-                        endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+                    let stroke = curvePath.strokedPath(
+                        StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wMul), lineCap: .round, lineJoin: .round)
                     )
-                )
-            }
 
-            if let noiseImage {
-                var prng = RainSurfacePRNG(seed: seed)
-                let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65
-                let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65 + bandHalfWidth * 0.20
+                    let g = scaledGradient(colourGradient, alphaMultiplier: aMul)
 
-                let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
-                let shading = GraphicsContext.Shading.tiledImage(
-                    noiseImage,
-                    origin: origin,
-                    sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-                    scale: noiseTileScale
-                )
+                    layer.fill(
+                        stroke,
+                        with: .linearGradient(
+                            g,
+                            startPoint: startPt,
+                            endPoint: endPt
+                        )
+                    )
+                }
 
-                layer.blendMode = .destinationIn
-                layer.fill(Path(rect), with: shading)
+                if let noiseImage {
+                    var prng = RainSurfacePRNG(seed: RainSurfacePRNG.combine(seed, UInt64(layerIndex &* 911)))
+                    let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.80
+                    let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.80 + bandHalfWidth * 0.20
+
+                    let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
+                    let shading = GraphicsContext.Shading.tiledImage(
+                        noiseImage,
+                        origin: origin,
+                        sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+                        scale: noiseTileScale
+                    )
+
+                    layer.blendMode = .destinationIn
+                    layer.fill(Path(clipRect), with: shading)
+                    layer.blendMode = .normal
+                }
+
+                // Remove dust inside the body.
+                layer.blendMode = .destinationOut
+                layer.fill(corePath, with: .color(Color.white))
                 layer.blendMode = .normal
             }
-
-            layer.blendMode = .destinationOut
-            layer.fill(corePath, with: .color(Color.white))
-            layer.blendMode = .normal
+            context.blendMode = .normal
         }
-        context.blendMode = .normal
     }
 }
 

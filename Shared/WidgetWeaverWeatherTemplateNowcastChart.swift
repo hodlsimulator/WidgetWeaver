@@ -47,6 +47,11 @@ struct WeatherNowcastChart: View {
         cfg.robustMaxPercentile = 0.92
         cfg.intensityGamma = 0.62
 
+        // Avoid artificially tapering real “rain at now / rain at 60m” cases.
+        // Taper comes from segment rendering + midpoint sampling instead.
+        cfg.edgeEasingFraction = 0.0
+        cfg.edgeEasingPower = 1.0
+
         // Core colours (no cyan; deep blue only).
         cfg.coreBodyColor = Color(red: 0.02, green: 0.08, blue: 0.55).opacity(0.92)
         cfg.coreTopColor = Color(red: 0.04, green: 0.12, blue: 0.78).opacity(0.95)
@@ -64,16 +69,16 @@ struct WeatherNowcastChart: View {
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
 
-        // Fuzz (new subtractive approach).
+        // Fuzz (subtractive + dust).
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
 
         cfg.fuzzColor = cfg.coreBodyColor
-        cfg.fuzzMaxOpacity = 0.74
+        cfg.fuzzMaxOpacity = 0.82
 
-        // Base band is smaller; outer dust pass expands it.
-        cfg.fuzzWidthFraction = 0.15
-        cfg.fuzzWidthPixelsClamp = 10.0...80.0
+        // Wider base band improves the “solid → grain → nothing” transition.
+        cfg.fuzzWidthFraction = 0.18
+        cfg.fuzzWidthPixelsClamp = 12.0...88.0
 
         // Keep silhouette sampling reasonable in extensions.
         cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 560 : 820
@@ -86,10 +91,10 @@ struct WeatherNowcastChart: View {
         cfg.fuzzChanceMinStrength = 0.06
 
         // Tail bloom + low-height emphasis.
-        cfg.fuzzTailMinutes = 9.0
+        cfg.fuzzTailMinutes = 11.0
         cfg.fuzzLowHeightPower = 1.35
         cfg.fuzzLowHeightBoost = 2.10
-        cfg.fuzzEdgeWindowPx = 30.0
+        cfg.fuzzEdgeWindowPx = 28.0
 
         // Texture (bounded draw calls).
         cfg.fuzzTextureEnabled = true
@@ -97,10 +102,10 @@ struct WeatherNowcastChart: View {
         cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
         // Inner -> outer dust expansion.
-        cfg.fuzzTextureInnerBandMultiplier = 1.25
-        cfg.fuzzTextureOuterBandMultiplier = 6.20
-        cfg.fuzzTextureInnerOpacityMultiplier = 0.90
-        cfg.fuzzTextureOuterOpacityMultiplier = 0.35
+        cfg.fuzzTextureInnerBandMultiplier = 1.30
+        cfg.fuzzTextureOuterBandMultiplier = 7.60
+        cfg.fuzzTextureInnerOpacityMultiplier = 0.95
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.45
 
         cfg.fuzzOuterDustEnabled = true
         cfg.fuzzOuterDustEnabledInAppExtension = true
@@ -109,8 +114,8 @@ struct WeatherNowcastChart: View {
 
         // Subtractive erosion.
         cfg.fuzzErodeEnabled = true
-        cfg.fuzzErodeStrength = 1.05
-        cfg.fuzzErodeStrokeWidthFactor = 0.85
+        cfg.fuzzErodeStrength = 1.25
+        cfg.fuzzErodeStrokeWidthFactor = 0.95
 
         // Cheap coherence haze (no blur).
         cfg.fuzzHazeStrength = 0.0
