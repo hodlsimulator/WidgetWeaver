@@ -169,7 +169,6 @@
 		E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Clock/Untitled.swift,
 				Info.plist,
 			);
 			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
