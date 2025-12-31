@@ -47,19 +47,19 @@ struct WeatherNowcastChart: View {
         cfg.robustMaxPercentile = 0.92
         cfg.intensityGamma = 0.62
 
-        // Core colours.
-        cfg.coreBodyColor = Color(red: 0.02, green: 0.22, blue: 0.86).opacity(0.84)
-        cfg.coreTopColor = Color(red: 0.46, green: 0.90, blue: 1.00).opacity(0.98)
-        cfg.coreTopMix = 0.64
-        cfg.coreFadeFraction = 0.10
+        // Core colours (no cyan; deep blue only).
+        cfg.coreBodyColor = Color(red: 0.02, green: 0.08, blue: 0.55).opacity(0.92)
+        cfg.coreTopColor = Color(red: 0.04, green: 0.12, blue: 0.78).opacity(0.95)
+        cfg.coreTopMix = 0.38
+        cfg.coreFadeFraction = 0.00
 
         // Rim (off for the mock look — erosion replaces the outline).
         cfg.rimEnabled = false
 
         // Baseline.
         cfg.baselineEnabled = true
-        cfg.baselineColor = Color(red: 0.76, green: 0.92, blue: 1.00)
-        cfg.baselineLineOpacity = 0.10
+        cfg.baselineColor = Color(red: 0.20, green: 0.32, blue: 0.90)
+        cfg.baselineLineOpacity = 0.11
         cfg.baselineWidthPixels = 1.0
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
@@ -68,15 +68,15 @@ struct WeatherNowcastChart: View {
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
 
-        cfg.fuzzColor = Color(red: 0.52, green: 0.93, blue: 1.00)
-        cfg.fuzzMaxOpacity = 0.62
+        cfg.fuzzColor = cfg.coreBodyColor
+        cfg.fuzzMaxOpacity = 0.74
 
         // Base band is smaller; outer dust pass expands it.
-        cfg.fuzzWidthFraction = 0.12
-        cfg.fuzzWidthPixelsClamp = 8.0...60.0
+        cfg.fuzzWidthFraction = 0.15
+        cfg.fuzzWidthPixelsClamp = 10.0...80.0
 
         // Keep silhouette sampling reasonable in extensions.
-        cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 520 : 780
+        cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 560 : 820
 
         // Uncertainty mapping.
         cfg.fuzzChanceThreshold = 0.78
@@ -86,29 +86,34 @@ struct WeatherNowcastChart: View {
         cfg.fuzzChanceMinStrength = 0.06
 
         // Tail bloom + low-height emphasis.
-        cfg.fuzzTailMinutes = 8.0
-        cfg.fuzzLowHeightPower = 1.05
-        cfg.fuzzLowHeightBoost = 1.10
-        cfg.fuzzEdgeWindowPx = 24.0
+        cfg.fuzzTailMinutes = 9.0
+        cfg.fuzzLowHeightPower = 1.35
+        cfg.fuzzLowHeightBoost = 2.10
+        cfg.fuzzEdgeWindowPx = 30.0
 
         // Texture (bounded draw calls).
         cfg.fuzzTextureEnabled = true
-        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 320
-        cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 26 : 34
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 192 : 224
+        cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
         // Inner -> outer dust expansion.
-        cfg.fuzzTextureInnerBandMultiplier = 1.15
-        cfg.fuzzTextureOuterBandMultiplier = 5.40
-        cfg.fuzzTextureInnerOpacityMultiplier = 0.62
-        cfg.fuzzTextureOuterOpacityMultiplier = 0.18
+        cfg.fuzzTextureInnerBandMultiplier = 1.25
+        cfg.fuzzTextureOuterBandMultiplier = 6.20
+        cfg.fuzzTextureInnerOpacityMultiplier = 0.90
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.35
+
+        cfg.fuzzOuterDustEnabled = true
+        cfg.fuzzOuterDustEnabledInAppExtension = true
+        cfg.fuzzOuterDustPassCount = 3
+        cfg.fuzzOuterDustPassCountInAppExtension = 2
 
         // Subtractive erosion.
         cfg.fuzzErodeEnabled = true
-        cfg.fuzzErodeStrength = 0.95
-        cfg.fuzzErodeStrokeWidthFactor = 0.68
+        cfg.fuzzErodeStrength = 1.05
+        cfg.fuzzErodeStrokeWidthFactor = 0.85
 
         // Cheap coherence haze (no blur).
-        cfg.fuzzHazeStrength = 0.06
+        cfg.fuzzHazeStrength = 0.0
         cfg.fuzzHazeBlurFractionOfBand = 0.0
         cfg.fuzzHazeStrokeWidthFactor = 0.95
 

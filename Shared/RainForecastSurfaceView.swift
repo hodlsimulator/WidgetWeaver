@@ -153,6 +153,12 @@ struct RainForecastSurfaceConfiguration {
     var fuzzTextureInnerOpacityMultiplier: Double = 0.85
     var fuzzTextureOuterOpacityMultiplier: Double = 0.45
 
+    // Outer dust (outside the core body)
+    var fuzzOuterDustEnabled: Bool = true
+    var fuzzOuterDustEnabledInAppExtension: Bool = false
+    var fuzzOuterDustPassCount: Int = 3
+    var fuzzOuterDustPassCountInAppExtension: Int = 2
+
     // Legacy knobs (kept for compatibility with existing code; renderer ignores these for now)
     var fuzzErodeEnabled: Bool = true
     var fuzzErodeStrength: Double = 1.05
@@ -234,6 +240,9 @@ private extension RainForecastSurfaceConfiguration {
         fuzzTextureOuterBandMultiplier = max(0.1, min(fuzzTextureOuterBandMultiplier, 8.0))
         fuzzTextureInnerOpacityMultiplier = max(0.0, min(fuzzTextureInnerOpacityMultiplier, 2.0))
         fuzzTextureOuterOpacityMultiplier = max(0.0, min(fuzzTextureOuterOpacityMultiplier, 2.0))
+
+        fuzzOuterDustPassCount = max(0, min(fuzzOuterDustPassCount, 4))
+        fuzzOuterDustPassCountInAppExtension = max(0, min(fuzzOuterDustPassCountInAppExtension, 4))
 
         // WidgetKit placeholder / preview rendering is very budget constrained.
         // Degrade visuals by removing extras first.
