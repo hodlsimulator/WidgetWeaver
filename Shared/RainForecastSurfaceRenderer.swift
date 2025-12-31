@@ -148,8 +148,6 @@ struct RainForecastSurfaceRenderer {
                     heights: seg.heights,
                     certainties01: seg.certainties01,
                     bandHalfWidth: bandHalfWidth,
-                    gradientStartX: seg.gradientStartX,
-                    gradientEndX: seg.gradientEndX,
                     displayScale: ds,
                     configuration: cfg
                 )
