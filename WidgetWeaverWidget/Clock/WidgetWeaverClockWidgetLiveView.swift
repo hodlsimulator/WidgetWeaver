@@ -8,9 +8,6 @@
 import Foundation
 import SwiftUI
 import WidgetKit
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
@@ -19,110 +16,89 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickSeconds: TimeInterval
 
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let isPlaceholder = redactionReasons.contains(.placeholder)
         let isPrivacy = redactionReasons.contains(.privacy)
-
         let isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 
-        let isReduceMotion: Bool = {
-            #if canImport(UIKit)
-            return UIAccessibility.isReduceMotionEnabled
-            #else
-            return false
-            #endif
-        }()
+        let wantsSeconds = (tickMode == .secondsSweep)
 
-        let secondsEnabled =
-            (tickMode == .secondsSweep)
+        // Prefer the CoreAnimation-based live clock only when motion is allowed.
+        let liveEnabled =
+            wantsSeconds
             && !isPlaceholder
             && !isPrivacy
             && !isLowPowerMode
-            && !isReduceMotion
+            && !reduceMotion
 
-        let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
-        let interval = Self.updateInterval(tickMode: tickMode, tickSeconds: tickSeconds)
+        if liveEnabled {
+            // Fully live (seconds + minute movement) without relying on WidgetKit timeline cadence.
+            WidgetWeaverClockLiveView(palette: palette, startDate: entryDate)
+                .privacySensitive(isPrivacy)
+                .widgetURL(URL(string: "widgetweaver://clock"))
+        } else {
+            // Budget-safe static render (updates only when WidgetKit advances the timeline).
+            WidgetWeaverRenderClock.withNow(entryDate) {
+                let effective = WWClockTime.minuteAnchor(entryDate: entryDate)
+                let angles = WWClockBaseAngles(date: effective)
+                let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
 
-        TimelineView(.periodic(from: entryDate, by: interval)) { context in
-            WidgetWeaverRenderClock.withNow(context.date) {
-                let angles = WWClockMonotonicAngles(date: context.date)
-
-                ZStack(alignment: .bottomTrailing) {
-                    WidgetWeaverClockIconView(
-                        palette: palette,
-                        hourAngle: .degrees(angles.hour),
-                        minuteAngle: .degrees(angles.minute),
-                        secondAngle: .degrees(angles.second),
-                        showsSecondHand: secondsEnabled,
-                        showsHandShadows: true,
-                        showsGlows: true,
-                        showsCentreHub: true,
-                        handsOpacity: handsOpacity
-                    )
-                    .privacySensitive(isPrivacy)
-                    .widgetURL(URL(string: "widgetweaver://clock"))
-                    .animation(secondsEnabled ? .linear(duration: interval) : nil, value: angles.second)
-
-                    // Time-based Text keeps the widget host in a live rendering mode on some Home Screen paths.
-                    WWClockWidgetHeartbeat(start: Date())
-                }
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: .degrees(angles.hour),
+                    minuteAngle: .degrees(angles.minute),
+                    secondAngle: .degrees(0),
+                    showsSecondHand: false,
+                    showsHandShadows: true,
+                    showsGlows: true,
+                    showsCentreHub: true,
+                    handsOpacity: handsOpacity
+                )
+                .privacySensitive(isPrivacy)
+                .widgetURL(URL(string: "widgetweaver://clock"))
             }
         }
     }
+}
 
-    private static func updateInterval(
-        tickMode: WidgetWeaverClockTickMode,
-        tickSeconds: TimeInterval
-    ) -> TimeInterval {
-        switch tickMode {
-        case .minuteOnly:
-            return 60.0
-        case .secondsSweep:
-            let clamped = max(1.0, min(60.0, tickSeconds))
-            return clamped
-        }
+// MARK: - Helpers
+
+private enum WWClockTime {
+    static func minuteAnchor(entryDate: Date) -> Date {
+        let systemNow = Date()
+
+        // WidgetKit can pre-render ahead of time; if that happens, use a sane “now”.
+        if entryDate > systemNow { return floorToMinute(systemNow) }
+
+        // If the entry is stale, snap to the current minute.
+        if systemNow.timeIntervalSince(entryDate) > 90.0 { return floorToMinute(systemNow) }
+
+        // Otherwise use the entry date (minute-aligned in the timeline).
+        return floorToMinute(entryDate)
+    }
+
+    static func floorToMinute(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
 
-private struct WWClockWidgetHeartbeat: View {
-    let start: Date
-
-    var body: some View {
-        Text(timerInterval: start...Date.distantFuture, countsDown: false)
-            .font(.system(size: 1))
-            .foregroundStyle(Color.primary.opacity(0.001))
-            .frame(width: 1, height: 1)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Angles
-
-private struct WWClockMonotonicAngles {
+private struct WWClockBaseAngles {
     let hour: Double
     let minute: Double
-    let second: Double
 
     init(date: Date) {
-        // Local “wall-clock seconds” (epoch + GMT offset) preserves DST jumps correctly.
-        let tz = TimeZone.autoupdatingCurrent
-        let local = date.timeIntervalSince1970 + TimeInterval(tz.secondsFromGMT(for: date))
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.hour, .minute], from: date)
 
-        // Keep magnitudes small so SwiftUI transform quantisation does not erase per-second deltas.
-        // A 7-day cycle avoids daily wrap and stays comfortably within float precision.
-        let secondsPerCycle: Double = 86_400.0 * 7.0
-        let t = Self.positiveRemainder(local, secondsPerCycle)
+        let hour24 = Double(comps.hour ?? 0)
+        let minuteInt = Double(comps.minute ?? 0)
+        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        self.second = t * 6.0
-        self.minute = t * (360.0 / 3_600.0)
-        self.hour = t * (360.0 / 43_200.0)
-    }
-
-    private static func positiveRemainder(_ value: Double, _ modulus: Double) -> Double {
-        let r = value.truncatingRemainder(dividingBy: modulus)
-        return (r >= 0) ? r : (r + modulus)
+        self.minute = minuteInt * 6.0
+        self.hour = (hour12 + (minuteInt / 60.0)) * 30.0
     }
 }
