@@ -53,15 +53,18 @@ enum WidgetWeaverClockTickMode: Int {
 
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
-    let minuteAnchor: Date
     let tickMode: WidgetWeaverClockTickMode
+    let tickSeconds: TimeInterval
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
 private enum WWClockTimelineConfig {
     /// Keep comfortably under the “too many entries” danger zone.
-    /// 120 entries = 2 hours of minute boundaries.
     static let maxEntriesPerTimeline: Int = 120
+
+    /// Budget-safe second-hand movement: a short tick interval + linear interpolation.
+    /// 10s * 120 entries = 20 minutes of coverage per timeline.
+    static let secondsTickSeconds: TimeInterval = 10.0
 
     static let defaultTickMode: WidgetWeaverClockTickMode = .secondsSweep
 }
@@ -72,12 +75,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let minuteAnchor = Self.floorToMinute(now)
-
         return Entry(
-            date: minuteAnchor,
-            minuteAnchor: minuteAnchor,
+            date: now,
             tickMode: .secondsSweep,
+            tickSeconds: WWClockTimelineConfig.secondsTickSeconds,
             colourScheme: .classic
         )
     }
@@ -85,13 +86,15 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
-        let minuteAnchor = Self.floorToMinute(now)
         let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
+        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : WWClockTimelineConfig.defaultTickMode
+        let tickSeconds: TimeInterval = (tickMode == .secondsSweep) ? WWClockTimelineConfig.secondsTickSeconds : 60.0
+
         return Entry(
-            date: minuteAnchor,
-            minuteAnchor: minuteAnchor,
-            tickMode: isLowPower ? .minuteOnly : WWClockTimelineConfig.defaultTickMode,
+            date: now,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
             colourScheme: scheme
         )
     }
@@ -109,7 +112,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         // Low Power Mode forces minute-only.
         if isLowPower { return makeMinuteTimeline(now: now, colourScheme: scheme) }
 
-        // Shipping path: still minute-boundary entries, but the view attempts seconds sweep.
+        // Shipping path: short tick entries + linear sweep between entries.
         return makeSecondsSweepTimeline(now: now, colourScheme: scheme)
     }
 
@@ -121,13 +124,11 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Use minute boundary dates for entries so WidgetKit’s “current entry” switches are clean.
-        // Minute hand steps once per minute.
         entries.append(
             Entry(
                 date: minuteAnchorNow,
-                minuteAnchor: minuteAnchorNow,
                 tickMode: .minuteOnly,
+                tickSeconds: 60.0,
                 colourScheme: colourScheme
             )
         )
@@ -137,8 +138,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             entries.append(
                 Entry(
                     date: next,
-                    minuteAnchor: next,
                     tickMode: .minuteOnly,
+                    tickSeconds: 60.0,
                     colourScheme: colourScheme
                 )
             )
@@ -149,32 +150,32 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 
     private func makeSecondsSweepTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
-        let minuteAnchorNow = Self.floorToMinute(now)
+        let tick = WWClockTimelineConfig.secondsTickSeconds
+        let start = Self.floorToSecond(now)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Same minute-boundary behaviour, but the view attempts a seconds sweep animation.
         entries.append(
             Entry(
-                date: minuteAnchorNow,
-                minuteAnchor: minuteAnchorNow,
+                date: start,
                 tickMode: .secondsSweep,
+                tickSeconds: tick,
                 colourScheme: colourScheme
             )
         )
 
-        var next = minuteAnchorNow.addingTimeInterval(60.0)
+        var next = start.addingTimeInterval(tick)
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
                     date: next,
-                    minuteAnchor: next,
                     tickMode: .secondsSweep,
+                    tickSeconds: tick,
                     colourScheme: colourScheme
                 )
             )
-            next = next.addingTimeInterval(60.0)
+            next = next.addingTimeInterval(tick)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -185,6 +186,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     private static func floorToMinute(_ date: Date) -> Date {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static func floorToSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t)
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
@@ -247,8 +254,8 @@ private struct WidgetWeaverHomeScreenClockView: View {
         WidgetWeaverClockWidgetLiveView(
             palette: palette,
             entryDate: entry.date,
-            minuteAnchor: entry.minuteAnchor,
-            tickMode: entry.tickMode
+            tickMode: entry.tickMode,
+            tickSeconds: entry.tickSeconds
         )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
