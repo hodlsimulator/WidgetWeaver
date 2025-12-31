@@ -260,7 +260,7 @@ private extension RainForecastSurfaceRenderer {
     }
 }
 
-// MARK: - Dissipation fuzz (subtractive erosion + outer dust)
+// MARK: - Dissipation fuzz (subtractive erosion + optional outer dust)
 
 private extension RainForecastSurfaceRenderer {
     static func drawDissipationFuzz(
@@ -278,6 +278,8 @@ private extension RainForecastSurfaceRenderer {
         guard cfg.fuzzMaxOpacity > 0.0001 else { return }
         guard curvePoints.count == heights.count, heights.count == certainties01.count else { return }
         guard heights.count >= 3 else { return }
+
+        let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
 
         let curvePath = buildCurveStrokePath(curvePoints: curvePoints)
 
@@ -361,10 +363,14 @@ private extension RainForecastSurfaceRenderer {
         var maxAlpha = clamp01(cfg.fuzzMaxOpacity)
         maxAlpha *= max(0.0, cfg.fuzzSpeckStrength)
 
-        let stopCount = max(8, min(cfg.fuzzTextureGradientStops, 64))
+        let maxStopCap = isExtension ? 18 : 64
+        let stopCount = max(8, min(cfg.fuzzTextureGradientStops, maxStopCap))
+
+        // Important: no cyan. Use core colours so the body appears to dissolve into itself.
+        let dissipationColor = cfg.coreBodyColor
 
         let colourGradient = makeAlphaGradient(
-            baseColor: cfg.fuzzColor,
+            baseColor: dissipationColor,
             strength: strength,
             maxAlpha: maxAlpha,
             stops: stopCount
@@ -377,24 +383,17 @@ private extension RainForecastSurfaceRenderer {
             stops: stopCount
         )
 
-        let tilePx = max(32, min(cfg.fuzzTextureTilePixels, 512))
+        let tilePx = max(32, min(cfg.fuzzTextureTilePixels, isExtension ? 256 : 512))
+        let noiseTileScale = fuzzNoiseTileScale(desiredTilePixels: tilePx)
 
         let baseSeed = RainSurfacePRNG.combine(
             cfg.noiseSeed,
             UInt64(curvePoints.count &* 977) &+ 0xA5A5_A5A5_A5A5_A5A5
         )
 
-        let dustNoise = FuzzNoiseCache.shared.image(
-            pixels: tilePx,
-            seed: RainSurfacePRNG.combine(baseSeed, 0xD157_D157_0000_0001),
-            cut: 0.54
-        )
-
-        let erodeNoise = FuzzNoiseCache.shared.image(
-            pixels: tilePx,
-            seed: RainSurfacePRNG.combine(baseSeed, 0xE20D_E20D_0000_0002),
-            cut: 0.38
-        )
+        // Asset-backed noise (sparse + dense variants). Procedural noise removed to keep widget renders cheap.
+        let dustNoise = fuzzNoiseImage(preferred: .sparse)
+        let erodeNoise = fuzzNoiseImage(preferred: .dense)
 
         if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
             applyEdgeErosion(
@@ -406,34 +405,39 @@ private extension RainForecastSurfaceRenderer {
                 bandHalfWidth: bandHalfWidth,
                 maskGradient: maskGradient,
                 noiseImage: erodeNoise,
+                noiseTileScale: noiseTileScale,
                 configuration: cfg,
                 seed: RainSurfacePRNG.combine(baseSeed, 0xBEE1_BEE1_BEE1_BEE1)
             )
         }
 
-        drawOuterDust(
-            in: &context,
-            rect: rect,
-            clipRect: clipRect,
-            corePath: corePath,
-            curvePath: curvePath,
-            bandHalfWidth: bandHalfWidth,
-            colourGradient: colourGradient,
-            noiseImage: dustNoise,
-            configuration: cfg,
-            seed: RainSurfacePRNG.combine(baseSeed, 0xD005_700D_D005_700D)
-        )
+        // In the widget extension, keep to erosion only to avoid the system placeholder.
+        if !isExtension {
+            drawOuterDust(
+                in: &context,
+                rect: rect,
+                clipRect: clipRect,
+                corePath: corePath,
+                curvePath: curvePath,
+                bandHalfWidth: bandHalfWidth,
+                colourGradient: colourGradient,
+                noiseImage: dustNoise,
+                noiseTileScale: noiseTileScale,
+                configuration: cfg,
+                seed: RainSurfacePRNG.combine(baseSeed, 0xD005_700D_D005_700D)
+            )
 
-        if cfg.fuzzHazeStrength > 0.0001 {
-            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(maxStrength) * maxAlpha
-            if hazeAlpha > 0.00001 {
-                context.blendMode = .screen
-                context.stroke(
-                    curvePath,
-                    with: .color(cfg.fuzzColor.opacity(hazeAlpha)),
-                    lineWidth: bandHalfWidth * 2.0 * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor))
-                )
-                context.blendMode = .normal
+            if cfg.fuzzHazeStrength > 0.0001 {
+                let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(maxStrength) * maxAlpha
+                if hazeAlpha > 0.00001 {
+                    context.blendMode = .normal
+                    context.stroke(
+                        curvePath,
+                        with: .color(dissipationColor.opacity(hazeAlpha)),
+                        lineWidth: bandHalfWidth * 2.0 * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor))
+                    )
+                    context.blendMode = .normal
+                }
             }
         }
     }
@@ -447,6 +451,7 @@ private extension RainForecastSurfaceRenderer {
         bandHalfWidth: CGFloat,
         maskGradient: Gradient,
         noiseImage: SwiftUI.Image?,
+        noiseTileScale: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration,
         seed: UInt64
     ) {
@@ -456,7 +461,7 @@ private extension RainForecastSurfaceRenderer {
         let narrowMul = max(0.10, cfg.fuzzErodeStrokeWidthFactor)
         let wideMul = max(narrowMul * 2.25, narrowMul + 0.55)
 
-        // Wide smooth subtraction
+        // Wide smooth subtraction (broad fade into the slope)
         context.blendMode = .destinationOut
         context.drawLayer { layer in
             layer.clip(to: Path(clipRect))
@@ -465,7 +470,7 @@ private extension RainForecastSurfaceRenderer {
             let wideStroke = curvePath.strokedPath(
                 StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wideMul), lineCap: .round, lineJoin: .round)
             )
-            let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.22 * strength)
+            let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.30 * strength)
 
             layer.fill(
                 wideStroke,
@@ -478,7 +483,7 @@ private extension RainForecastSurfaceRenderer {
         }
         context.blendMode = .normal
 
-        // Narrow grain subtraction
+        // Narrow grain subtraction (speckle)
         context.blendMode = .destinationOut
         context.drawLayer { layer in
             layer.clip(to: Path(clipRect))
@@ -487,7 +492,7 @@ private extension RainForecastSurfaceRenderer {
             let narrowStroke = curvePath.strokedPath(
                 StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(narrowMul), lineCap: .round, lineJoin: .round)
             )
-            let narrowGrad = scaledGradient(maskGradient, alphaMultiplier: 0.58 * strength)
+            let narrowGrad = scaledGradient(maskGradient, alphaMultiplier: 0.70 * strength)
 
             layer.fill(
                 narrowStroke,
@@ -502,11 +507,17 @@ private extension RainForecastSurfaceRenderer {
                 var prng = RainSurfacePRNG(seed: seed)
                 let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.45
                 let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.45
-                let drawRect = rect.offsetBy(dx: ox, dy: oy)
 
-                let resolved = layer.resolve(noiseImage)
+                let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
+                let shading = GraphicsContext.Shading.tiledImage(
+                    noiseImage,
+                    origin: origin,
+                    sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+                    scale: noiseTileScale
+                )
+
                 layer.blendMode = .destinationIn
-                layer.draw(resolved, in: drawRect)
+                layer.fill(Path(rect), with: shading)
                 layer.blendMode = .normal
             }
         }
@@ -522,6 +533,7 @@ private extension RainForecastSurfaceRenderer {
         bandHalfWidth: CGFloat,
         colourGradient: Gradient,
         noiseImage: SwiftUI.Image?,
+        noiseTileScale: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration,
         seed: UInt64
     ) {
@@ -543,7 +555,7 @@ private extension RainForecastSurfaceRenderer {
             outerA,
         ]
 
-        context.blendMode = .screen
+        context.blendMode = .normal
         context.drawLayer { layer in
             layer.clip(to: Path(clipRect))
 
@@ -572,14 +584,21 @@ private extension RainForecastSurfaceRenderer {
                 var prng = RainSurfacePRNG(seed: seed)
                 let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65
                 let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65 + bandHalfWidth * 0.20
-                let drawRect = rect.offsetBy(dx: ox, dy: oy)
 
-                let resolved = layer.resolve(noiseImage)
+                let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
+                let shading = GraphicsContext.Shading.tiledImage(
+                    noiseImage,
+                    origin: origin,
+                    sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+                    scale: noiseTileScale
+                )
+
                 layer.blendMode = .destinationIn
-                layer.draw(resolved, in: drawRect)
+                layer.fill(Path(rect), with: shading)
                 layer.blendMode = .normal
             }
 
+            // Keep only outside the core body.
             layer.blendMode = .destinationOut
             layer.fill(corePath, with: .color(Color.white))
             layer.blendMode = .normal
@@ -896,148 +915,50 @@ private extension RainForecastSurfaceRenderer {
     }
 }
 
+// MARK: - Fuzz noise assets
+
+private extension RainForecastSurfaceRenderer {
+    enum FuzzNoiseVariant {
+        case sparse
+        case normal
+        case dense
+
+        var assetName: String {
+            switch self {
+            case .sparse: return "RainFuzzNoise_Sparse"
+            case .normal: return "RainFuzzNoise"
+            case .dense: return "RainFuzzNoise_Dense"
+            }
+        }
+    }
+
+    static func fuzzNoiseImage(preferred: FuzzNoiseVariant) -> SwiftUI.Image? {
+        #if canImport(UIKit)
+        if UIKit.UIImage(named: preferred.assetName) != nil { return SwiftUI.Image(preferred.assetName) }
+        if UIKit.UIImage(named: FuzzNoiseVariant.normal.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.normal.assetName) }
+        if UIKit.UIImage(named: FuzzNoiseVariant.sparse.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.sparse.assetName) }
+        if UIKit.UIImage(named: FuzzNoiseVariant.dense.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.dense.assetName) }
+        return nil
+        #else
+        return SwiftUI.Image(preferred.assetName)
+        #endif
+    }
+
+    static func fuzzNoiseTileScale(desiredTilePixels: Int) -> CGFloat {
+        // Assumes the provided assets are authored at 256×256.
+        // Scale maps the requested tile pixel size onto the authored tile.
+        let authored: Double = 256.0
+        let desired = Double(max(16, min(desiredTilePixels, 1024)))
+        let s = desired / authored
+        return CGFloat(max(0.10, min(s, 6.0)))
+    }
+}
+
 // MARK: - Maths
 
 private extension RainForecastSurfaceRenderer {
     static func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
     static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * clamp01(t) }
-}
-
-// MARK: - Noise cache
-
-private final class FuzzNoiseCache: @unchecked Sendable {
-    static let shared = FuzzNoiseCache()
-
-    private struct Key: Hashable {
-        let pixels: Int
-        let seed: UInt64
-        let cutBucket: Int
-    }
-
-    private var cache: [Key: SwiftUI.Image] = [:]
-    private let lock = NSLock()
-
-    func image(pixels: Int, seed: UInt64, cut: Double) -> SwiftUI.Image? {
-        let px = max(16, min(pixels, 1024))
-
-        let cutClamped: Double = RainForecastSurfaceRenderer.clamp01(cut)
-        let rawBucket: Int = Int((cutClamped * 1000.0).rounded())
-        let bucket: Int = max(0, min(1000, rawBucket))
-
-        let key = Key(pixels: px, seed: seed, cutBucket: bucket)
-
-        return lock.withLock {
-            if let cached = cache[key] { return cached }
-
-            #if canImport(UIKit)
-            if let cg = UIKit.UIImage(named: "RainFuzzNoise")?.cgImage {
-                let img = SwiftUI.Image(decorative: cg, scale: 1.0, orientation: SwiftUI.Image.Orientation.up)
-                cache[key] = img
-                return img
-            }
-            #endif
-
-            guard let cg = Self.makeNoiseCGImage(pixels: px, seed: seed, cut: cutClamped) else {
-                return nil
-            }
-
-            let img = SwiftUI.Image(decorative: cg, scale: 1.0, orientation: SwiftUI.Image.Orientation.up)
-            cache[key] = img
-            return img
-        }
-    }
-
-    private static func makeNoiseCGImage(pixels: Int, seed: UInt64, cut: Double) -> CGImage? {
-        let w = pixels
-        let h = pixels
-        let count = w * h
-
-        var prng = RainSurfacePRNG(seed: seed)
-
-        var a = [UInt8](repeating: 0, count: count)
-        for i in 0..<count {
-            a[i] = UInt8(truncatingIfNeeded: prng.nextUInt64())
-        }
-
-        var tmp = [UInt8](repeating: 0, count: count)
-        Self.boxBlur3x3(src: a, dst: &tmp, w: w, h: h)
-        Self.boxBlur3x3(src: tmp, dst: &a, w: w, h: h)
-
-        let cutByte = UInt8(max(0, min(255, Int((cut * 255.0).rounded()))))
-        let denom = max(1, 255 - Int(cutByte))
-
-        var rgba = [UInt8](repeating: 0, count: count * 4)
-
-        for i in 0..<count {
-            let v = a[i]
-
-            let alpha: UInt8
-            if v <= cutByte {
-                alpha = 0
-            } else {
-                let t = Double(Int(v) - Int(cutByte)) / Double(denom)
-                let shaped = pow(max(0.0, min(1.0, t)), 0.55)
-                alpha = UInt8(max(0, min(255, Int((shaped * 255.0).rounded()))))
-            }
-
-            let o = i * 4
-            rgba[o + 0] = alpha
-            rgba[o + 1] = alpha
-            rgba[o + 2] = alpha
-            rgba[o + 3] = alpha
-        }
-
-        let data: Foundation.Data = Foundation.Data(rgba)
-        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
-
-        let cs = CGColorSpaceCreateDeviceRGB()
-        let bytesPerRow = w * 4
-
-        return CGImage(
-            width: w,
-            height: h,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: bytesPerRow,
-            space: cs,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
-    }
-
-    private static func boxBlur3x3(src: [UInt8], dst: inout [UInt8], w: Int, h: Int) {
-        guard src.count == w * h, dst.count == w * h else { return }
-
-        for y in 0..<h {
-            let y0 = max(0, y - 1)
-            let y1 = y
-            let y2 = min(h - 1, y + 1)
-
-            for x in 0..<w {
-                let x0 = max(0, x - 1)
-                let x1 = x
-                let x2 = min(w - 1, x + 1)
-
-                let s =
-                Int(src[y0 * w + x0]) + Int(src[y0 * w + x1]) + Int(src[y0 * w + x2]) +
-                Int(src[y1 * w + x0]) + Int(src[y1 * w + x1]) + Int(src[y1 * w + x2]) +
-                Int(src[y2 * w + x0]) + Int(src[y2 * w + x1]) + Int(src[y2 * w + x2])
-
-                dst[y * w + x] = UInt8(s / 9)
-            }
-        }
-    }
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () -> T) -> T {
-        lock()
-        defer { unlock() }
-        return body()
-    }
 }
 
 // MARK: - Colour blend helper
