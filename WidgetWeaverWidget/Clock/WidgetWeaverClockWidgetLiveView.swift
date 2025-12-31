@@ -50,13 +50,15 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
-                // Static face + hour/minute hands.
+                // Draw the static clock face + hour/minute hands.
+                // When the ticking seconds overlay is enabled, the centre hub is drawn in its own
+                // layer so it stays crisp.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(baseAngles.hour),
                     minuteAngle: .degrees(baseAngles.minute),
                     secondAngle: .degrees(0),
-                    showsSecondHand: !secondsEnabled,
+                    showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
                     showsCentreHub: !secondsEnabled,
@@ -66,13 +68,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                 if secondsEnabled {
                     ZStack {
-                        WWClockSecondHandLigatureOverlay(
+                        WWClockSecondHandTickingOverlay(
                             palette: palette,
                             startOfMinute: minuteAnchor,
                             handsOpacity: handsOpacity
                         )
 
-                        // Centre hub stays crisp above the ticking hand.
+                        // Centre hub in its own layer (avoids being rasterised along with the seconds overlay).
                         GeometryReader { proxy in
                             let s = min(proxy.size.width, proxy.size.height)
                             let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
@@ -132,36 +134,121 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds hand (widget-safe, time-sensitive Text + ligature font)
+// MARK: - Seconds hand overlay (budget-safe)
 
-private struct WWClockSecondHandLigatureOverlay: View {
+private struct WWClockSecondHandTickingOverlay: View {
     let palette: WidgetWeaverClockPalette
     let startOfMinute: Date
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
 
-    private static let posixLocale = Locale(identifier: "en_US_POSIX")
-
     var body: some View {
         GeometryReader { proxy in
-            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
-
             let s = min(proxy.size.width, proxy.size.height)
-            let dialDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
 
-            // The font contains a ligature for each "0:SS" string (0:00 ... 0:59),
-            // where the ligature glyph is the second hand at that second.
-            Text(timerInterval: startOfMinute...endOfMinute, countsDown: false)
-                .environment(\.locale, Self.posixLocale)
-                .font(WWClockSecondHandFont.font(size: dialDiameter))
-                .foregroundStyle(palette.accent)
-                .frame(width: dialDiameter, height: dialDiameter, alignment: .center)
-                .opacity(handsOpacity)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            // Mirror the sizing logic from WidgetWeaverClockIconView so the second hand matches.
+            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
+            let outerRadius = outerDiameter * 0.5
+
+            let metalThicknessRatio: CGFloat = 0.062
+            let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
+
+            let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
+            let ringC = WWClock.pixel(
+                WWClock.clamp(
+                    provisionalR * 0.0095,
+                    min: provisionalR * 0.008,
+                    max: provisionalR * 0.012
+                ),
+                scale: displayScale
+            )
+            let minB = WWClock.px(scale: displayScale)
+            let ringB = WWClock.pixel(
+                max(minB, outerRadius - provisionalR - ringA - ringC),
+                scale: displayScale
+            )
+
+            let R = outerRadius - ringA - ringB - ringC
+
+            let secondLength = WWClock.pixel(
+                WWClock.clamp(
+                    R * 0.90,
+                    min: R * 0.86,
+                    max: R * 0.92
+                ),
+                scale: displayScale
+            )
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(
+                    R * 0.006,
+                    min: R * 0.004,
+                    max: R * 0.007
+                ),
+                scale: displayScale
+            )
+            let secondTipSide = WWClock.pixel(
+                WWClock.clamp(
+                    R * 0.014,
+                    min: R * 0.012,
+                    max: R * 0.016
+                ),
+                scale: displayScale
+            )
+
+            TimelineView(.periodic(from: startOfMinute, by: 1.0)) { context in
+                let tick = WWClockSecondTick.secondIndex(for: context.date)
+                let angle = Angle.degrees(Double(tick) * 6.0)
+
+                WidgetWeaverClockSecondHandView(
+                    colour: palette.accent,
+                    width: secondWidth,
+                    length: secondLength,
+                    angle: angle,
+                    tipSide: secondTipSide,
+                    scale: displayScale
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            // Avoid implicit cross-fades between seconds.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+            .opacity(handsOpacity)
+            .overlay(
+                WWClockSecondsHeartbeat(start: startOfMinute),
+                alignment: .bottomTrailing
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
+    }
+}
+
+private enum WWClockSecondTick {
+    @inline(__always)
+    static func secondIndex(for date: Date) -> Int {
+        // Seconds-of-minute are timezone-agnostic.
+        let t = date.timeIntervalSinceReferenceDate
+        var s = Int(floor(t)) % 60
+        if s < 0 { s += 60 }
+        return s
+    }
+}
+
+private struct WWClockSecondsHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        // Heartbeat:
+        // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
