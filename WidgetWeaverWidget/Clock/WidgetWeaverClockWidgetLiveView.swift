@@ -66,7 +66,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                 if secondsEnabled {
                     ZStack {
-                        WWClockSecondHandLigatureOverlay(
+                        WWClockSecondHandWedgeTickOverlay(
                             palette: palette,
                             startOfMinute: minuteAnchor,
                             handsOpacity: handsOpacity
@@ -127,27 +127,29 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     }
                 }
             }
+            .overlay(
+                WWClockWidgetHeartbeat(start: minuteAnchor),
+                alignment: .bottomTrailing
+            )
             .widgetURL(URL(string: "widgetweaver://clock"))
         }
     }
 }
 
-// MARK: - Seconds hand overlay (budget-safe, widget-safe)
+// MARK: - Seconds hand overlay (ProgressView wedge reveal)
 
-private struct WWClockSecondHandLigatureOverlay: View {
+private struct WWClockSecondHandWedgeTickOverlay: View {
     let palette: WidgetWeaverClockPalette
     let startOfMinute: Date
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
 
-    private static let posixLocale = Locale(identifier: "en_US_POSIX")
-
     var body: some View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
 
-            // Match the dial sizing used by WidgetWeaverClockIconView.
+            // Match WidgetWeaverClockIconView sizing so the overlay aligns with the dial.
             let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
@@ -172,22 +174,134 @@ private struct WWClockSecondHandLigatureOverlay: View {
             let R = outerRadius - ringA - ringB - ringC
             let dialDiameter = R * 2.0
 
-            // End at +59s to avoid ever reaching a “1:00” string.
-            let endOfMinute = startOfMinute.addingTimeInterval(59.0)
+            let secondLength = WWClock.pixel(
+                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+                scale: displayScale
+            )
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                scale: displayScale
+            )
+            let secondTipSide = WWClock.pixel(
+                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                scale: displayScale
+            )
 
-            // The custom font maps the timer string “0:SS” to a ligature glyph (sec00...sec59)
-            // which draws the second hand at that second.
-            Text(timerInterval: startOfMinute...endOfMinute, countsDown: false)
-                .environment(\.locale, Self.posixLocale)
-                .font(WWClockSecondHandFont.font(size: dialDiameter))
-                .foregroundStyle(palette.accent)
-                .frame(width: dialDiameter, height: dialDiameter, alignment: .center)
-                .clipShape(Circle())
+            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
+
+            ZStack {
+                ZStack {
+                    ForEach(0..<60, id: \.self) { tick in
+                        let angle = Angle.degrees(Double(tick) * 6.0)
+                        WidgetWeaverClockSecondHandView(
+                            colour: palette.accent,
+                            width: secondWidth,
+                            length: secondLength,
+                            angle: angle,
+                            tipSide: secondTipSide,
+                            scale: displayScale
+                        )
+                    }
+                }
                 .opacity(handsOpacity)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+
+                // Cut everything *except* the moving wedge window.
+                WWClockSecondHandOutsideWedgeMatte(
+                    startOfMinute: startOfMinute,
+                    endOfMinute: endOfMinute,
+                    dialDiameter: dialDiameter,
+                    windowSeconds: 1.0
+                )
+                .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .frame(width: dialDiameter, height: dialDiameter)
+            .clipShape(Circle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
+    }
+}
+
+private struct WWClockSecondHandOutsideWedgeMatte: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    var body: some View {
+        ZStack {
+            Color.white
+
+            WWClockSecondHandWedgeMask(
+                startOfMinute: startOfMinute,
+                endOfMinute: endOfMinute,
+                dialDiameter: dialDiameter,
+                windowSeconds: windowSeconds
+            )
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: dialDiameter, height: dialDiameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockSecondHandWedgeMask: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    // Render very small, scale up so the circular stroke becomes a wide “pie slice”
+    // that reaches the centre (useful for masking).
+    private let baseDiameter: CGFloat = 2.0
+
+    var body: some View {
+        let scale = dialDiameter / baseDiameter
+
+        // Lead interval: progress is effectively evaluated at (now + windowSeconds),
+        // producing a wedge that is visible at second 0.
+        let leadStart = startOfMinute.addingTimeInterval(-windowSeconds)
+        let leadEnd = endOfMinute.addingTimeInterval(-windowSeconds)
+
+        ZStack {
+            ProgressView(timerInterval: leadStart...leadEnd, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+                .frame(width: dialDiameter, height: dialDiameter)
+
+            ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+                .frame(width: dialDiameter, height: dialDiameter)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Heartbeat
+
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
