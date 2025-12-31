@@ -4,261 +4,192 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  SwiftUI view for the nowcast “rain surface” chart.
-//  Keeps the background pure black and delegates all rendering to RainForecastSurfaceRenderer.
-//
 
 import SwiftUI
 
+/// Public SwiftUI wrapper.
 struct RainForecastSurfaceView: View {
+    let intensities: [Double]
+    let certainties: [Double]
+    let configuration: RainForecastSurfaceConfiguration
 
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.redactionReasons) private var redactionReasons
-    @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
-    @Environment(\.wwLowGraphicsBudget) private var lowGraphicsBudget
-
-    private let intensities: [Double]
-    private let certainties: [Double]
-    private let configuration: RainForecastSurfaceConfiguration
-
-    init(
-        intensities: [Double],
-        certainties: [Double] = [],
-        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
-    ) {
-        self.intensities = intensities
-        self.certainties = certainties
-        self.configuration = configuration
-    }
-
-    init(
-        intensities: [Double],
-        certainties: [Double?],
-        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
-    ) {
-        self.intensities = intensities
-        self.certainties = certainties.map { $0 ?? 0.0 }
-        self.configuration = configuration
-    }
+    @Environment(\.widgetFamily) private var widgetFamily
+    @Environment(\.widgetRenderingMode) private var widgetRenderingMode
 
     var body: some View {
         Canvas { context, size in
-            let rect = CGRect(origin: .zero, size: size)
-
-            var ctx = context
-            ctx.fill(Path(rect), with: .color(.black))
-
             var cfg = configuration
+            let isLowBudget = WidgetWeaverRuntime.thumbnailRenderingEnabled || WidgetWeaverRuntime.isPreviewOrPlaceholder
             cfg.applyWidgetPlaceholderBudgetGuardrails(
-                isLowBudget: isLowBudgetRender,
-                displayScale: displayScale,
-                size: size
+                isLowBudget: isLowBudget,
+                displayScale: displayScale
             )
-
             let renderer = RainForecastSurfaceRenderer(
                 intensities: intensities,
                 certainties: certainties,
                 configuration: cfg
             )
-
-            renderer.render(in: &ctx, rect: rect, displayScale: displayScale)
+            renderer.render(in: &context, size: size, displayScale: displayScale)
         }
-        .background(Color.black)
-    }
-
-    private var isLowBudgetRender: Bool {
-        if redactionReasons.contains(.placeholder) { return true }
-        if !thumbnailRenderingEnabled { return true }
-        if lowGraphicsBudget { return true }
-        return false
     }
 }
 
-// MARK: - Configuration
-
+/// Configuration for the surface renderer.
+/// Intentionally a big bag of knobs so the template can tune without touching the renderer.
 struct RainForecastSurfaceConfiguration {
+    // Geometry.
+    var baselineFractionFromTop: CGFloat = 0.83
+    var topHeadroomFraction: CGFloat = 0.08
+    var typicalPeakFraction: CGFloat = 0.78
 
-    // Layout
-    var baselineFractionFromTop: Double = 0.68
-    var topHeadroomFraction: Double = 0.07
-    var typicalPeakFraction: Double = 0.72
-
-    // End easing (makes tails feel “soft” instead of cut off)
-    var edgeEasingFraction: Double = 0.03
-    var edgeEasingPower: Double = 1.90
-
-    // Intensity -> height mapping
-    var intensityReferenceMaxMMPerHour: Double = 6.0
+    // Intensity scaling.
+    var intensityReferenceMaxMMPerHour: Double = 3.0
     var robustMaxPercentile: Double = 0.92
-    var intensityGamma: Double = 1.20
+    var intensityGamma: Double = 0.62
 
-    // Core shading
-    var coreBodyColor: Color = Color(red: 0.12, green: 0.43, blue: 0.98).opacity(0.78)
-    var coreTopColor: Color = Color(red: 0.40, green: 0.86, blue: 1.00).opacity(0.94)
+    // Sampling.
+    var maxDenseSamples: Int = 780
+
+    // Core appearance.
+    var coreBodyColor: Color = Color.blue.opacity(0.75)
+    var coreTopColor: Color = Color.blue.opacity(0.92)
     var coreTopMix: Double = 0.62
-    var coreFadeFraction: Double = 0.15
+    var coreFadeFraction: Double = 0.0
 
-    // Fuzz / uncertainty styling (primary visual)
+    // Rim stroke.
+    var rimEnabled: Bool = false
+    var rimColor: Color = Color.white.opacity(0.20)
+    var rimWidthPixels: CGFloat = 1.0
+
+    // Baseline stroke.
+    var baselineEnabled: Bool = true
+    var baselineColor: Color = Color.blue.opacity(0.85)
+    var baselineLineOpacity: Double = 0.12
+    var baselineWidthPixels: CGFloat = 1.0
+    var baselineOffsetPixels: CGFloat = 0.0
+    var baselineEndFadeFraction: Double = 0.18
+
+    // Fuzz (generic).
     var fuzzEnabled: Bool = true
     var canEnableFuzz: Bool = true
-    var fuzzColor: Color = Color.white
-    var fuzzMaxOpacity: Double = 0.42
-    var fuzzWidthFraction: Double = 0.040
-    var fuzzWidthPixelsClamp: ClosedRange<Double> = 2.0...24.0
-    var fuzzDensity: Double = 1.45
-
-    // Chance -> fuzz mapping
-    var fuzzChanceThreshold: Double = 0.60
-    var fuzzChanceTransition: Double = 0.24
-    var fuzzChanceExponent: Double = 1.35
-    var fuzzChanceFloor: Double = 0.24
-    var fuzzChanceMinStrength: Double = 0.08
-
-    // Fuzz emphasis around ends / base
-    var fuzzTailMinutes: Double = 7.0
-    var fuzzLowHeightPower: Double = 1.7
-    var fuzzLowHeightBoost: Double = 1.55
-
-    // Optional haze (kept low by default to avoid lifting the black background)
-    var fuzzHazeStrength: Double = 0.12
-    var fuzzHazeBlurFractionOfBand: Double = 0.26
-    var fuzzHazeStrokeWidthFactor: Double = 1.10
-    var fuzzInsideHazeStrokeWidthFactor: Double = 0.55
-
-    // Inside speckles (legacy knobs retained)
-    var fuzzInsideWidthFactor: Double = 0.62
-    var fuzzInsideOpacityFactor: Double = 0.88
-
-    // Particle speckles (legacy knobs retained; texture fuzz path ignores these)
+    var fuzzColor: Color = Color.blue
+    var fuzzMaxOpacity: Double = 0.66
     var fuzzSpeckStrength: Double = 1.35
-    var fuzzSpeckleBudget: Int = 7800
-    var fuzzSpeckleRadiusPixels: ClosedRange<Double> = 0.30...2.0
-    var fuzzInsideSpeckleFraction: Double = 0.55
 
-    // Distance distributions (legacy knobs retained)
-    var fuzzDistancePowerOutside: Double = 1.10
-    var fuzzDistancePowerInside: Double = 0.75
-    var fuzzAlongTangentJitter: Double = 0.35
+    // Fuzz band sizing.
+    var fuzzWidthFraction: Double = 0.14
+    var fuzzWidthPixelsClamp: ClosedRange<CGFloat> = 10.0...72.0
 
-    // Edge suppression window (prevents peppering far-away dry baseline)
-    var fuzzSlopeReferenceBandFraction: Double = 0.25
-    var fuzzEdgeWindowPx: Double = 12.0
+    // Certainty mapping.
+    var fuzzChanceThreshold: Double = 0.80
+    var fuzzChanceTransition: Double = 0.22
+    var fuzzChanceExponent: Double = 1.20
+    var fuzzChanceFloor: Double = 0.12
+    var fuzzChanceMinStrength: Double = 0.04
 
-    // NEW: Texture-based fuzz (WidgetKit-safe, “dissipation” look)
+    // Shape shaping for fuzz.
+    var fuzzTailMinutes: Double = 8.0
+    var fuzzLowHeightPower: Double = 1.05
+    var fuzzLowHeightBoost: Double = 1.10
+    var fuzzEdgeWindowPx: Double = 24.0
+
+    // Texture fuzz.
     var fuzzTextureEnabled: Bool = true
-    var fuzzTextureTilePixels: Int = 256
-    var fuzzTextureGradientStops: Int = 28
-    var fuzzTextureInnerBandMultiplier: Double = 1.35
-    var fuzzTextureOuterBandMultiplier: Double = 2.60
-    var fuzzTextureInnerOpacityMultiplier: Double = 0.85
-    var fuzzTextureOuterOpacityMultiplier: Double = 0.45
+    var fuzzTextureTilePixels: Int = 224
+    var fuzzTextureGradientStops: Int = 32
+    var fuzzTextureInnerBandMultiplier: Double = 1.15
+    var fuzzTextureOuterBandMultiplier: Double = 5.40
+    var fuzzTextureInnerOpacityMultiplier: Double = 1.10
+    var fuzzTextureOuterOpacityMultiplier: Double = 0.50
 
-    // Legacy knobs (kept for compatibility with existing code; renderer ignores these for now)
+    // Strength remap (post strength shaping before rendering)
+    // Exponent < 1 boosts small strengths; > 1 suppresses them. Gain is applied after exponent.
+    var fuzzStrengthExponent: Double = 1.0
+    var fuzzStrengthGain: Double = 1.0
+
+    // Outer dust (outside-the-body speckle). This is the “airy cloud” and can be disabled in widgets if needed.
+    var fuzzOuterDustEnabled: Bool = true
+    var fuzzOuterDustEnabledInAppExtension: Bool = false
+    var fuzzOuterDustPassCount: Int = 3
+    var fuzzOuterDustPassCountInAppExtension: Int = 2
+
+    // Subtractive edge erosion.
     var fuzzErodeEnabled: Bool = true
-    var fuzzErodeStrength: Double = 1.05
-    var fuzzErodeBlurFractionOfBand: Double = 0.06
-    var fuzzErodeStrokeWidthFactor: Double = 0.56
+    var fuzzErodeStrength: Double = 1.0
+    var fuzzErodeStrokeWidthFactor: Double = 0.85
     var fuzzErodeEdgePower: Double = 1.35
-    var fuzzErodeRimInsetPixels: Double = 1.0
 
-    // Gloss / glint (optional; not required for mockup match)
-    var glossEnabled: Bool = false
-    var glossMaxOpacity: Double = 0.10
-    var glossHeightPower: Double = 1.20
+    // Haze (soft pass).
+    var fuzzHazeStrength: Double = 0.0
+    var fuzzHazeBlurFractionOfBand: Double = 0.0
+    var fuzzHazeStrokeWidthFactor: Double = 1.0
 
-    var glintEnabled: Bool = false
-    var glintCount: Int = 10
-    var glintMaxOpacity: Double = 0.18
-    var glintRadiusPixels: ClosedRange<Double> = 0.7...2.2
+    // Noise.
+    var noiseSeed: UInt64 = 0xBADC0DE
 
-    // Rim
-    var rimEnabled: Bool = true
-    var rimColor: Color = Color(red: 0.55, green: 0.95, blue: 1.00)
-    var rimOpacity: Double = 0.18
-    var rimWidthPixels: Double = 1.0
+    mutating func applyWidgetPlaceholderBudgetGuardrails(isLowBudget: Bool, displayScale: CGFloat) {
+        // Keep these renders cheap & stable.
+        if isLowBudget {
+            canEnableFuzz = false
+        }
 
-    // Legacy/compat knobs referenced by WidgetWeaverWeatherTemplateNowcastChart.swift
-    var rimInnerOpacity: Double = 0.10
-    var rimInnerWidthPixels: Double = 1.0
-    var rimOuterOpacity: Double = 0.06
-    var rimOuterWidthPixels: Double = 2.0
+        // Geometry clamps.
+        baselineFractionFromTop = max(0.60, min(baselineFractionFromTop, 0.92))
+        topHeadroomFraction = max(0.0, min(topHeadroomFraction, 0.25))
+        typicalPeakFraction = max(0.40, min(typicalPeakFraction, 0.92))
 
-    // Baseline
-    var baselineEnabled: Bool = true
-    var baselineColor: Color = Color.white
-    var baselineLineOpacity: Double = 0.05
-    var baselineWidthPixels: Double = 1.0
-    var baselineOffsetPixels: Double = 0.0
-    var baselineEndFadeFraction: Double = 0.20
+        // Sampling clamps.
+        maxDenseSamples = max(120, min(maxDenseSamples, 1100))
 
-    // Renderer internals / budgets
-    var sourceMinuteCount: Int = 60
-    var maxDenseSamples: Int = 900
+        // Colour/opacity clamps.
+        intensityReferenceMaxMMPerHour = max(0.1, intensityReferenceMaxMMPerHour)
+        robustMaxPercentile = max(0.60, min(robustMaxPercentile, 0.995))
+        intensityGamma = max(0.20, min(intensityGamma, 2.50))
 
-    // Deterministic noise
-    var noiseSeed: UInt64 = 0xF00D_F00D_CAFE_BEEF
-}
+        // Baseline clamps.
+        baselineLineOpacity = max(0.0, min(baselineLineOpacity, 0.35))
+        baselineWidthPixels = max(0.5, min(baselineWidthPixels, 2.0))
+        baselineOffsetPixels = max(-4.0, min(baselineOffsetPixels, 4.0))
+        baselineEndFadeFraction = max(0.0, min(baselineEndFadeFraction, 0.40))
 
-// MARK: - Budget guardrails (WidgetKit placeholder / previews)
+        // Fuzz clamps.
+        fuzzMaxOpacity = max(0.0, min(fuzzMaxOpacity, 0.85))
+        fuzzSpeckStrength = max(0.0, min(fuzzSpeckStrength, 2.5))
+        fuzzWidthFraction = max(0.02, min(fuzzWidthFraction, 0.30))
+        fuzzWidthPixelsClamp = max(2.0, min(fuzzWidthPixelsClamp.lowerBound, 40.0))...max(8.0, min(fuzzWidthPixelsClamp.upperBound, 120.0))
 
-private extension RainForecastSurfaceConfiguration {
+        fuzzChanceThreshold = max(0.0, min(fuzzChanceThreshold, 1.0))
+        fuzzChanceTransition = max(0.01, min(fuzzChanceTransition, 1.0))
+        fuzzChanceExponent = max(0.10, min(fuzzChanceExponent, 4.0))
+        fuzzChanceFloor = max(0.0, min(fuzzChanceFloor, 1.0))
+        fuzzChanceMinStrength = max(0.0, min(fuzzChanceMinStrength, 1.0))
 
-    mutating func applyWidgetPlaceholderBudgetGuardrails(
-        isLowBudget: Bool,
-        displayScale: CGFloat,
-        size: CGSize
-    ) {
-        let ds = (displayScale.isFinite && displayScale > 0) ? displayScale : 1.0
-
-        // Hard clamps that should hold in all contexts.
-        maxDenseSamples = max(120, min(maxDenseSamples, 900))
-
-        let hardMaxSpeckles: Int = 9000
-        fuzzSpeckleBudget = max(0, min(fuzzSpeckleBudget, hardMaxSpeckles))
-
-        // Clamp fuzz width pixels to sane values so it can't explode with a large preview rect.
-        let minW = max(0.0, min(fuzzWidthPixelsClamp.lowerBound, fuzzWidthPixelsClamp.upperBound))
-        let maxW = max(minW, fuzzWidthPixelsClamp.upperBound)
-        fuzzWidthPixelsClamp = minW...maxW
-
-        // Ensure no negative widths/opacities.
-        fuzzMaxOpacity = max(0.0, min(fuzzMaxOpacity, 1.0))
-        rimInnerOpacity = max(0.0, min(rimInnerOpacity, 1.0))
-        rimOuterOpacity = max(0.0, min(rimOuterOpacity, 1.0))
-        baselineLineOpacity = max(0.0, min(baselineLineOpacity, 1.0))
+        fuzzTailMinutes = max(0.0, min(fuzzTailMinutes, 20.0))
+        fuzzLowHeightPower = max(0.05, min(fuzzLowHeightPower, 4.0))
+        fuzzLowHeightBoost = max(0.0, min(fuzzLowHeightBoost, 3.0))
+        fuzzEdgeWindowPx = max(0.0, min(fuzzEdgeWindowPx, 60.0))
 
         // Texture fuzz clamps.
-        fuzzTextureTilePixels = max(32, min(fuzzTextureTilePixels, 512))
+        fuzzTextureTilePixels = max(64, min(fuzzTextureTilePixels, 512))
         fuzzTextureGradientStops = max(8, min(fuzzTextureGradientStops, 64))
-        fuzzTextureInnerBandMultiplier = max(0.1, min(fuzzTextureInnerBandMultiplier, 6.0))
-        fuzzTextureOuterBandMultiplier = max(0.1, min(fuzzTextureOuterBandMultiplier, 8.0))
+        fuzzTextureInnerBandMultiplier = max(0.10, min(fuzzTextureInnerBandMultiplier, 6.0))
+        fuzzTextureOuterBandMultiplier = max(fuzzTextureInnerBandMultiplier, min(fuzzTextureOuterBandMultiplier, 10.0))
         fuzzTextureInnerOpacityMultiplier = max(0.0, min(fuzzTextureInnerOpacityMultiplier, 2.0))
         fuzzTextureOuterOpacityMultiplier = max(0.0, min(fuzzTextureOuterOpacityMultiplier, 2.0))
+        fuzzStrengthExponent = max(0.05, min(fuzzStrengthExponent, 2.0))
+        fuzzStrengthGain = max(0.0, min(fuzzStrengthGain, 5.0))
+        fuzzOuterDustPassCount = max(0, min(fuzzOuterDustPassCount, 4))
+        fuzzOuterDustPassCountInAppExtension = max(0, min(fuzzOuterDustPassCountInAppExtension, 4))
 
-        // WidgetKit placeholder / preview rendering is very budget constrained.
-        // Degrade visuals by removing extras first.
-        guard isLowBudget else { return }
+        // Erosion clamps.
+        fuzzErodeStrength = max(0.0, min(fuzzErodeStrength, 1.5))
+        fuzzErodeStrokeWidthFactor = max(0.05, min(fuzzErodeStrokeWidthFactor, 1.5))
+        fuzzErodeEdgePower = max(0.2, min(fuzzErodeEdgePower, 4.0))
 
-        // 1) Remove optional highlights.
-        glossEnabled = false
-        glintEnabled = false
-
-        // 2) Remove any haze/blur paths that can trigger expensive rasterisation.
-        fuzzHazeStrength = 0.0
-        fuzzHazeBlurFractionOfBand = 0.0
-
-        // 3) Clamp work proportional to width.
-        let wPx = max(1.0, Double(size.width * ds))
-        let conservativeDense = max(120, min(Int(wPx * 0.6), 260))
-        maxDenseSamples = min(maxDenseSamples, conservativeDense)
-
-        // 4) Reduce particle knobs (legacy; texture path ignores, but keep sane).
-        fuzzSpeckleBudget = min(fuzzSpeckleBudget, 650)
-        fuzzDensity = min(fuzzDensity, 0.85)
-        fuzzInsideSpeckleFraction = min(fuzzInsideSpeckleFraction, 0.25)
-        fuzzAlongTangentJitter = min(fuzzAlongTangentJitter, 0.35)
-
-        // 5) Final degrade: disable fuzz entirely for placeholder/previews.
-        canEnableFuzz = false
+        // Haze clamps.
+        fuzzHazeStrength = max(0.0, min(fuzzHazeStrength, 1.0))
+        fuzzHazeBlurFractionOfBand = max(0.0, min(fuzzHazeBlurFractionOfBand, 1.0))
+        fuzzHazeStrokeWidthFactor = max(0.1, min(fuzzHazeStrokeWidthFactor, 3.0))
     }
 }
