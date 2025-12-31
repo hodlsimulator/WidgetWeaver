@@ -46,7 +46,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 && !isReduceMotion
 
             let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
-
             let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
@@ -70,7 +69,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                             handsOpacity: handsOpacity
                         )
 
-                        // The centre hub is a separate layer so it stays crisp while the second hand animates.
+                        // The centre hub is a separate layer so it stays crisp while the seconds tick.
                         GeometryReader { proxy in
                             let s = min(proxy.size.width, proxy.size.height)
 
@@ -82,9 +81,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                             let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
                             let ringC = WWClock.pixel(
-                                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+                                WWClock.clamp(
+                                    provisionalR * 0.0095,
+                                    min: provisionalR * 0.008,
+                                    max: provisionalR * 0.012
+                                ),
                                 scale: displayScale
                             )
+
                             let minB = WWClock.px(scale: displayScale)
                             let ringB = WWClock.pixel(
                                 max(minB, outerRadius - provisionalR - ringA - ringC),
@@ -94,11 +98,20 @@ struct WidgetWeaverClockWidgetLiveView: View {
                             let R = outerRadius - ringA - ringB - ringC
 
                             let hubBaseRadius = WWClock.pixel(
-                                WWClock.clamp(R * 0.095, min: R * 0.080, max: R * 0.110),
+                                WWClock.clamp(
+                                    R * 0.095,
+                                    min: R * 0.080,
+                                    max: R * 0.110
+                                ),
                                 scale: displayScale
                             )
+
                             let hubCapRadius = WWClock.pixel(
-                                WWClock.clamp(R * 0.065, min: R * 0.055, max: R * 0.075),
+                                WWClock.clamp(
+                                    R * 0.065,
+                                    min: R * 0.055,
+                                    max: R * 0.075
+                                ),
                                 scale: displayScale
                             )
 
@@ -119,7 +132,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Live seconds hand overlay (TimelineView-driven)
+// MARK: - Host-driven seconds hand overlay
 
 private struct WWClockSecondHandHostDrivenOverlay: View {
     let palette: WidgetWeaverClockPalette
@@ -130,6 +143,7 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
             let s = min(proxy.size.width, proxy.size.height)
 
             // Mirror the sizing logic from WidgetWeaverClockIconView so the second hand matches.
@@ -141,9 +155,14 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
 
             let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
             let ringC = WWClock.pixel(
-                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+                WWClock.clamp(
+                    provisionalR * 0.0095,
+                    min: provisionalR * 0.008,
+                    max: provisionalR * 0.012
+                ),
                 scale: displayScale
             )
+
             let minB = WWClock.px(scale: displayScale)
             let ringB = WWClock.pixel(
                 max(minB, outerRadius - provisionalR - ringA - ringC),
@@ -153,42 +172,95 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
             let R = outerRadius - ringA - ringB - ringC
 
             let secondLength = WWClock.pixel(
-                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+                WWClock.clamp(
+                    R * 0.90,
+                    min: R * 0.86,
+                    max: R * 0.92
+                ),
                 scale: displayScale
             )
+
             let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                WWClock.clamp(
+                    R * 0.006,
+                    min: R * 0.004,
+                    max: R * 0.007
+                ),
                 scale: displayScale
             )
+
             let secondTipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                WWClock.clamp(
+                    R * 0.014,
+                    min: R * 0.012,
+                    max: R * 0.016
+                ),
                 scale: displayScale
             )
 
-            // Use TimelineView to re-render as time moves (works for a sweeping seconds hand).
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-                let elapsed = context.date.timeIntervalSince(startOfMinute)
-                let secondsRaw = elapsed.truncatingRemainder(dividingBy: 60.0)
-                let seconds = secondsRaw < 0.0 ? (secondsRaw + 60.0) : secondsRaw
-
-                let fraction = max(0.0, min(seconds / 60.0, 0.999_999))
-                let angle = Angle.degrees(fraction * 360.0)
-
-                WidgetWeaverClockSecondHandView(
-                    colour: palette.accent,
-                    width: secondWidth,
-                    length: secondLength,
-                    angle: angle,
-                    tipSide: secondTipSide,
-                    scale: displayScale
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(handsOpacity)
+            // The ProgressView is the host-driven tick source.
+            // A moving wedge mask reveals one of 60 pre-rotated hands (ticking seconds needle).
+            ZStack {
+                ForEach(0..<60, id: \.self) { tick in
+                    let angle = Angle.degrees(Double(tick) * 6.0)
+                    WidgetWeaverClockSecondHandView(
+                        colour: palette.accent,
+                        width: secondWidth,
+                        length: secondLength,
+                        angle: angle,
+                        tipSide: secondTipSide,
+                        scale: displayScale
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .opacity(handsOpacity)
+            .mask(
+                WWClockSecondHandWedgeMask(
+                    startOfMinute: startOfMinute,
+                    endOfMinute: endOfMinute,
+                    dialDiameter: outerDiameter,
+                    windowSeconds: 1.0
+                )
+            )
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockSecondHandWedgeMask: View {
+    let startOfMinute: Date
+    let endOfMinute: Date
+    let dialDiameter: CGFloat
+    let windowSeconds: TimeInterval
+
+    // Rendering the ProgressView very small then scaling up makes the stroke thick enough
+    // that the resulting wedge reaches through the centre (useful as a mask).
+    private let baseDiameter: CGFloat = 4.0
+
+    var body: some View {
+        let scale = dialDiameter / baseDiameter
+        let behindStart = startOfMinute.addingTimeInterval(windowSeconds)
+        let behindEnd = endOfMinute.addingTimeInterval(windowSeconds)
+
+        ZStack {
+            ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+
+            ProgressView(timerInterval: behindStart...behindEnd, countsDown: false)
+                .progressViewStyle(.circular)
+                .tint(Color.white)
+                .frame(width: baseDiameter, height: baseDiameter)
+                .scaleEffect(scale)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
