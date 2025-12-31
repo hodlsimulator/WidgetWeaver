@@ -167,8 +167,8 @@ private struct WWClockSecondHandWedgeTickOverlay: View {
             let geo = WWClockDialGeometry(containerSize: min(proxy.size.width, proxy.size.height), scale: displayScale)
             let endOfMinute = startOfMinute.addingTimeInterval(60.0)
 
+            // 60 pre-rotated hands, masked by a moving 1-second wedge.
             ZStack {
-                // 60 pre-rotated hands.
                 ZStack {
                     ForEach(0..<60, id: \.self) { tick in
                         let angle = Angle.degrees(Double(tick) * 6.0)
@@ -183,48 +183,22 @@ private struct WWClockSecondHandWedgeTickOverlay: View {
                     }
                 }
                 .opacity(handsOpacity)
-
-                // Cut away everything except the moving wedge window.
-                WWClockSecondHandOutsideWedgeMatte(
-                    startOfMinute: startOfMinute,
-                    endOfMinute: endOfMinute,
-                    dialDiameter: geo.dialDiameter,
-                    windowSeconds: 1.0
+                .compositingGroup()
+                .mask(
+                    WWClockSecondHandWedgeMask(
+                        startOfMinute: startOfMinute,
+                        endOfMinute: endOfMinute,
+                        dialDiameter: geo.dialDiameter,
+                        windowSeconds: 1.0
+                    )
                 )
-                .blendMode(.destinationOut)
             }
-            .compositingGroup()
             .frame(width: geo.dialDiameter, height: geo.dialDiameter)
             .clipShape(Circle())
             .frame(width: proxy.size.width, height: proxy.size.height)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
-    }
-}
-
-private struct WWClockSecondHandOutsideWedgeMatte: View {
-    let startOfMinute: Date
-    let endOfMinute: Date
-    let dialDiameter: CGFloat
-    let windowSeconds: TimeInterval
-
-    var body: some View {
-        ZStack {
-            Color.white
-
-            WWClockSecondHandWedgeMask(
-                startOfMinute: startOfMinute,
-                endOfMinute: endOfMinute,
-                dialDiameter: dialDiameter,
-                windowSeconds: windowSeconds
-            )
-            .blendMode(.destinationOut)
-        }
-        .compositingGroup()
-        .frame(width: dialDiameter, height: dialDiameter)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
@@ -235,31 +209,31 @@ private struct WWClockSecondHandWedgeMask: View {
     let windowSeconds: TimeInterval
 
     // Render tiny, then scale up so the circular stroke becomes a wedge that reaches the centre.
-    private let baseDiameter: CGFloat = 2.0
+    // Important: avoid sizes so small the system progress view draws no pixels (invisible wedge).
+    private let baseDiameter: CGFloat = 4.0
 
     var body: some View {
         let scale = dialDiameter / baseDiameter
 
-        let behindStart = startOfMinute.addingTimeInterval(windowSeconds)
-        let behindEnd = endOfMinute.addingTimeInterval(windowSeconds)
+        let windowStart = startOfMinute.addingTimeInterval(windowSeconds)
+        let windowEnd = endOfMinute.addingTimeInterval(windowSeconds)
 
+        // Use `difference` + `luminanceToAlpha` to isolate the moving window region.
+        // This avoids relying on the internal "track" rendering behaviour of the system circular style.
         ZStack {
             ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
                 .progressViewStyle(.circular)
                 .tint(Color.white)
-                .frame(width: baseDiameter, height: baseDiameter)
-                .scaleEffect(scale)
-                .frame(width: dialDiameter, height: dialDiameter)
 
-            ProgressView(timerInterval: behindStart...behindEnd, countsDown: false)
+            ProgressView(timerInterval: windowStart...windowEnd, countsDown: false)
                 .progressViewStyle(.circular)
                 .tint(Color.white)
-                .frame(width: baseDiameter, height: baseDiameter)
-                .scaleEffect(scale)
-                .frame(width: dialDiameter, height: dialDiameter)
-                .blendMode(.destinationOut)
+                .blendMode(.difference)
         }
         .compositingGroup()
+        .luminanceToAlpha()
+        .frame(width: baseDiameter, height: baseDiameter)
+        .scaleEffect(scale)
         .frame(width: dialDiameter, height: dialDiameter)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
