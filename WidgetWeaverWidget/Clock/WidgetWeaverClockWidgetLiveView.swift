@@ -65,21 +65,19 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 if secondsEnabled {
                     let endOfMinute = minuteAnchor.addingTimeInterval(60.0)
 
+                    // Host-driven tick + host-driven fractionCompleted → angle.
                     ProgressView(timerInterval: minuteAnchor...endOfMinute, countsDown: false)
-                        .progressViewStyle(.linear)
+                        .progressViewStyle(
+                            WWClockSecondHandProgressStyle(
+                                palette: palette,
+                                scale: displayScale
+                            )
+                        )
+                        .labelsHidden()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(0.001)
+                        .opacity(handsOpacity)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
-
-                    WWClockSecondHandMinuteSweepOverlay(
-                        palette: palette,
-                        startOfMinute: minuteAnchor,
-                        scale: displayScale
-                    )
-                    .opacity(handsOpacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
 
                     WWClockCentreHubOverlay(palette: palette, scale: displayScale)
                         .opacity(handsOpacity)
@@ -91,22 +89,35 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Second hand (minute sweep)
+// MARK: - Second hand driven by ProgressView fractionCompleted
 
-private struct WWClockSecondHandMinuteSweepOverlay: View {
+private struct WWClockSecondHandProgressStyle: ProgressViewStyle {
     let palette: WidgetWeaverClockPalette
-    let startOfMinute: Date
     let scale: CGFloat
 
-    @State private var phase: Double = 0.0
-    @State private var activeAnchor: Date = .distantPast
+    func makeBody(configuration: Configuration) -> some View {
+        WWClockSecondHandFromFractionView(
+            palette: palette,
+            fractionCompleted: configuration.fractionCompleted,
+            scale: scale
+        )
+    }
+}
+
+private struct WWClockSecondHandFromFractionView: View {
+    let palette: WidgetWeaverClockPalette
+    let fractionCompleted: Double?
+    let scale: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
-            let angle = Angle.degrees(max(0.0, min(phase, 0.999999)) * 360.0)
+            let fractionRaw = fractionCompleted ?? 0.0
+            let fraction = max(0.0, min(fractionRaw, 0.999999))
+            let angle = Angle.degrees(fraction * 360.0)
 
             let s = min(proxy.size.width, proxy.size.height)
 
+            // Mirror the second-hand geometry used by WidgetWeaverClockIconView
             let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
             let outerRadius = outerDiameter * 0.5
 
@@ -145,41 +156,8 @@ private struct WWClockSecondHandMinuteSweepOverlay: View {
                 scale: scale
             )
             .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .onAppear {
-            DispatchQueue.main.async {
-                startOrResyncIfNeeded(for: startOfMinute)
-            }
-        }
-        .task {
-            DispatchQueue.main.async {
-                startOrResyncIfNeeded(for: startOfMinute)
-            }
-        }
-        .onChange(of: startOfMinute) { _, newValue in
-            DispatchQueue.main.async {
-                startOrResyncIfNeeded(for: newValue)
-            }
-        }
-    }
-
-    private func startOrResyncIfNeeded(for anchor: Date) {
-        guard anchor != activeAnchor else { return }
-        activeAnchor = anchor
-
-        let now = Date()
-        let elapsed = now.timeIntervalSince(anchor)
-        let clamped = max(0.0, min(elapsed, 60.0))
-
-        let startPhase = clamped / 60.0
-        let remaining = max(0.01, 60.0 - clamped)
-
-        withAnimation(.none) {
-            phase = startPhase
-        }
-
-        withAnimation(.linear(duration: remaining)) {
-            phase = 1.0
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
