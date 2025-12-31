@@ -10,6 +10,8 @@ import WidgetKit
 
 extension ContentView {
 
+    private var remixVariantCount: Int { 12 }
+
     var remixToolbarButton: some View {
         Button {
             presentRemixSheet()
@@ -20,12 +22,12 @@ extension ContentView {
     }
 
     func presentRemixSheet() {
-        remixVariants = WidgetWeaverRemixEngine.generateVariants(from: remixBaseSpec(), count: 5)
+        remixVariants = WidgetWeaverRemixEngine.generateVariants(from: remixBaseSpec(), count: remixVariantCount)
         activeSheet = .remix
     }
 
     func remixAgain() {
-        remixVariants = WidgetWeaverRemixEngine.generateVariants(from: remixBaseSpec(), count: 5)
+        remixVariants = WidgetWeaverRemixEngine.generateVariants(from: remixBaseSpec(), count: remixVariantCount)
     }
 
     func applyRemixVariant(_ variant: WidgetSpec) {
