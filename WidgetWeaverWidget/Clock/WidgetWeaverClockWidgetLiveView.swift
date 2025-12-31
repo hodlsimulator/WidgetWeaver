@@ -36,8 +36,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let isPlaceholder = redactionReasons.contains(.placeholder)
             let isPrivacy = redactionReasons.contains(.privacy)
 
-            // Seconds must remain visible even when Reduce Motion is enabled.
-            // Only disable for placeholder/privacy rendering paths.
             let secondsEnabled =
                 (tickMode == .secondsSweep)
                 && !isPlaceholder
@@ -69,7 +67,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         )
 
                         GeometryReader { proxy in
-                            let geo = WWClockDialGeometry(containerSize: min(proxy.size.width, proxy.size.height), scale: displayScale)
+                            let geo = WWClockDialGeometry(
+                                containerSize: min(proxy.size.width, proxy.size.height),
+                                scale: displayScale
+                            )
 
                             WidgetWeaverClockCentreHubView(
                                 palette: palette,
@@ -147,7 +148,7 @@ private struct WWClockDialGeometry {
     }
 }
 
-// MARK: - Seconds overlay (ProgressView wedge, no SwiftUI .mask)
+// MARK: - Seconds overlay (centre-reaching wedge)
 
 private struct WWClockSecondHandWedgeTickOverlay: View {
     let palette: WidgetWeaverClockPalette
@@ -222,37 +223,49 @@ private struct WWClockSecondHandOutsideWedgeMatte: View {
     }
 }
 
+private struct WWClockThickCircularProgress: View {
+    let interval: ClosedRange<Date>
+    let dialDiameter: CGFloat
+    let thicknessScale: CGFloat
+
+    var body: some View {
+        ProgressView(timerInterval: interval, countsDown: false)
+            .progressViewStyle(.circular)
+            .tint(Color.white)
+            .frame(width: dialDiameter, height: dialDiameter)
+            .scaleEffect(thicknessScale)
+            .frame(width: dialDiameter, height: dialDiameter)
+            .clipShape(Circle())
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct WWClockSecondHandWedgeWindow: View {
     let start: Date
     let end: Date
     let dialDiameter: CGFloat
     let windowSeconds: TimeInterval
 
-    // Large scale is used so the circular progress stroke becomes a centre-reaching wedge.
-    private let baseDiameter: CGFloat = 2.0
+    private let thicknessScale: CGFloat = 8.0
 
     var body: some View {
-        let scale = dialDiameter / baseDiameter
-
-        // Lead interval is shifted earlier so a window exists at second 0.
         let leadStart = start.addingTimeInterval(-windowSeconds)
         let leadEnd = end.addingTimeInterval(-windowSeconds)
 
         ZStack {
-            ProgressView(timerInterval: leadStart...leadEnd, countsDown: false)
-                .progressViewStyle(.circular)
-                .tint(Color.white)
-                .frame(width: baseDiameter, height: baseDiameter)
-                .scaleEffect(scale)
-                .frame(width: dialDiameter, height: dialDiameter)
+            WWClockThickCircularProgress(
+                interval: leadStart...leadEnd,
+                dialDiameter: dialDiameter,
+                thicknessScale: thicknessScale
+            )
 
-            ProgressView(timerInterval: start...end, countsDown: false)
-                .progressViewStyle(.circular)
-                .tint(Color.white)
-                .frame(width: baseDiameter, height: baseDiameter)
-                .scaleEffect(scale)
-                .frame(width: dialDiameter, height: dialDiameter)
-                .blendMode(.destinationOut)
+            WWClockThickCircularProgress(
+                interval: start...end,
+                dialDiameter: dialDiameter,
+                thicknessScale: thicknessScale
+            )
+            .blendMode(.destinationOut)
         }
         .compositingGroup()
         .frame(width: dialDiameter, height: dialDiameter)
@@ -265,10 +278,7 @@ private enum WWClockTime {
     static func minuteAnchor(entryDate: Date) -> Date {
         let systemNow = Date()
 
-        // Avoid "future entry rendered early" (wedge stuck at 12).
         if entryDate > systemNow { return floorToMinute(systemNow) }
-
-        // Avoid "stale entry held too long" (wedge saturates and appears stopped).
         if systemNow.timeIntervalSince(entryDate) > 90.0 { return floorToMinute(systemNow) }
 
         return floorToMinute(entryDate)
