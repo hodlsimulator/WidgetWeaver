@@ -4,13 +4,11 @@
 //
 //  Created by . . on 12/29/25.
 //
-//  Nowcast chart for the weather template.
-//
 
 import SwiftUI
 
+/// Nowcast chart for the weather template.
 struct WeatherNowcastChart: View {
-
     let points: [WidgetWeaverWeatherMinutePoint]
     let maxIntensityMMPerHour: Double
     let accent: Color
@@ -55,52 +53,8 @@ struct WeatherNowcastChart: View {
         cfg.coreTopMix = 0.64
         cfg.coreFadeFraction = 0.10
 
-        // Fuzz: main look.
-        cfg.fuzzEnabled = true
-        cfg.canEnableFuzz = true
-        cfg.fuzzColor = Color(red: 0.52, green: 0.93, blue: 1.00)
-        cfg.fuzzMaxOpacity = 0.44
-
-        // Wider band is now safe (texture-based, bounded draw calls).
-        cfg.fuzzWidthFraction = 0.18
-        cfg.fuzzWidthPixelsClamp = 10.0...72.0
-
-        // Prefer texture fuzz in widgets.
-        cfg.fuzzTextureEnabled = true
-        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 320
-        cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 26 : 34
-        cfg.fuzzTextureInnerBandMultiplier = 1.35
-        cfg.fuzzTextureOuterBandMultiplier = 2.75
-        cfg.fuzzTextureInnerOpacityMultiplier = 0.85
-        cfg.fuzzTextureOuterOpacityMultiplier = 0.48
-
-        // Keep silhouette sampling reasonable in extensions.
-        cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 520 : 780
-
-        // Uncertainty mapping.
-        cfg.fuzzChanceThreshold = 0.70
-        cfg.fuzzChanceTransition = 0.23
-        cfg.fuzzChanceExponent = 1.85
-        cfg.fuzzChanceFloor = 0.20
-        cfg.fuzzChanceMinStrength = 0.06
-
-        // Tail bloom + low-height emphasis.
-        cfg.fuzzTailMinutes = 7.0
-        cfg.fuzzLowHeightPower = 1.85
-        cfg.fuzzLowHeightBoost = 1.20
-
-        // Cheap haze stroke (no blur).
-        cfg.fuzzHazeStrength = 0.12
-        cfg.fuzzHazeBlurFractionOfBand = 0.0
-        cfg.fuzzHazeStrokeWidthFactor = 1.20
-
-        // Rim.
-        cfg.rimEnabled = true
-        cfg.rimColor = Color(red: 0.72, green: 0.96, blue: 1.00)
-        cfg.rimInnerOpacity = 0.05
-        cfg.rimInnerWidthPixels = 1.0
-        cfg.rimOuterOpacity = 0.10
-        cfg.rimOuterWidthPixels = 2.6
+        // Rim (off for the mock look — erosion replaces the outline).
+        cfg.rimEnabled = false
 
         // Baseline.
         cfg.baselineEnabled = true
@@ -109,6 +63,54 @@ struct WeatherNowcastChart: View {
         cfg.baselineWidthPixels = 1.0
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
+
+        // Fuzz (new subtractive approach).
+        cfg.fuzzEnabled = true
+        cfg.canEnableFuzz = true
+
+        cfg.fuzzColor = Color(red: 0.52, green: 0.93, blue: 1.00)
+        cfg.fuzzMaxOpacity = 0.62
+
+        // Base band is smaller; outer dust pass expands it.
+        cfg.fuzzWidthFraction = 0.12
+        cfg.fuzzWidthPixelsClamp = 8.0...60.0
+
+        // Keep silhouette sampling reasonable in extensions.
+        cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 520 : 780
+
+        // Uncertainty mapping.
+        cfg.fuzzChanceThreshold = 0.78
+        cfg.fuzzChanceTransition = 0.22
+        cfg.fuzzChanceExponent = 1.20
+        cfg.fuzzChanceFloor = 0.20
+        cfg.fuzzChanceMinStrength = 0.06
+
+        // Tail bloom + low-height emphasis.
+        cfg.fuzzTailMinutes = 8.0
+        cfg.fuzzLowHeightPower = 1.05
+        cfg.fuzzLowHeightBoost = 1.10
+        cfg.fuzzEdgeWindowPx = 24.0
+
+        // Texture (bounded draw calls).
+        cfg.fuzzTextureEnabled = true
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 256 : 320
+        cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 26 : 34
+
+        // Inner -> outer dust expansion.
+        cfg.fuzzTextureInnerBandMultiplier = 1.15
+        cfg.fuzzTextureOuterBandMultiplier = 5.40
+        cfg.fuzzTextureInnerOpacityMultiplier = 0.62
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.18
+
+        // Subtractive erosion.
+        cfg.fuzzErodeEnabled = true
+        cfg.fuzzErodeStrength = 0.95
+        cfg.fuzzErodeStrokeWidthFactor = 0.68
+
+        // Cheap coherence haze (no blur).
+        cfg.fuzzHazeStrength = 0.06
+        cfg.fuzzHazeBlurFractionOfBand = 0.0
+        cfg.fuzzHazeStrokeWidthFactor = 0.95
 
         // Deterministic noise seed.
         cfg.noiseSeed = 0xBADC0DE
