@@ -37,23 +37,16 @@ extension RainForecastSurfaceRenderer {
         guard cfg.fuzzMaxOpacity > 0.0001 else { return }
         guard curvePoints.count == heights.count, heights.count == certainties01.count else { return }
         guard heights.count >= 3 else { return }
+        guard bandHalfWidth > 0.0001 else { return }
 
         let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
 
-        let curvePath = buildCurveStrokePath(curvePoints: curvePoints)
-
-        var strength = computeFuzzStrengthPerPoint(
-            heights: heights,
-            certainties01: certainties01.map { Double($0) },
-            configuration: cfg
-        )
-
+        // Conservative tiering for WidgetKit so the particulate look remains inexpensive.
         let wetEps = max(0.5 / max(1.0, Double(ds)), 0.0001)
-        let wetMask = heights.map { Double($0) > wetEps }
-        let distToWet = distanceToNearestTrue(wetMask)
-
-        let wetCount = wetMask.reduce(0) { $0 + ($1 ? 1 : 0) }
-        let wetCoverage = Double(wetCount) / Double(max(1, wetMask.count))
+        let wetCount = heights.reduce(0) { acc, h in
+            acc + ((Double(h) > wetEps) ? 1 : 0)
+        }
+        let wetCoverage = Double(wetCount) / Double(max(1, heights.count))
 
         let wPx = Double(rect.width * ds)
         let hPx = Double(max(0.0, baselineY - rect.minY) * ds)
@@ -67,205 +60,95 @@ extension RainForecastSurfaceRenderer {
             return .widget
         }()
 
-        let samplesPerPx = Double(heights.count) / max(1.0, Double(rect.width))
-        let edgeWindowSamples = max(1, Int(round(cfg.fuzzEdgeWindowPx * samplesPerPx)))
+        var baseCfg = cfg
 
-        if distToWet.count == strength.count {
-            for i in 0..<strength.count where distToWet[i] > edgeWindowSamples {
-                strength[i] = 0.0
+        // Target look is additive: subtle highlights and particulate dust.
+        // Subtractive erosion inside the body creates visible black “holes”.
+        baseCfg.fuzzErodeEnabled = false
+        baseCfg.fuzzOuterDustEnabled = false
+
+        // Clamp aggressively; many templates were tuned for subtractive erosion.
+        baseCfg.fuzzMaxOpacity = min(baseCfg.fuzzMaxOpacity, isExtension ? 0.30 : 0.42)
+        baseCfg.fuzzDensity = min(baseCfg.fuzzDensity, isExtension ? 1.25 : 1.35)
+        baseCfg.fuzzSpeckStrength = min(baseCfg.fuzzSpeckStrength, isExtension ? 1.10 : 1.25)
+
+        // Budget shaping for widgets.
+        if isExtension {
+            switch tier {
+            case .widget:
+                baseCfg.fuzzSpeckleBudget = min(baseCfg.fuzzSpeckleBudget, 2_600)
+                baseCfg.fuzzSpeckleRadiusPixels = 0.30...1.60
+            case .widgetHeavy:
+                baseCfg.fuzzSpeckleBudget = min(baseCfg.fuzzSpeckleBudget, 1_700)
+                baseCfg.fuzzSpeckleRadiusPixels = 0.30...1.45
+            case .app:
+                break
             }
         }
 
-        let tailMinutes = max(0.0, cfg.fuzzTailMinutes)
-        if tailMinutes > 0.01 {
-            let tailSamples = max(1, Int(round(tailMinutes / 60.0 * Double(strength.count))))
-            if tailSamples > 0 {
-                for i in 1..<strength.count {
-                    let prevWet = wetMask[i - 1]
-                    let curWet = wetMask[i]
-                    if prevWet != curWet {
-                        let start = max(0, i - tailSamples)
-                        let end = min(strength.count - 1, i + tailSamples)
-                        for j in start...end {
-                            let d = Double(abs(j - i))
-                            let t = 1.0 - clamp01(d / Double(tailSamples))
-                            strength[j] *= (1.0 + 0.65 * pow(t, 1.25))
-                        }
-                    }
-                }
-            }
-        }
-
-        let maxH = max(0.0001, Double(heights.max() ?? 0.0))
-        let invMaxH = 1.0 / maxH
-
-        var maxSlope: Double = 0.0
-        let dx = max(1e-6, Double(rect.width) / Double(max(1, heights.count - 1)))
-        var slopes = Array(repeating: 0.0, count: heights.count)
-
-        for i in 0..<heights.count {
-            let a = Double(heights[max(0, i - 1)])
-            let b = Double(heights[min(heights.count - 1, i + 1)])
-            let s = abs(b - a) / (2.0 * dx)
-            slopes[i] = s
-            maxSlope = max(maxSlope, s)
-        }
-
-        for i in 0..<strength.count {
-            let hn = clamp01(Double(heights[i]) * invMaxH)
-            let low = pow(max(0.0, 1.0 - hn), max(0.05, cfg.fuzzLowHeightPower))
-            let heightFade = 0.12 + 0.88 * low
-            strength[i] *= heightFade
-
-            if maxSlope > 0.000001 {
-                let sn = clamp01(slopes[i] / maxSlope)
-                let slopeFactor = 0.22 + 0.78 * pow(sn, 0.65)
-                strength[i] *= slopeFactor
-            }
-        }
-
-        let maxStrength = strength.max() ?? 0.0
-        guard maxStrength > 0.00001 else { return }
-
-        let clipRect = computeDissipationClipRect(
-            rect: rect,
+        // Geometry for strength mapping (chance + height shaping).
+        let geometry = RainSurfaceGeometry(
+            chartRect: rect,
             baselineY: baselineY,
             heights: heights,
-            strength: strength,
-            bandHalfWidth: bandHalfWidth,
-            configuration: cfg
+            certainties: certainties01.map { Double($0) },
+            displayScale: ds,
+            sourceMinuteCount: baseCfg.sourceMinuteCount
         )
 
-        var maxAlpha = clamp01(cfg.fuzzMaxOpacity)
-        maxAlpha *= max(0.0, cfg.fuzzSpeckStrength)
+        let surfacePoints = curvePoints
+        let normals = RainSurfaceDrawing.computeNormals(surfacePoints: surfacePoints)
 
-        let maxStopCap = isExtension ? 18 : 64
-        let baseStopCount = max(8, min(cfg.fuzzTextureGradientStops, maxStopCap))
-        let stopCount: Int = {
-            switch tier {
-            case .app:
-                return baseStopCount
-            case .widget:
-                return min(baseStopCount, 18)
-            case .widgetHeavy:
-                return min(baseStopCount, 12)
-            }
-        }()
-
-        let dissipationColor = cfg.coreBodyColor
-
-        let colourGradient = makeAlphaGradient(
-            baseColor: dissipationColor,
-            strength: strength,
-            maxAlpha: maxAlpha,
-            stops: stopCount
+        let perPointStrength = RainSurfaceDrawing.computeFuzzStrengthPerPoint(
+            geometry: geometry,
+            surfacePoints: surfacePoints,
+            normals: normals,
+            bandWidthPt: bandHalfWidth * 2.0,
+            displayScale: ds,
+            cfg: baseCfg
         )
 
-        let maskGradient = makeAlphaGradient(
-            baseColor: Color.white,
-            strength: strength,
-            maxAlpha: 1.0,
-            stops: stopCount
+        // Pass A: outside dust (blue, outside only).
+        var outsideCfg = baseCfg
+        outsideCfg.fuzzInsideSpeckleFraction = 0.0
+        outsideCfg.fuzzColor = cfg.coreBodyColor
+
+        RainSurfaceDrawing.drawFuzzSpeckles(
+            in: &context,
+            corePath: corePath,
+            surfacePoints: surfacePoints,
+            normals: normals,
+            perPointStrength: perPointStrength,
+            bandWidthPt: bandHalfWidth * 2.0,
+            displayScale: ds,
+            cfg: outsideCfg
         )
 
-        let baseTilePx = max(32, min(cfg.fuzzTextureTilePixels, isExtension ? 256 : 512))
-        let tilePx: Int = {
-            switch tier {
-            case .app:
-                return baseTilePx
-            case .widget:
-                return min(baseTilePx, 160)
-            case .widgetHeavy:
-                return min(baseTilePx, 128)
-            }
-        }()
-        let baseNoiseTileScale = fuzzNoiseTileScale(desiredTilePixels: tilePx)
-        let erodeNoiseTileScale = baseNoiseTileScale * 0.82
-        let dustNoiseTileScale = baseNoiseTileScale
+        // Pass B: inside highlight (white, inside only).
+        var insideCfg = baseCfg
+        insideCfg.fuzzInsideSpeckleFraction = 1.0
+        insideCfg.fuzzColor = Color.white
 
-        let baseSeed = RainSurfacePRNG.combine(
-            cfg.noiseSeed,
-            UInt64(curvePoints.count &* 977) &+ 0xA5A5_A5A5_A5A5_A5A5
+        // Keep the inside highlight subtle, even when outside dust is strong.
+        insideCfg.fuzzMaxOpacity = min(insideCfg.fuzzMaxOpacity, 0.22)
+        insideCfg.fuzzDensity = min(insideCfg.fuzzDensity, 1.00)
+        insideCfg.fuzzSpeckStrength = min(insideCfg.fuzzSpeckStrength, 0.65)
+
+        let insideBudgetMax = max(1_000, Int(Double(baseCfg.fuzzSpeckleBudget) * 0.55))
+        insideCfg.fuzzSpeckleBudget = min(insideCfg.fuzzSpeckleBudget, insideBudgetMax)
+
+        RainSurfaceDrawing.drawFuzzSpeckles(
+            in: &context,
+            corePath: corePath,
+            surfacePoints: surfacePoints,
+            normals: normals,
+            perPointStrength: perPointStrength,
+            bandWidthPt: bandHalfWidth * 2.0,
+            displayScale: ds,
+            cfg: insideCfg
         )
-
-        // Use a slightly denser tile for erosion so a meaningful fraction of the body
-        // is actually removed (the mockup has a large “grain” region, not just a thin outline).
-        // Keep outer dust sparse so it stays airy and widget-safe.
-        let dustNoise = fuzzNoiseImage(preferred: .sparse)
-        let erodeNoise = fuzzNoiseImage(preferred: .normal)
-
-        if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
-            let solidInset = computeSolidCoreInset(
-                bandHalfWidth: bandHalfWidth,
-                heights: heights,
-                displayScale: ds,
-                configuration: cfg
-            )
-
-            applyEdgeErosion(
-                in: &context,
-                rect: rect,
-                clipRect: clipRect,
-                corePath: corePath,
-                curvePath: curvePath,
-                bandHalfWidth: bandHalfWidth,
-                maskGradient: maskGradient,
-                noiseImage: erodeNoise,
-                noiseTileScale: erodeNoiseTileScale,
-                solidInset: solidInset,
-                tier: tier,
-                configuration: cfg,
-                seed: RainSurfacePRNG.combine(baseSeed, 0xBEE1_BEE1_BEE1_BEE1)
-            )
-        }
-
-        var allowOuterDust = cfg.fuzzOuterDustEnabled && (!isExtension || cfg.fuzzOuterDustEnabledInAppExtension)
-        if isExtension {
-            if tier == .widgetHeavy {
-                allowOuterDust = false
-            } else {
-                let coverageCutoff: Double = 0.55
-                let areaCutoff: Double = 420_000.0
-                if wetCoverage >= coverageCutoff || pixelArea >= areaCutoff {
-                    allowOuterDust = false
-                }
-            }
-        }
-
-        if allowOuterDust {
-            let desiredPassCount = isExtension ? cfg.fuzzOuterDustPassCountInAppExtension : cfg.fuzzOuterDustPassCount
-            let passCount = isExtension ? min(desiredPassCount, 1) : desiredPassCount
-            if passCount > 0 {
-                drawOuterDust(
-                    in: &context,
-                    rect: rect,
-                    clipRect: clipRect,
-                    corePath: corePath,
-                    curvePath: curvePath,
-                    bandHalfWidth: bandHalfWidth,
-                    colourGradient: colourGradient,
-                    noiseImage: dustNoise,
-                    noiseTileScale: dustNoiseTileScale,
-                    passCount: passCount,
-                    configuration: cfg,
-                    seed: RainSurfacePRNG.combine(baseSeed, 0xD005_700D_D005_700D)
-                )
-            }
-        }
-
-        if !isExtension, cfg.fuzzHazeStrength > 0.0001 {
-            let hazeAlpha = clamp01(cfg.fuzzHazeStrength) * clamp01(maxStrength) * maxAlpha
-            if hazeAlpha > 0.00001 {
-                context.blendMode = .normal
-                context.stroke(
-                    curvePath,
-                    with: .color(dissipationColor.opacity(hazeAlpha)),
-                    lineWidth: bandHalfWidth * 2.0 * CGFloat(max(0.10, cfg.fuzzHazeStrokeWidthFactor))
-                )
-                context.blendMode = .normal
-            }
-        }
     }
+
 
     static func applyEdgeErosion(
         in context: inout GraphicsContext,
