@@ -61,6 +61,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 private enum WWClockTimelineConfig {
     static let maxEntriesPerTimeline: Int = 120
     static let minuteStep: TimeInterval = 60.0
+    static let secondsSweepStep: TimeInterval = 1.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -70,10 +71,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> Entry {
         let now = Date()
         let minuteAnchor = Self.floorToMinute(now)
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : .secondsSweep
+        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
+            ? WWClockTimelineConfig.secondsSweepStep
+            : WWClockTimelineConfig.minuteStep
+
         return Entry(
             date: minuteAnchor,
-            tickMode: .secondsSweep,
-            tickSeconds: WWClockTimelineConfig.minuteStep,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
             colourScheme: .classic
         )
     }
@@ -82,10 +90,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
         let minuteAnchor = Self.floorToMinute(now)
+
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : .secondsSweep
+        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
+            ? WWClockTimelineConfig.secondsSweepStep
+            : WWClockTimelineConfig.minuteStep
+
         return Entry(
             date: minuteAnchor,
-            tickMode: .secondsSweep,
-            tickSeconds: WWClockTimelineConfig.minuteStep,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
             colourScheme: scheme
         )
     }
@@ -93,14 +108,15 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
+        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+        let tickMode: WidgetWeaverClockTickMode = (context.isPreview || isLowPower)
+            ? .minuteOnly
+            : .secondsSweep
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        if context.isPreview {
-            return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: .minuteOnly)
-        }
-
-        return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: .secondsSweep)
+        return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: tickMode)
     }
 
     private func makeMinuteTimeline(
@@ -109,6 +125,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         tickMode: WidgetWeaverClockTickMode
     ) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
+
+        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
+            ? WWClockTimelineConfig.secondsSweepStep
+            : WWClockTimelineConfig.minuteStep
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
@@ -119,7 +139,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                 Entry(
                     date: t,
                     tickMode: tickMode,
-                    tickSeconds: WWClockTimelineConfig.minuteStep,
+                    tickSeconds: tickSeconds,
                     colourScheme: colourScheme
                 )
             )
