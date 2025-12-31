@@ -119,7 +119,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Host-driven seconds hand overlay
+// MARK: - Live seconds hand overlay (TimelineView-driven)
 
 private struct WWClockSecondHandHostDrivenOverlay: View {
     let palette: WidgetWeaverClockPalette
@@ -130,8 +130,6 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
-
             let s = min(proxy.size.width, proxy.size.height)
 
             // Mirror the sizing logic from WidgetWeaverClockIconView so the second hand matches.
@@ -167,49 +165,30 @@ private struct WWClockSecondHandHostDrivenOverlay: View {
                 scale: displayScale
             )
 
-            // The ProgressView is the host-driven tick source.
-            // A custom ProgressViewStyle reads fractionCompleted and renders a rotating second hand.
-            ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
-                .progressViewStyle(
-                    WWClockSecondHandProgressStyle(
-                        palette: palette,
-                        secondWidth: secondWidth,
-                        secondLength: secondLength,
-                        secondTipSide: secondTipSide,
-                        scale: displayScale,
-                        handsOpacity: handsOpacity
-                    )
+            // Use TimelineView to re-render as time moves (works for a sweeping seconds hand).
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
+                let elapsed = context.date.timeIntervalSince(startOfMinute)
+                let secondsRaw = elapsed.truncatingRemainder(dividingBy: 60.0)
+                let seconds = secondsRaw < 0.0 ? (secondsRaw + 60.0) : secondsRaw
+
+                let fraction = max(0.0, min(seconds / 60.0, 0.999_999))
+                let angle = Angle.degrees(fraction * 360.0)
+
+                WidgetWeaverClockSecondHandView(
+                    colour: palette.accent,
+                    width: secondWidth,
+                    length: secondLength,
+                    angle: angle,
+                    tipSide: secondTipSide,
+                    scale: displayScale
                 )
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(handsOpacity)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-private struct WWClockSecondHandProgressStyle: ProgressViewStyle {
-    let palette: WidgetWeaverClockPalette
-    let secondWidth: CGFloat
-    let secondLength: CGFloat
-    let secondTipSide: CGFloat
-    let scale: CGFloat
-    let handsOpacity: Double
-
-    func makeBody(configuration: Configuration) -> some View {
-        let fraction = configuration.fractionCompleted ?? 0.0
-        let clamped = max(0.0, min(fraction, 0.999_999))
-        let angle = Angle.degrees(clamped * 360.0)
-
-        return WidgetWeaverClockSecondHandView(
-            colour: palette.accent,
-            width: secondWidth,
-            length: secondLength,
-            angle: angle,
-            tipSide: secondTipSide,
-            scale: scale
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(handsOpacity)
     }
 }
 
