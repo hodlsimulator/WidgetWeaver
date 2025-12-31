@@ -128,8 +128,9 @@ struct RainForecastSurfaceRenderer {
         for seg in segments {
             let corePath = Self.buildCoreFillPath(baselineY: baselineY, curvePoints: seg.curvePoints)
 
-            // Outer body first, then erosion/dust, then a solid inner core to preserve data
-            // legibility while still allowing a strong dissipation band.
+            // Core body first, then subtractive dissipation.
+            // The dissipation pass keeps the centre solid without re-filling an inset core,
+            // which avoids visible internal “terraces” in widgets.
             Self.drawCore(
                 in: &context,
                 corePath: corePath,
@@ -152,32 +153,6 @@ struct RainForecastSurfaceRenderer {
                     configuration: cfg
                 )
 
-                if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
-                    let inset = Self.computeSolidCoreInset(
-                        bandHalfWidth: bandHalfWidth,
-                        heights: seg.heights,
-                        displayScale: ds,
-                        configuration: cfg
-                    )
-
-                    if inset > onePx * 0.75 {
-                        let innerCurvePoints = Self.makeInsetCurvePoints(
-                            curvePoints: seg.curvePoints,
-                            baselineY: baselineY,
-                            heights: seg.heights,
-                            inset: inset
-                        )
-                        let innerCorePath = Self.buildCoreFillPath(baselineY: baselineY, curvePoints: innerCurvePoints)
-
-                        Self.drawCore(
-                            in: &context,
-                            corePath: innerCorePath,
-                            curvePoints: innerCurvePoints,
-                            baselineY: baselineY,
-                            configuration: cfg
-                        )
-                    }
-                }
             }
 
             Self.drawRim(

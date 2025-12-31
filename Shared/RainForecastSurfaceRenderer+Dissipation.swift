@@ -195,6 +195,13 @@ extension RainForecastSurfaceRenderer {
         let erodeNoise = fuzzNoiseImage(preferred: .normal)
 
         if cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
+            let solidInset = computeSolidCoreInset(
+                bandHalfWidth: bandHalfWidth,
+                heights: heights,
+                displayScale: ds,
+                configuration: cfg
+            )
+
             applyEdgeErosion(
                 in: &context,
                 rect: rect,
@@ -205,6 +212,7 @@ extension RainForecastSurfaceRenderer {
                 maskGradient: maskGradient,
                 noiseImage: erodeNoise,
                 noiseTileScale: erodeNoiseTileScale,
+                solidInset: solidInset,
                 tier: tier,
                 configuration: cfg,
                 seed: RainSurfacePRNG.combine(baseSeed, 0xBEE1_BEE1_BEE1_BEE1)
@@ -269,94 +277,133 @@ extension RainForecastSurfaceRenderer {
         maskGradient: Gradient,
         noiseImage: SwiftUI.Image?,
         noiseTileScale: CGFloat,
+        solidInset: CGFloat,
         tier: FuzzBudgetTier,
         configuration cfg: RainForecastSurfaceConfiguration,
         seed: UInt64
     ) {
         let strength = clamp01(cfg.fuzzErodeStrength)
         guard strength > 0.0001 else { return }
+        guard bandHalfWidth > 0.0001 else { return }
 
         let narrowMul = max(0.10, cfg.fuzzErodeStrokeWidthFactor)
-        let wideMul = max(narrowMul * 4.50, narrowMul + 2.00)
 
-        let wideStroke = curvePath.strokedPath(
-            StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wideMul), lineCap: .round, lineJoin: .round)
-        )
-        let narrowStroke = curvePath.strokedPath(
-            StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(narrowMul), lineCap: .round, lineJoin: .round)
-        )
+        // By default the erosion reaches well into the slope (broad grain region),
+        // but when `fuzzSolidCoreEnabled` is set, the inset is used to cap how far erosion can reach
+        // into the body. This keeps the centre solid without needing to re-fill an inset core.
+        var wideMul = max(narrowMul * 4.50, narrowMul + 2.00)
+
+        if solidInset > 0.0001 {
+            let maxInsideMul = max(Double(narrowMul), Double(solidInset / max(0.0001, bandHalfWidth)))
+            wideMul = min(wideMul, maxInsideMul)
+        }
 
         let startPoint = CGPoint(x: rect.minX, y: rect.midY)
         let endPoint = CGPoint(x: rect.maxX, y: rect.midY)
 
-        // In widgets, the erosion pass is intentionally collapsed into a single grainy subtraction layer.
-        // This keeps heavy rainy locations inside WidgetKit budgets while preserving the “dissolving slope” look.
-        let wantsSmoothWidePass = (tier == .app)
-
-        guard let noiseImage = noiseImage else {
-            context.blendMode = .destinationOut
-            context.drawLayer { layer in
-                layer.clip(to: Path(clipRect))
-                layer.clip(to: corePath)
-
-                // `drawLayer` inherits the parent blend mode. When the parent is `.destinationOut`,
-                // drawing into the layer with the inherited mode would erase from an empty layer.
-                // The layer should be drawn normally, then composited back with `.destinationOut`.
-                layer.blendMode = .normal
-
-                let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.65 * strength)
-                layer.fill(wideStroke, with: .linearGradient(wideGrad, startPoint: startPoint, endPoint: endPoint))
-
-                let narrowGrad = scaledGradient(maskGradient, alphaMultiplier: 1.05 * strength)
-                layer.fill(narrowStroke, with: .linearGradient(narrowGrad, startPoint: startPoint, endPoint: endPoint))
+        // Multiple overlapping stroke widths approximate a smooth falloff without blur.
+        // This avoids “terrace” bands that happen with only one wide + one narrow pass.
+        let layerCount: Int = {
+            switch tier {
+            case .app:
+                return 6
+            case .widget:
+                return 4
+            case .widgetHeavy:
+                return 3
             }
-            context.blendMode = .normal
-            return
+        }()
+
+        let edgePower = max(0.05, cfg.fuzzErodeEdgePower)
+
+        // Bias weights so the narrow layers dominate (strong near the contour, weak deeper inside).
+        let weightPower: Double = max(0.25, 1.60 + (edgePower - 1.0) * 0.45)
+
+        var widths: [Double] = []
+        widths.reserveCapacity(layerCount)
+
+        var weights: [Double] = []
+        weights.reserveCapacity(layerCount)
+
+        if layerCount == 1 {
+            widths.append(Double(wideMul))
+            weights.append(1.0)
+        } else {
+            for i in 0..<layerCount {
+                let t = Double(i) / Double(layerCount - 1) // 0 = narrow, 1 = wide
+
+                let shapedT = pow(t, edgePower)
+                let wMul = lerp(Double(narrowMul), Double(wideMul), shapedT)
+                widths.append(wMul)
+
+                let u = 1.0 - t
+                let w = pow(0.18 + 0.82 * max(0.0, u), weightPower)
+                weights.append(w)
+            }
+
+            let sum = max(0.000001, weights.reduce(0.0, +))
+            weights = weights.map { $0 / sum }
         }
 
-        if wantsSmoothWidePass {
-            context.blendMode = .destinationOut
-            context.drawLayer { layer in
-                layer.clip(to: Path(clipRect))
-                layer.clip(to: corePath)
-
-                layer.blendMode = .normal
-
-                // Keep the smooth pass subtle; the mockup reads primarily as grain.
-                let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.35 * strength)
-                layer.fill(wideStroke, with: .linearGradient(wideGrad, startPoint: startPoint, endPoint: endPoint))
+        // Calibrated for the alpha distribution of `RainFuzzNoise*` (median alpha ~0.28).
+        // Widget tiers clamp this slightly lower to reduce worst-case subtraction work.
+        let baseAlpha: Double = {
+            switch tier {
+            case .app:
+                return 2.45
+            case .widget:
+                return 2.25
+            case .widgetHeavy:
+                return 1.95
             }
-            context.blendMode = .normal
-        }
+        }()
 
         context.blendMode = .destinationOut
         context.drawLayer { layer in
             layer.clip(to: Path(clipRect))
             layer.clip(to: corePath)
 
+            // `drawLayer` inherits the parent blend mode. When the parent is `.destinationOut`,
+            // drawing into the layer with the inherited mode would erase from an empty layer.
+            // The layer is drawn normally, then composited back with `.destinationOut`.
             layer.blendMode = .normal
 
-            // Include wide-band grain even in the app tier. This is the main lever for getting
-            // the “~20% of the body becomes grain” look without turning the chart into a halo.
-            let includeWideInGrain = true
-            if includeWideInGrain {
-                let wideGrad = scaledGradient(maskGradient, alphaMultiplier: 0.95 * strength)
-                layer.fill(wideStroke, with: .linearGradient(wideGrad, startPoint: startPoint, endPoint: endPoint))
+            for i in 0..<widths.count {
+                let wMul = widths[i]
+                let aMul = baseAlpha * weights[i] * strength
+                if aMul <= 0.00001 { continue }
+
+                let stroke = curvePath.strokedPath(
+                    StrokeStyle(
+                        lineWidth: bandHalfWidth * 2.0 * CGFloat(wMul),
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+
+                let g = scaledGradient(maskGradient, alphaMultiplier: aMul)
+                layer.fill(stroke, with: .linearGradient(g, startPoint: startPoint, endPoint: endPoint))
             }
 
-            let narrowGrad = scaledGradient(maskGradient, alphaMultiplier: 1.30 * strength)
-            layer.fill(narrowStroke, with: .linearGradient(narrowGrad, startPoint: startPoint, endPoint: endPoint))
+            guard let noiseImage else { return }
 
             var prng = RainSurfacePRNG(seed: seed)
-            let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.95
-            let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.95
+
+            // Larger jitter prevents the tile from “locking” to the chart edges.
+            let jitterBase = max(64.0, min(256.0, Double(max(rect.width, rect.height))))
+            let ox = CGFloat(prng.nextSignedFloat() * jitterBase)
+            let oy = CGFloat(prng.nextSignedFloat() * jitterBase)
+
+            // A small deterministic scale variation reduces visible repetition without adding passes.
+            let scaleJitter = 0.92 + 0.16 * CGFloat(prng.nextFloat01())
+            let s = max(0.05, noiseTileScale * scaleJitter)
 
             let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
             let shading = GraphicsContext.Shading.tiledImage(
                 noiseImage,
                 origin: origin,
                 sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-                scale: noiseTileScale
+                scale: s
             )
 
             layer.blendMode = .destinationIn
