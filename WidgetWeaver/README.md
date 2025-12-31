@@ -22,7 +22,7 @@ WidgetWeaver has three tabs:
 - **Library**: saved designs (set Default, duplicate, delete)
 - **Editor**: edits the currently selected design; **Save** pushes changes to widgets
 
-Widgets refresh when a design is saved. If something looks stale, the in-app refresh action can be used (Editor → … → Refresh Widgets).
+Widgets refresh when a design is saved. If something looks stale, use the in-app refresh action (Editor → … → Refresh Widgets).
 
 ---
 
@@ -44,7 +44,7 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
 - Weather template added into the Library (optionally “Add & Make Default”)
 - Widgets added:
   - Home Screen: **WidgetWeaver** (select a Weather design), and/or
-  - Lock Screen: **Rain (WidgetWeaver)**
+  - Lock Screen: **Rain (WidgetWeaver)** (accessory rectangular)
 
 Notes:
 
@@ -117,34 +117,40 @@ The nowcast renderer is designed to stay inside WidgetKit budgets by constructio
 
 Implementation notes:
 
-- `RainForecastSurfaceView` detects placeholder/preview contexts via environment signals (including `.redactionReasons`) and applies `RainForecastSurfaceConfiguration.applyWidgetPlaceholderBudgetGuardrails(...)`.
-- `WidgetWeaverWidget.swift` treats `snapshot(...)` renders as low-budget so WidgetKit snapshots cannot accidentally trigger expensive rain rendering.
+- `RainForecastSurfaceView` detects placeholder/preview contexts (including `.redactionReasons`) and applies widget budget guardrails.
+  It does this via `RainForecastSurfaceConfiguration.applyWidgetPlaceholderBudgetGuardrails(...)`.
+- `WidgetWeaverWidget.swift` treats `snapshot(...)` renders as low-budget.
+  This ensures WidgetKit snapshots cannot trigger expensive rain rendering.
 
 #### How to fix it (when you see a placeholder)
 
 If the placeholder shows up during development, follow this order:
 
 1) **Force a fresh widget render**
-   - In the app: Editor → … → **Refresh Widgets** (reload timelines).
-   - Remove the widget from the Home Screen and add it again (forces a new snapshot path).
+
+- In the app: Editor → … → **Refresh Widgets** (reload timelines).
+- Remove the widget from the Home Screen and add it again (forces a new snapshot path).
 
 2) **Flush archived WidgetKit snapshots**
-   - Bump the relevant widget kind string so WidgetKit treats it as a “new” widget and re-archives cleanly:
-     - For the main widget: `Shared/WidgetWeaverWidgetKinds.swift` (the `main` kind).
-     - For the lock screen weather widget: the lock screen weather kind.
-   - Rebuild and run on a physical device.
+
+- Bump the relevant widget kind string so WidgetKit treats it as a “new” widget and re-archives cleanly:
+  - For the main widget: `Shared/WidgetWeaverWidgetKinds.swift` (the `main` kind).
+  - For the lock screen weather widget: the lock screen weather kind.
+- Rebuild and run on a physical device.
 
 3) **Reduce nowcast cost (stay inside the guardrails)**
-   - Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
-     - `fuzzSpeckleBudget`
-     - `maxDenseSamples`
-     - `fuzzHazeStrength` (ideally keep haze at 0 in widgets)
-     - `fuzzWidthFraction` / `fuzzWidthPixelsClamp`
-   - Confirm the renderer still clamps budgets in `Shared/RainForecastSurfaceRenderer.swift`.
+
+- Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
+  - `fuzzSpeckleBudget`
+  - `maxDenseSamples`
+  - `fuzzHazeStrength` (ideally keep haze at 0 in widgets)
+  - `fuzzWidthFraction` / `fuzzWidthPixelsClamp`
+- Confirm the renderer still clamps budgets in `Shared/RainForecastSurfaceRenderer.swift`.
 
 4) **Last resort recovery**
-   - Reboot the device (WidgetKit can get stuck with a bad snapshot state during heavy iteration).
-   - If a widget is permanently stuck in placeholder after many builds: remove it, reboot, re-add.
+
+- Reboot the device (WidgetKit can get stuck with a bad snapshot state during heavy iteration).
+- If a widget is permanently stuck in placeholder after many builds: remove it, reboot, re-add.
 
 The goal is always: a simple core-only chart is acceptable, but a placeholder is not. If budgets get tight, degrade the visual effects first.
 
@@ -172,11 +178,9 @@ WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`Layout
 Notes:
 
 - Calendar widgets render from a cache.
-
-If the widget looks stale:
-
-- refresh the Calendar snapshot (Next Up refresh action), then
-- refresh widget timelines (Editor → … → Refresh Widgets).
+- If the widget looks stale:
+  - refresh the Calendar snapshot (Next Up refresh action), then
+  - refresh widget timelines (Editor → … → Refresh Widgets).
 
 ---
 
@@ -222,7 +226,7 @@ WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenC
 
 ### Why the clock is tricky
 
-WidgetKit budgets timeline reloads. High-frequency widget timelines (for example: 1–2 second timeline entries) can look great briefly, then get coalesced or throttled.
+WidgetKit budgets timeline reloads. High-frequency widget timelines (e.g. 1–2 second entries) can look great briefly, then get coalesced or throttled.
 
 On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
 
@@ -248,7 +252,8 @@ Status: not reliably animated on Home Screen; the hosting view can be paused/fro
 
 3) **Heartbeat driver** (in-view periodic invalidation)
 
-- Keep the provider sparse (hourly) but drive an in-view periodic tick (for example: `TimelineView(.periodic(...))`) so the view re-evaluates.
+- Keep the provider sparse (hourly) but drive an in-view periodic tick so the view re-evaluates.
+  For example: `TimelineView(.periodic(...))`.
 
 Status: can render but has been unreliable; the clock can stop even after a widget kind bump.
 
@@ -266,9 +271,13 @@ Status: snaps correctly but often remains stopped (no ongoing animation).
 - Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
 - Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
 - Findings so far:
-  - `ProgressView(timerInterval: ...)` can animate visually, but `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress, so it cannot drive a custom second hand (symptom: second hand stuck at 12).
+  - `ProgressView(timerInterval: ...)` can animate visually, but it cannot drive a custom seconds hand from progress.
+    `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress (symptom: hand stuck at 12).
   - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
-- Status: minute stepping is reliable and does not blink; second-hand motion is still under investigation.
+  - Current experiment (budget-safe): a moving wedge mask reveals a **ticking** seconds needle (60 pre-rotated hands).
+    Wedge is isolated by subtracting a slightly time-shifted circular `ProgressView(timerInterval: ...)` (`destinationOut`).
+    Status: minute hand ticks reliably; seconds needle currently not visible (still under investigation).
+- Status: minute stepping is reliable and does not blink; seconds needle currently not visible (still under investigation).
 
 ### Files
 
@@ -328,7 +337,7 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
-- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); sweeping second hand is experimental (see Clock section)
+- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); second hand is experimental (see Clock section)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
