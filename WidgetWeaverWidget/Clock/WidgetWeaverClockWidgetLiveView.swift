@@ -46,10 +46,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 && !isReduceMotion
 
             let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
+
             let baseAngles = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
-                // Hour + minute are minute-boundary timeline-driven.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(baseAngles.hour),
@@ -58,24 +58,60 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
-                    showsCentreHub: !secondsEnabled,
                     handsOpacity: handsOpacity
                 )
                 .privacySensitive(isPrivacy)
 
                 if secondsEnabled {
-                    // Lightweight, host-animated seconds indicator (keeps the widget stable).
-                    WWClockSecondsRingOverlay(
-                        palette: palette,
-                        startOfMinute: minuteAnchor,
-                        scale: displayScale,
-                        opacity: handsOpacity
-                    )
+                    ZStack {
+                        WWClockSecondHandHostDrivenOverlay(
+                            palette: palette,
+                            startOfMinute: minuteAnchor,
+                            handsOpacity: handsOpacity
+                        )
 
-                    // Hub drawn once on top.
-                    WWClockCentreHubOverlay(palette: palette, scale: displayScale)
-                        .opacity(handsOpacity)
-                        .privacySensitive(isPrivacy)
+                        // The centre hub is a separate layer so it stays crisp while the second hand animates.
+                        GeometryReader { proxy in
+                            let s = min(proxy.size.width, proxy.size.height)
+
+                            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
+                            let outerRadius = outerDiameter * 0.5
+
+                            let metalThicknessRatio: CGFloat = 0.062
+                            let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
+
+                            let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
+                            let ringC = WWClock.pixel(
+                                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+                                scale: displayScale
+                            )
+                            let minB = WWClock.px(scale: displayScale)
+                            let ringB = WWClock.pixel(
+                                max(minB, outerRadius - provisionalR - ringA - ringC),
+                                scale: displayScale
+                            )
+
+                            let R = outerRadius - ringA - ringB - ringC
+
+                            let hubBaseRadius = WWClock.pixel(
+                                WWClock.clamp(R * 0.095, min: R * 0.080, max: R * 0.110),
+                                scale: displayScale
+                            )
+                            let hubCapRadius = WWClock.pixel(
+                                WWClock.clamp(R * 0.065, min: R * 0.055, max: R * 0.075),
+                                scale: displayScale
+                            )
+
+                            WidgetWeaverClockCentreHubView(
+                                palette: palette,
+                                baseRadius: hubBaseRadius,
+                                capRadius: hubCapRadius,
+                                scale: displayScale
+                            )
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .opacity(handsOpacity)
+                        }
+                    }
                 }
             }
             .widgetURL(URL(string: "widgetweaver://clock"))
@@ -83,100 +119,97 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Seconds indicator (host-animated, widget-safe)
+// MARK: - Host-driven seconds hand overlay
 
-private struct WWClockSecondsRingOverlay: View {
+private struct WWClockSecondHandHostDrivenOverlay: View {
     let palette: WidgetWeaverClockPalette
     let startOfMinute: Date
-    let scale: CGFloat
-    let opacity: Double
+    let handsOpacity: Double
+
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        let endOfMinute = startOfMinute.addingTimeInterval(60.0)
+        GeometryReader { proxy in
+            let endOfMinute = startOfMinute.addingTimeInterval(60.0)
 
-        return GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
 
-            let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+            // Mirror the sizing logic from WidgetWeaverClockIconView so the second hand matches.
+            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
             let metalThicknessRatio: CGFloat = 0.062
             let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
-            let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
+            let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
             let ringC = WWClock.pixel(
                 WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
-                scale: scale
+                scale: displayScale
             )
-            let minB = WWClock.px(scale: scale)
-            let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
+            let minB = WWClock.px(scale: displayScale)
+            let ringB = WWClock.pixel(
+                max(minB, outerRadius - provisionalR - ringA - ringC),
+                scale: displayScale
+            )
 
             let R = outerRadius - ringA - ringB - ringC
 
             let secondLength = WWClock.pixel(
                 WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
-                scale: scale
+                scale: displayScale
+            )
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                scale: displayScale
+            )
+            let secondTipSide = WWClock.pixel(
+                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                scale: displayScale
             )
 
-            let diameter = secondLength * 2.0
-
+            // The ProgressView is the host-driven tick source.
+            // A custom ProgressViewStyle reads fractionCompleted and renders a rotating second hand.
             ProgressView(timerInterval: startOfMinute...endOfMinute, countsDown: false)
-                .progressViewStyle(.circular)
-                .tint(palette.accent)
-                .frame(width: diameter, height: diameter)
-                .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
-                .opacity(opacity * 0.55)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                .progressViewStyle(
+                    WWClockSecondHandProgressStyle(
+                        palette: palette,
+                        secondWidth: secondWidth,
+                        secondLength: secondLength,
+                        secondTipSide: secondTipSide,
+                        scale: displayScale,
+                        handsOpacity: handsOpacity
+                    )
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
-// MARK: - Centre hub (drawn once on top)
-
-private struct WWClockCentreHubOverlay: View {
+private struct WWClockSecondHandProgressStyle: ProgressViewStyle {
     let palette: WidgetWeaverClockPalette
+    let secondWidth: CGFloat
+    let secondLength: CGFloat
+    let secondTipSide: CGFloat
     let scale: CGFloat
+    let handsOpacity: Double
 
-    var body: some View {
-        GeometryReader { proxy in
-            let s = min(proxy.size.width, proxy.size.height)
+    func makeBody(configuration: Configuration) -> some View {
+        let fraction = configuration.fractionCompleted ?? 0.0
+        let clamped = max(0.0, min(fraction, 0.999_999))
+        let angle = Angle.degrees(clamped * 360.0)
 
-            let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
-            let outerRadius = outerDiameter * 0.5
-
-            let metalThicknessRatio: CGFloat = 0.062
-            let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
-
-            let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
-            let ringC = WWClock.pixel(
-                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
-                scale: scale
-            )
-            let minB = WWClock.px(scale: scale)
-            let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
-
-            let R = outerRadius - ringA - ringB - ringC
-
-            let hubBaseRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
-                scale: scale
-            )
-            let hubCapRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
-                scale: scale
-            )
-
-            WidgetWeaverClockCentreHubView(
-                palette: palette,
-                baseRadius: hubBaseRadius,
-                capRadius: hubCapRadius,
-                scale: scale
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
+        return WidgetWeaverClockSecondHandView(
+            colour: palette.accent,
+            width: secondWidth,
+            length: secondLength,
+            angle: angle,
+            tipSide: secondTipSide,
+            scale: scale
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(handsOpacity)
     }
 }
 
