@@ -1,0 +1,507 @@
+# WidgetWeaver
+
+WidgetWeaver is an **iOS 26-only** prototype app that turns a typed “widget design spec” into real WidgetKit widgets.
+
+The project is a playground for exploring:
+
+- A simple typed JSON-ish design spec (`WidgetSpec`)
+- Deterministic SwiftUI rendering in a WidgetKit extension (`WidgetWeaverSpecView`)
+- A lightweight template catalogue (the **Explore** tab) for seeding designs
+- Pro features (matched sets + variables + interactive buttons)
+- Optional on-device AI for spec generation and patch edits
+
+The app and widget extension communicate via an App Group (UserDefaults + shared files) so widgets can render offline.
+
+---
+
+## App structure
+
+WidgetWeaver has three tabs:
+
+- **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps)
+- **Library**: saved designs (set Default, duplicate, delete)
+- **Editor**: edits the currently selected design; **Save** pushes changes to widgets
+
+Widgets refresh when a design is saved. If something looks stale, use the in-app refresh action (Editor → … → Refresh Widgets).
+
+---
+
+## Featured — Weather
+
+WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** (`LayoutTemplateToken.weather`):
+
+- Rain-first “next hour” nowcast chart (Dark Sky-ish)
+- Hourly strip + daily highs/lows (when data is available)
+- Glass container + glow styling
+- Adaptive Small / Medium / Large layouts
+- Exposes `__weather_*` **built-in variables** usable in any text field (no Pro required)
+- Includes a Lock Screen companion widget: **Rain (WidgetWeaver)** (accessory rectangular)
+
+### Weather setup checklist
+
+- Explore → Weather: location selected (Current Location or search)
+- Weather snapshot cached (Update now)
+- Weather template added into the Library (optionally “Add & Make Default”)
+- Widgets added:
+  - Home Screen: **WidgetWeaver** (select a Weather design), and/or
+  - Lock Screen: **Rain (WidgetWeaver)** (accessory rectangular)
+
+Notes:
+
+- Widgets refresh on a schedule, but **WidgetKit may throttle updates**.
+- Weather UI provides “Update now” to refresh the cached snapshot used by widgets.
+
+### Nowcast rain surface chart rendering
+
+The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-safe rendering pipeline.
+
+**Used (current path)**
+
+- `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift` — builds a `RainForecastSurfaceConfiguration` tuned for the nowcast chart and renders `RainForecastSurfaceView`.
+- `Shared/RainForecastSurfaceView.swift` — `Canvas` wrapper that fills a pure black background, applies WidgetKit budget guardrails, then calls the renderer.
+- `Shared/RainForecastSurfaceRenderer.swift` — procedural core mound + **asset-driven subtractive dissipation** (the body “evaporates” into grain on the slopes); deterministic and budget-clamped.
+- `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for stable jitter/offsets.
+
+**Not used for the Weather nowcast chart (legacy / experiments)**
+
+- `Shared/RainSurfaceDrawing.swift`
+- `Shared/RainSurfaceDrawing+Core.swift`
+- `Shared/RainSurfaceDrawing+Fuzz.swift`
+- `Shared/RainSurfaceDrawing+Rim.swift`
+- `Shared/RainSurfaceGeometry.swift`
+- `Shared/RainSurfaceMath.swift`
+- `Shared/RainSurfaceStyleHarness.swift`
+
+#### Technique (current): asset-driven subtractive dissipation
+
+We changed approach because “adding fuzz” kept reading like an outline/halo and was hard to push without triggering WidgetKit placeholders.
+
+The current technique is:
+
+- Draw the **core body** normally (a filled mound with a vertical gradient).
+- Then make the body **dissipate** by **subtracting opacity** near the contour:
+  - A wide, soft erosion band establishes the fade into the slope.
+  - A narrower erosion band is masked by a tiled speckle texture so the fade breaks into grain.
+- Optional: a very faint continuation outside the body (“outer dust”) can be used, but it is treated as a budget risk in widgets and may be disabled or heavily clamped.
+
+Key property:
+- This technique does **not** add a coloured fuzz layer. It primarily removes alpha from the body, so the surface looks like it is dissolving into black.
+- The goal is: **the body dissipates** (not a cyan halo, not a sharp outline).
+
+#### Noise assets (required for the new look)
+
+The dissipation grain comes from small tileable alpha textures derived from the mockup:
+
+- `RainFuzzNoise` (normal)
+- `RainFuzzNoise_Sparse`
+- `RainFuzzNoise_Dense`
+
+Important:
+- The widget extension is a separate bundle. These image sets must exist in the **widget extension’s** asset catalogue (and in the app’s if the app preview uses them).
+- If the assets do not load in the widget bundle, the erosion still happens but the “grain” component becomes subtle, and the chart can look very close to the previous commit.
+
+Notes:
+
+- `RainForecastSurfaceConfiguration` still contains several legacy knobs (for compatibility). The renderer uses a subset of fuzz/dissipation knobs and ignores unrelated legacy settings.
+- If the chart appearance needs tuning, start with the config values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`, then adjust dissipation behaviour in `Shared/RainForecastSurfaceRenderer.swift`. Avoid editing the legacy `RainSurfaceDrawing*` files for this chart.
+
+#### Current status of visual fidelity (and what to expect)
+
+The current output is still not matching the mockup, and it can look “nearly unchanged” if the erosion is too conservative or if the noise assets are not being loaded by the widget bundle.
+
+Can this technique reach mockup fidelity?
+- **Yes, this is the correct foundation** for the mockup look, because the mockup’s slopes are primarily an **alpha structure** problem (solid → grain → nothing), not a “draw more fuzz” problem.
+- The remaining gap is mostly:
+  - tuning the erosion width/strength so the dissipation reaches into the slope (not just the edge), and
+  - ensuring the tile textures have the right character (fine grain, sparse, no seams) and are consistently loaded.
+
+What may remain constrained by WidgetKit budgets:
+- Very large “outer dust clouds” can be risky in widgets. The primary requirement is **body dissipation**, which is achievable with bounded erosion passes.
+
+#### Troubleshooting: “no visible difference” and “wrong colour”
+
+If the chart looks almost identical to the older path:
+
+- Confirm `RainFuzzNoise*` image sets exist in the **widget extension** asset catalogue (not just the app).
+- Ensure names match exactly (case-sensitive).
+- Ensure the tile textures are truly sparse (mostly transparent). If the tile is too opaque, the effect reads as a smooth fade instead of grain.
+- Increase erosion width/strength in the nowcast configuration. A narrow band reads like a softened outline, not dissipation.
+
+If you see cyan/halo-like colour:
+- That indicates an additive blend (for example “screen”) or a haze stroke that is too strong, or the dissipation colour being sourced incorrectly.
+- The intended look is a blue body that dissolves; the dissipation should not introduce a new hue.
+
+### Regression A — WidgetKit placeholder (crash/budget blow) for rainy locations
+
+This is the most important pitfall for the nowcast chart.
+
+When the nowcast chart is “heavy” (lots of rain + expensive rendering), WidgetKit can decide the widget render exceeded its time/memory budget (or crashed) and it will fall back to a **placeholder snapshot**. That can appear as a skeleton-like widget or a generic placeholder look where the rain chart never appears correctly for rainy locations.
+
+#### Symptoms
+
+- Weather widget shows a placeholder-style UI only when rain is present (dry locations render fine).
+- The nowcast chart area becomes blank/grey/skeleton-like, or the entire widget looks like a placeholder.
+- The placeholder persists even after waiting, until a fresh snapshot is produced.
+
+#### Root causes (what to avoid)
+
+Avoid any rendering approach that can trigger expensive rasterisation or too many draw calls:
+
+- Large offscreen bitmaps (for example, trying to render into big images for compositing)
+- Repeated big blurs (especially `GraphicsContext.Filter.blur` or large `shadow`/`blur` chains)
+- Per-pixel loops or CPU “image processing” in the widget render path
+- Unbounded work tied to area (for example work ∝ width * height)
+- Thousands of individual shape fills/strokes per frame (draw-call explosion)
+- Any accidental “budget scaling” that increases work when rain is heavier (worst-case input)
+
+#### Guardrails (what the current path enforces)
+
+The nowcast renderer is designed to stay inside WidgetKit budgets by construction:
+
+- The silhouette is **O(n)** in samples.
+- Dissipation is a **bounded number of passes** (small constant number of clipped fills).
+- Grain uses small **asset-backed tile textures**, not per-speckle procedural loops.
+- Blur is avoided; any “coherence” should be a cheap stroke haze (and is best kept off in widgets).
+- In WidgetKit placeholder/preview contexts, the chart should **degrade** by removing extras first:
+  - disable gloss/glint
+  - disable haze/blur
+  - reduce dense samples
+  - reduce dissipation passes / disable “outer dust”
+  - if needed: disable dissipation entirely (core-only render is better than placeholder)
+
+Implementation notes:
+
+- `RainForecastSurfaceView` detects placeholder/preview contexts (including `.redactionReasons`) and applies widget budget guardrails.
+  It does this via `RainForecastSurfaceConfiguration.applyWidgetPlaceholderBudgetGuardrails(...)`.
+- `WidgetWeaverWidget.swift` treats `snapshot(...)` renders as low-budget.
+  This ensures WidgetKit snapshots cannot trigger expensive rain rendering.
+
+#### How to fix it (when you see a placeholder)
+
+If the placeholder shows up during development, follow this order:
+
+1) **Force a fresh widget render**
+
+- In the app: Editor → … → **Refresh Widgets** (reload timelines).
+- Remove the widget from the Home Screen and add it again (forces a new snapshot path).
+
+2) **Flush archived WidgetKit snapshots**
+
+- Bump the relevant widget kind string so WidgetKit treats it as a “new” widget and re-archives cleanly:
+  - For the main widget: `Shared/WidgetWeaverWidgetKinds.swift` (the `main` kind).
+  - For the lock screen weather widget: the lock screen weather kind.
+- Rebuild and run on a physical device.
+
+3) **Reduce nowcast cost (stay inside the guardrails)**
+
+- Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
+  - `maxDenseSamples`
+  - dissipation width/strength (erosion band width, number of passes)
+  - disable “outer dust” in widgets
+  - keep any haze at 0 in widgets
+- Confirm the renderer stays bounded in `Shared/RainForecastSurfaceRenderer.swift`.
+
+4) **Last resort recovery**
+
+- Reboot the device (WidgetKit can get stuck with a bad snapshot state during heavy iteration).
+- If a widget is permanently stuck in placeholder after many builds: remove it, reboot, re-add.
+
+The goal is always: a simple core-only chart is acceptable, but a placeholder is not. If budgets get tight, degrade the visual effects first.
+
+---
+
+## Featured — Next Up (Calendar)
+
+WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`LayoutTemplateToken.nextUpCalendar`):
+
+- Next calendar event with a live countdown
+- Medium/Large can also show a “Then” line (second upcoming event)
+- Cached calendar snapshot stored in the App Group (offline-friendly widgets)
+- Looks ahead until upcoming events are found (not limited to “next 24 hours”)
+- Includes a Lock Screen companion widget: **Next Up (WidgetWeaver)** (inline / circular / rectangular)
+
+### Next Up (Calendar) setup checklist
+
+- Explore → Templates: **Next Up (Calendar)** added into the Library
+- Calendar permission granted
+- Calendar snapshot cached (Next Up refresh action)
+- Widgets added:
+  - Home Screen: **WidgetWeaver** (select a Next Up design), and/or
+  - Lock Screen: **Next Up (WidgetWeaver)**
+
+Notes:
+
+- Calendar widgets render from a cache.
+- If the widget looks stale:
+  - refresh the Calendar snapshot (Next Up refresh action), then
+  - refresh widget timelines (Editor → … → Refresh Widgets).
+
+---
+
+## Featured — Steps (Pedometer)
+
+WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widgets:
+
+- Today’s step count snapshot (offline-friendly for widgets)
+- **Goal schedule** (weekday / weekend goals, with optional rest days)
+- **Streak rules** designed to feel fair:
+  - “Fair” rule avoids showing the streak as broken early in the day
+  - Rest days (goal = 0) can be skipped without breaking
+- **Full-history timeline in-app**: loads daily step totals back to the earliest available step sample
+- **Monthly calendar view** with goal-hit dots (tap a day → jump to that day in the timeline)
+- **Year heatmap view** (GitHub-style grid) with year picker + “best week / most consistent month”
+- “Pin this day” action from history (creates a saved design highlight for that day)
+- **Steps built-in variables** (`__steps_*`) usable in any design text field once Steps is set up
+- Lock Screen companion widget: **Steps (WidgetWeaver)** (inline / circular / rectangular)
+- Home Screen companion widget: **Steps (Home)** (Small / Medium / Large)
+
+### Steps setup checklist
+
+- Health permission granted for Step Count
+- Steps refreshed in-app to cache:
+  - Today’s steps snapshot (for widgets and `__steps_today`), and
+  - Full history (for streak / averages / heatmap / calendar)
+- Optional: weekday/weekend goals configured and a streak rule selected
+- Widgets added:
+  - Lock Screen: **Steps (WidgetWeaver)**
+  - Home Screen: **Steps (Home)**
+  - Or: `__steps_*` variables used inside any normal **WidgetWeaver** design
+
+Notes:
+
+- If “0 steps” appears unexpectedly, Fitness Tracking may be disabled or no step samples may be recorded.
+- Health access can be inspected via the Steps settings screen.
+
+---
+
+## Featured — Clock (Home Screen)
+
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style second hand.
+
+### Why the clock is tricky
+
+WidgetKit budgets timeline reloads. High-frequency widget timelines (e.g. 1–2 second entries) can look great briefly, then get coalesced or throttled.
+
+On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
+
+### Clock animation strategies (history + trade-offs)
+
+1) **Timeline-driven redraws + short linear sweeps** (most reliable when budgets allow)
+
+- Provider emits frequent timeline entries (`tickSeconds` around 2–15s, capped `maxEntries`, policy `.atEnd`).
+- The view wraps rendering in `WidgetWeaverRenderClock.withNow(entry.date)` and computes monotonic hand angles from `entry.date` so interpolation never runs backwards at wrap boundaries.
+- The sweeping effect comes from `.animation(.linear(duration: tickSeconds), value: secondDegrees)` between entries.
+
+Notes:
+
+- The update cadence can eventually be throttled by WidgetKit.
+- Alignment to whole seconds (base = `ceil(timeIntervalSinceReferenceDate)`) keeps the sweep phase-locked.
+
+2) **Widgy-style CoreAnimation sweeps** (no timeline spam, but host-dependent)
+
+- Keep the provider sparse (hourly or less) and start CoreAnimation-backed `repeatForever` sweeps on appearance.
+- Uses three phase values (seconds / minutes / hours) and resyncs to `Date()` on appearance to catch up after suspension.
+
+Status: not reliably animated on Home Screen; the hosting view can be paused/frozen.
+
+3) **Heartbeat driver** (in-view periodic invalidation)
+
+- Keep the provider sparse (hourly) but drive an in-view periodic tick so the view re-evaluates.
+  For example: `TimelineView(.periodic(...))`.
+
+Status: can render but has been unreliable; the clock can stop even after a widget kind bump.
+
+4) **Long single sweep per interval** (previous attempt)
+
+- Provider emits an immediate “now” entry plus hour-boundary entries; each entry carries `intervalStart` and `intervalEnd`.
+- The view snaps hands to real current time on appear, then attempts a single long `.linear` animation towards `intervalEnd` using monotonic (unbounded) angle maths.
+
+Status: snaps correctly but often remains stopped (no ongoing animation).
+
+5) **Minute-boundary timelines + stable tree + second-hand experiments** (current strategy)
+
+- Provider emits **minute-boundary** timeline entries (for example: 60–120 entries ≈ 1–2 hours), policy `.atEnd`.
+- Goal: the minute hand updates reliably while avoiding whole-widget “blink”.
+- Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
+- Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
+- Findings so far:
+  - `ProgressView(timerInterval: ...)` can animate visually, but it cannot drive a custom seconds hand from progress.
+    `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress (symptom: hand stuck at 12).
+  - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
+  - Current experiment (budget-safe): a moving wedge mask reveals a **ticking** seconds needle (60 pre-rotated hands).
+    Wedge is isolated by subtracting a slightly time-shifted circular `ProgressView(timerInterval: ...)` (`destinationOut`).
+    Status: minute hand ticks reliably; seconds needle currently not visible (still under investigation).
+- Status: minute stepping is reliable and does not blink; seconds needle currently not visible (still under investigation).
+
+### Files
+
+- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` — minute-boundary timeline generation (entry cap, policy `.atEnd`)
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` — stable-tree clock rendering + second-hand experiments
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` — experimental Widgy-style `repeatForever` driver
+- `Shared/WidgetWeaverRenderClock.swift` — helpers for injecting a deterministic “now” into rendering
+
+### Sweeping second hand (time maths)
+
+The core time maths is:
+
+- `local = now.timeIntervalSince1970 + TimeZone.autoupdatingCurrent.secondsFromGMT(for: now)`
+- `secondDeg = local * 6.0`
+- `minuteDeg = local * (360.0 / 3600.0)`
+- `hourDeg = local * (360.0 / 43200.0)`
+
+Using monotonic degrees avoids reverse interpolation if any implicit animation is introduced elsewhere.
+
+### Archived snapshots during iteration
+
+WidgetKit can hold onto an archived snapshot from a failed render; during iteration a widget can appear partially rendered or stuck until a clean archive occurs.
+
+If a clock widget remains stuck after code changes, bump the clock widget kind string (`WidgetWeaverWidgetKinds.homeScreenClock`) to force a clean archive.
+
+### RenderClock recursion pitfall
+
+`WidgetWeaverRenderClockScope.body` must not call `WidgetWeaverRenderClock.withNow(...)` from inside the scope.
+
+Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI view recursion and a black Home Screen widget.
+
+---
+
+## Current status (0.9.4 (15))
+
+### App
+
+- ✅ Explore tab: featured widgets + template catalogue (adds templates into the Library)
+- ✅ Library of saved specs + Default selection
+- ✅ Editor for `WidgetSpec`
+- ✅ Free tier: up to `WidgetWeaverEntitlements.maxFreeDesigns` saved designs
+- ✅ Pro: unlimited saved designs
+- ✅ Pro: matched sets (S/M/L) share style tokens
+- ✅ Share/export/import JSON (optionally embedding images)
+- ✅ Optional on-device AI (generate + patch)
+- ✅ Weather setup + cached snapshot + attribution
+- ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
+- ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
+- ✅ Steps History (timeline + monthly calendar + year heatmap) + insights + “Pin this day”
+- ✅ Inspector sheet (resolved spec + JSON + quick checks)
+- ✅ In-app preview dock (preview vs live, Small/Medium/Large)
+
+### Widgets
+
+- ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
+- ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
+- ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
+- ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
+- ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
+- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); second hand is experimental (see Clock section)
+- ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
+- ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
+- ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
+- ✅ Steps widgets render from a cached “today” snapshot stored in the App Group
+- ✅ `__weather_*` built-in variables available in any design (free)
+- ✅ `__steps_*` built-in variables available in any design once Steps is set up (free)
+- ✅ Time-sensitive designs can attempt minute-level timelines (still subject to WidgetKit throttling)
+
+### Layout + style
+
+- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up (Calendar) (includes a starter Steps design via `__steps_*` keys)
+- ✅ Axis: vertical/horizontal; alignment; spacing; line limits
+- ✅ Accent bar toggle
+- ✅ Style tokens: padding, corner radius, background token, overlay, glow, accent
+- ✅ Optional SF Symbol spec (name/size/weight/rendering/tint/placement)
+- ✅ Optional banner image (stored in App Group container)
+
+### Components
+
+- ✅ Built-in typed models: `WidgetSpec`, `LayoutSpec`, `StyleSpec`, `SymbolSpec`, `ImageSpec`
+- ✅ Rendering path: `WidgetWeaverSpecView` (SwiftUI)
+- ✅ Variable template engine: `WidgetWeaverVariableTemplate` (stored vars are Pro-only)
+- ✅ WeatherKit integration: `WidgetWeaverWeatherEngine`, `WidgetWeaverWeatherStore`, Weather template renderer
+- ✅ Calendar integration: `WidgetWeaverCalendarEngine`, `WidgetWeaverCalendarStore`, Next Up template renderer
+- ✅ HealthKit steps integration: `WidgetWeaverStepsEngine`, `WidgetWeaverStepsStore`, Steps settings + history + widgets + built-in vars
+- ✅ App Group store: `WidgetSpecStore`, `WidgetWeaverVariableStore`, `AppGroup`
+
+---
+
+## Project setup checklist
+
+- Xcode project opened
+- Team + bundle identifiers configured for app + widget targets
+- App Groups configured:
+  - Both targets have the App Group capability enabled
+  - Default identifier: `group.com.conornolan.widgetweaver` (see `Shared/AppGroup.swift`)
+  - If the identifier changes, updates are required in:
+    - `Shared/AppGroup.swift` (`AppGroup.identifier`)
+    - `WidgetWeaver/WidgetWeaver.entitlements`
+    - `WidgetWeaverWidgetExtension.entitlements`
+- First run: templates added from **Explore** into the Library
+- Designs edited in **Editor**, then saved to push updates to widgets
+- Weather / Calendar / Steps setup performed (for templates that depend on cached snapshots)
+
+Widgets can be added from the Home Screen / Lock Screen widget galleries and configured to select a specific saved design when relevant.
+
+Pro features require a Pro unlock; Variables and Actions become available in the editor after unlock.
+
+---
+
+## Editor features
+
+### Layout templates
+
+- **Classic**: stacked header + text, optional symbol, optional accent bar
+- **Hero**: text left, big symbol right (when present), optional accent bar
+- **Poster**: photo-first with a gradient overlay for text
+- **Weather**: WeatherKit-powered, rain-first nowcast layout with glass panels and adaptive S/M/L layouts
+- **Next Up (Calendar)**: next event + countdown (optionally “Then” on Medium/Large)
+
+### Built-in variables (free)
+
+Built-in variables are available in any text field via `{{...}}` templating.
+
+Weather:
+
+- `__weather_location_name`
+- `__weather_temperature`
+- `__weather_temperature_feels_like`
+- `__weather_condition`
+- `__weather_condition_symbol`
+- `__weather_rain_next_hour_mm`
+- `__weather_rain_next_hour_max_mm_hr`
+- `__weather_rain_next_hour_summary`
+- `__weather_hourly_strip`
+- `__weather_daily_high`
+- `__weather_daily_low`
+
+Steps:
+
+- `__steps_today`
+- `__steps_goal_today`
+- `__steps_progress_today`
+- `__steps_streak`
+- `__steps_avg_7`, `__steps_avg_7_exact`
+- `__steps_avg_30`, `__steps_avg_30_exact`
+- `__steps_best_day`
+- `__steps_best_day_date`
+- `__steps_best_day_date_iso`
+
+Access/debug:
+
+- `__steps_access`
+
+Example:
+
+- `Steps: {{__steps_today|--}} • Streak {{__steps_streak|0}}d`
+
+### Stored variables (Pro)
+
+The shared variable store is Pro-only and can be updated in-app or via widget buttons (App Intents).
+
+---
+
+## AI (Optional)
+
+AI features are designed to run on-device to generate or patch the design spec. Images are never generated.
+
+---
+
+## Licence / notes
+
+This is a prototype playground; it is not intended as a production app yet.
