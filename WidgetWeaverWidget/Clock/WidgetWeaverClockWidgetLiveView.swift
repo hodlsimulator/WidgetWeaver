@@ -25,13 +25,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let showLive = !(isPlaceholder || isPrivacy)
             let handsOpacity: Double = showLive ? 1.0 : 0.85
 
-            // README strategy #5:
-            // - Hour/minute: minute-boundary timeline entries (stable, reliable).
-            // - Seconds: budget-safe ticking via timer-style Text + ligature font (no 1 Hz timelines, no TimelineView).
-            //
-            // Important detail:
-            // The bundled font only has ligatures for "0:00"..."0:59" (and "0:0"..."0:9").
-            // The minute-boundary timeline keeps the timer in that domain by resetting `minuteAnchor` each minute.
+            // Hour/minute: minute-boundary timeline entries (stable, reliable).
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
@@ -50,8 +44,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     handsOpacity: handsOpacity
                 )
 
-                // Seconds overlay: ticking needle driven by timer-style text glyph updates.
-                WWClockSecondsLigatureOverlay(
+                // Seconds overlay:
+                // A 1 Hz TimelineView drives a lightweight redraw of *only* the seconds hand.
+                // This avoids the timer-style `Text` path, which can disable `liga` and break
+                // the bundled ligature font (its digits are intentionally blank).
+                WWClockSecondsHandOverlay(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
                     showLive: showLive,
@@ -68,7 +65,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
     }
-
 }
 
 // MARK: - Minute-boundary angles (tick)
@@ -91,9 +87,9 @@ private struct WWClockBaseAngles {
     }
 }
 
-// MARK: - Seconds overlay (ligature font)
+// MARK: - Seconds overlay (vector hand)
 
-private struct WWClockSecondsLigatureOverlay: View {
+private struct WWClockSecondsHandOverlay: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
     let showLive: Bool
@@ -104,32 +100,49 @@ private struct WWClockSecondsLigatureOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
+            let R = layout.dialDiameter * 0.5
+
+            let secondLength = WWClock.pixel(
+                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+                scale: displayScale
+            )
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                scale: displayScale
+            )
+            let secondTipSide = WWClock.pixel(
+                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                scale: displayScale
+            )
 
             ZStack {
                 if showLive {
-                    // Use a timer-style date text so the system updates the glyphs every second.
-                    // Important: the ligature font expects the displayed string to begin with "0:".
-                    // In practice `Text(timerInterval:...)` can format with two-digit minutes ("00:SS"),
-                    // which has no matching ligatures in the bundled font. `Text(date, style: .timer)`
-                    // formats as "0:SS", which matches.
-                    Text(minuteAnchor, style: .timer)
-                        .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
-                        .foregroundStyle(palette.accent)
-                        .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-                        .clipShape(Circle())
+                    TimelineView(.periodic(from: minuteAnchor, by: 1.0)) { context in
+                        WidgetWeaverClockSecondHandView(
+                            colour: palette.accent,
+                            width: secondWidth,
+                            length: secondLength,
+                            angle: Self.secondAngle(for: context.date),
+                            tipSide: secondTipSide,
+                            scale: displayScale
+                        )
                         .opacity(handsOpacity)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                    }
                 } else {
                     // Placeholder/privacy: deterministic static position (12 o'clock).
-                    Text("0:00")
-                        .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
-                        .foregroundStyle(palette.accent)
-                        .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-                        .clipShape(Circle())
-                        .opacity(handsOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    WidgetWeaverClockSecondHandView(
+                        colour: palette.accent,
+                        width: secondWidth,
+                        length: secondLength,
+                        angle: .degrees(0.0),
+                        tipSide: secondTipSide,
+                        scale: displayScale
+                    )
+                    .opacity(handsOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
 
                 WidgetWeaverClockCentreHubView(
@@ -146,6 +159,11 @@ private struct WWClockSecondsLigatureOverlay: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+
+    private static func secondAngle(for date: Date) -> Angle {
+        let sec = Calendar.autoupdatingCurrent.component(.second, from: date)
+        return .degrees(Double(sec) * 6.0)
     }
 }
 

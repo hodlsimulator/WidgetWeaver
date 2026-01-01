@@ -43,6 +43,12 @@ struct WidgetWeaverClockDialFaceView: View {
                     .blendMode(.multiply)
             )
             // Broad dome highlight biased upper-left (large area, low contrast).
+            //
+            // Note:
+            // A previous “lower-half darkening” layer used multiply-blended gradients with
+            // fully-transparent stops. WidgetKit can occasionally rasterise that into a hard
+            // horizontal seam that reads like a rectangular overlay. The dial looks close
+            // enough without that extra layer, and removing it avoids the artefact entirely.
             .overlay(
                 Ellipse()
                     .fill(
@@ -61,25 +67,6 @@ struct WidgetWeaverClockDialFaceView: View {
                     .blendMode(.screen)
                     .opacity(0.95)
                     .mask(Circle())
-            )
-            // Slight lower-half darkening to keep the face “near-black”.
-            //
-            // Using `.blendMode(.multiply)` with fully transparent gradient stops can produce
-            // a hard horizontal seam in some WidgetKit renders (reads like a rectangular overlay).
-            // A simple alpha overlay avoids that artefact and remains visually close.
-            .overlay(
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.black.opacity(0.00), location: 0.00),
-                                .init(color: Color.black.opacity(0.06), location: 0.55),
-                                .init(color: Color.black.opacity(0.18), location: 1.00)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
             )
             // Ring D: tight inner occlusion separator (crisp, no halo).
             .overlay(
