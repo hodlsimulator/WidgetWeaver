@@ -29,20 +29,23 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
-            // The seconds hand is a time-aware view and only renders in non-redacted contexts.
-            // In placeholder/privacy, the seconds hand falls back to a static 12 o'clock needle.
-            let showLiveSecondsHand = (tickMode == .secondsSweep) && showLive
-            let showStaticSecondsHand = (tickMode == .secondsSweep) && !showLive
+            // Seconds hand:
+            // - Always draw a fallback needle at 12 o'clock via WidgetWeaverClockIconView.
+            // - In live, non-redacted renders, try to draw the time-aware seconds glyph on top.
+            //
+            // This avoids the “no seconds hand at all” failure mode if the glyph path fails to render.
+            let showSecondsHand = (tickMode == .secondsSweep)
+            let showLiveSecondsGlyph = showSecondsHand && showLive
 
             ZStack {
-                // Base clock (hour + minute).
+                // Base clock (hour + minute + fallback seconds at 12).
                 // The centre hub is drawn in the overlay so the seconds needle sits underneath it.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
                     minuteAngle: .degrees(base.minute),
                     secondAngle: .degrees(0.0),
-                    showsSecondHand: showStaticSecondsHand,
+                    showsSecondHand: showSecondsHand,
                     showsHandShadows: true,
                     showsGlows: true,
                     showsCentreHub: false,
@@ -52,7 +55,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
-                    showLiveSecondsHand: showLiveSecondsHand,
+                    showLiveSecondsHand: showLiveSecondsGlyph,
                     handsOpacity: handsOpacity
                 )
             }
@@ -134,26 +137,44 @@ private struct WWClockSecondHandGlyphView: View {
     let minuteAnchor: Date
     let diameter: CGFloat
 
-    // A timer range capped to < 60 seconds ensures the formatted output remains "0:SS"
-    // (covered by the `WWClockSecondHand-Regular.ttf` ligatures).
+    // A timer range capped to < 60 seconds ensures the formatted output remains within the minute.
     private var timerRange: ClosedRange<Date> {
         let end = minuteAnchor.addingTimeInterval(59.999)
         return minuteAnchor...end
     }
 
     var body: some View {
-        Text(timerInterval: timerRange, countsDown: false)
-            // Force ASCII digits + ':' so OpenType `liga` substitution remains stable.
-            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(WWClockSecondHandFont.font(size: diameter))
-            .foregroundStyle(palette.accent)
-            .lineLimit(1)
-            .multilineTextAlignment(.center)
-            .frame(width: diameter, height: diameter, alignment: .center)
-            .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
-            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        ZStack {
+            Text(timerInterval: timerRange, countsDown: false)
+                // Force ASCII digits + ':' so OpenType `liga` substitution stays stable.
+                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+                .font(WWClockSecondHandFont.font(size: diameter))
+                .foregroundStyle(palette.accent)
+                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .frame(width: diameter, height: diameter, alignment: .center)
+                .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
+                .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            #if DEBUG
+            // Debug: show the exact timer string the system is producing.
+            // This makes it obvious whether it is "0:05", "00:05", etc.
+            Text(timerInterval: timerRange, countsDown: false)
+                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+                .font(.system(
+                    size: max(CGFloat(10.0), diameter * 0.08),
+                    weight: .regular,
+                    design: .monospaced
+                ))
+                .foregroundStyle(Color.red.opacity(0.85))
+                .frame(width: diameter, height: diameter, alignment: .bottom)
+                .padding(.bottom, max(CGFloat(6.0), diameter * 0.06))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            #endif
+        }
     }
 }
 
