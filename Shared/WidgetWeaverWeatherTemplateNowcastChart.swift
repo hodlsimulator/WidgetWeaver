@@ -18,16 +18,21 @@ struct WeatherNowcastChart: View {
     let locationLongitude: Double?
 
     var body: some View {
+        // Plot expected intensity so the chart matches the “Rain now / Ends in Xm” logic.
+        // Missing values are treated as 0 to avoid fill/hold artefacts at the tail.
         let intensities: [Double] = points.map { p in
-            if let v = p.precipitationIntensityMMPerHour, v.isFinite {
-                return max(0.0, v)
-            }
-            return Double.nan
+            let iRaw = p.precipitationIntensityMMPerHour ?? 0.0
+            let i0 = (iRaw.isFinite) ? max(0.0, iRaw) : 0.0
+
+            let cRaw = p.precipitationChance01 ?? 1.0
+            let c0 = (cRaw.isFinite) ? min(1.0, max(0.0, cRaw)) : 0.0
+
+            return i0 * c0
         }
 
-        // Treated as “certainty” for fuzz shaping:
+        // Treated as “certainty” for dissipation shaping:
         // - higher => less fuzz
-        // - lower => more fuzz
+        // - lower  => more fuzz
         let certainties: [Double] = points.map { p in
             if let c = p.precipitationChance01, c.isFinite {
                 return min(1.0, max(0.0, c))
@@ -58,7 +63,7 @@ struct WeatherNowcastChart: View {
         cfg.coreTopMix = 0.38
         cfg.coreFadeFraction = 0.00
 
-        // Rim (off for the mock look — erosion replaces the outline).
+        // Rim (off for the mock look — dissipation replaces the outline).
         cfg.rimEnabled = false
 
         // Baseline.
@@ -69,14 +74,14 @@ struct WeatherNowcastChart: View {
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
 
-        // Fuzz (subtractive + dust).
+        // Dissipation (texture-based; no particles).
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
 
         cfg.fuzzColor = cfg.coreBodyColor
-        cfg.fuzzMaxOpacity = 0.82
+        cfg.fuzzMaxOpacity = 0.72
 
-        // Wider base band improves the “solid → grain → nothing” transition.
+        // Base band width around the contour.
         cfg.fuzzWidthFraction = 0.18
         cfg.fuzzWidthPixelsClamp = 12.0...88.0
 
@@ -101,30 +106,23 @@ struct WeatherNowcastChart: View {
         cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 192 : 224
         cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
-        // Inner -> outer dust expansion.
-        cfg.fuzzTextureInnerBandMultiplier = 1.30
-        cfg.fuzzTextureOuterBandMultiplier = 7.60
-        cfg.fuzzTextureInnerOpacityMultiplier = 0.95
-        cfg.fuzzTextureOuterOpacityMultiplier = 0.45
+        // Inner -> outer expansion.
+        cfg.fuzzTextureInnerBandMultiplier = 1.55
+        cfg.fuzzTextureOuterBandMultiplier = 4.40
+        cfg.fuzzTextureInnerOpacityMultiplier = 1.00
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.65
 
+        // Outer dust is part of the mock look and is widget-safe with the texture method.
         cfg.fuzzOuterDustEnabled = true
         cfg.fuzzOuterDustEnabledInAppExtension = true
-        cfg.fuzzOuterDustPassCount = 3
+        cfg.fuzzOuterDustPassCount = 2
         cfg.fuzzOuterDustPassCountInAppExtension = 2
 
-        // Subtractive erosion.
+        // Subtle edge softening.
         cfg.fuzzErodeEnabled = true
-        cfg.fuzzErodeStrength = 1.25
-        cfg.fuzzErodeStrokeWidthFactor = 0.95
+        cfg.fuzzErodeStrength = 0.90
 
-        // Solid inner core: keep the envelope data-accurate while leaving a large
-        // “fuzzy shell” (targeting ~20% of the body area reading as grain).
-        cfg.fuzzSolidCoreEnabled = true
-        cfg.fuzzSolidCoreInsetBandMultiplier = 2.40
-        cfg.fuzzSolidCoreInsetPeakFraction = 0.20
-        cfg.fuzzSolidCoreMinInsetPixels = 0.0
-
-        // Cheap coherence haze (no blur).
+        // Cheap coherence haze (disabled; handled by noise layering).
         cfg.fuzzHazeStrength = 0.0
         cfg.fuzzHazeBlurFractionOfBand = 0.0
         cfg.fuzzHazeStrokeWidthFactor = 0.95
@@ -144,6 +142,7 @@ struct WeatherNowcastChart: View {
             if showAxisLabels {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
+
                     HStack {
                         Text("Now")
                         Spacer(minLength: 0)

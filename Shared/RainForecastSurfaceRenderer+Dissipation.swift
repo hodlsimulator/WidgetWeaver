@@ -4,6 +4,12 @@
 //
 //  Created by . . on 12/31/25.
 //
+//  Texture-based dissipation that matches the mock look:
+//  - no speckles / particles
+//  - seamless tiling (no band seams)
+//  - additive interior grain + mist band
+//  - subtle edge erosion only near the contour (no black pits in the body)
+//
 
 import Foundation
 import SwiftUI
@@ -13,15 +19,9 @@ import CoreGraphics
 import UIKit
 #endif
 
-// MARK: - Dissipation fuzz (subtractive erosion + optional outer dust)
-
 extension RainForecastSurfaceRenderer {
-    enum FuzzBudgetTier {
-        case app
-        case widget
-        case widgetHeavy
-    }
 
+    // MARK: - Dissipation fuzz
 
     static func drawDissipationFuzz(
         in context: inout GraphicsContext,
@@ -35,459 +35,393 @@ extension RainForecastSurfaceRenderer {
         displayScale ds: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration
     ) {
+        guard cfg.fuzzEnabled, cfg.canEnableFuzz else { return }
+        guard cfg.fuzzTextureEnabled else { return }
         guard cfg.fuzzMaxOpacity > 0.0001 else { return }
+
+        let n = min(heights.count, certainties01.count)
+        guard n >= 3 else { return }
         guard curvePoints.count == heights.count, heights.count == certainties01.count else { return }
-        guard heights.count >= 3 else { return }
-        guard bandHalfWidth > 0.0001 else { return }
 
-        let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
+        let maxAlpha = clamp01(cfg.fuzzMaxOpacity)
 
-        // Wet coverage and approximate render cost.
-        let wetEps = max(0.5 / max(1.0, Double(ds)), 0.0001)
-        let wetCount = heights.reduce(0) { acc, h in
-            acc + ((Double(h) > wetEps) ? 1 : 0)
-        }
-        let wetCoverage = Double(wetCount) / Double(max(1, heights.count))
+        // Strength along X, derived from chance + low-height emphasis.
+        let strength = computeFuzzStrengthPerPoint(
+            heights: heights,
+            certainties01: certainties01.map { Double($0) },
+            configuration: cfg
+        )
 
-        let wPx = Double(rect.width * ds)
-        let hPx = Double(max(0.0, baselineY - rect.minY) * ds)
-        let pixelArea = wPx * hPx
-
-        // Conservative tiering for WidgetKit.
-        let tier: FuzzBudgetTier = {
-            if !isExtension { return .app }
-            let heavyAreaThreshold: Double = 520_000.0
-            let heavyCoverageThreshold: Double = 0.62
-            if pixelArea >= heavyAreaThreshold || wetCoverage >= heavyCoverageThreshold { return .widgetHeavy }
-            return .widget
-        }()
-
-        // WidgetKit safety scaling: reduces work for large widgets and very-wet forecasts.
-        let complexityScale: Double = {
-            guard isExtension else { return 1.0 }
-            let areaRef: Double = 380_000.0
-            let cappedArea = max(90_000.0, min(pixelArea, 1_600_000.0))
-            let areaScale = sqrt(areaRef / cappedArea)
-            let coverageScale = 0.90 + 0.10 * (1.0 - wetCoverage)
-            return min(1.0, max(0.22, areaScale * coverageScale))
-        }()
-
-        // Hard cap total speckles (this is what prevents placeholder regression).
-        let totalBudgetCap: Int = {
-            if !isExtension { return 20_000 }
-            switch tier {
-            case .widget:
-                return 2_400
-            case .widgetHeavy:
-                return 1_600
-            case .app:
-                return 20_000
-            }
-        }()
-
-        let totalBudget = max(520, Int(Double(totalBudgetCap) * complexityScale))
-
-        // Split budget across passes (kept small; visuals are ramped via additive blend + strength).
-        var outsideBudget = max(80, Int(Double(totalBudget) * 0.10))
-        var sparkleBudget = max(160, Int(Double(totalBudget) * 0.26))
-        var bodyBudget = max(240, totalBudget - outsideBudget - sparkleBudget)
-
-        // Ensure sum <= totalBudget even after mins.
-        let sum0 = outsideBudget + sparkleBudget + bodyBudget
-        if sum0 > totalBudget {
-            var over = sum0 - totalBudget
-
-            let bodyMin = 240
-            let sparkleMin = 160
-            let outsideMin = 80
-
-            let bodyDrop = min(over, max(0, bodyBudget - bodyMin))
-            bodyBudget -= bodyDrop
-            over -= bodyDrop
-
-            let sparkleDrop = min(over, max(0, sparkleBudget - sparkleMin))
-            sparkleBudget -= sparkleDrop
-            over -= sparkleDrop
-
-            let outsideDrop = min(over, max(0, outsideBudget - outsideMin))
-            outsideBudget -= outsideDrop
-            over -= outsideDrop
+        if (strength.max() ?? 0.0) <= 0.001 {
+            return
         }
 
-        var baseCfg = cfg
-        // Additive particulate only (no subtractive erosion).
-        baseCfg.fuzzErodeEnabled = false
-
-        let geometry = RainSurfaceGeometry(
-            chartRect: rect,
+        // Keep all work inside a tight clip rect.
+        let clipRect = computeDissipationClipRect(
+            rect: rect,
             baselineY: baselineY,
             heights: heights,
-            certainties: certainties01.map { Double($0) },
-            displayScale: ds,
-            sourceMinuteCount: baseCfg.sourceMinuteCount
+            strength: strength,
+            bandHalfWidth: bandHalfWidth,
+            configuration: cfg
         )
 
-        let surfacePoints = curvePoints
-        let normals = RainSurfaceDrawing.computeNormals(surfacePoints: surfacePoints)
+        guard clipRect.width > 1.0, clipRect.height > 1.0 else { return }
 
-        let perPointStrengthEdgeRaw = RainSurfaceDrawing.computeFuzzStrengthPerPoint(
-            geometry: geometry,
-            surfacePoints: surfacePoints,
-            normals: normals,
-            bandWidthPt: bandHalfWidth * 2.0,
-            displayScale: ds,
-            cfg: baseCfg
+        let contour = contourPath(from: curvePoints)
+
+        let innerMul = max(0.05, cfg.fuzzTextureInnerBandMultiplier)
+        let outerMul = max(innerMul, cfg.fuzzTextureOuterBandMultiplier)
+
+        let innerBand = max(0.25, bandHalfWidth * CGFloat(innerMul))
+        let outerBand = max(innerBand, bandHalfWidth * CGFloat(outerMul))
+
+        let innerBandPath = contour.strokedPath(
+            StrokeStyle(lineWidth: innerBand * 2.0, lineCap: .round, lineJoin: .round)
         )
 
-        // Strength shaping:
-        // - wetFloor ensures texture appears as soon as rain exists
-        // - taperBoost increases fuzz where certainty drops (helps “ends in Xm” look)
-        let wetEpsCg = CGFloat(wetEps)
-        let edgeBoost: CGFloat = isExtension ? 1.90 : 2.10
-        let wetFloor: CGFloat = isExtension ? 0.20 : 0.16
-        let taperAmp: CGFloat = isExtension ? 1.20 : 1.35
+        let outerBandPath = contour.strokedPath(
+            StrokeStyle(lineWidth: outerBand * 2.0, lineCap: .round, lineJoin: .round)
+        )
 
-        var perPointStrengthEdge: [CGFloat] = []
-        perPointStrengthEdge.reserveCapacity(perPointStrengthEdgeRaw.count)
+        let topY = min(curvePoints.map { $0.y }.min() ?? baselineY, baselineY)
+        let yStart = max(rect.minY, topY - outerBand * 0.55)
+        let yEnd = min(baselineY + outerBand * 0.35, rect.maxY)
 
-        for i in 0..<perPointStrengthEdgeRaw.count {
-            let s = perPointStrengthEdgeRaw[i]
-            let h = heights[i]
-            let c = certainties01[i]
+        // Horizontal mask: stronger fuzz in uncertain / low-height regions, smoother in confident cores.
+        let xMaskGradient = makeAlphaGradient(
+            baseColor: .white,
+            strength: strength,
+            maxAlpha: 1.0,
+            stops: cfg.fuzzTextureGradientStops
+        )
+        let xMaskShading = GraphicsContext.Shading.linearGradient(
+            xMaskGradient,
+            startPoint: CGPoint(x: clipRect.minX, y: clipRect.midY),
+            endPoint: CGPoint(x: clipRect.maxX, y: clipRect.midY)
+        )
 
-            let t = max(CGFloat(0.0), CGFloat(1.0) - c)
-            let taperBoost: CGFloat = 1.0 + (t * t) * taperAmp
+        // Two seamless noise tiles.
+        let fineNoise = RainSurfaceSeamlessNoiseTile.image(.fine)
+        let coarseNoise = RainSurfaceSeamlessNoiseTile.image(.coarse)
 
-            var v = min(CGFloat(1.0), s * edgeBoost * taperBoost)
-            if h > wetEpsCg {
-                v = max(v, wetFloor)
+        let tilePixels = max(24, min(cfg.fuzzTextureTilePixels, 1024))
+        let fineShading = tiledNoiseShading(
+            image: fineNoise,
+            bounds: clipRect,
+            displayScale: ds,
+            desiredTilePixels: tilePixels,
+            scaleMultiplier: 1.0,
+            seed: cfg.noiseSeed ^ stableSeed(from: curvePoints, displayScale: ds),
+            jitterFraction: 0.22
+        )
+
+        let coarseShading = tiledNoiseShading(
+            image: coarseNoise,
+            bounds: clipRect,
+            displayScale: ds,
+            desiredTilePixels: tilePixels,
+            scaleMultiplier: 1.85,
+            seed: (cfg.noiseSeed &+ 0x9E3779B97F4A7C15) ^ stableSeed(from: Array(curvePoints.reversed()), displayScale: ds),
+            jitterFraction: 0.28
+        )
+
+        // Depth masks (multiplied via destinationIn).
+        let depthFullBody = GraphicsContext.Shading.linearGradient(
+            Gradient(stops: [
+                .init(color: .white.opacity(1.0), location: 0.0),
+                .init(color: .white.opacity(0.90), location: 0.18),
+                .init(color: .white.opacity(0.34), location: 0.70),
+                .init(color: .white.opacity(0.22), location: 1.0),
+            ]),
+            startPoint: CGPoint(x: clipRect.midX, y: yStart),
+            endPoint: CGPoint(x: clipRect.midX, y: yEnd)
+        )
+
+        let depthNearSurface = GraphicsContext.Shading.linearGradient(
+            Gradient(stops: [
+                .init(color: .white.opacity(1.0), location: 0.0),
+                .init(color: .white.opacity(0.78), location: 0.20),
+                .init(color: .white.opacity(0.0), location: 1.0),
+            ]),
+            startPoint: CGPoint(x: clipRect.midX, y: yStart),
+            endPoint: CGPoint(x: clipRect.midX, y: yEnd)
+        )
+
+        // Body grain (subtle, everywhere under the surface).
+        // This is the “texture under the fuzz” seen in the mock.
+        do {
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.34
+            if a > 0.0001 {
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.clip(to: corePath)
+
+                    layer.blendMode = .plusLighter
+                    layer.opacity = a
+                    layer.fill(Path(clipRect), with: fineShading)
+
+                    layer.blendMode = .destinationIn
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: depthFullBody)
+                    layer.fill(Path(clipRect), with: xMaskShading)
+                }
             }
-            perPointStrengthEdge.append(v)
         }
 
-        let bodyBoost: CGFloat = isExtension ? CGFloat(1.10 + 0.90 * complexityScale) : 2.00
-        let perPointStrengthBody: [CGFloat] = perPointStrengthEdge.map { s in
-            min(CGFloat(1.0), s * bodyBoost)
-        }
+        // Near-surface grain (stronger, slightly clumpier).
+        do {
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.70
+            if a > 0.0001 {
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.clip(to: corePath)
+                    layer.clip(to: innerBandPath)
 
-        let maxHeightPt: CGFloat = surfacePoints.reduce(0.0) { acc, p in
-            max(acc, max(0.0, baselineY - p.y))
-        }
-        let bodyBandWidthPt = max(bandHalfWidth * 2.0, maxHeightPt * 1.08)
+                    layer.blendMode = .plusLighter
+                    layer.opacity = a
+                    layer.fill(Path(clipRect), with: coarseShading)
 
-        // Pass A: outside dust (blue, subtle, cheap).
-        var outsideCfg = baseCfg
-        outsideCfg.fuzzOuterDustEnabled = true
-        outsideCfg.fuzzInsideSpeckleFraction = 0.0
-        outsideCfg.fuzzColor = cfg.coreBodyColor
-
-        outsideCfg.fuzzMaxOpacity = isExtension ? 0.22 : 0.30
-        outsideCfg.fuzzDensity = 0.95
-        outsideCfg.fuzzSpeckStrength = 1.00
-        outsideCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.18...1.00) : (0.18...1.15)
-        outsideCfg.fuzzSpeckleBudget = outsideBudget
-
-        RainSurfaceDrawing.drawFuzzSpeckles(
-            in: &context,
-            corePath: corePath,
-            surfacePoints: surfacePoints,
-            normals: normals,
-            perPointStrength: perPointStrengthEdge,
-            bandWidthPt: bandHalfWidth * 2.0,
-            displayScale: ds,
-            cfg: outsideCfg
-        )
-
-        // Inside passes are additive: stronger look with fewer primitives.
-        let prevBlend = context.blendMode
-        context.blendMode = .plusLighter
-
-        // Pass B: body grain (white, inside only, deep) – main texture.
-        var bodyCfg = baseCfg
-        bodyCfg.fuzzOuterDustEnabled = false
-        bodyCfg.fuzzInsideSpeckleFraction = 1.0
-        bodyCfg.fuzzColor = Color.white
-
-        bodyCfg.fuzzMaxOpacity = isExtension ? (0.34 + 0.14 * complexityScale) : 0.60
-        bodyCfg.fuzzDensity = isExtension ? (1.20 + 2.40 * complexityScale) : 5.60
-        bodyCfg.fuzzSpeckStrength = isExtension ? (1.00 + 1.70 * complexityScale) : 3.00
-        bodyCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.20...1.30) : (0.20...1.45)
-        bodyCfg.fuzzSpeckleBudget = bodyBudget
-
-        RainSurfaceDrawing.drawFuzzSpeckles(
-            in: &context,
-            corePath: corePath,
-            surfacePoints: surfacePoints,
-            normals: normals,
-            perPointStrength: perPointStrengthBody,
-            bandWidthPt: bodyBandWidthPt,
-            displayScale: ds,
-            cfg: bodyCfg
-        )
-
-        // Pass C: sparkle (white, inside only, shallow) – makes the surface read as mist.
-        var sparkleCfg = baseCfg
-        sparkleCfg.fuzzOuterDustEnabled = false
-        sparkleCfg.fuzzInsideSpeckleFraction = 1.0
-        sparkleCfg.fuzzColor = Color.white
-
-        sparkleCfg.fuzzMaxOpacity = isExtension ? (0.26 + 0.10 * complexityScale) : 0.44
-        sparkleCfg.fuzzDensity = isExtension ? (0.80 + 1.20 * complexityScale) : 2.60
-        sparkleCfg.fuzzSpeckStrength = isExtension ? (1.10 + 1.60 * complexityScale) : 3.20
-        sparkleCfg.fuzzSpeckleRadiusPixels = 0.28...2.10
-        sparkleCfg.fuzzSpeckleBudget = sparkleBudget
-
-        RainSurfaceDrawing.drawFuzzSpeckles(
-            in: &context,
-            corePath: corePath,
-            surfacePoints: surfacePoints,
-            normals: normals,
-            perPointStrength: perPointStrengthEdge,
-            bandWidthPt: bandHalfWidth * 2.0,
-            displayScale: ds,
-            cfg: sparkleCfg
-        )
-
-        context.blendMode = prevBlend
-    }
-
-
-
-
-
-
-    static func applyEdgeErosion(
-        in context: inout GraphicsContext,
-        rect: CGRect,
-        clipRect: CGRect,
-        corePath: Path,
-        curvePath: Path,
-        bandHalfWidth: CGFloat,
-        maskGradient: Gradient,
-        noiseImage: SwiftUI.Image?,
-        noiseTileScale: CGFloat,
-        solidInset: CGFloat,
-        tier: FuzzBudgetTier,
-        configuration cfg: RainForecastSurfaceConfiguration,
-        seed: UInt64
-    ) {
-        let strength = clamp01(cfg.fuzzErodeStrength)
-        guard strength > 0.0001 else { return }
-        guard bandHalfWidth > 0.0001 else { return }
-
-        let narrowMul = max(0.10, cfg.fuzzErodeStrokeWidthFactor)
-
-        // By default the erosion reaches well into the slope (broad grain region),
-        // but when `fuzzSolidCoreEnabled` is set, the inset is used to cap how far erosion can reach
-        // into the body. This keeps the centre solid without needing to re-fill an inset core.
-        var wideMul = max(narrowMul * 4.50, narrowMul + 2.00)
-
-        if solidInset > 0.0001 {
-            let maxInsideMul = max(Double(narrowMul), Double(solidInset / max(0.0001, bandHalfWidth)))
-            wideMul = min(wideMul, maxInsideMul)
-        }
-
-        let startPoint = CGPoint(x: rect.minX, y: rect.midY)
-        let endPoint = CGPoint(x: rect.maxX, y: rect.midY)
-
-        // Multiple overlapping stroke widths approximate a smooth falloff without blur.
-        // This avoids “terrace” bands that happen with only one wide + one narrow pass.
-        let layerCount: Int = {
-            switch tier {
-            case .app:
-                return 6
-            case .widget:
-                return 4
-            case .widgetHeavy:
-                return 3
+                    layer.blendMode = .destinationIn
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: depthNearSurface)
+                    layer.fill(Path(clipRect), with: xMaskShading)
+                }
             }
-        }()
-
-        let edgePower = max(0.05, cfg.fuzzErodeEdgePower)
-
-        // Bias weights so the narrow layers dominate (strong near the contour, weak deeper inside).
-        let weightPower: Double = max(0.25, 1.60 + (edgePower - 1.0) * 0.45)
-
-        var widths: [Double] = []
-        widths.reserveCapacity(layerCount)
-
-        var weights: [Double] = []
-        weights.reserveCapacity(layerCount)
-
-        if layerCount == 1 {
-            widths.append(Double(wideMul))
-            weights.append(1.0)
-        } else {
-            for i in 0..<layerCount {
-                let t = Double(i) / Double(layerCount - 1) // 0 = narrow, 1 = wide
-
-                let shapedT = pow(t, edgePower)
-                let wMul = lerp(Double(narrowMul), Double(wideMul), shapedT)
-                widths.append(wMul)
-
-                let u = 1.0 - t
-                let w = pow(0.18 + 0.82 * max(0.0, u), weightPower)
-                weights.append(w)
-            }
-
-            let sum = max(0.000001, weights.reduce(0.0, +))
-            weights = weights.map { $0 / sum }
         }
 
-        // Calibrated for the alpha distribution of `RainFuzzNoise*` (median alpha ~0.28).
-        // Widget tiers clamp this slightly lower to reduce worst-case subtraction work.
-        let baseAlpha: Double = {
-            switch tier {
-            case .app:
-                return 2.45
-            case .widget:
-                return 2.25
-            case .widgetHeavy:
-                return 1.95
-            }
-        }()
+        // Subtle edge erosion (only within the contour band).
+        // This removes the hard silhouette edge without producing interior “holes”.
+        if cfg.fuzzErodeEnabled && cfg.fuzzErodeStrength > 0.0001 {
+            let k = max(0.0, cfg.fuzzErodeStrength)
+            let a = maxAlpha * min(0.45, 0.22 * k)
 
-        context.blendMode = .destinationOut
-        context.drawLayer { layer in
-            layer.clip(to: Path(clipRect))
-            layer.clip(to: corePath)
+            if a > 0.0001 {
+                // Two light passes: breaks up repetition without heavy cost.
+                for pass in 0..<2 {
+                    let passSeed = cfg.noiseSeed &+ UInt64(pass) &* 0xBF58476D1CE4E5B9
 
-            // `drawLayer` inherits the parent blend mode. When the parent is `.destinationOut`,
-            // drawing into the layer with the inherited mode would erase from an empty layer.
-            // The layer is drawn normally, then composited back with `.destinationOut`.
-            layer.blendMode = .normal
-
-            for i in 0..<widths.count {
-                let wMul = widths[i]
-                let aMul = baseAlpha * weights[i] * strength
-                if aMul <= 0.00001 { continue }
-
-                let stroke = curvePath.strokedPath(
-                    StrokeStyle(
-                        lineWidth: bandHalfWidth * 2.0 * CGFloat(wMul),
-                        lineCap: .round,
-                        lineJoin: .round
+                    let passShading = tiledNoiseShading(
+                        image: coarseNoise,
+                        bounds: clipRect,
+                        displayScale: ds,
+                        desiredTilePixels: tilePixels,
+                        scaleMultiplier: 1.55 + CGFloat(pass) * 0.22,
+                        seed: passSeed ^ stableSeed(from: curvePoints, displayScale: ds),
+                        jitterFraction: 0.32
                     )
-                )
 
-                let g = scaledGradient(maskGradient, alphaMultiplier: aMul)
-                layer.fill(stroke, with: .linearGradient(g, startPoint: startPoint, endPoint: endPoint))
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(clipRect))
+                        layer.clip(to: corePath)
+                        layer.clip(to: outerBandPath)
+
+                        layer.blendMode = .destinationOut
+                        layer.opacity = a
+                        layer.fill(Path(clipRect), with: passShading)
+
+                        layer.blendMode = .destinationIn
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: xMaskShading)
+                    }
+                }
             }
-
-            guard let noiseImage else { return }
-
-            var prng = RainSurfacePRNG(seed: seed)
-
-            // Larger jitter prevents the tile from “locking” to the chart edges.
-            let jitterBase = max(64.0, min(256.0, Double(max(rect.width, rect.height))))
-            let ox = CGFloat(prng.nextSignedFloat() * jitterBase)
-            let oy = CGFloat(prng.nextSignedFloat() * jitterBase)
-
-            // A small deterministic scale variation reduces visible repetition without adding passes.
-            let scaleJitter = 0.92 + 0.16 * CGFloat(prng.nextFloat01())
-            let s = max(0.05, noiseTileScale * scaleJitter)
-
-            let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
-            let shading = GraphicsContext.Shading.tiledImage(
-                noiseImage,
-                origin: origin,
-                sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-                scale: s
-            )
-
-            layer.blendMode = .destinationIn
-            layer.fill(Path(clipRect), with: shading)
-            layer.blendMode = .normal
         }
-        context.blendMode = .normal
-    }
 
-    static func drawOuterDust(
-        in context: inout GraphicsContext,
-        rect: CGRect,
-        clipRect: CGRect,
-        corePath: Path,
-        curvePath: Path,
-        bandHalfWidth: CGFloat,
-        colourGradient: Gradient,
-        noiseImage: SwiftUI.Image?,
-        noiseTileScale: CGFloat,
-        passCount: Int,
-        configuration cfg: RainForecastSurfaceConfiguration,
-        seed: UInt64
-    ) {
-        let passes = max(0, min(passCount, 4))
-        guard passes > 0 else { return }
+        // Inner edge mist highlight (additive, very subtle).
+        do {
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.20
+            if a > 0.0001 {
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.clip(to: corePath)
+                    layer.clip(to: outerBandPath)
 
-        let innerW = max(0.10, cfg.fuzzTextureInnerBandMultiplier)
-        let outerW = max(innerW, cfg.fuzzTextureOuterBandMultiplier)
+                    layer.blendMode = .plusLighter
+                    layer.opacity = a
+                    layer.fill(Path(clipRect), with: fineShading)
 
-        let innerA = max(0.0, cfg.fuzzTextureInnerOpacityMultiplier)
-        let outerA = max(0.0, cfg.fuzzTextureOuterOpacityMultiplier)
-
-        let ts: [Double] = {
-            switch passes {
-            case 1: return [0.0]
-            case 2: return [0.0, 1.0]
-            case 3: return [0.0, 0.55, 1.0]
-            default: return [0.0, 0.33, 0.66, 1.0]
+                    layer.blendMode = .destinationIn
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: depthNearSurface)
+                    layer.fill(Path(clipRect), with: xMaskShading)
+                }
             }
-        }()
+        }
 
-        context.blendMode = .normal
-        context.drawLayer { layer in
-            layer.clip(to: Path(clipRect))
+        // Outer dust (blue haze outside the body, broken up by noise).
+        let allowOuterDust = cfg.fuzzOuterDustEnabled && (!WidgetWeaverRuntime.isRunningInAppExtension || cfg.fuzzOuterDustEnabledInAppExtension)
+        if allowOuterDust {
+            let passCount = WidgetWeaverRuntime.isRunningInAppExtension ? cfg.fuzzOuterDustPassCountInAppExtension : cfg.fuzzOuterDustPassCount
+            let passes = max(0, min(passCount, 3))
 
-            for t in ts {
-                let wMul = lerp(innerW, outerW, t)
-                let aMul = lerp(innerA, outerA, t)
-                if aMul <= 0.00001 { continue }
+            if passes > 0 {
+                let baseA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.62
 
-                let stroke = curvePath.strokedPath(
-                    StrokeStyle(lineWidth: bandHalfWidth * 2.0 * CGFloat(wMul), lineCap: .round, lineJoin: .round)
-                )
+                // Outside-of-core mask (even-odd) to prevent colouring the interior.
+                var outside = Path()
+                outside.addRect(clipRect)
+                outside.addPath(corePath)
 
-                let g = scaledGradient(colourGradient, alphaMultiplier: aMul)
+                for pass in 0..<passes {
+                    let t = CGFloat(pass) / CGFloat(max(1, passes - 1))
 
-                layer.fill(
-                    stroke,
-                    with: .linearGradient(
-                        g,
-                        startPoint: CGPoint(x: rect.minX, y: rect.midY),
-                        endPoint: CGPoint(x: rect.maxX, y: rect.midY)
+                    let bandMul = 1.05 + 1.25 * t
+                    let bandPath = contour.strokedPath(
+                        StrokeStyle(lineWidth: outerBand * 2.0 * bandMul, lineCap: .round, lineJoin: .round)
                     )
-                )
+
+                    let a = baseA * (1.0 - 0.52 * Double(t))
+                    if a <= 0.0001 { continue }
+
+                    let dustShading = (pass == 0) ? coarseShading : fineShading
+
+                    let depthDust = GraphicsContext.Shading.linearGradient(
+                        Gradient(stops: [
+                            .init(color: .white.opacity(1.0), location: 0.0),
+                            .init(color: .white.opacity(0.65), location: 0.40),
+                            .init(color: .white.opacity(0.0), location: 1.0),
+                        ]),
+                        startPoint: CGPoint(x: clipRect.midX, y: yStart),
+                        endPoint: CGPoint(x: clipRect.midX, y: yEnd)
+                    )
+
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(clipRect))
+                        layer.clip(to: bandPath)
+                        layer.clip(to: outside, style: FillStyle(eoFill: true, antialiased: true))
+
+                        // Colour first, then mask by noise.
+                        layer.blendMode = .normal
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: .color(cfg.fuzzColor.opacity(a)))
+
+                        layer.blendMode = .destinationIn
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: dustShading)
+                        layer.fill(Path(clipRect), with: depthDust)
+                        layer.fill(Path(clipRect), with: xMaskShading)
+                    }
+                }
             }
-
-            if let noiseImage {
-                var prng = RainSurfacePRNG(seed: seed)
-                let ox = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65
-                let oy = CGFloat(prng.nextSignedFloat()) * bandHalfWidth * 0.65 + bandHalfWidth * 0.20
-
-                let origin = CGPoint(x: rect.minX + ox, y: rect.minY + oy)
-                let shading = GraphicsContext.Shading.tiledImage(
-                    noiseImage,
-                    origin: origin,
-                    sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-                    scale: noiseTileScale
-                )
-
-                layer.blendMode = .destinationIn
-                layer.fill(Path(clipRect), with: shading)
-                layer.blendMode = .normal
-            }
-
-            layer.blendMode = .destinationOut
-            layer.fill(corePath, with: .color(Color.white))
-            layer.blendMode = .normal
         }
-        context.blendMode = .normal
+
+        // Crest glow (small, bright highlight near the peak).
+        // This is the only strongly “white” element in the mock.
+        do {
+            if let peak = peakPoint(curvePoints: curvePoints, baselineY: baselineY) {
+                let glowA = min(0.95, 0.55 + 0.35 * maxAlpha)
+                let r0 = max(1.0, bandHalfWidth * 0.12)
+                let r1 = max(r0 + 1.0, bandHalfWidth * 0.95)
+
+                let g = Gradient(stops: [
+                    .init(color: Color.white.opacity(glowA), location: 0.0),
+                    .init(color: Color.white.opacity(glowA * 0.25), location: 0.25),
+                    .init(color: Color.white.opacity(0.0), location: 1.0),
+                ])
+
+                let shading = GraphicsContext.Shading.radialGradient(
+                    g,
+                    center: peak,
+                    startRadius: r0,
+                    endRadius: r1
+                )
+
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.blendMode = .plusLighter
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: shading)
+                }
+            }
+        }
     }
-}
 
-// MARK: - Strength shaping + gradients
+    // MARK: - Helpers
 
-extension RainForecastSurfaceRenderer {
+    private static func contourPath(from points: [CGPoint]) -> Path {
+        var p = Path()
+        guard let first = points.first else { return p }
+        p.move(to: first)
+        for i in 1..<points.count {
+            p.addLine(to: points[i])
+        }
+        return p
+    }
+
+    private static func peakPoint(curvePoints: [CGPoint], baselineY: CGFloat) -> CGPoint? {
+        guard !curvePoints.isEmpty else { return nil }
+
+        var best: CGPoint?
+        var bestY = CGFloat.greatestFiniteMagnitude
+
+        for pt in curvePoints {
+            // Ignore baseline points (they are not part of the crest).
+            if abs(pt.y - baselineY) < 0.0001 { continue }
+            if pt.y < bestY {
+                bestY = pt.y
+                best = pt
+            }
+        }
+
+        return best
+    }
+
+    private static func stableSeed(from points: [CGPoint], displayScale: CGFloat) -> UInt64 {
+        // A cheap, stable hash of a polyline in device pixels.
+        let ds = max(1.0, displayScale)
+        var h: UInt64 = 0xD1B54A32D192ED03
+
+        let take = min(10, points.count)
+        for i in 0..<take {
+            let p = points[(i * max(1, points.count - 1)) / max(1, take - 1)]
+            let xi = Int64((p.x * ds).rounded())
+            let yi = Int64((p.y * ds).rounded())
+            let a = UInt64(bitPattern: xi)
+            let b = UInt64(bitPattern: yi)
+            h = h ^ (a &* 0x9E3779B97F4A7C15) ^ (b &* 0xBF58476D1CE4E5B9)
+            h = (h ^ (h >> 30)) &* 0xBF58476D1CE4E5B9
+            h = (h ^ (h >> 27)) &* 0x94D049BB133111EB
+            h = h ^ (h >> 31)
+        }
+
+        return h
+    }
+
+    private static func tiledNoiseShading(
+        image: Image,
+        bounds: CGRect,
+        displayScale: CGFloat,
+        desiredTilePixels: Int,
+        scaleMultiplier: CGFloat,
+        seed: UInt64,
+        jitterFraction: CGFloat
+    ) -> GraphicsContext.Shading {
+        let ds = max(1.0, displayScale)
+
+        let authored = CGFloat(RainSurfaceSeamlessNoiseTile.tileSizePixels)
+        let desiredPt = CGFloat(max(16, desiredTilePixels)) / ds
+        let baseScale = desiredPt / max(1.0, authored)
+
+        let scale = max(0.10, min(6.0, baseScale * max(0.05, scaleMultiplier)))
+
+        var prng = RainSurfacePRNG(seed: seed)
+        let j = max(0.0, min(1.0, jitterFraction))
+        let jitter = desiredPt * j
+
+        let ox = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
+        let oy = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
+
+        let origin = CGPoint(x: bounds.minX + ox, y: bounds.minY + oy)
+
+        return GraphicsContext.Shading.tiledImage(
+            image,
+            origin: origin,
+            sourceRect: CGRect(x: 0, y: 0, width: authored, height: authored),
+            scale: scale
+        )
+    }
+
     static func computeFuzzStrengthPerPoint(
         heights: [CGFloat],
         certainties01: [Double],
@@ -547,20 +481,6 @@ extension RainForecastSurfaceRenderer {
         return Gradient(stops: out)
     }
 
-    static func scaledGradient(_ g: Gradient, alphaMultiplier: Double) -> Gradient {
-        let m = max(0.0, alphaMultiplier)
-        if m == 1.0 { return g }
-
-        let scaledStops: [Gradient.Stop] = g.stops.map { s in
-            Gradient.Stop(color: s.color.opacity(m), location: s.location)
-        }
-        return Gradient(stops: scaledStops)
-    }
-}
-
-// MARK: - Work region (keeps offscreen layers bounded)
-
-extension RainForecastSurfaceRenderer {
     static func computeDissipationClipRect(
         rect: CGRect,
         baselineY: CGFloat,
@@ -577,27 +497,27 @@ extension RainForecastSurfaceRenderer {
         let activeEps: Double = 0.002
         var firstActive: Int = n
         var lastActive: Int = -1
+
         var maxActiveH: CGFloat = 0.0
 
-        for i in 0..<n where strength[i] > activeEps {
-            firstActive = min(firstActive, i)
-            lastActive = max(lastActive, i)
-            maxActiveH = max(maxActiveH, heights[i])
+        for i in 0..<n {
+            if strength[i] > activeEps && Double(heights[i]) > 0.0001 {
+                firstActive = min(firstActive, i)
+                lastActive = max(lastActive, i)
+                maxActiveH = max(maxActiveH, heights[i])
+            }
         }
 
-        if lastActive < firstActive {
+        if firstActive > lastActive {
             return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0.0, baselineY - rect.minY))
         }
 
-        let denom = CGFloat(max(1, n - 1))
-        func xAt(_ idx: Int) -> CGFloat {
-            rect.minX + (CGFloat(idx) / denom) * rect.width
+        let stepX = rect.width / CGFloat(max(1, n))
+        let xAt: (Int) -> CGFloat = { i in
+            rect.minX + (CGFloat(i) + 0.5) * stepX
         }
 
-        let narrowMul = max(0.10, cfg.fuzzErodeStrokeWidthFactor)
-        let wideMul = max(narrowMul * 4.50, narrowMul + 2.00)
-        let maxBandMul = max(Double(wideMul), cfg.fuzzTextureOuterBandMultiplier)
-
+        let maxBandMul = max(cfg.fuzzTextureOuterBandMultiplier, cfg.fuzzTextureInnerBandMultiplier)
         let pad = bandHalfWidth * CGFloat(maxBandMul) * 1.25
 
         let minX = max(rect.minX, min(xAt(firstActive), xAt(lastActive)) - pad)
@@ -614,67 +534,5 @@ extension RainForecastSurfaceRenderer {
         }
 
         return CGRect(x: minX, y: minY, width: w, height: h)
-    }
-}
-
-// MARK: - Distance transform
-
-extension RainForecastSurfaceRenderer {
-    static func distanceToNearestTrue(_ mask: [Bool]) -> [Int] {
-        guard !mask.isEmpty else { return [] }
-        let n = mask.count
-        let inf = n + 10
-        var dist = Array(repeating: inf, count: n)
-
-        var lastTrue = -inf
-        for i in 0..<n {
-            if mask[i] { lastTrue = i }
-            dist[i] = i - lastTrue
-        }
-
-        lastTrue = inf * 2
-        for i in stride(from: n - 1, through: 0, by: -1) {
-            if mask[i] { lastTrue = i }
-            dist[i] = min(dist[i], lastTrue - i)
-        }
-
-        return dist
-    }
-}
-
-// MARK: - Fuzz noise assets
-
-extension RainForecastSurfaceRenderer {
-    enum FuzzNoiseVariant {
-        case sparse
-        case normal
-        case dense
-
-        var assetName: String {
-            switch self {
-            case .sparse: return "RainFuzzNoise_Sparse"
-            case .normal: return "RainFuzzNoise"
-            case .dense: return "RainFuzzNoise_Dense"
-            }
-        }
-    }
-
-    static func fuzzNoiseImage(preferred: FuzzNoiseVariant) -> SwiftUI.Image? {
-        #if canImport(UIKit)
-        if UIKit.UIImage(named: preferred.assetName) != nil { return SwiftUI.Image(preferred.assetName) }
-        if UIKit.UIImage(named: FuzzNoiseVariant.normal.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.normal.assetName) }
-        if UIKit.UIImage(named: FuzzNoiseVariant.sparse.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.sparse.assetName) }
-        if UIKit.UIImage(named: FuzzNoiseVariant.dense.assetName) != nil { return SwiftUI.Image(FuzzNoiseVariant.dense.assetName) }
-        return nil
-        #else
-        return SwiftUI.Image(preferred.assetName)
-        #endif
-    }
-
-    static func fuzzNoiseTileScale(desiredTilePixels: Int) -> CGFloat {
-        let authored: Double = 256.0
-        let desired = Double(max(16, min(desiredTilePixels, 1024)))
-        let s = desired / authored
-        return CGFloat(max(0.10, min(s, 6.0)))
     }
 }

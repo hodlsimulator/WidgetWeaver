@@ -51,6 +51,8 @@
 		E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676AD2EF240EE0098B095 /* WidgetSpec.swift */; };
 		E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
 		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
+		E197A1012F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
+		E197A1022F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
 		E1C834C82EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834C92EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834CA2EFA5D1800E3AA98 /* WidgetWeaverWeatherEngine.swift */; };
@@ -142,6 +144,7 @@
 		E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWidgetKinds.swift; sourceTree = "<group>"; };
 		E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
 		E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
+		E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainSurfaceSeamlessNoiseTile.swift; sourceTree = "<group>"; };
 		E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherStore.swift; sourceTree = "<group>"; };
 		E1C834CA2EFA5D1800E3AA98 /* WidgetWeaverWeatherEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherEngine.swift; sourceTree = "<group>"; };
 		E1C834CD2EFAAF3600E3AA98 /* RainForecastSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainForecastSurfaceView.swift; sourceTree = "<group>"; };
@@ -265,6 +268,7 @@
 				E1C834DC2EFB341300E3AA98 /* RainSurfaceGeometry.swift */,
 				E1C834DF2EFB343900E3AA98 /* RainSurfaceMath.swift */,
 				E1C834E22EFB345700E3AA98 /* RainSurfacePRNG.swift */,
+				E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */,
 				E1C835BC2EFF427000E3AA98 /* RainSurfaceStyleHarness.swift */,
 				E18676AD2EF240EE0098B095 /* WidgetSpec.swift */,
 				C9FA7BC74A964A4FBFB0B8D9 /* WidgetSpec+Image.swift */,
@@ -433,6 +437,7 @@
 				E18676B12EF241160098B095 /* WidgetSpecStore.swift in Sources */,
 				E18676AC2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 				E15B0BAB2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
+				E197A1022F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */,
 				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E1C834CC2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
@@ -470,6 +475,7 @@
 				E1C834D22EFAB7CF00E3AA98 /* WidgetWeaverWeatherTemplateNowcastChart.swift in Sources */,
 				E1C834EA2EFB8FF200E3AA98 /* WidgetWeaverRuntime.swift in Sources */,
 				E1C834D52EFAB7F700E3AA98 /* WidgetWeaverWeatherTemplateHourlyStrip.swift in Sources */,
+				E197A1012F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */,
 				E16D84692EF8B47900552DCF /* WWThumbnailRenderingPolicyWWThumbnailRenderingPolicy.swift in Sources */,
 				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
 				E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
