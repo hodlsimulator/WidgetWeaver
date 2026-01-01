@@ -48,7 +48,7 @@ WidgetWeaver includes a built-in **WeatherKit-powered Weather layout template** 
 
 Notes:
 
-- Widgets refresh on a schedule, but **WidgetKit may throttle updates**.
+- Widgets refresh on a schedule, but the exact cadence is best‑effort (WidgetKit can delay or coalesce updates).
 - Weather UI provides “Update now” to refresh the cached snapshot used by widgets.
 
 ### Nowcast rain surface chart rendering
@@ -198,65 +198,43 @@ If the placeholder shows up during development, follow this order:
   - `maxDenseSamples`
   - dissipation width/strength (erosion band width, number of passes)
   - disable “outer dust” in widgets
-  - keep any haze at 0 in widgets
-- Confirm the renderer stays bounded in `Shared/RainForecastSurfaceRenderer.swift`.
-
-4) **Last resort recovery**
-
-- Reboot the device (WidgetKit can get stuck with a bad snapshot state during heavy iteration).
-- If a widget is permanently stuck in placeholder after many builds: remove it, reboot, re-add.
-
-The goal is always: a simple core-only chart is acceptable, but a placeholder is not. If budgets get tight, degrade the visual effects first.
 
 ---
 
-## Featured — Next Up (Calendar)
+## Featured — Calendar (Next Up)
 
-WidgetWeaver includes a built-in **Next Up (Calendar) layout template** (`LayoutTemplateToken.nextUpCalendar`):
+WidgetWeaver includes a built-in Next Up calendar template (`LayoutTemplateToken.nextUp`) and a Lock Screen widget for quick access.
 
-- Next calendar event with a live countdown
-- Medium/Large can also show a “Then” line (second upcoming event)
-- Cached calendar snapshot stored in the App Group (offline-friendly widgets)
-- Looks ahead until upcoming events are found (not limited to “next 24 hours”)
-- Includes a Lock Screen companion widget: **Next Up (WidgetWeaver)** (inline / circular / rectangular)
+The Calendar engine caches a lightweight snapshot of:
 
-### Next Up (Calendar) setup checklist
+- next event (title, start/end, all-day, location),
+- optional second event (“Then”),
+- and a countdown-friendly start date.
 
-- Explore → Templates: **Next Up (Calendar)** added into the Library
-- Calendar permission granted
-- Calendar snapshot cached (Next Up refresh action)
+The snapshot is stored in the App Group for offline widget rendering.
+
+### Calendar setup checklist
+
+- Explore → Calendar: permission granted
+- Snapshot cached (Update now)
+- Next Up template added into the Library (optionally “Add & Make Default”)
 - Widgets added:
-  - Home Screen: **WidgetWeaver** (select a Next Up design), and/or
-  - Lock Screen: **Next Up (WidgetWeaver)**
+  - Lock Screen: **Next Up (WidgetWeaver)** (inline / circular / rectangular)
 
 Notes:
 
-- Calendar widgets render from a cache.
-- If the widget looks stale:
-  - refresh the Calendar snapshot (Next Up refresh action), then
-  - refresh widget timelines (Editor → … → Refresh Widgets).
+- If calendar widgets show “—”, confirm permission is granted and a snapshot exists.
+- The lock screen widget is designed to be fast and stable; the Home Screen uses the normal “WidgetWeaver” design renderer.
 
 ---
 
-## Featured — Steps (Pedometer)
+## Featured — Steps
 
-WidgetWeaver includes a built-in **HealthKit-powered Steps mini-app** plus widgets:
-
-- Today’s step count snapshot (offline-friendly for widgets)
-- **Goal schedule** (weekday / weekend goals, with optional rest days)
-- **Streak rules** designed to feel fair:
-  - “Fair” rule avoids showing the streak as broken early in the day
-  - Rest days (goal = 0) can be skipped without breaking
-- **Full-history timeline in-app**: loads daily step totals back to the earliest available step sample
-- **Monthly calendar view** with goal-hit dots (tap a day → jump to that day in the timeline)
-- **Year heatmap view** (GitHub-style grid) with year picker + “best week / most consistent month”
-- “Pin this day” action from history (creates a saved design highlight for that day)
-- **Steps built-in variables** (`__steps_*`) usable in any design text field once Steps is set up
-- Lock Screen companion widget: **Steps (WidgetWeaver)** (inline / circular / rectangular)
-- Home Screen companion widget: **Steps (Home)** (Small / Medium / Large)
+WidgetWeaver includes a Steps engine and a built-in Steps design template. Steps are available as built-in variables (`__steps_*`) in any normal design once steps setup is completed.
 
 ### Steps setup checklist
 
+- Explore → Steps: Health permission granted
 - Health permission granted for Step Count
 - Steps refreshed in-app to cache:
   - Today’s steps snapshot (for widgets and `__steps_today`), and
@@ -276,86 +254,94 @@ Notes:
 
 ## Featured — Clock (Home Screen)
 
-WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style second hand.
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget`) with a configurable colour scheme and an Apple-style seconds hand.
 
-### Why the clock is tricky
+### Goal: “throttle-proof” seconds
 
-WidgetKit budgets timeline reloads. High-frequency widget timelines (e.g. 1–2 second entries) can look great briefly, then get coalesced or throttled.
+The clock is intended to keep time without relying on high-frequency WidgetKit timelines. In practice there are two separate update mechanisms:
 
-On iOS 26 Home Screen, some hosting paths also freeze `TimelineView` schedules and can ignore long-running SwiftUI animations.
+- **WidgetKit timeline entries** (from the provider): used for hour/minute hands. Current code schedules minute-boundary entries for ~2 hours at a time.
+- **In-view ticking/animation** (inside the SwiftUI view): used for the seconds hand. This is where iOS 26 Home Screen hosting has been inconsistent.
 
-### Clock animation strategies (history + trade-offs)
+Important: the current bug is **not** provider timeline “throttling”. The minute hand continues to tick on schedule. The failure mode is that the **in-view seconds driver stops firing**, and configuration edits can make WidgetKit fall back to an archived snapshot where the seconds hand is missing.
 
-1) **Timeline-driven redraws + short linear sweeps** (most reliable when budgets allow)
+### Current implementation (minute-proof, seconds experimental)
 
-- Provider emits frequent timeline entries (`tickSeconds` around 2–15s, capped `maxEntries`, policy `.atEnd`).
-- The view wraps rendering in `WidgetWeaverRenderClock.withNow(entry.date)` and computes monotonic hand angles from `entry.date` so interpolation never runs backwards at wrap boundaries.
-- The sweeping effect comes from `.animation(.linear(duration: tickSeconds), value: secondDegrees)` between entries.
+**Minute hand (fixed):**
 
-Notes:
+- The timeline starts with an entry at `now`, then the next entry lands on the next true minute boundary (`:00`) and continues every minute.
+- This avoids a subtle drift where WidgetKit can effectively “phase lock” minute updates to the second the timeline started, making the minute tick a couple of seconds late.
 
-- The update cadence can eventually be throttled by WidgetKit.
-- Alignment to whole seconds (base = `ceil(timeIntervalSinceReferenceDate)`) keeps the sweep phase-locked.
+**Dial overlay artefact (fixed):**
 
-2) **Widgy-style CoreAnimation sweeps** (no timeline spam, but host-dependent)
+- An intermittent rectangular band across the dial was caused by a multiply-blended lower-half gradient.
+- That layer was removed from `WidgetWeaverClockDialFaceView`.
 
-- Keep the provider sparse (hourly or less) and start CoreAnimation-backed `repeatForever` sweeps on appearance.
-- Uses three phase values (seconds / minutes / hours) and resyncs to `Date()` on appearance to catch up after suspension.
+**Seconds hand (current experiment):**
 
-Status: not reliably animated on Home Screen; the hosting view can be paused/frozen.
+- A vector seconds hand is drawn in an overlay.
+- It is driven by `TimelineView(.periodic(from: minuteAnchor, by: 1.0))` (1 Hz) so only the seconds hand redraws, not the whole widget tree.
 
-3) **Heartbeat driver** (in-view periodic invalidation)
+Observed on device:
 
-- Keep the provider sparse (hourly) but drive an in-view periodic tick so the view re-evaluates.
-  For example: `TimelineView(.periodic(...))`.
+- The seconds hand can **render once** (becoming visible), but then **stays frozen** (the `TimelineView` schedule appears paused on the Home Screen host).
+- After editing the widget configuration (changing the clock’s colour scheme), the seconds hand can **disappear** even though the minute hand continues to tick.
 
-Status: can render but has been unreliable; the clock can stop even after a widget kind bump.
+Working hypothesis:
 
-4) **Long single sweep per interval** (previous attempt)
+- On iOS 26 Home Screen, some widget hosting paths treat the view as a mostly-static snapshot and can pause/stop periodic SwiftUI schedules (`TimelineView`) and long-running SwiftUI animations.
+- This is distinct from provider timeline coalescing/throttling.
 
-- Provider emits an immediate “now” entry plus hour-boundary entries; each entry carries `intervalStart` and `intervalEnd`.
-- The view snaps hands to real current time on appear, then attempts a single long `.linear` animation towards `intervalEnd` using monotonic (unbounded) angle maths.
+### Clock animation strategies tried (history)
 
-Status: snaps correctly but often remains stopped (no ongoing animation).
+1) **High-frequency provider timeline (2–15s entries) + linear sweep**
+   - Looks great when it runs.
+   - Rejected for “throttle-proof” work: it relies on frequent timeline entries, which the system can delay/coalesce in real usage.
 
-5) **Minute-boundary timelines + stable tree + second-hand experiments** (current strategy)
+2) **Widgy-style CoreAnimation sweeps (`repeatForever`)**
+   - Minimal provider work.
+   - Not reliable on Home Screen: animations can be paused/frozen by the host.
 
-- Provider emits **minute-boundary** timeline entries (for example: 60–120 entries ≈ 1–2 hours), policy `.atEnd`.
-- Goal: the minute hand updates reliably while avoiding whole-widget “blink”.
-- Key behavioural win: avoiding subtree replacement (for example: `.id(minuteAnchor)`) keeps the minute tick smooth (no fade-out/fade-in).
-- Second-hand goal: tick all day without 1 Hz WidgetKit timeline entries.
-- Findings so far:
-  - `ProgressView(timerInterval: ...)` can animate visually, but it cannot drive a custom seconds hand from progress.
-    `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress (symptom: hand stuck at 12).
-  - Per-minute SwiftUI sweep attempts can still freeze in some Home Screen hosting paths (hand parked at 12 even though minute entries continue).
-  - Current experiment (budget-safe): a moving wedge mask reveals a **ticking** seconds needle (60 pre-rotated hands).
-    Wedge is isolated by subtracting a slightly time-shifted circular `ProgressView(timerInterval: ...)` (`destinationOut`).
-    Status: minute hand ticks reliably; seconds needle currently not visible (still under investigation).
-- Status: minute stepping is reliable and does not blink; seconds needle currently not visible (still under investigation).
+3) **Ligature font seconds hand (`Text(..., style: .timer)` / `timerInterval`)**
+   - Idea: use system-updating timer text glyphs, and a font where `0:SS` becomes a needle.
+   - Not reliable: OpenType `liga` substitution and/or timer formatting differs between hosts; if ligatures do not apply the font renders “blank digits” → invisible seconds.
+
+4) **`ProgressView(timerInterval:)` driven masks**
+   - Can animate visually, but `ProgressViewStyle.Configuration.fractionCompleted` is not updated for date-range progress, so it cannot drive a custom seconds hand.
 
 ### Files
 
-- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift` — minute-boundary timeline generation (entry cap, policy `.atEnd`)
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift` — stable-tree clock rendering + second-hand experiments
-- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift` — experimental Widgy-style `repeatForever` driver
-- `Shared/WidgetWeaverRenderClock.swift` — helpers for injecting a deterministic “now” into rendering
+- `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+  - Minute-boundary timeline generation (first entry at `now`, then minute boundaries).
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
+  - Stable-tree rendering + seconds overlay experiment (`TimelineView(.periodic(..., by: 1))`).
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockDialFaceView.swift`
+  - Dial gradients; removal of the lower-half multiply overlay that produced a rectangular seam.
+- `WidgetWeaverWidget/Clock/WidgetWeaverClockLiveView.swift`
+  - Experimental Widgy-style `repeatForever` driver.
+- `Shared/WidgetWeaverRenderClock.swift`
+  - Helpers for injecting a deterministic “now” into rendering.
 
-### Sweeping second hand (time maths)
+### Hand angle maths
 
-The core time maths is:
+The clock uses simple degrees:
 
-- `local = now.timeIntervalSince1970 + TimeZone.autoupdatingCurrent.secondsFromGMT(for: now)`
-- `secondDeg = local * 6.0`
-- `minuteDeg = local * (360.0 / 3600.0)`
-- `hourDeg = local * (360.0 / 43200.0)`
+- seconds: `second * 6`
+- minutes: `minute * 6`
+- hours: `(hour12 + minute/60) * 30`
 
-Using monotonic degrees avoids reverse interpolation if any implicit animation is introduced elsewhere.
+For smooth sweeps (if a reliable driver is found), monotonic “unbounded” degrees are preferred to avoid reverse interpolation at wrap boundaries.
 
 ### Archived snapshots during iteration
 
-WidgetKit can hold onto an archived snapshot from a failed render; during iteration a widget can appear partially rendered or stuck until a clean archive occurs.
+WidgetKit can keep an archived snapshot from a previous render. During development this can look like “code changes did nothing”, or like only part of the view updated.
 
-If a clock widget remains stuck after code changes, bump the clock widget kind string (`WidgetWeaverWidgetKinds.homeScreenClock`) to force a clean archive.
+Notes from clock iteration:
+
+- Editing widget configuration (colour scheme) can trigger a fresh snapshot path, and that snapshot can omit the seconds hand if the seconds driver is paused.
+- If a clock widget looks stuck after code changes:
+  - Remove the widget and add it again.
+  - Bump `WidgetWeaverWidgetKinds.homeScreenClock` to force a clean archive.
 
 ### RenderClock recursion pitfall
 
@@ -380,7 +366,7 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 - ✅ Weather setup + cached snapshot + attribution
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
 - ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
-- ✅ Steps History (timeline + monthly calendar + year heatmap) + insights + “Pin this day”
+- ✅ Steps History (timeline + monthly calendar + year heatmap / calendar) + insights + “Pin this day”
 - ✅ Inspector sheet (resolved spec + JSON + quick checks)
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
 
@@ -391,14 +377,14 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
-- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); second hand is experimental (see Clock section)
+- **Home Screen widget (“Clock (Icon)”)** analogue clock face (Small); minute hand ticks on time; seconds hand is experimental (currently can freeze / disappear after config edits; see Clock section)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
 - ✅ Optional interactive action bar (Pro) with up to 2 buttons that run App Intents and update Pro variables (no Shortcuts setup required)
 - ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
 - ✅ Steps widgets render from a cached “today” snapshot stored in the App Group
 - ✅ `__weather_*` built-in variables available in any design (free)
 - ✅ `__steps_*` built-in variables available in any design once Steps is set up (free)
-- ✅ Time-sensitive designs can attempt minute-level timelines (still subject to WidgetKit throttling)
+- ✅ Time-sensitive designs can attempt minute-level timelines (delivery is best‑effort; WidgetKit can delay or coalesce updates)
 
 ### Layout + style
 
