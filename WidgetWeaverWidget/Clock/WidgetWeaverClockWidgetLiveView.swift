@@ -45,9 +45,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 )
 
                 // Seconds overlay:
-                // A 1 Hz TimelineView drives a lightweight redraw of *only* the seconds hand.
-                // This avoids the timer-style `Text` path, which can disable `liga` and break
-                // the bundled ligature font (its digits are intentionally blank).
+                //
+                // On iOS 26 Home Screen hosting, `TimelineView(.periodic)` can be paused and stop firing,
+                // even while provider minute-boundary updates continue to land.
+                //
+                // This overlay avoids high-frequency provider timelines and instead uses a CoreAnimation-
+                // backed infinite rotation (SwiftUI `repeatForever`) plus a tiny timer-style `Text` heartbeat
+                // to encourage the host to keep the widget in a “live” rendering mode.
+                //
+                // This remains best-effort: the host can still freeze animations in some conditions,
+                // but this path has proven more resilient than relying on `TimelineView` alone.
                 WWClockSecondsHandOverlay(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
@@ -87,7 +94,7 @@ private struct WWClockBaseAngles {
     }
 }
 
-// MARK: - Seconds overlay (vector hand)
+// MARK: - Seconds overlay (CoreAnimation-backed sweep)
 
 private struct WWClockSecondsHandOverlay: View {
     let palette: WidgetWeaverClockPalette
@@ -96,6 +103,23 @@ private struct WWClockSecondsHandOverlay: View {
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
+
+    @State private var baseDate: Date
+    @State private var secPhase: Double = 0
+    @State private var started: Bool = false
+
+    init(
+        palette: WidgetWeaverClockPalette,
+        minuteAnchor: Date,
+        showLive: Bool,
+        handsOpacity: Double
+    ) {
+        self.palette = palette
+        self.minuteAnchor = minuteAnchor
+        self.showLive = showLive
+        self.handsOpacity = handsOpacity
+        _baseDate = State(initialValue: minuteAnchor)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -115,21 +139,37 @@ private struct WWClockSecondsHandOverlay: View {
                 scale: displayScale
             )
 
+            let animatedAngle = Angle.degrees(Self.secondDegrees(date: baseDate) + secPhase * 360.0)
+
             ZStack {
                 if showLive {
-                    TimelineView(.periodic(from: minuteAnchor, by: 1.0)) { context in
-                        WidgetWeaverClockSecondHandView(
-                            colour: palette.accent,
-                            width: secondWidth,
-                            length: secondLength,
-                            angle: Self.secondAngle(for: context.date),
-                            tipSide: secondTipSide,
-                            scale: displayScale
-                        )
-                        .opacity(handsOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    WidgetWeaverClockSecondHandView(
+                        colour: palette.accent,
+                        width: secondWidth,
+                        length: secondLength,
+                        angle: animatedAngle,
+                        tipSide: secondTipSide,
+                        scale: displayScale
+                    )
+                    .opacity(handsOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .onAppear {
+                        DispatchQueue.main.async {
+                            syncAndStartIfNeeded()
+                        }
                     }
+                    .task {
+                        // Some widget hosting paths can skip onAppear.
+                        DispatchQueue.main.async {
+                            syncAndStartIfNeeded()
+                        }
+                    }
+
+                    // Heartbeat:
+                    // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
+                    // This can help CoreAnimation-backed repeatForever rotations keep running.
+                    WWClockWidgetHeartbeat(start: baseDate)
                 } else {
                     // Placeholder/privacy: deterministic static position (12 o'clock).
                     WidgetWeaverClockSecondHandView(
@@ -161,9 +201,54 @@ private struct WWClockSecondsHandOverlay: View {
         }
     }
 
-    private static func secondAngle(for date: Date) -> Angle {
-        let sec = Calendar.autoupdatingCurrent.component(.second, from: date)
-        return .degrees(Double(sec) * 6.0)
+    private func syncAndStartIfNeeded() {
+        guard showLive else { return }
+
+        let now = Date()
+
+        // Start once per view lifetime, but also re-sync if the anchor is stale.
+        let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > 1.0)
+        guard shouldResync else { return }
+
+        started = true
+        baseDate = now
+
+        withAnimation(.none) {
+            secPhase = 0
+        }
+
+        withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
+            secPhase = 1
+        }
+    }
+
+    private static func secondDegrees(date: Date) -> Double {
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.second, .nanosecond], from: date)
+
+        let secondInt = Double(comps.second ?? 0)
+        let nano = Double(comps.nanosecond ?? 0)
+
+        let sec = secondInt + (nano / 1_000_000_000.0)
+        return sec * 6.0
+    }
+}
+
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
+
+    var body: some View {
+        // Keeping this extremely cheap:
+        // - very small font
+        // - clipped to a 1x1 region
+        // - almost transparent
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
