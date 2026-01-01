@@ -20,6 +20,10 @@ struct ContentView: View {
 
     @AppStorage("widgetweaver.editor.autoThemeFromImage") var autoThemeFromImage: Bool = true
 
+    @State private var librarySearchText: String = ""
+    @AppStorage("library.sort") private var librarySortRaw: String = "updated"
+    @AppStorage("library.filter") private var libraryFilterRaw: String = "all"
+
     @State var savedSpecs: [WidgetSpec] = []
     @State var defaultSpecID: UUID?
     @State var selectedSpecID: UUID = UUID()
@@ -93,6 +97,189 @@ struct ContentView: View {
     @State var importInProgress: Bool = false
 
     let store = WidgetSpecStore.shared
+
+    enum LibrarySort: String, CaseIterable, Identifiable {
+        case updated
+        case name
+        case template
+        case accent
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .updated: return "Updated"
+            case .name: return "Name"
+            case .template: return "Template"
+            case .accent: return "Accent"
+            }
+        }
+
+        static var ordered: [LibrarySort] { [.updated, .name, .template, .accent] }
+    }
+
+    enum LibraryFilter: String, CaseIterable, Identifiable {
+        case all
+        case `default` = "default"
+        case weather
+        case nextUp = "nextUp"
+        case steps
+        case withImage = "withImage"
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .default: return "Default"
+            case .weather: return "Weather"
+            case .nextUp: return "Next Up"
+            case .steps: return "Steps"
+            case .withImage: return "With Image"
+            }
+        }
+
+        static var ordered: [LibraryFilter] { [.all, .default, .weather, .nextUp, .steps, .withImage] }
+    }
+
+    private struct LibraryItem: Identifiable {
+        let index: Int
+        let spec: WidgetSpec
+
+        let nameKey: String
+        let templateKey: String
+        let accentKey: String
+        let searchKey: String
+        let updatedAt: Date
+
+        var id: UUID { spec.id }
+
+        init(index: Int, spec: WidgetSpec) {
+            self.index = index
+            self.spec = spec
+
+            self.nameKey = spec.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            self.templateKey = spec.layout.template.displayName.lowercased()
+            self.accentKey = spec.style.accent.displayName.lowercased()
+
+            let secondary = spec.secondaryText ?? ""
+            self.searchKey = (spec.name + "\n" + spec.primaryText + "\n" + secondary).lowercased()
+            self.updatedAt = spec.updatedAt
+        }
+    }
+
+    private var librarySort: LibrarySort { LibrarySort(rawValue: librarySortRaw) ?? .updated }
+    private var libraryFilter: LibraryFilter { LibraryFilter(rawValue: libraryFilterRaw) ?? .all }
+
+    private var libraryIsFilteringOrSearching: Bool {
+        if libraryFilter != .all { return true }
+        return !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var libraryDisplayedSpecs: [WidgetSpec] {
+        let q = librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var items = savedSpecs.enumerated().map { LibraryItem(index: $0.offset, spec: $0.element) }
+
+        items = items.filter { item in
+            switch libraryFilter {
+            case .all:
+                return true
+
+            case .default:
+                guard let defaultSpecID else { return false }
+                return item.spec.id == defaultSpecID
+
+            case .weather:
+                return item.spec.layout.template == .weather
+
+            case .nextUp:
+                return item.spec.layout.template == .nextUpCalendar
+
+            case .steps:
+                return item.spec.usesStepsRendering()
+
+            case .withImage:
+                return item.spec.image != nil
+            }
+        }
+
+        if !q.isEmpty {
+            items = items.filter { $0.searchKey.contains(q) }
+        }
+
+        switch librarySort {
+        case .updated:
+            items.sort {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.index < $1.index
+            }
+
+        case .name:
+            items.sort {
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.index < $1.index
+            }
+
+        case .template:
+            items.sort {
+                if $0.templateKey != $1.templateKey { return $0.templateKey < $1.templateKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                return $0.index < $1.index
+            }
+
+        case .accent:
+            items.sort {
+                if $0.accentKey != $1.accentKey { return $0.accentKey < $1.accentKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                return $0.index < $1.index
+            }
+        }
+
+        return items.map(\.spec)
+    }
+
+    private func clearLibrarySearchAndFilter() {
+        librarySearchText = ""
+        libraryFilterRaw = LibraryFilter.all.rawValue
+    }
+
+    private var libraryFilterChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LibraryFilter.ordered) { filter in
+                    libraryFilterChip(filter)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func libraryFilterChip(_ filter: LibraryFilter) -> some View {
+        let isSelected = filter == libraryFilter
+
+        return Button {
+            libraryFilterRaw = filter.rawValue
+        } label: {
+            Text(filter.title)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(filter.title)
+    }
 
     init() {
         Self.applyAppearanceIfNeeded()
@@ -176,16 +363,37 @@ struct ContentView: View {
     }
 
     private var libraryRoot: some View {
-        ZStack {
+        let displayedSpecs = libraryDisplayedSpecs
+
+        return ZStack {
             EditorBackground()
 
             List {
                 Section {
+                    libraryFilterChipsRow
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                        .listRowSeparator(.hidden)
+                }
+
+                Section {
                     if savedSpecs.isEmpty {
-                        Text("No saved designs yet.")
+                        Text("No designs yet. Create one in Explore.")
                             .foregroundStyle(.secondary)
+
+                    } else if displayedSpecs.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No matches. Clear search or choose All.")
+                                .foregroundStyle(.secondary)
+
+                            if libraryIsFilteringOrSearching {
+                                Button("Clear") { clearLibrarySearchAndFilter() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+
                     } else {
-                        ForEach(savedSpecs) { spec in
+                        ForEach(displayedSpecs) { spec in
                             Button {
                                 selectDesignFromLibrary(spec)
                             } label: {
@@ -226,7 +434,7 @@ struct ContentView: View {
                     Text("Designs")
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long‑press → Edit Widget to choose a Design.")
+                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -260,7 +468,21 @@ struct ContentView: View {
         }
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $librarySearchText, placement: .navigationBarDrawer(displayMode: .always))
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $librarySortRaw) {
+                        ForEach(LibrarySort.ordered) { sort in
+                            Text(sort.title).tag(sort.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort")
+            }
+
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -294,8 +516,13 @@ struct ContentView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text(spec.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                Text("\(spec.layout.template.displayName) • \(spec.style.accent.displayName)")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(spec.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
