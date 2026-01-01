@@ -31,7 +31,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
             //
             // Important detail:
             // The bundled font only has ligatures for "0:00"..."0:59" (and "0:0"..."0:9").
-            // Therefore the timer must be clamped so it never reaches "1:00".
+            // The minute-boundary timeline keeps the timer in that domain by resetting `minuteAnchor` each minute.
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
@@ -107,11 +107,12 @@ private struct WWClockSecondsLigatureOverlay: View {
 
             ZStack {
                 if showLive {
-                    // Clamp to +59s so the formatted timer string never becomes "1:00".
-                    // This keeps the ligature always in the "0:SS" domain.
-                    let end = minuteAnchor.addingTimeInterval(59.0)
-
-                    Text(timerInterval: minuteAnchor...end, countsDown: false)
+                    // Use a timer-style date text so the system updates the glyphs every second.
+                    // Important: the ligature font expects the displayed string to begin with "0:".
+                    // In practice `Text(timerInterval:...)` can format with two-digit minutes ("00:SS"),
+                    // which has no matching ligatures in the bundled font. `Text(date, style: .timer)`
+                    // formats as "0:SS", which matches.
+                    Text(minuteAnchor, style: .timer)
                         .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
                         .foregroundStyle(palette.accent)
                         .frame(width: layout.dialDiameter, height: layout.dialDiameter)

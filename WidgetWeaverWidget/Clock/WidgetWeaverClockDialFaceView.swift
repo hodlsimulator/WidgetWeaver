@@ -63,20 +63,23 @@ struct WidgetWeaverClockDialFaceView: View {
                     .mask(Circle())
             )
             // Slight lower-half darkening to keep the face “near-black”.
+            //
+            // Using `.blendMode(.multiply)` with fully transparent gradient stops can produce
+            // a hard horizontal seam in some WidgetKit renders (reads like a rectangular overlay).
+            // A simple alpha overlay avoids that artefact and remains visually close.
             .overlay(
                 Circle()
                     .fill(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: Color.clear, location: 0.0),
-                                .init(color: Color.clear, location: 0.44),
-                                .init(color: Color.black.opacity(0.22), location: 1.0)
+                                .init(color: Color.black.opacity(0.00), location: 0.00),
+                                .init(color: Color.black.opacity(0.06), location: 0.55),
+                                .init(color: Color.black.opacity(0.18), location: 1.00)
                             ]),
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                    .blendMode(.multiply)
             )
             // Ring D: tight inner occlusion separator (crisp, no halo).
             .overlay(
