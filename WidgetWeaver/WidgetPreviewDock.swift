@@ -35,15 +35,40 @@ struct WidgetPreviewDock: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @SceneStorage("widgetPreviewDock.isExpanded") private var isExpanded: Bool = false
-    @SceneStorage("widgetPreviewDock.isLive") private var isLive: Bool = false
+
+    @AppStorage("preview.liveEnabled") private var liveEnabled: Bool = true
+
+    @State private var displayedSpec: WidgetSpec? = nil
+    @State private var frozenSpec: WidgetSpec? = nil
+    @State private var pendingTask: Task<Void, Never>? = nil
 
     var body: some View {
-        switch presentation {
-        case .sidebar:
-            expandedCard
-        case .dock:
-            dockCard
+        Group {
+            switch presentation {
+            case .sidebar:
+                expandedCard
+            case .dock:
+                dockCard
+            }
         }
+        .onAppear { ensureSpecStateInitialised() }
+        .onChange(of: spec) { _, newValue in
+            handleIncomingSpecChange(newValue)
+        }
+        .onChange(of: liveEnabled) { _, newValue in
+            handleLiveToggleChange(newValue)
+        }
+        .onDisappear {
+            pendingTask?.cancel()
+            pendingTask = nil
+        }
+    }
+
+    private var effectiveSpec: WidgetSpec {
+        if liveEnabled {
+            return displayedSpec ?? spec
+        }
+        return frozenSpec ?? displayedSpec ?? spec
     }
 
     private var dockCard: some View {
@@ -81,15 +106,27 @@ struct WidgetPreviewDock: View {
 
                 Spacer(minLength: 0)
 
-                Picker("Mode", selection: $isLive) {
-                    Text("Preview").tag(false)
+                Picker("Live", selection: $liveEnabled) {
+                    Text("Off").tag(false)
                     Text("Live").tag(true)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .controlSize(.small)
-                .frame(width: presentation == .sidebar ? 180 : 150)
-                .accessibilityLabel("Preview mode")
+                .frame(width: presentation == .sidebar ? 140 : 120)
+                .accessibilityLabel("Live preview")
+
+                if !liveEnabled {
+                    Button {
+                        refreshFrozen()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel("Refresh preview")
+                }
 
                 Picker("Size", selection: $family) {
                     Text("Small").tag(WidgetFamily.systemSmall)
@@ -117,10 +154,10 @@ struct WidgetPreviewDock: View {
             }
 
             WidgetPreview(
-                spec: spec,
+                spec: effectiveSpec,
                 family: family,
                 maxHeight: expandedPreviewMaxHeight,
-                isLive: isLive
+                isLive: liveEnabled
             )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -129,12 +166,16 @@ struct WidgetPreviewDock: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("Live mode runs interactive widget buttons locally (no Home Screen round-trip).")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(isLive ? 1 : 0)
-                    .accessibilityHidden(!isLive)
+                Group {
+                    if liveEnabled {
+                        Text("Live updates are debounced; widget buttons run locally.")
+                    } else {
+                        Text("Live is off — preview is frozen. Tap Refresh to apply changes.")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
@@ -145,9 +186,8 @@ struct WidgetPreviewDock: View {
 
     private var collapsedCard: some View {
         HStack(spacing: 12) {
-            // Important: render LIVE in the dock to avoid stale raster cache when collapsing.
             WidgetPreviewThumbnail(
-                spec: spec,
+                spec: effectiveSpec,
                 family: family,
                 height: collapsedThumbnailHeight,
                 renderingStyle: .live
@@ -159,7 +199,7 @@ struct WidgetPreviewDock: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                Text(isLive ? "\(familyLabel) • Live" : familyLabel)
+                Text(statusLine)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -181,6 +221,13 @@ struct WidgetPreviewDock: View {
         .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
         .contentShape(cardShape)
         .onTapGesture { setExpanded(true) }
+    }
+
+    private var statusLine: String {
+        if liveEnabled {
+            return "\(familyLabel) • Live"
+        }
+        return "\(familyLabel)"
     }
 
     private var grabber: some View {
@@ -283,6 +330,50 @@ struct WidgetPreviewDock: View {
         guard presentation == .dock else { return }
         withAnimation(.snappy(duration: 0.25)) {
             isExpanded = expanded
+        }
+    }
+
+    private func ensureSpecStateInitialised() {
+        if displayedSpec == nil {
+            displayedSpec = spec
+        }
+        if frozenSpec == nil {
+            frozenSpec = spec
+        }
+    }
+
+    private func handleIncomingSpecChange(_ newValue: WidgetSpec) {
+        ensureSpecStateInitialised()
+        guard liveEnabled else { return }
+        scheduleDebouncedUpdate(to: newValue)
+    }
+
+    private func handleLiveToggleChange(_ enabled: Bool) {
+        ensureSpecStateInitialised()
+
+        pendingTask?.cancel()
+        pendingTask = nil
+
+        if enabled {
+            displayedSpec = spec
+            scheduleDebouncedUpdate(to: spec)
+        } else {
+            frozenSpec = displayedSpec ?? spec
+        }
+    }
+
+    private func refreshFrozen() {
+        frozenSpec = spec
+    }
+
+    private func scheduleDebouncedUpdate(to newSpec: WidgetSpec) {
+        pendingTask?.cancel()
+        pendingTask = Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                displayedSpec = newSpec
+            }
         }
     }
 }

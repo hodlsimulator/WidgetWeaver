@@ -20,6 +20,8 @@ struct WidgetPreview: View {
     var maxHeight: CGFloat?
     var isLive: Bool = false
 
+    @Environment(\.displayScale) private var displayScale
+
     // Forces a re-render when variables change in-app (including via AppIntent buttons).
     @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults)
     private var variablesData: Data = Data()
@@ -58,15 +60,22 @@ struct WidgetPreview: View {
 
     private var previewBody: some View {
         GeometryReader { proxy in
-            let base = Self.widgetSize(for: family)
+            let screen = WidgetPreviewMetrics.currentScreen()
 
-            // Small and Medium occupy the same Home Screen row height.
-            // Scaling both against the Medium base keeps the preview height stable between S/M.
-            let sizingBase = Self.widgetSize(for: Self.sizingReferenceFamily(for: family))
+            let base = WidgetPreviewMetrics.widgetSize(for: family, screen: screen)
+            let sizingBase = WidgetPreviewMetrics.widgetSize(for: Self.sizingReferenceFamily(for: family), screen: screen)
 
-            let scaleX = proxy.size.width / sizingBase.width
-            let scaleY = proxy.size.height / sizingBase.height
-            let scale = min(scaleX, scaleY)
+            let scale = WidgetPreviewMetrics.fitScale(
+                contentSize: sizingBase,
+                containerSize: proxy.size,
+                allowUpscale: false
+            )
+
+            let scaled = WidgetPreviewMetrics.scaledSize(
+                baseSize: base,
+                scale: scale,
+                displayScale: displayScale
+            )
 
             WidgetWeaverSpecView(
                 spec: spec,
@@ -75,12 +84,29 @@ struct WidgetPreview: View {
             )
             .frame(width: base.width, height: base.height)
             .scaleEffect(scale, anchor: .center)
+            .frame(width: scaled.width, height: scaled.height, alignment: .center)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
         }
     }
 
     static func widgetSize(for family: WidgetFamily) -> CGSize {
-        let sizes = WidgetPreviewSizing.sizesForCurrentDevice()
+        let screen = WidgetPreviewMetrics.currentScreen()
+        return WidgetPreviewMetrics.widgetSize(for: family, screen: screen)
+    }
+}
+
+// MARK: - Preview Metrics (single source of truth)
+
+enum WidgetPreviewMetrics {
+    struct Sizes {
+        let small: CGSize
+        let medium: CGSize
+        let large: CGSize
+    }
+
+    @MainActor
+    static func widgetSize(for family: WidgetFamily, screen: UIScreen) -> CGSize {
+        let sizes = sizesForDevice(screen: screen)
         switch family {
         case .systemSmall:
             return sizes.small
@@ -93,198 +119,130 @@ struct WidgetPreview: View {
         }
     }
 
-    private struct WidgetPreviewSizing {
-        struct Sizes {
-            let small: CGSize
-            let medium: CGSize
-            let large: CGSize
+    @MainActor
+    static func sizesForDevice(screen: UIScreen) -> Sizes {
+        let idiom = UIDevice.current.userInterfaceIdiom
+        let portraitWidth = min(screen.bounds.width, screen.bounds.height)
+        return sizesForDevice(idiom: idiom, portraitWidth: portraitWidth, displayScale: screen.scale)
+    }
+
+    static func sizesForDevice(idiom: UIUserInterfaceIdiom, portraitWidth: CGFloat, displayScale: CGFloat) -> Sizes {
+        let w = max(1, portraitWidth)
+        let scale = max(1, displayScale)
+
+        if idiom == .pad {
+            // iPad widgets generally behave like a 2-column layout inside a narrower widget region.
+            // This is intentionally not keyed on device model strings.
+            let mediumWidth = roundToPixel(clamp(w * 0.41, min: 306, max: 379), scale: scale)
+            let spacing = roundToPixel(clamp(w * 0.038, min: 24, max: 40), scale: scale)
+
+            let smallSide = roundToPixel((mediumWidth - spacing) / 2, scale: scale)
+
+            let small = CGSize(width: smallSide, height: smallSide)
+            let medium = CGSize(width: mediumWidth, height: smallSide)
+            let large = CGSize(width: mediumWidth, height: mediumWidth)
+
+            return Sizes(small: small, medium: medium, large: large)
+        } else {
+            // iPhone portrait assumption.
+            // The side inset and spacing are derived from screen width, avoiding per-device tables.
+            let sidePadding = roundToPixel(clamp(w * 0.20 - 52, min: 16, max: 36), scale: scale)
+            let spacing = roundToPixel(clamp(w * 0.058, min: 18, max: 26), scale: scale)
+            let availableWidth = max(1, w - (2 * sidePadding))
+
+            let smallSide = roundToPixel((availableWidth - spacing) / 2, scale: scale)
+            let mediumWidth = roundToPixel(availableWidth, scale: scale)
+
+            // Large widgets are slightly taller than a perfect 2x2 grid on iPhone.
+            let largeExtraHeight = roundToPixel(clamp(w * 0.040, min: 10, max: 18), scale: scale)
+            let largeHeight = roundToPixel((smallSide * 2) + spacing + largeExtraHeight, scale: scale)
+
+            let small = CGSize(width: smallSide, height: smallSide)
+            let medium = CGSize(width: mediumWidth, height: smallSide)
+            let large = CGSize(width: mediumWidth, height: largeHeight)
+
+            return Sizes(small: small, medium: medium, large: large)
+        }
+    }
+
+    static func fitScale(contentSize: CGSize, containerSize: CGSize, allowUpscale: Bool) -> CGFloat {
+        guard contentSize.width > 0, contentSize.height > 0 else { return 1 }
+        guard containerSize.width > 0, containerSize.height > 0 else { return 1 }
+
+        let sx = containerSize.width / contentSize.width
+        let sy = containerSize.height / contentSize.height
+        let s = min(sx, sy)
+
+        return allowUpscale ? s : min(1, s)
+    }
+
+    static func thumbnailScale(nativeSize: CGSize, targetHeight: CGFloat, targetWidth: CGFloat? = nil, allowUpscale: Bool = false) -> CGFloat {
+        guard nativeSize.width > 0, nativeSize.height > 0 else { return 1 }
+
+        var s = targetHeight / nativeSize.height
+        if let w = targetWidth {
+            s = min(s, w / nativeSize.width)
+        }
+        return allowUpscale ? s : min(1, s)
+    }
+
+    static func scaledSize(baseSize: CGSize, scale: CGFloat, displayScale: CGFloat) -> CGSize {
+        let s = max(0, scale)
+        let pxScale = max(1, displayScale)
+        return CGSize(
+            width: floorToPixel(baseSize.width * s, scale: pxScale),
+            height: floorToPixel(baseSize.height * s, scale: pxScale)
+        )
+    }
+
+    static func roundToPixel(_ value: CGFloat, scale: CGFloat) -> CGFloat {
+        (value * scale).rounded() / scale
+    }
+
+    static func floorToPixel(_ value: CGFloat, scale: CGFloat) -> CGFloat {
+        floor(value * scale) / scale
+    }
+
+    static func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        Swift.max(min, Swift.min(max, value))
+    }
+
+    @MainActor
+    static func currentScreen() -> UIScreen {
+        let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+
+        if let screen = screenFromWindowScenes(windowScenes, preferForegroundActive: true) {
+            return screen
+        }
+        if let screen = screenFromWindowScenes(windowScenes, preferForegroundActive: false) {
+            return screen
+        }
+        if let screen = windowScenes.first?.screen {
+            return screen
         }
 
-        @MainActor
-        static func sizesForCurrentDevice() -> Sizes {
-            let screen = currentScreen()
-            let native = screen.nativeBounds.size
+        preconditionFailure("WidgetPreviewMetrics.currentScreen(): no UIWindowScene available")
+    }
 
-            let w = Int(min(native.width, native.height))
-            let h = Int(max(native.width, native.height))
-            let key = "\(w)x\(h)"
+    @MainActor
+    private static func screenFromWindowScenes(_ scenes: [UIWindowScene], preferForegroundActive: Bool) -> UIScreen? {
+        let orderedScenes: [UIWindowScene]
+        if preferForegroundActive {
+            let active = scenes.filter { $0.activationState == .foregroundActive }
+            orderedScenes = active.isEmpty ? scenes : active
+        } else {
+            orderedScenes = scenes
+        }
 
-            if let sizes = knownSizesByNativeResolution[key] {
-                return sizes
+        for scene in orderedScenes {
+            if let key = scene.windows.first(where: { $0.isKeyWindow }) {
+                return key.screen
             }
-
-            let points = screen.bounds.size
-            let maxSide = max(points.width, points.height)
-            let minSide = min(points.width, points.height)
-
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                if minSide >= 1024 || maxSide >= 1366 {
-                    return Sizes(
-                        small: CGSize(width: 170, height: 170),
-                        medium: CGSize(width: 379, height: 170),
-                        large: CGSize(width: 379, height: 379)
-                    )
-                } else {
-                    return Sizes(
-                        small: CGSize(width: 155, height: 155),
-                        medium: CGSize(width: 342, height: 155),
-                        large: CGSize(width: 342, height: 342)
-                    )
-                }
-            }
-
-            if maxSide >= 926 {
-                return Sizes(
-                    small: CGSize(width: 170, height: 170),
-                    medium: CGSize(width: 364, height: 170),
-                    large: CGSize(width: 364, height: 382)
-                )
-            } else if maxSide >= 844 {
-                return Sizes(
-                    small: CGSize(width: 158, height: 158),
-                    medium: CGSize(width: 338, height: 158),
-                    large: CGSize(width: 338, height: 354)
-                )
-            } else if maxSide >= 812 {
-                return Sizes(
-                    small: CGSize(width: 155, height: 155),
-                    medium: CGSize(width: 329, height: 155),
-                    large: CGSize(width: 329, height: 345)
-                )
-            } else if maxSide >= 736 {
-                return Sizes(
-                    small: CGSize(width: 157, height: 157),
-                    medium: CGSize(width: 348, height: 157),
-                    large: CGSize(width: 348, height: 351)
-                )
-            } else if maxSide >= 667 {
-                return Sizes(
-                    small: CGSize(width: 148, height: 148),
-                    medium: CGSize(width: 321, height: 148),
-                    large: CGSize(width: 321, height: 324)
-                )
-            } else {
-                return Sizes(
-                    small: CGSize(width: 141, height: 141),
-                    medium: CGSize(width: 292, height: 141),
-                    large: CGSize(width: 292, height: 311)
-                )
+            if let any = scene.windows.first {
+                return any.screen
             }
         }
 
-        @MainActor
-        private static func currentScreen() -> UIScreen {
-            if let activeScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first(where: { $0.activationState == .foregroundActive })
-            {
-                return activeScene.screen
-            }
-
-            if let anyScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first
-            {
-                return anyScene.screen
-            }
-
-            return UIScreen()
-        }
-
-        private static let knownSizesByNativeResolution: [String: Sizes] = [
-            // MARK: - iPhone
-            "1170x2532": Sizes( // 12/13/14/15 (non-Pro 6.1")
-                small: CGSize(width: 158, height: 158),
-                medium: CGSize(width: 338, height: 158),
-                large: CGSize(width: 338, height: 354)
-            ),
-            "1179x2556": Sizes( // 14/15 Pro (6.1")
-                small: CGSize(width: 158, height: 158),
-                medium: CGSize(width: 338, height: 158),
-                large: CGSize(width: 338, height: 354)
-            ),
-            "1080x2340": Sizes( // 12/13 mini
-                small: CGSize(width: 155, height: 155),
-                medium: CGSize(width: 329, height: 155),
-                large: CGSize(width: 329, height: 345)
-            ),
-            "1284x2778": Sizes( // 12/13 Pro Max
-                small: CGSize(width: 170, height: 170),
-                medium: CGSize(width: 364, height: 170),
-                large: CGSize(width: 364, height: 382)
-            ),
-            "1290x2796": Sizes( // 14/15 Pro Max
-                small: CGSize(width: 170, height: 170),
-                medium: CGSize(width: 364, height: 170),
-                large: CGSize(width: 364, height: 382)
-            ),
-            "828x1792": Sizes( // XR / 11
-                small: CGSize(width: 169, height: 169),
-                medium: CGSize(width: 360, height: 169),
-                large: CGSize(width: 360, height: 379)
-            ),
-            "1125x2436": Sizes( // X / XS / 11 Pro
-                small: CGSize(width: 155, height: 155),
-                medium: CGSize(width: 329, height: 155),
-                large: CGSize(width: 329, height: 345)
-            ),
-            "1242x2688": Sizes( // XS Max / 11 Pro Max
-                small: CGSize(width: 169, height: 169),
-                medium: CGSize(width: 360, height: 169),
-                large: CGSize(width: 360, height: 379)
-            ),
-            "750x1334": Sizes( // 6/7/8/SE2/SE3
-                small: CGSize(width: 148, height: 148),
-                medium: CGSize(width: 321, height: 148),
-                large: CGSize(width: 321, height: 324)
-            ),
-            "1080x1920": Sizes( // Plus
-                small: CGSize(width: 157, height: 157),
-                medium: CGSize(width: 348, height: 157),
-                large: CGSize(width: 348, height: 351)
-            ),
-            "640x1136": Sizes( // SE 1st gen
-                small: CGSize(width: 141, height: 141),
-                medium: CGSize(width: 292, height: 141),
-                large: CGSize(width: 292, height: 311)
-            ),
-
-            // MARK: - iPad
-            "2732x2048": Sizes( // 12.9" iPad Pro
-                small: CGSize(width: 170, height: 170),
-                medium: CGSize(width: 379, height: 170),
-                large: CGSize(width: 379, height: 379)
-            ),
-            "2388x1668": Sizes( // 11" iPad Pro
-                small: CGSize(width: 155, height: 155),
-                medium: CGSize(width: 342, height: 155),
-                large: CGSize(width: 342, height: 342)
-            ),
-            "2360x1640": Sizes( // iPad Air 4/5
-                small: CGSize(width: 155, height: 155),
-                medium: CGSize(width: 342, height: 155),
-                large: CGSize(width: 342, height: 342)
-            ),
-            "2266x1488": Sizes( // iPad mini 6
-                small: CGSize(width: 141, height: 141),
-                medium: CGSize(width: 306, height: 141),
-                large: CGSize(width: 306, height: 306)
-            ),
-            "2224x1668": Sizes( // older iPad bucket
-                small: CGSize(width: 150, height: 150),
-                medium: CGSize(width: 328, height: 150),
-                large: CGSize(width: 328, height: 328)
-            ),
-            "2160x1620": Sizes( // iPad Pro 10.5"
-                small: CGSize(width: 146, height: 146),
-                medium: CGSize(width: 321, height: 146),
-                large: CGSize(width: 321, height: 321)
-            ),
-            "2048x1536": Sizes( // iPad 7/8/9
-                small: CGSize(width: 141, height: 141),
-                medium: CGSize(width: 306, height: 141),
-                large: CGSize(width: 306, height: 306)
-            )
-        ]
+        return nil
     }
 }

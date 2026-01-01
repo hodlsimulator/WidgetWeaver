@@ -39,17 +39,17 @@ private final class WidgetPreviewThumbnailRasterCache {
     func makeKey(
         spec: WidgetSpec,
         family: WidgetFamily,
-        size: CGSize,
+        renderSize: CGSize,
         colorScheme: ColorScheme,
-        screenScale: CGFloat,
+        rendererScale: CGFloat,
         dependencyFingerprint: String
     ) -> String {
         let fingerprint = Self.contentFingerprint(for: spec)
 
         let updatedMs = Int(spec.updatedAt.timeIntervalSince1970 * 1000.0)
-        let w = Int((size.width * 10.0).rounded())
-        let h = Int((size.height * 10.0).rounded())
-        let s = Int((screenScale * 10.0).rounded())
+        let w = Int((renderSize.width * 10.0).rounded())
+        let h = Int((renderSize.height * 10.0).rounded())
+        let s = Int((rendererScale * 10.0).rounded())
         let scheme = (colorScheme == .dark) ? "dark" : "light"
 
         return "\(spec.id.uuidString)|\(fingerprint)|\(updatedMs)|\(family)|\(w)x\(h)|\(scheme)|\(s)|\(dependencyFingerprint)"
@@ -58,28 +58,18 @@ private final class WidgetPreviewThumbnailRasterCache {
     func renderThumbnail(
         spec: WidgetSpec,
         family: WidgetFamily,
-        baseSize: CGSize,
-        scale: CGFloat,
-        thumbnailSize: CGSize,
+        renderSize: CGSize,
         colorScheme: ColorScheme,
         rendererScale: CGFloat
     ) -> UIImage? {
         guard #available(iOS 16.0, *) else { return nil }
 
-        let cornerRadius: CGFloat = 12
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-
         let content = WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-            .frame(width: baseSize.width, height: baseSize.height)
-            .scaleEffect(scale, anchor: .center)
-            .frame(width: thumbnailSize.width, height: thumbnailSize.height, alignment: .center)
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
-            .clipped()
+            .frame(width: renderSize.width, height: renderSize.height)
             .environment(\.colorScheme, colorScheme)
 
         let renderer = ImageRenderer(content: content)
-        renderer.proposedSize = ProposedViewSize(thumbnailSize)
+        renderer.proposedSize = ProposedViewSize(renderSize)
         renderer.scale = rendererScale
 
         return renderer.uiImage
@@ -142,58 +132,65 @@ struct WidgetPreviewThumbnail: View {
     var body: some View {
         switch renderingStyle {
         case .live:
-            liveBody
+            if #available(iOS 16.0, *) {
+                renderedBody(renderImmediately: true)
+            } else {
+                legacyLiveBody
+            }
         case .rasterCached:
             if #available(iOS 16.0, *) {
-                rasterisedBody
+                renderedBody(renderImmediately: false)
             } else {
-                liveBody
+                legacyLiveBody
             }
         }
     }
 
-    @available(iOS 16.0, *)
-    private var rasterisedBody: some View {
+    private var legacyLiveBody: some View {
         let base = WidgetPreview.widgetSize(for: family)
-        let scale = height / base.height
-        let scaledWidth = base.width * scale
-        let thumbSize = CGSize(width: scaledWidth, height: height)
-        let rendererScale = min(displayScale, 2.0)
+        let s = WidgetPreviewMetrics.thumbnailScale(nativeSize: base, targetHeight: height, allowUpscale: false)
+        let displaySize = WidgetPreviewMetrics.scaledSize(baseSize: base, scale: s, displayScale: displayScale)
 
+        return WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
+            .frame(width: base.width, height: base.height)
+            .scaleEffect(s, anchor: .center)
+            .frame(width: displaySize.width, height: displaySize.height, alignment: .center)
+            .clipped()
+    }
+
+    @available(iOS 16.0, *)
+    private func renderedBody(renderImmediately: Bool) -> some View {
+        let base = WidgetPreview.widgetSize(for: family)
+        let s = WidgetPreviewMetrics.thumbnailScale(nativeSize: base, targetHeight: height, allowUpscale: false)
+        let displaySize = WidgetPreviewMetrics.scaledSize(baseSize: base, scale: s, displayScale: displayScale)
+
+        let rendererScale = min(displayScale, 2.0)
         let dependencyFingerprint = buildDependencyFingerprint()
 
         let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
             spec: spec,
             family: family,
-            size: thumbSize,
+            renderSize: base,
             colorScheme: colorScheme,
-            screenScale: rendererScale,
+            rendererScale: rendererScale,
             dependencyFingerprint: dependencyFingerprint
         )
 
-        let taskID = "\(key)|\(thumbnailRenderingEnabled ? 1 : 0)"
+        let taskID = "\(key)|\(thumbnailRenderingEnabled ? 1 : 0)|\(renderImmediately ? 1 : 0)"
+
+        let cornerRadius = scaledWidgetCornerRadius(scale: s)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
         return Group {
             if let img = image, imageKey == key {
-                Image(uiImage: img)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .frame(width: thumbSize.width, height: thumbSize.height, alignment: .center)
-                    .accessibilityHidden(true)
+                thumbnailImage(img, size: displaySize, shape: shape)
             } else if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
-                Image(uiImage: cached)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .frame(width: thumbSize.width, height: thumbSize.height, alignment: .center)
-                    .accessibilityHidden(true)
+                thumbnailImage(cached, size: displaySize, shape: shape)
             } else {
-                placeholder(size: thumbSize)
+                placeholder(size: displaySize, shape: shape)
             }
         }
         .task(id: taskID) {
-            // Always drop any stale in-memory image when the key changes.
             if imageKey != key {
                 image = nil
                 imageKey = nil
@@ -207,8 +204,10 @@ struct WidgetPreviewThumbnail: View {
                 return
             }
 
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled else { return }
+            if !renderImmediately {
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                guard !Task.isCancelled else { return }
+            }
 
             if let cached = WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) {
                 image = cached
@@ -219,9 +218,7 @@ struct WidgetPreviewThumbnail: View {
             if let rendered = WidgetPreviewThumbnailRasterCache.shared.renderThumbnail(
                 spec: spec,
                 family: family,
-                baseSize: base,
-                scale: scale,
-                thumbnailSize: thumbSize,
+                renderSize: base,
                 colorScheme: colorScheme,
                 rendererScale: rendererScale
             ) {
@@ -232,27 +229,20 @@ struct WidgetPreviewThumbnail: View {
         }
     }
 
-    private var liveBody: some View {
-        let base = WidgetPreview.widgetSize(for: family)
-        let scale = height / base.height
-        let scaledWidth = base.width * scale
-
-        return WidgetWeaverSpecView(spec: spec, family: family, context: .preview)
-            .frame(width: base.width, height: base.height)
-            .scaleEffect(scale, anchor: .center)
-            .frame(width: scaledWidth, height: height, alignment: .center)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.10))
-            )
-            .clipped()
+    @ViewBuilder
+    private func thumbnailImage(_ image: UIImage, size: CGSize, shape: RoundedRectangle) -> some View {
+        Image(uiImage: image)
+            .resizable()
+            .interpolation(.high)
+            .antialiased(true)
+            .frame(width: size.width, height: size.height, alignment: .center)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            .accessibilityHidden(true)
     }
 
-    private func placeholder(size: CGSize) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-
-        return ZStack {
+    private func placeholder(size: CGSize, shape: RoundedRectangle) -> some View {
+        ZStack {
             shape
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.05))
 
@@ -263,6 +253,11 @@ struct WidgetPreviewThumbnail: View {
         .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
         .frame(width: size.width, height: size.height, alignment: .center)
         .accessibilityHidden(true)
+    }
+
+    private func scaledWidgetCornerRadius(scale: CGFloat) -> CGFloat {
+        let base: CGFloat = (UIDevice.current.userInterfaceIdiom == .pad) ? 24 : 22
+        return WidgetPreviewMetrics.floorToPixel(base * max(0, scale), scale: max(1, displayScale))
     }
 
     private func buildDependencyFingerprint() -> String {
