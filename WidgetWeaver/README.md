@@ -2,7 +2,7 @@
 
 WidgetWeaver builds and previews real WidgetKit widgets from saved designs.
 
-It runs on **iOS 26** and ships with:
+It runs on **iOS 26** and ships with: 
 
 - A template catalogue (Explore) with multiple remixes per template
 - A searchable design Library (set Default, duplicate, delete)
