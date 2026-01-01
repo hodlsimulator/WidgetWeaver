@@ -42,19 +42,18 @@ extension RainForecastSurfaceRenderer {
 
         let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
 
-        // Treat “wet” as any non-trivial height in pixels.
+        // Wet coverage and approximate render cost.
         let wetEps = max(0.5 / max(1.0, Double(ds)), 0.0001)
         let wetCount = heights.reduce(0) { acc, h in
             acc + ((Double(h) > wetEps) ? 1 : 0)
         }
         let wetCoverage = Double(wetCount) / Double(max(1, heights.count))
 
-        // Approx pixel area cost for the drawn surface region.
         let wPx = Double(rect.width * ds)
         let hPx = Double(max(0.0, baselineY - rect.minY) * ds)
         let pixelArea = wPx * hPx
 
-        // Budget tiering for WidgetKit stability.
+        // Conservative tiering for WidgetKit.
         let tier: FuzzBudgetTier = {
             if !isExtension { return .app }
             let heavyAreaThreshold: Double = 520_000.0
@@ -63,25 +62,60 @@ extension RainForecastSurfaceRenderer {
             return .widget
         }()
 
-        // WidgetKit safety: scale work down on large charts or all-wet forecasts.
-        // Clamp keeps a minimum amount of grain so rain never looks “flat”.
+        // WidgetKit safety scaling: reduces work for large widgets and very-wet forecasts.
         let complexityScale: Double = {
             guard isExtension else { return 1.0 }
-            let areaRef: Double = 420_000.0
+            let areaRef: Double = 380_000.0
             let cappedArea = max(90_000.0, min(pixelArea, 1_600_000.0))
-            let areaScale = sqrt(areaRef / cappedArea)              // ~1 at ~420k px, down to ~0.51 at 1.6M
-            let coverageScale = 0.86 + 0.14 * (1.0 - wetCoverage)   // 0.86..1.0
-            return min(1.0, max(0.38, areaScale * coverageScale))
+            let areaScale = sqrt(areaRef / cappedArea)
+            let coverageScale = 0.90 + 0.10 * (1.0 - wetCoverage)
+            return min(1.0, max(0.22, areaScale * coverageScale))
         }()
 
-        func scaledBudget(_ base: Int, cap: Int) -> Int {
-            guard isExtension else { return base }
-            let scaled = Int(Double(base) * complexityScale)
-            return min(cap, max(220, scaled))
+        // Hard cap total speckles (this is what prevents placeholder regression).
+        let totalBudgetCap: Int = {
+            if !isExtension { return 20_000 }
+            switch tier {
+            case .widget:
+                return 2_400
+            case .widgetHeavy:
+                return 1_600
+            case .app:
+                return 20_000
+            }
+        }()
+
+        let totalBudget = max(520, Int(Double(totalBudgetCap) * complexityScale))
+
+        // Split budget across passes (kept small; visuals are ramped via additive blend + strength).
+        var outsideBudget = max(80, Int(Double(totalBudget) * 0.10))
+        var sparkleBudget = max(160, Int(Double(totalBudget) * 0.26))
+        var bodyBudget = max(240, totalBudget - outsideBudget - sparkleBudget)
+
+        // Ensure sum <= totalBudget even after mins.
+        let sum0 = outsideBudget + sparkleBudget + bodyBudget
+        if sum0 > totalBudget {
+            var over = sum0 - totalBudget
+
+            let bodyMin = 240
+            let sparkleMin = 160
+            let outsideMin = 80
+
+            let bodyDrop = min(over, max(0, bodyBudget - bodyMin))
+            bodyBudget -= bodyDrop
+            over -= bodyDrop
+
+            let sparkleDrop = min(over, max(0, sparkleBudget - sparkleMin))
+            sparkleBudget -= sparkleDrop
+            over -= sparkleDrop
+
+            let outsideDrop = min(over, max(0, outsideBudget - outsideMin))
+            outsideBudget -= outsideDrop
+            over -= outsideDrop
         }
 
         var baseCfg = cfg
-        // Additive particulate only (no “cutting” / erosion).
+        // Additive particulate only (no subtractive erosion).
         baseCfg.fuzzErodeEnabled = false
 
         let geometry = RainSurfaceGeometry(
@@ -105,44 +139,53 @@ extension RainForecastSurfaceRenderer {
             cfg: baseCfg
         )
 
-        // Strength floor so the body grain appears everywhere rain is present.
-        let edgeBoost: CGFloat = isExtension ? CGFloat(2.25) : CGFloat(2.40)
-        let wetFloor: CGFloat = isExtension ? CGFloat(0.20) : CGFloat(0.16)
+        // Strength shaping:
+        // - wetFloor ensures texture appears as soon as rain exists
+        // - taperBoost increases fuzz where certainty drops (helps “ends in Xm” look)
         let wetEpsCg = CGFloat(wetEps)
+        let edgeBoost: CGFloat = isExtension ? 1.90 : 2.10
+        let wetFloor: CGFloat = isExtension ? 0.20 : 0.16
+        let taperAmp: CGFloat = isExtension ? 1.20 : 1.35
 
-        let perPointStrengthEdge: [CGFloat] = zip(perPointStrengthEdgeRaw, zip(heights, certainties01)).map { s, hc in
-            let (h, c) = hc
-            let boosted = min(1.0, s * edgeBoost)
-            if h > wetEpsCg && c > 0.10 {
-                return max(boosted, wetFloor)
-            } else {
-                return boosted
+        var perPointStrengthEdge: [CGFloat] = []
+        perPointStrengthEdge.reserveCapacity(perPointStrengthEdgeRaw.count)
+
+        for i in 0..<perPointStrengthEdgeRaw.count {
+            let s = perPointStrengthEdgeRaw[i]
+            let h = heights[i]
+            let c = certainties01[i]
+
+            let t = max(CGFloat(0.0), CGFloat(1.0) - c)
+            let taperBoost: CGFloat = 1.0 + (t * t) * taperAmp
+
+            var v = min(CGFloat(1.0), s * edgeBoost * taperBoost)
+            if h > wetEpsCg {
+                v = max(v, wetFloor)
             }
+            perPointStrengthEdge.append(v)
         }
 
-        let bodyBoost: Double = isExtension ? (1.55 + 1.00 * complexityScale) : 2.40
+        let bodyBoost: CGFloat = isExtension ? CGFloat(1.10 + 0.90 * complexityScale) : 2.00
         let perPointStrengthBody: [CGFloat] = perPointStrengthEdge.map { s in
-            CGFloat(min(1.0, Double(s) * bodyBoost))
+            min(CGFloat(1.0), s * bodyBoost)
         }
 
         let maxHeightPt: CGFloat = surfacePoints.reduce(0.0) { acc, p in
             max(acc, max(0.0, baselineY - p.y))
         }
-        let bodyBandWidthPt = max(bandHalfWidth * 2.0, maxHeightPt * 1.10)
+        let bodyBandWidthPt = max(bandHalfWidth * 2.0, maxHeightPt * 1.08)
 
-        // Outside dust (blue) - cheap, subtle.
+        // Pass A: outside dust (blue, subtle, cheap).
         var outsideCfg = baseCfg
         outsideCfg.fuzzOuterDustEnabled = true
         outsideCfg.fuzzInsideSpeckleFraction = 0.0
         outsideCfg.fuzzColor = cfg.coreBodyColor
-        outsideCfg.fuzzMaxOpacity = min(outsideCfg.fuzzMaxOpacity, isExtension ? 0.26 : 0.34)
-        outsideCfg.fuzzDensity = min(outsideCfg.fuzzDensity, 1.05)
-        outsideCfg.fuzzSpeckStrength = min(outsideCfg.fuzzSpeckStrength, 1.05)
-        outsideCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.18...1.10) : (0.18...1.20)
 
-        let outsideBase = isExtension ? (tier == .widgetHeavy ? 320 : 460) : 2200
-        let outsideCap  = isExtension ? (tier == .widgetHeavy ? 420 : 620) : outsideBase
-        outsideCfg.fuzzSpeckleBudget = scaledBudget(outsideBase, cap: outsideCap)
+        outsideCfg.fuzzMaxOpacity = isExtension ? 0.22 : 0.30
+        outsideCfg.fuzzDensity = 0.95
+        outsideCfg.fuzzSpeckStrength = 1.00
+        outsideCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.18...1.00) : (0.18...1.15)
+        outsideCfg.fuzzSpeckleBudget = outsideBudget
 
         RainSurfaceDrawing.drawFuzzSpeckles(
             in: &context,
@@ -155,22 +198,21 @@ extension RainForecastSurfaceRenderer {
             cfg: outsideCfg
         )
 
+        // Inside passes are additive: stronger look with fewer primitives.
         let prevBlend = context.blendMode
         context.blendMode = .plusLighter
 
-        // Body grain (white, inside only, deep) - main texture.
+        // Pass B: body grain (white, inside only, deep) – main texture.
         var bodyCfg = baseCfg
         bodyCfg.fuzzOuterDustEnabled = false
         bodyCfg.fuzzInsideSpeckleFraction = 1.0
         bodyCfg.fuzzColor = Color.white
-        bodyCfg.fuzzMaxOpacity = min(bodyCfg.fuzzMaxOpacity, isExtension ? 0.46 : 0.55)
-        bodyCfg.fuzzDensity = min(bodyCfg.fuzzDensity, isExtension ? (4.10 * complexityScale + 1.05) : 5.00)
-        bodyCfg.fuzzSpeckStrength = min(bodyCfg.fuzzSpeckStrength, isExtension ? (2.15 * complexityScale + 1.05) : 2.90)
-        bodyCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.20...1.35) : (0.20...1.45)
 
-        let bodyBase = isExtension ? (tier == .widgetHeavy ? 3000 : 4200) : 16000
-        let bodyCap  = isExtension ? (tier == .widgetHeavy ? 3600 : 5200) : bodyBase
-        bodyCfg.fuzzSpeckleBudget = scaledBudget(bodyBase, cap: bodyCap)
+        bodyCfg.fuzzMaxOpacity = isExtension ? (0.34 + 0.14 * complexityScale) : 0.60
+        bodyCfg.fuzzDensity = isExtension ? (1.20 + 2.40 * complexityScale) : 5.60
+        bodyCfg.fuzzSpeckStrength = isExtension ? (1.00 + 1.70 * complexityScale) : 3.00
+        bodyCfg.fuzzSpeckleRadiusPixels = isExtension ? (0.20...1.30) : (0.20...1.45)
+        bodyCfg.fuzzSpeckleBudget = bodyBudget
 
         RainSurfaceDrawing.drawFuzzSpeckles(
             in: &context,
@@ -183,19 +225,17 @@ extension RainForecastSurfaceRenderer {
             cfg: bodyCfg
         )
 
-        // Near-surface sparkle (white, inside only, shallow) - makes the top edge read as “mist”.
+        // Pass C: sparkle (white, inside only, shallow) – makes the surface read as mist.
         var sparkleCfg = baseCfg
         sparkleCfg.fuzzOuterDustEnabled = false
         sparkleCfg.fuzzInsideSpeckleFraction = 1.0
         sparkleCfg.fuzzColor = Color.white
-        sparkleCfg.fuzzMaxOpacity = min(sparkleCfg.fuzzMaxOpacity, isExtension ? 0.34 : 0.40)
-        sparkleCfg.fuzzDensity = min(sparkleCfg.fuzzDensity, isExtension ? (1.80 * complexityScale + 0.55) : 2.30)
-        sparkleCfg.fuzzSpeckStrength = min(sparkleCfg.fuzzSpeckStrength, isExtension ? (2.05 * complexityScale + 0.65) : 2.60)
-        sparkleCfg.fuzzSpeckleRadiusPixels = 0.26...2.20
 
-        let sparkleBase = isExtension ? (tier == .widgetHeavy ? 1100 : 1600) : 5200
-        let sparkleCap  = isExtension ? (tier == .widgetHeavy ? 1500 : 2100) : sparkleBase
-        sparkleCfg.fuzzSpeckleBudget = scaledBudget(sparkleBase, cap: sparkleCap)
+        sparkleCfg.fuzzMaxOpacity = isExtension ? (0.26 + 0.10 * complexityScale) : 0.44
+        sparkleCfg.fuzzDensity = isExtension ? (0.80 + 1.20 * complexityScale) : 2.60
+        sparkleCfg.fuzzSpeckStrength = isExtension ? (1.10 + 1.60 * complexityScale) : 3.20
+        sparkleCfg.fuzzSpeckleRadiusPixels = 0.28...2.10
+        sparkleCfg.fuzzSpeckleBudget = sparkleBudget
 
         RainSurfaceDrawing.drawFuzzSpeckles(
             in: &context,
@@ -210,6 +250,7 @@ extension RainForecastSurfaceRenderer {
 
         context.blendMode = prevBlend
     }
+
 
 
 
