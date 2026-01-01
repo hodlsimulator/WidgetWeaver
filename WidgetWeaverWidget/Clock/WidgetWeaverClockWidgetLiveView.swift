@@ -19,28 +19,24 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
-            let isPlaceholder = redactionReasons.contains(.placeholder)
             let isPrivacy = redactionReasons.contains(.privacy)
 
-            // The seconds hand isn’t sensitive content; allow it in placeholder too.
-            // Privacy redaction is still respected.
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
-            // Hour/minute: minute-boundary provider timeline entries (stable, reliable).
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
-            let showSecondsHand = (tickMode == .secondsSweep)
+            let showSeconds = (tickMode == .secondsSweep) && !isPrivacy
 
             ZStack {
-                // Base clock (hour + minute + fallback seconds at 12).
-                // The centre hub is drawn in the overlay so the seconds needle sits underneath it.
+                // Base clock (hour + minute only).
+                // The seconds layer is handled entirely by the overlay.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
                     minuteAngle: .degrees(base.minute),
                     secondAngle: .degrees(0.0),
-                    showsSecondHand: showSecondsHand,
+                    showsSecondHand: false,
                     showsHandShadows: true,
                     showsGlows: true,
                     showsCentreHub: false,
@@ -50,10 +46,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
-                    showsSeconds: showSecondsHand && !isPrivacy,
-                    handsOpacity: handsOpacity,
-                    isPlaceholder: isPlaceholder,
-                    isPrivacy: isPrivacy
+                    showsSeconds: showSeconds,
+                    handsOpacity: handsOpacity
                 )
             }
             .privacySensitive(isPrivacy)
@@ -95,20 +89,19 @@ private struct WWClockSecondsAndHubOverlay: View {
     let minuteAnchor: Date
     let showsSeconds: Bool
     let handsOpacity: Double
-    let isPlaceholder: Bool
-    let isPrivacy: Bool
 
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
+            let timerRange = minuteAnchor...minuteAnchor.addingTimeInterval(59.999)
 
             ZStack {
                 if showsSeconds {
                     WWClockSecondHandGlyphView(
                         palette: palette,
-                        minuteAnchor: minuteAnchor,
+                        timerRange: timerRange,
                         diameter: layout.dialDiameter
                     )
                     .opacity(handsOpacity)
@@ -122,16 +115,17 @@ private struct WWClockSecondsAndHubOverlay: View {
                 )
                 .opacity(handsOpacity)
 
-                #if DEBUG
-                // Debug overlay to confirm what the system is doing.
-                // This stays in DEBUG only.
-                WWClockSecondsDebugOverlay(
-                    minuteAnchor: minuteAnchor,
-                    diameter: layout.dialDiameter,
-                    isPlaceholder: isPlaceholder,
-                    isPrivacy: isPrivacy
-                )
-                #endif
+                // Debug: visible proof that the timer text exists and is updating.
+                // This can be removed once the seconds glyph is confirmed working.
+                Text(timerInterval: timerRange, countsDown: false)
+                    .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+                    .font(.system(size: max(CGFloat(10.0), layout.dialDiameter * 0.07), weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.red.opacity(0.85))
+                    .frame(width: layout.dialDiameter, height: layout.dialDiameter, alignment: .bottomTrailing)
+                    .padding(.trailing, max(CGFloat(6.0), layout.dialDiameter * 0.05))
+                    .padding(.bottom, max(CGFloat(6.0), layout.dialDiameter * 0.05))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
             .frame(width: layout.dialDiameter, height: layout.dialDiameter)
             .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
@@ -144,13 +138,8 @@ private struct WWClockSecondsAndHubOverlay: View {
 
 private struct WWClockSecondHandGlyphView: View {
     let palette: WidgetWeaverClockPalette
-    let minuteAnchor: Date
+    let timerRange: ClosedRange<Date>
     let diameter: CGFloat
-
-    private var timerRange: ClosedRange<Date> {
-        let end = minuteAnchor.addingTimeInterval(59.999)
-        return minuteAnchor...end
-    }
 
     var body: some View {
         Text(timerInterval: timerRange, countsDown: false)
@@ -166,35 +155,6 @@ private struct WWClockSecondHandGlyphView: View {
             .accessibilityHidden(true)
     }
 }
-
-#if DEBUG
-private struct WWClockSecondsDebugOverlay: View {
-    let minuteAnchor: Date
-    let diameter: CGFloat
-    let isPlaceholder: Bool
-    let isPrivacy: Bool
-
-    private var timerRange: ClosedRange<Date> {
-        let end = minuteAnchor.addingTimeInterval(59.999)
-        return minuteAnchor...end
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("PH:\(isPlaceholder ? "1" : "0") PRIV:\(isPrivacy ? "1" : "0")")
-            Text(timerInterval: timerRange, countsDown: false)
-                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-        }
-        .font(.system(size: max(CGFloat(9.0), diameter * 0.06), weight: .semibold, design: .monospaced))
-        .foregroundStyle(Color.red.opacity(0.85))
-        .padding(.top, max(CGFloat(6.0), diameter * 0.05))
-        .padding(.leading, max(CGFloat(6.0), diameter * 0.05))
-        .frame(width: diameter, height: diameter, alignment: .topLeading)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-#endif
 
 // MARK: - Dial layout (matches WidgetWeaverClockIconView)
 

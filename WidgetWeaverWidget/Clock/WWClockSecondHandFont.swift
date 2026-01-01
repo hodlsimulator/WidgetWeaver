@@ -14,8 +14,14 @@ enum WWClockSecondHandFont {
     private static let bundledFileName: String = "WWClockSecondHand-Regular"
     private static let bundledFileExtension: String = "ttf"
 
+    private final class BundleToken {}
+
+    private static var resourceBundle: Bundle {
+        Bundle(for: BundleToken.self)
+    }
+
     private static let registerOnce: Void = {
-        guard let url = Bundle.main.url(
+        guard let url = resourceBundle.url(
             forResource: bundledFileName,
             withExtension: bundledFileExtension
         ) else {
