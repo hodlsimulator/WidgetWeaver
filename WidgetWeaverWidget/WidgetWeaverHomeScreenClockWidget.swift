@@ -104,20 +104,30 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
+        let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
+        // First entry scheduled at `now` (not at the minute anchor).
+        //
+        // WidgetKit can effectively treat the first entry as “display immediately” and then
+        // advance using the deltas between subsequent entries. If the first entry is the
+        // minute anchor (in the past), the first delta is always 60s, which can lock the
+        // update cadence to `:SS` rather than `:00` and make the minute tick consistently late.
+        //
+        // Starting the timeline at `now` makes the first delta equal “seconds remaining in
+        // the current minute”, so the next entry lands on the next real minute boundary.
         entries.append(
             Entry(
-                date: minuteAnchorNow,
+                date: now,
                 tickMode: .minuteOnly,
                 tickSeconds: 60.0,
                 colourScheme: colourScheme
             )
         )
 
-        var next = minuteAnchorNow.addingTimeInterval(60.0)
+        var next = nextMinuteBoundary
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(

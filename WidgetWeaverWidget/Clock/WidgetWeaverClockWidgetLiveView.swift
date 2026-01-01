@@ -32,7 +32,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
             // Important detail:
             // The bundled font only has ligatures for "0:00"..."0:59" (and "0:0"..."0:9").
             // Therefore the timer must be clamped so it never reaches "1:00".
-            let base = WWClockBaseAngles(date: entryDate)
+            let minuteAnchor = Self.floorToMinute(entryDate)
+            let base = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
                 // Base clock (no seconds in the main tree).
@@ -52,7 +53,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 // Seconds overlay: ticking needle driven by timer-style text glyph updates.
                 WWClockSecondsLigatureOverlay(
                     palette: palette,
-                    minuteAnchor: entryDate,
+                    minuteAnchor: minuteAnchor,
                     showLive: showLive,
                     handsOpacity: handsOpacity
                 )
@@ -61,6 +62,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
             .widgetURL(URL(string: "widgetweaver://clock"))
         }
     }
+
+    private static func floorToMinute(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
 }
 
 // MARK: - Minute-boundary angles (tick)
