@@ -25,10 +25,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let showLive = !(isPlaceholder || isPrivacy)
             let handsOpacity: Double = showLive ? 1.0 : 0.85
 
-            // README strategy:
-            // - Hour/minute use minute-boundary timeline entries (stable, reliable).
-            // - Seconds avoid 1 Hz WidgetKit timelines; instead use a ProgressView(timerInterval:)
-            //   driven wedge mask to reveal one of 60 pre-rotated second hands.
+            // README strategy #5:
+            // - Hour/minute: minute-boundary timeline entries (stable, reliable).
+            // - Seconds: budget-safe ticking via timer-style Text + ligature font (no 1 Hz timelines, no TimelineView).
+            //
+            // Important detail:
+            // The bundled font only has ligatures for "0:00"..."0:59" (and "0:0"..."0:9").
+            // Therefore the timer must be clamped so it never reaches "1:00".
             let base = WWClockBaseAngles(date: entryDate)
 
             ZStack {
@@ -46,8 +49,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     handsOpacity: handsOpacity
                 )
 
-                // Seconds overlay: ticking/sweeping without TimelineView.
-                WWClockSecondsTickOverlay(
+                // Seconds overlay: ticking needle driven by timer-style text glyph updates.
+                WWClockSecondsLigatureOverlay(
                     palette: palette,
                     minuteAnchor: entryDate,
                     showLive: showLive,
@@ -80,9 +83,9 @@ private struct WWClockBaseAngles {
     }
 }
 
-// MARK: - Seconds overlay (ProgressView(timerInterval:) wedge mask)
+// MARK: - Seconds overlay (ligature font)
 
-private struct WWClockSecondsTickOverlay: View {
+private struct WWClockSecondsLigatureOverlay: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
     let showLive: Bool
@@ -96,18 +99,28 @@ private struct WWClockSecondsTickOverlay: View {
 
             ZStack {
                 if showLive {
-                    WWClockSecondHandSheet(
-                        palette: palette,
-                        dialDiameter: layout.dialDiameter,
-                        scale: displayScale
-                    )
-                    .mask(
-                        WWClockSecondWedgeMask(
-                            minuteAnchor: minuteAnchor,
-                            dialDiameter: layout.dialDiameter
-                        )
-                    )
-                    .opacity(handsOpacity)
+                    // Clamp to +59s so the formatted timer string never becomes "1:00".
+                    // This keeps the ligature always in the "0:SS" domain.
+                    let end = minuteAnchor.addingTimeInterval(59.0)
+
+                    Text(timerInterval: minuteAnchor...end, countsDown: false)
+                        .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
+                        .foregroundStyle(palette.accent)
+                        .frame(width: layout.dialDiameter, height: layout.dialDiameter)
+                        .clipShape(Circle())
+                        .opacity(handsOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                } else {
+                    // Placeholder/privacy: deterministic static position (12 o'clock).
+                    Text("0:00")
+                        .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
+                        .foregroundStyle(palette.accent)
+                        .frame(width: layout.dialDiameter, height: layout.dialDiameter)
+                        .clipShape(Circle())
+                        .opacity(handsOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
 
                 WidgetWeaverClockCentreHubView(
@@ -124,94 +137,6 @@ private struct WWClockSecondsTickOverlay: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
-    }
-}
-
-private struct WWClockSecondHandSheet: View {
-    let palette: WidgetWeaverClockPalette
-    let dialDiameter: CGFloat
-    let scale: CGFloat
-
-    var body: some View {
-        let R = dialDiameter * 0.5
-
-        let secondLength = WWClock.pixel(
-            WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
-            scale: scale
-        )
-
-        let secondWidth = WWClock.pixel(
-            WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
-            scale: scale
-        )
-
-        let secondTipSide = WWClock.pixel(
-            WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
-            scale: scale
-        )
-
-        ZStack {
-            ForEach(0..<60, id: \.self) { i in
-                WidgetWeaverClockSecondHandView(
-                    colour: palette.accent,
-                    width: secondWidth,
-                    length: secondLength,
-                    angle: .degrees(Double(i) * 6.0),
-                    tipSide: secondTipSide,
-                    scale: scale
-                )
-            }
-        }
-        .frame(width: dialDiameter, height: dialDiameter)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct WWClockSecondWedgeMask: View {
-    let minuteAnchor: Date
-    let dialDiameter: CGFloat
-
-    // The raw “A minus B” wedge is centred between second marks; rotating by +3° centres it on the
-    // current second hand (multiples of 6°), avoiding the “needle sits on the mask boundary” issue.
-    private let wedgeRotation: Angle = .degrees(3.0)
-
-    var body: some View {
-        let aStart = minuteAnchor
-        let aEnd = minuteAnchor.addingTimeInterval(60.0)
-
-        let bStart = minuteAnchor.addingTimeInterval(1.0)
-        let bEnd = minuteAnchor.addingTimeInterval(61.0)
-
-        ZStack {
-            progressMask(timer: aStart...aEnd)
-
-            progressMask(timer: bStart...bEnd)
-                .blendMode(.destinationOut)
-        }
-        .compositingGroup()
-        .rotationEffect(wedgeRotation)
-        .frame(width: dialDiameter, height: dialDiameter)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func progressMask(timer: ClosedRange<Date>) -> some View {
-        // Small seed size so the circular stroke becomes “thick” when scaled up.
-        // This helps the wedge cover the dial area (not just a thin ring).
-        let seed: CGFloat = 2.0
-        let s = dialDiameter / seed
-
-        ProgressView(timerInterval: timer, countsDown: false)
-            .progressViewStyle(.circular)
-            .tint(.white)
-            .frame(width: seed, height: seed)
-            .scaleEffect(s)
-            .frame(width: dialDiameter, height: dialDiameter)
-            .background(Color.black)
-            .compositingGroup()
-            .luminanceToAlpha()
     }
 }
 
