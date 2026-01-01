@@ -59,8 +59,13 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    /// 120 minute-boundary entries ≈ 2 hours of reliable ticking.
-    static let maxEntriesPerTimeline: Int = 120
+    /// 120 minute-boundary entries (+ a short kickoff entry) ≈ 2 hours of reliable ticking.
+    static let maxEntriesPerTimeline: Int = 122
+
+    /// Used to force an immediate entry transition so the seconds sweep starts without relying on `onAppear`.
+    ///
+    /// WidgetKit scheduling tends to behave on whole-second boundaries, so a 1s delay is intentional.
+    static let secondsSweepKickoffDelay: TimeInterval = 1.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -69,25 +74,23 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let minuteAnchor = Self.floorToMinute(now)
 
         return Entry(
-            date: minuteAnchor,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            date: now,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: .classic
         )
     }
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let minuteAnchor = Self.floorToMinute(now)
         let scheme = configuration.colourScheme ?? .classic
 
         return Entry(
-            date: minuteAnchor,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            date: now,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: scheme
         )
     }
@@ -98,7 +101,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        // README strategy #5: minute-boundary timelines only (reliable minute hand, stable tree).
+        // Strategy: minute-boundary timelines only (reliable hour/minute tick, stable view tree).
+        // Seconds hand uses finite animations between minute entries (no per-second provider entries).
         return makeMinuteTimeline(now: now, colourScheme: scheme)
     }
 
@@ -109,30 +113,43 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // First entry scheduled at `now` (not at the minute anchor).
+        // Anchor entry scheduled at `now`.
         //
-        // WidgetKit can effectively treat the first entry as “display immediately” and then
-        // advance using the deltas between subsequent entries. If the first entry is the
-        // minute anchor (in the past), the first delta is always 60s, which can lock the
-        // update cadence to `:SS` rather than `:00` and make the minute tick consistently late.
-        //
-        // Starting the timeline at `now` makes the first delta equal “seconds remaining in
-        // the current minute”, so the next entry lands on the next real minute boundary.
+        // The seconds hand is drawn at the correct position, but `tickSeconds == 0` disables
+        // seconds sweep animation for this entry.
         entries.append(
             Entry(
                 date: now,
-                tickMode: .minuteOnly,
-                tickSeconds: 60.0,
+                tickMode: .secondsSweep,
+                tickSeconds: 0.0,
                 colourScheme: colourScheme
             )
         )
 
+        // Kickoff entry scheduled shortly after `now`.
+        //
+        // This forces a real entry transition so the widget host starts a finite rotation
+        // animation without relying on `onAppear`, `.task`, `TimelineView(.periodic)`, etc.
+        let kickoffDate = now.addingTimeInterval(WWClockTimelineConfig.secondsSweepKickoffDelay)
+        if kickoffDate < nextMinuteBoundary {
+            let firstSweepSeconds = max(0.0, nextMinuteBoundary.timeIntervalSince(kickoffDate))
+            entries.append(
+                Entry(
+                    date: kickoffDate,
+                    tickMode: .secondsSweep,
+                    tickSeconds: firstSweepSeconds,
+                    colourScheme: colourScheme
+                )
+            )
+        }
+
+        // Minute-boundary entries.
         var next = nextMinuteBoundary
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
                     date: next,
-                    tickMode: .minuteOnly,
+                    tickMode: .secondsSweep,
                     tickSeconds: 60.0,
                     colourScheme: colourScheme
                 )

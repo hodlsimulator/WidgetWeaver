@@ -25,13 +25,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let showLive = !(isPlaceholder || isPrivacy)
             let handsOpacity: Double = showLive ? 1.0 : 0.85
 
-            // Hour/minute: minute-boundary timeline entries (stable, reliable).
+            // Hour/minute: minute-boundary provider timeline entries (stable, reliable).
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
             ZStack {
                 // Base clock (no seconds in the main tree).
-                // Centre hub is drawn after the seconds overlay so the seconds needle sits underneath it.
+                // Centre hub is drawn in the overlay so the seconds needle sits underneath it.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
@@ -44,20 +44,25 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     handsOpacity: handsOpacity
                 )
 
-                // Seconds overlay:
+                // Seconds + hub overlay:
                 //
-                // On iOS 26 Home Screen hosting, `TimelineView(.periodic)` can be paused and stop firing,
-                // even while provider minute-boundary updates continue to land.
+                // This is intentionally state-free. It avoids relying on `onAppear`, `.task`,
+                // `TimelineView(.periodic)` or infinite SwiftUI animations, which can be skipped/paused
+                // on some Home Screen hosting paths.
                 //
-                // This overlay avoids high-frequency provider timelines and instead uses a CoreAnimation-
-                // backed infinite rotation (SwiftUI `repeatForever`) plus a tiny timer-style `Text` heartbeat
-                // to encourage the host to keep the widget in a “live” rendering mode.
+                // Instead, the provider emits minute-boundary entries and this overlay requests a
+                // finite CoreAnimation-backed rotation between successive entries.
                 //
-                // This remains best-effort: the host can still freeze animations in some conditions,
-                // but this path has proven more resilient than relying on `TimelineView` alone.
-                WWClockSecondsHandOverlay(
+                // Key idea:
+                // - For a given entry at time T, we draw the seconds hand at the *end* of the interval
+                //   (T + tickSeconds) and attach an animation of duration tickSeconds keyed on entryDate.
+                // - When the next entry arrives, SwiftUI animates from the previous target to the new
+                //   target, producing continuous movement without any in-view timers.
+                WWClockSecondsAndHubOverlay(
                     palette: palette,
-                    minuteAnchor: minuteAnchor,
+                    entryDate: entryDate,
+                    tickMode: tickMode,
+                    tickSeconds: tickSeconds,
                     showLive: showLive,
                     handsOpacity: handsOpacity
                 )
@@ -94,32 +99,17 @@ private struct WWClockBaseAngles {
     }
 }
 
-// MARK: - Seconds overlay (CoreAnimation-backed sweep)
+// MARK: - Seconds + hub overlay (finite animation)
 
-private struct WWClockSecondsHandOverlay: View {
+private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
-    let minuteAnchor: Date
+    let entryDate: Date
+    let tickMode: WidgetWeaverClockTickMode
+    let tickSeconds: TimeInterval
     let showLive: Bool
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
-
-    @State private var baseDate: Date
-    @State private var secPhase: Double = 0
-    @State private var started: Bool = false
-
-    init(
-        palette: WidgetWeaverClockPalette,
-        minuteAnchor: Date,
-        showLive: Bool,
-        handsOpacity: Double
-    ) {
-        self.palette = palette
-        self.minuteAnchor = minuteAnchor
-        self.showLive = showLive
-        self.handsOpacity = handsOpacity
-        _baseDate = State(initialValue: minuteAnchor)
-    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -139,50 +129,35 @@ private struct WWClockSecondsHandOverlay: View {
                 scale: displayScale
             )
 
-            let animatedAngle = Angle.degrees(Self.secondDegrees(date: baseDate) + secPhase * 360.0)
-
             ZStack {
-                if showLive {
-                    WidgetWeaverClockSecondHandView(
-                        colour: palette.accent,
-                        width: secondWidth,
-                        length: secondLength,
-                        angle: animatedAngle,
-                        tipSide: secondTipSide,
-                        scale: displayScale
-                    )
-                    .opacity(handsOpacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                    .onAppear {
-                        DispatchQueue.main.async {
-                            syncAndStartIfNeeded()
-                        }
+                if tickMode == .secondsSweep {
+                    if showLive {
+                        WidgetWeaverClockSecondHandView(
+                            colour: palette.accent,
+                            width: secondWidth,
+                            length: secondLength,
+                            angle: .degrees(Self.secondDegreesTarget(date: entryDate, tickSeconds: tickSeconds)),
+                            tipSide: secondTipSide,
+                            scale: displayScale
+                        )
+                        .opacity(handsOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .animation(Self.secondsAnimation(tickSeconds: tickSeconds), value: entryDate)
+                    } else {
+                        // Placeholder/privacy: deterministic static position (12 o'clock).
+                        WidgetWeaverClockSecondHandView(
+                            colour: palette.accent,
+                            width: secondWidth,
+                            length: secondLength,
+                            angle: .degrees(0.0),
+                            tipSide: secondTipSide,
+                            scale: displayScale
+                        )
+                        .opacity(handsOpacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                     }
-                    .task {
-                        // Some widget hosting paths can skip onAppear.
-                        DispatchQueue.main.async {
-                            syncAndStartIfNeeded()
-                        }
-                    }
-
-                    // Heartbeat:
-                    // A tiny timer-style Text keeps the widget host in a “live” rendering mode.
-                    // This can help CoreAnimation-backed repeatForever rotations keep running.
-                    WWClockWidgetHeartbeat(start: baseDate)
-                } else {
-                    // Placeholder/privacy: deterministic static position (12 o'clock).
-                    WidgetWeaverClockSecondHandView(
-                        colour: palette.accent,
-                        width: secondWidth,
-                        length: secondLength,
-                        angle: .degrees(0.0),
-                        tipSide: secondTipSide,
-                        scale: displayScale
-                    )
-                    .opacity(handsOpacity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
                 }
 
                 WidgetWeaverClockCentreHubView(
@@ -201,54 +176,18 @@ private struct WWClockSecondsHandOverlay: View {
         }
     }
 
-    private func syncAndStartIfNeeded() {
-        guard showLive else { return }
-
-        let now = Date()
-
-        // Start once per view lifetime, but also re-sync if the anchor is stale.
-        let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > 1.0)
-        guard shouldResync else { return }
-
-        started = true
-        baseDate = now
-
-        withAnimation(.none) {
-            secPhase = 0
-        }
-
-        withAnimation(.linear(duration: 60.0).repeatForever(autoreverses: false)) {
-            secPhase = 1
-        }
+    private static func secondsAnimation(tickSeconds: TimeInterval) -> Animation? {
+        // `tickSeconds` is supplied by the provider as “time until the next entry”.
+        // When it is 0 (a setup/anchor entry), do not animate.
+        guard tickSeconds > 0.05 else { return nil }
+        return .linear(duration: tickSeconds)
     }
 
-    private static func secondDegrees(date: Date) -> Double {
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.second, .nanosecond], from: date)
-
-        let secondInt = Double(comps.second ?? 0)
-        let nano = Double(comps.nanosecond ?? 0)
-
-        let sec = secondInt + (nano / 1_000_000_000.0)
-        return sec * 6.0
-    }
-}
-
-private struct WWClockWidgetHeartbeat: View {
-    let start: Date
-
-    var body: some View {
-        // Keeping this extremely cheap:
-        // - very small font
-        // - clipped to a 1x1 region
-        // - almost transparent
-        Text(timerInterval: start...Date.distantFuture, countsDown: false)
-            .font(.system(size: 1))
-            .foregroundStyle(Color.primary.opacity(0.001))
-            .frame(width: 1, height: 1)
-            .clipped()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    private static func secondDegreesTarget(date: Date, tickSeconds: TimeInterval) -> Double {
+        // Use an unbounded angle so interpolation is always forward.
+        // Each elapsed second adds 6 degrees.
+        let baseDegrees = date.timeIntervalSinceReferenceDate * 6.0
+        return baseDegrees + tickSeconds * 6.0
     }
 }
 
