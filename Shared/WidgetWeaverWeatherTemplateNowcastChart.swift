@@ -139,10 +139,10 @@ struct WeatherNowcastChart: View {
         cfg.fuzzTextureInnerOpacityMultiplier = 0.82
         cfg.fuzzTextureOuterOpacityMultiplier = 0.80
 
-        // Outside particles are part of the mock look.
-        // If the background must remain perfectly pure black, set these back to false.
-        cfg.fuzzOuterDustEnabled = true
-        cfg.fuzzOuterDustEnabledInAppExtension = true
+        // Outside particles lift the black background and read as a halo.
+        // Keep disabled while the base surface + end caps are being refined.
+        cfg.fuzzOuterDustEnabled = false
+        cfg.fuzzOuterDustEnabledInAppExtension = false
         cfg.fuzzOuterDustPassCount = 2
         cfg.fuzzOuterDustPassCountInAppExtension = 2
 
@@ -156,11 +156,12 @@ struct WeatherNowcastChart: View {
         cfg.fuzzHazeStrokeWidthFactor = 0.95
 
         // Peak glow + glint (drawn on top of the surface).
-        cfg.glossEnabled = true
+        // Keep disabled while the base render is being cleaned up.
+        cfg.glossEnabled = false
         cfg.glossMaxOpacity = 0.24
         cfg.glossHeightPower = 1.20
 
-        cfg.glintEnabled = true
+        cfg.glintEnabled = false
         cfg.glintCount = 1
         cfg.glintMaxOpacity = 0.92
         cfg.glintRadiusPixels = 6.0...20.0

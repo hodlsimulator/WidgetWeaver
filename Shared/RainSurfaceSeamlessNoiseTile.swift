@@ -105,8 +105,10 @@ enum RainSurfaceSeamlessNoiseTile {
 
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
 
-        let denomX = Double(w - 1)
-        let denomY = Double(h - 1)
+        // Important: avoid duplicating the edge pixels (u/v == 0 and 1) in the authored tile.
+        // Duplicated edge pixels read as a faint grid when the tile repeats.
+        let denomX = Double(w)
+        let denomY = Double(h)
 
         for y in 0..<h {
             let v = Double(y) / denomY

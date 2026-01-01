@@ -72,7 +72,8 @@ struct RainForecastSurfaceRenderer {
             max(0.0, min(maxHeightPt, h01 * maxHeightPt))
         }
 
-        let wetThresholdPt: CGFloat = 0.25
+        let onePx: CGFloat = 1.0 / max(1.0, ds)
+        let wetThresholdPt: CGFloat = onePx * 0.85
         let segments = Self.buildWetSegments(
             rect: rect,
             baselineY: baselineY,
@@ -194,7 +195,7 @@ struct RainForecastSurfaceRenderer {
         // as an internal “crease” (like a second surface) inside the body.
         //
         // Fix: allocate at most half of the inter-run gap to each side.
-        let targetTaperPt = max(10.0, min(rect.width * 0.05, 26.0))
+        let targetTaperPt = max(12.0, min(rect.width * 0.08, 48.0))
 
         var leftExtendForRun = [CGFloat](repeating: 0.0, count: runs.count)
         var rightExtendForRun = [CGFloat](repeating: 0.0, count: runs.count)
@@ -261,13 +262,22 @@ struct RainForecastSurfaceRenderer {
             if leftExtendPt > 0.5, firstX > minX + 0.5 {
                 let span = max(0.0, firstX - minX)
                 if span > 0.5 {
-                    pts.append(CGPoint(x: minX + span * 0.35, y: baselineY - firstH * 0.22))
-                    hs.append(firstH * 0.22)
-                    cs.append(c0)
+                    // Smooth “cap” so segment starts/ends do not read as cut-off cliffs.
+                    let taper: [(CGFloat, CGFloat)] = [
+                        (0.22, 0.08),
+                        (0.48, 0.28),
+                        (0.72, 0.58),
+                        (0.88, 0.84),
+                    ]
 
-                    pts.append(CGPoint(x: minX + span * 0.70, y: baselineY - firstH * 0.68))
-                    hs.append(firstH * 0.68)
-                    cs.append(c0)
+                    for (xf, hf) in taper {
+                        let x = minX + span * xf
+                        if x <= minX + 0.25 { continue }
+
+                        pts.append(CGPoint(x: x, y: baselineY - firstH * hf))
+                        hs.append(firstH * hf)
+                        cs.append(c0)
+                    }
                 }
             }
 
@@ -284,13 +294,21 @@ struct RainForecastSurfaceRenderer {
             if rightExtendPt > 0.5, maxX > endSampleX + 0.5 {
                 let span = max(0.0, maxX - endSampleX)
                 if span > 0.5 {
-                    pts.append(CGPoint(x: endSampleX + span * 0.30, y: baselineY - lastH * 0.70))
-                    hs.append(lastH * 0.70)
-                    cs.append(c1)
+                    let taper: [(CGFloat, CGFloat)] = [
+                        (0.14, 0.88),
+                        (0.38, 0.62),
+                        (0.63, 0.30),
+                        (0.85, 0.10),
+                    ]
 
-                    pts.append(CGPoint(x: endSampleX + span * 0.65, y: baselineY - lastH * 0.24))
-                    hs.append(lastH * 0.24)
-                    cs.append(c1)
+                    for (xf, hf) in taper {
+                        let x = endSampleX + span * xf
+                        if x >= maxX - 0.25 { continue }
+
+                        pts.append(CGPoint(x: x, y: baselineY - lastH * hf))
+                        hs.append(lastH * hf)
+                        cs.append(c1)
+                    }
                 }
             }
 
