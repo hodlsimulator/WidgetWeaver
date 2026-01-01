@@ -127,7 +127,9 @@ struct WeatherNowcast: Hashable {
         }
 
         let intensities = points.map {
-            let raw0 = $0.precipitationIntensityMMPerHour ?? 0.0
+            let i0 = max(0.0, $0.precipitationIntensityMMPerHour ?? 0.0)
+            let c0 = WeatherNowcast.clamp01($0.precipitationChance01 ?? 1.0)
+            let raw0 = i0 * c0
             let raw = raw0.isFinite ? raw0 : 0.0
             return max(0.0, raw)
         }
@@ -233,7 +235,9 @@ struct WeatherNowcast: Hashable {
         }
 
         let samples: [Sample] = points.map { p in
-            let raw0 = p.precipitationIntensityMMPerHour ?? 0.0
+            let i0 = max(0.0, p.precipitationIntensityMMPerHour ?? 0.0)
+            let c0 = clamp01(p.precipitationChance01 ?? 1.0)
+            let raw0 = i0 * c0
             let raw = raw0.isFinite ? raw0 : 0.0
             let intensity = max(0.0, raw)
             let chance = clamp01(p.precipitationChance01 ?? 0.0)
