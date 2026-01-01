@@ -136,9 +136,10 @@ struct WeatherNowcastChart: View {
         cfg.fuzzTextureInnerOpacityMultiplier = 1.00
         cfg.fuzzTextureOuterOpacityMultiplier = 0.65
 
-        // Outer mist is part of the mock look; enabled for widgets.
-        cfg.fuzzOuterDustEnabled = true
-        cfg.fuzzOuterDustEnabledInAppExtension = true
+        // IMPORTANT: keep the background pure black.
+        // Any outside-the-body mist will lift the black background and read as a halo.
+        cfg.fuzzOuterDustEnabled = false
+        cfg.fuzzOuterDustEnabledInAppExtension = false
         cfg.fuzzOuterDustPassCount = 2
         cfg.fuzzOuterDustPassCountInAppExtension = 2
 

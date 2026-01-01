@@ -154,7 +154,9 @@ struct RainForecastSurfaceConfiguration {
     var fuzzTextureOuterOpacityMultiplier: Double = 0.45
 
     // Outer dust (outside the core body)
-    var fuzzOuterDustEnabled: Bool = true
+    // IMPORTANT: keep the background pure black.
+    // Any rendering outside the filled body will lift the black background and read as a halo.
+    var fuzzOuterDustEnabled: Bool = false
     var fuzzOuterDustEnabledInAppExtension: Bool = false
     var fuzzOuterDustPassCount: Int = 3
     var fuzzOuterDustPassCountInAppExtension: Int = 2
@@ -259,26 +261,21 @@ private extension RainForecastSurfaceConfiguration {
         // Degrade visuals by removing extras first.
         guard isLowBudget else { return }
 
-        // 1) Remove optional highlights.
+        rimEnabled = false
         glossEnabled = false
         glintEnabled = false
 
-        // 2) Remove any haze/blur paths that can trigger expensive rasterisation.
-        fuzzHazeStrength = 0.0
-        fuzzHazeBlurFractionOfBand = 0.0
+        fuzzOuterDustEnabledInAppExtension = false
+        fuzzTextureGradientStops = min(fuzzTextureGradientStops, 18)
+        fuzzTextureTilePixels = min(fuzzTextureTilePixels, 192)
 
-        // 3) Clamp work proportional to width.
-        let wPx = max(1.0, Double(size.width * ds))
-        let conservativeDense = max(120, min(Int(wPx * 0.6), 260))
-        maxDenseSamples = min(maxDenseSamples, conservativeDense)
+        // Reduce total fuzz intensity a little for placeholder.
+        fuzzMaxOpacity = min(fuzzMaxOpacity, 0.35)
 
-        // 4) Reduce particle knobs (legacy; texture path ignores, but keep sane).
-        fuzzSpeckleBudget = min(fuzzSpeckleBudget, 650)
-        fuzzDensity = min(fuzzDensity, 0.85)
-        fuzzInsideSpeckleFraction = min(fuzzInsideSpeckleFraction, 0.25)
-        fuzzAlongTangentJitter = min(fuzzAlongTangentJitter, 0.35)
+        // Avoid extreme width.
+        fuzzWidthPixelsClamp = min(fuzzWidthPixelsClamp.lowerBound, 14.0)...min(fuzzWidthPixelsClamp.upperBound, 18.0)
 
-        // 5) Final degrade: disable fuzz entirely for placeholder/previews.
-        canEnableFuzz = false
+        _ = ds
+        _ = size
     }
 }

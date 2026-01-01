@@ -100,28 +100,14 @@ struct RainForecastSurfaceRenderer {
             if cfg.fuzzEnabled && cfg.canEnableFuzz && cfg.fuzzTextureEnabled {
                 let bandHalfWidth = Self.computeBandHalfWidth(rect: rect, displayScale: ds, cfg: cfg)
 
-                var effectiveCorePath = corePath
-                if cfg.fuzzSolidCoreEnabled {
-                    let inset = Self.computeSolidCoreInset(
-                        bandHalfWidth: bandHalfWidth,
-                        heights: heights,
-                        displayScale: ds,
-                        configuration: cfg
-                    )
-                    if inset > 0.0 {
-                        effectiveCorePath = Self.buildSolidCoreFillPath(
-                            curvePoints: curvePoints,
-                            baselineY: baselineY,
-                            inset: inset
-                        )
-                    }
-                }
-
                 Self.drawDissipationFuzz(
                     in: &context,
                     rect: rect,
                     baselineY: baselineY,
-                    corePath: effectiveCorePath,
+                    // Tile shading should reach the actual surface contour.
+                    // Passing an inset “solid core” path leaves an untextured band that reads like
+                    // a second, flat surface layer.
+                    corePath: corePath,
                     curvePoints: curvePoints,
                     heights: heights,
                     certainties01: certainties01,
@@ -219,115 +205,91 @@ struct RainForecastSurfaceRenderer {
             let leftExtendPt = min(targetTaperPt, CGFloat(leftDryCount) * stepX)
             let rightExtendPt = min(targetTaperPt, CGFloat(rightDryCount) * stepX)
 
-            if let seg = makeSegment(
-                rect: rect,
-                baselineY: baselineY,
-                start: run.start,
-                end: run.end,
-                stepX: stepX,
-                xMid: xMid,
-                heights: heights,
-                certainties01: certainties01,
-                leftExtendPt: leftExtendPt,
-                rightExtendPt: rightExtendPt
-            ) {
-                segments.append(seg)
+            let startIdx = max(0, run.start)
+            let endIdx = min(n - 1, run.end)
+
+            let minX = rect.minX + CGFloat(startIdx) * stepX - leftExtendPt
+            let maxX = rect.minX + CGFloat(endIdx + 1) * stepX + rightExtendPt
+
+            // Build sample points with baseline anchors at both ends.
+            var pts: [CGPoint] = []
+            var hs: [CGFloat] = []
+            var cs: [CGFloat] = []
+
+            pts.reserveCapacity((endIdx - startIdx + 1) + 4)
+            hs.reserveCapacity(pts.capacity)
+            cs.reserveCapacity(pts.capacity)
+
+            let c0 = certainties01[startIdx]
+            let c1 = certainties01[endIdx]
+
+            // Baseline start.
+            pts.append(CGPoint(x: minX, y: baselineY))
+            hs.append(0.0)
+            cs.append(c0)
+
+            // Left taper (baseline -> first height).
+            let firstX = xMid(startIdx)
+            let firstH = heights[startIdx]
+            if leftExtendPt > 0.5, firstX > minX + 0.5 {
+                let span = max(0.0, firstX - minX)
+                if span > 0.5 {
+                    pts.append(CGPoint(x: minX + span * 0.35, y: baselineY - firstH * 0.22))
+                    hs.append(firstH * 0.22)
+                    cs.append(c0)
+
+                    pts.append(CGPoint(x: minX + span * 0.70, y: baselineY - firstH * 0.68))
+                    hs.append(firstH * 0.68)
+                    cs.append(c0)
+                }
             }
+
+            // Main samples.
+            for i in startIdx...endIdx {
+                pts.append(CGPoint(x: xMid(i), y: baselineY - heights[i]))
+                hs.append(heights[i])
+                cs.append(certainties01[i])
+            }
+
+            // Right taper (last height -> baseline).
+            let endSampleX = xMid(endIdx)
+            let lastH = heights[endIdx]
+            if rightExtendPt > 0.5, maxX > endSampleX + 0.5 {
+                let span = max(0.0, maxX - endSampleX)
+                if span > 0.5 {
+                    pts.append(CGPoint(x: endSampleX + span * 0.30, y: baselineY - lastH * 0.70))
+                    hs.append(lastH * 0.70)
+                    cs.append(c1)
+
+                    pts.append(CGPoint(x: endSampleX + span * 0.65, y: baselineY - lastH * 0.24))
+                    hs.append(lastH * 0.24)
+                    cs.append(c1)
+                }
+            }
+
+            // Baseline end.
+            pts.append(CGPoint(x: maxX, y: baselineY))
+            hs.append(0.0)
+            cs.append(c1)
+
+            segments.append(SurfaceSegment(
+                curvePoints: pts,
+                heights: hs,
+                certainties01: cs,
+                gradientStartX: minX,
+                gradientEndX: maxX
+            ))
         }
 
         return segments
     }
 
-    static func makeSegment(
-        rect: CGRect,
-        baselineY: CGFloat,
-        start: Int,
-        end: Int,
-        stepX: CGFloat,
-        xMid: (Int) -> CGFloat,
-        heights: [CGFloat],
-        certainties01: [CGFloat],
-        leftExtendPt: CGFloat,
-        rightExtendPt: CGFloat
-    ) -> SurfaceSegment? {
-        guard start >= 0, end >= start else { return nil }
-        guard end < heights.count, end < certainties01.count else { return nil }
-
-        let runLeftX = rect.minX + CGFloat(start) * stepX
-        let runRightX = rect.minX + CGFloat(end + 1) * stepX
-
-        let minX = max(rect.minX, min(runLeftX - max(0.0, leftExtendPt), rect.maxX))
-        let maxX = min(rect.maxX, max(runRightX + max(0.0, rightExtendPt), rect.minX))
-
-        if maxX <= minX + 0.0001 {
-            return nil
-        }
-
-        let c0 = certainties01[start]
-        let c1 = certainties01[end]
-
-        let firstH = max(0.0, heights[start])
-        let lastH = max(0.0, heights[end])
-
-        let startSampleX = xMid(start)
-        let endSampleX = xMid(end)
-
-        var pts: [CGPoint] = []
-        var hs: [CGFloat] = []
-        var cs: [CGFloat] = []
-
-        // Baseline start.
-        pts.append(CGPoint(x: minX, y: baselineY))
-        hs.append(0.0)
-        cs.append(c0)
-
-        // Left taper (baseline -> first height).
-        if leftExtendPt > 0.5, startSampleX > minX + 0.5 {
-            let span = max(0.0, startSampleX - minX)
-            if span > 0.5 {
-                pts.append(CGPoint(x: minX + span * 0.35, y: baselineY - firstH * 0.22))
-                hs.append(firstH * 0.22)
-                cs.append(c0)
-
-                pts.append(CGPoint(x: minX + span * 0.70, y: baselineY - firstH * 0.68))
-                hs.append(firstH * 0.68)
-                cs.append(c0)
-            }
-        }
-
-        // Sample points.
-        for i in start...end {
-            pts.append(CGPoint(x: xMid(i), y: baselineY - heights[i]))
-            hs.append(heights[i])
-            cs.append(certainties01[i])
-        }
-
-        // Right taper (last height -> baseline).
-        if rightExtendPt > 0.5, maxX > endSampleX + 0.5 {
-            let span = max(0.0, maxX - endSampleX)
-            if span > 0.5 {
-                pts.append(CGPoint(x: endSampleX + span * 0.30, y: baselineY - lastH * 0.70))
-                hs.append(lastH * 0.70)
-                cs.append(c1)
-
-                pts.append(CGPoint(x: endSampleX + span * 0.65, y: baselineY - lastH * 0.24))
-                hs.append(lastH * 0.24)
-                cs.append(c1)
-            }
-        }
-
-        // Baseline end.
-        pts.append(CGPoint(x: maxX, y: baselineY))
-        hs.append(0.0)
-        cs.append(c1)
-
-        return SurfaceSegment(
-            curvePoints: pts,
-            heights: hs,
-            certainties01: cs,
-            gradientStartX: minX,
-            gradientEndX: maxX
-        )
+    static func denseSampleCount(sourceCount: Int, rectWidthPoints: CGFloat, displayScale: CGFloat, maxDense: Int) -> Int {
+        let ds = max(1.0, displayScale)
+        let px = rectWidthPoints * ds
+        let target = Int(px * 1.15)
+        let n = max(sourceCount, min(maxDense, target))
+        return max(12, n)
     }
 
     static func computeSolidCoreInset(
@@ -428,21 +390,22 @@ struct RainForecastSurfaceRenderer {
             }
         }
 
-        var path = Path()
-        path.move(to: pts[0])
+        // Convert Hermite form to Bezier segments.
+        var p = Path()
+        p.move(to: pts[0])
 
         for i in 0..<(n - 1) {
             let p0 = pts[i]
             let p1 = pts[i + 1]
-            let h = dx[i] / 3
+            let dx = p1.x - p0.x
 
-            let c1 = CGPoint(x: p0.x + h, y: p0.y + tangents[i] * h)
-            let c2 = CGPoint(x: p1.x - h, y: p1.y - tangents[i + 1] * h)
+            let c0 = CGPoint(x: p0.x + dx / 3, y: p0.y + tangents[i] * dx / 3)
+            let c1 = CGPoint(x: p1.x - dx / 3, y: p1.y - tangents[i + 1] * dx / 3)
 
-            path.addCurve(to: p1, control1: c1, control2: c2)
+            p.addCurve(to: p1, control1: c0, control2: c1)
         }
 
-        return path
+        return p
     }
 
     static func drawCore(in context: inout GraphicsContext, corePath: Path, curvePoints: [CGPoint], baselineY: CGFloat, cfg: RainForecastSurfaceConfiguration) {
