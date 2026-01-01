@@ -1,16 +1,17 @@
 # WidgetWeaver
 
-WidgetWeaver is an **iOS 26-only** prototype app that turns a typed “widget design spec” into real WidgetKit widgets.
+WidgetWeaver builds and previews real WidgetKit widgets from saved designs.
 
-The project is a playground for exploring:
+It runs on **iOS 26** and ships with:
 
-- A simple typed JSON-ish design spec (`WidgetSpec`)
-- Deterministic SwiftUI rendering in a WidgetKit extension (`WidgetWeaverSpecView`)
-- A lightweight template catalogue (the **Explore** tab) for seeding designs
-- Pro features (matched sets + variables + interactive buttons)
-- Optional on-device AI for spec generation and patch edits
+- A template catalogue (Explore) with multiple remixes per template
+- A searchable design Library (set Default, duplicate, delete)
+- An Editor that pushes updates to widgets on Save
+- Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
+- Weather, Calendar, and Steps setups that cache snapshots for offline widget rendering
+- A small Home Screen clock widget (seconds hand work is still in progress)
 
-The app and widget extension communicate via an App Group (UserDefaults + shared files) so widgets can render offline.
+WidgetWeaver uses an App Group so the app and widget extension share designs, snapshots, and images.
 
 ---
 
@@ -18,11 +19,20 @@ The app and widget extension communicate via an App Group (UserDefaults + shared
 
 WidgetWeaver has three tabs:
 
-- **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps)
-- **Library**: saved designs (set Default, duplicate, delete)
+- **Explore**: featured widgets + templates + setup entry points (Weather / Calendar / Steps) + remixes
+- **Library**: saved designs (search, set Default, duplicate, delete)
 - **Editor**: edits the currently selected design; **Save** pushes changes to widgets
 
 Widgets refresh when a design is saved. If something looks stale, use the in-app refresh action (Editor → … → Refresh Widgets).
+
+### Previews (Home + Lock Screen)
+
+WidgetWeaver includes a preview dock designed for day-to-day iteration:
+
+- Small / Medium / Large previews for Home Screen designs
+- Lock Screen previews for accessory widgets where relevant
+- Snapshot-style previews for catching WidgetKit quirks early (including “budget guardrail” paths)
+- Quick switching between preview modes without leaving the editor
 
 ---
 
@@ -59,7 +69,9 @@ The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-sa
 
 - `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift` — builds a `RainForecastSurfaceConfiguration` tuned for the nowcast chart and renders `RainForecastSurfaceView`.
 - `Shared/RainForecastSurfaceView.swift` — `Canvas` wrapper that fills a pure black background, applies WidgetKit budget guardrails, then calls the renderer.
-- `Shared/RainForecastSurfaceRenderer.swift` — procedural core mound + **asset-driven subtractive dissipation** (the body “evaporates” into grain on the slopes); deterministic and budget-clamped.
+- `Shared/RainForecastSurfaceRenderer.swift` — procedural core ribbon (robust scaling + dense resampling) split into wet segments with tapered ends measured in points (no cliffs).
+- `Shared/RainForecastSurfaceRenderer+Dissipation.swift` — dissipation/mist layering using seamless tiled noise (constant-cost passes, widget-safe).
+- `Shared/RainSurfaceSeamlessNoiseTile.swift` — generates periodic (wrap-around) fine/coarse noise tiles used by dissipation (cached and small to reduce cold-start cost).
 - `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for stable jitter/offsets.
 
 **Not used for the Weather nowcast chart (legacy / experiments)**
@@ -72,64 +84,98 @@ The Weather template’s 0–60 minute nowcast chart uses a dedicated, widget-sa
 - `Shared/RainSurfaceMath.swift`
 - `Shared/RainSurfaceStyleHarness.swift`
 
-#### Technique (current): asset-driven subtractive dissipation
+#### Technique (current): seamless‑tile additive dissipation (grain + mist)
 
-We changed approach because “adding fuzz” kept reading like an outline/halo and was hard to push without triggering WidgetKit placeholders.
+The current nowcast look is built from a solid core plus layered texture. The goal is the same behaviour as the mockup:
+
+- solid body at the ridge,
+- texture present *through the body* once fuzz starts (not just a thin outline),
+- stronger turbulence at the surface,
+- and a soft mist above the surface.
 
 The current technique is:
 
-- Draw the **core body** normally (a filled mound with a vertical gradient).
-- Then make the body **dissipate** by **subtracting opacity** near the contour:
-  - A wide, soft erosion band establishes the fade into the slope.
-  - A narrower erosion band is masked by a tiled speckle texture so the fade breaks into grain.
-- Optional: a very faint continuation outside the body (“outer dust”) can be used, but it is treated as a budget risk in widgets and may be disabled or heavily clamped.
+- Draw the **core body** normally (a filled ribbon with a vertical gradient).
+- Add an **interior grain layer** inside the body:
+  - seamless **fine noise tile** filled additively (`.plusLighter`) to create subtle white micro‑highlights,
+  - depth-faded (strong near the surface, weaker towards the baseline),
+  - modulated horizontally by a certainty mask derived from chance/height.
+- Add a **surface band layer** near the contour:
+  - a stroked contour band (`innerBandPath`) clipped to the body,
+  - layered coarse + coarse‑detail + fine‑detail fills to produce visible turbulence without dots.
+- Add an **above‑surface mist layer** outside the body:
+  - outside-of-core region via even‑odd (`clipRect − corePath`) and `outerBandPath`,
+  - blue haze base (normal blend) + subtle white lift (additive),
+  - additional variation applied additively (no hard noise masking),
+  - then faded vertically above the ridge and modulated by the same horizontal mask.
 
 Key property:
-- This technique does **not** add a coloured fuzz layer. It primarily removes alpha from the body, so the surface looks like it is dissolving into black.
-- The goal is: **the body dissipates** (not a cyan halo, not a sharp outline).
+- This technique adds *texture* and *white highlight grain* while keeping the core colour stable.
+- It avoids the “cyan halo” failure mode by keeping above-surface lift subtle and by not relying on thick outline strokes.
 
-#### Noise assets (required for the new look)
+#### 0–60 minute series and “Ends in Xm” alignment
 
-The dissipation grain comes from small tileable alpha textures derived from the mockup:
+The chart must not “stretch” shorter WeatherKit minute forecasts across a full 60 minutes.
 
-- `RainFuzzNoise` (normal)
-- `RainFuzzNoise_Sparse`
-- `RainFuzzNoise_Dense`
+The current pipeline keeps the text and the graphic aligned:
 
-Important:
-- The widget extension is a separate bundle. These image sets must exist in the **widget extension’s** asset catalogue (and in the app’s if the app preview uses them).
-- If the assets do not load in the widget bundle, the erosion still happens but the “grain” component becomes subtle, and the chart can look very close to the previous commit.
+- Build `intensityByMinute[0..<60]` and `chanceByMinute[0..<60]`.
+- Bucket each minute point using **floor minute indexing** from `forecastStart`:
+  - `idx = Int((point.date - forecastStart) / 60)`
+- Plot **expected intensity**:
+  - `expected = precipitationIntensityMMPerHour × precipitationChance01`
+- Clamp sub-wet values to 0 using `WeatherNowcast.wetIntensityThresholdMMPerHour`.
+- Pass the chance series as `certainties` into the renderer so uncertainty controls dissipation.
 
-Notes:
+This prevents “Ends in 34m” while the ribbon still looks wet beyond the forecast window.
 
-- `RainForecastSurfaceConfiguration` still contains several legacy knobs (for compatibility). The renderer uses a subset of fuzz/dissipation knobs and ignores unrelated legacy settings.
-- If the chart appearance needs tuning, start with the config values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`, then adjust dissipation behaviour in `Shared/RainForecastSurfaceRenderer.swift`. Avoid editing the legacy `RainSurfaceDrawing*` files for this chart.
+#### Core shape, segmenting, and tapered ends (no cliffs)
 
-#### Current status of visual fidelity (and what to expect)
+The renderer draws wet runs as segments so each burst can taper cleanly:
 
-The current output is still not matching the mockup, and it can look “nearly unchanged” if the erosion is too conservative or if the noise assets are not being loaded by the widget bundle.
+- Robust intensity scaling (percentile-based reference max) + `intensityGamma`.
+- Dense resampling (`maxDenseSamples`) for a smooth ridge at widget sizes.
+- Wet runs are split into segments.
+- Each segment is extended left/right by a target taper width measured in **points**, bounded by dry space, with intermediate taper points (e.g. ~0.22 and ~0.68 of edge height). This removes vertical end caps.
 
-Can this technique reach mockup fidelity?
-- **Yes, this is the correct foundation** for the mockup look, because the mockup’s slopes are primarily an **alpha structure** problem (solid → grain → nothing), not a “draw more fuzz” problem.
-- The remaining gap is mostly:
-  - tuning the erosion width/strength so the dissipation reaches into the slope (not just the edge), and
-  - ensuring the tile textures have the right character (fine grain, sparse, no seams) and are consistently loaded.
+Pitfall: when sampling is very dense, one sample can be < 1pt, so tapering must be measured in points, not indices.
 
-What may remain constrained by WidgetKit budgets:
-- Very large “outer dust clouds” can be risky in widgets. The primary requirement is **body dissipation**, which is achievable with bounded erosion passes.
+#### Seamless noise tiles (how repetition is kept under control)
 
-#### Troubleshooting: “no visible difference” and “wrong colour”
+The dissipation grain comes from two procedural tiles:
+
+- `fine` — micro grain (small, sparse highlights)
+- `coarse` — wispier clumps for surface turbulence
+
+These are generated in code and cached:
+
+- Tiles wrap in both axes (periodic), so tiling cannot introduce a seam line.
+- Tile size is kept small to reduce WidgetKit cold-start cost.
+- Rendering jitters tile origins deterministically (PRNG) so the texture does not “lock” to edges.
+
+#### Avoiding visible tile edges along the surface
+
+When tile edges appear, the cause is usually clip boundaries, not the tile itself:
+
+- The dissipation `clipRect` must be derived from the **actual curvePoints x-range**. Segment tapering introduces non‑uniform x spacing; any index→x assumption can place a hard clip edge inside the visible ribbon.
+- Above-surface mist should remain continuous. Using noise as a hard alpha mask (`destinationIn` with noisy shading) creates blocky cut-outs that can read as tiled edges. Current code applies noise variation additively and then applies smooth fades/masks.
+
+#### Troubleshooting: “no visible difference”, “tile edges”, and “wrong colour”
 
 If the chart looks almost identical to the older path:
 
-- Confirm `RainFuzzNoise*` image sets exist in the **widget extension** asset catalogue (not just the app).
-- Ensure names match exactly (case-sensitive).
-- Ensure the tile textures are truly sparse (mostly transparent). If the tile is too opaque, the effect reads as a smooth fade instead of grain.
-- Increase erosion width/strength in the nowcast configuration. A narrow band reads like a softened outline, not dissipation.
+- Confirm fuzz is not being disabled by budget guardrails (`canEnableFuzz` can be turned off in low‑budget snapshot/placeholder contexts).
+- Confirm `GraphicsContext.Shading.tiledImage` usage: `sourceRect` is in unit space (0–1). Passing pixel-sized source rects collapses sampling and can make the tile look like it does nothing.
+- Increase config multipliers (opacity + band multipliers) before adding extra passes.
+
+If you still see tile edges along the surface:
+
+- The most common cause is the dissipation `clipRect` ending inside the visible segment. Ensure `clipRect` is based on `curvePoints.x` and padded enough to include above-surface fades.
 
 If you see cyan/halo-like colour:
-- That indicates an additive blend (for example “screen”) or a haze stroke that is too strong, or the dissipation colour being sourced incorrectly.
-- The intended look is a blue body that dissolves; the dissipation should not introduce a new hue.
+
+- Above-surface lift is too strong or mist colour is drifting away from the core body colour.
+- The intended look is a blue body that dissolves; dissipation should not introduce a new hue.
 
 ### Regression A — WidgetKit placeholder (crash/budget blow) for rainy locations
 
@@ -160,13 +206,13 @@ The nowcast renderer is designed to stay inside WidgetKit budgets by constructio
 
 - The silhouette is **O(n)** in samples.
 - Dissipation is a **bounded number of passes** (small constant number of clipped fills).
-- Grain uses small **asset-backed tile textures**, not per-speckle procedural loops.
+- Grain uses small **seamless tile textures** (procedural + cached), not per-speckle CPU loops.
 - Blur is avoided; any “coherence” should be a cheap stroke haze (and is best kept off in widgets).
 - In WidgetKit placeholder/preview contexts, the chart should **degrade** by removing extras first:
   - disable gloss/glint
   - disable haze/blur
   - reduce dense samples
-  - reduce dissipation passes / disable “outer dust”
+  - reduce dissipation passes / disable outside mist
   - if needed: disable dissipation entirely (core-only render is better than placeholder)
 
 Implementation notes:
@@ -196,8 +242,8 @@ If the placeholder shows up during development, follow this order:
 
 - Lower the tuned values in `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`:
   - `maxDenseSamples`
-  - dissipation width/strength (erosion band width, number of passes)
-  - disable “outer dust” in widgets
+  - dissipation band multipliers / opacity multipliers
+  - disable outside mist in widgets
 
 ---
 
@@ -356,13 +402,16 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 ### App
 
 - ✅ Explore tab: featured widgets + template catalogue (adds templates into the Library)
-- ✅ Library of saved specs + Default selection
+- ✅ More remixes across built-in templates (faster iteration without starting from scratch)
+- ✅ Library of saved designs + Default selection
+- ✅ Library search (find designs by name quickly)
 - ✅ Editor for `WidgetSpec`
+- ✅ More robust widget previews (multi-size + snapshot-style preview paths)
 - ✅ Free tier: up to `WidgetWeaverEntitlements.maxFreeDesigns` saved designs
 - ✅ Pro: unlimited saved designs
 - ✅ Pro: matched sets (S/M/L) share style tokens
 - ✅ Share/export/import JSON (optionally embedding images)
-- ✅ Optional on-device AI (generate + patch)
+- ✅ On-device AI (generate + patch)
 - ✅ Weather setup + cached snapshot + attribution
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
 - ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
@@ -389,9 +438,11 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 ### Layout + style
 
 - ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up (Calendar) (includes a starter Steps design via `__steps_*` keys)
+- ✅ More remixes for templates (Explore)
 - ✅ Axis: vertical/horizontal; alignment; spacing; line limits
 - ✅ Accent bar toggle
 - ✅ Style tokens: padding, corner radius, background token, overlay, glow, accent
+- ✅ Improved image theme extraction (better palette/contrast derived from images for poster-style designs)
 - ✅ Optional SF Symbol spec (name/size/weight/rendering/tint/placement)
 - ✅ Optional banner image (stored in App Group container)
 
@@ -482,12 +533,12 @@ The shared variable store is Pro-only and can be updated in-app or via widget bu
 
 ---
 
-## AI (Optional)
+## AI
 
-AI features are designed to run on-device to generate or patch the design spec. Images are never generated.
+AI features run on-device to generate or patch the design spec. Images are never generated.
 
 ---
 
 ## Licence / notes
 
-This is a prototype playground; it is not intended as a production app yet.
+This repo changes quickly and prioritises iteration speed. Expect breaking changes while features are being consolidated.
