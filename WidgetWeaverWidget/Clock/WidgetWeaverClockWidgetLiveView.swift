@@ -29,41 +29,30 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
+            // The seconds hand is a time-aware view and only renders in non-redacted contexts.
+            // In placeholder/privacy, the seconds hand falls back to a static 12 o'clock needle.
+            let showLiveSecondsHand = (tickMode == .secondsSweep) && showLive
+            let showStaticSecondsHand = (tickMode == .secondsSweep) && !showLive
+
             ZStack {
-                // Base clock (no seconds in the main tree).
-                // Centre hub is drawn in the overlay so the seconds needle sits underneath it.
+                // Base clock (hour + minute).
+                // The centre hub is drawn in the overlay so the seconds needle sits underneath it.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
                     minuteAngle: .degrees(base.minute),
                     secondAngle: .degrees(0.0),
-                    showsSecondHand: false,
+                    showsSecondHand: showStaticSecondsHand,
                     showsHandShadows: true,
                     showsGlows: true,
                     showsCentreHub: false,
                     handsOpacity: handsOpacity
                 )
 
-                // Seconds + hub overlay:
-                //
-                // This is intentionally state-free. It avoids relying on `onAppear`, `.task`,
-                // `TimelineView(.periodic)` or infinite SwiftUI animations, which can be skipped/paused
-                // on some Home Screen hosting paths.
-                //
-                // Instead, the provider emits minute-boundary entries and this overlay requests a
-                // finite CoreAnimation-backed rotation between successive entries.
-                //
-                // Key idea:
-                // - For a given entry at time T, we draw the seconds hand at the *end* of the interval
-                //   (T + tickSeconds) and attach an animation of duration tickSeconds keyed on entryDate.
-                // - When the next entry arrives, SwiftUI animates from the previous target to the new
-                //   target, producing continuous movement without any in-view timers.
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
-                    entryDate: entryDate,
-                    tickMode: tickMode,
-                    tickSeconds: tickSeconds,
-                    showLive: showLive,
+                    minuteAnchor: minuteAnchor,
+                    showLiveSecondsHand: showLiveSecondsHand,
                     handsOpacity: handsOpacity
                 )
             }
@@ -99,14 +88,12 @@ private struct WWClockBaseAngles {
     }
 }
 
-// MARK: - Seconds + hub overlay (finite animation)
+// MARK: - Seconds + hub overlay (time-aware seconds hand)
 
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
-    let entryDate: Date
-    let tickMode: WidgetWeaverClockTickMode
-    let tickSeconds: TimeInterval
-    let showLive: Bool
+    let minuteAnchor: Date
+    let showLiveSecondsHand: Bool
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
@@ -114,50 +101,15 @@ private struct WWClockSecondsAndHubOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
-            let R = layout.dialDiameter * 0.5
-
-            let secondLength = WWClock.pixel(
-                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
-                scale: displayScale
-            )
-            let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
-                scale: displayScale
-            )
-            let secondTipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
-                scale: displayScale
-            )
 
             ZStack {
-                if tickMode == .secondsSweep {
-                    if showLive {
-                        WidgetWeaverClockSecondHandView(
-                            colour: palette.accent,
-                            width: secondWidth,
-                            length: secondLength,
-                            angle: .degrees(Self.secondDegreesTarget(date: entryDate, tickSeconds: tickSeconds)),
-                            tipSide: secondTipSide,
-                            scale: displayScale
-                        )
-                        .opacity(handsOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                        .animation(Self.secondsAnimation(tickSeconds: tickSeconds), value: entryDate)
-                    } else {
-                        // Placeholder/privacy: deterministic static position (12 o'clock).
-                        WidgetWeaverClockSecondHandView(
-                            colour: palette.accent,
-                            width: secondWidth,
-                            length: secondLength,
-                            angle: .degrees(0.0),
-                            tipSide: secondTipSide,
-                            scale: displayScale
-                        )
-                        .opacity(handsOpacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
+                if showLiveSecondsHand {
+                    WWClockSecondHandGlyphView(
+                        palette: palette,
+                        minuteAnchor: minuteAnchor,
+                        diameter: layout.dialDiameter
+                    )
+                    .opacity(handsOpacity)
                 }
 
                 WidgetWeaverClockCentreHubView(
@@ -175,19 +127,33 @@ private struct WWClockSecondsAndHubOverlay: View {
             .accessibilityHidden(true)
         }
     }
+}
 
-    private static func secondsAnimation(tickSeconds: TimeInterval) -> Animation? {
-        // `tickSeconds` is supplied by the provider as “time until the next entry”.
-        // When it is 0 (a setup/anchor entry), do not animate.
-        guard tickSeconds > 0.05 else { return nil }
-        return .linear(duration: tickSeconds)
+private struct WWClockSecondHandGlyphView: View {
+    let palette: WidgetWeaverClockPalette
+    let minuteAnchor: Date
+    let diameter: CGFloat
+
+    // A timer range capped to < 60 seconds ensures the formatted output remains "0:SS"
+    // (covered by the `WWClockSecondHand-Regular.ttf` ligatures).
+    private var timerRange: ClosedRange<Date> {
+        let end = minuteAnchor.addingTimeInterval(59.999)
+        return minuteAnchor...end
     }
 
-    private static func secondDegreesTarget(date: Date, tickSeconds: TimeInterval) -> Double {
-        // Use an unbounded angle so interpolation is always forward.
-        // Each elapsed second adds 6 degrees.
-        let baseDegrees = date.timeIntervalSinceReferenceDate * 6.0
-        return baseDegrees + tickSeconds * 6.0
+    var body: some View {
+        Text(timerInterval: timerRange, countsDown: false)
+            // Force ASCII digits + ':' so OpenType `liga` substitution remains stable.
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(WWClockSecondHandFont.font(size: diameter))
+            .foregroundStyle(palette.accent)
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: diameter, height: diameter, alignment: .center)
+            .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
+            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

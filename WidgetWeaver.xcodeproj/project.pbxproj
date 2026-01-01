@@ -182,6 +182,13 @@
 			);
 			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
 		};
+		E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Clock/WWClockSecondHand-Regular.ttf",
+			);
+			target = E18676772EF227C30098B095 /* WidgetWeaver */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -196,6 +203,7 @@
 		E18676942EF232180098B095 /* WidgetWeaverWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */,
 				E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
 			);
 			path = WidgetWeaverWidget;
