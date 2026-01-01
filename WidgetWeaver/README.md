@@ -7,6 +7,7 @@ It runs on **iOS 26** and ships with:
 - A template catalogue (Explore) with multiple remixes per template
 - A searchable design Library (set Default, duplicate, delete)
 - An Editor that pushes updates to widgets on Save
+- Share/export/import JSON design packages (with embedded images) with an Import Review step (preview + selective import)
 - Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
 - Weather, Calendar, and Steps setups that cache snapshots for offline widget rendering
 - A small Home Screen clock widget (seconds hand work is still in progress)
@@ -33,6 +34,38 @@ WidgetWeaver includes a preview dock designed for day-to-day iteration:
 - Lock Screen previews for accessory widgets where relevant
 - Snapshot-style previews for catching WidgetKit quirks early (including “budget guardrail” paths)
 - Quick switching between preview modes without leaving the editor
+
+### Sharing and importing designs (JSON)
+
+WidgetWeaver can export a single design or your entire library as a JSON package (optionally embedding image files). You can import these packages back into the app to clone designs onto another device or share them with someone else.
+
+Where to find it:
+
+- **Editor → Sharing**: “Share This Design”, “Share All Designs”, and “Import designs…”
+- **Editor → … menu**: “Import Designs…”
+
+#### Import Review (preview + selective import)
+
+When you pick a JSON file to import, WidgetWeaver shows a review sheet before it writes anything to the library:
+
+- Shows the file name.
+- Lists each contained design: name, template, last updated date, and whether it references an embedded image.
+- Lets you tick which designs to import, with “Select all” and “Select none”.
+- Imports only the selected designs and skips the rest.
+- Shows a summary after import (for example: “Imported X designs. Skipped Y (not selected).”).
+
+#### Free tier behaviour
+
+The free tier is capped at `WidgetWeaverEntitlements.maxFreeDesigns` saved designs.
+
+- **Pro unlocked**: default selection is “select all”.
+- **Free tier**: default selection picks up to the available slots (newest designs first).
+- If your selection exceeds the available slots, the sheet shows a warning and **Import** is disabled. An “Unlock Pro” shortcut is provided.
+
+Notes:
+
+- Imported designs are duplicated with new IDs to avoid overwriting existing designs.
+- When selectively importing, only images referenced by the selected designs are included in the subset package (keeps imports lean).
 
 ---
 
@@ -410,7 +443,7 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 - ✅ Free tier: up to `WidgetWeaverEntitlements.maxFreeDesigns` saved designs
 - ✅ Pro: unlimited saved designs
 - ✅ Pro: matched sets (S/M/L) share style tokens
-- ✅ Share/export/import JSON (optionally embedding images)
+- ✅ Share/export/import JSON (optionally embedding images) with Import Review (preview + selective import)
 - ✅ On-device AI (generate + patch)
 - ✅ Weather setup + cached snapshot + attribution
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
