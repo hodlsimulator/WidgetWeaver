@@ -50,9 +50,9 @@ enum RainSurfaceSeamlessNoiseTile {
             octaves: 4,
             lacunarity: 2.0,
             gain: 0.55,
-            cutoff: 0.58,
-            power: 2.35,
-            baseAlpha: 0.015
+            cutoff: 0.54,
+            power: 1.90,
+            baseAlpha: 0.035
         )
     }()
 
@@ -65,9 +65,9 @@ enum RainSurfaceSeamlessNoiseTile {
             octaves: 3,
             lacunarity: 2.0,
             gain: 0.60,
-            cutoff: 0.50,
-            power: 1.65,
-            baseAlpha: 0.010
+            cutoff: 0.47,
+            power: 1.45,
+            baseAlpha: 0.025
         )
     }()
 

@@ -92,6 +92,7 @@ extension RainForecastSurfaceRenderer {
         let xMaskGradient = makeAlphaGradient(
             baseColor: .white,
             strength: strength,
+            minAlpha: 0.28,
             maxAlpha: 1.0,
             stops: cfg.fuzzTextureGradientStops
         )
@@ -130,9 +131,9 @@ extension RainForecastSurfaceRenderer {
         let depthFullBody = GraphicsContext.Shading.linearGradient(
             Gradient(stops: [
                 .init(color: .white.opacity(1.0), location: 0.0),
-                .init(color: .white.opacity(0.90), location: 0.18),
-                .init(color: .white.opacity(0.34), location: 0.70),
-                .init(color: .white.opacity(0.22), location: 1.0),
+                .init(color: .white.opacity(0.92), location: 0.18),
+                .init(color: .white.opacity(0.48), location: 0.70),
+                .init(color: .white.opacity(0.34), location: 1.0),
             ]),
             startPoint: CGPoint(x: clipRect.midX, y: yStart),
             endPoint: CGPoint(x: clipRect.midX, y: yEnd)
@@ -151,7 +152,7 @@ extension RainForecastSurfaceRenderer {
         // Body grain (subtle, everywhere under the surface).
         // This is the “texture under the fuzz” seen in the mock.
         do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.34
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.42
             if a > 0.0001 {
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -171,7 +172,7 @@ extension RainForecastSurfaceRenderer {
 
         // Near-surface grain (stronger, slightly clumpier).
         do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.70
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.88
             if a > 0.0001 {
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -211,26 +212,34 @@ extension RainForecastSurfaceRenderer {
                         jitterFraction: 0.32
                     )
 
+                    let prevBlend = context.blendMode
+                    let prevOpacity = context.opacity
+                    context.blendMode = .destinationOut
+                    context.opacity = a
+
                     context.drawLayer { layer in
                         layer.clip(to: Path(clipRect))
                         layer.clip(to: corePath)
                         layer.clip(to: outerBandPath)
 
-                        layer.blendMode = .destinationOut
-                        layer.opacity = a
+                        layer.blendMode = .normal
+                        layer.opacity = 1.0
                         layer.fill(Path(clipRect), with: passShading)
 
                         layer.blendMode = .destinationIn
                         layer.opacity = 1.0
                         layer.fill(Path(clipRect), with: xMaskShading)
                     }
+
+                    context.blendMode = prevBlend
+                    context.opacity = prevOpacity
                 }
             }
         }
 
         // Inner edge mist highlight (additive, very subtle).
         do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.20
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.34
             if a > 0.0001 {
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -256,7 +265,7 @@ extension RainForecastSurfaceRenderer {
             let passes = max(0, min(passCount, 3))
 
             if passes > 0 {
-                let baseA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.62
+                let baseA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.78
 
                 // Outside-of-core mask (even-odd) to prevent colouring the interior.
                 var outside = Path()
@@ -306,35 +315,6 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Crest glow (small, bright highlight near the peak).
-        // This is the only strongly “white” element in the mock.
-        do {
-            if let peak = peakPoint(curvePoints: curvePoints, baselineY: baselineY) {
-                let glowA = min(0.95, 0.55 + 0.35 * maxAlpha)
-                let r0 = max(1.0, bandHalfWidth * 0.12)
-                let r1 = max(r0 + 1.0, bandHalfWidth * 0.95)
-
-                let g = Gradient(stops: [
-                    .init(color: Color.white.opacity(glowA), location: 0.0),
-                    .init(color: Color.white.opacity(glowA * 0.25), location: 0.25),
-                    .init(color: Color.white.opacity(0.0), location: 1.0),
-                ])
-
-                let shading = GraphicsContext.Shading.radialGradient(
-                    g,
-                    center: peak,
-                    startRadius: r0,
-                    endRadius: r1
-                )
-
-                context.drawLayer { layer in
-                    layer.clip(to: Path(clipRect))
-                    layer.blendMode = .plusLighter
-                    layer.opacity = 1.0
-                    layer.fill(Path(clipRect), with: shading)
-                }
-            }
-        }
     }
 
     // MARK: - Helpers
@@ -381,7 +361,7 @@ extension RainForecastSurfaceRenderer {
             let b = UInt64(bitPattern: yi)
             h = h ^ (a &* 0x9E3779B97F4A7C15) ^ (b &* 0xBF58476D1CE4E5B9)
             h = (h ^ (h >> 30)) &* 0xBF58476D1CE4E5B9
-            h = (h ^ (h >> 27)) &* 0x94D049BB133111EB
+            h = (h ^ (h >> 27)) &* 0x94D0_49BB_1331_11EB
             h = h ^ (h >> 31)
         }
 
@@ -417,7 +397,7 @@ extension RainForecastSurfaceRenderer {
         return GraphicsContext.Shading.tiledImage(
             image,
             origin: origin,
-            sourceRect: CGRect(x: 0, y: 0, width: authored, height: authored),
+            sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
             scale: scale
         )
     }
@@ -464,7 +444,7 @@ extension RainForecastSurfaceRenderer {
         return out
     }
 
-    static func makeAlphaGradient(baseColor: Color, strength: [Double], maxAlpha: Double, stops: Int) -> Gradient {
+    static func makeAlphaGradient(baseColor: Color, strength: [Double], minAlpha: Double, maxAlpha: Double, stops: Int) -> Gradient {
         let n = max(1, strength.count)
         let stopCount = max(2, stops)
 
@@ -474,7 +454,10 @@ extension RainForecastSurfaceRenderer {
         for i in 0..<stopCount {
             let t = Double(i) / Double(stopCount - 1)
             let idx = min(n - 1, max(0, Int(round(t * Double(n - 1)))))
-            let a = clamp01(strength[idx]) * max(0.0, maxAlpha)
+            let s0 = clamp01(strength[idx])
+            let minA = clamp01(minAlpha)
+            let maxA = clamp01(maxAlpha)
+            let a = clamp01(minA + (maxA - minA) * s0)
             out.append(Gradient.Stop(color: baseColor.opacity(a), location: t))
         }
 
