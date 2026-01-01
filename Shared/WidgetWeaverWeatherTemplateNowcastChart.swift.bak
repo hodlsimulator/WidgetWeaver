@@ -19,18 +19,10 @@ struct WeatherNowcastChart: View {
 
     var body: some View {
         let intensities: [Double] = points.map { p in
-            guard let v = p.precipitationIntensityMMPerHour, v.isFinite else {
-                return Double.nan
+            if let v = p.precipitationIntensityMMPerHour, v.isFinite {
+                return max(0.0, v)
             }
-
-            let i0 = max(0.0, v)
-
-            // Keep the chart + text aligned: plot expected intensity, not raw intensity.
-            // This prevents low-chance tails from looking “fully wet”.
-            let cRaw = p.precipitationChance01 ?? 1.0
-            let c0 = (cRaw.isFinite) ? min(1.0, max(0.0, cRaw)) : 0.0
-
-            return i0 * c0
+            return Double.nan
         }
 
         // Treated as “certainty” for fuzz shaping:
