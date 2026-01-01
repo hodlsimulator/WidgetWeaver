@@ -4,173 +4,146 @@
 //
 //  Created by . . on 12/23/25.
 //
+//  Draws the nowcast “rain surface” into a SwiftUI Canvas.
+//  Core shape is a filled ribbon with optional rim + fuzz layers.
+//
 
 import Foundation
 import SwiftUI
 import CoreGraphics
 
-#if canImport(UIKit)
-import UIKit
-#endif
-
 struct RainForecastSurfaceRenderer {
-    private let intensities: [Double]
+
+    private let intensitiesMMPerHour: [Double]
     private let certainties01: [Double]
-    private let configuration: RainForecastSurfaceConfiguration
+    private let cfg: RainForecastSurfaceConfiguration
 
-    init(
-        intensities: [Double],
-        certainties: [Double] = [],
-        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
-    ) {
-        self.intensities = intensities
+    init(intensities: [Double], certainties: [Double], configuration: RainForecastSurfaceConfiguration) {
+        self.intensitiesMMPerHour = intensities
         self.certainties01 = certainties.map { Self.clamp01($0) }
-        self.configuration = configuration
+        self.cfg = configuration
     }
 
-    init(
-        intensities: [Double],
-        certainties: [Double?],
-        configuration: RainForecastSurfaceConfiguration = RainForecastSurfaceConfiguration()
-    ) {
-        self.intensities = intensities
+    init(intensities: [Double], certainties: [Double?], configuration: RainForecastSurfaceConfiguration) {
+        self.intensitiesMMPerHour = intensities
         self.certainties01 = certainties.map { Self.clamp01($0 ?? 0.0) }
-        self.configuration = configuration
+        self.cfg = configuration
     }
 
-    func render(in context: inout GraphicsContext, rect: CGRect, displayScale: CGFloat) {
-        guard rect.width > 1.0, rect.height > 1.0 else { return }
+    func render(in context: inout GraphicsContext, rect: CGRect, displayScale ds: CGFloat) {
+        guard rect.width > 1, rect.height > 1 else { return }
 
-        var cfg = configuration
-        cfg.sourceMinuteCount = intensities.count
+        let n0 = max(1, cfg.sourceMinuteCount)
+        let sourceCount = max(1, min(n0, intensitiesMMPerHour.count))
 
-        let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
-
-        let ds: CGFloat = (displayScale.isFinite && displayScale > 0) ? displayScale : 1.0
-        let onePx: CGFloat = 1.0 / max(1.0, ds)
-
-        if isExtension {
-            cfg.glossEnabled = false
-            cfg.glintEnabled = false
-            cfg.fuzzHazeBlurFractionOfBand = 0.0
-        }
-
-        cfg.maxDenseSamples = max(120, min(cfg.maxDenseSamples, isExtension ? 620 : 900))
-
-        let chartRect = rect
-        let baselineY = chartRect.minY
-        + chartRect.height * CGFloat(Self.clamp01(cfg.baselineFractionFromTop))
-        + CGFloat(cfg.baselineOffsetPixels) / max(1.0, ds)
-
-        guard !intensities.isEmpty else {
-            Self.drawBaseline(in: &context, chartRect: chartRect, baselineY: baselineY, configuration: cfg, displayScale: ds)
-            return
-        }
-
-        let filledIntensities = Self.fillMissingLinearHoldEnds(intensities)
+        let raw = Array(intensitiesMMPerHour.prefix(sourceCount)).map { max(0.0, $0.isFinite ? $0 : 0.0) }
+        let certs = Array(certainties01.prefix(sourceCount)).map { Self.clamp01($0) }
 
         let referenceMax = Self.robustReferenceMaxMMPerHour(
-            values: filledIntensities,
-            defaultMax: cfg.intensityReferenceMaxMMPerHour,
+            values: raw,
+            defaultMax: max(0.1, cfg.intensityReferenceMaxMMPerHour),
             percentile: cfg.robustMaxPercentile
         )
 
-        let topY = chartRect.minY + chartRect.height * CGFloat(Self.clamp01(cfg.topHeadroomFraction))
-        let usableHeight = max(1.0, baselineY - topY)
-        let peakHeight = usableHeight * CGFloat(Self.clamp01(cfg.typicalPeakFraction))
-
-        var minuteHeights: [CGFloat] = filledIntensities.map { v in
-            let x = max(0.0, v.isFinite ? v : 0.0)
-            let n = Self.clamp01(x / max(0.001, referenceMax))
-            let g = pow(n, max(0.01, cfg.intensityGamma))
-            return CGFloat(g) * peakHeight
+        let scaled = raw.map { v -> CGFloat in
+            guard referenceMax > 0 else { return 0 }
+            let x = max(0.0, min(1.0, v / referenceMax))
+            let g = max(0.05, cfg.intensityGamma)
+            let y = pow(x, g)
+            return CGFloat(y)
         }
-
-        if cfg.edgeEasingFraction > 0.0001 {
-            minuteHeights = Self.applyEdgeEasing(
-                values: minuteHeights,
-                fraction: cfg.edgeEasingFraction,
-                power: cfg.edgeEasingPower
-            )
-        }
-
-        let minuteCertainties = Self.makeMinuteCertainties(
-            sourceCount: minuteHeights.count,
-            certainties01: certainties01
-        )
 
         let denseCount = Self.denseSampleCount(
-            sourceCount: minuteHeights.count,
-            rectWidthPoints: Double(chartRect.width),
-            displayScale: Double(ds),
+            sourceCount: sourceCount,
+            rectWidthPoints: rect.width,
+            displayScale: ds,
             maxDense: cfg.maxDenseSamples
         )
 
-        let denseHeights = Self.resampleLinear(minuteHeights, toCount: denseCount)
-        let denseCertainties = Self.resampleLinear(minuteCertainties, toCount: denseCount)
+        let denseHeights01 = Self.resampleDense(values01: scaled, denseCount: denseCount)
+        let denseCerts01 = Self.resampleDense(values01: certs.map { CGFloat($0) }, denseCount: denseCount)
 
-        // Segment rendering avoids long baseline strokes through dry gaps, and creates tapered
-        // ends for each distinct rain burst.
-        let wetThreshold = onePx * 0.85
+        let baselineY = rect.minY + rect.height * CGFloat(cfg.baselineFractionFromTop)
+        let topHeadroom = rect.height * CGFloat(max(0.0, cfg.topHeadroomFraction))
+
+        // Normalise heights into points.
+        let maxHeightPt = max(1.0, baselineY - (rect.minY + topHeadroom))
+        let heights: [CGFloat] = denseHeights01.map { h01 in
+            max(0.0, min(maxHeightPt, h01 * maxHeightPt))
+        }
+
+        let wetThresholdPt: CGFloat = 0.25
         let segments = Self.buildWetSegments(
-            rect: chartRect,
+            rect: rect,
             baselineY: baselineY,
-            heights: denseHeights,
-            certainties01: denseCertainties,
-            wetThreshold: wetThreshold
+            heights: heights,
+            certainties01: denseCerts01,
+            wetThreshold: wetThresholdPt
         )
 
-        let shouldDrawFuzz = cfg.fuzzEnabled && cfg.canEnableFuzz && cfg.fuzzTextureEnabled
-        let bandHalfWidth = shouldDrawFuzz
-        ? Self.computeBandHalfWidthPoints(rect: chartRect, displayScale: ds, configuration: cfg)
-        : 0.0
+        if segments.isEmpty {
+            if cfg.baselineEnabled {
+                Self.drawBaseline(in: &context, rect: rect, baselineY: baselineY, displayScale: ds, cfg: cfg)
+            }
+            return
+        }
 
         for seg in segments {
-            let corePath = Self.buildCoreFillPath(baselineY: baselineY, curvePoints: seg.curvePoints)
+            let curvePoints = seg.curvePoints
+            let heights = seg.heights
+            let certainties01 = seg.certainties01
 
-            // Core body first, then subtractive dissipation.
-            // The dissipation pass keeps the centre solid without re-filling an inset core,
-            // which avoids visible internal “terraces” in widgets.
-            Self.drawCore(
-                in: &context,
-                corePath: corePath,
-                curvePoints: seg.curvePoints,
-                baselineY: baselineY,
-                configuration: cfg
-            )
+            let corePath = Self.buildCoreFillPath(curvePoints: curvePoints)
 
-            if shouldDrawFuzz, bandHalfWidth > onePx * 0.5 {
+            Self.drawCore(in: &context, corePath: corePath, curvePoints: curvePoints, baselineY: baselineY, cfg: cfg)
+
+            if cfg.fuzzEnabled && cfg.canEnableFuzz && cfg.fuzzTextureEnabled {
+                let bandHalfWidth = Self.computeBandHalfWidth(rect: rect, displayScale: ds, cfg: cfg)
+
+                var effectiveCorePath = corePath
+                if cfg.fuzzSolidCoreEnabled {
+                    let inset = Self.computeSolidCoreInset(
+                        bandHalfWidth: bandHalfWidth,
+                        heights: heights,
+                        displayScale: ds,
+                        configuration: cfg
+                    )
+                    if inset > 0.0 {
+                        effectiveCorePath = Self.buildSolidCoreFillPath(
+                            curvePoints: curvePoints,
+                            baselineY: baselineY,
+                            inset: inset
+                        )
+                    }
+                }
+
                 Self.drawDissipationFuzz(
                     in: &context,
-                    rect: chartRect,
+                    rect: rect,
                     baselineY: baselineY,
-                    corePath: corePath,
-                    curvePoints: seg.curvePoints,
-                    heights: seg.heights,
-                    certainties01: seg.certainties01,
+                    corePath: effectiveCorePath,
+                    curvePoints: curvePoints,
+                    heights: heights,
+                    certainties01: certainties01,
                     bandHalfWidth: bandHalfWidth,
                     displayScale: ds,
                     configuration: cfg
                 )
-
             }
 
-            Self.drawRim(
-                in: &context,
-                curvePoints: seg.curvePoints,
-                configuration: cfg,
-                displayScale: ds
-            )
+            if cfg.rimEnabled {
+                Self.drawRim(in: &context, curvePoints: curvePoints, baselineY: baselineY, displayScale: ds, cfg: cfg)
+            }
         }
 
-        Self.drawBaseline(in: &context, chartRect: chartRect, baselineY: baselineY, configuration: cfg, displayScale: ds)
+        if cfg.baselineEnabled {
+            Self.drawBaseline(in: &context, rect: rect, baselineY: baselineY, displayScale: ds, cfg: cfg)
+        }
     }
-}
 
-// MARK: - Segments
+    // MARK: - Segment building
 
-extension RainForecastSurfaceRenderer {
-    struct SurfaceSegment {
+    struct SurfaceSegment: Hashable {
         var curvePoints: [CGPoint]
         var heights: [CGFloat]
         var certainties01: [CGFloat]
@@ -199,25 +172,65 @@ extension RainForecastSurfaceRenderer {
             heights[i] > wetThreshold
         }
 
-        var segments: [SurfaceSegment] = []
-        segments.reserveCapacity(4)
+        // Find contiguous wet runs.
+        var runs: [(start: Int, end: Int)] = []
+        runs.reserveCapacity(4)
 
         var runStart: Int? = nil
         for i in 0..<n {
             if isWet(i) {
                 if runStart == nil { runStart = i }
             } else if let start = runStart {
-                let end = i - 1
-                if let seg = makeSegment(rect: rect, baselineY: baselineY, start: start, end: end, stepX: stepX, xMid: xMid, heights: heights, certainties01: certainties01) {
-                    segments.append(seg)
-                }
+                runs.append((start: start, end: i - 1))
                 runStart = nil
             }
         }
 
         if let start = runStart {
-            let end = n - 1
-            if let seg = makeSegment(rect: rect, baselineY: baselineY, start: start, end: end, stepX: stepX, xMid: xMid, heights: heights, certainties01: certainties01) {
+            runs.append((start: start, end: n - 1))
+        }
+
+        guard !runs.isEmpty else { return [] }
+
+        // Per-segment tapering avoids the “cliff” at rain start/end without affecting true
+        // rain-now / rain-at-60m scenarios.
+        let targetTaperPt = max(10.0, min(rect.width * 0.05, 26.0))
+
+        var segments: [SurfaceSegment] = []
+        segments.reserveCapacity(runs.count)
+
+        for r in 0..<runs.count {
+            let run = runs[r]
+
+            let leftDryCount: Int
+            if r == 0 {
+                leftDryCount = run.start
+            } else {
+                leftDryCount = max(0, run.start - (runs[r - 1].end + 1))
+            }
+
+            let rightDryCount: Int
+            if r == runs.count - 1 {
+                rightDryCount = max(0, (n - 1) - run.end)
+            } else {
+                rightDryCount = max(0, runs[r + 1].start - (run.end + 1))
+            }
+
+            let leftExtendPt = min(targetTaperPt, CGFloat(leftDryCount) * stepX)
+            let rightExtendPt = min(targetTaperPt, CGFloat(rightDryCount) * stepX)
+
+            if let seg = makeSegment(
+                rect: rect,
+                baselineY: baselineY,
+                start: run.start,
+                end: run.end,
+                stepX: stepX,
+                xMid: xMid,
+                heights: heights,
+                certainties01: certainties01,
+                leftExtendPt: leftExtendPt,
+                rightExtendPt: rightExtendPt
+            ) {
                 segments.append(seg)
             }
         }
@@ -225,7 +238,7 @@ extension RainForecastSurfaceRenderer {
         return segments
     }
 
-    private static func makeSegment(
+    static func makeSegment(
         rect: CGRect,
         baselineY: CGFloat,
         start: Int,
@@ -233,41 +246,77 @@ extension RainForecastSurfaceRenderer {
         stepX: CGFloat,
         xMid: (Int) -> CGFloat,
         heights: [CGFloat],
-        certainties01: [CGFloat]
+        certainties01: [CGFloat],
+        leftExtendPt: CGFloat,
+        rightExtendPt: CGFloat
     ) -> SurfaceSegment? {
         guard start >= 0, end >= start else { return nil }
         guard end < heights.count, end < certainties01.count else { return nil }
 
-        let leftX = rect.minX + CGFloat(start) * stepX
-        let rightX = rect.minX + CGFloat(end + 1) * stepX
+        let runLeftX = rect.minX + CGFloat(start) * stepX
+        let runRightX = rect.minX + CGFloat(end + 1) * stepX
 
-        let clampedLeftX = max(rect.minX, min(leftX, rect.maxX))
-        let clampedRightX = max(rect.minX, min(rightX, rect.maxX))
-        let minX = min(clampedLeftX, clampedRightX)
-        let maxX = max(clampedLeftX, clampedRightX)
+        let minX = max(rect.minX, min(runLeftX - max(0.0, leftExtendPt), rect.maxX))
+        let maxX = min(rect.maxX, max(runRightX + max(0.0, rightExtendPt), rect.minX))
+
+        if maxX <= minX + 0.0001 {
+            return nil
+        }
+
+        let c0 = certainties01[start]
+        let c1 = certainties01[end]
+
+        let firstH = max(0.0, heights[start])
+        let lastH = max(0.0, heights[end])
+
+        let startSampleX = xMid(start)
+        let endSampleX = xMid(end)
 
         var pts: [CGPoint] = []
         var hs: [CGFloat] = []
         var cs: [CGFloat] = []
 
-        let count = (end - start + 1)
-        pts.reserveCapacity(count + 2)
-        hs.reserveCapacity(count + 2)
-        cs.reserveCapacity(count + 2)
-
-        let c0 = certainties01[start]
-        let c1 = certainties01[end]
-
+        // Baseline start.
         pts.append(CGPoint(x: minX, y: baselineY))
         hs.append(0.0)
         cs.append(c0)
 
+        // Left taper (baseline -> first height).
+        if leftExtendPt > 0.5, startSampleX > minX + 0.5 {
+            let span = max(0.0, startSampleX - minX)
+            if span > 0.5 {
+                pts.append(CGPoint(x: minX + span * 0.35, y: baselineY - firstH * 0.22))
+                hs.append(firstH * 0.22)
+                cs.append(c0)
+
+                pts.append(CGPoint(x: minX + span * 0.70, y: baselineY - firstH * 0.68))
+                hs.append(firstH * 0.68)
+                cs.append(c0)
+            }
+        }
+
+        // Sample points.
         for i in start...end {
             pts.append(CGPoint(x: xMid(i), y: baselineY - heights[i]))
             hs.append(heights[i])
             cs.append(certainties01[i])
         }
 
+        // Right taper (last height -> baseline).
+        if rightExtendPt > 0.5, maxX > endSampleX + 0.5 {
+            let span = max(0.0, maxX - endSampleX)
+            if span > 0.5 {
+                pts.append(CGPoint(x: endSampleX + span * 0.30, y: baselineY - lastH * 0.70))
+                hs.append(lastH * 0.70)
+                cs.append(c1)
+
+                pts.append(CGPoint(x: endSampleX + span * 0.65, y: baselineY - lastH * 0.24))
+                hs.append(lastH * 0.24)
+                cs.append(c1)
+            }
+        }
+
+        // Baseline end.
         pts.append(CGPoint(x: maxX, y: baselineY))
         hs.append(0.0)
         cs.append(c1)
@@ -289,315 +338,196 @@ extension RainForecastSurfaceRenderer {
     ) -> CGFloat {
         guard cfg.fuzzSolidCoreEnabled else { return 0.0 }
 
-        let maxH = heights.max() ?? 0.0
-        if maxH <= 0.0001 { return 0.0 }
+        let hMax = max(0.0, heights.max() ?? 0.0)
+        if hMax <= 0.001 { return 0.0 }
 
-        let bandMul = max(0.0, cfg.fuzzSolidCoreInsetBandMultiplier)
-        let peakFrac = max(0.0, cfg.fuzzSolidCoreInsetPeakFraction)
+        let mul = max(0.0, cfg.fuzzSolidCoreInsetBandMultiplier)
+        let minInset = max(0.0, cfg.fuzzSolidCoreMinInsetPixels) / max(1.0, ds)
 
-        let byBand = bandHalfWidth * CGFloat(bandMul)
-        let byPeak = maxH * CGFloat(peakFrac)
-        var inset = max(0.0, min(byBand, byPeak))
+        let peakFrac = max(0.0, min(1.0, cfg.fuzzSolidCoreInsetPeakFraction))
+        let peakInset = hMax * CGFloat(peakFrac)
 
-        // Avoid collapsing the inner body completely.
-        inset = min(inset, maxH * 0.90)
+        let bandInset = bandHalfWidth * CGFloat(mul)
 
-        let minInsetPx = max(0.0, cfg.fuzzSolidCoreMinInsetPixels)
-        let minInsetPt = CGFloat(minInsetPx) / max(1.0, ds)
-        inset = max(inset, minInsetPt)
-
-        return inset
+        return max(minInset, min(peakInset, bandInset))
     }
 
-    static func makeInsetCurvePoints(
-        curvePoints: [CGPoint],
-        baselineY: CGFloat,
-        heights: [CGFloat],
-        inset: CGFloat
-    ) -> [CGPoint] {
-        let n = min(curvePoints.count, heights.count)
-        guard n > 0 else { return curvePoints }
+    static func buildSolidCoreFillPath(curvePoints: [CGPoint], baselineY: CGFloat, inset: CGFloat) -> Path {
+        guard curvePoints.count >= 2 else { return Path() }
 
-        var pts: [CGPoint] = []
-        pts.reserveCapacity(n)
+        // Keep endpoints anchored to the baseline.
+        var pts = curvePoints
+        pts[0].y = baselineY
+        pts[pts.count - 1].y = baselineY
 
-        for i in 0..<n {
-            let h = max(0.0, heights[i] - inset)
-            pts.append(CGPoint(x: curvePoints[i].x, y: baselineY - h))
+        for i in 1..<(pts.count - 1) {
+            let y = pts[i].y
+            let clamped = min(baselineY, y + inset)
+            pts[i].y = clamped
         }
 
-        return pts
-    }
-}
-
-// MARK: - Core / Rim / Baseline
-
-extension RainForecastSurfaceRenderer {
-    static func drawCore(
-        in context: inout GraphicsContext,
-        corePath: Path,
-        curvePoints: [CGPoint],
-        baselineY: CGFloat,
-        configuration cfg: RainForecastSurfaceConfiguration
-    ) {
-        guard !curvePoints.isEmpty else { return }
-
-        let topY = curvePoints.map(\.y).min() ?? baselineY
-        let startPoint = CGPoint(x: curvePoints.first?.x ?? 0.0, y: topY)
-        let endPoint = CGPoint(x: curvePoints.first?.x ?? 0.0, y: baselineY)
-
-        let top = cfg.coreTopColor
-        let body = cfg.coreBodyColor
-        let mid = Color.blend(body, top, t: cfg.coreTopMix)
-
-        let fade = clamp01(cfg.coreFadeFraction)
-        let midStop = 0.42
-
-        let gradient: Gradient
-        if fade <= 0.0001 {
-            gradient = Gradient(stops: [
-                Gradient.Stop(color: top, location: 0.0),
-                Gradient.Stop(color: mid, location: midStop),
-                Gradient.Stop(color: body, location: 1.0),
-            ])
-        } else {
-            let fadeStart = max(midStop, 1.0 - fade)
-            gradient = Gradient(stops: [
-                Gradient.Stop(color: top, location: 0.0),
-                Gradient.Stop(color: mid, location: midStop),
-                Gradient.Stop(color: body, location: fadeStart),
-                Gradient.Stop(color: body.opacity(0.0), location: 1.0),
-            ])
-        }
-
-        context.fill(corePath, with: .linearGradient(gradient, startPoint: startPoint, endPoint: endPoint))
+        return buildCoreFillPath(curvePoints: pts)
     }
 
-    static func drawRim(
-        in context: inout GraphicsContext,
-        curvePoints: [CGPoint],
-        configuration cfg: RainForecastSurfaceConfiguration,
-        displayScale ds: CGFloat
-    ) {
-        guard cfg.rimEnabled, !curvePoints.isEmpty else { return }
+    // MARK: - Core + strokes
 
-        let path = buildCurveStrokePath(curvePoints: curvePoints)
-        let px = max(1.0, ds)
-
-        if cfg.rimInnerOpacity > 0.0001, cfg.rimInnerWidthPixels > 0.0001 {
-            context.stroke(
-                path,
-                with: .color(cfg.rimColor.opacity(clamp01(cfg.rimInnerOpacity))),
-                lineWidth: CGFloat(cfg.rimInnerWidthPixels) / px
-            )
-        }
-
-        if cfg.rimOpacity > 0.0001, cfg.rimWidthPixels > 0.0001 {
-            context.stroke(
-                path,
-                with: .color(cfg.rimColor.opacity(clamp01(cfg.rimOpacity))),
-                lineWidth: CGFloat(cfg.rimWidthPixels) / px
-            )
-        }
-
-        if cfg.rimOuterOpacity > 0.0001, cfg.rimOuterWidthPixels > 0.0001 {
-            context.stroke(
-                path,
-                with: .color(cfg.rimColor.opacity(clamp01(cfg.rimOuterOpacity))),
-                lineWidth: CGFloat(cfg.rimOuterWidthPixels) / px
-            )
-        }
-    }
-
-    static func drawBaseline(
-        in context: inout GraphicsContext,
-        chartRect: CGRect,
-        baselineY: CGFloat,
-        configuration cfg: RainForecastSurfaceConfiguration,
-        displayScale ds: CGFloat
-    ) {
-        guard cfg.baselineEnabled else { return }
-        guard cfg.baselineWidthPixels > 0.0001, cfg.baselineLineOpacity > 0.0001 else { return }
-
-        var p = Path()
-        p.move(to: CGPoint(x: chartRect.minX, y: baselineY))
-        p.addLine(to: CGPoint(x: chartRect.maxX, y: baselineY))
-
-        let fade = clamp01(cfg.baselineEndFadeFraction)
-        let base = cfg.baselineColor.opacity(clamp01(cfg.baselineLineOpacity))
-
-        let gradient = Gradient(stops: [
-            Gradient.Stop(color: base.opacity(0.0), location: 0.0),
-            Gradient.Stop(color: base, location: fade),
-            Gradient.Stop(color: base, location: 1.0 - fade),
-            Gradient.Stop(color: base.opacity(0.0), location: 1.0),
-        ])
-
-        context.stroke(
-            p,
-            with: .linearGradient(
-                gradient,
-                startPoint: CGPoint(x: chartRect.minX, y: baselineY),
-                endPoint: CGPoint(x: chartRect.maxX, y: baselineY)
-            ),
-            lineWidth: CGFloat(cfg.baselineWidthPixels) / max(1.0, ds)
-        )
-    }
-}
-
-// MARK: - Geometry helpers
-
-extension RainForecastSurfaceRenderer {
-    static func computeBandHalfWidthPoints(
-        rect: CGRect,
-        displayScale ds: CGFloat,
-        configuration cfg: RainForecastSurfaceConfiguration
-    ) -> CGFloat {
-        let minDim = min(rect.height * 0.28, rect.width * 0.10)
-        let frac = max(0.0, cfg.fuzzWidthFraction)
-        var widthPt = minDim * CGFloat(frac)
-
-        let clampPx = cfg.fuzzWidthPixelsClamp
-        let loPx = max(0.0, min(clampPx.lowerBound, clampPx.upperBound))
-        let hiPx = max(loPx, clampPx.upperBound)
-
-        let minPt = CGFloat(loPx) / max(1.0, ds)
-        let maxPt = CGFloat(hiPx) / max(1.0, ds)
-        widthPt = max(minPt, min(widthPt, maxPt))
-
-        return widthPt
-    }
-
-    static func buildCurveStrokePath(curvePoints: [CGPoint]) -> Path {
-        var p = Path()
-        guard curvePoints.count >= 2 else { return p }
-
-        let pts = curvePoints
-        p.move(to: pts[0])
-
-        if pts.count == 2 {
-            p.addLine(to: pts[1])
-            return p
-        }
-
-        let n = pts.count
-        var x: [CGFloat] = []
-        var y: [CGFloat] = []
-        x.reserveCapacity(n)
-        y.reserveCapacity(n)
-
-        for pt in pts {
-            x.append(pt.x)
-            y.append(pt.y)
-        }
-
-        var h = Array(repeating: CGFloat(0.0), count: max(0, n - 1))
-        var delta = Array(repeating: CGFloat(0.0), count: max(0, n - 1))
-
-        for i in 0..<(n - 1) {
-            let dx = x[i + 1] - x[i]
-            let d = (abs(dx) < 0.000001) ? 0.0 : (y[i + 1] - y[i]) / dx
-            h[i] = dx
-            delta[i] = d
-        }
-
-        var m = Array(repeating: CGFloat(0.0), count: n)
-        if n >= 2 {
-            m[0] = delta[0]
-            m[n - 1] = delta[n - 2]
-        }
-
-        if n >= 3 {
-            for i in 1..<(n - 1) {
-                let d0 = delta[i - 1]
-                let d1 = delta[i]
-                if d0 == 0.0 || d1 == 0.0 || (d0.sign != d1.sign) {
-                    m[i] = 0.0
-                } else {
-                    let w1 = 2.0 * h[i] + h[i - 1]
-                    let w2 = h[i] + 2.0 * h[i - 1]
-                    m[i] = (w1 + w2) / (w1 / d0 + w2 / d1)
-                }
-            }
-
-            // Endpoints (Fritsch–Carlson).
-            let h0 = h[0]
-            let h1 = h[1]
-            let d0 = delta[0]
-            let d1 = delta[1]
-
-            if (h0 + h1) != 0.0 {
-                var m0 = ((2.0 * h0 + h1) * d0 - h0 * d1) / (h0 + h1)
-                if m0.sign != d0.sign { m0 = 0.0 }
-                if (d0.sign != d1.sign) && abs(m0) > abs(3.0 * d0) { m0 = 3.0 * d0 }
-                m[0] = m0
-            }
-
-            let hn1 = h[n - 2]
-            let hn2 = h[n - 3]
-            let dn1 = delta[n - 2]
-            let dn2 = delta[n - 3]
-
-            if (hn1 + hn2) != 0.0 {
-                var mn = ((2.0 * hn1 + hn2) * dn1 - hn1 * dn2) / (hn1 + hn2)
-                if mn.sign != dn1.sign { mn = 0.0 }
-                if (dn1.sign != dn2.sign) && abs(mn) > abs(3.0 * dn1) { mn = 3.0 * dn1 }
-                m[n - 1] = mn
-            }
-        }
-
-        for i in 0..<(n - 1) {
-            let p0 = pts[i]
-            let p1 = pts[i + 1]
-            let dx = p1.x - p0.x
-
-            let c1 = CGPoint(x: p0.x + dx / 3.0, y: p0.y + m[i] * dx / 3.0)
-            let c2 = CGPoint(x: p1.x - dx / 3.0, y: p1.y - m[i + 1] * dx / 3.0)
-
-            p.addCurve(to: p1, control1: c1, control2: c2)
-        }
-
-        return p
-    }
-
-    static func buildCoreFillPath(baselineY: CGFloat, curvePoints: [CGPoint]) -> Path {
-        // curvePoints are expected to start and end on the baseline.
+    static func buildCoreFillPath(curvePoints: [CGPoint]) -> Path {
         var p = buildCurveStrokePath(curvePoints: curvePoints)
         p.closeSubpath()
         return p
     }
-}
 
-// MARK: - Maths
+    static func buildCurveStrokePath(curvePoints: [CGPoint]) -> Path {
+        guard curvePoints.count >= 2 else { return Path() }
 
-extension RainForecastSurfaceRenderer {
-    static func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
-    static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a + (b - a) * clamp01(t) }
-}
+        let pts = curvePoints
+        let n = pts.count
 
-// MARK: - Colour blend helper
+        // Monotone cubic interpolation in x (gives “Weather app” smoothness without overshoot).
+        // Compute slopes (dy/dx) at each point.
+        var dx = [CGFloat](repeating: 0.0, count: n - 1)
+        var dy = [CGFloat](repeating: 0.0, count: n - 1)
+        var m = [CGFloat](repeating: 0.0, count: n - 1)
 
-private extension Color {
-    static func blend(_ a: Color, _ b: Color, t: Double) -> Color {
-        #if canImport(UIKit)
-        let ta = RainForecastSurfaceRenderer.clamp01(t)
-        let ua = UIKit.UIColor(a)
-        let ub = UIKit.UIColor(b)
+        for i in 0..<(n - 1) {
+            dx[i] = pts[i + 1].x - pts[i].x
+            dy[i] = pts[i + 1].y - pts[i].y
+            m[i] = (dx[i] != 0.0) ? (dy[i] / dx[i]) : 0.0
+        }
 
-        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
-        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        var tangents = [CGFloat](repeating: 0.0, count: n)
+        tangents[0] = m[0]
+        tangents[n - 1] = m[n - 2]
 
-        ua.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
-        ub.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        if n > 2 {
+            for i in 1..<(n - 1) {
+                if m[i - 1] * m[i] <= 0 {
+                    tangents[i] = 0
+                } else {
+                    let w1 = 2 * dx[i] + dx[i - 1]
+                    let w2 = dx[i] + 2 * dx[i - 1]
+                    tangents[i] = (w1 + w2) / (w1 / m[i - 1] + w2 / m[i])
+                }
+            }
+        }
 
-        let r = ar + (br - ar) * CGFloat(ta)
-        let g = ag + (bg - ag) * CGFloat(ta)
-        let bV = ab + (bb - ab) * CGFloat(ta)
-        let aOut = aa + (ba - aa) * CGFloat(ta)
+        // Clamp to avoid overshoot.
+        for i in 0..<(n - 1) {
+            if m[i] == 0 {
+                tangents[i] = 0
+                tangents[i + 1] = 0
+            } else {
+                let a = tangents[i] / m[i]
+                let b = tangents[i + 1] / m[i]
+                let s = a * a + b * b
+                if s > 9 {
+                    let t = 3 / sqrt(s)
+                    tangents[i] = t * a * m[i]
+                    tangents[i + 1] = t * b * m[i]
+                }
+            }
+        }
 
-        return Color(red: Double(r), green: Double(g), blue: Double(bV)).opacity(Double(aOut))
-        #else
-        return a
-        #endif
+        var path = Path()
+        path.move(to: pts[0])
+
+        for i in 0..<(n - 1) {
+            let p0 = pts[i]
+            let p1 = pts[i + 1]
+            let h = dx[i] / 3
+
+            let c1 = CGPoint(x: p0.x + h, y: p0.y + tangents[i] * h)
+            let c2 = CGPoint(x: p1.x - h, y: p1.y - tangents[i + 1] * h)
+
+            path.addCurve(to: p1, control1: c1, control2: c2)
+        }
+
+        return path
+    }
+
+    static func drawCore(in context: inout GraphicsContext, corePath: Path, curvePoints: [CGPoint], baselineY: CGFloat, cfg: RainForecastSurfaceConfiguration) {
+        let startX = curvePoints.first?.x ?? 0
+        let endX = curvePoints.last?.x ?? 1
+
+        let topMix = max(0.0, min(1.0, cfg.coreTopMix))
+        let fadeFrac = max(0.0, min(1.0, cfg.coreFadeFraction))
+
+        let grad = Gradient(stops: [
+            .init(color: cfg.coreTopColor.opacity(topMix), location: 0.0),
+            .init(color: cfg.coreBodyColor.opacity(1.0), location: max(0.0, 1.0 - fadeFrac))
+        ])
+
+        let shading = GraphicsContext.Shading.linearGradient(
+            grad,
+            startPoint: CGPoint(x: startX, y: baselineY),
+            endPoint: CGPoint(x: endX, y: baselineY - 500)
+        )
+
+        context.fill(corePath, with: shading)
+    }
+
+    static func drawRim(in context: inout GraphicsContext, curvePoints: [CGPoint], baselineY: CGFloat, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) {
+        let w = max(0.5, cfg.rimWidthPixels) / max(1.0, ds)
+        var p = buildCurveStrokePath(curvePoints: curvePoints)
+
+        context.stroke(
+            p,
+            with: .color(cfg.rimColor.opacity(cfg.rimOpacity)),
+            style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    static func drawBaseline(in context: inout GraphicsContext, rect: CGRect, baselineY: CGFloat, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) {
+        let w = max(0.5, cfg.baselineWidthPixels) / max(1.0, ds)
+        let y = baselineY + (cfg.baselineOffsetPixels / max(1.0, ds))
+
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: y))
+        p.addLine(to: CGPoint(x: rect.maxX, y: y))
+
+        context.stroke(p, with: .color(cfg.baselineColor.opacity(cfg.baselineLineOpacity)), style: StrokeStyle(lineWidth: w))
+    }
+
+    // MARK: - Utilities
+
+    static func computeBandHalfWidth(rect: CGRect, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) -> CGFloat {
+        let frac = max(0.0, cfg.fuzzWidthFraction)
+        let w0 = rect.height * CGFloat(frac)
+
+        let minPx = cfg.fuzzWidthPixelsClamp.lowerBound / max(1.0, ds)
+        let maxPx = cfg.fuzzWidthPixelsClamp.upperBound / max(1.0, ds)
+
+        return max(CGFloat(minPx), min(CGFloat(maxPx), w0))
+    }
+
+    static func resampleDense(values01: [CGFloat], denseCount: Int) -> [CGFloat] {
+        let n = values01.count
+        guard n > 0 else { return [] }
+        guard denseCount > 0 else { return [] }
+        if denseCount == n { return values01 }
+
+        var out = [CGFloat](repeating: 0.0, count: denseCount)
+
+        if n == 1 {
+            out = [CGFloat](repeating: values01[0], count: denseCount)
+            return out
+        }
+
+        for i in 0..<denseCount {
+            let t = CGFloat(i) / CGFloat(denseCount - 1)
+            let x = t * CGFloat(n - 1)
+            let x0 = Int(floor(x))
+            let x1 = min(n - 1, x0 + 1)
+            let frac = x - CGFloat(x0)
+            let v0 = values01[x0]
+            let v1 = values01[x1]
+            out[i] = v0 + (v1 - v0) * frac
+        }
+
+        return out
+    }
+
+    static func clamp01(_ x: Double) -> Double {
+        max(0.0, min(1.0, x.isFinite ? x : 0.0))
     }
 }

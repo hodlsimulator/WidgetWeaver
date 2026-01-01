@@ -35,7 +35,7 @@ struct WeatherNowcastChart: View {
             if dt < 0 { continue }
             let idx = Int(dt / 60.0)
 
-            if idx < 0 || idx >= 60 { continue }
+            if idx >= 60 { continue }
 
             let iRaw = p.precipitationIntensityMMPerHour ?? 0.0
             let i0 = (iRaw.isFinite) ? max(0.0, iRaw) : 0.0
@@ -46,6 +46,7 @@ struct WeatherNowcastChart: View {
             // Expected intensity matches the “Rain now / Ends in Xm” logic.
             let expected = i0 * c0
 
+            // Use max to handle duplicate/near-duplicate samples landing in the same minute bucket.
             intensityByMinute[idx] = max(intensityByMinute[idx], expected)
             chanceByMinute[idx] = max(chanceByMinute[idx], c0)
         }
@@ -126,7 +127,7 @@ struct WeatherNowcastChart: View {
 
         // Texture (bounded draw calls).
         cfg.fuzzTextureEnabled = true
-        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 160 : 224
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 192 : 224
         cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
         // Inner -> outer expansion.
