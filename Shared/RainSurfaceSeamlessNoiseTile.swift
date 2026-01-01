@@ -5,7 +5,7 @@
 //  Created by . . on 01/01/26.
 //
 //  Seamless (wrap-around) noise tiles used for the nowcast “dissipated” rain surface.
-//  These are generated deterministically in code to avoid visible seams/banding when tiled.
+//  Fast generator: periodic value-noise sampled from precomputed grids (no per-pixel hashing).
 //
 
 import Foundation
@@ -19,9 +19,8 @@ enum RainSurfaceSeamlessNoiseTile {
         case coarse
     }
 
-    // Tile size in pixels for both variants.
-    // A fixed size keeps caching simple; scaling is handled at draw time.
-    static let tileSizePixels: Int = 128
+    // Smaller tile drastically reduces cold-start cost in WidgetKit.
+    static let tileSizePixels: Int = 64
 
     static func image(_ kind: Kind) -> Image {
         switch kind {
@@ -42,32 +41,32 @@ enum RainSurfaceSeamlessNoiseTile {
     // MARK: - Cached tiles
 
     private static let fineCGImage: CGImage = {
-        // Fine grain: higher frequency + higher cutoff (mostly transparent).
+        // Fine grain: mostly transparent highlights.
         makeTile(
             size: tileSizePixels,
             seed: 0xA1B2_C3D4_E5F6_1020,
-            basePeriod: 26,
-            octaves: 4,
+            basePeriod: 38,
+            octaves: 3,
             lacunarity: 2.0,
             gain: 0.55,
-            cutoff: 0.54,
-            power: 1.90,
-            baseAlpha: 0.035
+            cutoff: 0.50,
+            power: 1.65,
+            baseAlpha: 0.030
         )
     }()
 
     private static let coarseCGImage: CGImage = {
-        // Coarse wisps: lower frequency + lower cutoff (more connected shapes).
+        // Coarse wisps: chunkier alpha shapes.
         makeTile(
             size: tileSizePixels,
             seed: 0x0F1E_2D3C_4B5A_6978,
-            basePeriod: 12,
+            basePeriod: 14,
             octaves: 3,
             lacunarity: 2.0,
-            gain: 0.60,
-            cutoff: 0.47,
-            power: 1.45,
-            baseAlpha: 0.025
+            gain: 0.62,
+            cutoff: 0.46,
+            power: 1.35,
+            baseAlpha: 0.022
         )
     }()
 
@@ -87,6 +86,23 @@ enum RainSurfaceSeamlessNoiseTile {
         let w = max(2, size)
         let h = max(2, size)
 
+        // Precompute octave grids (periodic).
+        var grids: [(period: Int, values: [Double], amp: Double)] = []
+        grids.reserveCapacity(max(1, octaves))
+
+        var prng = RainSurfacePRNG(seed: seed)
+        var period = max(2, basePeriod)
+        var amp = 1.0
+
+        for _ in 0..<max(1, octaves) {
+            let values = makeGrid(period: period, prng: &prng)
+            grids.append((period: period, values: values, amp: amp))
+            amp *= gain
+            period = max(2, Int(Double(period) * lacunarity))
+        }
+
+        let ampSum = max(0.000001, grids.reduce(0.0) { $0 + $1.amp })
+
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
 
         let denomX = Double(w - 1)
@@ -98,28 +114,15 @@ enum RainSurfaceSeamlessNoiseTile {
                 let u = Double(x) / denomX
 
                 var value = 0.0
-                var amp = 1.0
-                var sum = 0.0
-
-                var period = max(2, basePeriod)
-                var s = seed
-
-                for _ in 0..<max(1, octaves) {
-                    value += valueNoise(u: u, v: v, period: period, seed: s) * amp
-                    sum += amp
-                    amp *= gain
-                    period = max(2, Int(Double(period) * lacunarity))
-                    s = mixSeed(s, 0x9E37_79B9_7F4A_7C15)
+                for g in grids {
+                    value += samplePeriodicValueNoise(u: u, v: v, period: g.period, grid: g.values) * g.amp
                 }
+                value /= ampSum
 
-                value /= max(0.000001, sum)
-
-                // Map to sparse alpha with a soft knee.
+                // Alpha shaping (sparse).
                 var a = (value - cutoff) / max(0.000001, (1.0 - cutoff))
-                if a < 0 { a = 0 }
-                if a > 1 { a = 1 }
-
-                a = pow(a, power)
+                a = clamp01(a)
+                a = pow(a, max(0.05, power))
                 a = baseAlpha + (1.0 - baseAlpha) * a
 
                 let alpha = UInt8(max(0, min(255, Int((a * 255.0).rounded()))))
@@ -153,41 +156,45 @@ enum RainSurfaceSeamlessNoiseTile {
         )!
     }
 
-    private static func valueNoise(u: Double, v: Double, period: Int, seed: UInt64) -> Double {
-        // Periodic lattice in [0, period), sampled over a torus.
-        let x = u * Double(period)
-        let y = v * Double(period)
+    private static func makeGrid(period: Int, prng: inout RainSurfacePRNG) -> [Double] {
+        let p = max(2, period)
+        var out = [Double](repeating: 0.0, count: p * p)
+        for i in 0..<out.count {
+            out[i] = prng.nextFloat01()
+        }
+        return out
+    }
 
-        let x0 = Int(floor(x))
-        let y0 = Int(floor(y))
-        let x1 = x0 + 1
-        let y1 = y0 + 1
+    private static func samplePeriodicValueNoise(u: Double, v: Double, period: Int, grid: [Double]) -> Double {
+        let p = max(2, period)
 
-        let tx = x - Double(x0)
-        let ty = y - Double(y0)
+        let x = u * Double(p)
+        let y = v * Double(p)
+
+        let x0i = Int(floor(x))
+        let y0i = Int(floor(y))
+        let x1i = x0i + 1
+        let y1i = y0i + 1
+
+        let tx = x - Double(x0i)
+        let ty = y - Double(y0i)
 
         let sx = smoothstep(tx)
         let sy = smoothstep(ty)
 
-        let v00 = lattice(x: x0, y: y0, period: period, seed: seed)
-        let v10 = lattice(x: x1, y: y0, period: period, seed: seed)
-        let v01 = lattice(x: x0, y: y1, period: period, seed: seed)
-        let v11 = lattice(x: x1, y: y1, period: period, seed: seed)
+        let x0 = positiveMod(x0i, p)
+        let y0 = positiveMod(y0i, p)
+        let x1 = positiveMod(x1i, p)
+        let y1 = positiveMod(y1i, p)
+
+        let v00 = grid[y0 * p + x0]
+        let v10 = grid[y0 * p + x1]
+        let v01 = grid[y1 * p + x0]
+        let v11 = grid[y1 * p + x1]
 
         let a = lerp(v00, v10, sx)
         let b = lerp(v01, v11, sx)
         return lerp(a, b, sy)
-    }
-
-    private static func lattice(x: Int, y: Int, period: Int, seed: UInt64) -> Double {
-        let p = max(1, period)
-        let xi = positiveMod(x, p)
-        let yi = positiveMod(y, p)
-
-        // 2D hash -> [0, 1).
-        let key = (UInt64(UInt32(xi)) << 32) | UInt64(UInt32(yi))
-        let h = mixSeed(seed, key)
-        return toUnit01(h)
     }
 
     private static func positiveMod(_ a: Int, _ m: Int) -> Int {
@@ -200,23 +207,11 @@ enum RainSurfaceSeamlessNoiseTile {
     }
 
     private static func smoothstep(_ t: Double) -> Double {
-        let x = max(0.0, min(1.0, t))
+        let x = clamp01(t)
         return x * x * (3.0 - 2.0 * x)
     }
 
-    // MARK: - Hashing
-
-    private static func mixSeed(_ a: UInt64, _ b: UInt64) -> UInt64 {
-        var x = a &+ 0x9E37_79B9_7F4A_7C15
-        x ^= b &+ 0xBF58_476D_1CE4_E5B9
-        x = (x ^ (x >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        x = (x ^ (x >> 27)) &* 0x94D0_49BB_1331_11EB
-        return x ^ (x >> 31)
-    }
-
-    private static func toUnit01(_ x: UInt64) -> Double {
-        // Use top 53 bits to build a Double in [0, 1).
-        let y = x >> 11
-        return Double(y) * (1.0 / 9007199254740992.0)
+    private static func clamp01(_ x: Double) -> Double {
+        max(0.0, min(1.0, x.isFinite ? x : 0.0))
     }
 }

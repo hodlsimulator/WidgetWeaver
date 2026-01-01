@@ -4,11 +4,10 @@
 //
 //  Created by . . on 12/31/25.
 //
-//  Texture-based dissipation that matches the mock look:
-//  - no speckles / particles
+//  Texture-based dissipation:
 //  - seamless tiling (no band seams)
 //  - additive interior grain + mist band
-//  - subtle edge erosion only near the contour (no black pits in the body)
+//  - widget-safe path uses a single layer to avoid placeholder timeouts
 //
 
 import Foundation
@@ -20,8 +19,6 @@ import UIKit
 #endif
 
 extension RainForecastSurfaceRenderer {
-
-    // MARK: - Dissipation fuzz
 
     static func drawDissipationFuzz(
         in context: inout GraphicsContext,
@@ -39,13 +36,14 @@ extension RainForecastSurfaceRenderer {
         guard cfg.fuzzTextureEnabled else { return }
         guard cfg.fuzzMaxOpacity > 0.0001 else { return }
 
+        let isExtension = WidgetWeaverRuntime.isRunningInAppExtension
+
         let n = min(heights.count, certainties01.count)
         guard n >= 3 else { return }
         guard curvePoints.count == heights.count, heights.count == certainties01.count else { return }
 
         let maxAlpha = clamp01(cfg.fuzzMaxOpacity)
 
-        // Strength along X, derived from chance + low-height emphasis.
         let strength = computeFuzzStrengthPerPoint(
             heights: heights,
             certainties01: certainties01.map { Double($0) },
@@ -56,7 +54,6 @@ extension RainForecastSurfaceRenderer {
             return
         }
 
-        // Keep all work inside a tight clip rect.
         let clipRect = computeDissipationClipRect(
             rect: rect,
             baselineY: baselineY,
@@ -88,7 +85,6 @@ extension RainForecastSurfaceRenderer {
         let yStart = max(rect.minY, topY - outerBand * 0.55)
         let yEnd = min(baselineY + outerBand * 0.35, rect.maxY)
 
-        // Horizontal mask: stronger fuzz in uncertain / low-height regions, smoother in confident cores.
         let xMaskGradient = makeAlphaGradient(
             baseColor: .white,
             strength: strength,
@@ -102,11 +98,11 @@ extension RainForecastSurfaceRenderer {
             endPoint: CGPoint(x: clipRect.maxX, y: clipRect.midY)
         )
 
-        // Two seamless noise tiles.
         let fineNoise = RainSurfaceSeamlessNoiseTile.image(.fine)
         let coarseNoise = RainSurfaceSeamlessNoiseTile.image(.coarse)
 
         let tilePixels = max(24, min(cfg.fuzzTextureTilePixels, 1024))
+
         let fineShading = tiledNoiseShading(
             image: fineNoise,
             bounds: clipRect,
@@ -127,13 +123,12 @@ extension RainForecastSurfaceRenderer {
             jitterFraction: 0.28
         )
 
-        // Depth masks (multiplied via destinationIn).
         let depthFullBody = GraphicsContext.Shading.linearGradient(
             Gradient(stops: [
                 .init(color: .white.opacity(1.0), location: 0.0),
                 .init(color: .white.opacity(0.92), location: 0.18),
-                .init(color: .white.opacity(0.48), location: 0.70),
-                .init(color: .white.opacity(0.34), location: 1.0),
+                .init(color: .white.opacity(0.50), location: 0.70),
+                .init(color: .white.opacity(0.36), location: 1.0),
             ]),
             startPoint: CGPoint(x: clipRect.midX, y: yStart),
             endPoint: CGPoint(x: clipRect.midX, y: yEnd)
@@ -149,8 +144,41 @@ extension RainForecastSurfaceRenderer {
             endPoint: CGPoint(x: clipRect.midX, y: yEnd)
         )
 
+        // Widget-safe path:
+        // - single offscreen layer
+        // - no destinationOut erosion passes
+        // - no outer dust passes
+        // This removes the placeholder regression while keeping the interior grain + mist band.
+        if isExtension {
+            let bodyA = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.60
+            let edgeA = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.98
+
+            context.drawLayer { layer in
+                layer.clip(to: Path(clipRect))
+                layer.clip(to: corePath)
+
+                layer.blendMode = .plusLighter
+                layer.opacity = bodyA
+                layer.fill(Path(clipRect), with: fineShading)
+
+                layer.opacity = edgeA
+                layer.fill(innerBandPath, with: coarseShading)
+
+                layer.blendMode = .destinationIn
+                layer.opacity = 1.0
+                layer.fill(Path(clipRect), with: depthFullBody)
+                layer.fill(Path(clipRect), with: xMaskShading)
+
+                // Add a very light surface falloff to keep the top edge “misty”.
+                layer.fill(Path(clipRect), with: depthNearSurface)
+            }
+
+            return
+        }
+
+        // App path (richer layering; acceptable outside WidgetKit watchdog limits).
+
         // Body grain (subtle, everywhere under the surface).
-        // This is the “texture under the fuzz” seen in the mock.
         do {
             let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.42
             if a > 0.0001 {
@@ -170,7 +198,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Near-surface grain (stronger, slightly clumpier).
+        // Near-surface grain (stronger).
         do {
             let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.88
             if a > 0.0001 {
@@ -192,13 +220,11 @@ extension RainForecastSurfaceRenderer {
         }
 
         // Subtle edge erosion (only within the contour band).
-        // This removes the hard silhouette edge without producing interior “holes”.
         if cfg.fuzzErodeEnabled && cfg.fuzzErodeStrength > 0.0001 {
             let k = max(0.0, cfg.fuzzErodeStrength)
             let a = maxAlpha * min(0.45, 0.22 * k)
 
             if a > 0.0001 {
-                // Two light passes: breaks up repetition without heavy cost.
                 for pass in 0..<2 {
                     let passSeed = cfg.noiseSeed &+ UInt64(pass) &* 0xBF58476D1CE4E5B9
 
@@ -237,7 +263,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Inner edge mist highlight (additive, very subtle).
+        // Inner edge mist highlight.
         do {
             let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.34
             if a > 0.0001 {
@@ -258,7 +284,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Outer dust (blue haze outside the body, broken up by noise).
+        // Outer dust (blue haze outside the body).
         let allowOuterDust = cfg.fuzzOuterDustEnabled && (!WidgetWeaverRuntime.isRunningInAppExtension || cfg.fuzzOuterDustEnabledInAppExtension)
         if allowOuterDust {
             let passCount = WidgetWeaverRuntime.isRunningInAppExtension ? cfg.fuzzOuterDustPassCountInAppExtension : cfg.fuzzOuterDustPassCount
@@ -267,7 +293,6 @@ extension RainForecastSurfaceRenderer {
             if passes > 0 {
                 let baseA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.78
 
-                // Outside-of-core mask (even-odd) to prevent colouring the interior.
                 var outside = Path()
                 outside.addRect(clipRect)
                 outside.addPath(corePath)
@@ -300,7 +325,6 @@ extension RainForecastSurfaceRenderer {
                         layer.clip(to: bandPath)
                         layer.clip(to: outside, style: FillStyle(eoFill: true, antialiased: true))
 
-                        // Colour first, then mask by noise.
                         layer.blendMode = .normal
                         layer.opacity = 1.0
                         layer.fill(Path(clipRect), with: .color(cfg.fuzzColor.opacity(a)))
@@ -314,7 +338,6 @@ extension RainForecastSurfaceRenderer {
                 }
             }
         }
-
     }
 
     // MARK: - Helpers
@@ -329,26 +352,7 @@ extension RainForecastSurfaceRenderer {
         return p
     }
 
-    private static func peakPoint(curvePoints: [CGPoint], baselineY: CGFloat) -> CGPoint? {
-        guard !curvePoints.isEmpty else { return nil }
-
-        var best: CGPoint?
-        var bestY = CGFloat.greatestFiniteMagnitude
-
-        for pt in curvePoints {
-            // Ignore baseline points (they are not part of the crest).
-            if abs(pt.y - baselineY) < 0.0001 { continue }
-            if pt.y < bestY {
-                bestY = pt.y
-                best = pt
-            }
-        }
-
-        return best
-    }
-
     private static func stableSeed(from points: [CGPoint], displayScale: CGFloat) -> UInt64 {
-        // A cheap, stable hash of a polyline in device pixels.
         let ds = max(1.0, displayScale)
         var h: UInt64 = 0xD1B54A32D192ED03
 
@@ -361,7 +365,7 @@ extension RainForecastSurfaceRenderer {
             let b = UInt64(bitPattern: yi)
             h = h ^ (a &* 0x9E3779B97F4A7C15) ^ (b &* 0xBF58476D1CE4E5B9)
             h = (h ^ (h >> 30)) &* 0xBF58476D1CE4E5B9
-            h = (h ^ (h >> 27)) &* 0x94D0_49BB_1331_11EB
+            h = (h ^ (h >> 27)) &* 0x94D049BB133111EB
             h = h ^ (h >> 31)
         }
 
