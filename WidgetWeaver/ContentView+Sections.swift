@@ -594,12 +594,50 @@ extension ContentView {
                         }
                     }
 
+                    HStack {
+                        Menu {
+                            ForEach(ActionBarPreset.allCases) { preset in
+                                Button {
+                                    withAnimation {
+                                        actionBarDraft.replace(with: preset)
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(preset.title)
+                                        Text(preset.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Presets", systemImage: "sparkles")
+                        }
+
+                        Spacer()
+
+                        Button {
+                            if actionBarDraft.actions.count < WidgetActionBarSpec.maxActions {
+                                actionBarDraft.actions.append(.defaultIncrement())
+                            }
+                        } label: {
+                            Label("Add button", systemImage: "plus")
+                        }
+                        .disabled(actionBarDraft.actions.count >= WidgetActionBarSpec.maxActions)
+                    }
+                    .controlSize(.small)
+
                     if actionBarDraft.actions.isEmpty {
                         Button { actionBarDraft.actions = [ .defaultIncrement(), .defaultDone() ] } label: {
                             Label("Add starter buttons", systemImage: "sparkles")
                         }
                     } else {
                         ForEach($actionBarDraft.actions) { $action in
+                            let idx = actionBarDraft.actions.firstIndex(where: { $0.id == action.id })
+                            let canMoveUp = (idx ?? 0) > 0
+                            let canMoveDown = idx != nil && idx! < (actionBarDraft.actions.count - 1)
+                            let keyValidation = action.validateVariableKey()
+
                             DisclosureGroup {
                                 TextField("Button title", text: $action.title)
                                     .textInputAutocapitalization(.words)
@@ -618,6 +656,12 @@ extension ContentView {
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
 
+                                if case .warning(let message) = keyValidation {
+                                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(.red)
+                                }
+
                                 switch action.kind {
                                 case .incrementVariable:
                                     Stepper(
@@ -633,34 +677,79 @@ extension ContentView {
                                     }
                                 }
 
+                                ControlGroup {
+                                    Button {
+                                        withAnimation { actionBarDraft.moveUp(id: action.id) }
+                                    } label: {
+                                        Label("Move Up", systemImage: "arrow.up")
+                                    }
+                                    .disabled(!canMoveUp)
+
+                                    Button {
+                                        withAnimation { actionBarDraft.moveDown(id: action.id) }
+                                    } label: {
+                                        Label("Move Down", systemImage: "arrow.down")
+                                    }
+                                    .disabled(!canMoveDown)
+                                }
+                                .controlSize(.small)
+
                                 Button(role: .destructive) {
                                     actionBarDraft.actions.removeAll { $0.id == action.id }
                                 } label: {
                                     Label("Remove button", systemImage: "trash")
                                 }
                             } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? action.kind.displayName : action.title)
-                                        .lineLimit(1)
+                                HStack(alignment: .center, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(No label)" : action.title)
+                                                .lineLimit(1)
 
-                                    if !action.variableKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        Text(action.variableKey)
+                                            if case .warning = keyValidation {
+                                                Image(systemName: "exclamationmark.triangle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.red)
+                                                    .accessibilityHidden(true)
+                                            }
+                                        }
+
+                                        Text(action.previewString)
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
+
+                                    Spacer(minLength: 8)
+
+                                    VStack(spacing: 6) {
+                                        Button {
+                                            withAnimation { actionBarDraft.moveUp(id: action.id) }
+                                        } label: {
+                                            Image(systemName: "arrow.up")
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .disabled(!canMoveUp)
+                                        .accessibilityLabel("Move up")
+
+                                        Button {
+                                            withAnimation { actionBarDraft.moveDown(id: action.id) }
+                                        } label: {
+                                            Image(systemName: "arrow.down")
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .disabled(!canMoveDown)
+                                        .accessibilityLabel("Move down")
+                                    }
                                 }
                             }
                         }
-
-                        Button {
-                            if actionBarDraft.actions.count < WidgetActionBarSpec.maxActions {
-                                actionBarDraft.actions.append(.defaultIncrement())
+                        .onMove { fromOffsets, toOffset in
+                            withAnimation {
+                                actionBarDraft.move(fromOffsets: fromOffsets, toOffset: toOffset)
                             }
-                        } label: {
-                            Label("Add button", systemImage: "plus")
                         }
-                        .disabled(actionBarDraft.actions.count >= WidgetActionBarSpec.maxActions)
+                        .environment(\.editMode, .constant(.active))
                     }
 
                     Text("Buttons render on iOS 17+ as interactive widgets.\nThey update variables stored in the App Group.")

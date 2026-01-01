@@ -327,6 +327,165 @@ struct ActionBarDraft: Hashable {
         let specs = actions.compactMap { $0.toActionSpecOrNil() }
         return WidgetActionBarSpec(actions: specs, style: style).normalisedOrNil()
     }
+
+    mutating func move(fromOffsets: IndexSet, toOffset: Int) {
+        actions.move(fromOffsets: fromOffsets, toOffset: toOffset)
+    }
+
+    mutating func moveUp(id: UUID) {
+        guard let idx = actions.firstIndex(where: { $0.id == id }), idx > 0 else { return }
+        actions.swapAt(idx, idx - 1)
+    }
+
+    mutating func moveDown(id: UUID) {
+        guard let idx = actions.firstIndex(where: { $0.id == id }), idx < actions.count - 1 else { return }
+        actions.swapAt(idx, idx + 1)
+    }
+
+    mutating func replace(with preset: ActionBarPreset) {
+        isEnabled = true
+        actions = preset.buildActions()
+    }
+}
+
+enum VariableKeyValidationResult: Hashable {
+    case ok
+    case warning(String)
+}
+
+enum ActionBarPreset: String, CaseIterable, Identifiable {
+    case counter
+    case habitStreak
+    case donePlusOne
+    case hydration
+    case pomodoro
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .counter: return "Counter"
+        case .habitStreak: return "Habit Streak"
+        case .donePlusOne: return "Done +1"
+        case .hydration: return "Hydration"
+        case .pomodoro: return "Pomodoro"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .counter:
+            return "Count up/down (key: count)."
+        case .habitStreak:
+            return "Track a streak with Done/Undo (key: streak)."
+        case .donePlusOne:
+            return "Single Done button (key: done)."
+        case .hydration:
+            return "Quick adds for water intake (key: waterMl)."
+        case .pomodoro:
+            return "Start/Stop as a simple counter (key: pomo)."
+        }
+    }
+
+    func buildActions() -> [WidgetActionDraft] {
+        let out: [WidgetActionDraft] = {
+            switch self {
+            case .counter:
+                return [
+                    WidgetActionDraft(
+                        title: "+1",
+                        systemImage: "plus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "-1",
+                        systemImage: "minus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .habitStreak:
+                return [
+                    WidgetActionDraft(
+                        title: "Done +1",
+                        systemImage: "checkmark.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "Undo -1",
+                        systemImage: "arrow.uturn.backward.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .donePlusOne:
+                return [
+                    WidgetActionDraft(
+                        title: "Done +1",
+                        systemImage: "checkmark.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "done",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .hydration:
+                return [
+                    WidgetActionDraft(
+                        title: "+25ml",
+                        systemImage: "drop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 25,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "+50ml",
+                        systemImage: "drop.circle",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 50,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .pomodoro:
+                return [
+                    WidgetActionDraft(
+                        title: "Start",
+                        systemImage: "play.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "Stop",
+                        systemImage: "stop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+            }
+        }()
+
+        return Array(out.prefix(WidgetActionBarSpec.maxActions))
+    }
 }
 
 struct WidgetActionDraft: Hashable, Identifiable {
@@ -402,5 +561,65 @@ struct WidgetActionDraft: Hashable, Identifiable {
             incrementAmount: incrementAmount,
             nowFormat: nowFormat
         ).normalisedOrNil()
+    }
+
+    var previewString: String {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keyPart = key.isEmpty ? "(No key)" : key
+
+        switch kind {
+        case .incrementVariable:
+            let amt = incrementAmount
+            let signed = amt >= 0 ? "+\(amt)" : "\(amt)"
+            return "Increment \(signed) → \(keyPart)"
+        case .setVariableToNow:
+            let fmt: String = {
+                switch nowFormat {
+                case .iso8601: return "ISO"
+                case .unixSeconds: return "Unix s"
+                case .unixMilliseconds: return "Unix ms"
+                case .dateOnly: return "Date"
+                case .timeOnly: return "Time"
+                }
+            }()
+            return "Set Now (\(fmt)) → \(keyPart)"
+        }
+    }
+
+    func validateVariableKey() -> VariableKeyValidationResult {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !key.isEmpty else {
+            return .warning("Key is required.")
+        }
+
+        if key.hasPrefix("__") {
+            return .warning("Reserved key (starts with \"__\").")
+        }
+
+        if key.count > 32 {
+            return .warning("Key is too long (max 32 characters).")
+        }
+
+        guard let first = key.unicodeScalars.first, Self.isASCIIAlpha(first) else {
+            return .warning("Key must start with a letter.")
+        }
+
+        for s in key.unicodeScalars {
+            if Self.isASCIIAlpha(s) { continue }
+            if Self.isASCIIDigit(s) { continue }
+            if s.value == 95 { continue }
+            return .warning("Only letters, numbers, and _ are allowed.")
+        }
+
+        return .ok
+    }
+
+    private static func isASCIIAlpha(_ s: UnicodeScalar) -> Bool {
+        (s.value >= 65 && s.value <= 90) || (s.value >= 97 && s.value <= 122)
+    }
+
+    private static func isASCIIDigit(_ s: UnicodeScalar) -> Bool {
+        (s.value >= 48 && s.value <= 57)
     }
 }
