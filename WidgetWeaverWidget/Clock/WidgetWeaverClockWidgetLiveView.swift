@@ -18,150 +18,93 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @Environment(\.redactionReasons) private var redactionReasons
 
     var body: some View {
-        WidgetWeaverRenderClock.withNow(entryDate) {
-            let isPlaceholder = redactionReasons.contains(.placeholder)
-            let isPrivacy = redactionReasons.contains(.privacy)
+        let isPlaceholder = redactionReasons.contains(.placeholder)
+        let isPrivacy = redactionReasons.contains(.privacy)
 
-            let handsOpacity: Double = (isPlaceholder || isPrivacy) ? 0.85 : 1.0
+        let showLive = !(isPlaceholder || isPrivacy)
+        let handsOpacity: Double = showLive ? 1.0 : 0.85
 
-            // README strategy #5:
-            // - Minute hand should tick reliably from minute-boundary entries.
-            // - Seconds hand should tick without 1Hz WidgetKit timelines.
-            // Use the bundled second-hand ligature font driven by Text(timerInterval:...).
-            let base = WWClockBaseAngles(date: entryDate)
-
-            ZStack {
-                // Base clock: hour + minute only (stable tree, no seconds animation).
-                // Centre hub is drawn after the seconds needle so the needle sits "under" the hub.
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: .degrees(base.hour),
-                    minuteAngle: .degrees(base.minute),
-                    secondAngle: .degrees(0),
-                    showsSecondHand: false,
-                    showsHandShadows: true,
-                    showsGlows: true,
-                    showsCentreHub: false,
-                    handsOpacity: handsOpacity
-                )
-
-                // Seconds needle + hub overlay, clipped to the dial circle.
-                WWClockSecondsNeedleOverlay(
-                    palette: palette,
-                    minuteAnchor: entryDate,
-                    showLive: !(isPlaceholder || isPrivacy),
-                    handsOpacity: handsOpacity
-                )
+        Group {
+            if showLive {
+                // Drive hands with an in-view 1Hz tick (budget-safe vs 1Hz WidgetKit timelines).
+                // Angles are computed from the live time so the minute hand is not “seconds behind”.
+                TimelineView(.periodic(from: entryDate, by: 1.0)) { context in
+                    clock(now: context.date, handsOpacity: handsOpacity, isPrivacy: isPrivacy, showHeartbeat: true)
+                }
+            } else {
+                // Static render for placeholder / privacy.
+                clock(now: entryDate, handsOpacity: handsOpacity, isPrivacy: isPrivacy, showHeartbeat: false)
             }
-            .privacySensitive(isPrivacy)
-            .widgetURL(URL(string: "widgetweaver://clock"))
         }
+        .privacySensitive(isPrivacy)
+        .widgetURL(URL(string: "widgetweaver://clock"))
+    }
+
+    @ViewBuilder
+    private func clock(now: Date, handsOpacity: Double, isPrivacy: Bool, showHeartbeat: Bool) -> some View {
+        let angles = WWClockAngles(date: now)
+
+        ZStack(alignment: .bottomTrailing) {
+            // Single stable tree: just update the angles.
+            WidgetWeaverClockIconView(
+                palette: palette,
+                hourAngle: .degrees(angles.hour),
+                minuteAngle: .degrees(angles.minute),
+                secondAngle: .degrees(angles.second),
+                showsSecondHand: true,
+                showsHandShadows: true,
+                showsGlows: true,
+                showsCentreHub: true,
+                handsOpacity: handsOpacity
+            )
+
+            // A tiny “heartbeat” keeps the host in a live-updating mode in more hosting paths.
+            if showHeartbeat {
+                WWClockWidgetHeartbeat(start: entryDate)
+            }
+        }
+        .opacity(handsOpacity)
     }
 }
 
-// MARK: - Minute-boundary angles (tick)
+// MARK: - Live angles (include seconds)
 
-private struct WWClockBaseAngles {
+private struct WWClockAngles {
     let hour: Double
     let minute: Double
+    let second: Double
 
     init(date: Date) {
         let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute], from: date)
+        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
 
         let hour24 = Double(comps.hour ?? 0)
         let minuteInt = Double(comps.minute ?? 0)
+        let secondInt = Double(comps.second ?? 0)
+        let nano = Double(comps.nanosecond ?? 0)
 
+        let sec = secondInt + (nano / 1_000_000_000.0)
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        self.minute = minuteInt * 6.0
-        self.hour = (hour12 + (minuteInt / 60.0)) * 30.0
+        // Tick-style angles (no reliance on font ligatures).
+        self.second = sec * 6.0
+        self.minute = (minuteInt + sec / 60.0) * 6.0
+        self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
     }
 }
 
-// MARK: - Seconds needle overlay (budget-safe ticking)
+// MARK: - Heartbeat
 
-private struct WWClockSecondsNeedleOverlay: View {
-    let palette: WidgetWeaverClockPalette
-    let minuteAnchor: Date
-    let showLive: Bool
-    let handsOpacity: Double
-
-    @Environment(\.displayScale) private var displayScale
+private struct WWClockWidgetHeartbeat: View {
+    let start: Date
 
     var body: some View {
-        GeometryReader { proxy in
-            let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
-
-            ZStack {
-                // This is the key trick:
-                // - Text(timerInterval:) updates once per second in a widget-safe way.
-                // - WWClockSecondHand-Regular.ttf has blank digits/colon, but "0:SS" ligatures map
-                //   to pre-rotated second-hand glyphs (sec00 ... sec59).
-                Group {
-                    if showLive {
-                        Text(timerInterval: minuteAnchor...Date.distantFuture, countsDown: false)
-                    } else {
-                        Text("0:00")
-                    }
-                }
-                .font(WWClockSecondHandFont.font(size: layout.dialDiameter))
-                .foregroundStyle(palette.accent)
-                .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-                .clipShape(Circle())
-                .opacity(handsOpacity)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
-                // Draw hub last so the seconds needle sits underneath it visually.
-                WidgetWeaverClockCentreHubView(
-                    palette: palette,
-                    baseRadius: layout.hubBaseRadius,
-                    capRadius: layout.hubCapRadius,
-                    scale: displayScale
-                )
-                .opacity(handsOpacity)
-            }
-            .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-            .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
-        }
-    }
-}
-
-private struct WWClockDialLayout {
-    let dialDiameter: CGFloat
-    let hubBaseRadius: CGFloat
-    let hubCapRadius: CGFloat
-
-    init(size: CGSize, scale: CGFloat) {
-        let s = min(size.width, size.height)
-
-        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
-        let outerRadius = outerDiameter * 0.5
-
-        let metalThicknessRatio: CGFloat = 0.062
-        let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
-
-        let ringA = WWClock.pixel(provisionalR * 0.010, scale: scale)
-        let ringC = WWClock.pixel(
-            WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
-            scale: scale
-        )
-
-        let minB = WWClock.px(scale: scale)
-        let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
-
-        let R = outerRadius - ringA - ringB - ringC
-        self.dialDiameter = R * 2.0
-
-        self.hubBaseRadius = WWClock.pixel(
-            WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
-            scale: scale
-        )
-
-        self.hubCapRadius = WWClock.pixel(
-            WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
-            scale: scale
-        )
+        Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
