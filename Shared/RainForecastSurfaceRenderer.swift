@@ -122,6 +122,13 @@ struct RainForecastSurfaceRenderer {
             }
         }
 
+        // Peak highlight/glint (drawn after all segments so it stays on top).
+        if cfg.glossEnabled || cfg.glintEnabled {
+            if let peak = Self.peakPoint(segments: segments, baselineY: baselineY) {
+                Self.drawPeakHighlights(in: &context, peak: peak, baselineY: baselineY, displayScale: ds, cfg: cfg)
+            }
+        }
+
         if cfg.baselineEnabled {
             Self.drawBaseline(in: &context, rect: rect, baselineY: baselineY, displayScale: ds, cfg: cfg)
         }
@@ -180,7 +187,41 @@ struct RainForecastSurfaceRenderer {
 
         // Per-segment tapering avoids the “cliff” at rain start/end without affecting true
         // rain-now / rain-at-60m scenarios.
+        //
+        // IMPORTANT:
+        // When there are multiple wet runs separated by short dry gaps, tapering both runs by the full
+        // available gap width causes the two segments to overlap. That overlap is drawn twice and reads
+        // as an internal “crease” (like a second surface) inside the body.
+        //
+        // Fix: allocate at most half of the inter-run gap to each side.
         let targetTaperPt = max(10.0, min(rect.width * 0.05, 26.0))
+
+        var leftExtendForRun = [CGFloat](repeating: 0.0, count: runs.count)
+        var rightExtendForRun = [CGFloat](repeating: 0.0, count: runs.count)
+
+        for r in 0..<runs.count {
+            let run = runs[r]
+
+            // Leading dry region (before first run) can take the full taper.
+            if r == 0 {
+                let dryCount = max(0, run.start)
+                leftExtendForRun[r] = min(targetTaperPt, CGFloat(dryCount) * stepX)
+            } else {
+                let prev = runs[r - 1]
+                let gapCount = max(0, run.start - prev.end - 1)
+                leftExtendForRun[r] = min(targetTaperPt, CGFloat(gapCount) * stepX * 0.5)
+            }
+
+            // Trailing dry region (after last run) can take the full taper.
+            if r == runs.count - 1 {
+                let dryCount = max(0, (n - 1) - run.end)
+                rightExtendForRun[r] = min(targetTaperPt, CGFloat(dryCount) * stepX)
+            } else {
+                let next = runs[r + 1]
+                let gapCount = max(0, next.start - run.end - 1)
+                rightExtendForRun[r] = min(targetTaperPt, CGFloat(gapCount) * stepX * 0.5)
+            }
+        }
 
         var segments: [SurfaceSegment] = []
         segments.reserveCapacity(runs.count)
@@ -188,22 +229,8 @@ struct RainForecastSurfaceRenderer {
         for r in 0..<runs.count {
             let run = runs[r]
 
-            let leftDryCount: Int
-            if r == 0 {
-                leftDryCount = run.start
-            } else {
-                leftDryCount = max(0, run.start - (runs[r - 1].end + 1))
-            }
-
-            let rightDryCount: Int
-            if r == runs.count - 1 {
-                rightDryCount = max(0, (n - 1) - run.end)
-            } else {
-                rightDryCount = max(0, runs[r + 1].start - (run.end + 1))
-            }
-
-            let leftExtendPt = min(targetTaperPt, CGFloat(leftDryCount) * stepX)
-            let rightExtendPt = min(targetTaperPt, CGFloat(rightDryCount) * stepX)
+            let leftExtendPt = leftExtendForRun[r]
+            let rightExtendPt = rightExtendForRun[r]
 
             let startIdx = max(0, run.start)
             let endIdx = min(n - 1, run.end)
@@ -283,6 +310,27 @@ struct RainForecastSurfaceRenderer {
 
         return segments
     }
+
+    static func peakPoint(segments: [SurfaceSegment], baselineY: CGFloat) -> CGPoint? {
+        var best: CGPoint? = nil
+
+        for seg in segments {
+            if seg.curvePoints.count <= 2 { continue }
+
+            // Skip baseline anchors (first/last).
+            for i in 1..<(seg.curvePoints.count - 1) {
+                let p = seg.curvePoints[i]
+                if p.y >= baselineY { continue }
+                if best == nil || p.y < (best?.y ?? .greatestFiniteMagnitude) {
+                    best = p
+                }
+            }
+        }
+
+        return best
+    }
+
+    // MARK: - Sampling density / widths
 
     static func denseSampleCount(sourceCount: Int, rectWidthPoints: CGFloat, displayScale: CGFloat, maxDense: Int) -> Int {
         let ds = max(1.0, displayScale)
@@ -409,8 +457,8 @@ struct RainForecastSurfaceRenderer {
     }
 
     static func drawCore(in context: inout GraphicsContext, corePath: Path, curvePoints: [CGPoint], baselineY: CGFloat, cfg: RainForecastSurfaceConfiguration) {
-        let startX = curvePoints.first?.x ?? 0
-        let endX = curvePoints.last?.x ?? 1
+        let topY = curvePoints.map { $0.y }.min() ?? (baselineY - 120.0)
+        let midX = ((curvePoints.first?.x ?? 0.0) + (curvePoints.last?.x ?? 0.0)) * 0.5
 
         let topMix = max(0.0, min(1.0, cfg.coreTopMix))
         let fadeFrac = max(0.0, min(1.0, cfg.coreFadeFraction))
@@ -420,13 +468,90 @@ struct RainForecastSurfaceRenderer {
             .init(color: cfg.coreBodyColor.opacity(1.0), location: max(0.0, 1.0 - fadeFrac))
         ])
 
+        // Vertical gradient:
+        // - top uses `coreTopColor`
+        // - bottom uses `coreBodyColor`
+        //
+        // A per-segment diagonal gradient makes segment overlaps far more visible, so keep the vector
+        // purely vertical.
         let shading = GraphicsContext.Shading.linearGradient(
             grad,
-            startPoint: CGPoint(x: startX, y: baselineY),
-            endPoint: CGPoint(x: endX, y: baselineY - 500)
+            startPoint: CGPoint(x: midX, y: topY),
+            endPoint: CGPoint(x: midX, y: baselineY)
         )
 
         context.fill(corePath, with: shading)
+    }
+
+    static func drawPeakHighlights(in context: inout GraphicsContext, peak: CGPoint, baselineY: CGFloat, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) {
+        let ds = max(1.0, ds)
+        let onePx = 1.0 / ds
+
+        let height = max(0.0, baselineY - peak.y)
+        if height <= 0.5 { return }
+
+        let prevBlend = context.blendMode
+        let prevOpacity = context.opacity
+        context.blendMode = .plusLighter
+        context.opacity = 1.0
+
+        // Soft glow (cyan/blue) around the peak.
+        if cfg.glossEnabled, cfg.glossMaxOpacity > 0.0001 {
+            let a = clamp01(cfg.glossMaxOpacity)
+            let r0 = max(10.0 * onePx, min(height * 0.22, 90.0 * onePx))
+            let r1 = max(r0, r0 * 1.35)
+
+            let glowGradient = Gradient(stops: [
+                .init(color: cfg.coreTopColor.opacity(a * 0.10), location: 0.0),
+                .init(color: cfg.coreTopColor.opacity(a * 0.22), location: 0.30),
+                .init(color: Color.white.opacity(a * 0.20), location: 0.42),
+                .init(color: cfg.coreTopColor.opacity(a * 0.10), location: 0.62),
+                .init(color: Color.white.opacity(0.0), location: 1.0)
+            ])
+
+            let shading = GraphicsContext.Shading.radialGradient(
+                glowGradient,
+                center: CGPoint(x: peak.x, y: peak.y - r0 * 0.05),
+                startRadius: 0.0,
+                endRadius: r1
+            )
+
+            context.fill(
+                Path(ellipseIn: CGRect(x: peak.x - r1, y: peak.y - r1, width: r1 * 2, height: r1 * 2)),
+                with: shading
+            )
+        }
+
+        // Glint (tight white highlight).
+        if cfg.glintEnabled, cfg.glintMaxOpacity > 0.0001 {
+            let a = clamp01(cfg.glintMaxOpacity)
+            let minR = max(onePx, CGFloat(cfg.glintRadiusPixels.lowerBound) / ds)
+            let maxR = max(minR, CGFloat(cfg.glintRadiusPixels.upperBound) / ds)
+            let r = maxR
+
+            let glintGradient = Gradient(stops: [
+                .init(color: Color.white.opacity(a), location: 0.0),
+                .init(color: Color.white.opacity(a * 0.85), location: 0.18),
+                .init(color: cfg.coreTopColor.opacity(a * 0.40), location: 0.42),
+                .init(color: Color.white.opacity(0.0), location: 1.0)
+            ])
+
+            let q = CGPoint(x: peak.x, y: peak.y - r * 0.18)
+            let shading = GraphicsContext.Shading.radialGradient(
+                glintGradient,
+                center: q,
+                startRadius: 0.0,
+                endRadius: r
+            )
+
+            context.fill(
+                Path(ellipseIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)),
+                with: shading
+            )
+        }
+
+        context.blendMode = prevBlend
+        context.opacity = prevOpacity
     }
 
     static func drawRim(in context: inout GraphicsContext, curvePoints: [CGPoint], baselineY: CGFloat, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) {

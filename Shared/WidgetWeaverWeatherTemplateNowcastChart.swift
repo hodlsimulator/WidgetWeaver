@@ -81,10 +81,10 @@ struct WeatherNowcastChart: View {
         cfg.edgeEasingFraction = 0.0
         cfg.edgeEasingPower = 1.0
 
-        // Core colours (no cyan; deep blue only).
-        cfg.coreBodyColor = Color(red: 0.02, green: 0.08, blue: 0.55).opacity(0.92)
-        cfg.coreTopColor = Color(red: 0.04, green: 0.12, blue: 0.78).opacity(0.95)
-        cfg.coreTopMix = 0.38
+        // Core colours (match the mockup gradient: bright top, deep navy bottom).
+        cfg.coreBodyColor = Color(red: 0.00, green: 0.02, blue: 0.18)
+        cfg.coreTopColor = Color(red: 0.00, green: 0.41, blue: 0.94)
+        cfg.coreTopMix = 1.00
         cfg.coreFadeFraction = 0.00
 
         // Rim (off for the mock look — dissipation replaces the outline).
@@ -92,22 +92,25 @@ struct WeatherNowcastChart: View {
 
         // Baseline.
         cfg.baselineEnabled = true
-        cfg.baselineColor = Color(red: 0.20, green: 0.32, blue: 0.90)
-        cfg.baselineLineOpacity = 0.11
+        cfg.baselineColor = Color(red: 0.18, green: 0.34, blue: 0.98)
+        cfg.baselineLineOpacity = 0.20
         cfg.baselineWidthPixels = 1.0
         cfg.baselineOffsetPixels = 0.0
         cfg.baselineEndFadeFraction = 0.18
 
-        // Dissipation (texture-based; no particles).
+        // Dissipation (texture-based).
         cfg.fuzzEnabled = true
         cfg.canEnableFuzz = true
 
-        cfg.fuzzColor = cfg.coreBodyColor
-        cfg.fuzzMaxOpacity = 0.72
+        // Blue tint for outside particles.
+        cfg.fuzzColor = Color(red: 0.00, green: 0.30, blue: 0.92)
 
-        // Base band width around the contour.
-        cfg.fuzzWidthFraction = 0.18
-        cfg.fuzzWidthPixelsClamp = 12.0...88.0
+        // Overall max opacity for dissipation layers.
+        cfg.fuzzMaxOpacity = 0.62
+
+        // Base band width around the contour (narrower keeps the body clean).
+        cfg.fuzzWidthFraction = 0.12
+        cfg.fuzzWidthPixelsClamp = 8.0...64.0
 
         // Keep silhouette sampling reasonable in extensions.
         cfg.maxDenseSamples = WidgetWeaverRuntime.isRunningInAppExtension ? 560 : 820
@@ -116,8 +119,8 @@ struct WeatherNowcastChart: View {
         cfg.fuzzChanceThreshold = 0.78
         cfg.fuzzChanceTransition = 0.22
         cfg.fuzzChanceExponent = 1.20
-        cfg.fuzzChanceFloor = 0.20
-        cfg.fuzzChanceMinStrength = 0.06
+        cfg.fuzzChanceFloor = 0.16
+        cfg.fuzzChanceMinStrength = 0.04
 
         // Tail bloom + low-height emphasis.
         cfg.fuzzTailMinutes = 11.0
@@ -127,30 +130,40 @@ struct WeatherNowcastChart: View {
 
         // Texture (bounded draw calls).
         cfg.fuzzTextureEnabled = true
-        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 192 : 224
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 224 : 256
         cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
         // Inner -> outer expansion.
-        cfg.fuzzTextureInnerBandMultiplier = 1.55
-        cfg.fuzzTextureOuterBandMultiplier = 4.40
-        cfg.fuzzTextureInnerOpacityMultiplier = 1.00
-        cfg.fuzzTextureOuterOpacityMultiplier = 0.65
+        cfg.fuzzTextureInnerBandMultiplier = 1.15
+        cfg.fuzzTextureOuterBandMultiplier = 2.90
+        cfg.fuzzTextureInnerOpacityMultiplier = 0.82
+        cfg.fuzzTextureOuterOpacityMultiplier = 0.80
 
-        // IMPORTANT: keep the background pure black.
-        // Any outside-the-body mist will lift the black background and read as a halo.
-        cfg.fuzzOuterDustEnabled = false
-        cfg.fuzzOuterDustEnabledInAppExtension = false
+        // Outside particles are part of the mock look.
+        // If the background must remain perfectly pure black, set these back to false.
+        cfg.fuzzOuterDustEnabled = true
+        cfg.fuzzOuterDustEnabledInAppExtension = true
         cfg.fuzzOuterDustPassCount = 2
         cfg.fuzzOuterDustPassCountInAppExtension = 2
 
         // Subtle edge softening.
         cfg.fuzzErodeEnabled = true
-        cfg.fuzzErodeStrength = 0.90
+        cfg.fuzzErodeStrength = 0.70
 
-        // Cheap coherence haze (disabled; handled by noise layering).
+        // Cheap coherence haze (off; mock has clean blacks).
         cfg.fuzzHazeStrength = 0.0
         cfg.fuzzHazeBlurFractionOfBand = 0.0
         cfg.fuzzHazeStrokeWidthFactor = 0.95
+
+        // Peak glow + glint (drawn on top of the surface).
+        cfg.glossEnabled = true
+        cfg.glossMaxOpacity = 0.24
+        cfg.glossHeightPower = 1.20
+
+        cfg.glintEnabled = true
+        cfg.glintCount = 1
+        cfg.glintMaxOpacity = 0.92
+        cfg.glintRadiusPixels = 6.0...20.0
 
         // Deterministic noise seed.
         cfg.noiseSeed = 0xBADC0DE
