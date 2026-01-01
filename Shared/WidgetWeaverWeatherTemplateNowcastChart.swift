@@ -5,6 +5,7 @@
 //  Created by . . on 12/29/25.
 //
 
+import Foundation
 import SwiftUI
 
 /// Nowcast chart for the weather template.
@@ -18,26 +19,48 @@ struct WeatherNowcastChart: View {
     let locationLongitude: Double?
 
     var body: some View {
-        // Plot expected intensity so the chart matches the “Rain now / Ends in Xm” logic.
-        // Missing values are treated as 0 to avoid fill/hold artefacts at the tail.
-        let intensities: [Double] = points.map { p in
+        let cal = Calendar.current
+        let base = cal.dateInterval(of: .minute, for: forecastStart)?.start ?? forecastStart
+
+        // WeatherKit minute forecasts are not guaranteed to contain a full 60 points.
+        // When fewer points arrive (e.g. 35), stretching them to the full width makes the chart appear to
+        // "keep raining" until 60m.
+        //
+        // Build a fixed 60-minute axis from `forecastStart` and place each sample by its minute offset.
+        var intensityByMinute = Array(repeating: 0.0, count: 60)
+        var chanceByMinute = Array(repeating: 0.0, count: 60)
+
+        let sorted = points.sorted { $0.date < $1.date }
+        for p in sorted {
+            let dt = p.date.timeIntervalSince(base)
+            let idx = Int((dt / 60.0).rounded())
+
+            if idx < 0 || idx >= 60 { continue }
+
             let iRaw = p.precipitationIntensityMMPerHour ?? 0.0
             let i0 = (iRaw.isFinite) ? max(0.0, iRaw) : 0.0
 
             let cRaw = p.precipitationChance01 ?? 1.0
             let c0 = (cRaw.isFinite) ? min(1.0, max(0.0, cRaw)) : 0.0
 
-            return i0 * c0
+            // Expected intensity matches the “Rain now / Ends in Xm” logic.
+            let expected = i0 * c0
+
+            intensityByMinute[idx] = expected
+            chanceByMinute[idx] = c0
+        }
+
+        // Remove “ghost rain” after the computed end by clamping sub-wet values to 0.
+        // This keeps the visual tail aligned with the wording thresholds.
+        let intensities: [Double] = intensityByMinute.map { v in
+            (v >= WeatherNowcast.wetIntensityThresholdMMPerHour) ? v : 0.0
         }
 
         // Treated as “certainty” for dissipation shaping:
         // - higher => less fuzz
         // - lower  => more fuzz
-        let certainties: [Double] = points.map { p in
-            if let c = p.precipitationChance01, c.isFinite {
-                return min(1.0, max(0.0, c))
-            }
-            return 0.0
+        let certainties: [Double] = chanceByMinute.map { c in
+            (c.isFinite) ? min(1.0, max(0.0, c)) : 0.0
         }
 
         var cfg = RainForecastSurfaceConfiguration()
@@ -112,7 +135,7 @@ struct WeatherNowcastChart: View {
         cfg.fuzzTextureInnerOpacityMultiplier = 1.00
         cfg.fuzzTextureOuterOpacityMultiplier = 0.65
 
-        // Outer dust is part of the mock look and is widget-safe with the texture method.
+        // Outer mist is part of the mock look; enabled for widgets.
         cfg.fuzzOuterDustEnabled = true
         cfg.fuzzOuterDustEnabledInAppExtension = true
         cfg.fuzzOuterDustPassCount = 2

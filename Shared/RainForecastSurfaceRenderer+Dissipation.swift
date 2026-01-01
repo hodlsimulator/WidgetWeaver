@@ -6,8 +6,8 @@
 //
 //  Texture-based dissipation:
 //  - seamless tiling (no band seams)
-//  - additive interior grain + mist band
-//  - widget-safe path uses a single layer to avoid placeholder timeouts
+//  - additive interior grain + surface mist
+//  - widget-safe path stays constant-cost to avoid placeholder timeouts
 //
 
 import Foundation
@@ -103,14 +103,26 @@ extension RainForecastSurfaceRenderer {
 
         let tilePixels = max(24, min(cfg.fuzzTextureTilePixels, 1024))
 
+        let baseSeed = cfg.noiseSeed ^ stableSeed(from: curvePoints, displayScale: ds)
+
         let fineShading = tiledNoiseShading(
             image: fineNoise,
             bounds: clipRect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
             scaleMultiplier: 1.0,
-            seed: cfg.noiseSeed ^ stableSeed(from: curvePoints, displayScale: ds),
+            seed: baseSeed,
             jitterFraction: 0.22
+        )
+
+        let fineDetailShading = tiledNoiseShading(
+            image: fineNoise,
+            bounds: clipRect,
+            displayScale: ds,
+            desiredTilePixels: tilePixels,
+            scaleMultiplier: 0.62,
+            seed: baseSeed &+ 0x9E37_79B9_7F4A_7C15,
+            jitterFraction: 0.18
         )
 
         let coarseShading = tiledNoiseShading(
@@ -118,8 +130,8 @@ extension RainForecastSurfaceRenderer {
             bounds: clipRect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
-            scaleMultiplier: 1.85,
-            seed: (cfg.noiseSeed &+ 0x9E3779B97F4A7C15) ^ stableSeed(from: Array(curvePoints.reversed()), displayScale: ds),
+            scaleMultiplier: 1.75,
+            seed: (cfg.noiseSeed &+ 0xBF58_476D_1CE4_E5B9) ^ stableSeed(from: Array(curvePoints.reversed()), displayScale: ds),
             jitterFraction: 0.28
         )
 
@@ -127,68 +139,112 @@ extension RainForecastSurfaceRenderer {
             Gradient(stops: [
                 .init(color: .white.opacity(1.0), location: 0.0),
                 .init(color: .white.opacity(0.92), location: 0.18),
-                .init(color: .white.opacity(0.50), location: 0.70),
-                .init(color: .white.opacity(0.36), location: 1.0),
+                .init(color: .white.opacity(0.52), location: 0.70),
+                .init(color: .white.opacity(0.40), location: 1.0),
             ]),
             startPoint: CGPoint(x: clipRect.midX, y: yStart),
             endPoint: CGPoint(x: clipRect.midX, y: yEnd)
         )
 
-        let depthNearSurface = GraphicsContext.Shading.linearGradient(
+        // Above-surface fade: strongest just above the contour, vanishes upwards and below.
+        let aboveTopY = max(rect.minY, yStart - outerBand * 1.35)
+        let aboveBottomY = min(rect.maxY, yStart + outerBand * 0.55)
+        let aboveFade = GraphicsContext.Shading.linearGradient(
             Gradient(stops: [
-                .init(color: .white.opacity(1.0), location: 0.0),
-                .init(color: .white.opacity(0.78), location: 0.20),
+                .init(color: .white.opacity(0.0), location: 0.0),
+                .init(color: .white.opacity(1.0), location: 0.62),
                 .init(color: .white.opacity(0.0), location: 1.0),
             ]),
-            startPoint: CGPoint(x: clipRect.midX, y: yStart),
-            endPoint: CGPoint(x: clipRect.midX, y: yEnd)
+            startPoint: CGPoint(x: clipRect.midX, y: aboveTopY),
+            endPoint: CGPoint(x: clipRect.midX, y: aboveBottomY)
         )
 
         // Widget-safe path:
-        // - single offscreen layer
-        // - no destinationOut erosion passes
-        // - no outer dust passes
-        // This removes the placeholder regression while keeping the interior grain + mist band.
+        // - constant number of draw operations
+        // - 2 offscreen layers total (interior + exterior)
+        // - no per-speckle loops
         if isExtension {
-            let bodyA = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.60
-            let edgeA = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.98
+            let innerMulA = clamp01(cfg.fuzzTextureInnerOpacityMultiplier)
+            let outerMulA = clamp01(cfg.fuzzTextureOuterOpacityMultiplier)
+
+            let bodyA0 = min(1.0, maxAlpha * innerMulA * 0.86)
+            let bodyA1 = min(1.0, maxAlpha * innerMulA * 0.44)
+            let edgeA0 = min(1.0, maxAlpha * innerMulA * 0.98)
+            let edgeA1 = min(1.0, maxAlpha * innerMulA * 0.28)
 
             context.drawLayer { layer in
                 layer.clip(to: Path(clipRect))
                 layer.clip(to: corePath)
 
                 layer.blendMode = .plusLighter
-                layer.opacity = bodyA
+                layer.opacity = bodyA0
                 layer.fill(Path(clipRect), with: fineShading)
 
-                layer.opacity = edgeA
+                layer.opacity = bodyA1
+                layer.fill(Path(clipRect), with: fineDetailShading)
+
+                layer.opacity = edgeA0
                 layer.fill(innerBandPath, with: coarseShading)
+
+                layer.opacity = edgeA1
+                layer.fill(innerBandPath, with: fineDetailShading)
 
                 layer.blendMode = .destinationIn
                 layer.opacity = 1.0
                 layer.fill(Path(clipRect), with: depthFullBody)
                 layer.fill(Path(clipRect), with: xMaskShading)
+            }
 
-                // Add a very light surface falloff to keep the top edge “misty”.
-                layer.fill(Path(clipRect), with: depthNearSurface)
+            let allowOuter = cfg.fuzzOuterDustEnabled && cfg.fuzzOuterDustEnabledInAppExtension
+            if allowOuter {
+                var outside = Path()
+                outside.addRect(clipRect)
+                outside.addPath(corePath)
+
+                let blueA = min(1.0, maxAlpha * outerMulA * 0.62)
+                let whiteA = min(1.0, maxAlpha * outerMulA * 0.28)
+
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.clip(to: outerBandPath)
+                    layer.clip(to: outside, style: FillStyle(eoFill: true, antialiased: true))
+
+                    layer.blendMode = .normal
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: .color(cfg.fuzzColor.opacity(blueA)))
+
+                    layer.blendMode = .plusLighter
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
+
+                    layer.blendMode = .destinationIn
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: coarseShading)
+                    layer.fill(Path(clipRect), with: aboveFade)
+                    layer.fill(Path(clipRect), with: xMaskShading)
+                }
             }
 
             return
         }
 
-        // App path (richer layering; acceptable outside WidgetKit watchdog limits).
+        // App path (richer layering; outside WidgetKit watchdog limits).
 
-        // Body grain (subtle, everywhere under the surface).
+        // Body grain (everywhere under the surface).
         do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.42
-            if a > 0.0001 {
+            let a0 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.44
+            let a1 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.22
+            if (a0 + a1) > 0.0001 {
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
                     layer.clip(to: corePath)
 
                     layer.blendMode = .plusLighter
-                    layer.opacity = a
+                    layer.opacity = a0
                     layer.fill(Path(clipRect), with: fineShading)
+
+                    layer.opacity = a1
+                    layer.fill(Path(clipRect), with: fineDetailShading)
 
                     layer.blendMode = .destinationIn
                     layer.opacity = 1.0
@@ -198,9 +254,9 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Near-surface grain (stronger).
+        // Near-surface mist band (inside).
         do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.88
+            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.92
             if a > 0.0001 {
                 context.drawLayer { layer in
                     layer.clip(to: Path(clipRect))
@@ -213,8 +269,42 @@ extension RainForecastSurfaceRenderer {
 
                     layer.blendMode = .destinationIn
                     layer.opacity = 1.0
-                    layer.fill(Path(clipRect), with: depthNearSurface)
                     layer.fill(Path(clipRect), with: xMaskShading)
+                }
+            }
+        }
+
+        // Above-surface mist (white + blue), masked by seamless noise.
+        do {
+            let allowOuter = cfg.fuzzOuterDustEnabled
+            if allowOuter {
+                var outside = Path()
+                outside.addRect(clipRect)
+                outside.addPath(corePath)
+
+                let blueA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.70
+                let whiteA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.32
+
+                if (blueA + whiteA) > 0.0001 {
+                    context.drawLayer { layer in
+                        layer.clip(to: Path(clipRect))
+                        layer.clip(to: outerBandPath)
+                        layer.clip(to: outside, style: FillStyle(eoFill: true, antialiased: true))
+
+                        layer.blendMode = .normal
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: .color(cfg.fuzzColor.opacity(blueA)))
+
+                        layer.blendMode = .plusLighter
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
+
+                        layer.blendMode = .destinationIn
+                        layer.opacity = 1.0
+                        layer.fill(Path(clipRect), with: coarseShading)
+                        layer.fill(Path(clipRect), with: aboveFade)
+                        layer.fill(Path(clipRect), with: xMaskShading)
+                    }
                 }
             }
         }
@@ -259,82 +349,6 @@ extension RainForecastSurfaceRenderer {
 
                     context.blendMode = prevBlend
                     context.opacity = prevOpacity
-                }
-            }
-        }
-
-        // Inner edge mist highlight.
-        do {
-            let a = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.34
-            if a > 0.0001 {
-                context.drawLayer { layer in
-                    layer.clip(to: Path(clipRect))
-                    layer.clip(to: corePath)
-                    layer.clip(to: outerBandPath)
-
-                    layer.blendMode = .plusLighter
-                    layer.opacity = a
-                    layer.fill(Path(clipRect), with: fineShading)
-
-                    layer.blendMode = .destinationIn
-                    layer.opacity = 1.0
-                    layer.fill(Path(clipRect), with: depthNearSurface)
-                    layer.fill(Path(clipRect), with: xMaskShading)
-                }
-            }
-        }
-
-        // Outer dust (blue haze outside the body).
-        let allowOuterDust = cfg.fuzzOuterDustEnabled && (!WidgetWeaverRuntime.isRunningInAppExtension || cfg.fuzzOuterDustEnabledInAppExtension)
-        if allowOuterDust {
-            let passCount = WidgetWeaverRuntime.isRunningInAppExtension ? cfg.fuzzOuterDustPassCountInAppExtension : cfg.fuzzOuterDustPassCount
-            let passes = max(0, min(passCount, 3))
-
-            if passes > 0 {
-                let baseA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.78
-
-                var outside = Path()
-                outside.addRect(clipRect)
-                outside.addPath(corePath)
-
-                for pass in 0..<passes {
-                    let t = CGFloat(pass) / CGFloat(max(1, passes - 1))
-
-                    let bandMul = 1.05 + 1.25 * t
-                    let bandPath = contour.strokedPath(
-                        StrokeStyle(lineWidth: outerBand * 2.0 * bandMul, lineCap: .round, lineJoin: .round)
-                    )
-
-                    let a = baseA * (1.0 - 0.52 * Double(t))
-                    if a <= 0.0001 { continue }
-
-                    let dustShading = (pass == 0) ? coarseShading : fineShading
-
-                    let depthDust = GraphicsContext.Shading.linearGradient(
-                        Gradient(stops: [
-                            .init(color: .white.opacity(1.0), location: 0.0),
-                            .init(color: .white.opacity(0.65), location: 0.40),
-                            .init(color: .white.opacity(0.0), location: 1.0),
-                        ]),
-                        startPoint: CGPoint(x: clipRect.midX, y: yStart),
-                        endPoint: CGPoint(x: clipRect.midX, y: yEnd)
-                    )
-
-                    context.drawLayer { layer in
-                        layer.clip(to: Path(clipRect))
-                        layer.clip(to: bandPath)
-                        layer.clip(to: outside, style: FillStyle(eoFill: true, antialiased: true))
-
-                        layer.blendMode = .normal
-                        layer.opacity = 1.0
-                        layer.fill(Path(clipRect), with: .color(cfg.fuzzColor.opacity(a)))
-
-                        layer.blendMode = .destinationIn
-                        layer.opacity = 1.0
-                        layer.fill(Path(clipRect), with: dustShading)
-                        layer.fill(Path(clipRect), with: depthDust)
-                        layer.fill(Path(clipRect), with: xMaskShading)
-                    }
                 }
             }
         }
