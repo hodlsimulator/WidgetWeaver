@@ -22,20 +22,15 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let isPlaceholder = redactionReasons.contains(.placeholder)
             let isPrivacy = redactionReasons.contains(.privacy)
 
-            let showLive = !(isPlaceholder || isPrivacy)
-            let handsOpacity: Double = showLive ? 1.0 : 0.85
+            // The seconds hand isn’t sensitive content; allow it in placeholder too.
+            // Privacy redaction is still respected.
+            let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
             // Hour/minute: minute-boundary provider timeline entries (stable, reliable).
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
-            // Seconds hand:
-            // - Always draw a fallback needle at 12 o'clock via WidgetWeaverClockIconView.
-            // - In live, non-redacted renders, try to draw the time-aware seconds glyph on top.
-            //
-            // This avoids the “no seconds hand at all” failure mode if the glyph path fails to render.
             let showSecondsHand = (tickMode == .secondsSweep)
-            let showLiveSecondsGlyph = showSecondsHand && showLive
 
             ZStack {
                 // Base clock (hour + minute + fallback seconds at 12).
@@ -55,8 +50,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
                     minuteAnchor: minuteAnchor,
-                    showLiveSecondsHand: showLiveSecondsGlyph,
-                    handsOpacity: handsOpacity
+                    showsSeconds: showSecondsHand && !isPrivacy,
+                    handsOpacity: handsOpacity,
+                    isPlaceholder: isPlaceholder,
+                    isPrivacy: isPrivacy
                 )
             }
             .privacySensitive(isPrivacy)
@@ -96,8 +93,10 @@ private struct WWClockBaseAngles {
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
     let minuteAnchor: Date
-    let showLiveSecondsHand: Bool
+    let showsSeconds: Bool
     let handsOpacity: Double
+    let isPlaceholder: Bool
+    let isPrivacy: Bool
 
     @Environment(\.displayScale) private var displayScale
 
@@ -106,7 +105,7 @@ private struct WWClockSecondsAndHubOverlay: View {
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
 
             ZStack {
-                if showLiveSecondsHand {
+                if showsSeconds {
                     WWClockSecondHandGlyphView(
                         palette: palette,
                         minuteAnchor: minuteAnchor,
@@ -122,6 +121,17 @@ private struct WWClockSecondsAndHubOverlay: View {
                     scale: displayScale
                 )
                 .opacity(handsOpacity)
+
+                #if DEBUG
+                // Debug overlay to confirm what the system is doing.
+                // This stays in DEBUG only.
+                WWClockSecondsDebugOverlay(
+                    minuteAnchor: minuteAnchor,
+                    diameter: layout.dialDiameter,
+                    isPlaceholder: isPlaceholder,
+                    isPrivacy: isPrivacy
+                )
+                #endif
             }
             .frame(width: layout.dialDiameter, height: layout.dialDiameter)
             .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
@@ -137,46 +147,54 @@ private struct WWClockSecondHandGlyphView: View {
     let minuteAnchor: Date
     let diameter: CGFloat
 
-    // A timer range capped to < 60 seconds ensures the formatted output remains within the minute.
     private var timerRange: ClosedRange<Date> {
         let end = minuteAnchor.addingTimeInterval(59.999)
         return minuteAnchor...end
     }
 
     var body: some View {
-        ZStack {
-            Text(timerInterval: timerRange, countsDown: false)
-                // Force ASCII digits + ':' so OpenType `liga` substitution stays stable.
-                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-                .font(WWClockSecondHandFont.font(size: diameter))
-                .foregroundStyle(palette.accent)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
-                .frame(width: diameter, height: diameter, alignment: .center)
-                .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
-                .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
-            #if DEBUG
-            // Debug: show the exact timer string the system is producing.
-            // This makes it obvious whether it is "0:05", "00:05", etc.
-            Text(timerInterval: timerRange, countsDown: false)
-                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-                .font(.system(
-                    size: max(CGFloat(10.0), diameter * 0.08),
-                    weight: .regular,
-                    design: .monospaced
-                ))
-                .foregroundStyle(Color.red.opacity(0.85))
-                .frame(width: diameter, height: diameter, alignment: .bottom)
-                .padding(.bottom, max(CGFloat(6.0), diameter * 0.06))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            #endif
-        }
+        Text(timerInterval: timerRange, countsDown: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(WWClockSecondHandFont.font(size: diameter))
+            .foregroundStyle(palette.accent)
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: diameter, height: diameter, alignment: .center)
+            .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
+            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
+
+#if DEBUG
+private struct WWClockSecondsDebugOverlay: View {
+    let minuteAnchor: Date
+    let diameter: CGFloat
+    let isPlaceholder: Bool
+    let isPrivacy: Bool
+
+    private var timerRange: ClosedRange<Date> {
+        let end = minuteAnchor.addingTimeInterval(59.999)
+        return minuteAnchor...end
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("PH:\(isPlaceholder ? "1" : "0") PRIV:\(isPrivacy ? "1" : "0")")
+            Text(timerInterval: timerRange, countsDown: false)
+                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+        }
+        .font(.system(size: max(CGFloat(9.0), diameter * 0.06), weight: .semibold, design: .monospaced))
+        .foregroundStyle(Color.red.opacity(0.85))
+        .padding(.top, max(CGFloat(6.0), diameter * 0.05))
+        .padding(.leading, max(CGFloat(6.0), diameter * 0.05))
+        .frame(width: diameter, height: diameter, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+#endif
 
 // MARK: - Dial layout (matches WidgetWeaverClockIconView)
 
