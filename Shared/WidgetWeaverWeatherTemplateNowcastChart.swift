@@ -19,8 +19,7 @@ struct WeatherNowcastChart: View {
     let locationLongitude: Double?
 
     var body: some View {
-        let cal = Calendar.current
-        let base = cal.dateInterval(of: .minute, for: forecastStart)?.start ?? forecastStart
+        let base = forecastStart
 
         // WeatherKit minute forecasts are not guaranteed to contain a full 60 points.
         // When fewer points arrive (e.g. 35), stretching them to the full width makes the chart appear to
@@ -33,7 +32,8 @@ struct WeatherNowcastChart: View {
         let sorted = points.sorted { $0.date < $1.date }
         for p in sorted {
             let dt = p.date.timeIntervalSince(base)
-            let idx = Int((dt / 60.0).rounded())
+            if dt < 0 { continue }
+            let idx = Int(dt / 60.0)
 
             if idx < 0 || idx >= 60 { continue }
 
@@ -46,8 +46,8 @@ struct WeatherNowcastChart: View {
             // Expected intensity matches the “Rain now / Ends in Xm” logic.
             let expected = i0 * c0
 
-            intensityByMinute[idx] = expected
-            chanceByMinute[idx] = c0
+            intensityByMinute[idx] = max(intensityByMinute[idx], expected)
+            chanceByMinute[idx] = max(chanceByMinute[idx], c0)
         }
 
         // Remove “ghost rain” after the computed end by clamping sub-wet values to 0.
@@ -126,7 +126,7 @@ struct WeatherNowcastChart: View {
 
         // Texture (bounded draw calls).
         cfg.fuzzTextureEnabled = true
-        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 192 : 224
+        cfg.fuzzTextureTilePixels = WidgetWeaverRuntime.isRunningInAppExtension ? 160 : 224
         cfg.fuzzTextureGradientStops = WidgetWeaverRuntime.isRunningInAppExtension ? 22 : 30
 
         // Inner -> outer expansion.

@@ -130,9 +130,19 @@ extension RainForecastSurfaceRenderer {
             bounds: clipRect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
-            scaleMultiplier: 1.75,
+            scaleMultiplier: 1.28,
             seed: (cfg.noiseSeed &+ 0xBF58_476D_1CE4_E5B9) ^ stableSeed(from: Array(curvePoints.reversed()), displayScale: ds),
             jitterFraction: 0.28
+        )
+
+        let coarseDetailShading = tiledNoiseShading(
+            image: coarseNoise,
+            bounds: clipRect,
+            displayScale: ds,
+            desiredTilePixels: tilePixels,
+            scaleMultiplier: 0.86,
+            seed: baseSeed &+ 0x94D0_49BB_1331_11EB,
+            jitterFraction: 0.24
         )
 
         let depthFullBody = GraphicsContext.Shading.linearGradient(
@@ -169,8 +179,8 @@ extension RainForecastSurfaceRenderer {
 
             let bodyA0 = min(1.0, maxAlpha * innerMulA * 0.86)
             let bodyA1 = min(1.0, maxAlpha * innerMulA * 0.44)
-            let edgeA0 = min(1.0, maxAlpha * innerMulA * 0.98)
-            let edgeA1 = min(1.0, maxAlpha * innerMulA * 0.28)
+            let edgeA0 = min(1.0, maxAlpha * innerMulA * 0.78)
+            let edgeA1 = min(1.0, maxAlpha * innerMulA * 0.42)
 
             context.drawLayer { layer in
                 layer.clip(to: Path(clipRect))
@@ -185,6 +195,9 @@ extension RainForecastSurfaceRenderer {
 
                 layer.opacity = edgeA0
                 layer.fill(innerBandPath, with: coarseShading)
+
+                layer.opacity = edgeA0 * 0.55
+                layer.fill(innerBandPath, with: coarseDetailShading)
 
                 layer.opacity = edgeA1
                 layer.fill(innerBandPath, with: fineDetailShading)
@@ -217,9 +230,14 @@ extension RainForecastSurfaceRenderer {
                     layer.opacity = 1.0
                     layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
 
+                    // Fine speckles to break up tiled shapes (masked by the same noise/fade below).
+                    let speckA = min(1.0, maxAlpha * outerMulA * 0.10)
+                    layer.opacity = speckA
+                    layer.fill(Path(clipRect), with: fineDetailShading)
+
                     layer.blendMode = .destinationIn
                     layer.opacity = 1.0
-                    layer.fill(Path(clipRect), with: coarseShading)
+                    layer.fill(Path(clipRect), with: coarseDetailShading)
                     layer.fill(Path(clipRect), with: aboveFade)
                     layer.fill(Path(clipRect), with: xMaskShading)
                 }
@@ -267,6 +285,9 @@ extension RainForecastSurfaceRenderer {
                     layer.opacity = a
                     layer.fill(Path(clipRect), with: coarseShading)
 
+                    layer.opacity = a * 0.55
+                    layer.fill(Path(clipRect), with: coarseDetailShading)
+
                     layer.blendMode = .destinationIn
                     layer.opacity = 1.0
                     layer.fill(Path(clipRect), with: xMaskShading)
@@ -299,9 +320,14 @@ extension RainForecastSurfaceRenderer {
                         layer.opacity = 1.0
                         layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
 
+                        // Fine speckles to break up tiled shapes (masked by the same noise/fade below).
+                        let speckA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.10
+                        layer.opacity = speckA
+                        layer.fill(Path(clipRect), with: fineDetailShading)
+
                         layer.blendMode = .destinationIn
                         layer.opacity = 1.0
-                        layer.fill(Path(clipRect), with: coarseShading)
+                        layer.fill(Path(clipRect), with: coarseDetailShading)
                         layer.fill(Path(clipRect), with: aboveFade)
                         layer.fill(Path(clipRect), with: xMaskShading)
                     }
@@ -357,13 +383,7 @@ extension RainForecastSurfaceRenderer {
     // MARK: - Helpers
 
     private static func contourPath(from points: [CGPoint]) -> Path {
-        var p = Path()
-        guard let first = points.first else { return p }
-        p.move(to: first)
-        for i in 1..<points.count {
-            p.addLine(to: points[i])
-        }
-        return p
+        Self.buildCurveStrokePath(curvePoints: points)
     }
 
     private static func stableSeed(from points: [CGPoint], displayScale: CGFloat) -> UInt64 {
@@ -410,7 +430,9 @@ extension RainForecastSurfaceRenderer {
         let ox = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
         let oy = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
 
-        let origin = CGPoint(x: bounds.minX + ox, y: bounds.minY + oy)
+        let baseOx = desiredPt * 0.371
+        let baseOy = desiredPt * 0.173
+        let origin = CGPoint(x: bounds.minX + baseOx + ox, y: bounds.minY + baseOy + oy)
 
         return GraphicsContext.Shading.tiledImage(
             image,
@@ -518,22 +540,15 @@ extension RainForecastSurfaceRenderer {
             rect.minX + (CGFloat(i) + 0.5) * stepX
         }
 
-        let maxBandMul = max(cfg.fuzzTextureOuterBandMultiplier, cfg.fuzzTextureInnerBandMultiplier)
-        let pad = bandHalfWidth * CGFloat(maxBandMul) * 1.25
+        let padMul = max(cfg.fuzzTextureOuterBandMultiplier, cfg.fuzzTextureInnerBandMultiplier)
+        let pad = max(2.0, bandHalfWidth * CGFloat(max(1.0, padMul)) * 1.25)
 
-        let minX = max(rect.minX, min(xAt(firstActive), xAt(lastActive)) - pad)
-        let maxX = min(rect.maxX, max(xAt(firstActive), xAt(lastActive)) + pad)
+        let x0 = max(rect.minX, xAt(firstActive) - pad)
+        let x1 = min(rect.maxX, xAt(lastActive) + pad)
 
-        let yPad = pad * 0.95
-        let minY = max(rect.minY, baselineY - maxActiveH - yPad)
-        let maxY = baselineY
+        let top = max(rect.minY, baselineY - maxActiveH - pad)
+        let bottom = min(rect.maxY, baselineY + pad)
 
-        let w = max(0.0, maxX - minX)
-        let h = max(0.0, maxY - minY)
-        if w <= 0.0 || h <= 0.0 {
-            return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0.0, baselineY - rect.minY))
-        }
-
-        return CGRect(x: minX, y: minY, width: w, height: h)
+        return CGRect(x: x0, y: top, width: max(1.0, x1 - x0), height: max(1.0, bottom - top))
     }
 }
