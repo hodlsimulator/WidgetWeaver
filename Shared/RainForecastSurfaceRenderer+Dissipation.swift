@@ -54,9 +54,13 @@ extension RainForecastSurfaceRenderer {
             return
         }
 
+        // IMPORTANT:
+        // clip rect must be derived from curvePoints, not an assumed uniform stepX, otherwise
+        // the clip boundary can land inside the visible body (looks like a tile seam).
         let clipRect = computeDissipationClipRect(
             rect: rect,
             baselineY: baselineY,
+            curvePoints: curvePoints,
             heights: heights,
             strength: strength,
             bandHalfWidth: bandHalfWidth,
@@ -101,7 +105,10 @@ extension RainForecastSurfaceRenderer {
         let fineNoise = RainSurfaceSeamlessNoiseTile.image(.fine)
         let coarseNoise = RainSurfaceSeamlessNoiseTile.image(.coarse)
 
-        let tilePixels = max(24, min(cfg.fuzzTextureTilePixels, 1024))
+        // Larger on-screen tile reduces visible repetition without increasing generator cost.
+        // Clamped to avoid extreme scaling in widgets.
+        let widthDriven = Int((rect.width * ds) * (isExtension ? 0.55 : 0.45))
+        let tilePixels = max(24, min(max(cfg.fuzzTextureTilePixels, widthDriven), 1024))
 
         let baseSeed = cfg.noiseSeed ^ stableSeed(from: curvePoints, displayScale: ds)
 
@@ -230,9 +237,15 @@ extension RainForecastSurfaceRenderer {
                     layer.opacity = 1.0
                     layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
 
+                    // Add variation additively (continuous mist; avoids hard noise-mask edges).
+                    let wispA = min(1.0, maxAlpha * outerMulA * 0.10)
+                    if wispA > 0.0001 {
+                        layer.opacity = wispA
+                        layer.fill(Path(clipRect), with: coarseDetailShading)
+                    }
+
                     layer.blendMode = .destinationIn
                     layer.opacity = 1.0
-                    layer.fill(Path(clipRect), with: coarseDetailShading)
                     layer.fill(Path(clipRect), with: aboveFade)
                     layer.fill(Path(clipRect), with: xMaskShading)
                 }
@@ -290,7 +303,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Above-surface mist (white + blue), masked by seamless noise.
+        // Above-surface mist (white + blue), with additive variation (no hard noise-mask).
         do {
             let allowOuter = cfg.fuzzOuterDustEnabled
             if allowOuter {
@@ -315,9 +328,14 @@ extension RainForecastSurfaceRenderer {
                         layer.opacity = 1.0
                         layer.fill(Path(clipRect), with: .color(Color.white.opacity(whiteA)))
 
+                        let wispA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.10
+                        if wispA > 0.0001 {
+                            layer.opacity = wispA
+                            layer.fill(Path(clipRect), with: coarseDetailShading)
+                        }
+
                         layer.blendMode = .destinationIn
                         layer.opacity = 1.0
-                        layer.fill(Path(clipRect), with: coarseDetailShading)
                         layer.fill(Path(clipRect), with: aboveFade)
                         layer.fill(Path(clipRect), with: xMaskShading)
                     }
@@ -497,48 +515,55 @@ extension RainForecastSurfaceRenderer {
     static func computeDissipationClipRect(
         rect: CGRect,
         baselineY: CGFloat,
+        curvePoints: [CGPoint],
         heights: [CGFloat],
         strength: [Double],
         bandHalfWidth: CGFloat,
         configuration cfg: RainForecastSurfaceConfiguration
     ) -> CGRect {
-        let n = min(heights.count, strength.count)
+        let n = min(heights.count, strength.count, curvePoints.count)
         guard n > 0 else {
             return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0.0, baselineY - rect.minY))
         }
 
+        // X range must follow the real curve points (tapered endpoints are not uniformly spaced).
+        var minXCurve = CGFloat.greatestFiniteMagnitude
+        var maxXCurve: CGFloat = -CGFloat.greatestFiniteMagnitude
+        for i in 0..<n {
+            let x = curvePoints[i].x
+            minXCurve = min(minXCurve, x)
+            maxXCurve = max(maxXCurve, x)
+        }
+        if !minXCurve.isFinite || !maxXCurve.isFinite || maxXCurve <= minXCurve {
+            minXCurve = rect.minX
+            maxXCurve = rect.maxX
+        }
+
+        // Y range can stay based on active heights to limit work.
         let activeEps: Double = 0.002
-        var firstActive: Int = n
-        var lastActive: Int = -1
-
         var maxActiveH: CGFloat = 0.0
-
         for i in 0..<n {
             if strength[i] > activeEps && Double(heights[i]) > 0.0001 {
-                firstActive = min(firstActive, i)
-                lastActive = max(lastActive, i)
                 maxActiveH = max(maxActiveH, heights[i])
             }
         }
-
-        if firstActive > lastActive {
-            return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0.0, baselineY - rect.minY))
-        }
-
-        let stepX = rect.width / CGFloat(max(1, n))
-        let xAt: (Int) -> CGFloat = { i in
-            rect.minX + (CGFloat(i) + 0.5) * stepX
+        if maxActiveH <= 0.0001 {
+            maxActiveH = max(0.0, heights.prefix(n).max() ?? 0.0)
         }
 
         let maxBandMul = max(cfg.fuzzTextureOuterBandMultiplier, cfg.fuzzTextureInnerBandMultiplier)
-        let pad = bandHalfWidth * CGFloat(maxBandMul) * 1.25
+        let outerBand = bandHalfWidth * CGFloat(maxBandMul)
 
-        let minX = max(rect.minX, min(xAt(firstActive), xAt(lastActive)) - pad)
-        let maxX = min(rect.maxX, max(xAt(firstActive), xAt(lastActive)) + pad)
+        // Extra pad prevents visible hard edges at clipRect boundaries.
+        let padX = max(outerBand * 1.25, 18.0)
+        let padYTop = max(outerBand * 1.85, 24.0)
+        let padYBottom = max(outerBand * 0.35, 8.0)
 
-        let yPad = pad * 0.95
-        let minY = max(rect.minY, baselineY - maxActiveH - yPad)
-        let maxY = baselineY
+        let minX = max(rect.minX, minXCurve - padX)
+        let maxX = min(rect.maxX, maxXCurve + padX)
+
+        let minY = max(rect.minY, baselineY - maxActiveH - padYTop)
+        let maxY = min(rect.maxY, baselineY + padYBottom)
 
         let w = max(0.0, maxX - minX)
         let h = max(0.0, maxY - minY)

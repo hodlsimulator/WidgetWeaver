@@ -468,7 +468,7 @@ struct RainForecastSurfaceRenderer {
 
     static func drawRim(in context: inout GraphicsContext, curvePoints: [CGPoint], baselineY: CGFloat, displayScale ds: CGFloat, cfg: RainForecastSurfaceConfiguration) {
         let w = max(0.5, cfg.rimWidthPixels) / max(1.0, ds)
-        var p = buildCurveStrokePath(curvePoints: curvePoints)
+        let p = buildCurveStrokePath(curvePoints: curvePoints)
 
         context.stroke(
             p,
