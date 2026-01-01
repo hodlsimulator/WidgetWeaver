@@ -59,9 +59,9 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    static let maxEntriesPerTimeline: Int = 120
-    static let minuteStep: TimeInterval = 60.0
-    static let secondsSweepStep: TimeInterval = 1.0
+    // 24 hours of 5-minute entries (WidgetKit guidance is to avoid sub-5-minute schedules).
+    static let maxEntriesPerTimeline: Int = 288
+    static let step: TimeInterval = 300.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -70,18 +70,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-        let minuteAnchor = Self.floorToMinute(now)
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : .secondsSweep
-        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
-            ? WWClockTimelineConfig.secondsSweepStep
-            : WWClockTimelineConfig.minuteStep
+        let anchor = Self.floorToStep(now, step: WWClockTimelineConfig.step)
 
         return Entry(
-            date: minuteAnchor,
-            tickMode: tickMode,
-            tickSeconds: tickSeconds,
+            date: anchor,
+            tickMode: .minuteOnly,
+            tickSeconds: WWClockTimelineConfig.step,
             colourScheme: .classic
         )
     }
@@ -89,18 +83,12 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
-        let minuteAnchor = Self.floorToMinute(now)
-
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-        let tickMode: WidgetWeaverClockTickMode = isLowPower ? .minuteOnly : .secondsSweep
-        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
-            ? WWClockTimelineConfig.secondsSweepStep
-            : WWClockTimelineConfig.minuteStep
+        let anchor = Self.floorToStep(now, step: WWClockTimelineConfig.step)
 
         return Entry(
-            date: minuteAnchor,
-            tickMode: tickMode,
-            tickSeconds: tickSeconds,
+            date: anchor,
+            tickMode: .minuteOnly,
+            tickSeconds: WWClockTimelineConfig.step,
             colourScheme: scheme
         )
     }
@@ -108,50 +96,38 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
         let scheme = configuration.colourScheme ?? .classic
-        let isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-        let tickMode: WidgetWeaverClockTickMode = (context.isPreview || isLowPower)
-            ? .minuteOnly
-            : .secondsSweep
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        return makeMinuteTimeline(now: now, colourScheme: scheme, tickMode: tickMode)
+        return makeTimeline(now: now, colourScheme: scheme)
     }
 
-    private func makeMinuteTimeline(
-        now: Date,
-        colourScheme: WidgetWeaverClockColourScheme,
-        tickMode: WidgetWeaverClockTickMode
-    ) -> Timeline<Entry> {
-        let minuteAnchorNow = Self.floorToMinute(now)
-
-        let tickSeconds: TimeInterval = (tickMode == .secondsSweep)
-            ? WWClockTimelineConfig.secondsSweepStep
-            : WWClockTimelineConfig.minuteStep
+    private func makeTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+        let anchorNow = Self.floorToStep(now, step: WWClockTimelineConfig.step)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        var t = minuteAnchorNow
+        var t = anchorNow
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
                     date: t,
-                    tickMode: tickMode,
-                    tickSeconds: tickSeconds,
+                    tickMode: .minuteOnly,
+                    tickSeconds: WWClockTimelineConfig.step,
                     colourScheme: colourScheme
                 )
             )
-            t = t.addingTimeInterval(WWClockTimelineConfig.minuteStep)
+            t = t.addingTimeInterval(WWClockTimelineConfig.step)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
     }
 
-    private static func floorToMinute(_ date: Date) -> Date {
+    private static func floorToStep(_ date: Date, step: TimeInterval) -> Date {
+        guard step > 0 else { return date }
         let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t / 60.0) * 60.0
+        let floored = floor(t / step) * step
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
