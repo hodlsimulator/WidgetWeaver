@@ -6,7 +6,11 @@
 //
 //  Seamless (wrap-around) noise tiles used for the nowcast “dissipated” rain surface.
 //  These must be exactly seamless because GraphicsContext.Shading.tiledImage repeats them with filtering.
-//  If the first/last row or column differs, the repeat boundary becomes visible.
+//
+//  Important:
+//  This CGImage is created as premultiplied alpha.
+//  For premultiplied alpha, RGB must already be multiplied by A.
+//  If RGB stays at 255 while A is small, filtered sampling at tile boundaries produces bright seams.
 //
 
 import Foundation
@@ -130,10 +134,14 @@ enum RainSurfaceSeamlessNoiseTile {
 
                 let alpha = UInt8(max(0, min(255, Int((a * 255.0).rounded()))))
 
+                // Premultiplied alpha:
+                // For white, premultiplied RGB is simply A (0...255).
+                let premul = alpha
+
                 let i = (y * w + x) * 4
-                rgba[i + 0] = 255
-                rgba[i + 1] = 255
-                rgba[i + 2] = 255
+                rgba[i + 0] = premul
+                rgba[i + 1] = premul
+                rgba[i + 2] = premul
                 rgba[i + 3] = alpha
             }
         }
