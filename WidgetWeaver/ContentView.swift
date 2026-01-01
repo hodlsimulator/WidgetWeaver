@@ -77,6 +77,7 @@ struct ContentView: View {
         case remix
         case weather
         case steps
+        case importReview
 
         var id: Int {
             switch self {
@@ -87,6 +88,7 @@ struct ContentView: View {
             case .inspector: return 5
             case .remix: return 6
             case .steps: return 7
+            case .importReview: return 8
             }
         }
     }
@@ -95,6 +97,9 @@ struct ContentView: View {
 
     @State var showImportPicker: Bool = false
     @State var importInProgress: Bool = false
+    
+    @State var importReviewModel: WidgetWeaverImportReviewModel?
+    @State var importReviewSelection: Set<UUID> = []
 
     let store = WidgetSpecStore.shared
 
@@ -633,6 +638,10 @@ struct ContentView: View {
                     WidgetWeaverStepsSettingsView(onClose: { activeSheet = nil })
                 }
             )
+            
+        case .importReview:
+            return importReviewSheetAnyView()
+
         }
     }
 
@@ -640,7 +649,7 @@ struct ContentView: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            Task { await importDesigns(from: url) }
+            Task { await prepareImportReview(from: url) }
 
         case .failure(let error):
             if (error as NSError).code == NSUserCancelledError { return }

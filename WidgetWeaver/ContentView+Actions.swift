@@ -285,6 +285,150 @@ extension ContentView {
 
     // MARK: - Import
 
+    func prepareImportReview(from url: URL) async {
+        guard !importInProgress else { return }
+        importInProgress = true
+        defer { importInProgress = false }
+
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStart { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let payload = try WidgetWeaverImportReviewLogic.decodeImportFile(data: data)
+
+            let fileName = url.lastPathComponent
+            let model = WidgetWeaverImportReviewLogic.makeReviewModel(payload: payload, fileName: fileName)
+
+            let availableSlots = max(0, WidgetWeaverEntitlements.maxFreeDesigns - savedSpecs.count)
+            let initialSelection = WidgetWeaverImportReviewModel.defaultSelection(
+                items: model.items,
+                isProUnlocked: proManager.isProUnlocked,
+                availableSlots: availableSlots
+            )
+
+            importReviewModel = model
+            importReviewSelection = initialSelection
+            activeSheet = .importReview
+        } catch {
+            saveStatusMessage = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    func importReviewSelectAll() {
+        guard let model = importReviewModel else { return }
+        importReviewSelection = Set(model.items.map(\.id))
+    }
+
+    func importReviewSelectNone() {
+        importReviewSelection.removeAll()
+    }
+
+    func importReviewLimitState() -> WidgetWeaverImportReviewLimitState {
+        let availableSlots = max(0, WidgetWeaverEntitlements.maxFreeDesigns - savedSpecs.count)
+        return WidgetWeaverImportReviewModel.limitState(
+            isProUnlocked: proManager.isProUnlocked,
+            selectionCount: importReviewSelection.count,
+            availableSlots: availableSlots
+        )
+    }
+
+    func cancelImportReview() {
+        activeSheet = nil
+        importReviewModel = nil
+        importReviewSelection.removeAll()
+    }
+
+    func performImportReview() async {
+        guard let model = importReviewModel else {
+            cancelImportReview()
+            return
+        }
+
+        let selectedCount = importReviewSelection.count
+        let totalCount = model.items.count
+        let skippedNotSelected = max(0, totalCount - selectedCount)
+
+        guard selectedCount > 0 else {
+            saveStatusMessage = "No designs selected."
+            return
+        }
+
+        let limitState = importReviewLimitState()
+        if case .exceedsFreeLimit = limitState {
+            saveStatusMessage = "Selection exceeds free-tier limit."
+            return
+        }
+
+        guard !importInProgress else { return }
+        importInProgress = true
+        defer { importInProgress = false }
+
+        do {
+            let subsetPayload = WidgetWeaverImportReviewLogic.makeSubsetPayload(
+                payload: model.payload,
+                selectedIDs: importReviewSelection
+            )
+
+            let subsetData = try WidgetWeaverDesignExchangeCodec.encode(subsetPayload)
+            let result = try store.importDesigns(from: subsetData, makeDefault: false)
+
+            refreshSavedSpecs(preservingSelection: false)
+
+            if let firstID = result.importedIDs.first {
+                selectedSpecID = firstID
+                loadSelected()
+            }
+
+            lastWidgetRefreshAt = Date()
+
+            saveStatusMessage = "Imported \(result.importedCount) design\(result.importedCount == 1 ? "" : "s"). Skipped \(skippedNotSelected) (not selected)."
+
+            if !result.notes.isEmpty {
+                let suffix = result.notes.prefix(2).joined(separator: "\n")
+                saveStatusMessage += "\n\(suffix)"
+            }
+
+            if !proManager.isProUnlocked, result.importedCount == 0 {
+                activeSheet = .pro
+            } else {
+                cancelImportReview()
+            }
+        } catch {
+            saveStatusMessage = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    func importReviewSheetAnyView() -> AnyView {
+        guard let model = importReviewModel else {
+            return AnyView(
+                Text("Nothing to import.")
+                    .padding()
+                    .onAppear { activeSheet = nil }
+            )
+        }
+
+        let limitState = importReviewLimitState()
+        let showUnlockPro = !proManager.isProUnlocked
+
+        return AnyView(
+            WidgetWeaverImportReviewSheet(
+                model: model,
+                selection: $importReviewSelection,
+                limitState: limitState,
+                isImporting: importInProgress,
+                showUnlockPro: showUnlockPro,
+                onCancel: { cancelImportReview() },
+                onImport: { Task { await performImportReview() } },
+                onSelectAll: { importReviewSelectAll() },
+                onSelectNone: { importReviewSelectNone() },
+                onUnlockPro: { activeSheet = .pro }
+            )
+        )
+    }
+
     func importDesigns(from url: URL) async {
         guard !importInProgress else { return }
 
