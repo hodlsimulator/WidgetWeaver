@@ -5,7 +5,8 @@
 //  Created by . . on 01/01/26.
 //
 //  Seamless (wrap-around) noise tiles used for the nowcast “dissipated” rain surface.
-//  Fast generator: periodic value-noise sampled from precomputed grids (no per-pixel hashing).
+//  These must be exactly seamless because GraphicsContext.Shading.tiledImage repeats them with filtering.
+//  If the first/last row or column differs, the repeat boundary becomes visible.
 //
 
 import Foundation
@@ -19,7 +20,7 @@ enum RainSurfaceSeamlessNoiseTile {
         case coarse
     }
 
-    // Smaller tile drastically reduces cold-start cost in WidgetKit.
+    // Smaller tile reduces cold-start cost in WidgetKit.
     static let tileSizePixels: Int = 64
 
     static func image(_ kind: Kind) -> Image {
@@ -105,10 +106,10 @@ enum RainSurfaceSeamlessNoiseTile {
 
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
 
-        // Important: avoid duplicating the edge pixels (u/v == 0 and 1) in the authored tile.
-        // Duplicated edge pixels read as a faint grid when the tile repeats.
-        let denomX = Double(w)
-        let denomY = Double(h)
+        // Seam-free tiling requires the last pixel row/column to equal the first.
+        // Sampling u/v in [0, 1] inclusive (denominator = size - 1) guarantees exact edge matches.
+        let denomX = Double(max(1, w - 1))
+        let denomY = Double(max(1, h - 1))
 
         for y in 0..<h {
             let v = Double(y) / denomY
