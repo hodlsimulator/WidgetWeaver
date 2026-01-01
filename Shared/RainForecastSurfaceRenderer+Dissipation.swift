@@ -101,7 +101,7 @@ extension RainForecastSurfaceRenderer {
 
         let fineShading = tiledNoiseShading(
             image: fineNoise,
-            bounds: clipRect,
+            bounds: rect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
             scaleMultiplier: 1.0,
@@ -111,7 +111,7 @@ extension RainForecastSurfaceRenderer {
 
         let fineDetailShading = tiledNoiseShading(
             image: fineNoise,
-            bounds: clipRect,
+            bounds: rect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
             scaleMultiplier: 0.62,
@@ -121,7 +121,7 @@ extension RainForecastSurfaceRenderer {
 
         let coarseShading = tiledNoiseShading(
             image: coarseNoise,
-            bounds: clipRect,
+            bounds: rect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
             scaleMultiplier: 1.28,
@@ -131,7 +131,7 @@ extension RainForecastSurfaceRenderer {
 
         let coarseDetailShading = tiledNoiseShading(
             image: coarseNoise,
-            bounds: clipRect,
+            bounds: rect,
             displayScale: ds,
             desiredTilePixels: tilePixels,
             scaleMultiplier: 2.55,
@@ -300,7 +300,7 @@ extension RainForecastSurfaceRenderer {
 
                     let passShading = tiledNoiseShading(
                         image: coarseNoise,
-                        bounds: clipRect,
+                        bounds: rect,
                         displayScale: ds,
                         desiredTilePixels: tilePixels,
                         scaleMultiplier: 1.55 + CGFloat(pass) * 0.22,
@@ -371,22 +371,33 @@ extension RainForecastSurfaceRenderer {
     ) -> GraphicsContext.Shading {
         let ds = max(1.0, displayScale)
 
-        let authored = CGFloat(RainSurfaceSeamlessNoiseTile.tileSizePixels)
-        let desiredPt = CGFloat(max(16, desiredTilePixels)) / ds
-        let baseScale = desiredPt / max(1.0, authored)
+        let authoredPt = CGFloat(RainSurfaceSeamlessNoiseTile.tileSizePixels)
 
-        let scale = max(0.10, min(6.0, baseScale * max(0.05, scaleMultiplier)))
+        let basePx = CGFloat(max(16, desiredTilePixels))
+        let mul = max(0.05, scaleMultiplier)
+
+        // Quantise the scaled tile period to whole device pixels.
+        // Fractional pixel periods are a common cause of visible seams between repeated tiles.
+        let targetPx = max(12.0, min(2048.0, (basePx * mul).rounded(.toNearestOrAwayFromZero)))
+        let targetPt = targetPx / ds
 
         var prng = RainSurfacePRNG(seed: seed)
+
         let j = max(0.0, min(1.0, jitterFraction))
-        let jitter = desiredPt * j
+        let jitterPx = targetPx * j
 
-        let ox = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
-        let oy = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitter
+        let oxPx = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitterPx
+        let oyPx = (CGFloat(prng.nextFloat01()) - 0.5) * 2.0 * jitterPx
 
-        let baseOx = desiredPt * 0.37
-        let baseOy = desiredPt * 0.21
-        let origin = CGPoint(x: bounds.minX + baseOx + ox, y: bounds.minY + baseOy + oy)
+        let baseOxPx = targetPx * 0.37
+        let baseOyPx = targetPx * 0.21
+
+        // Snap origin to the device pixel grid to avoid hairline seams between tiles.
+        let originPxX = (bounds.minX * ds + baseOxPx + oxPx).rounded(.toNearestOrAwayFromZero)
+        let originPxY = (bounds.minY * ds + baseOyPx + oyPx).rounded(.toNearestOrAwayFromZero)
+        let origin = CGPoint(x: originPxX / ds, y: originPxY / ds)
+
+        let scale = max(0.10, min(6.0, targetPt / max(1.0, authoredPt)))
 
         return GraphicsContext.Shading.tiledImage(
             image,
@@ -404,55 +415,106 @@ extension RainForecastSurfaceRenderer {
         let n = min(heights.count, certainties01.count)
         guard n > 0 else { return [] }
 
-        let maxH = max(0.0001, Double(heights.prefix(n).max() ?? 0.0))
-        let invMaxH = 1.0 / maxH
+        var out = [Double](repeating: 0.0, count: n)
 
-        let thr = clamp01(cfg.fuzzChanceThreshold)
-        let trans = max(0.0001, cfg.fuzzChanceTransition)
-        let expo = max(0.05, cfg.fuzzChanceExponent)
+        let chanceThresh = clamp01(cfg.fuzzChanceThreshold)
+        let chanceTrans = max(0.0001, clamp01(cfg.fuzzChanceTransition))
+        let chanceExp = max(0.05, cfg.fuzzChanceExponent)
 
-        let floorBase = clamp01(cfg.fuzzChanceFloor)
+        let floorStrength = clamp01(cfg.fuzzChanceFloor)
         let minStrength = clamp01(cfg.fuzzChanceMinStrength)
 
-        let lowPow = max(0.05, cfg.fuzzLowHeightPower)
-        let lowBoost = max(0.0, cfg.fuzzLowHeightBoost)
-
-        var out = Array(repeating: 0.0, count: n)
+        let maxH = max(0.0, heights.prefix(n).max() ?? 0.0)
 
         for i in 0..<n {
+            let h = max(0.0, heights[i])
+
+            if h <= 0.0001 {
+                out[i] = 0.0
+                continue
+            }
+
             let c = clamp01(certainties01[i])
-            var t = (thr - c) / trans
-            t = clamp01(t)
-            t = pow(t, expo)
+            var u = 1.0 - c
 
-            var s = floorBase + (1.0 - floorBase) * t
-            s = max(s, minStrength)
+            if c >= chanceThresh {
+                u = 0.0
+            } else {
+                let t = (chanceThresh - c) / chanceTrans
+                u = clamp01(t)
+            }
 
-            let hn = clamp01(Double(heights[i]) * invMaxH)
-            let low = pow(max(0.0, 1.0 - hn), lowPow)
-            s *= (1.0 + lowBoost * low)
+            u = pow(u, chanceExp)
+            u = max(minStrength, u)
 
-            out[i] = clamp01(s)
+            // Boost fuzz near the baseline for thin rain.
+            if maxH > 0.0001 {
+                let frac = Double(h / maxH)
+                let lowPow = max(0.05, cfg.fuzzLowHeightPower)
+                let lowBoost = max(0.0, cfg.fuzzLowHeightBoost)
+                let low = pow(max(0.0, min(1.0, 1.0 - frac)), lowPow)
+                u *= (1.0 + lowBoost * low)
+            }
+
+            // Floor strength prevents full disappearance at intermediate certainties.
+            u = max(floorStrength, u)
+
+            out[i] = clamp01(u)
+        }
+
+        // Tail smoothing.
+        if cfg.fuzzTailMinutes > 0.0001 {
+            let tail = max(0.0, cfg.fuzzTailMinutes)
+            let tailCount = max(1, Int(tail.rounded()))
+
+            if tailCount >= 2, out.count >= 2 {
+                var sm = out
+                for i in 0..<out.count {
+                    var acc = 0.0
+                    var wsum = 0.0
+                    for k in 0..<tailCount {
+                        let j = min(out.count - 1, i + k)
+                        let w = 1.0 - (Double(k) / Double(max(1, tailCount - 1)))
+                        acc += sm[j] * w
+                        wsum += w
+                    }
+                    out[i] = (wsum > 0.0001) ? (acc / wsum) : out[i]
+                }
+            }
         }
 
         return out
     }
 
-    static func makeAlphaGradient(baseColor: Color, strength: [Double], minAlpha: Double, maxAlpha: Double, stops: Int) -> Gradient {
-        let n = max(1, strength.count)
-        let stopCount = max(2, stops)
+    static func makeAlphaGradient(
+        baseColor: Color,
+        strength: [Double],
+        minAlpha: Double,
+        maxAlpha: Double,
+        stops: Int
+    ) -> Gradient {
+        let n = strength.count
+        guard n > 0 else {
+            return Gradient(stops: [
+                .init(color: baseColor.opacity(minAlpha), location: 0.0),
+                .init(color: baseColor.opacity(minAlpha), location: 1.0)
+            ])
+        }
 
+        let sMin = minAlpha
+        let sMax = maxAlpha
+
+        let count = max(2, stops)
         var out: [Gradient.Stop] = []
-        out.reserveCapacity(stopCount)
+        out.reserveCapacity(count)
 
-        for i in 0..<stopCount {
-            let t = Double(i) / Double(stopCount - 1)
-            let idx = min(n - 1, max(0, Int(round(t * Double(n - 1)))))
-            let s0 = clamp01(strength[idx])
-            let minA = clamp01(minAlpha)
-            let maxA = clamp01(maxAlpha)
-            let a = clamp01(minA + (maxA - minA) * s0)
-            out.append(Gradient.Stop(color: baseColor.opacity(a), location: t))
+        for i in 0..<count {
+            let t = Double(i) / Double(count - 1)
+            let idx = Int((t * Double(n - 1)).rounded())
+            let v = clamp01(strength[min(n - 1, max(0, idx))])
+
+            let a = sMin + (sMax - sMin) * v
+            out.append(.init(color: baseColor.opacity(a), location: t))
         }
 
         return Gradient(stops: out)
