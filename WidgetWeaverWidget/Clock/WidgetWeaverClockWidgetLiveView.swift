@@ -28,73 +28,85 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let isPlaceholder = redactionReasons.contains(.placeholder)
 
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
-
-            let minuteAnchor = Self.floorToMinute(entryDate)
-            let base = WWClockBaseAngles(date: minuteAnchor)
-
             let showSeconds = (tickMode == .secondsSweep)
 
-            // Seconds hand is driven by a time-aware SwiftUI timer text.
-            // Allow a small spillover past the minute boundary so the hand can keep moving if the
-            // next WidgetKit minute entry arrives slightly late (including across the hour).
-            //
-            // The ligature font maps both "0:SS" and "1:SS" to the same second-hand glyphs, so
-            // we can safely render a short "1:xx" spillover without freezing at 59.
-            let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
-            let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
-            let timerRange = timerStart...timerEnd
+            // WidgetKit timeline swaps can land slightly late at minute boundaries.
+            // A live TimelineView drives the minute tick so the minute hand advances on-time,
+            // while still respecting WidgetKit pre-rendering (future entry dates).
+            let entryMinute = Self.floorToMinute(WidgetWeaverRenderClock.now)
+            let scheduleStart = Self.floorToMinute(Date())
 
-            let wallNow = Date()
-            let fontOK = WWClockSecondHandFont.isAvailable()
+            TimelineView(.periodic(from: scheduleStart, by: 60.0)) { timeline in
+                let liveMinute = Self.floorToMinute(timeline.date)
+                let minuteAnchor = Self.maxDate(entryMinute, liveMinute)
 
-            let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
-            let expectedString = String(format: "0:%02d", expectedSeconds)
+                let base = WWClockBaseAngles(date: minuteAnchor)
 
-            let redactLabel: String = {
-                if isPlaceholder && isPrivacy { return "placeholder+privacy" }
-                if isPlaceholder { return "placeholder" }
-                if isPrivacy { return "privacy" }
-                return "none"
-            }()
+                // Seconds hand is driven by a time-aware SwiftUI timer text.
+                // Allow a small spillover past the minute boundary so the hand can keep moving if
+                // a refresh arrives slightly late (including across the hour).
+                //
+                // The ligature font maps both "0:SS" and "1:SS" to the same second-hand glyphs, so
+                // a short "1:xx" spillover is safe and avoids freezing at 59.
+                let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
+                let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
+                let timerRange = timerStart...timerEnd
 
-            // IMPORTANT: side-effect call must be bound, otherwise @ViewBuilder tries to treat () as a View.
-            let _ = WWClockDebugLog.appendLazy(
-                category: "clock",
-                throttleID: "clockWidget.render",
-                minInterval: 30.0,
-                now: wallNow
-            ) {
-                let entryRef = Int(entryDate.timeIntervalSinceReferenceDate.rounded())
-                let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
-                let anchorRef = Int(minuteAnchor.timeIntervalSinceReferenceDate.rounded())
-                let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
-                let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
-                let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
+                let minuteID = Int(minuteAnchor.timeIntervalSince1970 / 60.0)
 
-                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                let wallNow = Date()
+                let fontOK = WWClockSecondHandFont.isAvailable()
+
+                let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
+                let expectedString = String(format: "0:%02d", expectedSeconds)
+
+                let redactLabel: String = {
+                    if isPlaceholder && isPrivacy { return "placeholder+privacy" }
+                    if isPlaceholder { return "placeholder" }
+                    if isPrivacy { return "privacy" }
+                    return "none"
+                }()
+
+                // IMPORTANT: side-effect call must be bound, otherwise @ViewBuilder tries to treat () as a View.
+                let _ = WWClockDebugLog.appendLazy(
+                    category: "clock",
+                    throttleID: "clockWidget.render",
+                    minInterval: 30.0,
+                    now: wallNow
+                ) {
+                    let entryRef = Int(entryDate.timeIntervalSinceReferenceDate.rounded())
+                    let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
+                    let anchorRef = Int(minuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                    let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
+                    let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
+                    let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
+
+                    return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                }
+
+                ZStack {
+                    WidgetWeaverClockIconView(
+                        palette: palette,
+                        hourAngle: .degrees(base.hour),
+                        minuteAngle: .degrees(base.minute),
+                        secondAngle: .degrees(0.0),
+                        showsSecondHand: false,
+                        showsHandShadows: true,
+                        showsGlows: true,
+                        showsCentreHub: false,
+                        handsOpacity: handsOpacity
+                    )
+
+                    WWClockSecondsAndHubOverlay(
+                        palette: palette,
+                        showsSeconds: showSeconds,
+                        timerRange: timerRange,
+                        handsOpacity: handsOpacity
+                    )
+                }
+                .id(minuteID)
+                .widgetURL(URL(string: "widgetweaver://clock"))
             }
-
-            ZStack {
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: .degrees(base.hour),
-                    minuteAngle: .degrees(base.minute),
-                    secondAngle: .degrees(0.0),
-                    showsSecondHand: false,
-                    showsHandShadows: true,
-                    showsGlows: true,
-                    showsCentreHub: false,
-                    handsOpacity: handsOpacity
-                )
-
-                WWClockSecondsAndHubOverlay(
-                    palette: palette,
-                    showsSeconds: showSeconds,
-                    timerRange: timerRange,
-                    handsOpacity: handsOpacity
-                )
-            }
-            .widgetURL(URL(string: "widgetweaver://clock"))
         }
     }
 
@@ -102,6 +114,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static func maxDate(_ a: Date, _ b: Date) -> Date {
+        (a > b) ? a : b
     }
 }
 
