@@ -34,12 +34,15 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
             let showSeconds = (tickMode == .secondsSweep)
 
+            // Seconds hand is driven by a time-aware SwiftUI timer text.
+            // Allow a small spillover past the minute boundary so the hand can keep moving if the
+            // next WidgetKit minute entry arrives slightly late (including across the hour).
+            //
+            // The ligature font maps both "0:SS" and "1:SS" to the same second-hand glyphs, so
+            // we can safely render a short "1:xx" spillover without freezing at 59.
             let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
             let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
-
-            // Clamp display to 0:59 so the ligature font never needs to render 1:xx.
-            let pauseTime = minuteAnchor.addingTimeInterval(59.0)
 
             let wallNow = Date()
             let fontOK = WWClockSecondHandFont.isAvailable()
@@ -66,10 +69,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let anchorRef = Int(minuteAnchor.timeIntervalSinceReferenceDate.rounded())
                 let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
                 let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
-                let pauseRef = Int(pauseTime.timeIntervalSinceReferenceDate.rounded())
                 let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
 
-                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) pauseRef=\(pauseRef) expected=\(expectedString)"
+                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
@@ -89,7 +91,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     palette: palette,
                     showsSeconds: showSeconds,
                     timerRange: timerRange,
-                    pauseTime: pauseTime,
                     handsOpacity: handsOpacity
                 )
             }
@@ -130,7 +131,6 @@ private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
     let showsSeconds: Bool
     let timerRange: ClosedRange<Date>
-    let pauseTime: Date
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
@@ -144,7 +144,6 @@ private struct WWClockSecondsAndHubOverlay: View {
                     WWClockSecondHandGlyphView(
                         palette: palette,
                         timerRange: timerRange,
-                        pauseTime: pauseTime,
                         diameter: layout.dialDiameter
                     )
                     .opacity(handsOpacity)
@@ -170,11 +169,10 @@ private struct WWClockSecondsAndHubOverlay: View {
 private struct WWClockSecondHandGlyphView: View {
     let palette: WidgetWeaverClockPalette
     let timerRange: ClosedRange<Date>
-    let pauseTime: Date
     let diameter: CGFloat
 
     var body: some View {
-        Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
+        Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
             .foregroundStyle(palette.accent)
