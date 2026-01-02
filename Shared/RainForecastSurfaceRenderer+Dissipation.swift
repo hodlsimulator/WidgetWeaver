@@ -6,7 +6,7 @@
 //
 //  Dissipation fuzz rendering.
 //  Tiling is confined to low-certainty slopes and to the body under the surface.
-//  Fix: prevent X-mask fade on geometric tapers by pinning endpoint strength to nearest non-zero height.
+//  Fix: ensure tapered ends show texture by (1) taper-edge boost and (2) height-dependent body cut.
 //
 
 import Foundation
@@ -39,8 +39,10 @@ extension RainForecastSurfaceRenderer {
 
         let maxAlpha = clamp01Local(cfg.fuzzMaxOpacity)
 
-        // Strength for tiling must be able to reach real zero in high-certainty areas,
-        // but must not fade at geometric taper endpoints (baseline anchors).
+        // Tiling strength:
+        // - Uses uncertainty where available.
+        // - Adds a taper-edge boost so geometric tails still show texture.
+        // - Pins baseline anchors to avoid X-mask gradient artefacts at taper endpoints.
         let tilingStrength = computeTilingStrengthPerPoint(
             heights: heights,
             certainties01: certainties01.map { Double($0) },
@@ -53,12 +55,12 @@ extension RainForecastSurfaceRenderer {
 
         let slopeStrength = computeSlopeStrengthPerPoint(heights: heights)
 
-        // Surface tiling: emphasise uncertain slopes, avoid flat peaks.
+        // Surface tiling: emphasise slopes, avoid flat peaks.
         let surfaceStrength: [Double] = zip(tilingStrength, slopeStrength).map { u, s in
             clamp01Local(u * (0.10 + 0.90 * s))
         }
 
-        // Body tiling: mostly uncertainty-driven, lightly slope-weighted to reduce plateau texture.
+        // Body tiling: mostly uncertainty/taper-driven, lightly slope-weighted.
         let bodyStrength: [Double] = zip(tilingStrength, slopeStrength).map { u, s in
             clamp01Local(u * (0.35 + 0.65 * s))
         }
@@ -92,7 +94,7 @@ extension RainForecastSurfaceRenderer {
         )
 
         // Body region: a lowered version of the core fill, so tiling starts underneath the surface.
-        // Local inset prevents small/taper heights from being completely erased.
+        // Height-dependent cut allows the body region to rise towards the surface on taper ends.
         let minY = curvePoints.map { $0.y }.min() ?? baselineY
         let peakHeight = max(0.0, baselineY - minY)
 
@@ -262,7 +264,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // PASS 2 — Body tiling underneath the surface, only where uncertainty exists.
+        // PASS 2 — Body tiling underneath the surface.
         do {
             let bodyMax = bodyStrength.max() ?? 0.0
             if bodyMax > 0.002 {
@@ -435,12 +437,70 @@ extension RainForecastSurfaceRenderer {
             out[i] = clamp01Local(u)
         }
 
-        // Critical: avoid endpoint fades on geometric tapers.
-        // Baseline anchors have height 0 so their strength is 0, which turns the X-mask into a gradient
-        // across the taper. The geometry already tapers the area to zero, so the mask is pinned instead.
+        // Add texture on tapered ends even when certainty is high.
+        applyTaperEdgeBoost(&out, heights: heights)
+
+        // Avoid X-mask gradients on baseline anchors (taper endpoints).
         pinStrengthAtZeroHeightEndpoints(&out, heights: heights)
 
         return out
+    }
+
+    private static func applyTaperEdgeBoost(_ strength: inout [Double], heights: [CGFloat]) {
+        let n = min(strength.count, heights.count)
+        guard n >= 3 else { return }
+
+        let eps: CGFloat = 0.0001
+
+        var firstNonZero: Int? = nil
+        for i in 0..<n {
+            if heights[i] > eps {
+                firstNonZero = i
+                break
+            }
+        }
+
+        var lastNonZero: Int? = nil
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            if heights[i] > eps {
+                lastNonZero = i
+                break
+            }
+        }
+
+        guard let f = firstNonZero, let l = lastNonZero, l > f else { return }
+
+        let span = l - f + 1
+        let edgeWindow = max(6, min(46, Int(Double(span) * 0.22)))
+
+        let maxH = Double(max(0.0, heights[f...l].max() ?? 0.0))
+        if maxH <= 0.0001 { return }
+
+        // Gain is deliberately < 1 so uncertainty can still dominate where present.
+        let gain: Double = 0.90
+
+        for i in f...l {
+            let h = Double(max(0.0, heights[i]))
+            if h <= 0.0001 { continue }
+
+            let d = min(i - f, l - i)
+
+            var edge = 1.0 - (Double(d) / Double(edgeWindow))
+            edge = clamp01Local(edge)
+            edge = smoothstepLocal(edge)
+            edge = pow(edge, 1.25)
+
+            let hr = h / maxH
+            var low = (0.62 - hr) / 0.62
+            low = clamp01Local(low)
+            low = smoothstepLocal(low)
+            low = pow(low, 1.10)
+
+            let taper = edge * low
+            let boosted = clamp01Local(taper * gain)
+
+            strength[i] = max(strength[i], boosted)
+        }
     }
 
     private static func pinStrengthAtZeroHeightEndpoints(_ strength: inout [Double], heights: [CGFloat]) {
@@ -623,6 +683,17 @@ extension RainForecastSurfaceRenderer {
         let inset = max(0.0, inset)
         let eps: CGFloat = 0.0001
 
+        let minY = curvePoints.map { $0.y }.min() ?? baselineY
+        let peakHeight = max(0.0, baselineY - minY)
+        let peakH = max(eps, peakHeight)
+
+        // Cut fraction rises with height:
+        // - Small heights (tapers): cut very little so the body region reaches up towards the surface.
+        // - Large heights (peaks): cut more so the body region stays deeper.
+        let cutMin: Double = 0.10
+        let cutMax: Double = 0.72
+        let cutExp: Double = 1.15
+
         var pts = curvePoints
         for i in 0..<pts.count {
             if abs(pts[i].y - baselineY) < eps {
@@ -630,9 +701,13 @@ extension RainForecastSurfaceRenderer {
             }
 
             let h = max(0.0, baselineY - pts[i].y)
+            if h <= eps { continue }
 
-            // Local inset avoids erasing the body region near thin/tapered ends.
-            let localInset = min(inset, h * 0.70)
+            let k = clamp01Local(Double(h / peakH))
+            let cutFrac = cutMin + (cutMax - cutMin) * pow(k, cutExp)
+
+            let localInsetByFrac = h * CGFloat(cutFrac)
+            let localInset = min(inset, localInsetByFrac)
 
             pts[i].y = min(baselineY, pts[i].y + localInset)
         }
