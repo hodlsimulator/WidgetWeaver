@@ -10,11 +10,11 @@ import SwiftUI
 struct NoiseMachineView: View {
     @StateObject private var model = NoiseMachineViewModel()
     @State private var expandedEQ: Set<Int> = []
-    
+
     var body: some View {
         List {
             masterSection
-            
+
             ForEach(0..<NoiseMixState.slotCount, id: \.self) { idx in
                 slotSection(index: idx)
             }
@@ -23,7 +23,7 @@ struct NoiseMachineView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear { model.onAppear() }
     }
-    
+
     private var masterSection: some View {
         Section {
             HStack(spacing: 12) {
@@ -34,7 +34,7 @@ struct NoiseMachineView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                
+
                 Button(role: .destructive) {
                     model.stop()
                 } label: {
@@ -43,7 +43,7 @@ struct NoiseMachineView: View {
                 }
                 .buttonStyle(.bordered)
             }
-            
+
             WWFloatSliderRow(
                 title: "Master volume",
                 value: Binding(
@@ -56,7 +56,7 @@ struct NoiseMachineView: View {
                     if !editing { model.setMasterVolume(model.state.masterVolume, commit: true) }
                 }
             )
-            
+
             Toggle(isOn: Binding(
                 get: { model.resumeOnLaunch },
                 set: { model.setResumeOnLaunch($0) }
@@ -69,7 +69,7 @@ struct NoiseMachineView: View {
             Text("If enabled, playback resumes automatically after a force-quit and relaunch.")
         }
     }
-    
+
     private func slotSection(index: Int) -> some View {
         Section {
             Toggle(isOn: Binding(
@@ -78,7 +78,7 @@ struct NoiseMachineView: View {
             )) {
                 Text("Enabled")
             }
-            
+
             WWFloatSliderRow(
                 title: "Volume",
                 value: Binding(
@@ -91,7 +91,7 @@ struct NoiseMachineView: View {
                     if !editing { model.setSlotVolume(index, volume: model.state.slots[index].volume, commit: true) }
                 }
             )
-            
+
             WWFloatSliderRow(
                 title: "Colour",
                 value: Binding(
@@ -104,7 +104,7 @@ struct NoiseMachineView: View {
                     if !editing { model.setSlotColour(index, colour: model.state.slots[index].colour, commit: true) }
                 }
             )
-            
+
             WWFloatSliderRow(
                 title: "Low cut",
                 value: Binding(
@@ -117,7 +117,7 @@ struct NoiseMachineView: View {
                     if !editing { model.setSlotLowCut(index, hz: model.state.slots[index].lowCutHz, commit: true) }
                 }
             )
-            
+
             WWFloatSliderRow(
                 title: "High cut",
                 value: Binding(
@@ -130,7 +130,7 @@ struct NoiseMachineView: View {
                     if !editing { model.setSlotHighCut(index, hz: model.state.slots[index].highCutHz, commit: true) }
                 }
             )
-            
+
             DisclosureGroup(
                 isExpanded: Binding(
                     get: { expandedEQ.contains(index) },
@@ -158,7 +158,7 @@ struct NoiseMachineView: View {
                             }
                         }
                     )
-                    
+
                     WWFloatSliderRow(
                         title: "Mid",
                         value: Binding(
@@ -173,7 +173,7 @@ struct NoiseMachineView: View {
                             }
                         }
                     )
-                    
+
                     WWFloatSliderRow(
                         title: "High",
                         value: Binding(
@@ -199,7 +199,7 @@ struct NoiseMachineView: View {
             Text("Colour blends white → pink → brown. Sliders are smoothed to avoid zipper noise.")
         }
     }
-    
+
     private func colourLabel(_ value: Float) -> String {
         if value < 0.25 { return "White" }
         if value < 0.75 { return "White → Pink" }
@@ -207,19 +207,19 @@ struct NoiseMachineView: View {
         if value < 1.75 { return "Pink → Brown" }
         return "Brown"
     }
-    
+
     private func hzString(_ hz: Float) -> String {
         if hz >= 1000 {
             return String(format: "%.1f kHz", Double(hz / 1000))
         }
         return String(format: "%.0f Hz", Double(hz))
     }
-    
+
     private func dbString(_ db: Float) -> String {
         if abs(db) < 0.05 { return "0 dB" }
         return String(format: "%.1f dB", Double(db))
     }
-    
+
     private func updatedEQ(index: Int, low: Float? = nil, mid: Float? = nil, high: Float? = nil) -> EQState {
         var eq = model.state.slots[index].eq
         if let low { eq.lowGainDB = low }
@@ -235,7 +235,7 @@ private struct WWFloatSliderRow: View {
     let range: ClosedRange<Float>
     let valueText: (Float) -> String
     let onEditingChanged: (Bool) -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -246,7 +246,7 @@ private struct WWFloatSliderRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            
+
             Slider(value: value, in: range, onEditingChanged: onEditingChanged)
         }
         .padding(.vertical, 4)

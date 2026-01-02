@@ -10,39 +10,36 @@ import SwiftUI
 @main
 struct WidgetWeaverApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    
+
     init() {
-        AppGroup.ensureExistence()
+        AppGroup.ensureImagesDirectoryExists()
+
+        Task {
+            await NoiseMachineController.shared.bootstrapOnLaunch()
+        }
     }
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .tint(Color("AccentColor"))
                 .task {
-                    await NoiseMachineController.shared.bootstrapOnLaunch()
-
-                    #if !DEBUG
+#if !DEBUG
                     await MainActor.run {
-                        WidgetWeaverWidgetRefresh.forceKickWidgetCacheWarmUp()
+                        WidgetWeaverWidgetRefresh.forceKick()
                     }
-                    #endif
+#endif
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background {
                         Task { await NoiseMachineController.shared.flushPersistence() }
                     }
 
-                    #if !DEBUG
+#if !DEBUG
                     if phase == .background {
-                        Task {
-                            try? await Task.sleep(for: .seconds(0.5))
-                            await MainActor.run {
-                                WidgetWeaverWidgetRefresh.forceKickWidgetsFromBackground()
-                            }
-                        }
+                        WidgetWeaverWidgetRefresh.kickIfNeeded()
                     }
-                    #endif
+#endif
                 }
         }
     }

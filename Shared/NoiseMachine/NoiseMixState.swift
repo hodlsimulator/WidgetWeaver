@@ -9,54 +9,72 @@ import Foundation
 
 public struct NoiseMixState: Codable, Hashable, Sendable {
     public static let slotCount: Int = 4
-    
+
     public var wasPlaying: Bool
     public var masterVolume: Float
     public var slots: [NoiseSlotState]
     public var updatedAt: Date
-    
+
     public init(
         wasPlaying: Bool,
         masterVolume: Float,
         slots: [NoiseSlotState],
-        updatedAt: Date = Date()
+        updatedAt: Date
     ) {
         self.wasPlaying = wasPlaying
         self.masterVolume = masterVolume
         self.slots = slots
         self.updatedAt = updatedAt
-        normalise()
     }
-    
-    public static func `default`() -> NoiseMixState {
-        NoiseMixState(
+
+    public static var `default`: NoiseMixState {
+        let slots = (0..<slotCount).map { idx in
+            NoiseSlotState(
+                enabled: idx == 0,
+                volume: idx == 0 ? 0.65 : 0.0,
+                colour: 0.0,
+                lowCutHz: 20,
+                highCutHz: 18_000,
+                eq: .default
+            )
+        }
+
+        return NoiseMixState(
             wasPlaying: false,
             masterVolume: 0.8,
-            slots: (0..<slotCount).map { NoiseSlotState.default(index: $0) },
+            slots: slots,
             updatedAt: Date()
         )
     }
-    
-    public mutating func normalise() {
-        masterVolume = masterVolume.clamped(to: 0...1)
-        
-        if slots.count < Self.slotCount {
-            for i in slots.count..<Self.slotCount {
-                slots.append(.default(index: i))
-            }
-        } else if slots.count > Self.slotCount {
-            slots = Array(slots.prefix(Self.slotCount))
-        }
-        
-        for i in 0..<slots.count {
-            slots[i].normalise()
-        }
-    }
-    
-    public var normalisedWithUpdateTimestamp: NoiseMixState {
+
+    public func sanitised() -> NoiseMixState {
         var s = self
-        s.updatedAt = Date()
-        s.normalise()
+        if s.slots.count != Self.slotCount {
+            s.slots = (0..<Self.slotCount).map { idx in
+                if self.slots.indices.contains(idx) {
+                    return self.slots[idx]
+                }
+                return NoiseSlotState.default
+            }
+        }
+
+        s.masterVolume = s.masterVolume.clamped(to: 0...1)
+
+        s.slots = s.slots.map { slot in
+            var slot = slot
+            slot.volume = slot.volume.clamped(to: 0...1)
+            slot.colour = slot.colour.clamped(to: 0...2)
+
+            slot.lowCutHz = slot.lowCutHz.clamped(to: 10...2000)
+            slot.highCutHz = slot.highCutHz.clamped(to: 500...20_000)
+            if slot.lowCutHz >= slot.highCutHz {
+                slot.highCutHz = min(20_000, slot.lowCutHz + 1000)
+            }
+
+            slot.eq = slot.eq.sanitised()
+            return slot
+        }
+
         return s
     }
 }
@@ -64,15 +82,11 @@ public struct NoiseMixState: Codable, Hashable, Sendable {
 public struct NoiseSlotState: Codable, Hashable, Sendable {
     public var enabled: Bool
     public var volume: Float
-    
-    /// 0 = white, 1 = pink, 2 = brown
     public var colour: Float
-    
     public var lowCutHz: Float
     public var highCutHz: Float
-    
     public var eq: EQState
-    
+
     public init(
         enabled: Bool,
         volume: Float,
@@ -87,41 +101,17 @@ public struct NoiseSlotState: Codable, Hashable, Sendable {
         self.lowCutHz = lowCutHz
         self.highCutHz = highCutHz
         self.eq = eq
-        normalise()
     }
-    
-    public static func `default`(index: Int) -> NoiseSlotState {
-        let defaults: [(Bool, Float, Float)] = [
-            (true, 0.35, 1.0),
-            (true, 0.30, 0.0),
-            (false, 0.25, 2.0),
-            (false, 0.25, 1.0)
-        ]
-        
-        let tuple = defaults.indices.contains(index) ? defaults[index] : (false, 0.25, 1.0)
-        
-        return NoiseSlotState(
-            enabled: tuple.0,
-            volume: tuple.1,
-            colour: tuple.2,
+
+    public static var `default`: NoiseSlotState {
+        NoiseSlotState(
+            enabled: false,
+            volume: 0.5,
+            colour: 0.0,
             lowCutHz: 20,
             highCutHz: 18_000,
-            eq: .default()
+            eq: .default
         )
-    }
-    
-    public mutating func normalise() {
-        volume = volume.clamped(to: 0...1)
-        colour = colour.clamped(to: 0...2)
-        
-        lowCutHz = lowCutHz.clamped(to: 10...10_000)
-        highCutHz = highCutHz.clamped(to: 50...20_000)
-        
-        if lowCutHz > highCutHz {
-            swap(&lowCutHz, &highCutHz)
-        }
-        
-        eq.normalise()
     }
 }
 
@@ -129,27 +119,22 @@ public struct EQState: Codable, Hashable, Sendable {
     public var lowGainDB: Float
     public var midGainDB: Float
     public var highGainDB: Float
-    
+
     public init(lowGainDB: Float, midGainDB: Float, highGainDB: Float) {
         self.lowGainDB = lowGainDB
         self.midGainDB = midGainDB
         self.highGainDB = highGainDB
-        normalise()
     }
-    
-    public static func `default`() -> EQState {
+
+    public static var `default`: EQState {
         EQState(lowGainDB: 0, midGainDB: 0, highGainDB: 0)
     }
-    
-    public mutating func normalise() {
-        lowGainDB = lowGainDB.clamped(to: -12...12)
-        midGainDB = midGainDB.clamped(to: -12...12)
-        highGainDB = highGainDB.clamped(to: -12...12)
-    }
-}
 
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
+    public func sanitised() -> EQState {
+        EQState(
+            lowGainDB: lowGainDB.clamped(to: -12...12),
+            midGainDB: midGainDB.clamped(to: -12...12),
+            highGainDB: highGainDB.clamped(to: -12...12)
+        )
     }
 }

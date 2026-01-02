@@ -5,228 +5,282 @@
 //  Created by . . on 12/18/25.
 //
 
-//
-//  WidgetWeaverAboutView.swift
-//  WidgetWeaver
-//
-//  Created by Conor Nolan on 29/12/2024.
-//
-
+import Foundation
 import SwiftUI
 import WidgetKit
+import UIKit
+import EventKit
 
 struct WidgetWeaverAboutView: View {
-    @Environment(\.openURL) private var openURL
-    
     @ObservedObject var proManager: WidgetWeaverProManager
-    
-    var forceUseWeatherMockData: Bool
-    var resetAllWidgetWeaverData: (() -> Void)?
-    var notificationAccessAction: (() -> Void)?
-    var notificationDiagnosticsAction: (() -> Void)?
-    var requestProAction: (() -> Void)?
-    
-    private var isProEnabled: Bool { proManager.isProEnabled }
-    
+
+    /// Adds a template into the design library.
+    /// The caller owns ID/UUID creation and any persistence details.
+    var onAddTemplate: (_ spec: WidgetSpec, _ makeDefault: Bool) -> Void
+
+    var onShowPro: () -> Void
+    var onShowWidgetHelp: () -> Void
+    var onOpenWeatherSettings: () -> Void
+    var onOpenStepsSettings: () -> Void
+    var onGoToLibrary: () -> Void
+
+    @State private var isListScrolling = false
+    @State var statusMessage: String = ""
+
     var body: some View {
-        aboutList
-            .background(Color(uiColor: .systemBackground))
-            .task {
-                WidgetWeaverWidgetRefresh.kickWidgetCacheWarmUp()
+        ZStack {
+            WidgetWeaverAboutBackground()
+
+            List {
+                aboutHeaderSection
+
+                featuredWeatherSection
+                featuredClockSection
+                featuredCalendarSection
+                featuredStepsSection
+
+                starterTemplatesSection
+                proTemplatesSection
+
+                capabilitiesSection
+                interactiveButtonsSection
+
+                noiseMachineSection
+
+                variablesSection
+                aiSection
+                privacySection
+
+                sharingSection
+                proSection
+                diagnosticsSection
+
+                supportSection
             }
-            .task {
-                let widgetCenter = WidgetCenter.shared
-                let currentConfigs = await widgetCenter.currentConfigurations()
-                let currentKinds = Set(currentConfigs.map(\.kind))
-                
-                WidgetWeaverWidgetDebug.configuredKinds = currentKinds
+            .listStyle(.plain)
+            .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.immediately)
+            .scrollClipDisabled()
+            .listSectionSeparator(.hidden)
+            .onScrollPhaseChange { _, newPhase in
+                isListScrolling = !newPhase.isIdle
             }
-            .navigationTitle("Explore")
-    }
-    
-    var aboutList: some View {
-        List {
-            aboutHeaderSection
-            
-            featuredWeatherSection
-            featuredLiveIndicatorSection
-            featuredStepsSection
-            featuredNextUpSection
-            featuredVariableSection
-            featuredVariableLocationSection
-            featuredDynamicTypeSection
-            featuredCountdownSection
-            featuredGridSection
-            featuredLargeTitleSection
-            featuredStyledTextSection
-            featuredSymbolsSection
-            featuredButtonsSection
-            
-            capabilitiesSection
-            interactiveButtonsSection
-            noiseMachineSection
-            variablesSection
-            aiSection
-            privacySection
-            
-            sharingSection
-            proSection
-            diagnosticsSection
-            supportSection
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("Explore")
+        .navigationBarTitleDisplayMode(.large)
     }
-}
 
-// MARK: - Sharing
+    // MARK: - Helpers
 
-extension WidgetWeaverAboutView {
-    
+    var appVersionString: String {
+        let bundle = Bundle.main
+        let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "v\(version) (\(build))"
+    }
+
+    func copyToPasteboard(_ string: String) {
+        UIPasteboard.general.string = string
+        withAnimation(.spring(duration: 0.35)) {
+            statusMessage = "Copied"
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            await MainActor.run {
+                withAnimation(.spring(duration: 0.35)) {
+                    if statusMessage == "Copied" { statusMessage = "" }
+                }
+            }
+        }
+    }
+
+    func handleAdd(template: WidgetSpec, makeDefault: Bool) {
+        onAddTemplate(template, makeDefault)
+        withAnimation(.spring(duration: 0.35)) {
+            statusMessage = makeDefault ? "Added & set as default" : "Added"
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            await MainActor.run {
+                withAnimation(.spring(duration: 0.35)) {
+                    if statusMessage == "Added" || statusMessage == "Added & set as default" {
+                        statusMessage = ""
+                    }
+                }
+            }
+        }
+    }
+
+    func presentCalendarPermissionFlow() {
+        let store = EKEventStore()
+        store.requestFullAccessToEvents { granted, error in
+            DispatchQueue.main.async {
+                if granted {
+                    withAnimation(.spring(duration: 0.35)) {
+                        statusMessage = "Calendar access granted"
+                    }
+                } else if let error {
+                    withAnimation(.spring(duration: 0.35)) {
+                        statusMessage = "Calendar access denied: \(error.localizedDescription)"
+                    }
+                } else {
+                    withAnimation(.spring(duration: 0.35)) {
+                        statusMessage = "Calendar access denied"
+                    }
+                }
+
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await MainActor.run {
+                        withAnimation(.spring(duration: 0.35)) {
+                            statusMessage = ""
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Sharing
+
     var sharingSection: some View {
         Section {
-            WidgetWeaverAboutCard(accent: .blue) {
-                WidgetWeaverAboutCardTitle(
-                    "Share as a Widget",
-                    systemImage: "square.and.arrow.up"
-                )
-                
-                Text("Share your widget designs with others. They can load them into WidgetWeaver instantly.")
-                    .foregroundStyle(.secondary)
-                
-                WidgetWeaverAboutBulletList {
-                    WidgetWeaverAboutBullet(
-                        "Use the Share button in the editor"
-                    )
-                    
-                    WidgetWeaverAboutBullet(
-                        "Generates a compact WidgetWeaver URL"
-                    )
-                    
-                    WidgetWeaverAboutBullet(
-                        "Recipients can import with one tap"
-                    )
+            WidgetWeaverAboutCard(accent: .orange) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Sharing")
+                            .font(.headline)
+                        Spacer()
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Export widget designs as images or JSON so they can be shared or versioned.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Export images for previews and social posts.",
+                        "Export JSON for backups and version control.",
+                        "Import JSON to restore or move designs across devices."
+                    ])
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Sharing", systemImage: "square.and.arrow.up", accent: .blue)
-        } footer: {
-            Text("Shared widgets can include most styling and data features, and can optionally include interactive elements depending on the widget type.")
+            WidgetWeaverAboutSectionHeader("Sharing", systemImage: "square.and.arrow.up", accent: .orange)
         }
     }
-}
 
-// MARK: - Pro
+    // MARK: - Pro
 
-extension WidgetWeaverAboutView {
-    
     var proSection: some View {
         Section {
-            WidgetWeaverAboutCard(accent: .indigo) {
-                WidgetWeaverAboutCardTitle(
-                    "WidgetWeaver Pro",
-                    systemImage: "sparkles"
-                )
-                
-                Text("Unlock additional templates, design tools, and faster iteration workflows.")
-                    .foregroundStyle(.secondary)
-                
-                WidgetWeaverAboutBulletList {
-                    WidgetWeaverAboutBullet(
-                        "Extra widget templates"
-                    )
-                    
-                    WidgetWeaverAboutBullet(
-                        "Premium styling options"
-                    )
-                    
-                    WidgetWeaverAboutBullet(
-                        "More design flexibility"
-                    )
-                }
-                
-                if isProEnabled {
-                    WidgetWeaverAboutBadgeRow(
-                        title: "Pro enabled",
-                        systemImage: "checkmark.seal.fill",
-                        accent: .green
-                    )
-                    .padding(.top, 8)
-                } else {
-                    Button {
-                        requestProAction?()
-                    } label: {
-                        Label("Upgrade to Pro", systemImage: "sparkles")
-                            .frame(maxWidth: .infinity, alignment: .center)
+            WidgetWeaverAboutCard(accent: .cyan) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Pro")
+                            .font(.headline)
+                        Spacer()
+                        Text(proManager.isProUnlocked ? "Unlocked" : "Locked")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(proManager.isProUnlocked ? .green : .secondary)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 8)
+
+                    Text("Unlock the full template set and advanced widget features.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Full template catalogue",
+                        "More styling controls",
+                        "More widget types"
+                    ])
+
+                    if !proManager.isProUnlocked {
+                        Button {
+                            onShowPro()
+                        } label: {
+                            Label("View Pro", systemImage: "sparkles")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Pro", systemImage: "sparkles", accent: .indigo)
-        } footer: {
-            Text("Pro features are optional. The free version is fully usable for building and running widgets.")
+            WidgetWeaverAboutSectionHeader("Pro", systemImage: "sparkles", accent: .cyan)
         }
     }
-}
 
-// MARK: - Diagnostics
+    // MARK: - Diagnostics
 
-extension WidgetWeaverAboutView {
-    
+    @State private var designCount: Int? = nil
+
     var diagnosticsSection: some View {
         Section {
-            WidgetWeaverAboutCard(accent: .orange) {
-                WidgetWeaverAboutCardTitle(
-                    "Diagnostics",
-                    systemImage: "stethoscope"
-                )
-                
-                Text("Tools for checking widget refresh behaviour, notification access, and debugging templates.")
-                    .foregroundStyle(.secondary)
-                
-                VStack(spacing: 10) {
-                    if let notificationAccessAction {
-                        Button {
-                            notificationAccessAction()
-                        } label: {
-                            Label("Check Notification Access", systemImage: "bell.badge")
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .buttonStyle(.bordered)
+            WidgetWeaverAboutCard(accent: .gray) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Diagnostics")
+                            .font(.headline)
+                        Spacer()
+                        Image(systemName: "wrench.and.screwdriver")
+                            .foregroundStyle(.secondary)
                     }
-                    
-                    if let notificationDiagnosticsAction {
-                        Button {
-                            notificationDiagnosticsAction()
-                        } label: {
-                            Label("Notification Diagnostics", systemImage: "ladybug")
-                                .frame(maxWidth: .infinity, alignment: .center)
+
+                    Text("Basic app metadata and counts to help debug.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("App")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(appVersionString)
+                                .monospacedDigit()
                         }
-                        .buttonStyle(.bordered)
+
+                        HStack {
+                            Text("Designs")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(designCount.map(String.init) ?? "—")
+                                .monospacedDigit()
+                        }
                     }
-                    
-                    if let resetAllWidgetWeaverData {
-                        Button(role: .destructive) {
-                            resetAllWidgetWeaverData()
-                        } label: {
-                            Label("Reset All WidgetWeaver Data", systemImage: "trash")
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        }
-                        .buttonStyle(.bordered)
+                    .font(.subheadline)
+
+                    Button {
+                        copyToPasteboard(appVersionString)
+                    } label: {
+                        Label("Copy version", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .task {
+                    if designCount == nil {
+                        let count = (try? WidgetDesignStore().readAll().count) ?? 0
+                        await MainActor.run { designCount = count }
                     }
                 }
-                .padding(.top, 10)
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Diagnostics", systemImage: "stethoscope", accent: .orange)
-        } footer: {
-            Text("Resetting data deletes local designs and cached assets. Widgets may take a moment to repopulate afterwards.")
+            WidgetWeaverAboutSectionHeader("Diagnostics", systemImage: "wrench.and.screwdriver", accent: .gray)
         }
     }
 }
