@@ -18,58 +18,43 @@ struct ContentView: View {
 
     @StateObject var proManager = WidgetWeaverProManager()
 
-    @AppStorage("widgetweaver.editor.autoThemeFromImage") var autoThemeFromImage: Bool = true
+    @State var store: WidgetWeaverDesignStore = .shared
+    @State var selectedSpecID: String = ""
+    @State var defaultSpecID: String = ""
 
-    @State private var librarySearchText: String = ""
-    @AppStorage("library.sort") private var librarySortRaw: String = "updated"
-    @AppStorage("library.filter") private var libraryFilterRaw: String = "all"
+    @State var draftSpecs: [String: WidgetSpec] = [:]
 
     @State var savedSpecs: [WidgetSpec] = []
-    @State var defaultSpecID: UUID?
-    @State var selectedSpecID: UUID = UUID()
+    @State var activeSheet: ActiveSheet? = nil
 
-    @State var designName: String = "WidgetWeaver"
-    @State var styleDraft: StyleDraft = .defaultDraft
-    @State var actionBarDraft: ActionBarDraft = .defaultDraft
-
-    @State var baseDraft: FamilyDraft = .defaultDraft
-    @State var matchedSetEnabled: Bool = false
-    @State var matchedDrafts: MatchedDrafts = MatchedDrafts(
-        small: .defaultDraft,
-        medium: .defaultDraft,
-        large: .defaultDraft
-    )
-
-    @State var pickedPhoto: PhotosPickerItem?
-    @State var lastImageThemeFileName: String = ""
-    @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
-
-    @State var remixVariants: [WidgetWeaverRemixEngine.Variant] = []
-
-    @State var aiPrompt: String = ""
-    @State var aiMakeGeneratedDefault: Bool = true
-    @State var aiPatchInstruction: String = ""
-    @State var aiStatusMessage: String = ""
-
-    @State var previewFamily: WidgetFamily = .systemSmall
-
-    @State var lastSavedAt: Date?
-    @State var lastWidgetRefreshAt: Date?
     @State var saveStatusMessage: String = ""
 
-    @State var showDeleteConfirmation: Bool = false
-    @State var showImageCleanupConfirmation: Bool = false
-    @State var showRevertConfirmation: Bool = false
+    @State var previewFamily: WidgetFamily = .systemSmall
+    @State var previewLockFamilyRaw: LockWidgetFamilyToken = .accessoryRectangular
 
-    enum AppTab: Int, Hashable {
-        case explore = 1
-        case library = 2
-        case editor = 3
-    }
+    @State var remixVariants: [WidgetSpec] = []
 
     @State var selectedTab: AppTab = .explore
 
-    enum ActiveSheet: Identifiable {
+    @State var showDeleteConfirmation: Bool = false
+    @State var showRevertConfirmation: Bool = false
+    @State var showImageCleanupConfirmation: Bool = false
+
+    @State var showImportPicker: Bool = false
+
+    @State var librarySearchText: String = ""
+    @State var librarySortRaw: String = LibrarySort.recent.rawValue
+    @State var libraryFilterRaw: String = LibraryFilter.all.rawValue
+
+    @State var pickedPhoto: PhotosPickerItem? = nil
+
+    enum AppTab: Hashable {
+        case explore
+        case library
+        case editor
+    }
+
+    enum ActiveSheet: Hashable, Identifiable {
         case widgetHelp
         case pro
         case variables
@@ -79,169 +64,182 @@ struct ContentView: View {
         case steps
         case importReview
 
-        var id: Int {
+        var id: String {
             switch self {
-            case .widgetHelp: return 1
-            case .pro: return 2
-            case .variables: return 3
-            case .weather: return 4
-            case .inspector: return 5
-            case .remix: return 6
-            case .steps: return 7
-            case .importReview: return 8
+            case .widgetHelp: return "widgetHelp"
+            case .pro: return "pro"
+            case .variables: return "variables"
+            case .inspector: return "inspector"
+            case .remix: return "remix"
+            case .weather: return "weather"
+            case .steps: return "steps"
+            case .importReview: return "importReview"
             }
         }
     }
 
-    @State var activeSheet: ActiveSheet?
-
-    @State var showImportPicker: Bool = false
-    @State var importInProgress: Bool = false
-    
-    @State var importReviewModel: WidgetWeaverImportReviewModel?
-    @State var importReviewSelection: Set<UUID> = []
-
-    let store = WidgetSpecStore.shared
-
     enum LibrarySort: String, CaseIterable, Identifiable {
-        case updated
+        case recent
         case name
-        case template
-        case accent
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .updated: return "Updated"
+            case .recent: return "Recent"
             case .name: return "Name"
-            case .template: return "Template"
-            case .accent: return "Accent"
             }
         }
 
-        static var ordered: [LibrarySort] { [.updated, .name, .template, .accent] }
+        static var ordered: [LibrarySort] { [.recent, .name] }
     }
 
     enum LibraryFilter: String, CaseIterable, Identifiable {
         case all
-        case `default` = "default"
+        case home
+        case lock
         case weather
-        case nextUp = "nextUp"
         case steps
-        case withImage = "withImage"
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .all: return "All"
-            case .default: return "Default"
+            case .home: return "Home"
+            case .lock: return "Lock"
             case .weather: return "Weather"
-            case .nextUp: return "Next Up"
             case .steps: return "Steps"
-            case .withImage: return "With Image"
             }
         }
 
-        static var ordered: [LibraryFilter] { [.all, .default, .weather, .nextUp, .steps, .withImage] }
+        static var ordered: [LibraryFilter] { [.all, .home, .lock, .weather, .steps] }
     }
 
-    private struct LibraryItem: Identifiable {
-        let index: Int
-        let spec: WidgetSpec
-
-        let nameKey: String
-        let templateKey: String
-        let accentKey: String
-        let searchKey: String
-        let updatedAt: Date
-
-        var id: UUID { spec.id }
-
-        init(index: Int, spec: WidgetSpec) {
-            self.index = index
-            self.spec = spec
-
-            self.nameKey = spec.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            self.templateKey = spec.layout.template.displayName.lowercased()
-            self.accentKey = spec.style.accent.displayName.lowercased()
-
-            let secondary = spec.secondaryText ?? ""
-            self.searchKey = (spec.name + "\n" + spec.primaryText + "\n" + secondary).lowercased()
-            self.updatedAt = spec.updatedAt
-        }
+    var librarySort: LibrarySort {
+        LibrarySort(rawValue: librarySortRaw) ?? .recent
     }
 
-    private var librarySort: LibrarySort { LibrarySort(rawValue: librarySortRaw) ?? .updated }
-    private var libraryFilter: LibraryFilter { LibraryFilter(rawValue: libraryFilterRaw) ?? .all }
+    var libraryFilter: LibraryFilter {
+        LibraryFilter(rawValue: libraryFilterRaw) ?? .all
+    }
 
-    private var libraryIsFilteringOrSearching: Bool {
-        if libraryFilter != .all { return true }
-        return !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var libraryIsFilteringOrSearching: Bool {
+        !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || libraryFilter != .all
     }
 
     private var libraryDisplayedSpecs: [WidgetSpec] {
-        let q = librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        var items = savedSpecs.enumerated().map { LibraryItem(index: $0.offset, spec: $0.element) }
+        var items = savedSpecs
 
-        items = items.filter { item in
-            switch libraryFilter {
-            case .all:
-                return true
-
-            case .default:
-                guard let defaultSpecID else { return false }
-                return item.spec.id == defaultSpecID
-
-            case .weather:
-                return item.spec.layout.template == .weather
-
-            case .nextUp:
-                return item.spec.layout.template == .nextUpCalendar
-
-            case .steps:
-                return item.spec.usesStepsRendering()
-
-            case .withImage:
-                return item.spec.image != nil
+        if libraryFilter != .all {
+            items = items.filter { spec in
+                switch libraryFilter {
+                case .all:
+                    return true
+                case .home:
+                    return spec.layout.template.supportsHomeWidgets
+                case .lock:
+                    return spec.layout.template.supportsLockWidgets
+                case .weather:
+                    return spec.layout.template.category == .weather
+                case .steps:
+                    return spec.layout.template.category == .steps
+                }
             }
         }
 
-        if !q.isEmpty {
-            items = items.filter { $0.searchKey.contains(q) }
+        let search = librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !search.isEmpty {
+            let lower = search.lowercased()
+            items = items.filter { spec in
+                spec.name.lowercased().contains(lower)
+                || spec.layout.template.displayName.lowercased().contains(lower)
+                || spec.style.accent.displayName.lowercased().contains(lower)
+            }
         }
 
         switch librarySort {
-        case .updated:
-            items.sort {
-                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
-                return $0.index < $1.index
+        case .recent:
+            items.sort { a, b in
+                if a.id == defaultSpecID { return true }
+                if b.id == defaultSpecID { return false }
+                return a.updatedAt > b.updatedAt
             }
-
         case .name:
-            items.sort {
-                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
-                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
-                return $0.index < $1.index
-            }
-
-        case .template:
-            items.sort {
-                if $0.templateKey != $1.templateKey { return $0.templateKey < $1.templateKey }
-                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
-                return $0.index < $1.index
-            }
-
-        case .accent:
-            items.sort {
-                if $0.accentKey != $1.accentKey { return $0.accentKey < $1.accentKey }
-                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
-                return $0.index < $1.index
+            items.sort { a, b in
+                if a.id == defaultSpecID { return true }
+                if b.id == defaultSpecID { return false }
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
             }
         }
 
-        return items.map(\.spec)
+        return items
+    }
+
+    private func draftSpec(id: String) -> WidgetSpec {
+        if let draft = draftSpecs[id] { return draft }
+        if let saved = savedSpecs.first(where: { $0.id == id }) { return saved }
+        return WidgetSpec.defaultSpec()
+    }
+
+    private func applySpec(_ spec: WidgetSpec) {
+        draftSpecs[spec.id] = spec
+        selectedSpecID = spec.id
+    }
+
+    private func specDisplayName(_ spec: WidgetSpec) -> String {
+        let name = spec.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Untitled" : name
+    }
+
+    private func isDraftDirty(id: String) -> Bool {
+        guard let draft = draftSpecs[id] else { return false }
+        guard let saved = savedSpecs.first(where: { $0.id == id }) else { return true }
+        return draft.normalised() != saved.normalised()
+    }
+
+    private func currentSavedSpec() -> WidgetSpec? {
+        savedSpecs.first(where: { $0.id == selectedSpecID })
+    }
+
+    private func currentDraftSpec() -> WidgetSpec {
+        draftSpec(id: selectedSpecID)
+    }
+
+    private func updateSavedSpecsCache() {
+        savedSpecs = store.loadAllSorted()
+    }
+
+    private func loadSelected() {
+        if selectedSpecID.isEmpty {
+            selectedSpecID = store.defaultSpecID()
+        }
+        if selectedSpecID.isEmpty, let first = savedSpecs.first {
+            selectedSpecID = first.id
+        }
+        if selectedSpecID.isEmpty {
+            var spec = WidgetSpec.defaultSpec()
+            spec.id = UUID().uuidString
+            spec.createdAt = Date()
+            spec.updatedAt = Date()
+            store.save(spec: spec)
+            updateSavedSpecsCache()
+            selectedSpecID = spec.id
+        }
+
+        defaultSpecID = store.defaultSpecID()
+        if defaultSpecID.isEmpty, let first = savedSpecs.first {
+            store.setDefault(id: first.id)
+            defaultSpecID = first.id
+        }
+
+        draftSpecs[selectedSpecID] = currentSavedSpec() ?? WidgetSpec.defaultSpec()
+    }
+
+    private func bootstrap() {
+        updateSavedSpecsCache()
+        loadSelected()
+        refreshWidgets()
     }
 
     private func clearLibrarySearchAndFilter() {
@@ -371,7 +369,7 @@ struct ContentView: View {
         let displayedSpecs = libraryDisplayedSpecs
 
         return ZStack {
-            EditorBackground()
+            WidgetWeaverAboutBackground()
 
             List {
                 Section {
@@ -571,7 +569,7 @@ struct ContentView: View {
 
     private var editorRoot: some View {
         ZStack {
-            EditorBackground()
+            WidgetWeaverAboutBackground()
             editorLayout
         }
         .navigationTitle("Editor")
