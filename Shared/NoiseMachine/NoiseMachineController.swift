@@ -5,10 +5,8 @@
 //  Created by . . on 01/02/26.
 //
 
-import AVFAudio
 import AVFoundation
 import AudioToolbox
-import Darwin
 import Foundation
 
 public actor NoiseMachineController {
@@ -26,10 +24,13 @@ public actor NoiseMachineController {
     private var limiter: AVAudioUnitEffect?
 
     private var slotNodes: [NoiseSlotNode] = []
-    private var isEngineRunning: Bool = false
+
     private var didConfigureSession: Bool = false
+    private var observersInstalled: Bool = false
+    private var notificationTokens: [NSObjectProtocol] = []
 
     private var currentState: NoiseMixState = .default
+    private var isEngineRunning: Bool = false
 
     private let renderSampleRate: Double = 48_000
     private let preferredIOBufferDuration: TimeInterval = 0.0053
@@ -52,20 +53,22 @@ public actor NoiseMachineController {
 
     public func prepareIfNeeded() async {
         if engine != nil { return }
+
         await configureSessionIfNeeded()
         buildGraph()
-        installObservers()
+        installObserversIfNeeded()
+
         currentState = store.loadLastMix()
-        updateGeneratorTargets(from: currentState, savePolicy: .immediate)
+        applyTargets(from: currentState, savePolicy: .immediate)
     }
+
+    // MARK: - Engine API
 
     public func apply(state: NoiseMixState) async {
         await prepareIfNeeded()
-
-        let state = state.sanitised()
-        currentState = state
-
-        updateGeneratorTargets(from: state, savePolicy: .immediate)
+        let s = state.sanitised()
+        currentState = s
+        applyTargets(from: s, savePolicy: .immediate)
     }
 
     public func play() async {
@@ -80,7 +83,7 @@ public actor NoiseMachineController {
             store.setResumeOnLaunchEnabled(true)
         }
 
-        updateGeneratorTargets(from: s, savePolicy: .immediate)
+        applyTargets(from: s, savePolicy: .immediate)
         await startEngineIfNeeded()
     }
 
@@ -96,11 +99,7 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        for slot in slotNodes {
-            slot.setTargetEnabled(false)
-        }
-
-        updateGeneratorTargets(from: s, savePolicy: .immediate)
+        applyTargets(from: s, savePolicy: .immediate)
         await stopEngineSoon()
     }
 
@@ -113,22 +112,16 @@ public actor NoiseMachineController {
         }
     }
 
-    // MARK: - Slot controls
-
     public func setSlotEnabled(_ index: Int, enabled: Bool) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
         s.slots[index].enabled = enabled
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetEnabled(enabled)
-
-        updateGeneratorTargets(from: s, savePolicy: .immediate)
+        applyTargets(from: s, savePolicy: .immediate)
         if s.wasPlaying {
             await startEngineIfNeeded()
         }
@@ -136,122 +129,80 @@ public actor NoiseMachineController {
 
     public func setSlotVolume(_ index: Int, volume: Float, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
-
-        let v = volume.clamped(to: 0...1)
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
-        s.slots[index].volume = v
+        s.slots[index].volume = volume
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetVolume(v)
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
     public func setSlotColour(_ index: Int, colour: Float, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
-
-        let c = colour.clamped(to: 0...2)
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
-        s.slots[index].colour = c
+        s.slots[index].colour = colour
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetColour(c)
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
     public func setSlotLowCut(_ index: Int, hz: Float, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
-
-        let f = hz.clamped(to: 10...2000)
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
-        s.slots[index].lowCutHz = f
-        if s.slots[index].lowCutHz >= s.slots[index].highCutHz {
-            s.slots[index].highCutHz = min(20_000, s.slots[index].lowCutHz + 1000)
-        }
+        s.slots[index].lowCutHz = hz
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetLowCutHz(s.slots[index].lowCutHz)
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
     public func setSlotHighCut(_ index: Int, hz: Float, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
-
-        let f = hz.clamped(to: 500...20_000)
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
-        s.slots[index].highCutHz = f
-        if s.slots[index].lowCutHz >= s.slots[index].highCutHz {
-            s.slots[index].lowCutHz = max(10, s.slots[index].highCutHz - 1000)
-        }
+        s.slots[index].highCutHz = hz
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetHighCutHz(s.slots[index].highCutHz)
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
     public func setSlotEQ(_ index: Int, eq: EQState, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
-        guard slotNodes.indices.contains(index) else { return }
-
-        let eq = eq.sanitised()
+        guard currentState.slots.indices.contains(index) else { return }
 
         var s = currentState
-        guard s.slots.indices.contains(index) else { return }
-
         s.slots[index].eq = eq
         s.updatedAt = Date()
         currentState = s
 
-        slotNodes[index].setTargetEQ(eq)
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
     public func setMasterVolume(_ volume: Float, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
 
-        let v = volume.clamped(to: 0...1)
-
         var s = currentState
-        s.masterVolume = v
+        s.masterVolume = volume
         s.updatedAt = Date()
         currentState = s
 
-        masterMixer?.outputVolume = v
-
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
     }
-
-    // MARK: - Persistence
 
     public func flushPersistence() async {
         store.flushPendingWrites()
     }
 
-    // MARK: - Audio session / engine graph
+    // MARK: - Session
 
     private func configureSessionIfNeeded() async {
         if didConfigureSession { return }
@@ -276,13 +227,15 @@ public actor NoiseMachineController {
         }
     }
 
+    // MARK: - Graph
+
     private func buildGraph() {
         let engine = AVAudioEngine()
 
         let outFormat = AVAudioFormat(standardFormatWithSampleRate: renderSampleRate, channels: 2)!
 
         let master = AVAudioMixerNode()
-        master.outputVolume = currentState.masterVolume.clamped(to: 0...1)
+        master.outputVolume = 1.0
 
         let limiterDesc = AudioComponentDescription(
             componentType: kAudioUnitType_Effect,
@@ -297,126 +250,28 @@ public actor NoiseMachineController {
         engine.attach(limiter)
 
         var slots: [NoiseSlotNode] = []
+
         for idx in 0..<NoiseMixState.slotCount {
             let slot = NoiseSlotNode(index: idx, sampleRate: renderSampleRate)
             slots.append(slot)
 
-            engine.attach(slot.outputNode)
+            engine.attach(slot.sourceNode)
             engine.attach(slot.eqNode)
 
-            engine.connect(slot.outputNode, to: slot.eqNode, format: slot.outputFormat)
-            engine.connect(slot.eqNode, to: master, format: slot.outputFormat)
+            engine.connect(slot.sourceNode, to: slot.eqNode, format: slot.format)
+            engine.connect(slot.eqNode, to: master, format: slot.format)
         }
 
         engine.connect(master, to: limiter, format: outFormat)
         engine.connect(limiter, to: engine.outputNode, format: outFormat)
 
+        engine.prepare()
+
         self.engine = engine
         self.masterMixer = master
         self.limiter = limiter
         self.slotNodes = slots
-
-        updateGeneratorTargets(from: currentState, savePolicy: .immediate)
-    }
-
-    private func installObservers() {
-        let center = NotificationCenter.default
-
-        center.addObserver(
-            forName: AVAudioSession.interruptionNotification,
-            object: AVAudioSession.sharedInstance(),
-            queue: nil
-        ) { [weak self] note in
-            guard let self else { return }
-            Task { await self.handleInterruption(note) }
-        }
-
-        center.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: AVAudioSession.sharedInstance(),
-            queue: nil
-        ) { [weak self] note in
-            guard let self else { return }
-            Task { await self.handleRouteChange(note) }
-        }
-
-        center.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: engine,
-            queue: nil
-        ) { [weak self] _ in
-            guard let self else { return }
-            Task { await self.handleEngineConfigurationChange() }
-        }
-    }
-
-    private func handleInterruption(_ note: Notification) async {
-        guard let info = note.userInfo,
-              let rawType = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
-            return
-        }
-
-        switch type {
-        case .began:
-            await pause(savePolicy: .immediate)
-
-        case .ended:
-            let optionsRaw = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
-            if options.contains(.shouldResume) {
-                if currentState.wasPlaying {
-                    await play()
-                }
-            }
-
-        @unknown default:
-            break
-        }
-    }
-
-    private func handleRouteChange(_ note: Notification) async {
-        guard let info = note.userInfo,
-              let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else {
-            return
-        }
-
-        switch reason {
-        case .newDeviceAvailable,
-             .oldDeviceUnavailable,
-             .routeConfigurationChange:
-            await restartEngineIfNeededForRouteChange()
-
-        default:
-            break
-        }
-    }
-
-    private func handleEngineConfigurationChange() async {
-        await restartEngineIfNeededForRouteChange()
-    }
-
-    private func restartEngineIfNeededForRouteChange() async {
-        guard let engine else { return }
-
-        let shouldKeepPlaying = currentState.wasPlaying
-
-        if engine.isRunning {
-            engine.pause()
-            isEngineRunning = false
-        }
-
-        do {
-            try engine.start()
-            isEngineRunning = true
-        } catch {
-            isEngineRunning = false
-        }
-
-        if !shouldKeepPlaying {
-            await stopEngineSoon()
-        }
+        self.isEngineRunning = false
     }
 
     private func startEngineIfNeeded() async {
@@ -436,13 +291,10 @@ public actor NoiseMachineController {
         if !engine.isRunning { return }
 
         for slot in slotNodes {
-            slot.setTargetEnabled(false)
-            slot.setTargetVolume(0)
+            slot.generator.setTargetGain(0)
         }
 
-        updateGeneratorTargets(from: currentState, savePolicy: .immediate)
-
-        try? await Task.sleep(nanoseconds: 60_000_000)
+        try? await Task.sleep(nanoseconds: 70_000_000)
 
         engine.pause()
         isEngineRunning = false
@@ -453,36 +305,35 @@ public actor NoiseMachineController {
 
         var s = currentState
         s.wasPlaying = false
+        s.updatedAt = Date()
         currentState = s
 
-        updateGeneratorTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: savePolicy)
         await stopEngineSoon()
     }
 
-    // MARK: - Parameter application
+    // MARK: - Apply targets
 
-    private func updateGeneratorTargets(from state: NoiseMixState, savePolicy: SavePolicy) {
-        if slotNodes.count != NoiseMixState.slotCount { return }
-
-        masterMixer?.outputVolume = state.masterVolume.clamped(to: 0...1)
+    private func applyTargets(from state: NoiseMixState, savePolicy: SavePolicy) {
+        let s = state.sanitised()
 
         for idx in 0..<NoiseMixState.slotCount {
-            guard state.slots.indices.contains(idx) else { continue }
-            let slotState = state.slots[idx]
+            guard s.slots.indices.contains(idx),
+                  slotNodes.indices.contains(idx) else { continue }
 
-            let enabled = slotState.enabled && state.wasPlaying
-            slotNodes[idx].setTargetEnabled(enabled)
+            let slot = s.slots[idx]
+            let gain: Float = (s.wasPlaying && slot.enabled) ? (slot.volume * s.masterVolume) : 0
 
-            let vol = slotState.volume.clamped(to: 0...1)
-            slotNodes[idx].setTargetVolume(vol)
+            let node = slotNodes[idx]
+            node.generator.setTargetGain(gain)
+            node.generator.setTargetColour(slot.colour)
+            node.generator.setTargetLowCutHz(slot.lowCutHz)
+            node.generator.setTargetHighCutHz(slot.highCutHz)
 
-            slotNodes[idx].setTargetColour(slotState.colour.clamped(to: 0...2))
-            slotNodes[idx].setTargetLowCutHz(slotState.lowCutHz.clamped(to: 10...2000))
-            slotNodes[idx].setTargetHighCutHz(slotState.highCutHz.clamped(to: 500...20_000))
-            slotNodes[idx].setTargetEQ(slotState.eq.sanitised())
+            node.applyEQ(slot.eq.sanitised())
         }
 
-        var toSave = state
+        var toSave = s
         toSave.updatedAt = Date()
 
         switch savePolicy {
@@ -492,245 +343,336 @@ public actor NoiseMachineController {
             store.saveThrottled(toSave)
         }
     }
+
+    // MARK: - Observers (Sendable-safe)
+
+    private func installObserversIfNeeded() {
+        guard !observersInstalled else { return }
+        observersInstalled = true
+
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+
+        let interruptionToken = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: nil
+        ) { @Sendable note in
+            let typeRaw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let optionsRaw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+
+            Task {
+                await NoiseMachineController.shared.handleInterruption(typeRaw: typeRaw, optionsRaw: optionsRaw)
+            }
+        }
+
+        let routeToken = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: session,
+            queue: nil
+        ) { @Sendable note in
+            let reasonRaw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            Task {
+                await NoiseMachineController.shared.handleRouteChange(reasonRaw: reasonRaw)
+            }
+        }
+
+        let configToken = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { @Sendable _ in
+            Task {
+                await NoiseMachineController.shared.handleEngineConfigurationChange()
+            }
+        }
+
+        notificationTokens.append(interruptionToken)
+        notificationTokens.append(routeToken)
+        notificationTokens.append(configToken)
+    }
+
+    private func handleInterruption(typeRaw: UInt?, optionsRaw: UInt?) async {
+        guard let typeRaw, let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
+
+        switch type {
+        case .began:
+            await pause(savePolicy: .immediate)
+
+        case .ended:
+            let opts = AVAudioSession.InterruptionOptions(rawValue: optionsRaw ?? 0)
+            if opts.contains(.shouldResume), currentState.wasPlaying {
+                await play()
+            }
+
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange(reasonRaw: UInt?) async {
+        guard let reasonRaw,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw) else { return }
+
+        switch reason {
+        case .newDeviceAvailable,
+             .oldDeviceUnavailable,
+             .routeConfigurationChange:
+            if currentState.wasPlaying {
+                await startEngineIfNeeded()
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func handleEngineConfigurationChange() async {
+        if currentState.wasPlaying {
+            await startEngineIfNeeded()
+        }
+    }
 }
 
-// MARK: - Slot node (Noise -> Filters -> EQ -> Mixer)
+// MARK: - Slot node
 
 private final class NoiseSlotNode {
     let index: Int
+    let format: AVAudioFormat
 
-    private let format: AVAudioFormat
-    private let sourceNode: AVAudioSourceNode
-
-    private let eq: AVAudioUnitEQ
-    private let generator: NoiseGenerator
-
-    private(set) var outputNode: AVAudioNode
-    private(set) var outputFormat: AVAudioFormat
-
-    private var targetEnabled: AtomicFloat = .init(0)
-    private var targetVolume: AtomicFloat = .init(0)
-    private var targetColour: AtomicFloat = .init(0)
-
-    private var targetLowCut: AtomicFloat = .init(20)
-    private var targetHighCut: AtomicFloat = .init(18_000)
-
-    private var targetEQLow: AtomicFloat = .init(0)
-    private var targetEQMid: AtomicFloat = .init(0)
-    private var targetEQHigh: AtomicFloat = .init(0)
-
-    private var enabledSmoother = SmoothedParam(timeConstantSeconds: 0.04)
-    private var volumeSmoother = SmoothedParam(timeConstantSeconds: 0.04)
-    private var colourSmoother = SmoothedParam(timeConstantSeconds: 0.12)
-    private var lowCutSmoother = SmoothedParam(timeConstantSeconds: 0.18)
-    private var highCutSmoother = SmoothedParam(timeConstantSeconds: 0.18)
+    let generator: NoiseSlotGenerator
+    let sourceNode: AVAudioSourceNode
+    let eqNode: AVAudioUnitEQ
 
     init(index: Int, sampleRate: Double) {
         self.index = index
         self.format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-        self.generator = NoiseGenerator(sampleRate: Float(sampleRate))
 
-        self.eq = AVAudioUnitEQ(numberOfBands: 3)
-        self.eq.globalGain = 0
+        let gen = NoiseSlotGenerator(sampleRate: Float(sampleRate), seed: UInt64(0x9E3779B97F4A7C15 &+ UInt64(index &* 101)))
+        self.generator = gen
 
-        let low = self.eq.bands[0]
+        self.sourceNode = AVAudioSourceNode(format: self.format) { _, _, frameCount, audioBufferList in
+            gen.render(frameCount: Int(frameCount), audioBufferList: audioBufferList)
+            return noErr
+        }
+
+        let eq = AVAudioUnitEQ(numberOfBands: 3)
+        eq.globalGain = 0
+
+        let low = eq.bands[0]
         low.filterType = .lowShelf
         low.frequency = 180
         low.bandwidth = 1.0
         low.gain = 0
         low.bypass = false
 
-        let mid = self.eq.bands[1]
+        let mid = eq.bands[1]
         mid.filterType = .parametric
-        mid.frequency = 900
-        mid.bandwidth = 0.9
+        mid.frequency = 1_000
+        mid.bandwidth = 1.0
         mid.gain = 0
         mid.bypass = false
 
-        let high = self.eq.bands[2]
+        let high = eq.bands[2]
         high.filterType = .highShelf
-        high.frequency = 6_000
+        high.frequency = 8_000
         high.bandwidth = 1.0
         high.gain = 0
         high.bypass = false
 
-        self.sourceNode = AVAudioSourceNode(format: self.format) { [weak self] _, _, frameCount, audioBufferList in
-            guard let self else { return noErr }
-            self.render(frameCount: Int(frameCount), audioBufferList: audioBufferList)
-            return noErr
-        }
-
-        self.outputNode = sourceNode
-        self.outputFormat = format
+        self.eqNode = eq
     }
 
-    var eqNode: AVAudioUnitEQ { eq }
+    func applyEQ(_ eq: EQState) {
+        eqNode.bands[0].gain = eq.lowGainDB
+        eqNode.bands[1].gain = eq.midGainDB
+        eqNode.bands[2].gain = eq.highGainDB
+    }
+}
 
-    func setTargetEnabled(_ enabled: Bool) {
-        targetEnabled.store(enabled ? 1 : 0)
+// MARK: - Procedural generator
+
+private final class NoiseSlotGenerator: @unchecked Sendable {
+    private let sampleRate: Float
+    private var rng: SplitMix64
+
+    private var pink = PinkNoiseState()
+    private var brown: Float = 0
+
+    private var hpLP: Float = 0
+    private var lp: Float = 0
+
+    private var currentGain: Float = 0
+    private var currentColour: Float = 0
+    private var currentLowCutHz: Float = 20
+    private var currentHighCutHz: Float = 18_000
+
+    private var targetGain = AtomicFloat(0)
+    private var targetColour = AtomicFloat(0)
+    private var targetLowCutHz = AtomicFloat(20)
+    private var targetHighCutHz = AtomicFloat(18_000)
+
+    init(sampleRate: Float, seed: UInt64) {
+        self.sampleRate = sampleRate
+        self.rng = SplitMix64(seed: seed == 0 ? 0x123456789ABCDEF : seed)
     }
 
-    func setTargetVolume(_ volume: Float) {
-        targetVolume.store(volume.clamped(to: 0...1))
+    func setTargetGain(_ gain: Float) {
+        targetGain.store(gain)
     }
 
     func setTargetColour(_ colour: Float) {
-        targetColour.store(colour.clamped(to: 0...2))
+        targetColour.store(colour)
     }
 
     func setTargetLowCutHz(_ hz: Float) {
-        targetLowCut.store(hz.clamped(to: 10...2000))
+        targetLowCutHz.store(hz)
     }
 
     func setTargetHighCutHz(_ hz: Float) {
-        targetHighCut.store(hz.clamped(to: 500...20_000))
+        targetHighCutHz.store(hz)
     }
 
-    func setTargetEQ(_ eq: EQState) {
-        targetEQLow.store(eq.lowGainDB.clamped(to: -12...12))
-        targetEQMid.store(eq.midGainDB.clamped(to: -12...12))
-        targetEQHigh.store(eq.highGainDB.clamped(to: -12...12))
-    }
-
-    private func render(frameCount: Int, audioBufferList: UnsafeMutablePointer<AudioBufferList>) {
-        let enabled = targetEnabled.load()
-        let volume = targetVolume.load()
-        let colour = targetColour.load()
-
-        let lowCut = targetLowCut.load()
-        let highCut = targetHighCut.load()
-
-        let eqLow = targetEQLow.load()
-        let eqMid = targetEQMid.load()
-        let eqHigh = targetEQHigh.load()
-
-        let sr = Float(format.sampleRate)
-
-        let rampEnabled = enabledSmoother.process(target: enabled, sampleRate: sr)
-        let rampVolume = volumeSmoother.process(target: volume, sampleRate: sr)
-        let rampColour = colourSmoother.process(target: colour, sampleRate: sr)
-
-        let rampLowCut = lowCutSmoother.process(target: lowCut, sampleRate: sr)
-        let rampHighCut = highCutSmoother.process(target: highCut, sampleRate: sr)
-
-        generator.setColour(rampColour)
-        generator.setBandpass(lowCutHz: rampLowCut, highCutHz: rampHighCut)
-
-        eq.bands[0].gain = eqLow
-        eq.bands[1].gain = eqMid
-        eq.bands[2].gain = eqHigh
-
-        let overall = rampEnabled * rampVolume
-
+    func render(frameCount: Int, audioBufferList: UnsafeMutablePointer<AudioBufferList>) {
         let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-        guard buffers.count >= 2 else { return }
+        if frameCount <= 0 || buffers.count == 0 { return }
 
-        let left = buffers[0]
-        let right = buffers[1]
+        let gainAlpha = onePoleAlpha(timeConstantSeconds: 0.06)
+        let colourAlpha = onePoleAlpha(timeConstantSeconds: 0.12)
+        let cutAlpha = onePoleAlpha(timeConstantSeconds: 0.18)
 
-        guard let leftPtr = left.mData?.assumingMemoryBound(to: Float.self),
-              let rightPtr = right.mData?.assumingMemoryBound(to: Float.self) else {
+        let tg = targetGain.load()
+        let tc = targetColour.load()
+        let tl = targetLowCutHz.load()
+        let th = targetHighCutHz.load()
+
+        currentGain += (tg - currentGain) * gainAlpha
+        currentColour += (tc - currentColour) * colourAlpha
+        currentLowCutHz += (tl - currentLowCutHz) * cutAlpha
+        currentHighCutHz += (th - currentHighCutHz) * cutAlpha
+
+        let lowCutHz = max(10, min(currentLowCutHz, 2_000))
+        let highCutHz = max(500, min(currentHighCutHz, 20_000))
+        let lowAlpha = lowCutHz > 20 ? onePoleCutoffAlpha(cutoffHz: lowCutHz) : 0
+        let highAlpha = highCutHz < 20_000 ? onePoleCutoffAlpha(cutoffHz: highCutHz) : 0
+
+        let silent = abs(currentGain) < 0.00005
+
+        if silent {
+            for b in buffers {
+                guard let mData = b.mData else { continue }
+                let ptr = mData.assumingMemoryBound(to: Float.self)
+                let samples = frameCount * Int(b.mNumberChannels)
+                for i in 0..<samples { ptr[i] = 0 }
+            }
             return
         }
 
-        generator.renderStereo(
-            left: leftPtr,
-            right: rightPtr,
-            frameCount: frameCount,
-            gain: overall
-        )
-    }
-}
+        if buffers.count == 1 {
+            let b = buffers[0]
+            let channels = Int(b.mNumberChannels)
+            guard let mData = b.mData else { return }
+            let ptr = mData.assumingMemoryBound(to: Float.self)
 
-// MARK: - Noise generation
-
-private final class NoiseGenerator {
-    private var rng = SplitMix64(seed: UInt64.random(in: 1...UInt64.max))
-    private let sampleRate: Float
-
-    private var pink = PinkNoise()
-    private var brown = BrownNoise()
-
-    private var colour: Float = 0
-
-    private var hp = OnePoleHighPass()
-    private var lp = OnePoleLowPass()
-
-    private var targetLowCut: Float = 20
-    private var targetHighCut: Float = 18_000
-
-    private var lowCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
-    private var highCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
-
-    init(sampleRate: Float) {
-        self.sampleRate = sampleRate
-        hp.reset()
-        lp.reset()
-    }
-
-    func setColour(_ c: Float) {
-        colour = c.clamped(to: 0...2)
-    }
-
-    func setBandpass(lowCutHz: Float, highCutHz: Float) {
-        targetLowCut = lowCutHz
-        targetHighCut = highCutHz
-    }
-
-    func renderStereo(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frameCount: Int, gain: Float) {
-        if frameCount <= 0 { return }
-
-        for i in 0..<frameCount {
-            let lc = lowCutSmoother.process(target: targetLowCut, sampleRate: sampleRate)
-            let hc = highCutSmoother.process(target: targetHighCut, sampleRate: sampleRate)
-
-            hp.set(cutoffHz: lc, sampleRate: sampleRate)
-            lp.set(cutoffHz: hc, sampleRate: sampleRate)
-
-            let white = rng.nextFloatSigned()
-
-            let pinkSample = pink.process(white)
-            let brownSample = brown.process(white)
-
-            let c = colour
-
-            let x: Float
-            if c <= 1 {
-                let t = c
-                x = lerp(white, pinkSample, t: t)
+            if channels <= 1 {
+                for i in 0..<frameCount {
+                    ptr[i] = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
+                }
             } else {
-                let t = c - 1
-                x = lerp(pinkSample, brownSample, t: t)
+                for i in 0..<frameCount {
+                    let s = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
+                    let base = i * channels
+                    ptr[base] = s
+                    ptr[base + 1] = s
+                    if channels > 2 {
+                        for c in 2..<channels { ptr[base + c] = s }
+                    }
+                }
+            }
+        } else {
+            guard buffers.count >= 2 else { return }
+
+            let left = buffers[0]
+            let right = buffers[1]
+
+            guard let lData = left.mData, let rData = right.mData else { return }
+            let lPtr = lData.assumingMemoryBound(to: Float.self)
+            let rPtr = rData.assumingMemoryBound(to: Float.self)
+
+            for i in 0..<frameCount {
+                let s = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
+                lPtr[i] = s
+                rPtr[i] = s
             }
 
-            let filtered = lp.process(hp.process(x))
-
-            let y = softClip(filtered * gain)
-
-            left[i] = y
-            right[i] = y
+            if buffers.count > 2 {
+                for b in 2..<buffers.count {
+                    guard let mData = buffers[b].mData else { continue }
+                    let ptr = mData.assumingMemoryBound(to: Float.self)
+                    for i in 0..<frameCount { ptr[i] = lPtr[i] }
+                }
+            }
         }
     }
 
-    private func lerp(_ a: Float, _ b: Float, t: Float) -> Float {
-        a + (b - a) * t
+    private func renderOneSample(lowAlpha: Float, highAlpha: Float) -> Float {
+        let white = rng.nextFloatSigned()
+
+        let pinkSample = pink.process(white)
+        brown = (brown + white * 0.02) * 0.99
+        brown = brown.clamped(to: -1...1)
+
+        let w = white * 0.28
+        let p = pinkSample * 0.18
+        let b = brown * 0.12
+
+        let c = currentColour.clamped(to: 0...2)
+        let mixed: Float
+        if c <= 1 {
+            mixed = lerp(w, p, t: c)
+        } else {
+            mixed = lerp(p, b, t: (c - 1))
+        }
+
+        var x = mixed
+
+        if lowAlpha > 0 {
+            hpLP += lowAlpha * (x - hpLP)
+            x = x - hpLP
+        }
+
+        if highAlpha > 0 {
+            lp += highAlpha * (x - lp)
+            x = lp
+        }
+
+        return tanhf(x * currentGain)
     }
 
-    private func softClip(_ x: Float) -> Float {
-        tanhf(x)
+    private func onePoleAlpha(timeConstantSeconds: Float) -> Float {
+        let tau = max(0.001, timeConstantSeconds)
+        let a = 1 - expf(-1 / (sampleRate * tau))
+        return a.clamped(to: 0...1)
+    }
+
+    private func onePoleCutoffAlpha(cutoffHz: Float) -> Float {
+        let fc = max(1, cutoffHz)
+        return (1 - expf(-2 * Float.pi * fc / sampleRate)).clamped(to: 0...1)
+    }
+
+    private func lerp(_ a: Float, _ b: Float, t: Float) -> Float {
+        a + (b - a) * t.clamped(to: 0...1)
     }
 }
 
-// MARK: - Noise colour filters
-
-private struct PinkNoise {
-    private var b0: Float = 0
-    private var b1: Float = 0
-    private var b2: Float = 0
-    private var b3: Float = 0
-    private var b4: Float = 0
-    private var b5: Float = 0
-    private var b6: Float = 0
+private struct PinkNoiseState {
+    var b0: Float = 0
+    var b1: Float = 0
+    var b2: Float = 0
+    var b3: Float = 0
+    var b4: Float = 0
+    var b5: Float = 0
+    var b6: Float = 0
 
     mutating func process(_ white: Float) -> Float {
         b0 = 0.99886 * b0 + white * 0.0555179
@@ -745,84 +687,11 @@ private struct PinkNoise {
     }
 }
 
-private struct BrownNoise {
-    private var last: Float = 0
-
-    mutating func process(_ white: Float) -> Float {
-        last = (last + (0.02 * white)).clamped(to: -1...1)
-        return last
-    }
-}
-
-// MARK: - Simple filters
-
-private struct OnePoleLowPass {
-    private var a: Float = 0
-    private var b: Float = 0
-    private var z: Float = 0
-
-    mutating func reset() {
-        z = 0
-    }
-
-    mutating func set(cutoffHz: Float, sampleRate: Float) {
-        let fc = max(10, min(cutoffHz, sampleRate * 0.45))
-        let x = expf(-2 * Float.pi * fc / sampleRate)
-        a = 1 - x
-        b = x
-    }
-
-    mutating func process(_ x: Float) -> Float {
-        z = a * x + b * z
-        return z
-    }
-}
-
-private struct OnePoleHighPass {
-    private var lp = OnePoleLowPass()
-
-    mutating func reset() {
-        lp.reset()
-    }
-
-    mutating func set(cutoffHz: Float, sampleRate: Float) {
-        lp.set(cutoffHz: cutoffHz, sampleRate: sampleRate)
-    }
-
-    mutating func process(_ x: Float) -> Float {
-        x - lp.process(x)
-    }
-}
-
-// MARK: - Parameter smoothing
-
-private struct SmoothedParam {
-    private let timeConstant: Float
-    private var value: Float = 0
-
-    init(timeConstantSeconds: Float) {
-        timeConstant = max(0.001, timeConstantSeconds)
-    }
-
-    mutating func reset(to v: Float) {
-        value = v
-    }
-
-    mutating func process(target: Float, sampleRate: Float) -> Float {
-        let dt = 1 / sampleRate
-        let alpha = dt / (timeConstant + dt)
-        value += alpha * (target - value)
-        return value
-    }
-}
-
-// MARK: - RNG
-
 private struct SplitMix64 {
     private var state: UInt64
 
     init(seed: UInt64) {
-        self.state = seed
+        state = seed
     }
 
     mutating func next() -> UInt64 {
@@ -834,14 +703,11 @@ private struct SplitMix64 {
     }
 
     mutating func nextFloatSigned() -> Float {
-        let u = next()
-        let mantissa = u >> 40
-        let f = Float(mantissa) / Float(1 << 24)
+        let u = next() >> 40
+        let f = Float(u) / Float(1 << 24)
         return (f * 2) - 1
     }
 }
-
-// MARK: - Atomic float
 
 private struct AtomicFloat {
     private var raw: UInt32
