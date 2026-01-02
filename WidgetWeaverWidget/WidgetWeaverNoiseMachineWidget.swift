@@ -5,6 +5,7 @@
 //  Created by . . on 01/02/26.
 //
 
+import Foundation
 import WidgetKit
 import SwiftUI
 
@@ -55,6 +56,7 @@ private struct NoiseMachineWidgetView: View {
         }
         .containerBackground(.fill.tertiary, for: .widget)
         .padding(12)
+        .widgetURL(URL(string: "widgetweaver://noiseMachine"))
     }
 
     private var header: some View {

@@ -21,26 +21,28 @@ struct WidgetWeaverApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .tint(Color("AccentColor"))
-                .task {
+            WidgetWeaverDeepLinkHost {
+                ContentView()
+            }
+            .tint(Color("AccentColor"))
+            .task {
 #if !DEBUG
-                    await MainActor.run {
-                        WidgetWeaverWidgetRefresh.forceKick()
-                    }
-#endif
+                await MainActor.run {
+                    WidgetWeaverWidgetRefresh.forceKick()
                 }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .background {
-                        Task { await NoiseMachineController.shared.flushPersistence() }
-                    }
+#endif
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    Task { await NoiseMachineController.shared.flushPersistence() }
+                }
 
 #if !DEBUG
-                    if phase == .background {
-                        WidgetWeaverWidgetRefresh.kickIfNeeded()
-                    }
-#endif
+                if phase == .background {
+                    WidgetWeaverWidgetRefresh.kickIfNeeded()
                 }
+#endif
+            }
         }
     }
 }
