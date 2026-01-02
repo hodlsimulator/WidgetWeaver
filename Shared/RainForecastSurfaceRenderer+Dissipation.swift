@@ -4,10 +4,11 @@
 //
 //  Created by . . on 12/31/25.
 //
-//  Texture-based dissipation:
-//  - seamless tiling (no band seams)
-//  - near-surface mist + optional outside particles
-//  - constant-cost path for WidgetKit
+//  Dissipation fuzz rendering using tiledImage.
+//  Seam fix:
+//  - Use a wrap-padded tile image.
+//  - Tile only the interior via sourceRect.
+//  - Snap pattern origin to the device pixel grid.
 //
 
 import Foundation
@@ -38,7 +39,8 @@ extension RainForecastSurfaceRenderer {
         guard n >= 3 else { return }
         guard curvePoints.count == heights.count, heights.count == certainties01.count else { return }
 
-        let maxAlpha = clamp01(cfg.fuzzMaxOpacity)
+        // Slight boost makes seams easier to spot while verifying.
+        let maxAlpha = clamp01(cfg.fuzzMaxOpacity * 1.35)
 
         let strength = computeFuzzStrengthPerPoint(
             heights: heights,
@@ -139,41 +141,38 @@ extension RainForecastSurfaceRenderer {
             jitterFraction: 0.30
         )
 
-        // WidgetKit-safe path: constant number of draws, no per-speckle loops.
+        // WidgetKit-safe: constant number of draws.
         if isExtension {
             let innerMulA = clamp01(cfg.fuzzTextureInnerOpacityMultiplier)
-            let outerMulA = clamp01(cfg.fuzzTextureOuterOpacityMultiplier)
 
-            do {
-                let a0 = min(1.0, maxAlpha * innerMulA * 0.70)
-                let a1 = min(1.0, maxAlpha * innerMulA * 0.38)
-                let a2 = min(1.0, maxAlpha * innerMulA * 0.18)
-                let a3 = min(1.0, maxAlpha * innerMulA * 0.12)
+            let a0 = min(1.0, maxAlpha * innerMulA * 0.70)
+            let a1 = min(1.0, maxAlpha * innerMulA * 0.38)
+            let a2 = min(1.0, maxAlpha * innerMulA * 0.18)
+            let a3 = min(1.0, maxAlpha * innerMulA * 0.12)
 
-                if (a0 + a1 + a2 + a3) > 0.0001 {
-                    context.drawLayer { layer in
-                        layer.clip(to: Path(clipRect))
-                        layer.clip(to: corePath)
-                        layer.clip(to: innerBandPath)
+            if (a0 + a1 + a2 + a3) > 0.0001 {
+                context.drawLayer { layer in
+                    layer.clip(to: Path(clipRect))
+                    layer.clip(to: corePath)
+                    layer.clip(to: innerBandPath)
 
-                        layer.blendMode = .plusLighter
+                    layer.blendMode = .plusLighter
 
-                        layer.opacity = a0
-                        layer.fill(Path(clipRect), with: coarseShading)
+                    layer.opacity = a0
+                    layer.fill(Path(clipRect), with: coarseShading)
 
-                        layer.opacity = a1
-                        layer.fill(Path(clipRect), with: coarseDetailShading)
+                    layer.opacity = a1
+                    layer.fill(Path(clipRect), with: coarseDetailShading)
 
-                        layer.opacity = a2
-                        layer.fill(Path(clipRect), with: fineShading)
+                    layer.opacity = a2
+                    layer.fill(Path(clipRect), with: fineShading)
 
-                        layer.opacity = a3
-                        layer.fill(Path(clipRect), with: fineDetailShading)
+                    layer.opacity = a3
+                    layer.fill(Path(clipRect), with: fineDetailShading)
 
-                        layer.blendMode = .destinationIn
-                        layer.opacity = 1.0
-                        layer.fill(Path(clipRect), with: xMaskShading)
-                    }
+                    layer.blendMode = .destinationIn
+                    layer.opacity = 1.0
+                    layer.fill(Path(clipRect), with: xMaskShading)
                 }
             }
 
@@ -183,7 +182,9 @@ extension RainForecastSurfaceRenderer {
                 outside.addRect(clipRect)
                 outside.addPath(corePath)
 
+                let outerMulA = clamp01(cfg.fuzzTextureOuterOpacityMultiplier)
                 let tintA = min(1.0, maxAlpha * outerMulA * 0.55)
+
                 if tintA > 0.0001 {
                     context.drawLayer { layer in
                         layer.clip(to: Path(clipRect))
@@ -217,12 +218,14 @@ extension RainForecastSurfaceRenderer {
             return
         }
 
-        // App path (richer layering; still constant-cost).
+        // App path (same structure, richer).
         do {
-            let a0 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.68
-            let a1 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.36
-            let a2 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.18
-            let a3 = maxAlpha * clamp01(cfg.fuzzTextureInnerOpacityMultiplier) * 0.12
+            let innerMulA = clamp01(cfg.fuzzTextureInnerOpacityMultiplier)
+
+            let a0 = min(1.0, maxAlpha * innerMulA * 0.70)
+            let a1 = min(1.0, maxAlpha * innerMulA * 0.38)
+            let a2 = min(1.0, maxAlpha * innerMulA * 0.18)
+            let a3 = min(1.0, maxAlpha * innerMulA * 0.12)
 
             if (a0 + a1 + a2 + a3) > 0.0001 {
                 context.drawLayer { layer in
@@ -258,7 +261,9 @@ extension RainForecastSurfaceRenderer {
                 outside.addRect(clipRect)
                 outside.addPath(corePath)
 
-                let tintA = maxAlpha * clamp01(cfg.fuzzTextureOuterOpacityMultiplier) * 0.55
+                let outerMulA = clamp01(cfg.fuzzTextureOuterOpacityMultiplier)
+                let tintA = min(1.0, maxAlpha * outerMulA * 0.55)
+
                 if tintA > 0.0001 {
                     context.drawLayer { layer in
                         layer.clip(to: Path(clipRect))
@@ -371,13 +376,14 @@ extension RainForecastSurfaceRenderer {
     ) -> GraphicsContext.Shading {
         let ds = max(1.0, displayScale)
 
-        let authoredPt = CGFloat(RainSurfaceSeamlessNoiseTile.tileSizePixels)
+        // Tile repeat size is the interior (padding is excluded via sourceRect).
+        let authoredRepeatPt = CGFloat(RainSurfaceSeamlessNoiseTile.tileInteriorPixels)
+        let sourceRect = RainSurfaceSeamlessNoiseTile.unitSourceRect
 
+        // Quantise the final tile period to whole device pixels.
         let basePx = CGFloat(max(16, desiredTilePixels))
         let mul = max(0.05, scaleMultiplier)
 
-        // Quantise the scaled tile period to whole device pixels.
-        // Fractional pixel periods are a common cause of visible seams between repeated tiles.
         let targetPx = max(12.0, min(2048.0, (basePx * mul).rounded(.toNearestOrAwayFromZero)))
         let targetPt = targetPx / ds
 
@@ -392,20 +398,23 @@ extension RainForecastSurfaceRenderer {
         let baseOxPx = targetPx * 0.37
         let baseOyPx = targetPx * 0.21
 
-        // Snap origin to the device pixel grid to avoid hairline seams between tiles.
+        // Snap origin to the device pixel grid.
         let originPxX = (bounds.minX * ds + baseOxPx + oxPx).rounded(.toNearestOrAwayFromZero)
         let originPxY = (bounds.minY * ds + baseOyPx + oyPx).rounded(.toNearestOrAwayFromZero)
         let origin = CGPoint(x: originPxX / ds, y: originPxY / ds)
 
-        let scale = max(0.10, min(6.0, targetPt / max(1.0, authoredPt)))
+        // Scale such that the interior repeat maps to targetPt.
+        let scale = max(0.10, min(6.0, targetPt / max(1.0, authoredRepeatPt)))
 
         return GraphicsContext.Shading.tiledImage(
             image,
             origin: origin,
-            sourceRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+            sourceRect: sourceRect,
             scale: scale
         )
     }
+
+    // MARK: - Strength
 
     static func computeFuzzStrengthPerPoint(
         heights: [CGFloat],
@@ -428,7 +437,6 @@ extension RainForecastSurfaceRenderer {
 
         for i in 0..<n {
             let h = max(0.0, heights[i])
-
             if h <= 0.0001 {
                 out[i] = 0.0
                 continue
@@ -447,7 +455,6 @@ extension RainForecastSurfaceRenderer {
             u = pow(u, chanceExp)
             u = max(minStrength, u)
 
-            // Boost fuzz near the baseline for thin rain.
             if maxH > 0.0001 {
                 let frac = Double(h / maxH)
                 let lowPow = max(0.05, cfg.fuzzLowHeightPower)
@@ -456,19 +463,16 @@ extension RainForecastSurfaceRenderer {
                 u *= (1.0 + lowBoost * low)
             }
 
-            // Floor strength prevents full disappearance at intermediate certainties.
             u = max(floorStrength, u)
-
             out[i] = clamp01(u)
         }
 
-        // Tail smoothing.
         if cfg.fuzzTailMinutes > 0.0001 {
             let tail = max(0.0, cfg.fuzzTailMinutes)
             let tailCount = max(1, Int(tail.rounded()))
 
             if tailCount >= 2, out.count >= 2 {
-                let sm = out
+                var sm = out
                 for i in 0..<out.count {
                     var acc = 0.0
                     var wsum = 0.0
@@ -485,6 +489,8 @@ extension RainForecastSurfaceRenderer {
 
         return out
     }
+
+    // MARK: - Mask gradient
 
     static func makeAlphaGradient(
         baseColor: Color,
@@ -519,6 +525,8 @@ extension RainForecastSurfaceRenderer {
 
         return Gradient(stops: out)
     }
+
+    // MARK: - Clip rect
 
     static func computeDissipationClipRect(
         rect: CGRect,
