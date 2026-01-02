@@ -8,6 +8,44 @@
 import Foundation
 import SwiftUI
 import WidgetKit
+import UIKit
+
+private enum WWClockDebugStorage {
+    static let overlayEnabledKey = "widgetweaver.clock.debug.overlay.enabled"
+    static let lastRenderTSKey = "widgetweaver.clock.widget.render.last.ts"
+    static let lastRenderInfoKey = "widgetweaver.clock.widget.render.info"
+    static let fontOKKey = "widgetweaver.clock.font.ok"
+    static let renderThrottleTSKey = "widgetweaver.clock.widget.render.throttle.ts"
+
+    static func isOverlayEnabled() -> Bool {
+        AppGroup.userDefaults.bool(forKey: overlayEnabledKey)
+    }
+
+    static func recordRender(info: String, fontOK: Bool) {
+        let defaults = AppGroup.userDefaults
+        if !defaults.bool(forKey: overlayEnabledKey) {
+            return
+        }
+
+        let now = Date().timeIntervalSince1970
+        let last = defaults.double(forKey: renderThrottleTSKey)
+        if (now - last) < 20.0 {
+            return
+        }
+
+        defaults.set(now, forKey: renderThrottleTSKey)
+        defaults.set(now, forKey: lastRenderTSKey)
+        defaults.set(info, forKey: lastRenderInfoKey)
+        defaults.set(fontOK, forKey: fontOKKey)
+        defaults.synchronize()
+    }
+}
+
+private enum WWClockSecondHandTimerConfig {
+    static let minuteSpilloverSeconds: TimeInterval = 6.0
+    static let timerStartBiasSeconds: TimeInterval = 0.25
+    static let pauseAtSeconds: TimeInterval = 59.0
+}
 
 struct WidgetWeaverClockWidgetLiveView: View {
     let palette: WidgetWeaverClockPalette
@@ -16,21 +54,41 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickSeconds: TimeInterval
 
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let isPrivacy = redactionReasons.contains(.privacy)
-
-            let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
+            let debugOverlayEnabled = WWClockDebugStorage.isOverlayEnabled()
 
             let minuteAnchor = Self.floorToMinute(entryDate)
             let base = WWClockBaseAngles(date: minuteAnchor)
 
-            let showSeconds = (tickMode == .secondsSweep) && !isPrivacy
+            let showSeconds = (tickMode == .secondsSweep)
+
+            let timerStart = minuteAnchor.addingTimeInterval(-WWClockSecondHandTimerConfig.timerStartBiasSeconds)
+            let timerEnd = minuteAnchor.addingTimeInterval(60.0 + WWClockSecondHandTimerConfig.minuteSpilloverSeconds)
+            let timerRange = timerStart...timerEnd
+
+            let pauseTime = minuteAnchor.addingTimeInterval(WWClockSecondHandTimerConfig.pauseAtSeconds)
+
+            let _ = WWClockSecondHandFont.font(size: 12)
+            let fontOK = UIFont(name: WWClockSecondHandFont.postScriptName, size: 12) != nil
+
+            let info =
+                "privacy=\(isPrivacy ? 1 : 0) " +
+                "sec=\(showSeconds ? 1 : 0) " +
+                "font=\(fontOK ? 1 : 0) " +
+                "rm=\(reduceMotion ? 1 : 0) " +
+                "dt=\(String(describing: dynamicTypeSize)) " +
+                "entry=\(Int(entryDate.timeIntervalSinceReferenceDate))"
+
+            let _ = WWClockDebugStorage.recordRender(info: info, fontOK: fontOK)
+
+            let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
             ZStack {
-                // Base clock (hour + minute only).
-                // The seconds layer is handled entirely by the overlay.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: .degrees(base.hour),
@@ -45,13 +103,28 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
-                    minuteAnchor: minuteAnchor,
+                    timerRange: timerRange,
+                    pauseTime: pauseTime,
                     showsSeconds: showSeconds,
-                    handsOpacity: handsOpacity
+                    handsOpacity: handsOpacity,
+                    fontOK: fontOK
                 )
             }
-            .privacySensitive(isPrivacy)
+            .overlay(alignment: .topLeading) {
+                if debugOverlayEnabled {
+                    WWClockWidgetDebugOverlay(
+                        timerRange: timerRange,
+                        isPrivacy: isPrivacy,
+                        showSeconds: showSeconds,
+                        fontOK: fontOK,
+                        reduceMotion: reduceMotion,
+                        dynamicTypeSize: dynamicTypeSize
+                    )
+                }
+            }
             .widgetURL(URL(string: "widgetweaver://clock"))
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .environment(\.layoutDirection, .leftToRight)
         }
     }
 
@@ -86,28 +159,17 @@ private struct WWClockBaseAngles {
 
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
-    let minuteAnchor: Date
+    let timerRange: ClosedRange<Date>
+    let pauseTime: Date
     let showsSeconds: Bool
     let handsOpacity: Double
+    let fontOK: Bool
 
     @Environment(\.displayScale) private var displayScale
-
-    private static let minuteSpilloverSeconds: TimeInterval = 6.0
-
-    // Small start bias to reduce “00 → 02” skips right after the minute boundary.
-    private static let timerStartBiasSeconds: TimeInterval = 0.25
 
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
-
-            // Spillover helps avoid a “blank” hand if the next minute entry is delivered late.
-            let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
-            let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
-            let timerRange = timerStart...timerEnd
-
-            // Pause at 59 seconds so the timer never reaches "1:00" (which may not be covered by ligatures).
-            let pauseTime = minuteAnchor.addingTimeInterval(59.0)
 
             ZStack {
                 if showsSeconds {
@@ -115,7 +177,8 @@ private struct WWClockSecondsAndHubOverlay: View {
                         palette: palette,
                         timerRange: timerRange,
                         pauseTime: pauseTime,
-                        diameter: layout.dialDiameter
+                        diameter: layout.dialDiameter,
+                        fontOK: fontOK
                     )
                     .opacity(handsOpacity)
                 }
@@ -142,19 +205,61 @@ private struct WWClockSecondHandGlyphView: View {
     let timerRange: ClosedRange<Date>
     let pauseTime: Date
     let diameter: CGFloat
+    let fontOK: Bool
 
     var body: some View {
-        Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
-            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(WWClockSecondHandFont.font(size: diameter))
-            .foregroundStyle(palette.accent)
-            .lineLimit(1)
-            .multilineTextAlignment(.center)
-            .frame(width: diameter, height: diameter, alignment: .center)
-            .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
-            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        Group {
+            if fontOK {
+                Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
+                    .font(WWClockSecondHandFont.font(size: diameter))
+            } else {
+                Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
+                    .font(.system(size: max(12, diameter * 0.16), weight: .semibold, design: .monospaced))
+            }
+        }
+        .foregroundStyle(palette.accent)
+        .lineLimit(1)
+        .multilineTextAlignment(.center)
+        .frame(width: diameter, height: diameter, alignment: .center)
+        .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
+        .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WWClockWidgetDebugOverlay: View {
+    let timerRange: ClosedRange<Date>
+    let isPrivacy: Bool
+    let showSeconds: Bool
+    let fontOK: Bool
+    let reduceMotion: Bool
+    let dynamicTypeSize: DynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("CLK DBG")
+                .font(.caption2.weight(.semibold))
+
+            Text("privacy \(isPrivacy ? 1 : 0)  sec \(showSeconds ? 1 : 0)  font \(fontOK ? "OK" : "NO")")
+                .font(.caption2.monospacedDigit())
+
+            Text("rm \(reduceMotion ? 1 : 0)  dt \(String(describing: dynamicTypeSize))")
+                .font(.caption2.monospacedDigit())
+                .opacity(0.85)
+
+            Text(timerInterval: timerRange, countsDown: false)
+                .font(.caption2.monospacedDigit())
+        }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.55))
+        )
+        .foregroundStyle(Color.white.opacity(0.92))
+        .padding(6)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

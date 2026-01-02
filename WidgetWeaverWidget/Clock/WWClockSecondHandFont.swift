@@ -34,7 +34,6 @@ enum WWClockSecondHandFont {
 
     static func font(size: CGFloat) -> Font {
         _ = registerOnce
-        // Fixed size so the glyph clock hand is not affected by the user’s Dynamic Type setting.
         return .custom(postScriptName, fixedSize: size)
     }
 }

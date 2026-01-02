@@ -89,6 +89,8 @@
 		E1C835D32F050F5E00E3AA98 /* RainForecastSurfaceRenderer+Data.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */; };
 		E1C835D52F050F8E00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */; };
 		E1C835D62F050F8E00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */; };
+		E1E878372F083FC900C9AA14 /* ClockWidgetDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E878362F083FC800C9AA14 /* ClockWidgetDiagnostics.swift */; };
+		E1E878382F083FC900C9AA14 /* ClockWidgetDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E878362F083FC800C9AA14 /* ClockWidgetDiagnostics.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -164,6 +166,7 @@
 		E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Data.swift"; sourceTree = "<group>"; };
 		E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Dissipation.swift"; sourceTree = "<group>"; };
 		E1E877872F07162D00C9AA14 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		E1E878362F083FC800C9AA14 /* ClockWidgetDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClockWidgetDiagnostics.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -286,8 +289,9 @@
 		E18676A62EF240690098B095 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
+				E1E878362F083FC800C9AA14 /* ClockWidgetDiagnostics.swift */,
+				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */,
 				E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */,
@@ -478,6 +482,7 @@
 				E1C834CC2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
+				E1E878382F083FC900C9AA14 /* ClockWidgetDiagnostics.swift in Sources */,
 				E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
@@ -489,6 +494,7 @@
 			files = (
 				E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+				E1E878372F083FC900C9AA14 /* ClockWidgetDiagnostics.swift in Sources */,
 				E1C835BD2EFF427200E3AA98 /* RainSurfaceStyleHarness.swift in Sources */,
 				E1C834DB2EFB33F100E3AA98 /* RainSurfaceDrawing.swift in Sources */,
 				E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
@@ -548,7 +554,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 1;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -560,7 +566,7 @@
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
 				PRODUCT_NAME = WidgetWeaver;
 				SWIFT_VERSION = 6.0;
@@ -573,7 +579,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaver/WidgetWeaver.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WidgetWeaver/Info.plist;
@@ -584,7 +590,7 @@
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WidgetWeaver reads your step count to show steps in widgets. WidgetWeaver does not write to Health.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used to set the weather location for your widgets.";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver;
 				PRODUCT_NAME = WidgetWeaver;
 				SWIFT_VERSION = 6.0;
@@ -596,13 +602,13 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 1;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
 				INFOPLIST_OUTPUT_FORMAT = xml;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
 				PRODUCT_NAME = WidgetWeaverWidgetExtension;
 				SWIFT_VERSION = 6.0;
@@ -614,12 +620,12 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetWeaverWidgetExtension.entitlements;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WidgetWeaverWidget/Info.plist;
 				INFOPLIST_OUTPUT_FORMAT = xml;
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.9.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaver.WidgetWeaverWidget;
 				PRODUCT_NAME = WidgetWeaverWidgetExtension;
 				SWIFT_VERSION = 6.0;
