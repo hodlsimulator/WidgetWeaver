@@ -20,7 +20,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let isPrivacy = redactionReasons.contains(.privacy)
-
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
             let minuteAnchor = Self.floorToMinute(entryDate)

@@ -5,8 +5,9 @@
 //  Created by . . on 12/31/25.
 //
 //  Dissipation fuzz rendering.
-//  Tiling is confined to low-certainty slopes and to the body under the surface.
-//  Fix: ensure tapered ends show texture by (1) taper-edge boost and (2) height-dependent body cut.
+//  Tiling layer placement matches the mockup:
+//  - Texture belongs on tapered edges (near the sides/ends of each non-zero “island”)
+//  - Texture is absent under the smooth interior core
 //
 
 import Foundation
@@ -39,10 +40,9 @@ extension RainForecastSurfaceRenderer {
 
         let maxAlpha = clamp01Local(cfg.fuzzMaxOpacity)
 
-        // Tiling strength:
-        // - Uses uncertainty where available.
-        // - Adds a taper-edge boost so geometric tails still show texture.
-        // - Pins baseline anchors to avoid X-mask gradient artefacts at taper endpoints.
+        // Core change:
+        // tilingStrength is now “edge/taper domain” first (per rain island),
+        // then uncertainty/height modulates within that domain.
         let tilingStrength = computeTilingStrengthPerPoint(
             heights: heights,
             certainties01: certainties01.map { Double($0) },
@@ -55,14 +55,14 @@ extension RainForecastSurfaceRenderer {
 
         let slopeStrength = computeSlopeStrengthPerPoint(heights: heights)
 
-        // Surface tiling: emphasise slopes, avoid flat peaks.
+        // Surface tiling: keep it on sloped edges.
         let surfaceStrength: [Double] = zip(tilingStrength, slopeStrength).map { u, s in
-            clamp01Local(u * (0.10 + 0.90 * s))
+            clamp01Local(u * (0.12 + 0.88 * s))
         }
 
-        // Body tiling: mostly uncertainty/taper-driven, lightly slope-weighted.
+        // Body tiling: still edge domain, slightly less slope-gated.
         let bodyStrength: [Double] = zip(tilingStrength, slopeStrength).map { u, s in
-            clamp01Local(u * (0.35 + 0.65 * s))
+            clamp01Local(u * (0.30 + 0.70 * s))
         }
 
         let clipRect = computeDissipationClipRect(
@@ -93,8 +93,7 @@ extension RainForecastSurfaceRenderer {
             StrokeStyle(lineWidth: outerBand * 2.0, lineCap: .round, lineJoin: .round)
         )
 
-        // Body region: a lowered version of the core fill, so tiling starts underneath the surface.
-        // Height-dependent cut allows the body region to rise towards the surface on taper ends.
+        // Body region starts below the surface, but rises towards the surface on low heights.
         let minY = curvePoints.map { $0.y }.min() ?? baselineY
         let peakHeight = max(0.0, baselineY - minY)
 
@@ -108,8 +107,9 @@ extension RainForecastSurfaceRenderer {
             inset: bodyInset
         )
 
-        // X-masks: more stops reduces visible vertical banding when texture is strong.
-        let maxStops = isExtension ? 140 : 260
+        // X-masks: use one stop per sample to avoid smearing texture into the smooth core.
+        let maxStops = isExtension ? 256 : 512
+
         let surfaceMaskGradient = makeAlphaGradient(
             baseColor: .white,
             strength: surfaceStrength,
@@ -118,6 +118,7 @@ extension RainForecastSurfaceRenderer {
             stopsHint: cfg.fuzzTextureGradientStops,
             maxStops: maxStops
         )
+
         let bodyMaskGradient = makeAlphaGradient(
             baseColor: .white,
             strength: bodyStrength,
@@ -139,7 +140,6 @@ extension RainForecastSurfaceRenderer {
             endPoint: CGPoint(x: clipRect.maxX, y: clipRect.midY)
         )
 
-        // Tile shadings (two-phase draw reduces any residual repeat emphasis).
         let fineNoise = RainSurfaceSeamlessNoiseTile.image(.fine)
         let coarseNoise = RainSurfaceSeamlessNoiseTile.image(.coarse)
 
@@ -226,7 +226,7 @@ extension RainForecastSurfaceRenderer {
 
         let clipRectPath = Path(clipRect)
 
-        // PASS 1 — Surface tiling, slopes only.
+        // PASS 1 — Surface tiling on tapered edges only.
         do {
             let surfaceMax = surfaceStrength.max() ?? 0.0
             if surfaceMax > 0.002 {
@@ -240,20 +240,19 @@ extension RainForecastSurfaceRenderer {
 
                     layer.blendMode = .plusLighter
 
-                    // Subtle on the surface; the body pass carries most of the texture.
-                    layer.opacity = base * 0.18 * 0.5
+                    layer.opacity = base * 0.22 * 0.5
                     layer.fill(clipRectPath, with: coarseA)
                     layer.fill(clipRectPath, with: coarseB)
 
-                    layer.opacity = base * 0.10 * 0.5
+                    layer.opacity = base * 0.12 * 0.5
                     layer.fill(clipRectPath, with: coarseDetailA)
                     layer.fill(clipRectPath, with: coarseDetailB)
 
-                    layer.opacity = base * 0.06 * 0.5
+                    layer.opacity = base * 0.07 * 0.5
                     layer.fill(clipRectPath, with: fineA)
                     layer.fill(clipRectPath, with: fineB)
 
-                    layer.opacity = base * 0.04 * 0.5
+                    layer.opacity = base * 0.05 * 0.5
                     layer.fill(clipRectPath, with: fineDetailA)
                     layer.fill(clipRectPath, with: fineDetailB)
 
@@ -264,7 +263,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // PASS 2 — Body tiling underneath the surface.
+        // PASS 2 — Body tiling underneath tapered edges.
         do {
             let bodyMax = bodyStrength.max() ?? 0.0
             if bodyMax > 0.002 {
@@ -277,19 +276,19 @@ extension RainForecastSurfaceRenderer {
 
                     layer.blendMode = .plusLighter
 
-                    layer.opacity = base * 0.42 * 0.5
+                    layer.opacity = base * 0.46 * 0.5
                     layer.fill(clipRectPath, with: coarseA)
                     layer.fill(clipRectPath, with: coarseB)
 
-                    layer.opacity = base * 0.24 * 0.5
+                    layer.opacity = base * 0.27 * 0.5
                     layer.fill(clipRectPath, with: coarseDetailA)
                     layer.fill(clipRectPath, with: coarseDetailB)
 
-                    layer.opacity = base * 0.13 * 0.5
+                    layer.opacity = base * 0.15 * 0.5
                     layer.fill(clipRectPath, with: fineA)
                     layer.fill(clipRectPath, with: fineB)
 
-                    layer.opacity = base * 0.09 * 0.5
+                    layer.opacity = base * 0.10 * 0.5
                     layer.fill(clipRectPath, with: fineDetailA)
                     layer.fill(clipRectPath, with: fineDetailB)
 
@@ -300,7 +299,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Optional outer dust, masked to the surface uncertainty region.
+        // Optional outer dust is still surface-masked.
         do {
             let allowOuter: Bool
             if isExtension {
@@ -345,7 +344,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Optional erosion: apply to the body region, not the surface band.
+        // Optional erosion stays on the body region.
         if !isExtension, cfg.fuzzErodeEnabled, cfg.fuzzErodeStrength > 0.0001 {
             let k = max(0.0, cfg.fuzzErodeStrength)
             let a = maxAlpha * min(0.40, 0.20 * k)
@@ -389,7 +388,7 @@ extension RainForecastSurfaceRenderer {
         }
     }
 
-    // MARK: - Tiling strength
+    // MARK: - Tiling strength (placement)
 
     private static func computeTilingStrengthPerPoint(
         heights: [CGFloat],
@@ -399,17 +398,33 @@ extension RainForecastSurfaceRenderer {
         let n = min(heights.count, certainties01.count)
         guard n > 0 else { return [] }
 
-        var out = [Double](repeating: 0.0, count: n)
+        let eps: CGFloat = 0.0001
+        let maxH = max(0.0, heights.prefix(n).max() ?? 0.0)
 
+        // 1) Domain mask: 1 at tapered edges of each non-zero segment, 0 at interior core.
+        let edgeMask = computeEdgeStrengthPerPoint(heights: Array(heights.prefix(n)))
+
+        // 2) Height shaping: stronger towards low heights (taper/bottom), softer higher up.
+        let lowHeightMask = computeLowHeightStrengthPerPoint(
+            heights: Array(heights.prefix(n)),
+            maxHeight: maxH
+        )
+
+        // 3) Uncertainty shaping (still useful within the edge domain).
         let chanceThresh = clamp01Local(cfg.fuzzChanceThreshold)
         let chanceTrans = max(0.0001, clamp01Local(cfg.fuzzChanceTransition))
         let chanceExp = max(0.05, cfg.fuzzChanceExponent)
 
-        let maxH = max(0.0, heights.prefix(n).max() ?? 0.0)
+        // Floor for tails so textured tapers still read when certainty is high.
+        let tailFloor: Double = 0.62
+
+        var out = [Double](repeating: 0.0, count: n)
 
         for i in 0..<n {
             let h = max(0.0, heights[i])
-            if h <= 0.0001 {
+
+            // Outside the rain shape, nothing is needed.
+            if h <= eps {
                 out[i] = 0.0
                 continue
             }
@@ -423,122 +438,132 @@ extension RainForecastSurfaceRenderer {
                 let t = (chanceThresh - c) / chanceTrans
                 u = clamp01Local(t)
             }
-
             u = pow(u, chanceExp)
 
-            if maxH > 0.0001 {
-                let frac = Double(h / maxH)
-                let lowPow = max(0.05, cfg.fuzzLowHeightPower)
-                let lowBoost = max(0.0, cfg.fuzzLowHeightBoost)
-                let low = pow(max(0.0, min(1.0, 1.0 - frac)), lowPow)
-                u *= (1.0 + lowBoost * low)
-            }
+            let low = lowHeightMask[i]
+            let base = max(u, tailFloor * low)
 
-            out[i] = clamp01Local(u)
+            // Final placement: edge/taper domain decides where tiling can exist.
+            var s = base * edgeMask[i]
+
+            // Soft roll-off makes the interior core stay clean.
+            s = pow(clamp01Local(s), 1.10)
+
+            out[i] = s
         }
 
-        // Add texture on tapered ends even when certainty is high.
-        applyTaperEdgeBoost(&out, heights: heights)
-
-        // Avoid X-mask gradients on baseline anchors (taper endpoints).
-        pinStrengthAtZeroHeightEndpoints(&out, heights: heights)
+        // Keep baseline anchor samples adjacent to a segment from forcing an X-mask fade
+        // right at the geometric taper endpoints.
+        pinStrengthAtSegmentAnchors(&out, heights: Array(heights.prefix(n)))
 
         return out
     }
 
-    private static func applyTaperEdgeBoost(_ strength: inout [Double], heights: [CGFloat]) {
-        let n = min(strength.count, heights.count)
-        guard n >= 3 else { return }
+    private static func computeEdgeStrengthPerPoint(heights: [CGFloat]) -> [Double] {
+        let n = heights.count
+        guard n > 0 else { return [] }
 
         let eps: CGFloat = 0.0001
+        var out = [Double](repeating: 0.0, count: n)
 
-        var firstNonZero: Int? = nil
-        for i in 0..<n {
-            if heights[i] > eps {
-                firstNonZero = i
-                break
+        var i = 0
+        while i < n {
+            while i < n && heights[i] <= eps { i += 1 }
+            if i >= n { break }
+
+            let start = i
+            while i < n && heights[i] > eps { i += 1 }
+            let end = i - 1
+
+            let length = end - start + 1
+            if length <= 0 { continue }
+
+            // Controls how far the edge domain reaches into the segment.
+            // Capped so the interior core can reach zero even on shorter segments.
+            let edgeFraction: Double = 0.35
+            var edgeWidth = Int((Double(length) * edgeFraction).rounded(.toNearestOrAwayFromZero))
+            edgeWidth = max(4, min(56, edgeWidth))
+
+            let dMax = max(1, length / 2)
+            edgeWidth = min(edgeWidth, dMax)
+
+            let denom = Double(max(1, edgeWidth))
+
+            for j in start...end {
+                let d = min(j - start, end - j)
+
+                var t = 1.0 - (Double(d) / denom)
+                t = clamp01Local(t)
+
+                // Smooth edge falloff.
+                var e = smoothstepLocal(t)
+                e = pow(e, 1.15)
+
+                out[j] = e
             }
         }
 
-        var lastNonZero: Int? = nil
-        for i in stride(from: n - 1, through: 0, by: -1) {
-            if heights[i] > eps {
-                lastNonZero = i
-                break
-            }
-        }
-
-        guard let f = firstNonZero, let l = lastNonZero, l > f else { return }
-
-        let span = l - f + 1
-        let edgeWindow = max(6, min(46, Int(Double(span) * 0.22)))
-
-        let maxH = Double(max(0.0, heights[f...l].max() ?? 0.0))
-        if maxH <= 0.0001 { return }
-
-        // Gain is deliberately < 1 so uncertainty can still dominate where present.
-        let gain: Double = 0.90
-
-        for i in f...l {
-            let h = Double(max(0.0, heights[i]))
-            if h <= 0.0001 { continue }
-
-            let d = min(i - f, l - i)
-
-            var edge = 1.0 - (Double(d) / Double(edgeWindow))
-            edge = clamp01Local(edge)
-            edge = smoothstepLocal(edge)
-            edge = pow(edge, 1.25)
-
-            let hr = h / maxH
-            var low = (0.62 - hr) / 0.62
-            low = clamp01Local(low)
-            low = smoothstepLocal(low)
-            low = pow(low, 1.10)
-
-            let taper = edge * low
-            let boosted = clamp01Local(taper * gain)
-
-            strength[i] = max(strength[i], boosted)
-        }
+        return out
     }
 
-    private static func pinStrengthAtZeroHeightEndpoints(_ strength: inout [Double], heights: [CGFloat]) {
+    private static func computeLowHeightStrengthPerPoint(heights: [CGFloat], maxHeight: CGFloat) -> [Double] {
+        let n = heights.count
+        guard n > 0 else { return [] }
+
+        let maxH = Double(max(0.0, maxHeight))
+        if maxH <= 0.0001 {
+            return [Double](repeating: 0.0, count: n)
+        }
+
+        // Low-height weighting:
+        // - near the bottom/tapers: ~1
+        // - towards the top: ~0
+        let startFrac: Double = 0.90
+        let widthFrac: Double = 0.42
+
+        var out = [Double](repeating: 0.0, count: n)
+
+        for i in 0..<n {
+            let h = Double(max(0.0, heights[i]))
+            let frac = clamp01Local(h / maxH)
+
+            var t = (startFrac - frac) / widthFrac
+            t = clamp01Local(t)
+            t = smoothstepLocal(t)
+            t = pow(t, 1.05)
+
+            out[i] = t
+        }
+
+        return out
+    }
+
+    private static func pinStrengthAtSegmentAnchors(_ strength: inout [Double], heights: [CGFloat]) {
         let n = min(strength.count, heights.count)
         guard n >= 2 else { return }
 
         let eps: CGFloat = 0.0001
 
-        var firstNonZero: Int? = nil
-        for i in 0..<n {
-            if heights[i] > eps {
-                firstNonZero = i
-                break
-            }
-        }
+        var i = 0
+        while i < n {
+            while i < n && heights[i] <= eps { i += 1 }
+            if i >= n { break }
 
-        var lastNonZero: Int? = nil
-        for i in stride(from: n - 1, through: 0, by: -1) {
-            if heights[i] > eps {
-                lastNonZero = i
-                break
-            }
-        }
+            let start = i
+            while i < n && heights[i] > eps { i += 1 }
+            let end = i - 1
 
-        if let f = firstNonZero {
-            let v = strength[f]
-            if f > 0 {
-                for i in 0..<f {
-                    strength[i] = v
+            if start >= 0 && start < n {
+                let v = strength[start]
+                if start - 1 >= 0 {
+                    strength[start - 1] = max(strength[start - 1], v)
                 }
             }
-        }
 
-        if let l = lastNonZero {
-            let v = strength[l]
-            if l < n - 1 {
-                for i in (l + 1)..<n {
-                    strength[i] = v
+            if end >= 0 && end < n {
+                let v = strength[end]
+                if end + 1 < n {
+                    strength[end + 1] = max(strength[end + 1], v)
                 }
             }
         }
@@ -587,9 +612,8 @@ extension RainForecastSurfaceRenderer {
             ])
         }
 
-        let hinted = max(2, stopsHint)
-        let auto = max(24, min(maxStops, max(48, n / 2)))
-        let count = max(hinted, auto)
+        // One stop per sample gives a mask that matches placement precisely.
+        let count = min(maxStops, max(2, n))
 
         var out: [Gradient.Stop] = []
         out.reserveCapacity(count)
@@ -688,10 +712,10 @@ extension RainForecastSurfaceRenderer {
         let peakH = max(eps, peakHeight)
 
         // Cut fraction rises with height:
-        // - Small heights (tapers): cut very little so the body region reaches up towards the surface.
-        // - Large heights (peaks): cut more so the body region stays deeper.
-        let cutMin: Double = 0.10
-        let cutMax: Double = 0.72
+        // - low heights: minimal cut, body reaches close to surface
+        // - high heights: deeper cut, body starts well below surface
+        let cutMin: Double = 0.08
+        let cutMax: Double = 0.76
         let cutExp: Double = 1.15
 
         var pts = curvePoints
@@ -735,7 +759,6 @@ extension RainForecastSurfaceRenderer {
         let basePx = CGFloat(max(16, desiredTilePixels))
         let mul = max(0.05, scaleMultiplier)
 
-        // Quantise to whole device pixels.
         let targetPx = max(12.0, min(2048.0, (basePx * mul).rounded(.toNearestOrAwayFromZero)))
         let targetPt = targetPx / ds
 
