@@ -114,18 +114,6 @@ private struct WWClockSecondsAndHubOverlay: View {
                     scale: displayScale
                 )
                 .opacity(handsOpacity)
-
-                // Debug: visible proof that the timer text exists and is updating.
-                // This can be removed once the seconds glyph is confirmed working.
-                Text(timerInterval: timerRange, countsDown: false)
-                    .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-                    .font(.system(size: max(CGFloat(10.0), layout.dialDiameter * 0.07), weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.red.opacity(0.85))
-                    .frame(width: layout.dialDiameter, height: layout.dialDiameter, alignment: .bottomTrailing)
-                    .padding(.trailing, max(CGFloat(6.0), layout.dialDiameter * 0.05))
-                    .padding(.bottom, max(CGFloat(6.0), layout.dialDiameter * 0.05))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
             }
             .frame(width: layout.dialDiameter, height: layout.dialDiameter)
             .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
