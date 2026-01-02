@@ -92,10 +92,17 @@ private struct WWClockSecondsAndHubOverlay: View {
 
     @Environment(\.displayScale) private var displayScale
 
+    private static let minuteSpilloverSeconds: TimeInterval = 6.0
+
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
-            let timerRange = minuteAnchor...minuteAnchor.addingTimeInterval(59.999)
+
+            // Allow a small spillover beyond 60 seconds.
+            // WidgetKit can deliver the next minute entry fractionally late; without spillover,
+            // the timer text can briefly drop out-of-range and render blank, which looks like
+            // the seconds hand disappearing right on the minute.
+            let timerRange = minuteAnchor...minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
 
             ZStack {
                 if showsSeconds {
