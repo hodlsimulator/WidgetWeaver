@@ -12,18 +12,21 @@ public enum WWClockDebugLog {
     private static let throttlePrefix = "widgetweaver.clock.debug.log.throttle."
     private static let maxLinesDefault: Int = 240
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    private static func timestampString(_ date: Date) -> String {
+        // Local formatter per call avoids shared mutable state / Sendable warnings under strict concurrency.
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+        return f.string(from: date)
+    }
 
-    public static func append(
-        _ message: String,
+    /// Appends a message if the throttle window allows it.
+    /// The closure is only evaluated when a log entry will actually be written.
+    public static func appendLazy(
         category: String = "clock",
         throttleID: String? = nil,
         minInterval: TimeInterval = 20.0,
-        now: Date = Date()
+        now: Date = Date(),
+        _ makeMessage: () -> String
     ) {
         let defaults = AppGroup.userDefaults
 
@@ -34,10 +37,10 @@ public enum WWClockDebugLog {
             defaults.set(now, forKey: key)
         }
 
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = makeMessage().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let ts = isoFormatter.string(from: now)
+        let ts = timestampString(now)
         let bundleID = Bundle.main.bundleIdentifier ?? "unknown.bundle"
         let line = "\(ts) [\(category)] [\(bundleID)] \(trimmed)"
 
@@ -50,6 +53,19 @@ public enum WWClockDebugLog {
 
         defaults.set(lines, forKey: logKey)
         defaults.synchronize()
+    }
+
+    /// Convenience wrapper (eager string).
+    public static func append(
+        _ message: String,
+        category: String = "clock",
+        throttleID: String? = nil,
+        minInterval: TimeInterval = 20.0,
+        now: Date = Date()
+    ) {
+        appendLazy(category: category, throttleID: throttleID, minInterval: minInterval, now: now) {
+            message
+        }
     }
 
     public static func readLines() -> [String] {

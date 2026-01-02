@@ -5,6 +5,7 @@
 //  Created by . . on 01/02/26.
 //
 
+import Foundation
 import SwiftUI
 
 struct NoiseMachineView: View {
@@ -51,6 +52,14 @@ struct NoiseMachineView: View {
                 .buttonStyle(.bordered)
             }
 
+            Button {
+                model.resetToDefaults()
+            } label: {
+                Label("Reset to defaults", systemImage: "arrow.counterclockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
             WWFloatSliderRow(
                 title: "Master volume",
                 value: Binding(
@@ -75,7 +84,7 @@ struct NoiseMachineView: View {
         } header: {
             Text("Master")
         } footer: {
-            Text("If enabled, playback resumes automatically after a force-quit and relaunch.")
+            Text("Reset sets all layers, filters, and EQ back to defaults. Playback stops; press Play to start again.")
         }
     }
 
@@ -119,13 +128,6 @@ struct NoiseMachineView: View {
             }
 
             HStack(spacing: 12) {
-                Button {
-                    model.resetToDefaults()
-                } label: {
-                    Label("Reset mix", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(.bordered)
-
                 Button {
                     model.rebuildEngine()
                 } label: {
@@ -248,9 +250,7 @@ struct NoiseMachineView: View {
                         range: -12...12,
                         valueText: { dbString($0) },
                         onEditingChanged: { editing in
-                            if !editing {
-                                model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true)
-                            }
+                            if !editing { model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true) }
                         }
                     )
 
@@ -263,9 +263,7 @@ struct NoiseMachineView: View {
                         range: -12...12,
                         valueText: { dbString($0) },
                         onEditingChanged: { editing in
-                            if !editing {
-                                model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true)
-                            }
+                            if !editing { model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true) }
                         }
                     )
 
@@ -278,9 +276,7 @@ struct NoiseMachineView: View {
                         range: -12...12,
                         valueText: { dbString($0) },
                         onEditingChanged: { editing in
-                            if !editing {
-                                model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true)
-                            }
+                            if !editing { model.setSlotEQ(index, eq: model.state.slots[index].eq, commit: true) }
                         }
                     )
                 }
@@ -291,7 +287,7 @@ struct NoiseMachineView: View {
         } header: {
             Text("Layer \(index + 1)")
         } footer: {
-            Text("Colour blends white → pink → brown. Sliders are smoothed to avoid zipper noise.")
+            Text("Colour blends white → pink → brown.")
         }
     }
 
@@ -304,9 +300,7 @@ struct NoiseMachineView: View {
     }
 
     private func hzString(_ hz: Float) -> String {
-        if hz >= 1000 {
-            return String(format: "%.1f kHz", Double(hz / 1000))
-        }
+        if hz >= 1000 { return String(format: "%.1f kHz", Double(hz / 1000)) }
         return String(format: "%.0f Hz", Double(hz))
     }
 
@@ -368,7 +362,6 @@ private final class NoiseMachineDebugLogModel: ObservableObject {
                 self.refresh()
             }
         }
-
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }

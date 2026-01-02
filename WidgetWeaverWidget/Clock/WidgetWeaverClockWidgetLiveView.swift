@@ -25,6 +25,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let isPrivacy = redactionReasons.contains(.privacy)
+            let isPlaceholder = redactionReasons.contains(.placeholder)
+
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
             let minuteAnchor = Self.floorToMinute(entryDate)
@@ -36,23 +38,39 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
 
-            // Critical: clamps formatted output to 0:59 max, matching the ligature glyph set.
+            // Clamp display to 0:59 so the ligature font never needs to render 1:xx.
             let pauseTime = minuteAnchor.addingTimeInterval(59.0)
 
             let wallNow = Date()
             let fontOK = WWClockSecondHandFont.isAvailable()
-            let redactLabel = isPrivacy ? "privacy" : "none"
 
             let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
             let expectedString = String(format: "0:%02d", expectedSeconds)
 
-            WWClockDebugLog.append(
-                "clockWidget render entry=\(Self.iso(entryDate)) wall=\(Self.iso(wallNow)) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchor=\(Self.iso(minuteAnchor)) range=\(Self.iso(timerStart))...\(Self.iso(timerEnd)) pause=\(Self.iso(pauseTime)) expected=\(expectedString)",
+            let redactLabel: String = {
+                if isPlaceholder && isPrivacy { return "placeholder+privacy" }
+                if isPlaceholder { return "placeholder" }
+                if isPrivacy { return "privacy" }
+                return "none"
+            }()
+
+            // IMPORTANT: side-effect call must be bound, otherwise @ViewBuilder tries to treat () as a View.
+            let _ = WWClockDebugLog.appendLazy(
                 category: "clock",
                 throttleID: "clockWidget.render",
                 minInterval: 30.0,
                 now: wallNow
-            )
+            ) {
+                let entryRef = Int(entryDate.timeIntervalSinceReferenceDate.rounded())
+                let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
+                let anchorRef = Int(minuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
+                let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
+                let pauseRef = Int(pauseTime.timeIntervalSinceReferenceDate.rounded())
+                let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
+
+                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) pauseRef=\(pauseRef) expected=\(expectedString)"
+            }
 
             ZStack {
                 WidgetWeaverClockIconView(
@@ -83,16 +101,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
-    }
-
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static func iso(_ date: Date) -> String {
-        isoFormatter.string(from: date)
     }
 }
 
