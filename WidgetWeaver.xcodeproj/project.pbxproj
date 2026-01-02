@@ -163,6 +163,7 @@
 		E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainSurfaceDissipationNoise.swift; sourceTree = "<group>"; };
 		E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Data.swift"; sourceTree = "<group>"; };
 		E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Dissipation.swift"; sourceTree = "<group>"; };
+		E1E877872F07162D00C9AA14 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -171,7 +172,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				README.md,
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
 		};
@@ -251,6 +251,7 @@
 				E18676792EF227C30098B095 /* Products */,
 				E186768F2EF232180098B095 /* Frameworks */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
+				E1E877872F07162D00C9AA14 /* README.md */,
 			);
 			sourceTree = "<group>";
 		};

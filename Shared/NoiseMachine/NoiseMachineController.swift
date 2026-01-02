@@ -519,9 +519,11 @@ private final class NoiseSlotNode {
     private var targetEQMid: AtomicFloat = .init(0)
     private var targetEQHigh: AtomicFloat = .init(0)
 
-    private let gainSmoother = SmoothedParam(timeConstantSeconds: 0.04)
-    private let colourSmoother = SmoothedParam(timeConstantSeconds: 0.12)
-    private let cutSmoother = SmoothedParam(timeConstantSeconds: 0.18)
+    private var enabledSmoother = SmoothedParam(timeConstantSeconds: 0.04)
+    private var volumeSmoother = SmoothedParam(timeConstantSeconds: 0.04)
+    private var colourSmoother = SmoothedParam(timeConstantSeconds: 0.12)
+    private var lowCutSmoother = SmoothedParam(timeConstantSeconds: 0.18)
+    private var highCutSmoother = SmoothedParam(timeConstantSeconds: 0.18)
 
     init(index: Int, sampleRate: Double) {
         self.index = index
@@ -602,12 +604,14 @@ private final class NoiseSlotNode {
         let eqMid = targetEQMid.load()
         let eqHigh = targetEQHigh.load()
 
-        let rampEnabled = gainSmoother.process(target: enabled, sampleRate: Float(format.sampleRate))
-        let rampVolume = gainSmoother.process(target: volume, sampleRate: Float(format.sampleRate))
-        let rampColour = colourSmoother.process(target: colour, sampleRate: Float(format.sampleRate))
+        let sr = Float(format.sampleRate)
 
-        let rampLowCut = cutSmoother.process(target: lowCut, sampleRate: Float(format.sampleRate))
-        let rampHighCut = cutSmoother.process(target: highCut, sampleRate: Float(format.sampleRate))
+        let rampEnabled = enabledSmoother.process(target: enabled, sampleRate: sr)
+        let rampVolume = volumeSmoother.process(target: volume, sampleRate: sr)
+        let rampColour = colourSmoother.process(target: colour, sampleRate: sr)
+
+        let rampLowCut = lowCutSmoother.process(target: lowCut, sampleRate: sr)
+        let rampHighCut = highCutSmoother.process(target: highCut, sampleRate: sr)
 
         generator.setColour(rampColour)
         generator.setBandpass(lowCutHz: rampLowCut, highCutHz: rampHighCut)
@@ -655,8 +659,8 @@ private final class NoiseGenerator {
     private var targetLowCut: Float = 20
     private var targetHighCut: Float = 18_000
 
-    private let lowCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
-    private let highCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
+    private var lowCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
+    private var highCutSmoother = SmoothedParam(timeConstantSeconds: 0.15)
 
     init(sampleRate: Float) {
         self.sampleRate = sampleRate

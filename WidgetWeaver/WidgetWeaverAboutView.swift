@@ -65,7 +65,7 @@ struct WidgetWeaverAboutView: View {
             .scrollClipDisabled()
             .listSectionSeparator(.hidden)
             .onScrollPhaseChange { _, newPhase in
-                isListScrolling = !newPhase.isIdle
+                isListScrolling = newPhase.isScrolling
             }
         }
         .navigationTitle("Explore")
@@ -273,7 +273,7 @@ struct WidgetWeaverAboutView: View {
                 }
                 .task {
                     if designCount == nil {
-                        let count = (try? WidgetDesignStore().readAll().count) ?? 0
+                        let count = WidgetSpecStore.shared.loadAll().count
                         await MainActor.run { designCount = count }
                     }
                 }
