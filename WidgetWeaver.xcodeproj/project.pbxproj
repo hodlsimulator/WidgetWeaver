@@ -178,6 +178,7 @@
 		E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Clock/WWClockSecondHand-Regular.backup.ttf",
 				Info.plist,
 			);
 			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
@@ -207,6 +208,11 @@
 				E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
 			);
 			path = WidgetWeaverWidget;
+			sourceTree = "<group>";
+		};
+		E1E878082F0787DD00C9AA14 /* Tools */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Tools;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -239,6 +245,7 @@
 				E18676A62EF240690098B095 /* Shared */,
 				E18676792EF227C30098B095 /* Products */,
 				E186768F2EF232180098B095 /* Frameworks */,
+				E1E878082F0787DD00C9AA14 /* Tools */,
 			);
 			sourceTree = "<group>";
 		};
@@ -327,6 +334,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
+				E1E878082F0787DD00C9AA14 /* Tools */,
 			);
 			name = WidgetWeaver;
 			productName = WidgetWeaver;

@@ -20,6 +20,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let isPrivacy = redactionReasons.contains(.privacy)
+
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
             let minuteAnchor = Self.floorToMinute(entryDate)
@@ -93,6 +94,12 @@ private struct WWClockSecondsAndHubOverlay: View {
 
     private static let minuteSpilloverSeconds: TimeInterval = 6.0
 
+    // Small start bias to reduce “00 → 02” skips right after the minute boundary.
+    // Text(timerInterval:) displays 0:00 when now <= lowerBound, and counts within the range. :contentReference[oaicite:1]{index=1}
+    // By starting slightly before the minute anchor, the first visible “1 second” state lands earlier,
+    // which tends to survive entry swaps better in the widget host.
+    private static let timerStartBiasSeconds: TimeInterval = 0.25
+
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
@@ -101,7 +108,9 @@ private struct WWClockSecondsAndHubOverlay: View {
             // WidgetKit can deliver the next minute entry fractionally late; without spillover,
             // the timer text can briefly drop out-of-range and render blank, which looks like
             // the seconds hand disappearing right on the minute.
-            let timerRange = minuteAnchor...minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
+            let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
+            let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
+            let timerRange = timerStart...timerEnd
 
             ZStack {
                 if showsSeconds {
