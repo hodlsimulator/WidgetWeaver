@@ -190,6 +190,13 @@
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
 		};
+		E1E878352F082A5700C9AA14 /* Exceptions for "NoiseMachine" folder in "WidgetWeaverWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"WidgetWeaverAboutView+NoiseMachineSection.swift",
+			);
+			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -217,6 +224,9 @@
 		};
 		E1E8780F2F08056900C9AA14 /* NoiseMachine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E1E878352F082A5700C9AA14 /* Exceptions for "NoiseMachine" folder in "WidgetWeaverWidgetExtension" target */,
+			);
 			path = NoiseMachine;
 			sourceTree = "<group>";
 		};

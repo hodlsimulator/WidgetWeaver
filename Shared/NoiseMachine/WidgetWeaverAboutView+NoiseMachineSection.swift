@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+#if !APP_EXTENSION
+
 extension WidgetWeaverAboutView {
     var noiseMachineSection: some View {
         Section {
@@ -59,3 +61,5 @@ extension WidgetWeaverAboutView {
         }
     }
 }
+
+#endif
