@@ -14,11 +14,24 @@ extension WidgetWeaverAboutView {
     static let featuredCalendarTemplateID = "starter-calendar-nextup"
     static let featuredStepsTemplateID = "starter-steps"
 
-    static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredWeatherTemplateID })!
-    static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredCalendarTemplateID })!
-    static let featuredStepsTemplate: WidgetWeaverAboutTemplate = starterTemplates.first(where: { $0.id == featuredStepsTemplateID })!
+    static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredWeatherTemplateID })!
+    static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredCalendarTemplateID })!
+    static let featuredStepsTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredStepsTemplateID })!
 
-    static let starterTemplates: [WidgetWeaverAboutTemplate] = [
+    static let featuredTemplateIDs: Set<String> = [
+        featuredWeatherTemplateID,
+        featuredCalendarTemplateID,
+        featuredStepsTemplateID,
+    ]
+
+    private static func deduplicatedTemplates(_ templates: [WidgetWeaverAboutTemplate]) -> [WidgetWeaverAboutTemplate] {
+        var seen = Set<String>()
+        return templates.filter { template in
+            seen.insert(template.id).inserted
+        }
+    }
+
+    static let starterTemplatesAll: [WidgetWeaverAboutTemplate] = [
         WidgetWeaverAboutTemplate(
             id: "starter-focus",
             title: "Focus",
@@ -100,6 +113,13 @@ extension WidgetWeaverAboutView {
             spec: specNextUpCalendar()
         ),
     ]
+
+    /// Templates shown in the Templates section on Explore.
+    ///
+    /// Featured templates already appear above as large cards, so they’re excluded here to avoid duplicates.
+    static let starterTemplates: [WidgetWeaverAboutTemplate] = deduplicatedTemplates(
+        starterTemplatesAll.filter { !featuredTemplateIDs.contains($0.id) }
+    )
 
     static let proTemplates: [WidgetWeaverAboutTemplate] = [
         WidgetWeaverAboutTemplate(
