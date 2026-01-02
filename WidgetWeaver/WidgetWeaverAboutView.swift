@@ -11,18 +11,19 @@ import WidgetKit
 import UIKit
 import EventKit
 
+@MainActor
 struct WidgetWeaverAboutView: View {
     @ObservedObject var proManager: WidgetWeaverProManager
 
     /// Adds a template into the design library.
     /// The caller owns ID/UUID creation and any persistence details.
-    var onAddTemplate: (_ spec: WidgetSpec, _ makeDefault: Bool) -> Void
+    var onAddTemplate: @MainActor @Sendable (_ spec: WidgetSpec, _ makeDefault: Bool) -> Void
 
-    var onShowPro: () -> Void
-    var onShowWidgetHelp: () -> Void
-    var onOpenWeatherSettings: () -> Void
-    var onOpenStepsSettings: () -> Void
-    var onGoToLibrary: () -> Void
+    var onShowPro: @MainActor @Sendable () -> Void
+    var onShowWidgetHelp: @MainActor @Sendable () -> Void
+    var onOpenWeatherSettings: @MainActor @Sendable () -> Void
+    var onOpenStepsSettings: @MainActor @Sendable () -> Void
+    var onGoToLibrary: @MainActor @Sendable () -> Void
 
     @State private var isListScrolling = false
     @State var statusMessage: String = ""
@@ -97,8 +98,8 @@ struct WidgetWeaverAboutView: View {
         }
     }
 
-    func handleAdd(template: WidgetSpec, makeDefault: Bool) {
-        onAddTemplate(template, makeDefault)
+    func handleAdd(template: WidgetWeaverAboutTemplate, makeDefault: Bool) {
+        onAddTemplate(template.spec, makeDefault)
         withAnimation(.spring(duration: 0.35)) {
             statusMessage = makeDefault ? "Added & set as default" : "Added"
         }
@@ -135,7 +136,7 @@ struct WidgetWeaverAboutView: View {
 
                 Task {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    await MainActor.run {
+                    DispatchQueue.main.async {
                         withAnimation(.spring(duration: 0.35)) {
                             statusMessage = ""
                         }

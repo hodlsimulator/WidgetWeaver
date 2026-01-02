@@ -95,28 +95,26 @@ private struct WWClockSecondsAndHubOverlay: View {
     private static let minuteSpilloverSeconds: TimeInterval = 6.0
 
     // Small start bias to reduce “00 → 02” skips right after the minute boundary.
-    // Text(timerInterval:) displays 0:00 when now <= lowerBound, and counts within the range. :contentReference[oaicite:1]{index=1}
-    // By starting slightly before the minute anchor, the first visible “1 second” state lands earlier,
-    // which tends to survive entry swaps better in the widget host.
     private static let timerStartBiasSeconds: TimeInterval = 0.25
 
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
 
-            // Allow a small spillover beyond 60 seconds.
-            // WidgetKit can deliver the next minute entry fractionally late; without spillover,
-            // the timer text can briefly drop out-of-range and render blank, which looks like
-            // the seconds hand disappearing right on the minute.
+            // Spillover helps avoid a “blank” hand if the next minute entry is delivered late.
             let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
             let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
+
+            // Pause at 59 seconds so the timer never reaches "1:00" (which may not be covered by ligatures).
+            let pauseTime = minuteAnchor.addingTimeInterval(59.0)
 
             ZStack {
                 if showsSeconds {
                     WWClockSecondHandGlyphView(
                         palette: palette,
                         timerRange: timerRange,
+                        pauseTime: pauseTime,
                         diameter: layout.dialDiameter
                     )
                     .opacity(handsOpacity)
@@ -142,10 +140,11 @@ private struct WWClockSecondsAndHubOverlay: View {
 private struct WWClockSecondHandGlyphView: View {
     let palette: WidgetWeaverClockPalette
     let timerRange: ClosedRange<Date>
+    let pauseTime: Date
     let diameter: CGFloat
 
     var body: some View {
-        Text(timerInterval: timerRange, countsDown: false)
+        Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
             .foregroundStyle(palette.accent)

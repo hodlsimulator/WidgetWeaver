@@ -16,8 +16,7 @@ public enum WidgetWeaverWidgetKinds {
 
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
-    // V110: bumped while iterating on widget rendering.
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV110"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV112"
 
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
 }
