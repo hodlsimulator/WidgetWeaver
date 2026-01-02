@@ -215,6 +215,11 @@
 			path = Tools;
 			sourceTree = "<group>";
 		};
+		E1E8780F2F08056900C9AA14 /* NoiseMachine */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NoiseMachine;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -270,6 +275,7 @@
 		E18676A62EF240690098B095 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */,
@@ -335,6 +341,7 @@
 			fileSystemSynchronizedGroups = (
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
+				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 			);
 			name = WidgetWeaver;
 			productName = WidgetWeaver;
@@ -355,6 +362,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
+				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 			);
 			name = WidgetWeaverWidgetExtension;
 			productName = WidgetWeaverWidgetExtension;
