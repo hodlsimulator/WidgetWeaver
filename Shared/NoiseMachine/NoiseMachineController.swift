@@ -36,7 +36,6 @@ public actor NoiseMachineController {
     private let fallbackSampleRate: Double = 48_000
     private let preferredSampleRate: Double = 48_000
 
-    // Preference only; some routes reject very small values with OSStatus -50.
     private let preferredIOBufferCandidates: [TimeInterval] = [0.01, 0.02, 0.03]
 
     private var graphSampleRate: Double = 48_000
@@ -115,7 +114,7 @@ public actor NoiseMachineController {
         installObserversIfNeeded()
 
         currentState = store.loadLastMix()
-        applyTargets(from: currentState, savePolicy: .immediate)
+        applyTargets(from: currentState, savePolicy: .none)
     }
 
     // MARK: - Public API
@@ -291,8 +290,6 @@ public actor NoiseMachineController {
 
         log("AVAudioSession configure begin")
 
-        // Some category options combinations can fail with OSStatus -50 on certain routes.
-        // Prefer mixing (so other audio can continue), but fall back to plain playback if needed.
         do {
             try session.setCategory(
                 .playback,
@@ -312,7 +309,6 @@ public actor NoiseMachineController {
             }
         }
 
-        // Preferences: useful when accepted, but not required for playback.
         do {
             try session.setPreferredSampleRate(preferredSampleRate)
             log("AVAudioSession setPreferredSampleRate(\(preferredSampleRate)) ok")
@@ -410,11 +406,15 @@ public actor NoiseMachineController {
             let slot = NoiseSlotNode(index: idx, sampleRate: sr, channelCount: ch)
             slots.append(slot)
 
-            engine.attach(slot.sourceNode)
+            engine.attach(slot.playerNode)
             engine.attach(slot.eqNode)
+            engine.attach(slot.slotMixer)
 
-            engine.connect(slot.sourceNode, to: slot.eqNode, format: slot.format)
-            engine.connect(slot.eqNode, to: master, format: slot.format)
+            engine.connect(slot.playerNode, to: slot.eqNode, format: slot.format)
+            engine.connect(slot.eqNode, to: slot.slotMixer, format: slot.format)
+            engine.connect(slot.slotMixer, to: master, format: slot.format)
+
+            slot.scheduleIfNeeded()
         }
 
         engine.connect(master, to: limiter, format: outFormat)
@@ -445,6 +445,10 @@ public actor NoiseMachineController {
             log("startEngineIfNeeded: starting engine")
             try engine.start()
 
+            for slot in slotNodes {
+                slot.playIfNeeded()
+            }
+
             isEngineRunning = true
             log("Engine started")
         } catch {
@@ -455,6 +459,10 @@ public actor NoiseMachineController {
     }
 
     private func teardownEngine() {
+        for slot in slotNodes {
+            slot.stop()
+        }
+
         engine?.stop()
         engine?.reset()
         engine = nil
@@ -476,7 +484,6 @@ public actor NoiseMachineController {
     private func recoverFromEngineStartFailure(originalError: Error) async {
         log("Attempting recovery after engine start failure…", level: .warning)
 
-        // Attempt 1: reset engine and retry.
         do {
             engine?.stop()
             engine?.reset()
@@ -484,6 +491,11 @@ public actor NoiseMachineController {
             try activateSessionIfNeeded()
             engine?.prepare()
             try engine?.start()
+
+            for slot in slotNodes {
+                slot.playIfNeeded()
+            }
+
             isEngineRunning = true
             log("Recovery succeeded after engine reset")
             return
@@ -492,13 +504,17 @@ public actor NoiseMachineController {
             logError("AVAudioEngine restart after reset", error, level: .error)
         }
 
-        // Attempt 2: rebuild graph and retry.
         await rebuildEngine(reason: "engine.start failed")
         do {
             guard let engine else { return }
             try activateSessionIfNeeded()
             engine.prepare()
             try engine.start()
+
+            for slot in slotNodes {
+                slot.playIfNeeded()
+            }
+
             isEngineRunning = true
             log("Recovery succeeded after rebuild")
         } catch {
@@ -530,8 +546,11 @@ public actor NoiseMachineController {
             return
         }
 
-        // Fade down quickly to avoid pops.
         await fadeMaster(to: 0, over: 0.08)
+
+        for slot in slotNodes {
+            slot.stop()
+        }
 
         engine.stop()
         isEngineRunning = false
@@ -556,20 +575,21 @@ public actor NoiseMachineController {
     // MARK: - Applying state
 
     private func applyTargets(from state: NoiseMixState, savePolicy: SavePolicy) {
-        store.save(state, policy: savePolicy)
+        let state = state.sanitised()
+
+        switch savePolicy {
+        case .none:
+            break
+        case .throttled:
+            store.saveThrottled(state)
+        case .immediate:
+            store.saveImmediate(state)
+        }
 
         masterMixer?.outputVolume = state.masterVolume
 
-        for idx in 0..<slotNodes.count {
-            let slot = slotNodes[idx]
-            let s = state.slots[idx]
-
-            slot.isEnabled = s.enabled
-            slot.volume = s.volume
-            slot.colour = s.colour
-            slot.lowCutHz = s.lowCutHz
-            slot.highCutHz = s.highCutHz
-            slot.eq = s.eq
+        for idx in 0..<min(slotNodes.count, state.slots.count) {
+            slotNodes[idx].apply(slot: state.slots[idx])
         }
     }
 
@@ -696,5 +716,186 @@ public actor NoiseMachineController {
         ]
 
         return lines.joined(separator: "\n")
+    }
+}
+
+private final class NoiseSlotNode {
+    let index: Int
+    let format: AVAudioFormat
+
+    let playerNode: AVAudioPlayerNode
+    let eqNode: AVAudioUnitEQ
+    let slotMixer: AVAudioMixerNode
+
+    private var buffer: AVAudioPCMBuffer
+    private var hasScheduled: Bool = false
+
+    private var lastEnabled: Bool = false
+    private var lastVolume: Float = 0
+
+    init(index: Int, sampleRate: Double, channelCount: AVAudioChannelCount) {
+        self.index = index
+        self.format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount)!
+
+        self.playerNode = AVAudioPlayerNode()
+        self.eqNode = AVAudioUnitEQ(numberOfBands: 5)
+        self.slotMixer = AVAudioMixerNode()
+
+        self.slotMixer.outputVolume = 0
+        self.eqNode.globalGain = 0
+
+        self.buffer = NoiseSlotNode.makeNoiseBuffer(format: self.format, seconds: 8.0, seed: UInt64(0xC0FFEE) &+ UInt64(index) &* 17)
+
+        configureEQBands()
+    }
+
+    func scheduleIfNeeded() {
+        guard !hasScheduled else { return }
+        playerNode.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
+        hasScheduled = true
+    }
+
+    func playIfNeeded() {
+        scheduleIfNeeded()
+        if !playerNode.isPlaying {
+            playerNode.play()
+        }
+    }
+
+    func stop() {
+        playerNode.stop()
+        hasScheduled = false
+        scheduleIfNeeded()
+
+        if lastEnabled {
+            slotMixer.outputVolume = lastVolume
+        } else {
+            slotMixer.outputVolume = 0
+        }
+    }
+
+    func apply(slot: NoiseSlotState) {
+        lastEnabled = slot.enabled
+        lastVolume = slot.volume
+
+        slotMixer.outputVolume = slot.enabled ? slot.volume : 0
+
+        let lowCut = slot.lowCutHz.clamped(to: 10...2000)
+        let highCut = slot.highCutHz.clamped(to: 500...20_000)
+
+        let colour = slot.colour.clamped(to: 0...2)
+        let tilt = colour * 4.0
+
+        let lowGain = (slot.eq.lowGainDB + tilt).clamped(to: -12...12)
+        let midGain = slot.eq.midGainDB.clamped(to: -12...12)
+        let highGain = (slot.eq.highGainDB - tilt).clamped(to: -12...12)
+
+        let hp = eqNode.bands[0]
+        hp.filterType = .highPass
+        hp.frequency = lowCut
+        hp.bypass = false
+
+        let lp = eqNode.bands[1]
+        lp.filterType = .lowPass
+        lp.frequency = highCut
+        lp.bypass = false
+
+        let lowShelf = eqNode.bands[2]
+        lowShelf.filterType = .lowShelf
+        lowShelf.frequency = 160
+        lowShelf.gain = lowGain
+        lowShelf.bypass = false
+
+        let mid = eqNode.bands[3]
+        mid.filterType = .parametric
+        mid.frequency = 1200
+        mid.bandwidth = 1.0
+        mid.gain = midGain
+        mid.bypass = false
+
+        let highShelf = eqNode.bands[4]
+        highShelf.filterType = .highShelf
+        highShelf.frequency = 6000
+        highShelf.gain = highGain
+        highShelf.bypass = false
+    }
+
+    private func configureEQBands() {
+        guard eqNode.bands.count == 5 else { return }
+
+        let hp = eqNode.bands[0]
+        hp.filterType = .highPass
+        hp.frequency = 20
+        hp.bypass = false
+
+        let lp = eqNode.bands[1]
+        lp.filterType = .lowPass
+        lp.frequency = 18_000
+        lp.bypass = false
+
+        let lowShelf = eqNode.bands[2]
+        lowShelf.filterType = .lowShelf
+        lowShelf.frequency = 160
+        lowShelf.gain = 0
+        lowShelf.bypass = false
+
+        let mid = eqNode.bands[3]
+        mid.filterType = .parametric
+        mid.frequency = 1200
+        mid.bandwidth = 1.0
+        mid.gain = 0
+        mid.bypass = false
+
+        let highShelf = eqNode.bands[4]
+        highShelf.filterType = .highShelf
+        highShelf.frequency = 6000
+        highShelf.gain = 0
+        highShelf.bypass = false
+    }
+
+    private static func makeNoiseBuffer(format: AVAudioFormat, seconds: Double, seed: UInt64) -> AVAudioPCMBuffer {
+        let frames = AVAudioFrameCount(max(1, Int(format.sampleRate * seconds)))
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+
+        guard let channels = buffer.floatChannelData else {
+            return buffer
+        }
+
+        var rng = SeededRandom(seed: seed)
+        let chCount = Int(format.channelCount)
+        let frameCount = Int(frames)
+
+        for ch in 0..<chCount {
+            let out = channels[ch]
+            for i in 0..<frameCount {
+                let r = rng.nextFloatMinus1To1()
+                out[i] = r * 0.22
+            }
+        }
+
+        return buffer
+    }
+
+    private struct SeededRandom {
+        private var state: UInt64
+
+        init(seed: UInt64) {
+            self.state = seed == 0 ? 0xDEADBEEF : seed
+        }
+
+        mutating func nextUInt32() -> UInt32 {
+            state &+= 0x9E3779B97F4A7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            let x = z ^ (z >> 31)
+            return UInt32(truncatingIfNeeded: x)
+        }
+
+        mutating func nextFloatMinus1To1() -> Float {
+            let u = Float(nextUInt32()) / Float(UInt32.max)
+            return (u * 2.0) - 1.0
+        }
     }
 }
