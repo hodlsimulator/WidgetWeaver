@@ -9,7 +9,7 @@ import AppIntents
 import Foundation
 import WidgetKit
 
-public struct TogglePlayPauseIntent: AppIntent, AudioPlaybackIntent {
+public struct TogglePlayPauseIntent: AudioPlaybackIntent {
     public static var title: LocalizedStringResource { "Toggle Noise Playback" }
     public static var description: IntentDescription {
         IntentDescription("Play or pause the Noise Machine without opening the app.")
@@ -20,20 +20,10 @@ public struct TogglePlayPauseIntent: AppIntent, AudioPlaybackIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult {
-        let store = NoiseMixStore.shared
-        var state = store.loadLastMix()
-
-        await NoiseMachineController.shared.prepareIfNeeded()
-
-        if state.wasPlaying {
-            state.wasPlaying = false
-            await NoiseMachineController.shared.apply(state: state)
-            await NoiseMachineController.shared.pause()
-        } else {
-            state.wasPlaying = true
-            await NoiseMachineController.shared.apply(state: state)
-            await NoiseMachineController.shared.play()
-        }
+#if DEBUG
+        print("[NoiseMachineIntent] TogglePlayPauseIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
+#endif
+        await NoiseMachineController.shared.togglePlayPause()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -43,7 +33,7 @@ public struct TogglePlayPauseIntent: AppIntent, AudioPlaybackIntent {
     }
 }
 
-public struct StopNoiseIntent: AppIntent, AudioPlaybackIntent {
+public struct StopNoiseIntent: AudioPlaybackIntent {
     public static var title: LocalizedStringResource { "Stop Noise" }
     public static var description: IntentDescription {
         IntentDescription("Stop and silence the Noise Machine.")
@@ -54,12 +44,9 @@ public struct StopNoiseIntent: AppIntent, AudioPlaybackIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult {
-        let store = NoiseMixStore.shared
-        var state = store.loadLastMix()
-        state.wasPlaying = false
-
-        await NoiseMachineController.shared.prepareIfNeeded()
-        await NoiseMachineController.shared.apply(state: state)
+#if DEBUG
+        print("[NoiseMachineIntent] StopNoiseIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
+#endif
         await NoiseMachineController.shared.stop()
 
         await MainActor.run {
@@ -70,7 +57,7 @@ public struct StopNoiseIntent: AppIntent, AudioPlaybackIntent {
     }
 }
 
-public struct ToggleSlotIntent: AppIntent, AudioPlaybackIntent {
+public struct ToggleSlotIntent: AudioPlaybackIntent {
     public static var title: LocalizedStringResource { "Toggle Noise Layer" }
     public static var description: IntentDescription {
         IntentDescription("Enable or disable an individual Noise Machine layer.")
@@ -88,22 +75,16 @@ public struct ToggleSlotIntent: AppIntent, AudioPlaybackIntent {
     }
 
     public func perform() async throws -> some IntentResult {
+#if DEBUG
+        print("[NoiseMachineIntent] ToggleSlotIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
+#endif
         let store = NoiseMixStore.shared
-        var state = store.loadLastMix()
+        let state = store.loadLastMix()
 
         let idx = max(0, min(NoiseMixState.slotCount - 1, layerIndex - 1))
-        if state.slots.indices.contains(idx) {
-            state.slots[idx].enabled.toggle()
-        }
+        let enabled = (state.slots.indices.contains(idx) ? !state.slots[idx].enabled : true)
 
-        await NoiseMachineController.shared.prepareIfNeeded()
-        await NoiseMachineController.shared.apply(state: state)
-
-        if state.wasPlaying {
-            await NoiseMachineController.shared.play()
-        } else {
-            await NoiseMachineController.shared.pause()
-        }
+        await NoiseMachineController.shared.setSlotEnabled(idx, enabled: enabled)
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)

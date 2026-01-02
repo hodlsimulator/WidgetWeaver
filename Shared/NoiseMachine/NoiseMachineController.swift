@@ -37,6 +37,45 @@ public actor NoiseMachineController {
 
     private init() {}
 
+
+    // MARK: - Debug
+
+    private func log(_ message: String) {
+#if DEBUG
+        let bundle = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        print("[NoiseMachine][\(bundle)] \(message)")
+#endif
+    }
+
+    private func logError(_ context: String, _ error: Error) {
+#if DEBUG
+        let bundle = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        let ns = error as NSError
+
+        if ns.domain == NSOSStatusErrorDomain {
+            let status = OSStatus(ns.code)
+            let hex = String(format: "0x%08X", UInt32(bitPattern: status))
+            let fourcc = Self.fourCCString(status).map { "'\($0)'" } ?? "n/a"
+            print("[NoiseMachine][\(bundle)] \(context): OSStatus \(status) (\(hex), \(fourcc)) \(ns.localizedDescription)")
+        } else {
+            print("[NoiseMachine][\(bundle)] \(context): \(ns.domain) \(ns.code) \(ns.localizedDescription)")
+        }
+#endif
+    }
+
+    private static func fourCCString(_ status: OSStatus) -> String? {
+        let n = UInt32(bitPattern: status)
+        let bytes: [UInt8] = [
+            UInt8((n >> 24) & 0xFF),
+            UInt8((n >> 16) & 0xFF),
+            UInt8((n >> 8) & 0xFF),
+            UInt8(n & 0xFF)
+        ]
+
+        guard bytes.allSatisfy({ $0 >= 32 && $0 <= 126 }) else { return nil }
+        return String(bytes: bytes, encoding: .ascii)
+    }
+
     // MARK: - Lifecycle
 
     public func bootstrapOnLaunch() async {
@@ -79,10 +118,6 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        if !store.hasResumeOnLaunchValue() {
-            store.setResumeOnLaunchEnabled(true)
-        }
-
         applyTargets(from: s, savePolicy: .immediate)
         await startEngineIfNeeded()
     }
@@ -96,6 +131,13 @@ public actor NoiseMachineController {
 
         var s = currentState
         s.wasPlaying = false
+
+        for i in 0..<NoiseMixState.slotCount {
+            if s.slots.indices.contains(i) {
+                s.slots[i].volume = 0
+            }
+        }
+
         s.updatedAt = Date()
         currentState = s
 
@@ -104,15 +146,17 @@ public actor NoiseMachineController {
     }
 
     public func togglePlayPause() async {
-        let s = store.loadLastMix()
-        if s.wasPlaying {
+        let state = store.loadLastMix()
+        await prepareIfNeeded()
+
+        if state.wasPlaying {
             await pause()
         } else {
             await play()
         }
     }
 
-    public func setSlotEnabled(_ index: Int, enabled: Bool) async {
+    public func setSlotEnabled(_ index: Int, enabled: Bool, savePolicy: SavePolicy = .immediate) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -121,7 +165,8 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: .immediate)
+        applyTargets(from: s, savePolicy: savePolicy)
+
         if s.wasPlaying {
             await startEngineIfNeeded()
         }
@@ -206,24 +251,48 @@ public actor NoiseMachineController {
 
     private func configureSessionIfNeeded() async {
         if didConfigureSession { return }
-        didConfigureSession = true
 
+        do {
+            try configureSession()
+            didConfigureSession = true
+        } catch {
+            didConfigureSession = false
+            logError("AVAudioSession configure", error)
+        }
+    }
+
+    private func configureSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+            .playback,
+            mode: .default,
+            options: [
+                .mixWithOthers,
+                .allowAirPlay,
+                .allowBluetoothA2DP
+            ]
+        )
+        try session.setPreferredSampleRate(renderSampleRate)
+        try session.setPreferredIOBufferDuration(preferredIOBufferDuration)
+    }
+
+    private func activateSessionIfNeeded() throws {
+        let session = AVAudioSession.sharedInstance()
+
+        if !didConfigureSession {
+            try configureSession()
+            didConfigureSession = true
+        }
+
+        try session.setActive(true, options: [])
+    }
+
+    private func deactivateSessionIfPossible() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(
-                .playback,
-                mode: .default,
-                options: [
-                    .mixWithOthers,
-                    .allowAirPlay,
-                    .allowBluetoothA2DP
-                ]
-            )
-            try session.setPreferredSampleRate(renderSampleRate)
-            try session.setPreferredIOBufferDuration(preferredIOBufferDuration)
-            try session.setActive(true, options: [])
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
         } catch {
-            // ignore
+            logError("AVAudioSession deactivate", error)
         }
     }
 
@@ -279,16 +348,79 @@ public actor NoiseMachineController {
         if isEngineRunning, engine.isRunning { return }
 
         do {
+            try activateSessionIfNeeded()
+            engine.prepare()
             try engine.start()
             isEngineRunning = true
         } catch {
             isEngineRunning = false
+            logError("AVAudioEngine start", error)
+            await recoverFromEngineStartFailure(originalError: error)
+        }
+    }
+
+    private func teardownEngine() {
+        engine?.stop()
+        engine?.reset()
+        engine = nil
+        masterMixer = nil
+        limiter = nil
+        slotNodes = []
+        isEngineRunning = false
+    }
+
+    private func rebuildEngine(reason: String) async {
+        log("Rebuilding audio engine (\(reason))")
+        teardownEngine()
+        didConfigureSession = false
+
+        await configureSessionIfNeeded()
+        buildGraph()
+        applyTargets(from: currentState, savePolicy: .immediate)
+    }
+
+    private func recoverFromEngineStartFailure(originalError: Error) async {
+        log("Attempting recovery after engine start failure…")
+
+        if let engine {
+            engine.stop()
+            engine.reset()
+
+            do {
+                try activateSessionIfNeeded()
+                engine.prepare()
+                try engine.start()
+                isEngineRunning = true
+                log("Recovered: reset + restart")
+                return
+            } catch {
+                logError("AVAudioEngine restart after reset", error)
+            }
+        }
+
+        await rebuildEngine(reason: "engine.start failed")
+
+        guard let engine else { return }
+        do {
+            try activateSessionIfNeeded()
+            engine.prepare()
+            try engine.start()
+            isEngineRunning = true
+            log("Recovered: rebuild + start")
+        } catch {
+            isEngineRunning = false
+            logError("AVAudioEngine start after rebuild", error)
         }
     }
 
     private func stopEngineSoon() async {
         guard let engine else { return }
-        if !engine.isRunning { return }
+
+        if !engine.isRunning {
+            isEngineRunning = false
+            deactivateSessionIfPossible()
+            return
+        }
 
         for slot in slotNodes {
             slot.generator.setTargetGain(0)
@@ -296,8 +428,10 @@ public actor NoiseMachineController {
 
         try? await Task.sleep(nanoseconds: 70_000_000)
 
-        engine.pause()
+        engine.stop()
+        engine.reset()
         isEngineRunning = false
+        deactivateSessionIfPossible()
     }
 
     private func pause(savePolicy: SavePolicy) async {
@@ -377,9 +511,29 @@ public actor NoiseMachineController {
             }
         }
 
+        let mediaLostToken = center.addObserver(
+            forName: AVAudioSession.mediaServicesWereLostNotification,
+            object: session,
+            queue: nil
+        ) { @Sendable _ in
+            Task {
+                await NoiseMachineController.shared.handleMediaServicesWereLost()
+            }
+        }
+
+        let mediaResetToken = center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: session,
+            queue: nil
+        ) { @Sendable _ in
+            Task {
+                await NoiseMachineController.shared.handleMediaServicesWereReset()
+            }
+        }
+
         let configToken = center.addObserver(
             forName: .AVAudioEngineConfigurationChange,
-            object: engine,
+            object: nil,
             queue: nil
         ) { @Sendable _ in
             Task {
@@ -389,6 +543,8 @@ public actor NoiseMachineController {
 
         notificationTokens.append(interruptionToken)
         notificationTokens.append(routeToken)
+        notificationTokens.append(mediaLostToken)
+        notificationTokens.append(mediaResetToken)
         notificationTokens.append(configToken)
     }
 
@@ -428,6 +584,21 @@ public actor NoiseMachineController {
     }
 
     private func handleEngineConfigurationChange() async {
+        if currentState.wasPlaying {
+            await startEngineIfNeeded()
+        }
+    }
+
+
+    private func handleMediaServicesWereLost() async {
+        log("AVAudioSession media services were lost")
+        teardownEngine()
+        didConfigureSession = false
+    }
+
+    private func handleMediaServicesWereReset() async {
+        log("AVAudioSession media services were reset")
+        await rebuildEngine(reason: "mediaServicesWereReset")
         if currentState.wasPlaying {
             await startEngineIfNeeded()
         }
@@ -522,159 +693,83 @@ private final class NoiseSlotGenerator: @unchecked Sendable {
     }
 
     func setTargetColour(_ colour: Float) {
-        targetColour.store(colour)
+        targetColour.store(max(0, min(1, colour)))
     }
 
     func setTargetLowCutHz(_ hz: Float) {
-        targetLowCutHz.store(hz)
+        targetLowCutHz.store(max(20, min(20_000, hz)))
     }
 
     func setTargetHighCutHz(_ hz: Float) {
-        targetHighCutHz.store(hz)
+        targetHighCutHz.store(max(20, min(20_000, hz)))
     }
 
     func render(frameCount: Int, audioBufferList: UnsafeMutablePointer<AudioBufferList>) {
-        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-        if frameCount <= 0 || buffers.count == 0 { return }
-
-        let gainAlpha = onePoleAlpha(timeConstantSeconds: 0.06)
-        let colourAlpha = onePoleAlpha(timeConstantSeconds: 0.12)
-        let cutAlpha = onePoleAlpha(timeConstantSeconds: 0.18)
-
         let tg = targetGain.load()
         let tc = targetColour.load()
-        let tl = targetLowCutHz.load()
-        let th = targetHighCutHz.load()
+        let tLow = targetLowCutHz.load()
+        let tHigh = targetHighCutHz.load()
 
-        currentGain += (tg - currentGain) * gainAlpha
-        currentColour += (tc - currentColour) * colourAlpha
-        currentLowCutHz += (tl - currentLowCutHz) * cutAlpha
-        currentHighCutHz += (th - currentHighCutHz) * cutAlpha
+        let rampFrames = max(1, Int(sampleRate * 0.02))
+        let gStep = (tg - currentGain) / Float(rampFrames)
+        let cStep = (tc - currentColour) / Float(rampFrames)
+        let lowStep = (tLow - currentLowCutHz) / Float(rampFrames)
+        let highStep = (tHigh - currentHighCutHz) / Float(rampFrames)
 
-        let lowCutHz = max(10, min(currentLowCutHz, 2_000))
-        let highCutHz = max(500, min(currentHighCutHz, 20_000))
-        let lowAlpha = lowCutHz > 20 ? onePoleCutoffAlpha(cutoffHz: lowCutHz) : 0
-        let highAlpha = highCutHz < 20_000 ? onePoleCutoffAlpha(cutoffHz: highCutHz) : 0
+        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+        let left = buffers[0]
+        let right = buffers.count > 1 ? buffers[1] : buffers[0]
 
-        let silent = abs(currentGain) < 0.00005
+        let lPtr = left.mData!.assumingMemoryBound(to: Float.self)
+        let rPtr = right.mData!.assumingMemoryBound(to: Float.self)
 
-        if silent {
-            for b in buffers {
-                guard let mData = b.mData else { continue }
-                let ptr = mData.assumingMemoryBound(to: Float.self)
-                let samples = frameCount * Int(b.mNumberChannels)
-                for i in 0..<samples { ptr[i] = 0 }
-            }
-            return
-        }
+        for i in 0..<frameCount {
+            currentGain += gStep
+            currentColour += cStep
+            currentLowCutHz += lowStep
+            currentHighCutHz += highStep
 
-        if buffers.count == 1 {
-            let b = buffers[0]
-            let channels = Int(b.mNumberChannels)
-            guard let mData = b.mData else { return }
-            let ptr = mData.assumingMemoryBound(to: Float.self)
+            let white = rng.nextFloatSigned()
+            let pinkS = pink.next(white: white)
+            brown += white * 0.02
+            brown = max(-1, min(1, brown))
 
-            if channels <= 1 {
-                for i in 0..<frameCount {
-                    ptr[i] = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
-                }
-            } else {
-                for i in 0..<frameCount {
-                    let s = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
-                    let base = i * channels
-                    ptr[base] = s
-                    ptr[base + 1] = s
-                    if channels > 2 {
-                        for c in 2..<channels { ptr[base + c] = s }
-                    }
-                }
-            }
-        } else {
-            guard buffers.count >= 2 else { return }
+            let mix = currentColour
+            let coloured = (1 - mix) * pinkS + mix * brown
 
-            let left = buffers[0]
-            let right = buffers[1]
+            let hpAlpha = Self.hpAlpha(sampleRate: sampleRate, cutoffHz: currentLowCutHz)
+            hpLP = hpAlpha * (hpLP + coloured - lp)
 
-            guard let lData = left.mData, let rData = right.mData else { return }
-            let lPtr = lData.assumingMemoryBound(to: Float.self)
-            let rPtr = rData.assumingMemoryBound(to: Float.self)
+            let lpAlpha = Self.lpAlpha(sampleRate: sampleRate, cutoffHz: currentHighCutHz)
+            lp = lp + lpAlpha * (hpLP - lp)
 
-            for i in 0..<frameCount {
-                let s = renderOneSample(lowAlpha: lowAlpha, highAlpha: highAlpha)
-                lPtr[i] = s
-                rPtr[i] = s
-            }
-
-            if buffers.count > 2 {
-                for b in 2..<buffers.count {
-                    guard let mData = buffers[b].mData else { continue }
-                    let ptr = mData.assumingMemoryBound(to: Float.self)
-                    for i in 0..<frameCount { ptr[i] = lPtr[i] }
-                }
-            }
+            let out = lp * currentGain
+            lPtr[i] = out
+            rPtr[i] = out
         }
     }
 
-    private func renderOneSample(lowAlpha: Float, highAlpha: Float) -> Float {
-        let white = rng.nextFloatSigned()
-
-        let pinkSample = pink.process(white)
-        brown = (brown + white * 0.02) * 0.99
-        brown = brown.clamped(to: -1...1)
-
-        let w = white * 0.28
-        let p = pinkSample * 0.18
-        let b = brown * 0.12
-
-        let c = currentColour.clamped(to: 0...2)
-        let mixed: Float
-        if c <= 1 {
-            mixed = lerp(w, p, t: c)
-        } else {
-            mixed = lerp(p, b, t: (c - 1))
-        }
-
-        var x = mixed
-
-        if lowAlpha > 0 {
-            hpLP += lowAlpha * (x - hpLP)
-            x = x - hpLP
-        }
-
-        if highAlpha > 0 {
-            lp += highAlpha * (x - lp)
-            x = lp
-        }
-
-        return tanhf(x * currentGain)
+    private static func lpAlpha(sampleRate: Float, cutoffHz: Float) -> Float {
+        let x = 2 * Float.pi * cutoffHz / sampleRate
+        return x / (x + 1)
     }
 
-    private func onePoleAlpha(timeConstantSeconds: Float) -> Float {
-        let tau = max(0.001, timeConstantSeconds)
-        let a = 1 - expf(-1 / (sampleRate * tau))
-        return a.clamped(to: 0...1)
-    }
-
-    private func onePoleCutoffAlpha(cutoffHz: Float) -> Float {
-        let fc = max(1, cutoffHz)
-        return (1 - expf(-2 * Float.pi * fc / sampleRate)).clamped(to: 0...1)
-    }
-
-    private func lerp(_ a: Float, _ b: Float, t: Float) -> Float {
-        a + (b - a) * t.clamped(to: 0...1)
+    private static func hpAlpha(sampleRate: Float, cutoffHz: Float) -> Float {
+        let x = 2 * Float.pi * cutoffHz / sampleRate
+        return 1 / (x + 1)
     }
 }
 
 private struct PinkNoiseState {
-    var b0: Float = 0
-    var b1: Float = 0
-    var b2: Float = 0
-    var b3: Float = 0
-    var b4: Float = 0
-    var b5: Float = 0
-    var b6: Float = 0
+    private var b0: Float = 0
+    private var b1: Float = 0
+    private var b2: Float = 0
+    private var b3: Float = 0
+    private var b4: Float = 0
+    private var b5: Float = 0
+    private var b6: Float = 0
 
-    mutating func process(_ white: Float) -> Float {
+    mutating func next(white: Float) -> Float {
         b0 = 0.99886 * b0 + white * 0.0555179
         b1 = 0.99332 * b1 + white * 0.0750759
         b2 = 0.96900 * b2 + white * 0.1538520
@@ -687,11 +782,24 @@ private struct PinkNoiseState {
     }
 }
 
+private struct AtomicFloat {
+    private var value: Float
+    init(_ value: Float) { self.value = value }
+
+    mutating func store(_ newValue: Float) {
+        value = newValue
+    }
+
+    func load() -> Float {
+        value
+    }
+}
+
 private struct SplitMix64 {
     private var state: UInt64
 
     init(seed: UInt64) {
-        state = seed
+        self.state = seed
     }
 
     mutating func next() -> UInt64 {
@@ -706,21 +814,5 @@ private struct SplitMix64 {
         let u = next() >> 40
         let f = Float(u) / Float(1 << 24)
         return (f * 2) - 1
-    }
-}
-
-private struct AtomicFloat {
-    private var raw: UInt32
-
-    init(_ value: Float) {
-        raw = value.bitPattern
-    }
-
-    mutating func store(_ value: Float) {
-        raw = value.bitPattern
-    }
-
-    func load() -> Float {
-        Float(bitPattern: raw)
     }
 }
