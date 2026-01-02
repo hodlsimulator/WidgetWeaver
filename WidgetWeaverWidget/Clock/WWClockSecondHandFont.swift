@@ -9,6 +9,10 @@ import CoreText
 import Foundation
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 enum WWClockSecondHandFont {
     static let postScriptName: String = "WWClockSecondHand-Regular"
     private static let bundledFileName: String = "WWClockSecondHand-Regular"
@@ -34,6 +38,16 @@ enum WWClockSecondHandFont {
 
     static func font(size: CGFloat) -> Font {
         _ = registerOnce
+        // Fixed size keeps the glyph positioning stable under Dynamic Type.
         return .custom(postScriptName, fixedSize: size)
+    }
+
+    static func isAvailable() -> Bool {
+        _ = registerOnce
+        #if canImport(UIKit)
+        return UIFont(name: postScriptName, size: 12) != nil
+        #else
+        return true
+        #endif
     }
 }
