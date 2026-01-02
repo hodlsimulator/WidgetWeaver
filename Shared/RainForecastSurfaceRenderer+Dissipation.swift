@@ -5,8 +5,8 @@
 //  Created by . . on 12/31/25.
 //
 //  Dissipation fuzz rendering.
-//  Change: tiling is confined to low-certainty slopes and to the body under the surface,
-//  rather than running along the entire surface.
+//  Tiling is confined to low-certainty slopes and to the body under the surface.
+//  Fix: prevent X-mask fade on geometric tapers by pinning endpoint strength to nearest non-zero height.
 //
 
 import Foundation
@@ -39,7 +39,8 @@ extension RainForecastSurfaceRenderer {
 
         let maxAlpha = clamp01Local(cfg.fuzzMaxOpacity)
 
-        // Strength for tiling must be able to reach real zero in high-certainty areas.
+        // Strength for tiling must be able to reach real zero in high-certainty areas,
+        // but must not fade at geometric taper endpoints (baseline anchors).
         let tilingStrength = computeTilingStrengthPerPoint(
             heights: heights,
             certainties01: certainties01.map { Double($0) },
@@ -91,6 +92,7 @@ extension RainForecastSurfaceRenderer {
         )
 
         // Body region: a lowered version of the core fill, so tiling starts underneath the surface.
+        // Local inset prevents small/taper heights from being completely erased.
         let minY = curvePoints.map { $0.y }.min() ?? baselineY
         let peakHeight = max(0.0, baselineY - minY)
 
@@ -104,7 +106,7 @@ extension RainForecastSurfaceRenderer {
             inset: bodyInset
         )
 
-        // X-masks with higher stop density to avoid visible vertical banding.
+        // X-masks: more stops reduces visible vertical banding when texture is strong.
         let maxStops = isExtension ? 140 : 260
         let surfaceMaskGradient = makeAlphaGradient(
             baseColor: .white,
@@ -296,7 +298,7 @@ extension RainForecastSurfaceRenderer {
             }
         }
 
-        // Optional outer dust, still masked to the surface uncertainty region.
+        // Optional outer dust, masked to the surface uncertainty region.
         do {
             let allowOuter: Bool
             if isExtension {
@@ -433,28 +435,53 @@ extension RainForecastSurfaceRenderer {
             out[i] = clamp01Local(u)
         }
 
-        // Optional tail smoothing kept, but without floors.
-        if cfg.fuzzTailMinutes > 0.0001 {
-            let tail = max(0.0, cfg.fuzzTailMinutes)
-            let tailCount = max(1, Int(tail.rounded()))
+        // Critical: avoid endpoint fades on geometric tapers.
+        // Baseline anchors have height 0 so their strength is 0, which turns the X-mask into a gradient
+        // across the taper. The geometry already tapers the area to zero, so the mask is pinned instead.
+        pinStrengthAtZeroHeightEndpoints(&out, heights: heights)
 
-            if tailCount >= 2, out.count >= 2 {
-                let sm = out
-                for i in 0..<out.count {
-                    var acc = 0.0
-                    var wsum = 0.0
-                    for k in 0..<tailCount {
-                        let j = min(out.count - 1, i + k)
-                        let w = 1.0 - (Double(k) / Double(max(1, tailCount - 1)))
-                        acc += sm[j] * w
-                        wsum += w
-                    }
-                    out[i] = (wsum > 0.0001) ? (acc / wsum) : out[i]
+        return out
+    }
+
+    private static func pinStrengthAtZeroHeightEndpoints(_ strength: inout [Double], heights: [CGFloat]) {
+        let n = min(strength.count, heights.count)
+        guard n >= 2 else { return }
+
+        let eps: CGFloat = 0.0001
+
+        var firstNonZero: Int? = nil
+        for i in 0..<n {
+            if heights[i] > eps {
+                firstNonZero = i
+                break
+            }
+        }
+
+        var lastNonZero: Int? = nil
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            if heights[i] > eps {
+                lastNonZero = i
+                break
+            }
+        }
+
+        if let f = firstNonZero {
+            let v = strength[f]
+            if f > 0 {
+                for i in 0..<f {
+                    strength[i] = v
                 }
             }
         }
 
-        return out
+        if let l = lastNonZero {
+            let v = strength[l]
+            if l < n - 1 {
+                for i in (l + 1)..<n {
+                    strength[i] = v
+                }
+            }
+        }
     }
 
     private static func computeSlopeStrengthPerPoint(heights: [CGFloat]) -> [Double] {
@@ -473,7 +500,6 @@ extension RainForecastSurfaceRenderer {
             let b = Double(heights[min(n - 1, i + 1)])
             let dh = abs(b - a)
 
-            // Normalised slope proxy.
             var s = (dh / maxH) / 0.08
             s = clamp01Local(s)
             s = smoothstepLocal(s)
@@ -502,8 +528,6 @@ extension RainForecastSurfaceRenderer {
         }
 
         let hinted = max(2, stopsHint)
-
-        // More stops reduces visible vertical banding when texture is strong.
         let auto = max(24, min(maxStops, max(48, n / 2)))
         let count = max(hinted, auto)
 
@@ -604,7 +628,13 @@ extension RainForecastSurfaceRenderer {
             if abs(pts[i].y - baselineY) < eps {
                 continue
             }
-            pts[i].y = min(baselineY, pts[i].y + inset)
+
+            let h = max(0.0, baselineY - pts[i].y)
+
+            // Local inset avoids erasing the body region near thin/tapered ends.
+            let localInset = min(inset, h * 0.70)
+
+            pts[i].y = min(baselineY, pts[i].y + localInset)
         }
 
         var p = Self.buildCurveStrokePath(curvePoints: pts)
