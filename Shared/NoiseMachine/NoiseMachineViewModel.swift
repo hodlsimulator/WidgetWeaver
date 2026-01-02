@@ -12,6 +12,7 @@ import SwiftUI
 final class NoiseMachineViewModel: ObservableObject {
     @Published private(set) var state: NoiseMixState
     @Published var resumeOnLaunch: Bool
+    @Published var audioStatus: String = ""
 
     private let store = NoiseMixStore.shared
 
@@ -22,10 +23,12 @@ final class NoiseMachineViewModel: ObservableObject {
     }
 
     func onAppear() {
+        NoiseMachineDebugLogStore.shared.append(.info, "NoiseMachineViewModel onAppear")
         Task {
             await NoiseMachineController.shared.prepareIfNeeded()
             await NoiseMachineController.shared.apply(state: store.loadLastMix())
-            refreshFromStore()
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
         }
     }
 
@@ -34,22 +37,63 @@ final class NoiseMachineViewModel: ObservableObject {
         resumeOnLaunch = store.isResumeOnLaunchEnabled()
     }
 
+    func refreshFromController() {
+        Task {
+            state = await NoiseMachineController.shared.currentMixState()
+        }
+    }
+
+    func refreshAudioStatus() async {
+        audioStatus = await NoiseMachineController.shared.debugAudioStatusString()
+    }
+
+    func dumpAudioStatus() {
+        NoiseMachineDebugLogStore.shared.append(.info, "UI dumpAudioStatus")
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "ui")
+            await refreshAudioStatus()
+        }
+    }
+
+    func rebuildEngine() {
+        NoiseMachineDebugLogStore.shared.append(.warning, "UI rebuildEngine")
+        Task {
+            await NoiseMachineController.shared.debugRebuildEngine()
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
+        }
+    }
+
+    func resetToDefaults() {
+        NoiseMachineDebugLogStore.shared.append(.warning, "UI resetToDefaults")
+        Task {
+            await NoiseMachineController.shared.stop()
+            await NoiseMachineController.shared.apply(state: .default)
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
+        }
+    }
+
     func setResumeOnLaunch(_ enabled: Bool) {
         store.setResumeOnLaunchEnabled(enabled)
         resumeOnLaunch = enabled
     }
 
     func togglePlayPause() {
+        NoiseMachineDebugLogStore.shared.append(.info, "UI togglePlayPause")
         Task {
             await NoiseMachineController.shared.togglePlayPause()
-            refreshFromStore()
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
         }
     }
 
     func stop() {
+        NoiseMachineDebugLogStore.shared.append(.info, "UI stop")
         Task {
             await NoiseMachineController.shared.stop()
-            refreshFromStore()
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
         }
     }
 
@@ -57,11 +101,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.masterVolume = volume
 
         Task {
-            await NoiseMachineController.shared.setMasterVolume(volume, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setMasterVolume(volume, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 
@@ -71,7 +114,8 @@ final class NoiseMachineViewModel: ObservableObject {
 
         Task {
             await NoiseMachineController.shared.setSlotEnabled(index, enabled: enabled)
-            refreshFromStore()
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
         }
     }
 
@@ -80,11 +124,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.slots[index].volume = volume
 
         Task {
-            await NoiseMachineController.shared.setSlotVolume(index, volume: volume, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setSlotVolume(index, volume: volume, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 
@@ -93,11 +136,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.slots[index].colour = colour
 
         Task {
-            await NoiseMachineController.shared.setSlotColour(index, colour: colour, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setSlotColour(index, colour: colour, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 
@@ -106,11 +148,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.slots[index].lowCutHz = hz
 
         Task {
-            await NoiseMachineController.shared.setSlotLowCut(index, hz: hz, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setSlotLowCut(index, hz: hz, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 
@@ -119,11 +160,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.slots[index].highCutHz = hz
 
         Task {
-            await NoiseMachineController.shared.setSlotHighCut(index, hz: hz, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setSlotHighCut(index, hz: hz, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 
@@ -132,11 +172,10 @@ final class NoiseMachineViewModel: ObservableObject {
         state.slots[index].eq = eq
 
         Task {
-            await NoiseMachineController.shared.setSlotEQ(index, eq: eq, savePolicy: commit ? .immediate : .throttled)
+            await NoiseMachineController.shared.setSlotEQ(index, eq: eq, savePolicy: commit ? .immediate : .none)
             if commit {
-                await NoiseMachineController.shared.flushPersistence()
+                state = await NoiseMachineController.shared.currentMixState()
             }
-            refreshFromStore()
         }
     }
 }

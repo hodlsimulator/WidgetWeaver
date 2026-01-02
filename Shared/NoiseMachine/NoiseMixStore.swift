@@ -119,3 +119,107 @@ public final class NoiseMixStore: @unchecked Sendable {
         }
     }
 }
+
+// MARK: - Debug Log (App Group)
+
+public enum NoiseMachineLogLevel: String, Codable, Sendable {
+    case info
+    case warning
+    case error
+}
+
+public struct NoiseMachineLogEntry: Codable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var timestamp: Date
+    public var level: NoiseMachineLogLevel
+    public var origin: String
+    public var message: String
+
+    public init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        level: NoiseMachineLogLevel,
+        origin: String,
+        message: String
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.level = level
+        self.origin = origin
+        self.message = message
+    }
+}
+
+public final class NoiseMachineDebugLogStore: @unchecked Sendable {
+    public static let shared = NoiseMachineDebugLogStore()
+
+    private let key = "NoiseMachine.DebugLog.v1"
+    private let maxEntries: Int = 250
+
+    private let defaults = AppGroup.userDefaults
+    private let queue = DispatchQueue(label: "NoiseMachineDebugLogStore.queue", qos: .utility)
+
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    private init() {
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+    }
+
+    public func append(
+        _ level: NoiseMachineLogLevel = .info,
+        _ message: String,
+        origin: String? = nil
+    ) {
+        let resolvedOrigin = origin ?? (Bundle.main.bundleIdentifier ?? "unknown.bundle")
+        queue.async { [weak self] in
+            guard let self else { return }
+
+            var entries = self.loadUnsafe()
+            entries.append(NoiseMachineLogEntry(level: level, origin: resolvedOrigin, message: message))
+            if entries.count > self.maxEntries {
+                entries.removeFirst(entries.count - self.maxEntries)
+            }
+
+            do {
+                let data = try self.encoder.encode(entries)
+                self.defaults.set(data, forKey: self.key)
+                self.defaults.synchronize()
+            } catch {
+                // ignore
+            }
+        }
+    }
+
+    public func load() -> [NoiseMachineLogEntry] {
+        queue.sync {
+            loadUnsafe()
+        }
+    }
+
+    public func clear() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.defaults.removeObject(forKey: self.key)
+            self.defaults.synchronize()
+        }
+    }
+
+    public func exportText() -> String {
+        load().map { entry in
+            let date = ISO8601DateFormatter().string(from: entry.timestamp)
+            return "\(date) [\(entry.level.rawValue.uppercased())] [\(entry.origin)] \(entry.message)"
+        }
+        .joined(separator: "\n")
+    }
+
+    private func loadUnsafe() -> [NoiseMachineLogEntry] {
+        guard let data = defaults.data(forKey: key) else { return [] }
+        do {
+            return try decoder.decode([NoiseMachineLogEntry].self, from: data)
+        } catch {
+            return []
+        }
+    }
+}

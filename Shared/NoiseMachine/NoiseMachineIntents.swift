@@ -20,10 +20,11 @@ public struct TogglePlayPauseIntent: AudioPlaybackIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult {
-#if DEBUG
-        print("[NoiseMachineIntent] TogglePlayPauseIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
-#endif
+        let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        NoiseMachineDebugLogStore.shared.append(.info, "Intent TogglePlayPause", origin: origin)
         await NoiseMachineController.shared.togglePlayPause()
+
+        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggle")
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -44,10 +45,11 @@ public struct StopNoiseIntent: AudioPlaybackIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult {
-#if DEBUG
-        print("[NoiseMachineIntent] StopNoiseIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
-#endif
+        let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        NoiseMachineDebugLogStore.shared.append(.info, "Intent StopNoise", origin: origin)
         await NoiseMachineController.shared.stop()
+
+        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-stop")
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -75,9 +77,8 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
     }
 
     public func perform() async throws -> some IntentResult {
-#if DEBUG
-        print("[NoiseMachineIntent] ToggleSlotIntent running in \(Bundle.main.bundleIdentifier ?? "unknown.bundle")")
-#endif
+        let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        NoiseMachineDebugLogStore.shared.append(.info, "Intent ToggleSlot layerIndex=\(layerIndex)", origin: origin)
         let store = NoiseMixStore.shared
         let state = store.loadLastMix()
 
@@ -85,6 +86,8 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
         let enabled = (state.slots.indices.contains(idx) ? !state.slots[idx].enabled : true)
 
         await NoiseMachineController.shared.setSlotEnabled(idx, enabled: enabled)
+
+        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggleSlot")
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)

@@ -11,6 +11,7 @@ import Foundation
 
 public actor NoiseMachineController {
     public enum SavePolicy: Sendable {
+        case none
         case throttled
         case immediate
     }
@@ -40,15 +41,16 @@ public actor NoiseMachineController {
 
     // MARK: - Debug
 
-    private func log(_ message: String) {
-#if DEBUG
+    private func log(_ message: String, level: NoiseMachineLogLevel = .info) {
         let bundle = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        NoiseMachineDebugLogStore.shared.append(level, message, origin: bundle)
+
+        #if DEBUG
         print("[NoiseMachine][\(bundle)] \(message)")
-#endif
+        #endif
     }
 
     private func logError(_ context: String, _ error: Error) {
-#if DEBUG
         let bundle = Bundle.main.bundleIdentifier ?? "unknown.bundle"
         let ns = error as NSError
 
@@ -56,11 +58,20 @@ public actor NoiseMachineController {
             let status = OSStatus(ns.code)
             let hex = String(format: "0x%08X", UInt32(bitPattern: status))
             let fourcc = Self.fourCCString(status).map { "'\($0)'" } ?? "n/a"
-            print("[NoiseMachine][\(bundle)] \(context): OSStatus \(status) (\(hex), \(fourcc)) \(ns.localizedDescription)")
+            let msg = "\(context): OSStatus \(status) (\(hex), \(fourcc)) \(ns.localizedDescription)"
+            NoiseMachineDebugLogStore.shared.append(.error, msg, origin: bundle)
+
+            #if DEBUG
+            print("[NoiseMachine][\(bundle)] \(msg)")
+            #endif
         } else {
-            print("[NoiseMachine][\(bundle)] \(context): \(ns.domain) \(ns.code) \(ns.localizedDescription)")
+            let msg = "\(context): \(ns.domain) \(ns.code) \(ns.localizedDescription)"
+            NoiseMachineDebugLogStore.shared.append(.error, msg, origin: bundle)
+
+            #if DEBUG
+            print("[NoiseMachine][\(bundle)] \(msg)")
+            #endif
         }
-#endif
     }
 
     private static func fourCCString(_ status: OSStatus) -> String? {
@@ -79,6 +90,7 @@ public actor NoiseMachineController {
     // MARK: - Lifecycle
 
     public func bootstrapOnLaunch() async {
+        log("bootstrapOnLaunch")
         let state = store.loadLastMix()
         currentState = state
 
@@ -92,7 +104,7 @@ public actor NoiseMachineController {
 
     public func prepareIfNeeded() async {
         if engine != nil { return }
-
+        log("prepareIfNeeded: building audio engine")
         await configureSessionIfNeeded()
         buildGraph()
         installObserversIfNeeded()
@@ -113,6 +125,8 @@ public actor NoiseMachineController {
     public func play() async {
         await prepareIfNeeded()
 
+        log("play")
+
         var s = currentState
         s.wasPlaying = true
         s.updatedAt = Date()
@@ -129,14 +143,10 @@ public actor NoiseMachineController {
     public func stop() async {
         await prepareIfNeeded()
 
+        log("stop")
+
         var s = currentState
         s.wasPlaying = false
-
-        for i in 0..<NoiseMixState.slotCount {
-            if s.slots.indices.contains(i) {
-                s.slots[i].volume = 0
-            }
-        }
 
         s.updatedAt = Date()
         currentState = s
@@ -146,10 +156,10 @@ public actor NoiseMachineController {
     }
 
     public func togglePlayPause() async {
-        let state = store.loadLastMix()
+        log("togglePlayPause")
         await prepareIfNeeded()
 
-        if state.wasPlaying {
+        if currentState.wasPlaying {
             await pause()
         } else {
             await play()
@@ -245,6 +255,26 @@ public actor NoiseMachineController {
 
     public func flushPersistence() async {
         store.flushPendingWrites()
+    }
+
+    public func currentMixState() async -> NoiseMixState {
+        currentState
+    }
+
+    public func debugDumpAudioStatus(reason: String = "manual") async {
+        let snapshot = await debugSnapshot()
+        log("Debug snapshot (\(reason)):\n\(snapshot)")
+    }
+
+    public func debugAudioStatusString() async -> String {
+        await debugSnapshot()
+    }
+
+    public func debugRebuildEngine() async {
+        await rebuildEngine(reason: "manual")
+        if currentState.wasPlaying {
+            await startEngineIfNeeded()
+        }
     }
 
     // MARK: - Session
@@ -348,10 +378,13 @@ public actor NoiseMachineController {
         if isEngineRunning, engine.isRunning { return }
 
         do {
+            log("startEngineIfNeeded: activating session")
             try activateSessionIfNeeded()
             engine.prepare()
+            log("startEngineIfNeeded: starting engine")
             try engine.start()
             isEngineRunning = true
+            log("Engine started")
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine start", error)
@@ -370,7 +403,7 @@ public actor NoiseMachineController {
     }
 
     private func rebuildEngine(reason: String) async {
-        log("Rebuilding audio engine (\(reason))")
+        log("Rebuilding audio engine (\(reason))", level: .warning)
         teardownEngine()
         didConfigureSession = false
 
@@ -380,7 +413,7 @@ public actor NoiseMachineController {
     }
 
     private func recoverFromEngineStartFailure(originalError: Error) async {
-        log("Attempting recovery after engine start failure…")
+        log("Attempting recovery after engine start failure…", level: .warning)
 
         if let engine {
             engine.stop()
@@ -391,7 +424,7 @@ public actor NoiseMachineController {
                 engine.prepare()
                 try engine.start()
                 isEngineRunning = true
-                log("Recovered: reset + restart")
+                log("Recovered: reset + restart", level: .warning)
                 return
             } catch {
                 logError("AVAudioEngine restart after reset", error)
@@ -406,7 +439,7 @@ public actor NoiseMachineController {
             engine.prepare()
             try engine.start()
             isEngineRunning = true
-            log("Recovered: rebuild + start")
+            log("Recovered: rebuild + start", level: .warning)
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine start after rebuild", error)
@@ -471,6 +504,8 @@ public actor NoiseMachineController {
         toSave.updatedAt = Date()
 
         switch savePolicy {
+        case .none:
+            break
         case .immediate:
             store.saveImmediate(toSave)
         case .throttled:
@@ -591,17 +626,46 @@ public actor NoiseMachineController {
 
 
     private func handleMediaServicesWereLost() async {
-        log("AVAudioSession media services were lost")
+        log("AVAudioSession media services were lost", level: .warning)
         teardownEngine()
         didConfigureSession = false
     }
 
     private func handleMediaServicesWereReset() async {
-        log("AVAudioSession media services were reset")
+        log("AVAudioSession media services were reset", level: .warning)
         await rebuildEngine(reason: "mediaServicesWereReset")
         if currentState.wasPlaying {
             await startEngineIfNeeded()
         }
+    }
+}
+
+// MARK: - Debug snapshot
+
+private extension NoiseMachineController {
+    func debugSnapshot() async -> String {
+        let session = AVAudioSession.sharedInstance()
+        let outputs = session.currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ", ")
+        let inputs = session.currentRoute.inputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ", ")
+
+        let engineExists = engine != nil
+        let engineRunning = engine?.isRunning ?? false
+
+        let enabledSlots = currentState.slots.enumerated().filter { $0.element.enabled }.map { "\($0.offset + 1)" }.joined(separator: ",")
+        let vols = currentState.slots.enumerated().map { idx, slot in
+            "L\(idx + 1)=\(String(format: "%.2f", slot.volume))"
+        }.joined(separator: " ")
+
+        var lines: [String] = []
+        lines.append("time=\(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("engineExists=\(engineExists) engineRunning=\(engineRunning) internalFlag=\(isEngineRunning)")
+        lines.append("sessionCategory=\(session.category.rawValue) mode=\(session.mode.rawValue)")
+        lines.append(String(format: "sampleRate=%.1f preferred=%.1f", session.sampleRate, session.preferredSampleRate))
+        lines.append(String(format: "ioBuffer=%.4f preferred=%.4f", session.ioBufferDuration, session.preferredIOBufferDuration))
+        lines.append(String(format: "outputVolume=%.2f otherAudioPlaying=\(session.isOtherAudioPlaying)", session.outputVolume))
+        lines.append("routeOutputs=[\(outputs)] routeInputs=[\(inputs)]")
+        lines.append("state.wasPlaying=\(currentState.wasPlaying) master=\(String(format: "%.2f", currentState.masterVolume)) enabledSlots=[\(enabledSlots)] \(vols)")
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -693,15 +757,15 @@ private final class NoiseSlotGenerator: @unchecked Sendable {
     }
 
     func setTargetColour(_ colour: Float) {
-        targetColour.store(max(0, min(1, colour)))
+        targetColour.store(max(0, min(2, colour)))
     }
 
     func setTargetLowCutHz(_ hz: Float) {
-        targetLowCutHz.store(max(20, min(20_000, hz)))
+        targetLowCutHz.store(max(10, min(2_000, hz)))
     }
 
     func setTargetHighCutHz(_ hz: Float) {
-        targetHighCutHz.store(max(20, min(20_000, hz)))
+        targetHighCutHz.store(max(500, min(20_000, hz)))
     }
 
     func render(frameCount: Int, audioBufferList: UnsafeMutablePointer<AudioBufferList>) {
@@ -734,8 +798,15 @@ private final class NoiseSlotGenerator: @unchecked Sendable {
             brown += white * 0.02
             brown = max(-1, min(1, brown))
 
-            let mix = currentColour
-            let coloured = (1 - mix) * pinkS + mix * brown
+            let c = max(0, min(2, currentColour))
+            let coloured: Float
+            if c <= 1 {
+                let mix = c
+                coloured = (1 - mix) * white + mix * pinkS
+            } else {
+                let mix = c - 1
+                coloured = (1 - mix) * pinkS + mix * brown
+            }
 
             let hpAlpha = Self.hpAlpha(sampleRate: sampleRate, cutoffHz: currentLowCutHz)
             hpLP = hpAlpha * (hpLP + coloured - lp)

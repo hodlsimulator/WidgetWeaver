@@ -9,6 +9,7 @@ import SwiftUI
 
 struct NoiseMachineView: View {
     @StateObject private var model = NoiseMachineViewModel()
+    @StateObject private var logModel = NoiseMachineDebugLogModel()
     @State private var expandedEQ: Set<Int> = []
 
     var body: some View {
@@ -21,7 +22,13 @@ struct NoiseMachineView: View {
         }
         .navigationTitle("Noise Machine")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear { model.onAppear() }
+        .onAppear {
+            logModel.start()
+            model.onAppear()
+        }
+        .onDisappear {
+            logModel.stop()
+        }
     }
 
     private var masterSection: some View {
@@ -63,11 +70,99 @@ struct NoiseMachineView: View {
             )) {
                 Text("Resume on launch")
             }
+
+            diagnosticsSection
         } header: {
             Text("Master")
         } footer: {
             Text("If enabled, playback resumes automatically after a force-quit and relaunch.")
         }
+    }
+
+    private var diagnosticsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider().padding(.top, 4)
+
+            Text("Diagnostics")
+                .font(.headline)
+
+            HStack(spacing: 12) {
+                Button {
+                    model.refreshFromController()
+                    Task { await model.refreshAudioStatus() }
+                    logModel.refresh()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    model.dumpAudioStatus()
+                } label: {
+                    Label("Dump status", systemImage: "doc.plaintext")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 12) {
+                Button(role: .destructive) {
+                    logModel.clear()
+                } label: {
+                    Label("Clear log", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+
+                ShareLink(item: logModel.exportText) {
+                    Label("Share log", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    model.resetToDefaults()
+                } label: {
+                    Label("Reset mix", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    model.rebuildEngine()
+                } label: {
+                    Label("Rebuild engine", systemImage: "wrench.and.screwdriver")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if !model.audioStatus.isEmpty {
+                ScrollView {
+                    Text(model.audioStatus)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 160)
+            }
+
+            if !logModel.entries.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(logModel.entries.suffix(80)) { entry in
+                            Text(logModel.format(entry))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(entry.level == .error ? Color.red : Color.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            } else {
+                Text("No log entries yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     private func slotSection(index: Int) -> some View {
@@ -250,5 +345,53 @@ private struct WWFloatSliderRow: View {
             Slider(value: value, in: range, onEditingChanged: onEditingChanged)
         }
         .padding(.vertical, 4)
+    }
+}
+
+@MainActor
+private final class NoiseMachineDebugLogModel: ObservableObject {
+    @Published private(set) var entries: [NoiseMachineLogEntry] = []
+
+    private var timer: Timer?
+
+    var exportText: String {
+        entries.map { format($0, includeOrigin: true) }.joined(separator: "\n")
+    }
+
+    func start() {
+        refresh()
+        timer?.invalidate()
+
+        let t = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.refresh()
+            }
+        }
+
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func refresh() {
+        entries = NoiseMachineDebugLogStore.shared.load()
+    }
+
+    func clear() {
+        NoiseMachineDebugLogStore.shared.clear()
+        entries = []
+    }
+
+    func format(_ entry: NoiseMachineLogEntry, includeOrigin: Bool = false) -> String {
+        let date = ISO8601DateFormatter().string(from: entry.timestamp)
+        if includeOrigin {
+            return "\(date) [\(entry.level.rawValue.uppercased())] [\(entry.origin)] \(entry.message)"
+        }
+        return "\(date) [\(entry.level.rawValue.uppercased())] \(entry.message)"
     }
 }
