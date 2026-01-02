@@ -472,7 +472,7 @@ extension RainForecastSurfaceRenderer {
             let tailCount = max(1, Int(tail.rounded()))
 
             if tailCount >= 2, out.count >= 2 {
-                var sm = out
+                let sm = out
                 for i in 0..<out.count {
                     var acc = 0.0
                     var wsum = 0.0
