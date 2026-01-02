@@ -33,7 +33,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         Explore curated templates, then customise layout + style in the Editor.
-                        Featured starters include Weather, Clock (Icon), Next Up (Calendar), and Steps.
+                        Featured starters include Weather, Next Up (Calendar), and Steps.
                         """
                     )
                     .font(.subheadline)
@@ -58,8 +58,6 @@ extension WidgetWeaverAboutView {
             EmptyView()
         }
     }
-
-
 
     // MARK: - Header actions (adaptive)
 
@@ -139,6 +137,7 @@ extension WidgetWeaverAboutView {
             aboutHeaderButtonContent("Upgrade to Pro", systemImage: "crown.fill", fixedSize: fixedSize)
         }
     }
+
     // MARK: - Featured Weather
 
     var featuredWeatherSection: some View {
@@ -261,12 +260,10 @@ extension WidgetWeaverAboutView {
         }
     }
 
-
-
     // MARK: - Featured Clock (Home Screen)
 
     var featuredClockSection: some View {
-        return Section {
+        Section {
             WidgetWeaverAboutCard(accent: .orange) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -280,16 +277,14 @@ extension WidgetWeaverAboutView {
 
                         Spacer(minLength: 0)
 
-                        Button {
-                            WidgetWeaverWidgetRefresh.wakeHomeScreenClock()
-                        } label: {
-                            Label("Wake", systemImage: "arrow.clockwise.circle.fill")
+                        Button { onShowWidgetHelp() } label: {
+                            Label("How to add", systemImage: "plus.circle.fill")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
 
-                    Text("A small analogue clock widget with configurable colour schemes. The seconds hand is experimental on some Home Screen hosting paths.")
+                    Text("A standalone analogue clock widget. This is separate from Designs, the Library, and the Editor.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -314,16 +309,10 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Add the Clock (Icon) widget to your Home Screen (Small).",
-                        "Long-press → Edit Widget → choose a colour scheme.",
-                        "If the seconds hand freezes, try removing and adding the widget again.",
+                        "On the Home Screen: long-press → Edit Home Screen → “+”.",
+                        "Search “WidgetWeaver” → add Clock (Icon) (Small).",
+                        "Long-press the clock → Edit Widget → choose a colour scheme.",
                     ])
-
-                    Button { onShowWidgetHelp() } label: {
-                        Label("Widget help", systemImage: "questionmark.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
             .tint(.orange)
@@ -331,7 +320,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Clock", systemImage: "clock", accent: .orange)
         } footer: {
-            Text("Clock (Icon) is a separate widget kind and does not use Designs, the Library, or the Editor.")
+            Text("Clock (Icon) is a separate widget kind and can’t be added to your Design library like templates.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -785,7 +774,9 @@ extension WidgetWeaverAboutView {
                         .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Weather: cached snapshot stored locally.",
+                        "Designs: saved locally in the App Group.",
+                        "Images: stored locally in the App Group container.",
+                        "Weather: cached snapshot + attribution stored locally.",
                         "Calendar: cached upcoming events stored locally.",
                         "Steps: cached today snapshot and (optionally) cached history stored locally.",
                     ])
@@ -886,7 +877,6 @@ private struct WidgetWeaverAboutClockThumbnail: View {
                             .strokeBorder(palette.dialStroke.opacity(0.55), lineWidth: max(1, size * 0.012))
                     )
 
-                // Hour markers
                 ForEach(0..<12, id: \.self) { i in
                     let angle = Double(i) * 30.0
                     Capsule(style: .continuous)
@@ -896,7 +886,6 @@ private struct WidgetWeaverAboutClockThumbnail: View {
                         .rotationEffect(.degrees(angle))
                 }
 
-                // Hands
                 clockHand(length: dialR * 0.52, width: max(2, size * 0.040), color: palette.hourHand, angle: angles.hour)
                 clockHand(length: dialR * 0.72, width: max(2, size * 0.028), color: palette.minuteHand, angle: angles.minute)
                 clockHand(length: dialR * 0.76, width: max(1, size * 0.012), color: palette.secondHand, angle: angles.second)
