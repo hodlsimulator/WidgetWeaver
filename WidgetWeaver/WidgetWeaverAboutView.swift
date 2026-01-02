@@ -78,6 +78,7 @@ struct WidgetWeaverAboutView: View {
             aboutHeaderSection
 
             featuredWeatherSection
+            featuredClockSection
             featuredCalendarSection
             featuredStepsSection
 

@@ -33,7 +33,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         Explore curated templates, then customise layout + style in the Editor.
-                        Featured starters include Weather, Next Up (Calendar), and Steps.
+                        Featured starters include Weather, Clock (Icon), Next Up (Calendar), and Steps.
                         """
                     )
                     .font(.subheadline)
@@ -261,6 +261,82 @@ extension WidgetWeaverAboutView {
         }
     }
 
+
+
+    // MARK: - Featured Clock (Home Screen)
+
+    var featuredClockSection: some View {
+        return Section {
+            WidgetWeaverAboutCard(accent: .orange) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Clock (Icon)")
+                                .font(.headline)
+                            Text("Analogue • Home Screen (Small)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Button {
+                            WidgetWeaverWidgetRefresh.wakeHomeScreenClock()
+                        } label: {
+                            Label("Wake", systemImage: "arrow.clockwise.circle.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Text("A small analogue clock widget with configurable colour schemes. The seconds hand is experimental on some Home Screen hosting paths.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Classic", accent: .orange) {
+                                WidgetWeaverAboutClockThumbnail(variant: .classic)
+                            }
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Ocean", accent: .orange) {
+                                WidgetWeaverAboutClockThumbnail(variant: .ocean)
+                            }
+                            WidgetWeaverAboutPreviewLabeled(familyLabel: "Graphite", accent: .orange) {
+                                WidgetWeaverAboutClockThumbnail(variant: .graphite)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    Divider()
+
+                    Text("Setup")
+                        .font(.subheadline.weight(.semibold))
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Add the Clock (Icon) widget to your Home Screen (Small).",
+                        "Long-press → Edit Widget → choose a colour scheme.",
+                        "If the seconds hand freezes, try removing and adding the widget again.",
+                    ])
+
+                    Button { onShowWidgetHelp() } label: {
+                        Label("Widget help", systemImage: "questionmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .tint(.orange)
+            .wwAboutListRow()
+        } header: {
+            WidgetWeaverAboutSectionHeader("Clock", systemImage: "clock", accent: .orange)
+        } footer: {
+            Text("Clock (Icon) is a separate widget kind and does not use Designs, the Library, or the Editor.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Featured Calendar (Next Up)
 
     var featuredCalendarSection: some View {
@@ -420,7 +496,7 @@ extension WidgetWeaverAboutView {
                         .controlSize(.small)
                     }
 
-                    Text("Uses built-in __steps_* keys. Requires Health permission so the app can cache today’s snapshot for widgets.")
+                    Text("Shows your step count, goal progress, and is ready for streaks.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -432,7 +508,7 @@ extension WidgetWeaverAboutView {
                         Spacer(minLength: 0)
 
                         Button { onOpenStepsSettings() } label: {
-                            Label("Open Steps settings", systemImage: "heart")
+                            Label("Open Steps", systemImage: "heart.fill")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -463,7 +539,7 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Open Steps settings and enable Health access.",
+                        "Open Steps settings and allow Health access.",
                         "Add the Steps template to your library.",
                         "Add a WidgetWeaver widget to your Home Screen.",
                     ])
@@ -474,7 +550,54 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Steps", systemImage: "figure.walk", accent: .green)
         } footer: {
-            Text("Steps are cached in the App Group so widgets can render quickly.\nRefresh limits still apply, so opening the app helps keep snapshots current.")
+            Text(
+                """
+                Steps data is read on-device from HealthKit.
+                WidgetWeaver caches today’s snapshot for widgets to read.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Starter templates
+
+    var starterTemplatesSection: some View {
+        Section {
+            ForEach(Self.starterTemplates) { template in
+                WidgetWeaverAboutTemplateRow(
+                    template: template,
+                    isProUnlocked: proManager.isProUnlocked,
+                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                    onShowPro: onShowPro
+                )
+            }
+        } header: {
+            WidgetWeaverAboutSectionHeader("Templates", systemImage: "square.grid.2x2.fill", accent: .pink)
+        } footer: {
+            Text("Templates are added to your Library as Designs. Edit them any time.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Pro templates
+
+    var proTemplatesSection: some View {
+        Section {
+            ForEach(Self.proTemplates) { template in
+                WidgetWeaverAboutTemplateRow(
+                    template: template,
+                    isProUnlocked: proManager.isProUnlocked,
+                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                    onShowPro: onShowPro
+                )
+            }
+        } header: {
+            WidgetWeaverAboutSectionHeader("Pro Templates", systemImage: "crown.fill", accent: .yellow)
+        } footer: {
+            Text("Pro templates showcase buttons, variables, and matched sets.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -486,56 +609,27 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .purple) {
                 VStack(alignment: .leading, spacing: 12) {
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Templates library",
-                        subtitle: "Add starter designs (and Pro designs) to your library, then edit freely."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Text-first widgets",
-                        subtitle: "Design name, primary text, and optional secondary text."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Layout templates",
-                        subtitle: "Classic / Hero / Poster / Weather / Next Up, plus axis, alignment, spacing, and line limits."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Built-in Weather template",
-                        subtitle: "A rain-first layout with glass panels and adaptive Small/Medium/Large composition."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Matched Sets (Pro)",
-                        subtitle: "Override Small/Medium/Large content for one design."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Variables + Shortcuts (Pro)",
-                        subtitle: "Create shared variables and fill them from Shortcuts or interactive widget buttons."
-                    )
-                    Divider()
-                    WidgetWeaverAboutFeatureRow(
-                        title: "Interactive buttons (Pro)",
-                        subtitle: "Add an action bar to the widget (iOS 17+) to update variables without opening the app."
-                    )
-                    Divider()
+                    Text("WidgetWeaver renders a saved design spec into a widget view. Templates are starting points you can customise.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Examples that fit the current renderer:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        WidgetWeaverAboutBulletList(items: [
-                            "Weather (rain-first nowcast + forecast) via Weather template",
-                            "Next Up calendar widget (upcoming events) via Next Up template",
-                            "Steps widget (Health) via Steps starter design",
-                            "Habit tracker / streak counter (Variables + interactive buttons in Pro)",
-                            "Countdown widget (manual or variable-driven)",
-                            "Daily focus / top task",
-                            "Shopping list / reminder",
-                        ])
+                        WidgetWeaverAboutFeatureRow(
+                            title: "Templates + Remixes",
+                            subtitle: "Curated starters, then tweak layout + style."
+                        )
+                        WidgetWeaverAboutFeatureRow(
+                            title: "Design Library",
+                            subtitle: "Save multiple designs and choose a default."
+                        )
+                        WidgetWeaverAboutFeatureRow(
+                            title: "Widget families",
+                            subtitle: "Small / Medium / Large Home Screen widgets."
+                        )
+                        WidgetWeaverAboutFeatureRow(
+                            title: "Lock Screen widgets",
+                            subtitle: "Weather, Next Up, and Steps lock widgets."
+                        )
                     }
                 }
             }
@@ -543,107 +637,34 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Capabilities", systemImage: "wand.and.stars", accent: .purple)
         } footer: {
-            Text("Each design renders into Small/Medium/Large with size-aware layout rules.\nSome presets (Weather/Next Up) are special layouts.")
+            Text("Some features require iOS 17+ (interactive widgets).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Templates
-
-    var starterTemplatesSection: some View {
-        Section {
-            ForEach(Self.starterTemplates.filter {
-                $0.id != Self.featuredWeatherTemplateID &&
-                $0.id != Self.featuredCalendarTemplateID &&
-                $0.id != Self.featuredStepsTemplateID
-            }) { template in
-                WidgetWeaverAboutTemplateRow(
-                    template: template,
-                    isProUnlocked: proManager.isProUnlocked,
-                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
-                    onShowPro: { onShowPro() }
-                )
-            }
-        } header: {
-            WidgetWeaverAboutSectionHeader("Templates — Starter", systemImage: "square.grid.2x2", accent: .pink)
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Templates add a new saved design to the library.\nEdit freely, then Save to refresh widgets.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if !proManager.isProUnlocked {
-                    Text("Free tier designs: \(designCount)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    var proTemplatesSection: some View {
-        Section {
-            ForEach(Self.proTemplates) { template in
-                WidgetWeaverAboutTemplateRow(
-                    template: template,
-                    isProUnlocked: proManager.isProUnlocked,
-                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
-                    onShowPro: { onShowPro() }
-                )
-            }
-        } header: {
-            WidgetWeaverAboutSectionHeader("Templates — Pro", systemImage: "crown.fill", accent: .yellow)
-        } footer: {
-            Text("Pro templates can include Matched Sets, Variables + Shortcuts, and Interactive Buttons.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Interactive Buttons
+    // MARK: - Interactive buttons
 
     var interactiveButtonsSection: some View {
         Section {
-            WidgetWeaverAboutCard(accent: .orange) {
+            WidgetWeaverAboutCard(accent: .teal) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        """
-                        Interactive buttons add a compact action bar to the bottom of the widget on iOS 17+.
-                        Each button runs an App Intent and updates a variable in the App Group, so the widget can update without opening the app.
-                        """
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text("Interactive widgets can trigger AppIntents to update shared variables.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Up to \(WidgetActionBarSpec.maxActions) buttons per widget.",
-                        "Actions: Increment Variable, Set Variable to Now.",
-                        "Buttons can include a title and optional SF Symbol.",
-                        "Pairs with templates like {{count|0}} or {{last_done|Never|relative}}.",
+                        "Requires iOS 17+.",
+                        "Buttons update variables stored in the App Group.",
+                        "Use variables in any text field with {{__var_name}}."
                     ])
-
-                    if proManager.isProUnlocked {
-                        Text("See Templates — Pro for ready-made button examples (e.g. Habit Streak, Counter).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Label("Interactive buttons are a Pro feature.", systemImage: "lock.fill")
-                            .foregroundStyle(.secondary)
-
-                        Button { onShowPro() } label: {
-                            Label("Unlock Pro", systemImage: "crown.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Interactive Buttons", systemImage: "hand.tap", accent: .orange)
+            WidgetWeaverAboutSectionHeader("Buttons", systemImage: "hand.tap.fill", accent: .teal)
         } footer: {
-            Text("Buttons only appear in the widget.\nConfigure them in the editor under Actions.")
+            Text("Interactive buttons are supported on Home Screen widgets.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -655,83 +676,42 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .teal) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        """
-                        Template variables let text fields pull values at render time.
-                        Some keys are built-in (time/date + weather + steps). Pro unlocks a shared variable store that can be updated via Shortcuts and interactive widget buttons.
-                        """
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text("Variables are small pieces of state shared between the app and widgets.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Template syntax")
-                                .font(.subheadline.weight(.semibold))
-
-                            WidgetWeaverAboutCodeBlock(
-                                """
-                                {{key}}
-                                {{key|fallback}}
-                                {{key|fallback|upper}}
-                                {{amount|0|number:0}}
-                                {{last_done|Never|relative}}
-                                {{progress|0|bar:10}}
-                                {{__now||date:HH:mm}}
-                                {{__weather_temp|--}}
-                                {{__weather_condition|Updating…}}
-                                {{__steps_today|--|number:0}}
-                                {{=done/total*100|0|number:0}}%
-                                """,
-                                accent: .teal
-                            )
-                        }
-
-                        Spacer(minLength: 0)
-
-                        VStack(alignment: .trailing, spacing: 8) {
-                            Button {
-                                copyToPasteboard(
-                                    """
-                                    Weather: {{__weather_temp|--}}° • {{__weather_condition|Updating…}}
-                                    Location: {{__weather_location|Set location}}
-                                    """
-                                )
-                            } label: {
-                                Label("Copy weather", systemImage: "doc.on.doc")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button {
-                                copyToPasteboard("Streak: {{streak|0}} days\nLast done: {{last_done|Never|relative}}")
-                            } label: {
-                                Label("Copy Pro example", systemImage: "doc.on.doc")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
+                    WidgetWeaverAboutBulletList(items: [
+                        "Use {{__var_name|Fallback}} in any text field.",
+                        "Variables can be updated by buttons (iOS 17+).",
+                        "Variables live in the App Group store."
+                    ])
 
                     Divider()
 
-                    Text("Shortcuts actions (App Intents):")
+                    Text("Example")
                         .font(.subheadline.weight(.semibold))
 
-                    WidgetWeaverAboutBulletList(items: [
-                        "Set WidgetWeaver Variable",
-                        "Get WidgetWeaver Variable",
-                        "Remove WidgetWeaver Variable",
-                        "Increment WidgetWeaver Variable",
-                        "Set WidgetWeaver Variable to Now",
-                    ])
+                    WidgetWeaverAboutCodeBlock(
+                        """
+                        Streak: {{__var_streak|0}} days
+                        """,
+                        accent: .teal
+                    )
+
+                    Button {
+                        copyToPasteboard("Streak: {{__var_streak|0}} days")
+                    } label: {
+                        Label("Copy variable example", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("Variables", systemImage: "curlybraces", accent: .teal)
+            WidgetWeaverAboutSectionHeader("Variables", systemImage: "curlybraces.square", accent: .teal)
         } footer: {
-            Text("Variables render at widget refresh time.\nUse built-in keys (weather/steps) or Pro variables for interactive widgets.")
+            Text("Variables are stored on-device only.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -743,27 +723,52 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .indigo) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        """
-                        AI features are optional and run on-device.
-                        They can generate or patch your WidgetSpec, but they never generate images.
-                        """
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text("Generate and patch designs on-device.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Generate a design spec from a prompt.",
-                        "Patch edits: “make it more minimal”, “turn accent to teal”, etc.",
-                        "Results are validated and clamped to safe ranges.",
+                        "Prompts create a starter design.",
+                        "Patches tweak layout and style tokens.",
+                        "AI output is editable in the Editor."
                     ])
+
+                    Divider()
+
+                    Text("Prompt ideas")
+                        .font(.subheadline.weight(.semibold))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Self.promptIdeas, id: \.self) { idea in
+                            WidgetWeaverAboutPromptRow(
+                                text: idea,
+                                copyLabel: "Copy prompt",
+                                onCopy: { copyToPasteboard(idea) }
+                            )
+                        }
+                    }
+
+                    Divider()
+
+                    Text("Patch ideas")
+                        .font(.subheadline.weight(.semibold))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Self.patchIdeas, id: \.self) { idea in
+                            WidgetWeaverAboutPromptRow(
+                                text: idea,
+                                copyLabel: "Copy patch",
+                                onCopy: { copyToPasteboard(idea) }
+                            )
+                        }
+                    }
                 }
             }
             .wwAboutListRow()
         } header: {
-            WidgetWeaverAboutSectionHeader("AI (Optional)", systemImage: "sparkles", accent: .indigo)
+            WidgetWeaverAboutSectionHeader("AI", systemImage: "sparkles", accent: .indigo)
         } footer: {
-            Text("AI is currently intended as a prototype helper for spec exploration.")
+            Text("AI runs on-device where available.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -775,19 +780,12 @@ extension WidgetWeaverAboutView {
         Section {
             WidgetWeaverAboutCard(accent: .gray) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        """
-                        WidgetWeaver stores designs and caches locally on your device.
-                        Weather, calendar, and steps snapshots are read on-device and saved into the App Group cache for widgets to render offline.
-                        """
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text("WidgetWeaver keeps your data on-device.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Designs: saved locally in the App Group.",
-                        "Images: stored locally in the App Group container.",
-                        "Weather: cached snapshot + attribution stored locally.",
+                        "Weather: cached snapshot stored locally.",
                         "Calendar: cached upcoming events stored locally.",
                         "Steps: cached today snapshot and (optionally) cached history stored locally.",
                     ])
@@ -827,6 +825,219 @@ extension WidgetWeaverAboutView {
             Text("Thanks for testing WidgetWeaver.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Clock thumbnail (Explore)
+
+private struct WidgetWeaverAboutClockThumbnail: View {
+    enum Variant: String, CaseIterable {
+        case classic
+        case ocean
+        case graphite
+    }
+
+    let variant: Variant
+
+    @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if thumbnailRenderingEnabled {
+                TimelineView(.periodic(from: Date(), by: 1.0)) { context in
+                    clockBody(date: context.date)
+                }
+            } else {
+                clockBody(date: Date())
+            }
+        }
+        .frame(width: 86, height: 86)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.10), lineWidth: 1)
+        )
+        .accessibilityHidden(true)
+    }
+
+    private func clockBody(date: Date) -> some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let r = size * 0.5
+            let dialR = r * 0.86
+
+            let angles = Self.handAngles(for: date)
+            let palette = Self.palette(for: variant, colorScheme: colorScheme)
+
+            ZStack {
+                LinearGradient(
+                    colors: [palette.backgroundA, palette.backgroundB],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(palette.dialFill.opacity(0.95))
+                    .frame(width: dialR * 2, height: dialR * 2)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(palette.dialStroke.opacity(0.55), lineWidth: max(1, size * 0.012))
+                    )
+
+                // Hour markers
+                ForEach(0..<12, id: \.self) { i in
+                    let angle = Double(i) * 30.0
+                    Capsule(style: .continuous)
+                        .fill(palette.marker)
+                        .frame(width: max(1, size * 0.020), height: max(2, size * 0.090))
+                        .offset(y: -dialR + (size * 0.090))
+                        .rotationEffect(.degrees(angle))
+                }
+
+                // Hands
+                clockHand(length: dialR * 0.52, width: max(2, size * 0.040), color: palette.hourHand, angle: angles.hour)
+                clockHand(length: dialR * 0.72, width: max(2, size * 0.028), color: palette.minuteHand, angle: angles.minute)
+                clockHand(length: dialR * 0.76, width: max(1, size * 0.012), color: palette.secondHand, angle: angles.second)
+
+                Circle()
+                    .fill(palette.centre)
+                    .frame(width: max(4, size * 0.06), height: max(4, size * 0.06))
+                    .shadow(color: Color.black.opacity(0.18), radius: size * 0.02, x: 0, y: size * 0.01)
+            }
+        }
+    }
+
+    private func clockHand(length: CGFloat, width: CGFloat, color: Color, angle: Double) -> some View {
+        Capsule(style: .continuous)
+            .fill(color)
+            .frame(width: width, height: length)
+            .offset(y: -length * 0.5)
+            .rotationEffect(.degrees(angle))
+            .shadow(color: Color.black.opacity(0.12), radius: width, x: 0, y: width * 0.3)
+    }
+
+    private struct Angles {
+        let hour: Double
+        let minute: Double
+        let second: Double
+    }
+
+    private static func handAngles(for date: Date) -> Angles {
+        let cal = Calendar.autoupdatingCurrent
+        let c = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+
+        let hour = Double((c.hour ?? 0) % 12)
+        let minuteInt = Double(c.minute ?? 0)
+        let secondInt = Double(c.second ?? 0)
+        let subSecond = Double(c.nanosecond ?? 0) / 1_000_000_000.0
+
+        let seconds = secondInt + subSecond
+        let minutes = minuteInt + (seconds / 60.0)
+        let hours = hour + (minutes / 60.0)
+
+        return Angles(
+            hour: hours * 30.0,
+            minute: minutes * 6.0,
+            second: seconds * 6.0
+        )
+    }
+
+    private struct Palette {
+        let backgroundA: Color
+        let backgroundB: Color
+        let dialFill: Color
+        let dialStroke: Color
+        let marker: Color
+        let hourHand: Color
+        let minuteHand: Color
+        let secondHand: Color
+        let centre: Color
+    }
+
+    private static func palette(for variant: Variant, colorScheme: ColorScheme) -> Palette {
+        switch variant {
+        case .classic:
+            if colorScheme == .dark {
+                return Palette(
+                    backgroundA: Color(white: 0.20),
+                    backgroundB: Color(white: 0.10),
+                    dialFill: Color(white: 0.08),
+                    dialStroke: Color.white.opacity(0.18),
+                    marker: Color.white.opacity(0.80),
+                    hourHand: Color.white.opacity(0.92),
+                    minuteHand: Color.white.opacity(0.78),
+                    secondHand: Color.orange.opacity(0.92),
+                    centre: Color.white.opacity(0.92)
+                )
+            } else {
+                return Palette(
+                    backgroundA: Color(white: 0.98),
+                    backgroundB: Color(white: 0.88),
+                    dialFill: Color.white,
+                    dialStroke: Color.black.opacity(0.10),
+                    marker: Color.black.opacity(0.65),
+                    hourHand: Color.black.opacity(0.82),
+                    minuteHand: Color.black.opacity(0.62),
+                    secondHand: Color.orange.opacity(0.85),
+                    centre: Color.black.opacity(0.78)
+                )
+            }
+
+        case .ocean:
+            if colorScheme == .dark {
+                return Palette(
+                    backgroundA: Color.blue.opacity(0.55),
+                    backgroundB: Color.black.opacity(0.90),
+                    dialFill: Color.black.opacity(0.35),
+                    dialStroke: Color.white.opacity(0.22),
+                    marker: Color.white.opacity(0.80),
+                    hourHand: Color.white.opacity(0.92),
+                    minuteHand: Color.white.opacity(0.78),
+                    secondHand: Color.cyan.opacity(0.92),
+                    centre: Color.white.opacity(0.92)
+                )
+            } else {
+                return Palette(
+                    backgroundA: Color.blue.opacity(0.55),
+                    backgroundB: Color.cyan.opacity(0.35),
+                    dialFill: Color.white.opacity(0.88),
+                    dialStroke: Color.black.opacity(0.10),
+                    marker: Color.black.opacity(0.65),
+                    hourHand: Color.black.opacity(0.82),
+                    minuteHand: Color.black.opacity(0.62),
+                    secondHand: Color.blue.opacity(0.90),
+                    centre: Color.black.opacity(0.78)
+                )
+            }
+
+        case .graphite:
+            if colorScheme == .dark {
+                return Palette(
+                    backgroundA: Color(white: 0.14),
+                    backgroundB: Color(white: 0.04),
+                    dialFill: Color(white: 0.06),
+                    dialStroke: Color.white.opacity(0.16),
+                    marker: Color.white.opacity(0.74),
+                    hourHand: Color.white.opacity(0.92),
+                    minuteHand: Color.white.opacity(0.78),
+                    secondHand: Color.red.opacity(0.86),
+                    centre: Color.white.opacity(0.92)
+                )
+            } else {
+                return Palette(
+                    backgroundA: Color(white: 0.26),
+                    backgroundB: Color(white: 0.10),
+                    dialFill: Color(white: 0.08),
+                    dialStroke: Color.white.opacity(0.16),
+                    marker: Color.white.opacity(0.75),
+                    hourHand: Color.white.opacity(0.92),
+                    minuteHand: Color.white.opacity(0.78),
+                    secondHand: Color.red.opacity(0.86),
+                    centre: Color.white.opacity(0.92)
+                )
+            }
         }
     }
 }
