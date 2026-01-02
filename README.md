@@ -161,7 +161,7 @@ This keeps the seconds hand moving without scheduling high-frequency provider ti
 
 ---
 
-## Current status (0.9.4 (17))
+## Current status (0.9.5 (2))
 
 ### App
 
