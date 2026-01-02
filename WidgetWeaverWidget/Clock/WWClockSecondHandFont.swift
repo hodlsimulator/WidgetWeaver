@@ -29,16 +29,45 @@ enum WWClockSecondHandFont {
             forResource: bundledFileName,
             withExtension: bundledFileExtension
         ) else {
+            WWClockDebugLog.append(
+                "secondHandFont missing resource \(bundledFileName).\(bundledFileExtension)",
+                category: "clock",
+                throttleID: "clock.font.missingResource",
+                minInterval: 600,
+                now: Date()
+            )
             return
         }
 
         var cfErr: Unmanaged<CFError>?
-        _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &cfErr)
+        let ok = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &cfErr)
+
+        if !ok {
+            let err = cfErr?.takeRetainedValue().localizedDescription ?? "unknown"
+            WWClockDebugLog.append(
+                "secondHandFont register failed err=\(err)",
+                category: "clock",
+                throttleID: "clock.font.registerFail",
+                minInterval: 600,
+                now: Date()
+            )
+            return
+        }
+
+        #if canImport(UIKit)
+        let available = UIFont(name: postScriptName, size: 12) != nil
+        WWClockDebugLog.append(
+            "secondHandFont register ok available=\(available ? 1 : 0)",
+            category: "clock",
+            throttleID: "clock.font.registerOK",
+            minInterval: 600,
+            now: Date()
+        )
+        #endif
     }()
 
     static func font(size: CGFloat) -> Font {
         _ = registerOnce
-        // Fixed size keeps the glyph positioning stable under Dynamic Type.
         return .custom(postScriptName, fixedSize: size)
     }
 

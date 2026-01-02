@@ -227,6 +227,10 @@ struct WidgetWeaverAboutView: View {
 
     @State private var designCount: Int? = nil
 
+    @State private var clockLogPreview: String = ""
+    @State private var clockLogLineCount: Int = 0
+    @State private var clockLastTimelineBuild: Date? = nil
+
     var diagnosticsSection: some View {
         Section {
             WidgetWeaverAboutCard(accent: .gray) {
@@ -239,7 +243,7 @@ struct WidgetWeaverAboutView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Text("Basic app metadata and counts to help debug.")
+                    Text("Basic app metadata and a shareable clock debug log.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -264,24 +268,137 @@ struct WidgetWeaverAboutView: View {
                     }
                     .font(.subheadline)
 
-                    Button {
-                        copyToPasteboard(appVersionString)
+                    HStack(spacing: 10) {
+                        Button {
+                            copyToPasteboard(appVersionString)
+                        } label: {
+                            Label("Copy version", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            WidgetWeaverWidgetRefresh.forceKickIncludingClock()
+                            withAnimation(.spring(duration: 0.35)) {
+                                statusMessage = "Requested widget refresh"
+                            }
+
+                            Task {
+                                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                await MainActor.run {
+                                    withAnimation(.spring(duration: 0.35)) {
+                                        if statusMessage == "Requested widget refresh" { statusMessage = "" }
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Refresh widgets", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Clock timeline build")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let d = clockLastTimelineBuild {
+                                Text(d, format: .dateTime.year().month().day().hour().minute().second())
+                                    .monospacedDigit()
+                            } else {
+                                Text("—")
+                                    .monospacedDigit()
+                            }
+                        }
+
+                        HStack {
+                            Text("Clock log lines")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(clockLogLineCount)")
+                                .monospacedDigit()
+                        }
+                    }
+                    .font(.subheadline)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            refreshClockDiagnostics()
+                        } label: {
+                            Label("Reload clock log", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            let text = WWClockDebugLog.readText(maxLines: 240)
+                            copyToPasteboard(text.isEmpty ? "Clock debug log is empty." : text)
+                        } label: {
+                            Label("Copy clock log", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button(role: .destructive) {
+                        WWClockDebugLog.clear()
+                        refreshClockDiagnostics()
+                        withAnimation(.spring(duration: 0.35)) {
+                            statusMessage = "Cleared clock log"
+                        }
+
+                        Task {
+                            try? await Task.sleep(nanoseconds: 900_000_000)
+                            await MainActor.run {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    if statusMessage == "Cleared clock log" { statusMessage = "" }
+                                }
+                            }
+                        }
                     } label: {
-                        Label("Copy version", systemImage: "doc.on.doc")
+                        Label("Clear clock log", systemImage: "trash")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
+
+                    if !clockLogPreview.isEmpty {
+                        ScrollView {
+                            Text(clockLogPreview)
+                                .font(.caption2.monospacedDigit())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                        }
+                        .frame(maxHeight: 180)
+                    } else {
+                        Text("No clock log entries yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .task {
                     if designCount == nil {
                         let count = WidgetSpecStore.shared.loadAll().count
                         await MainActor.run { designCount = count }
                     }
+                    refreshClockDiagnostics()
                 }
             }
             .wwAboutListRow()
         } header: {
             WidgetWeaverAboutSectionHeader("Diagnostics", systemImage: "wrench.and.screwdriver", accent: .gray)
         }
+    }
+
+    private func refreshClockDiagnostics() {
+        let defaults = AppGroup.userDefaults
+        clockLastTimelineBuild = defaults.object(forKey: "widgetweaver.clock.timelineBuild.last") as? Date
+
+        let lines = WWClockDebugLog.readLines()
+        clockLogLineCount = lines.count
+        clockLogPreview = lines.suffix(40).joined(separator: "\n")
     }
 }

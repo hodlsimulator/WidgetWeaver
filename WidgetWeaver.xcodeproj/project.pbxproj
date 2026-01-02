@@ -89,6 +89,8 @@
 		E1C835D32F050F5E00E3AA98 /* RainForecastSurfaceRenderer+Data.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */; };
 		E1C835D52F050F8E00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */; };
 		E1C835D62F050F8E00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */; };
+		E1E8783C2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */; };
+		E1E8783D2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -164,6 +166,7 @@
 		E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Data.swift"; sourceTree = "<group>"; };
 		E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Dissipation.swift"; sourceTree = "<group>"; };
 		E1E877872F07162D00C9AA14 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WWClockDebugLog.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -327,6 +330,7 @@
 				E1C834D02EFAB7CD00E3AA98 /* WidgetWeaverWeatherTemplateNowcastChart.swift */,
 				E1785EBB2EF628E100F7D707 /* WidgetWeaverWeatherTemplateView.swift */,
 				E18676AA2EF240D00098B095 /* WidgetWeaverWidgetKinds.swift */,
+				E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */,
 				E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicyWWThumbnailRenderingPolicy.swift */,
 			);
 			path = Shared;
@@ -453,6 +457,7 @@
 				E18676AF2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */,
 				21291E876C7E4A1CA098C6E7 /* WidgetSpec+Symbol.swift in Sources */,
+				E1E8783C2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */,
 				E1C834D82EFB33CA00E3AA98 /* RainForecastSurfaceRenderer.swift in Sources */,
 				E1785EBD2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
 				E1C834CF2EFAAF3900E3AA98 /* RainForecastSurfaceView.swift in Sources */,
@@ -489,6 +494,7 @@
 			files = (
 				E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+				E1E8783D2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */,
 				E1C835BD2EFF427200E3AA98 /* RainSurfaceStyleHarness.swift in Sources */,
 				E1C834DB2EFB33F100E3AA98 /* RainSurfaceDrawing.swift in Sources */,
 				E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,

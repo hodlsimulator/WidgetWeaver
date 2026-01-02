@@ -16,11 +16,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickSeconds: TimeInterval
 
     @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    // Avoids the “00 → 02” style boundary glitch.
     private static let timerStartBiasSeconds: TimeInterval = 0.25
-
-    // Keep some spillover so the timer doesn’t go blank if the next minute entry is delivered a bit late.
     private static let minuteSpilloverSeconds: TimeInterval = 6.0
 
     var body: some View {
@@ -28,21 +27,32 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let isPrivacy = redactionReasons.contains(.privacy)
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
 
-            // Hour/minute can follow the entry minute (what you already had).
-            let entryMinuteAnchor = Self.floorToMinute(entryDate)
-            let base = WWClockBaseAngles(date: entryMinuteAnchor)
+            let minuteAnchor = Self.floorToMinute(entryDate)
+            let base = WWClockBaseAngles(date: minuteAnchor)
 
-            // Seconds should render even if the host chooses to redact (a clock isn’t sensitive).
             let showSeconds = (tickMode == .secondsSweep)
 
-            // IMPORTANT: compute seconds timer off “render time” rather than entryDate,
-            // so a stale timeline entry can’t push the timer range out of sync on a specific device.
-            let renderNow = Date()
-            let secondMinuteAnchor = Self.floorToMinute(renderNow)
-
-            let timerStart = secondMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
-            let timerEnd = secondMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
+            let timerStart = minuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
+            let timerEnd = minuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
+
+            // Critical: clamps formatted output to 0:59 max, matching the ligature glyph set.
+            let pauseTime = minuteAnchor.addingTimeInterval(59.0)
+
+            let wallNow = Date()
+            let fontOK = WWClockSecondHandFont.isAvailable()
+            let redactLabel = isPrivacy ? "privacy" : "none"
+
+            let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
+            let expectedString = String(format: "0:%02d", expectedSeconds)
+
+            WWClockDebugLog.append(
+                "clockWidget render entry=\(Self.iso(entryDate)) wall=\(Self.iso(wallNow)) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchor=\(Self.iso(minuteAnchor)) range=\(Self.iso(timerStart))...\(Self.iso(timerEnd)) pause=\(Self.iso(pauseTime)) expected=\(expectedString)",
+                category: "clock",
+                throttleID: "clockWidget.render",
+                minInterval: 30.0,
+                now: wallNow
+            )
 
             ZStack {
                 WidgetWeaverClockIconView(
@@ -61,18 +71,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     palette: palette,
                     showsSeconds: showSeconds,
                     timerRange: timerRange,
+                    pauseTime: pauseTime,
                     handsOpacity: handsOpacity
                 )
-            }
-            .overlay(alignment: .bottomLeading) {
-                WWClockWidgetDebugBadge(
-                    entryDate: entryDate,
-                    minuteAnchor: secondMinuteAnchor,
-                    timerRange: timerRange,
-                    showSeconds: showSeconds,
-                    tickModeLabel: String(describing: tickMode)
-                )
-                .padding(6)
             }
             .widgetURL(URL(string: "widgetweaver://clock"))
         }
@@ -82,6 +83,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static func iso(_ date: Date) -> String {
+        isoFormatter.string(from: date)
     }
 }
 
@@ -111,6 +122,7 @@ private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
     let showsSeconds: Bool
     let timerRange: ClosedRange<Date>
+    let pauseTime: Date
     let handsOpacity: Double
 
     @Environment(\.displayScale) private var displayScale
@@ -124,6 +136,7 @@ private struct WWClockSecondsAndHubOverlay: View {
                     WWClockSecondHandGlyphView(
                         palette: palette,
                         timerRange: timerRange,
+                        pauseTime: pauseTime,
                         diameter: layout.dialDiameter
                     )
                     .opacity(handsOpacity)
@@ -149,33 +162,21 @@ private struct WWClockSecondsAndHubOverlay: View {
 private struct WWClockSecondHandGlyphView: View {
     let palette: WidgetWeaverClockPalette
     let timerRange: ClosedRange<Date>
+    let pauseTime: Date
     let diameter: CGFloat
 
-    @Environment(\.redactionReasons) private var redactionReasons
-
     var body: some View {
-        // If the host is rendering a placeholder state, the timer output can be replaced.
-        // In that case, show a stable test string that maps to a known ligature.
-        let usesPlaceholder = redactionReasons.contains(.placeholder)
-
-        Group {
-            if usesPlaceholder {
-                Text("0:00")
-            } else {
-                Text(timerInterval: timerRange, countsDown: false)
-            }
-        }
-        .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-        .font(WWClockSecondHandFont.font(size: diameter))
-        .dynamicTypeSize(.medium)
-        .foregroundStyle(palette.accent)
-        .lineLimit(1)
-        .multilineTextAlignment(.center)
-        .frame(width: diameter, height: diameter, alignment: .center)
-        .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
-        .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Text(timerInterval: timerRange, pauseTime: pauseTime, countsDown: false, showsHours: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(WWClockSecondHandFont.font(size: diameter))
+            .foregroundStyle(palette.accent)
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: diameter, height: diameter, alignment: .center)
+            .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
+            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
