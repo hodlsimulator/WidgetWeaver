@@ -23,10 +23,14 @@ struct WidgetWeaverVariablesView: View {
     @State private var statusMessage: String = ""
     @State private var showClearConfirmation: Bool = false
 
+    @AppStorage("variables.tryit.input") private var tryItInput: String = "Streak: {{streak|0}}"
+    @State private var tryItCopied: Bool = false
+
     var body: some View {
         NavigationStack {
             List {
                 headerSection
+                tryItSection
 
                 if proManager.isProUnlocked {
                     addSection
@@ -117,6 +121,106 @@ struct WidgetWeaverVariablesView: View {
             }
         } header: {
             Text("How it works")
+        }
+    }
+
+    private var tryItSection: some View {
+        let result = tryItResult
+        let outputDisplay: String = {
+            if result.isEmptyInput { return "Paste a template above to see its output." }
+            if result.output.isEmpty { return "—" }
+            return result.output
+        }()
+
+        return Section {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Input")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextEditor(text: $tryItInput)
+                        .font(.system(.callout, design: .monospaced))
+                        .frame(minHeight: 96)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(alignment: .topLeading) {
+                            if tryItInput.isEmpty {
+                                Text("e.g. Streak: {{streak|0}}")
+                                    .font(.system(.callout, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 14)
+                            }
+                        }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Quick inserts")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+                        ForEach(tryItSnippets) { snippet in
+                            Button {
+                                appendTryItSnippet(snippet.value)
+                            } label: {
+                                Text(snippet.value)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.thinMaterial, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Output")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text(outputDisplay)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(result.isError ? .red : .primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                HStack(spacing: 12) {
+                    Button {
+                        copyTryItOutput()
+                    } label: {
+                        Label("Copy output", systemImage: "doc.on.doc")
+                    }
+                    .disabled(result.isEmptyInput)
+
+                    if tryItCopied {
+                        Text("Copied")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .animation(.easeInOut(duration: 0.2), value: tryItCopied)
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Try it")
+        } footer: {
+            Text("Uses the same template renderer as widgets. Built-ins (e.g. __steps_* and __weather_*) resolve even without Pro.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -238,6 +342,70 @@ struct WidgetWeaverVariablesView: View {
 
     // MARK: - Helpers
 
+    private struct TryItResult {
+        let output: String
+        let isError: Bool
+        let isEmptyInput: Bool
+    }
+
+    private struct TryItSnippet: Identifiable, Hashable {
+        let id: String
+        let value: String
+
+        init(_ value: String) {
+            self.value = value
+            self.id = value
+        }
+    }
+
+    private var tryItSnippets: [TryItSnippet] {
+        [
+            TryItSnippet("{{streak|0}}"),
+            TryItSnippet("{{count|0}}"),
+            TryItSnippet("{{done|0}}"),
+            TryItSnippet("{{waterMl|0}}"),
+            TryItSnippet("{{date.short}}"),
+            TryItSnippet("{{time.short}}"),
+            TryItSnippet("{{__today}}"),
+            TryItSnippet("{{__time}}"),
+            TryItSnippet("{{__steps_today|--|number:0}}"),
+            TryItSnippet("{{__weather_temp|--}}"),
+        ]
+    }
+
+    private var tryItResult: TryItResult {
+        let raw = tryItInput
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return TryItResult(output: "", isError: false, isEmptyInput: true)
+        }
+
+        if hasUnbalancedTemplateDelimiters(raw) {
+            return TryItResult(output: "Error: Unbalanced {{ }} in template.", isError: true, isEmptyInput: false)
+        }
+
+        let now = WidgetWeaverRenderClock.now
+
+        var vars: [String: String] = proManager.isProUnlocked ? variables : [:]
+
+        let builtIns = WidgetWeaverVariableTemplate.builtInVariables(now: now)
+        for (k, v) in builtIns where vars[k] == nil {
+            vars[k] = v
+        }
+
+        let weatherVars = WidgetWeaverWeatherStore.shared.variablesDictionary(now: now)
+        for (k, v) in weatherVars {
+            vars[k] = v
+        }
+
+        let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
+        for (k, v) in stepsVars {
+            vars[k] = v
+        }
+
+        let rendered = WidgetWeaverVariableTemplate.render(raw, variables: vars, now: now, maxPasses: 3)
+        return TryItResult(output: rendered, isError: false, isEmptyInput: false)
+    }
+
     private var filteredKeys: [String] {
         let keys = variables.keys.sorted()
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -270,6 +438,71 @@ struct WidgetWeaverVariablesView: View {
         WidgetWeaverVariableStore.shared.clearAll()
         statusMessage = "Cleared all variables."
         refresh()
+    }
+
+    private func appendTryItSnippet(_ snippet: String) {
+        let trimmed = tryItInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            tryItInput = snippet
+            return
+        }
+
+        if let last = tryItInput.last, last == "\n" || last == " " {
+            tryItInput += snippet
+        } else {
+            tryItInput += " " + snippet
+        }
+    }
+
+    private func copyTryItOutput() {
+        let result = tryItResult
+        guard !result.isEmptyInput else { return }
+
+        UIPasteboard.general.string = result.output
+
+        withAnimation(.easeInOut(duration: 0.15)) {
+            tryItCopied = true
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    tryItCopied = false
+                }
+            }
+        }
+    }
+
+    private func hasUnbalancedTemplateDelimiters(_ s: String) -> Bool {
+        var balance = 0
+        var i = s.startIndex
+        let end = s.endIndex
+
+        while i < end {
+            let ch = s[i]
+
+            if ch == "{" {
+                let next = s.index(after: i)
+                if next < end, s[next] == "{" {
+                    balance += 1
+                    i = s.index(after: next)
+                    continue
+                }
+            } else if ch == "}" {
+                let next = s.index(after: i)
+                if next < end, s[next] == "}" {
+                    if balance == 0 { return true }
+                    balance -= 1
+                    i = s.index(after: next)
+                    continue
+                }
+            }
+
+            i = s.index(after: i)
+        }
+
+        return balance != 0
     }
 }
 
