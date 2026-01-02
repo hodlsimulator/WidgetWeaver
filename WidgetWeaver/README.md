@@ -430,7 +430,7 @@ Overload resolution can re-wrap a new scope repeatedly, causing infinite SwiftUI
 
 ---
 
-## Current status (0.9.4 (15))
+## Current status (0.9.4 (16))
 
 ### App
 
