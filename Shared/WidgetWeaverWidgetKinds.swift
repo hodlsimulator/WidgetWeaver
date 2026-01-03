@@ -13,10 +13,12 @@ public enum WidgetWeaverWidgetKinds {
     public static let lockScreenWeather = "WidgetWeaverLockScreenWeatherWidget"
     public static let lockScreenNextUp = "WidgetWeaverLockScreenNextUpWidget"
     public static let lockScreenSteps = "WidgetWeaverLockScreenStepsWidget"
+    public static let lockScreenActivity = "WidgetWeaverLockScreenActivityWidget"
 
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
+    public static let homeScreenActivity = "WidgetWeaverHomeScreenActivityWidget"
 
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV119"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV116"
 
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
 }

@@ -93,6 +93,16 @@ extension WidgetWeaverAboutView {
             spec: specSteps()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-activity",
+            title: "Activity",
+            subtitle: "Steps + more (Health)",
+            description: "A multi-metric Activity widget powered by built-in __activity_* keys.\nEnable Activity access in the app first.",
+            tags: ["Activity", "Health", "Snapshot"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specActivity()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-weather",
             title: "Weather",
             subtitle: "Rain-first nowcast",
@@ -291,6 +301,30 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundGlowEnabled = true
         spec.symbol = SymbolSpec(
             name: "figure.walk",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
+        return spec.normalised()
+    }
+
+
+    static func specActivity() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Activity"
+        spec.primaryText = "{{__activity_steps_today|--|number:0}} steps"
+        spec.secondaryText = "{{__activity_flights_today|--|number:0}} flights • {{__activity_distance_km|--}} • {{__activity_active_energy_kcal|--|number:0}} kcal"
+        spec.layout.template = .hero
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .orange
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = true
+        spec.symbol = SymbolSpec(
+            name: "figure.walk.circle",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,

@@ -1135,6 +1135,13 @@ public extension WidgetSpec {
             vars[k] = v
         }
 
+        // Activity variables behave like built-ins (not Pro-gated).
+        // These intentionally override any existing keys to keep the widget truthful.
+        let activityVars = WidgetWeaverActivityStore.shared.variablesDictionary(now: now)
+        for (k, v) in activityVars {
+            vars[k] = v
+        }
+
         return resolvingVariables(using: vars, now: now)
     }
 
@@ -1213,6 +1220,15 @@ public extension WidgetSpec {
     func usesStepsRendering() -> Bool {
         for t in allTemplateStrings() {
             if t.localizedCaseInsensitiveContains("__steps") {
+                return true
+            }
+        }
+        return false
+    }
+
+    func usesActivityRendering() -> Bool {
+        for t in allTemplateStrings() {
+            if t.localizedCaseInsensitiveContains("__activity") {
                 return true
             }
         }

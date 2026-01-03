@@ -178,6 +178,22 @@ struct WidgetWeaverStepsSettingsView: View {
                     }
                 }
             }
+
+
+            Section("More") {
+                NavigationLink {
+                    WidgetWeaverActivitySettingsView()
+                } label: {
+                    HStack {
+                        Image(systemName: "figure.walk.circle")
+                        Text("Activity (steps + more)")
+                    }
+                }
+
+                Text("Activity can request more Health data in one prompt (Flights, Distance, Active Energy) and powers __activity_* template keys.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle("Steps")
         .navigationBarTitleDisplayMode(.inline)
@@ -243,6 +259,164 @@ struct WidgetWeaverStepsSettingsView: View {
         case .notDetermined: return "Not enabled"
         case .authorised: return "Enabled"
         case .denied: return "Denied"
+        }
+    }
+}
+
+
+// MARK: - Activity settings
+
+struct WidgetWeaverActivitySettingsView: View {
+    let onClose: (() -> Void)?
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
+
+    @State private var isRefreshing: Bool = false
+    @State private var snapshot: WidgetWeaverActivitySnapshot?
+    @State private var access: WidgetWeaverActivityAccess = .unknown
+    @State private var lastError: String?
+    @State private var statusMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                ActivityTodayCard(
+                    snapshot: snapshot,
+                    access: access
+                )
+            }
+
+            Section("Activity access") {
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Text(accessLabel(access))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastError, !lastError.isEmpty {
+                    Text(lastError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if access == .notDetermined || access == .denied || access == .unknown {
+                    Button {
+                        Task { await requestAccessAndRefresh() }
+                    } label: {
+                        Label("Request Activity Access", systemImage: "hand.raised.fill")
+                    }
+                    .disabled(isRefreshing)
+
+                    Text("This requests read access for Steps, Flights Climbed, Walking/Running Distance, and Active Energy.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    Task { await refresh(force: true) }
+                } label: {
+                    HStack {
+                        Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
+                        Text(isRefreshing ? "Refreshing…" : "Refresh now")
+                    }
+                }
+                .disabled(isRefreshing)
+
+                if access == .denied {
+                    Text("If access was denied, enable it in the Health app: Sharing → Apps → WidgetWeaver, then allow the activity types you want.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let statusMessage, !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Activity data is read on-device from HealthKit and cached so widgets render quickly.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Template variables") {
+                Text("Use these built-in keys in any widget text:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("__activity_steps_today")
+                    Text("__activity_flights_today")
+                    Text("__activity_distance_km")
+                    Text("__activity_active_energy_kcal")
+                    Text("__activity_updated_iso")
+                    Text("__activity_access")
+                }
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+                Text("Keys appear once Health access is enabled and a snapshot is cached.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Activity")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let onClose {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { onClose() }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    // MARK: - Data
+
+    private func load() async {
+        let store = WidgetWeaverActivityStore.shared
+        snapshot = store.snapshotForToday()
+        access = store.loadLastAccess()
+        lastError = store.loadLastError()
+
+        await refresh(force: false)
+    }
+
+    private func requestAccessAndRefresh() async {
+        statusMessage = nil
+        let ok = await WidgetWeaverActivityEngine.shared.requestReadAuthorisation()
+        await refresh(force: true)
+        statusMessage = ok ? "Access request completed." : "Access request failed."
+    }
+
+    private func refresh(force: Bool) async {
+        if isRefreshing { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let result = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: force)
+        snapshot = result.snapshot
+        access = result.access
+        lastError = WidgetWeaverActivityStore.shared.loadLastError()
+        statusMessage = nil
+
+        WidgetSpecStore.shared.reloadWidgets()
+    }
+
+    private func accessLabel(_ access: WidgetWeaverActivityAccess) -> String {
+        switch access {
+        case .unknown: return "Unknown"
+        case .notAvailable: return "Unavailable"
+        case .notDetermined: return "Not enabled"
+        case .authorised: return "Enabled"
+        case .denied: return "Denied"
+        case .partial: return "Partial"
         }
     }
 }

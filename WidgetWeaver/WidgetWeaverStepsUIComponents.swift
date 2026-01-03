@@ -83,6 +83,90 @@ struct StepsTodayCard: View {
     }
 }
 
+
+
+// MARK: - Activity today card (multi-metric)
+
+struct ActivityTodayCard: View {
+    let snapshot: WidgetWeaverActivitySnapshot?
+    let access: WidgetWeaverActivityAccess
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.walk.circle")
+                    .font(.title2)
+                    .foregroundStyle(.accent)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .bold()
+
+                    Text(primary)
+                        .font(.system(.title2, design: .rounded).weight(.bold))
+                        .monospacedDigit()
+
+                    Text(secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+            }
+
+            if let fetchedAt = snapshot?.fetchedAt {
+                Text("Updated \(wwTimeShort(fetchedAt))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var title: String {
+        switch access {
+        case .authorised, .partial: return "Activity today"
+        case .denied: return "Activity (Denied)"
+        case .notAvailable: return "Activity (Unavailable)"
+        case .notDetermined: return "Activity (Not enabled)"
+        case .unknown: return "Activity"
+        }
+    }
+
+    private var primary: String {
+        switch access {
+        case .authorised, .partial, .unknown:
+            if let steps = snapshot?.steps {
+                return "\(wwFormatSteps(steps)) steps"
+            }
+            return "—"
+        case .denied, .notAvailable, .notDetermined:
+            return "—"
+        }
+    }
+
+    private var secondary: String {
+        switch access {
+        case .denied, .notDetermined:
+            return "Tap Request Activity Access."
+        case .notAvailable:
+            return "HealthKit isn’t available on this device."
+        case .unknown:
+            return "Refresh to load today’s snapshot."
+        case .authorised, .partial:
+            let flightsText: String? = snapshot?.flightsClimbed.map { "\($0) flights" }
+            let distanceText: String? = snapshot?.distanceWalkingRunningMeters.map(wwFormatDistanceKM)
+            let energyText: String? = snapshot?.activeEnergyBurnedKilocalories.map(wwFormatKcal)
+
+            let parts = [flightsText, distanceText, energyText].compactMap { $0 }
+            if parts.isEmpty { return "Today" }
+            return parts.joined(separator: " • ")
+        }
+    }
+}
+
 struct StepsRing: View {
     let fraction: Double
     let lineWidth: CGFloat
@@ -107,6 +191,25 @@ func wwFormatSteps(_ n: Int) -> String {
     nf.numberStyle = .decimal
     nf.usesGroupingSeparator = true
     return nf.string(from: NSNumber(value: n)) ?? "\(n)"
+}
+
+
+func wwFormatDistanceKM(_ meters: Double) -> String {
+    let km = max(0, meters) / 1000.0
+
+    let nf = NumberFormatter()
+    nf.numberStyle = .decimal
+    nf.usesGroupingSeparator = true
+    nf.minimumFractionDigits = 0
+    nf.maximumFractionDigits = 1
+
+    let s = nf.string(from: NSNumber(value: km)) ?? String(format: "%.1f", km)
+    return "\(s) km"
+}
+
+func wwFormatKcal(_ kcal: Double) -> String {
+    let v = Int(max(0, kcal).rounded())
+    return "\(wwFormatSteps(v)) kcal"
 }
 
 func wwDateMedium(_ d: Date) -> String {

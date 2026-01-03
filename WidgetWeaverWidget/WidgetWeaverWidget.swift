@@ -124,6 +124,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let usesTime = spec.usesTimeDependentRendering()
         let usesCalendar = (spec.layout.template == LayoutTemplateToken.nextUpCalendar)
         let usesSteps = spec.usesStepsRendering()
+        let usesActivity = spec.usesActivityRendering()
 
         if !context.isPreview {
             if usesWeather {
@@ -145,6 +146,12 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
                     _ = await WidgetWeaverStepsEngine.shared.updateHistoryFromBeginningIfNeeded(force: false)
                 }
             }
+
+            if usesActivity {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: false)
+                }
+            }
         }
 
         let now = Date()
@@ -156,6 +163,10 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         if usesSteps && !usesTime {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
+        }
+
+        if usesActivity && !usesTime {
+            refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverActivityStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
         // Important: use `now` as the base so a timeline reload inside the same minute

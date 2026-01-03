@@ -14,8 +14,10 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverWidget()
         WidgetWeaverHomeScreenClockWidget()
         WidgetWeaverHomeScreenStepsWidget()
+        WidgetWeaverHomeScreenActivityWidget()
         WidgetWeaverLockScreenWeatherWidget()
         WidgetWeaverLockScreenStepsWidget()
+        WidgetWeaverLockScreenActivityWidget()
         WidgetWeaverNoiseMachineWidget()
     }
 }

@@ -218,7 +218,7 @@ struct WidgetWeaverVariablesView: View {
         } header: {
             Text("Try it")
         } footer: {
-            Text("Uses the same template renderer as widgets. Built-ins (e.g. __steps_* and __weather_*) resolve even without Pro.")
+            Text("Uses the same template renderer as widgets. Built-ins (e.g. __steps_*, __activity_* and __weather_*) resolve even without Pro.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -369,6 +369,7 @@ struct WidgetWeaverVariablesView: View {
             TryItSnippet("{{__today}}"),
             TryItSnippet("{{__time}}"),
             TryItSnippet("{{__steps_today|--|number:0}}"),
+            TryItSnippet("{{__activity_steps_today|--|number:0}}"),
             TryItSnippet("{{__weather_temp|--}}"),
         ]
     }
@@ -399,6 +400,11 @@ struct WidgetWeaverVariablesView: View {
 
         let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
         for (k, v) in stepsVars {
+            vars[k] = v
+        }
+
+        let activityVars = WidgetWeaverActivityStore.shared.variablesDictionary(now: now)
+        for (k, v) in activityVars {
             vars[k] = v
         }
 

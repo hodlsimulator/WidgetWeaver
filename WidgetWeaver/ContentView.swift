@@ -77,6 +77,7 @@ struct ContentView: View {
         case remix
         case weather
         case steps
+        case activity
         case importReview
 
         var id: Int {
@@ -88,7 +89,8 @@ struct ContentView: View {
             case .inspector: return 5
             case .remix: return 6
             case .steps: return 7
-            case .importReview: return 8
+            case .activity: return 8
+            case .importReview: return 9
             }
         }
     }
@@ -639,6 +641,13 @@ struct ContentView: View {
                 }
             )
             
+        case .activity:
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverActivitySettingsView(onClose: { activeSheet = nil })
+                }
+            )
+
         case .importReview:
             return importReviewSheetAnyView()
 

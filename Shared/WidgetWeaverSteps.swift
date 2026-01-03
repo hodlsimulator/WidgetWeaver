@@ -566,3 +566,216 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
 
 // MARK: - Modularised files
 // WidgetWeaverStepsAnalytics and WidgetWeaverStepsEngine live in separate files.
+
+
+// MARK: - Activity (multi-metric HealthKit snapshot)
+//
+// Activity is a sibling feature to Steps:
+// - Steps stays simple (stepCount only).
+// - Activity can request multiple movement types in one HealthKit prompt
+//   (steps, flights climbed, walking/running distance, active energy)
+//   and exposes __activity_* keys for templates/widgets.
+
+public struct WidgetWeaverActivitySnapshot: Codable, Hashable, Sendable {
+    public var fetchedAt: Date
+    public var startOfDay: Date
+
+    // Values are optional to support partial authorisation (e.g. Steps allowed, Flights denied).
+    public var steps: Int?
+    public var flightsClimbed: Int?
+    public var distanceWalkingRunningMeters: Double?
+    public var activeEnergyBurnedKilocalories: Double?
+
+    public init(
+        fetchedAt: Date,
+        startOfDay: Date,
+        steps: Int?,
+        flightsClimbed: Int?,
+        distanceWalkingRunningMeters: Double?,
+        activeEnergyBurnedKilocalories: Double?
+    ) {
+        self.fetchedAt = fetchedAt
+        self.startOfDay = startOfDay
+        self.steps = steps.map { max(0, $0) }
+        self.flightsClimbed = flightsClimbed.map { max(0, $0) }
+        self.distanceWalkingRunningMeters = distanceWalkingRunningMeters.map { max(0, $0) }
+        self.activeEnergyBurnedKilocalories = activeEnergyBurnedKilocalories.map { max(0, $0) }
+    }
+
+    public static func sample(now: Date = Date()) -> WidgetWeaverActivitySnapshot {
+        let cal = Calendar.autoupdatingCurrent
+        return WidgetWeaverActivitySnapshot(
+            fetchedAt: now,
+            startOfDay: cal.startOfDay(for: now),
+            steps: 7_423,
+            flightsClimbed: 11,
+            distanceWalkingRunningMeters: 5_250,
+            activeEnergyBurnedKilocalories: 412
+        )
+    }
+}
+
+public enum WidgetWeaverActivityAccess: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case unknown
+    case notAvailable
+    case notDetermined
+    case authorised
+    case denied
+    case partial
+
+    public var id: String { rawValue }
+}
+
+public final class WidgetWeaverActivityStore: @unchecked Sendable {
+    public static let shared = WidgetWeaverActivityStore()
+
+    public enum Keys {
+        public static let snapshotData = "widgetweaver.activity.snapshot.v1"
+        public static let lastError = "widgetweaver.activity.lastError.v1"
+        public static let lastAccess = "widgetweaver.activity.lastAccess.v1"
+    }
+
+    private let defaults: UserDefaults
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    @inline(__always) private func sync() {
+        defaults.synchronize()
+        UserDefaults.standard.synchronize()
+    }
+
+    private init(defaults: UserDefaults = AppGroup.userDefaults) {
+        self.defaults = defaults
+        self.encoder = JSONEncoder()
+        self.decoder = JSONDecoder()
+        self.encoder.dateEncodingStrategy = .iso8601
+        self.decoder.dateDecodingStrategy = .iso8601
+    }
+
+    // MARK: - Snapshot
+
+    public func snapshotForToday(now: Date = Date()) -> WidgetWeaverActivitySnapshot? {
+        guard let snap = loadSnapshot() else { return nil }
+        let cal = Calendar.autoupdatingCurrent
+        let today = cal.startOfDay(for: now)
+        if !cal.isDate(snap.startOfDay, inSameDayAs: today) { return nil }
+        return snap
+    }
+
+    public func saveSnapshot(_ snapshot: WidgetWeaverActivitySnapshot?) {
+        if let snapshot, let data = try? encoder.encode(snapshot) {
+            defaults.set(data, forKey: Keys.snapshotData)
+            UserDefaults.standard.set(data, forKey: Keys.snapshotData)
+        } else {
+            defaults.removeObject(forKey: Keys.snapshotData)
+            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+        }
+        sync()
+    }
+
+    public func loadSnapshot() -> WidgetWeaverActivitySnapshot? {
+        sync()
+
+        if let data = defaults.data(forKey: Keys.snapshotData),
+           let snap = try? decoder.decode(WidgetWeaverActivitySnapshot.self, from: data)
+        {
+            return snap
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
+           let snap = try? decoder.decode(WidgetWeaverActivitySnapshot.self, from: data)
+        {
+            defaults.set(data, forKey: Keys.snapshotData)
+            sync()
+            return snap
+        }
+
+        return nil
+    }
+
+    // MARK: - Last access + errors
+
+    public func loadLastAccess() -> WidgetWeaverActivityAccess {
+        sync()
+        let raw = defaults.string(forKey: Keys.lastAccess)
+            ?? UserDefaults.standard.string(forKey: Keys.lastAccess)
+            ?? WidgetWeaverActivityAccess.unknown.rawValue
+        return WidgetWeaverActivityAccess(rawValue: raw) ?? .unknown
+    }
+
+    public func saveLastAccess(_ access: WidgetWeaverActivityAccess) {
+        defaults.set(access.rawValue, forKey: Keys.lastAccess)
+        UserDefaults.standard.set(access.rawValue, forKey: Keys.lastAccess)
+        sync()
+    }
+
+    public func loadLastError() -> String? {
+        sync()
+
+        if let s = defaults.string(forKey: Keys.lastError) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        if let s = UserDefaults.standard.string(forKey: Keys.lastError) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                defaults.set(t, forKey: Keys.lastError)
+                sync()
+                return t
+            }
+        }
+        return nil
+    }
+
+    public func saveLastError(_ error: String?) {
+        let trimmed = error?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            defaults.set(trimmed, forKey: Keys.lastError)
+            UserDefaults.standard.set(trimmed, forKey: Keys.lastError)
+        } else {
+            defaults.removeObject(forKey: Keys.lastError)
+            UserDefaults.standard.removeObject(forKey: Keys.lastError)
+        }
+        sync()
+    }
+
+    public func recommendedRefreshIntervalSeconds() -> TimeInterval {
+        60 * 15
+    }
+
+    // MARK: - Template variables
+
+    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+        var vars: [String: String] = [:]
+        vars["__activity_access"] = loadLastAccess().rawValue
+
+        guard let snap = snapshotForToday(now: now) else { return vars }
+
+        vars["__activity_updated_iso"] = WidgetWeaverVariableTemplate.iso8601String(snap.fetchedAt)
+
+        if let steps = snap.steps {
+            vars["__activity_steps_today"] = String(steps)
+        }
+
+        if let flights = snap.flightsClimbed {
+            vars["__activity_flights_today"] = String(flights)
+        }
+
+        if let meters = snap.distanceWalkingRunningMeters {
+            let roundedM = Int(meters.rounded())
+            vars["__activity_distance_m"] = String(roundedM)
+            vars["__activity_distance_m_exact"] = String(meters)
+
+            let km = meters / 1000.0
+            vars["__activity_distance_km"] = String(format: "%.1f", km)
+            vars["__activity_distance_km_exact"] = String(km)
+        }
+
+        if let kcal = snap.activeEnergyBurnedKilocalories {
+            vars["__activity_active_energy_kcal"] = String(Int(kcal.rounded()))
+            vars["__activity_active_energy_kcal_exact"] = String(kcal)
+        }
+
+        return vars
+    }
+}

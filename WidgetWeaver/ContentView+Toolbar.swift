@@ -50,6 +50,12 @@ extension ContentView {
                 Label("Steps settings", systemImage: "figure.walk")
             }
 
+            Button {
+                activeSheet = .activity
+            } label: {
+                Label("Activity settings", systemImage: "figure.walk.circle")
+            }
+
             Divider()
 
             Button {

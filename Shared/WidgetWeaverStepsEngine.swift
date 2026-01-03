@@ -414,3 +414,349 @@ public actor WidgetWeaverStepsEngine {
     }
     #endif
 }
+
+
+// MARK: - Activity Engine (HealthKit-backed multi-metric snapshot)
+
+public actor WidgetWeaverActivityEngine {
+    public static let shared = WidgetWeaverActivityEngine()
+
+    public struct Result: Sendable {
+        public var snapshot: WidgetWeaverActivitySnapshot?
+        public var access: WidgetWeaverActivityAccess
+        public var errorDescription: String?
+
+        public init(snapshot: WidgetWeaverActivitySnapshot?, access: WidgetWeaverActivityAccess, errorDescription: String?) {
+            self.snapshot = snapshot
+            self.access = access
+            self.errorDescription = errorDescription
+        }
+    }
+
+    public var minimumUpdateInterval: TimeInterval = 60 * 15
+
+    private var inFlightSnapshot: Task<Result, Never>?
+
+    public func requestReadAuthorisation() async -> Bool {
+        let store = WidgetWeaverActivityStore.shared
+
+        #if !canImport(HealthKit)
+        store.saveLastAccess(.notAvailable)
+        store.saveLastError("HealthKit unavailable")
+        return false
+        #else
+
+        #if targetEnvironment(simulator)
+        store.saveLastAccess(.authorised)
+        store.saveLastError(nil)
+        return true
+        #else
+
+        guard HKHealthStore.isHealthDataAvailable() else {
+            store.saveLastAccess(.notAvailable)
+            store.saveLastError("Health data is not available on this device.")
+            return false
+        }
+
+        let readTypes = Self.readTypesAvailable()
+        guard !readTypes.isEmpty else {
+            store.saveLastAccess(.notAvailable)
+            store.saveLastError("Activity data types are not available.")
+            return false
+        }
+
+        let healthStore = HKHealthStore()
+        return await withCheckedContinuation { cont in
+            healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
+                if let error {
+                    store.saveLastError(error.localizedDescription)
+                } else {
+                    store.saveLastError(nil)
+                }
+                cont.resume(returning: success)
+            }
+        }
+
+        #endif
+        #endif
+    }
+
+    public func updateIfNeeded(force: Bool = false) async -> Result {
+        if let inFlightSnapshot {
+            return await inFlightSnapshot.value
+        }
+        let task = Task { () -> Result in
+            await self.updateSnapshot(force: force)
+        }
+        inFlightSnapshot = task
+        let out = await task.value
+        inFlightSnapshot = nil
+        return out
+    }
+
+    private func updateSnapshot(force: Bool) async -> Result {
+        let store = WidgetWeaverActivityStore.shared
+
+        #if !canImport(HealthKit)
+        store.saveLastAccess(.notAvailable)
+        store.saveLastError("HealthKit unavailable")
+        return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
+        #else
+
+        #if targetEnvironment(simulator)
+        let snap = WidgetWeaverActivitySnapshot.sample()
+        store.saveSnapshot(snap)
+        store.saveLastAccess(.authorised)
+        store.saveLastError(nil)
+        return Result(snapshot: snap, access: .authorised, errorDescription: nil)
+        #else
+
+        guard HKHealthStore.isHealthDataAvailable() else {
+            store.saveLastAccess(.notAvailable)
+            store.saveLastError("Health data is not available on this device.")
+            return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
+        }
+
+        if !force, let existing = store.snapshotForToday() {
+            let age = Date().timeIntervalSince(existing.fetchedAt)
+            if age < minimumUpdateInterval {
+                store.saveLastError(nil)
+                return Result(snapshot: existing, access: store.loadLastAccess(), errorDescription: nil)
+            }
+        }
+
+        let healthStore = HKHealthStore()
+
+        let readTypes = Self.readTypesAvailable()
+        guard !readTypes.isEmpty else {
+            store.saveLastAccess(.notAvailable)
+            store.saveLastError("Activity data types are not available.")
+            return Result(snapshot: store.snapshotForToday(), access: .notAvailable, errorDescription: store.loadLastError())
+        }
+
+        let req = await requestStatusForRead(healthStore: healthStore, readTypes: readTypes)
+        if req == .shouldRequest {
+            store.saveLastAccess(.notDetermined)
+            store.saveLastError("Activity access isn’t enabled yet. Tap “Request Activity Access”.")
+            return Result(snapshot: store.snapshotForToday(), access: .notDetermined, errorDescription: store.loadLastError())
+        }
+
+        let cal = Calendar.autoupdatingCurrent
+        let now = Date()
+        let start = cal.startOfDay(for: now)
+
+        var steps: Int?
+        var flights: Int?
+        var distanceM: Double?
+        var energyKcal: Double?
+
+        var missing: [String] = []
+        var hadDenied: Bool = false
+        var hadNotDetermined: Bool = false
+        var otherError: NSError?
+
+        func handleError(_ ns: NSError, label: String) {
+            if Self.isAuthorisationNotDeterminedError(ns) {
+                hadNotDetermined = true
+                missing.append(label)
+                return
+            }
+            if Self.isAuthorisationDeniedError(ns) {
+                hadDenied = true
+                missing.append(label)
+                return
+            }
+            otherError = ns
+        }
+
+        // Steps
+        if let t = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            do {
+                let v = try await fetchCumulativeSumForToday(healthStore: healthStore, quantityType: t, unit: .count())
+                steps = Int(v.rounded())
+            } catch {
+                let ns = error as NSError
+                if Self.isNoDataAvailableError(ns) {
+                    steps = 0
+                } else {
+                    handleError(ns, label: "Steps")
+                }
+            }
+        }
+
+        // Flights
+        if let t = HKQuantityType.quantityType(forIdentifier: .flightsClimbed) {
+            do {
+                let v = try await fetchCumulativeSumForToday(healthStore: healthStore, quantityType: t, unit: .count())
+                flights = Int(v.rounded())
+            } catch {
+                let ns = error as NSError
+                if Self.isNoDataAvailableError(ns) {
+                    flights = 0
+                } else {
+                    handleError(ns, label: "Flights")
+                }
+            }
+        }
+
+        // Distance
+        if let t = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            do {
+                let v = try await fetchCumulativeSumForToday(healthStore: healthStore, quantityType: t, unit: .meter())
+                distanceM = v
+            } catch {
+                let ns = error as NSError
+                if Self.isNoDataAvailableError(ns) {
+                    distanceM = 0
+                } else {
+                    handleError(ns, label: "Distance")
+                }
+            }
+        }
+
+        // Active energy
+        if let t = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            do {
+                let v = try await fetchCumulativeSumForToday(healthStore: healthStore, quantityType: t, unit: .kilocalorie())
+                energyKcal = v
+            } catch {
+                let ns = error as NSError
+                if Self.isNoDataAvailableError(ns) {
+                    energyKcal = 0
+                } else {
+                    handleError(ns, label: "Active Energy")
+                }
+            }
+        }
+
+        // Decide access state.
+        let anyValuePresent =
+            steps != nil || flights != nil || distanceM != nil || energyKcal != nil
+
+        if let otherError {
+            store.saveLastAccess(.unknown)
+            store.saveLastError("\(otherError.domain) (\(otherError.code)): \(otherError.localizedDescription)")
+            return Result(snapshot: store.snapshotForToday(), access: store.loadLastAccess(), errorDescription: store.loadLastError())
+        }
+
+        let access: WidgetWeaverActivityAccess
+        if !anyValuePresent {
+            if hadNotDetermined {
+                access = .notDetermined
+            } else if hadDenied {
+                access = .denied
+            } else {
+                access = .unknown
+            }
+        } else if !missing.isEmpty {
+            access = .partial
+        } else {
+            access = .authorised
+        }
+
+        let snap = WidgetWeaverActivitySnapshot(
+            fetchedAt: now,
+            startOfDay: start,
+            steps: steps,
+            flightsClimbed: flights,
+            distanceWalkingRunningMeters: distanceM,
+            activeEnergyBurnedKilocalories: energyKcal
+        )
+
+        store.saveSnapshot(snap)
+        store.saveLastAccess(access)
+
+        if access == .notDetermined {
+            store.saveLastError("Activity access isn’t enabled yet. Tap “Request Activity Access”.")
+        } else if access == .denied {
+            store.saveLastError("Activity access is denied. Enable it in the Health app (Sharing → Apps → WidgetWeaver).")
+        } else if access == .partial {
+            let list = missing.sorted().joined(separator: ", ")
+            store.saveLastError("Some activity types aren’t enabled: \(list). Enable them in the Health app (Sharing → Apps → WidgetWeaver).")
+        } else {
+            store.saveLastError(nil)
+        }
+
+        return Result(snapshot: snap, access: access, errorDescription: store.loadLastError())
+
+        #endif
+        #endif
+    }
+
+    // MARK: - HealthKit helpers
+
+    #if canImport(HealthKit)
+    private func requestStatusForRead(healthStore: HKHealthStore, readTypes: Set<HKObjectType>) async -> HKAuthorizationRequestStatus {
+        await withCheckedContinuation { cont in
+            healthStore.getRequestStatusForAuthorization(toShare: [], read: readTypes) { status, _ in
+                cont.resume(returning: status)
+            }
+        }
+    }
+
+    private static func readTypesAvailable() -> Set<HKObjectType> {
+        var out: Set<HKObjectType> = []
+
+        if let t = HKObjectType.quantityType(forIdentifier: .stepCount) { out.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .flightsClimbed) { out.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) { out.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { out.insert(t) }
+
+        return out
+    }
+
+    nonisolated private static func isHealthKitDomain(_ domain: String) -> Bool {
+        if domain == HKErrorDomain { return true }
+        if domain == "com.apple.healthkit" { return true }
+        return false
+    }
+
+    nonisolated private static func isNoDataAvailableError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 11 { return true }
+        let d = ns.localizedDescription.lowercased()
+        if d.contains("no data available") { return true }
+        let r = (ns.userInfo[NSLocalizedFailureReasonErrorKey] as? String)?.lowercased() ?? ""
+        if r.contains("no data available") { return true }
+        return false
+    }
+
+    nonisolated private static func isAuthorisationNotDeterminedError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 5 { return true }
+        let d = ns.localizedDescription.lowercased()
+        if d.contains("authorization not determined") { return true }
+        if d.contains("authorisation not determined") { return true }
+        return false
+    }
+
+    nonisolated private static func isAuthorisationDeniedError(_ ns: NSError) -> Bool {
+        if Self.isHealthKitDomain(ns.domain) && ns.code == 4 { return true }
+        let d = ns.localizedDescription.lowercased()
+        if d.contains("authorization denied") { return true }
+        if d.contains("authorisation denied") { return true }
+        if d.contains("not authorized") { return true }
+        if d.contains("not authorised") { return true }
+        return false
+    }
+
+    private func fetchCumulativeSumForToday(healthStore: HKHealthStore, quantityType: HKQuantityType, unit: HKUnit) async throws -> Double {
+        let cal = Calendar.autoupdatingCurrent
+        let now = Date()
+        let start = cal.startOfDay(for: now)
+        let end = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsQuery(quantityType: quantityType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, error in
+                if let error = error as NSError? {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let sum = stats?.sumQuantity()?.doubleValue(for: unit) ?? 0
+                continuation.resume(returning: sum)
+            }
+            healthStore.execute(query)
+        }
+    }
+    #endif
+}
