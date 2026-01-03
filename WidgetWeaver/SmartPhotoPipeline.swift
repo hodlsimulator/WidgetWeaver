@@ -46,7 +46,7 @@ enum SmartPhotoPipelineError: Error {
 }
 
 struct SmartPhotoPipeline {
-    static let algorithmVersion: Int = 1
+    static let algorithmVersion: Int = 2
 
     /// Creates:
     /// - master (largest preserved)
@@ -402,16 +402,30 @@ private enum SmartPhotoVariantBuilder {
         let bounds = CGRect(origin: .zero, size: imageSize)
 
         let ranked = detection.boxes
+
         let selected: [CGRect]
+        let usesGroupModeForSmall: Bool
         switch family {
         case .systemSmall:
-            selected = Array(ranked.prefix(1))
+            if shouldGroupTopTwoForSmall(detection: detection, imageSize: imageSize) {
+                selected = Array(ranked.prefix(2))
+                usesGroupModeForSmall = true
+            } else {
+                selected = Array(ranked.prefix(1))
+                usesGroupModeForSmall = false
+            }
+
         case .systemMedium:
             selected = Array(ranked.prefix(2))
+            usesGroupModeForSmall = false
+
         case .systemLarge:
             selected = ranked
+            usesGroupModeForSmall = false
+
         default:
             selected = Array(ranked.prefix(1))
+            usesGroupModeForSmall = false
         }
 
         let expanded = selected.map { expandSubjectBox($0, kind: detection.kind, family: family, imageSize: imageSize).intersection(bounds) }
@@ -481,6 +495,13 @@ private enum SmartPhotoVariantBuilder {
         }
 
         var centre = CGPoint(x: focus.midX, y: focus.midY)
+
+        if family == .systemSmall && usesGroupModeForSmall && selected.count >= 2 {
+            let c1 = CGPoint(x: selected[0].midX, y: selected[0].midY)
+            let c2 = CGPoint(x: selected[1].midX, y: selected[1].midY)
+            centre = CGPoint(x: (c1.x + c2.x) / 2.0, y: (c1.y + c2.y) / 2.0)
+        }
+
         if detection.kind == .face {
             let biasFactor: CGFloat = {
                 switch family {
@@ -500,6 +521,33 @@ private enum SmartPhotoVariantBuilder {
         y = min(max(0, y), imageSize.height - cropH)
 
         return CGRect(x: x, y: y, width: cropW, height: cropH).intersection(bounds)
+    }
+
+    private static func shouldGroupTopTwoForSmall(detection: SmartPhotoDetection, imageSize: CGSize) -> Bool {
+        guard detection.kind == .face || detection.kind == .animal else { return false }
+
+        let ranked = detection.boxes
+        guard ranked.count >= 2 else { return false }
+
+        let a = ranked[0]
+        let b = ranked[1]
+
+        let imageW = max(1, imageSize.width)
+        let imageH = max(1, imageSize.height)
+        let imageArea = imageW * imageH
+
+        func area(_ r: CGRect) -> CGFloat { max(0, r.width) * max(0, r.height) }
+
+        let minCoverage: CGFloat = 0.05
+        let maxHorizontalSeparation: CGFloat = 0.55
+
+        let coverage = (area(a) + area(b)) / max(1, imageArea)
+        if coverage < minCoverage { return false }
+
+        let dx = abs(a.midX - b.midX) / imageW
+        if dx > maxHorizontalSeparation { return false }
+
+        return true
     }
 
     private static func expandSubjectBox(_ rect: CGRect, kind: SmartPhotoSubjectKind, family: WidgetFamily, imageSize: CGSize) -> CGRect {
