@@ -46,7 +46,7 @@ enum SmartPhotoPipelineError: Error {
 }
 
 struct SmartPhotoPipeline {
-    static let algorithmVersion: Int = 2
+    static let algorithmVersion: Int = 3
 
     /// Creates:
     /// - master (largest preserved)
@@ -182,6 +182,7 @@ private enum SmartPhotoImageDecoder {
 private enum SmartPhotoSubjectKind {
     case face
     case animal
+    case human
     case saliency
     case none
 }
@@ -200,13 +201,32 @@ private enum SmartPhotoSubjectDetector {
         let size = CGSize(width: cg.width, height: cg.height)
 
         let faces = detectFaces(in: cg, imageSize: size)
-        if !faces.isEmpty {
+        if faces.count >= 2 {
+            return SmartPhotoDetection(kind: .face, boxes: rank(boxes: faces, imageSize: size))
+        }
+
+        if faces.count == 1 {
+            let humans = detectHumans(in: cg, imageSize: size)
+            if humans.count >= 2 {
+                return SmartPhotoDetection(kind: .human, boxes: rank(boxes: humans, imageSize: size))
+            }
+
+            let saliency = detectSaliency(in: cg, imageSize: size)
+            if saliency.count >= 2 {
+                return SmartPhotoDetection(kind: .saliency, boxes: rank(boxes: saliency, imageSize: size))
+            }
+
             return SmartPhotoDetection(kind: .face, boxes: rank(boxes: faces, imageSize: size))
         }
 
         let animals = detectAnimals(in: cg, imageSize: size)
         if !animals.isEmpty {
             return SmartPhotoDetection(kind: .animal, boxes: rank(boxes: animals, imageSize: size))
+        }
+
+        let humans = detectHumans(in: cg, imageSize: size)
+        if !humans.isEmpty {
+            return SmartPhotoDetection(kind: .human, boxes: rank(boxes: humans, imageSize: size))
         }
 
         let saliency = detectSaliency(in: cg, imageSize: size)
@@ -247,6 +267,32 @@ private enum SmartPhotoSubjectDetector {
             guard let results = request.results as? [VNRecognizedObjectObservation] else { return }
             out = results.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) }
         }
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([req])
+        } catch {
+            return []
+        }
+
+        let bounds = CGRect(origin: .zero, size: imageSize)
+        return out.compactMap {
+            let r = $0.intersection(bounds)
+            return (r.isNull || r.isEmpty) ? nil : r
+        }
+    }
+
+    private static func detectHumans(in cgImage: CGImage, imageSize: CGSize) -> [CGRect] {
+        guard #available(iOS 11.0, *) else { return [] }
+
+        var out: [CGRect] = []
+
+        let req = VNDetectHumanRectanglesRequest { request, _ in
+            guard let results = request.results as? [VNHumanObservation] else { return }
+            out = results.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) }
+        }
+
+        req.upperBodyOnly = true
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {
@@ -502,16 +548,33 @@ private enum SmartPhotoVariantBuilder {
             centre = CGPoint(x: (c1.x + c2.x) / 2.0, y: (c1.y + c2.y) / 2.0)
         }
 
-        if detection.kind == .face {
+        if detection.kind == .face || detection.kind == .human {
             let biasFactor: CGFloat = {
-                switch family {
-                case .systemSmall: return 0.12
-                case .systemMedium: return 0.08
-                case .systemLarge: return 0.05
-                default: return 0.08
+                switch detection.kind {
+                case .face:
+                    switch family {
+                    case .systemSmall: return 0.12
+                    case .systemMedium: return 0.08
+                    case .systemLarge: return 0.05
+                    default: return 0.08
+                    }
+
+                case .human:
+                    switch family {
+                    case .systemSmall: return 0.10
+                    case .systemMedium: return 0.07
+                    case .systemLarge: return 0.05
+                    default: return 0.07
+                    }
+
+                default:
+                    return 0
                 }
             }()
-            centre.y -= focus.height * biasFactor
+
+            if biasFactor > 0 {
+                centre.y -= focus.height * biasFactor
+            }
         }
 
         var x = centre.x - cropW / 2.0
@@ -524,7 +587,7 @@ private enum SmartPhotoVariantBuilder {
     }
 
     private static func shouldGroupTopTwoForSmall(detection: SmartPhotoDetection, imageSize: CGSize) -> Bool {
-        guard detection.kind == .face || detection.kind == .animal else { return false }
+        guard detection.kind != .none else { return false }
 
         let ranked = detection.boxes
         guard ranked.count >= 2 else { return false }
@@ -538,7 +601,7 @@ private enum SmartPhotoVariantBuilder {
 
         func area(_ r: CGRect) -> CGFloat { max(0, r.width) * max(0, r.height) }
 
-        let minCoverage: CGFloat = 0.05
+        let minCoverage: CGFloat = (detection.kind == .saliency) ? 0.03 : 0.05
         let maxHorizontalSeparation: CGFloat = 0.55
 
         let coverage = (area(a) + area(b)) / max(1, imageArea)
@@ -566,6 +629,14 @@ private enum SmartPhotoVariantBuilder {
             let dx = r.width * 0.18
             let dy = r.height * 0.18
             r = r.insetBy(dx: -dx, dy: -dy)
+
+        case .human:
+            let side = r.width * 0.14
+            let top = r.height * 0.22
+            let bottom = r.height * 0.10
+            r = r.insetBy(dx: -side, dy: 0)
+            r.origin.y -= top
+            r.size.height += top + bottom
 
         case .saliency:
             let dx = r.width * 0.12
