@@ -5,6 +5,7 @@
 //  Created by . . on 12/18/25.
 //
 
+import Foundation
 import SwiftUI
 import WidgetKit
 
@@ -22,10 +23,19 @@ extension ContentView {
     }
 
     func setCurrentFamilyDraft(_ newValue: FamilyDraft) {
+        var v = newValue
+
+        // If the image has been cleared, also clear any Smart Photo metadata.
+        // This keeps the draft state tidy and avoids holding onto file references
+        // that are no longer reachable from the spec.
+        if v.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            v.imageSmartPhoto = nil
+        }
+
         if matchedSetEnabled {
-            matchedDrafts[editingFamily] = newValue
+            matchedDrafts[editingFamily] = v
         } else {
-            baseDraft = newValue
+            baseDraft = v
         }
     }
 

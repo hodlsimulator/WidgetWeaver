@@ -16,23 +16,59 @@ extension ContentView {
     // MARK: - Photos import
 
     func importPickedImage(_ item: PhotosPickerItem) async {
+        let data: Data
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else { return }
-            guard let uiImage = UIImage(data: data) else { return }
+            guard let loaded = try await item.loadTransferable(type: Data.self) else {
+                pickedPhoto = nil
+                return
+            }
+            data = loaded
+        } catch {
+            pickedPhoto = nil
+            return
+        }
+
+        // Prefer Smart Photo: master + per-family renders saved in the App Group.
+        do {
+            let targets = SmartPhotoRenderTargets.forCurrentDevice()
+            let imageSpec = try await Task.detached(priority: .userInitiated) {
+                try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
+            }.value
+
+            var d = currentFamilyDraft()
+            d.imageFileName = imageSpec.fileName
+            d.imageSmartPhoto = imageSpec.smartPhoto
+            setCurrentFamilyDraft(d)
+
+            if let themeImage = AppGroup.loadUIImage(fileName: imageSpec.fileName) ?? UIImage(data: data) {
+                handleImportedImageTheme(uiImage: themeImage, fileName: imageSpec.fileName)
+            }
+
+            pickedPhoto = nil
+            return
+        } catch {
+            // Fall back to the legacy single-file import if Smart Photo fails.
+        }
+
+        do {
+            guard let uiImage = UIImage(data: data) else {
+                pickedPhoto = nil
+                return
+            }
 
             let fileName = AppGroup.createImageFileName(ext: "jpg")
             try AppGroup.writeUIImage(uiImage, fileName: fileName, compressionQuality: 0.85)
 
-            await MainActor.run {
-                var d = currentFamilyDraft()
-                d.imageFileName = fileName
-                setCurrentFamilyDraft(d)
+            var d = currentFamilyDraft()
+            d.imageFileName = fileName
+            d.imageSmartPhoto = nil
+            setCurrentFamilyDraft(d)
 
-                handleImportedImageTheme(uiImage: uiImage, fileName: fileName)
-                pickedPhoto = nil
-            }
+            handleImportedImageTheme(uiImage: uiImage, fileName: fileName)
+            pickedPhoto = nil
         } catch {
             // Intentionally ignored (image remains unchanged).
+            pickedPhoto = nil
         }
     }
 
