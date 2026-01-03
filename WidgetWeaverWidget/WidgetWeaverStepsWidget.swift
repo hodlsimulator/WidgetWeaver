@@ -429,6 +429,7 @@ struct WidgetWeaverLockScreenActivityView: View {
         switch family {
         case .accessoryInline:
             Text("Activity: Open app")
+
         case .accessoryCircular:
             VStack(spacing: 2) {
                 Text("—")
@@ -437,6 +438,7 @@ struct WidgetWeaverLockScreenActivityView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+
         default:
             VStack(alignment: .leading, spacing: 3) {
                 Text("Activity")
@@ -450,14 +452,24 @@ struct WidgetWeaverLockScreenActivityView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        let steps = entry.snapshot?.steps ?? nil
-        let flights = entry.snapshot?.flightsClimbed ?? nil
+        let snap = entry.snapshot
+        let goal = max(0, WidgetWeaverStepsStore.shared.loadGoalSteps())
+        let steps = snap?.steps
+
+        let fraction: Double = {
+            guard let steps, goal > 0 else { return 0.0 }
+            return min(1.0, Double(steps) / Double(goal))
+        }()
 
         switch family {
         case .accessoryInline:
             if let steps {
-                if let flights {
-                    Text("\(formatSteps(steps)) st • \(flights) fl")
+                if let meters = snap?.distanceWalkingRunningMeters {
+                    Text("\(formatSteps(steps)) • \(formatDistanceKMShort(meters))")
+                } else if let kcal = snap?.activeEnergyBurnedKilocalories {
+                    Text("\(formatSteps(steps)) • \(formatKcalShort(kcal))")
+                } else if let flights = snap?.flightsClimbed {
+                    Text("\(formatSteps(steps)) • \(flights) fl")
                 } else {
                     Text("\(formatSteps(steps)) steps")
                 }
@@ -466,32 +478,60 @@ struct WidgetWeaverLockScreenActivityView: View {
             }
 
         case .accessoryCircular:
-            VStack(spacing: 2) {
+            ZStack {
+                StepsRing(fraction: fraction, lineWidth: 6)
                 Text(steps.map(shortSteps) ?? "—")
                     .font(.headline)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
-                Image(systemName: "figure.walk")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
 
-        default:
+        default: // .accessoryRectangular
             VStack(alignment: .leading, spacing: 3) {
-                Text(steps.map(formatSteps) ?? "—")
-                    .font(.headline)
-                    .bold()
-                if let flights {
-                    Text("\(flights) flights")
-                        .font(.caption2)
+                HStack(spacing: 6) {
+                    Image(systemName: "figure.walk")
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
-                } else {
-                    Text("Today")
-                        .font(.caption2)
+                    Text("Activity")
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if entry.access == .partial {
+                        Text("Partial")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+
+                Text(steps.map(formatSteps) ?? "—")
+                    .font(.headline.weight(.bold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+
+                Text(compactLine(
+                    flights: snap?.flightsClimbed,
+                    meters: snap?.distanceWalkingRunningMeters,
+                    kcal: snap?.activeEnergyBurnedKilocalories
+                ))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
         }
+    }
+
+    private func compactLine(flights: Int?, meters: Double?, kcal: Double?) -> String {
+        var parts: [String] = []
+        if let meters {
+            parts.append(formatDistanceKMShort(meters))
+        }
+        if let kcal {
+            parts.append(formatKcalShort(kcal))
+        }
+        if let flights {
+            parts.append("\(flights) fl")
+        }
+        return parts.isEmpty ? "Today" : parts.joined(separator: " • ")
     }
 
     private func formatSteps(_ n: Int) -> String {
@@ -507,6 +547,22 @@ struct WidgetWeaverLockScreenActivityView: View {
             return String(format: "%.0fk", k)
         }
         return "\(n)"
+    }
+
+    private func formatDistanceKMShort(_ meters: Double) -> String {
+        let km = max(0, meters) / 1000.0
+        if km >= 10 {
+            return String(format: "%.0f km", km)
+        } else if km >= 1 {
+            return String(format: "%.1f km", km)
+        } else {
+            return String(format: "%.0f m", max(0, meters))
+        }
+    }
+
+    private func formatKcalShort(_ kcal: Double) -> String {
+        let v = max(0, Int(kcal.rounded()))
+        return "\(v) kcal"
     }
 }
 
@@ -588,14 +644,17 @@ struct WidgetWeaverHomeScreenActivityView: View {
         .wwWidgetContainerBackground()
     }
 
+    // MARK: - Locked state
+
     @ViewBuilder
     private var locked: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "figure.walk")
                 Text("Activity")
                     .font(.headline)
                     .bold()
+                Spacer()
             }
 
             Text(entry.access == .denied ? "Denied" : "Open the app to enable Health access.")
@@ -606,111 +665,363 @@ struct WidgetWeaverHomeScreenActivityView: View {
         }
     }
 
+    // MARK: - Content state
+
     @ViewBuilder
     private var content: some View {
         let snap = entry.snapshot
+        let goal = max(0, WidgetWeaverStepsStore.shared.loadGoalSteps())
+
         let steps = snap?.steps
         let flights = snap?.flightsClimbed
         let meters = snap?.distanceWalkingRunningMeters
         let kcal = snap?.activeEnergyBurnedKilocalories
 
+        let fraction: Double = {
+            guard let steps, goal > 0 else { return 0.0 }
+            return min(1.0, Double(steps) / Double(goal))
+        }()
+
+        let pct: Int? = {
+            guard let steps, goal > 0 else { return nil }
+            return Int((min(1.0, Double(steps) / Double(goal)) * 100.0).rounded())
+        }()
+
+        let stepsText = steps.map(formatSteps) ?? "—"
+        let goalText = (goal > 0) ? formatSteps(goal) : nil
+
+        let distanceText = meters.map(formatDistanceKM) ?? "—"
+        let energyText = kcal.map(formatKcal) ?? "—"
+        let flightsText = flights.map { "\($0)" } ?? "—"
+
         switch family {
         case .systemSmall:
-            VStack(alignment: .leading, spacing: 8) {
-                header
-                Text(steps.map(formatSteps) ?? "—")
-                    .font(.system(.title, design: .rounded).weight(.bold))
-                    .monospacedDigit()
-                Text("Steps")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if flights != nil || meters != nil || kcal != nil {
-                    Text(compactSecondary(flights: flights, meters: meters, kcal: kcal))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+            VStack(alignment: .leading, spacing: 10) {
+                headerRow(updatedAt: nil)
+
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        StepsRing(fraction: fraction, lineWidth: 10)
+                        Text(pct.map { "\($0)%" } ?? "")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(width: 54, height: 54)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(stepsText)
+                            .font(.system(.title2, design: .rounded).weight(.bold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        Text(goalText.map { "Goal \($0)" } ?? "Steps today")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
                 }
+
+                HStack(spacing: 8) {
+                    MetricPill(systemImage: "map", text: distanceText)
+                    MetricPill(systemImage: "flame.fill", text: energyText)
+                }
+
+                MetricPill(systemImage: "arrow.up", text: flightsText + " flights")
+
+                if entry.access == .partial {
+                    Text("Some metrics disabled")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 Spacer()
             }
 
         case .systemMedium:
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                HStack(alignment: .top, spacing: 16) {
-                    metricBlock(title: "Steps", value: steps.map(formatSteps) ?? "—")
-                    metricBlock(title: "Distance", value: meters.map(formatDistanceKM) ?? "—")
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    headerRow(updatedAt: snap?.fetchedAt)
+
+                    HStack(alignment: .center, spacing: 12) {
+                        ZStack {
+                            StepsRing(fraction: fraction, lineWidth: 12)
+                            Image(systemName: "figure.walk")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 60, height: 60)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(stepsText)
+                                .font(.system(.title2, design: .rounded).weight(.bold))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+
+                            if let goalText, let pct {
+                                Text("Goal \(goalText) • \(pct)%")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            } else {
+                                Text("Steps today")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    if entry.access == .partial {
+                        Text("Some metrics are disabled in Health.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                HStack(alignment: .top, spacing: 16) {
-                    metricBlock(title: "Flights", value: flights.map { "\($0)" } ?? "—")
-                    metricBlock(title: "Active", value: kcal.map(formatKcal) ?? "—")
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(spacing: 10) {
+                    MetricRow(systemImage: "map", title: "Distance", value: distanceText)
+                    MetricRow(systemImage: "flame.fill", title: "Active energy", value: energyText)
+                    MetricRow(systemImage: "arrow.up", title: "Flights climbed", value: flightsText)
                 }
-                if let updated = snap?.fetchedAt {
-                    Text("Updated \(formatTime(updated))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
         default: // .systemLarge and others
             VStack(alignment: .leading, spacing: 12) {
-                header
-                HStack(alignment: .top, spacing: 16) {
-                    metricBlock(title: "Steps", value: steps.map(formatSteps) ?? "—")
-                    metricBlock(title: "Distance", value: meters.map(formatDistanceKM) ?? "—")
+                headerRow(updatedAt: snap?.fetchedAt)
+
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        StepsRing(fraction: fraction, lineWidth: 12)
+                        Text(pct.map { "\($0)%" } ?? "")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(width: 66, height: 66)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(stepsText)
+                            .font(.system(.title, design: .rounded).weight(.bold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        if let goalText, let pct {
+                            Text("Goal \(goalText) • \(pct)%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Steps today")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
                 }
-                HStack(alignment: .top, spacing: 16) {
-                    metricBlock(title: "Flights", value: flights.map { "\($0)" } ?? "—")
-                    metricBlock(title: "Active energy", value: kcal.map(formatKcal) ?? "—")
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12),
+                    ],
+                    spacing: 12
+                ) {
+                    MetricTile(systemImage: "map", title: "Distance", value: distanceText)
+                    MetricTile(systemImage: "flame.fill", title: "Active energy", value: energyText)
+                    MetricTile(systemImage: "arrow.up", title: "Flights", value: flightsText)
+                    MetricTile(
+                        systemImage: "clock",
+                        title: "Updated",
+                        value: (snap?.fetchedAt).map(formatTime) ?? "—"
+                    )
                 }
-                if let updated = snap?.fetchedAt {
-                    Text("Updated \(formatTime(updated))")
+
+                if entry.access == .partial {
+                    Text("Some metrics are disabled in Health.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+
                 Spacer()
             }
         }
     }
 
-    private var header: some View {
+    // MARK: - Building blocks
+
+    private func headerRow(updatedAt: Date?) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "figure.walk")
                 .font(.headline)
+
             Text("Activity")
                 .font(.headline)
                 .bold()
-            Spacer()
+
+            if entry.access == .partial {
+                Badge(text: "Partial")
+            }
+
+            Spacer(minLength: 0)
+
+            if let updatedAt {
+                Text(formatTime(updatedAt))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 
-    private func metricBlock(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(.title3, design: .rounded).weight(.bold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(title)
-                .font(.caption)
+    private struct Badge: View {
+        let text: String
+
+        var body: some View {
+            Text(text)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Color.secondary.opacity(0.12))
+                )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func compactSecondary(flights: Int?, meters: Double?, kcal: Double?) -> String {
-        var parts: [String] = []
-        if let flights {
-            parts.append("\(flights) flights")
+    private struct MetricPill: View {
+        let systemImage: String
+        let text: String
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(text)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.14), lineWidth: 1)
+            )
         }
-        if let meters {
-            parts.append(formatDistanceKM(meters))
-        }
-        if let kcal {
-            parts.append(formatKcal(kcal))
-        }
-        return parts.joined(separator: " • ")
     }
+
+    private struct MetricRow: View {
+        let systemImage: String
+        let title: String
+        let value: String
+
+        var body: some View {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.10))
+                    Image(systemName: systemImage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .frame(width: 30, height: 30)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(value)
+                        .font(.system(.headline, design: .rounded).weight(.bold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+
+                    Text(title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.secondary.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.12), lineWidth: 1)
+            )
+        }
+    }
+
+    private struct MetricTile: View {
+        let systemImage: String
+        let title: String
+        let value: String
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                }
+
+                Text(value)
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.12), lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Formatting helpers
 
     private func formatSteps(_ n: Int) -> String {
         let nf = NumberFormatter()
@@ -720,12 +1031,15 @@ struct WidgetWeaverHomeScreenActivityView: View {
     }
 
     private func formatDistanceKM(_ meters: Double) -> String {
-        let km = meters / 1000.0
+        let km = max(0, meters) / 1000.0
+        if km >= 10 {
+            return String(format: "%.0f km", km)
+        }
         return String(format: "%.1f km", km)
     }
 
     private func formatKcal(_ kcal: Double) -> String {
-        return "\(Int(kcal.rounded())) kcal"
+        return "\(max(0, Int(kcal.rounded()))) kcal"
     }
 
     private func formatTime(_ d: Date) -> String {
@@ -746,12 +1060,11 @@ struct WidgetWeaverHomeScreenActivityWidget: Widget {
             WidgetWeaverHomeScreenActivityView(entry: entry)
         }
         .configurationDisplayName("Activity (Home)")
-        .description("A simple multi-metric activity snapshot from Health.")
+        .description("An activity snapshot with steps, distance, energy, and flights.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
 }
-
 
 // MARK: - Shared ring + background
 
