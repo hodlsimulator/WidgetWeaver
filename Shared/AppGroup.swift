@@ -15,12 +15,9 @@ import WidgetKit
 private final class ImageCacheBox: @unchecked Sendable {
     let cache: NSCache<NSString, UIImage>
 
-    init(countLimit: Int, totalCostLimitBytes: Int?) {
+    init(countLimit: Int) {
         let c = NSCache<NSString, UIImage>()
         c.countLimit = countLimit
-        if let bytes = totalCostLimitBytes {
-            c.totalCostLimit = bytes
-        }
         self.cache = c
     }
 }
@@ -48,18 +45,7 @@ public enum AppGroup {
         containerURL.appendingPathComponent("WidgetWeaverImages", isDirectory: true)
     }
 
-    private static var isWidgetExtension: Bool {
-        Bundle.main.bundleURL.pathExtension == "appex"
-    }
-
-    private static let imageCache: ImageCacheBox = {
-        // Widgets are memory constrained. Use a smaller cache in the extension.
-        if isWidgetExtension {
-            return ImageCacheBox(countLimit: 6, totalCostLimitBytes: 12 * 1024 * 1024)
-        } else {
-            return ImageCacheBox(countLimit: 32, totalCostLimitBytes: 96 * 1024 * 1024)
-        }
-    }()
+    private static let imageCache = ImageCacheBox(countLimit: 32)
 
     public static func ensureImagesDirectoryExists() {
         let url = imagesDirectoryURL
@@ -76,15 +62,7 @@ public enum AppGroup {
     }
 
     public static func createImageFileName(ext: String = "jpg") -> String {
-        createImageFileName(prefix: "image", ext: ext)
-    }
-
-    public static func createImageFileName(prefix: String, ext: String = "jpg") -> String {
-        let cleanedPrefix = prefix
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "-")
-        let safePrefix = cleanedPrefix.isEmpty ? "image" : String(cleanedPrefix.prefix(32))
-        return "\(safePrefix)-\(UUID().uuidString).\(ext)"
+        "image-\(UUID().uuidString).\(ext)"
     }
 
     public static func writeImageData(_ data: Data, fileName: String) throws {
@@ -95,22 +73,10 @@ public enum AppGroup {
     }
 
     public static func writeUIImage(_ image: UIImage, fileName: String, compressionQuality: CGFloat = 0.85) throws {
-        try writeUIImage(image, fileName: fileName, compressionQuality: compressionQuality, maxPixel: 1024)
-    }
-
-    /// Writes a JPEG into the App Group container.
-    /// - Parameters:
-    ///   - maxPixel: Maximum width/height in pixels for the stored file (preserves aspect ratio).
-    public static func writeUIImage(
-        _ image: UIImage,
-        fileName: String,
-        compressionQuality: CGFloat = 0.85,
-        maxPixel: CGFloat
-    ) throws {
         ensureImagesDirectoryExists()
 
         let normalised = image.normalisedOrientation()
-        let downsized = normalised.downsampled(maxPixel: maxPixel)
+        let downsized = normalised.downsampled(maxPixel: 1024)
 
         if let data = downsized.jpegData(compressionQuality: compressionQuality) {
             try writeImageData(data, fileName: fileName)
@@ -126,7 +92,7 @@ public enum AppGroup {
     }
 
     public static func loadUIImage(fileName: String) -> UIImage? {
-        let trimmed = fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if let cached = imageCache.cache.object(forKey: trimmed as NSString) {
@@ -137,12 +103,12 @@ public enum AppGroup {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         guard let img = UIImage(contentsOfFile: url.path) else { return nil }
 
-        imageCache.cache.setObject(img, forKey: trimmed as NSString, cost: img.estimatedDecodedByteCount)
+        imageCache.cache.setObject(img, forKey: trimmed as NSString)
         return img
     }
 
     public static func deleteImage(fileName: String) {
-        let trimmed = fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let url = imagesDirectoryURL.appendingPathComponent(trimmed)
@@ -176,7 +142,7 @@ private extension UIImage {
     }
 
     func downsampled(maxPixel: CGFloat) -> UIImage {
-        let maxSide = max(size.width * scale, size.height * scale)
+        let maxSide = max(size.width, size.height)
         guard maxSide > 0, maxSide > maxPixel else { return self }
 
         let ratio = maxPixel / maxSide
@@ -187,15 +153,6 @@ private extension UIImage {
         let img = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
         return img ?? self
-    }
-
-    var estimatedDecodedByteCount: Int {
-        guard let cg = cgImage else {
-            let px = Int((size.width * scale).rounded(.up))
-            let py = Int((size.height * scale).rounded(.up))
-            return max(1, px * py * 4)
-        }
-        return max(1, cg.bytesPerRow * cg.height)
     }
 }
 

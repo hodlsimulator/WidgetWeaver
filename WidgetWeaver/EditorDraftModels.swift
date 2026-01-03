@@ -2,281 +2,109 @@
 //  EditorDraftModels.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/17/25.
+//  Created by . . on 12/18/25.
 //
 
 import Foundation
 import WidgetKit
 
-// MARK: - StyleDraft
+// MARK: - Draft models
+
+enum EditingFamily: String, CaseIterable {
+    case small
+    case medium
+    case large
+
+    init?(widgetFamily: WidgetFamily) {
+        switch widgetFamily {
+        case .systemSmall: self = .small
+        case .systemMedium: self = .medium
+        case .systemLarge: self = .large
+        default: return nil
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        }
+    }
+}
+
+struct MatchedDrafts: Hashable {
+    var small: FamilyDraft
+    var medium: FamilyDraft
+    var large: FamilyDraft
+
+    subscript(_ family: EditingFamily) -> FamilyDraft {
+        get {
+            switch family {
+            case .small: return small
+            case .medium: return medium
+            case .large: return large
+            }
+        }
+        set {
+            switch family {
+            case .small: small = newValue
+            case .medium: medium = newValue
+            case .large: large = newValue
+            }
+        }
+    }
+}
 
 struct StyleDraft: Hashable {
+    var padding: Double
+    var cornerRadius: Double
+    var weatherScale: Double
     var background: BackgroundToken
     var accent: AccentToken
-
+    var nameTextStyle: TextStyleToken
     var primaryTextStyle: TextStyleToken
     var secondaryTextStyle: TextStyleToken
-    var tertiaryTextStyle: TextStyleToken
 
-    var primaryFont: FontToken
-    var secondaryFont: FontToken
-    var tertiaryFont: FontToken
+    static var defaultDraft: StyleDraft { StyleDraft(from: .defaultStyle) }
 
-    var primarySize: Double
-    var secondarySize: Double
-    var tertiarySize: Double
-
-    var primaryWeight: FontWeightToken
-    var secondaryWeight: FontWeightToken
-    var tertiaryWeight: FontWeightToken
-
-    var primaryTextColour: TextColourToken
-    var secondaryTextColour: TextColourToken
-    var tertiaryTextColour: TextColourToken
-
-    var shadowStyle: ShadowStyleToken
-    var shadowOpacity: Double
-    var shadowRadius: Double
-    var shadowX: Double
-    var shadowY: Double
-
-    var usesTheme: Bool
-    var themeImageFileName: String
-    var themeScale: Double
-    var themeStrategy: ThemeStrategyToken
-    var themeControlsAccent: Bool
-    var themeControlsText: Bool
-    var themeControlsBackground: Bool
-
-    var weatherScale: Double
-    var weatherBlur: Double
-
-    static var defaultDraft: StyleDraft {
-        StyleDraft(from: WidgetSpec.defaultSpec().style)
+    init(from style: StyleSpec) {
+        self.padding = style.padding
+        self.cornerRadius = style.cornerRadius
+        self.weatherScale = style.weatherScale
+        self.background = style.background
+        self.accent = style.accent
+        self.nameTextStyle = style.nameTextStyle
+        self.primaryTextStyle = style.primaryTextStyle
+        self.secondaryTextStyle = style.secondaryTextStyle
     }
 
-    init(from s: StyleSpec) {
-        background = s.background
-        accent = s.accent
-
-        primaryTextStyle = s.primaryTextStyle
-        secondaryTextStyle = s.secondaryTextStyle
-        tertiaryTextStyle = s.tertiaryTextStyle
-
-        primaryFont = s.primaryFont
-        secondaryFont = s.secondaryFont
-        tertiaryFont = s.tertiaryFont
-
-        primarySize = s.primarySize
-        secondarySize = s.secondarySize
-        tertiarySize = s.tertiarySize
-
-        primaryWeight = s.primaryWeight
-        secondaryWeight = s.secondaryWeight
-        tertiaryWeight = s.tertiaryWeight
-
-        primaryTextColour = s.primaryTextColour
-        secondaryTextColour = s.secondaryTextColour
-        tertiaryTextColour = s.tertiaryTextColour
-
-        shadowStyle = s.shadowStyle
-        shadowOpacity = s.shadowOpacity
-        shadowRadius = s.shadowRadius
-        shadowX = s.shadowX
-        shadowY = s.shadowY
-
-        usesTheme = s.usesTheme
-        themeImageFileName = s.themeImageFileName
-        themeScale = s.themeScale
-        themeStrategy = s.themeStrategy
-        themeControlsAccent = s.themeControlsAccent
-        themeControlsText = s.themeControlsText
-        themeControlsBackground = s.themeControlsBackground
-
-        weatherScale = s.weatherScale
-        weatherBlur = s.weatherBlur
-    }
-
-    func toSpec() -> StyleSpec {
+    func toStyleSpec() -> StyleSpec {
         StyleSpec(
+            padding: padding,
+            cornerRadius: cornerRadius,
             background: background,
             accent: accent,
+            nameTextStyle: nameTextStyle,
             primaryTextStyle: primaryTextStyle,
             secondaryTextStyle: secondaryTextStyle,
-            tertiaryTextStyle: tertiaryTextStyle,
-            primaryFont: primaryFont,
-            secondaryFont: secondaryFont,
-            tertiaryFont: tertiaryFont,
-            primarySize: primarySize,
-            secondarySize: secondarySize,
-            tertiarySize: tertiarySize,
-            primaryWeight: primaryWeight,
-            secondaryWeight: secondaryWeight,
-            tertiaryWeight: tertiaryWeight,
-            primaryTextColour: primaryTextColour,
-            secondaryTextColour: secondaryTextColour,
-            tertiaryTextColour: tertiaryTextColour,
-            shadowStyle: shadowStyle,
-            shadowOpacity: shadowOpacity,
-            shadowRadius: shadowRadius,
-            shadowX: shadowX,
-            shadowY: shadowY,
-            usesTheme: usesTheme,
-            themeImageFileName: themeImageFileName,
-            themeScale: themeScale,
-            themeStrategy: themeStrategy,
-            themeControlsAccent: themeControlsAccent,
-            themeControlsText: themeControlsText,
-            themeControlsBackground: themeControlsBackground,
-            weatherScale: weatherScale,
-            weatherBlur: weatherBlur
+            weatherScale: weatherScale
         ).normalised()
     }
-
-    mutating func apply(spec s: StyleSpec) {
-        background = s.background
-        accent = s.accent
-
-        primaryTextStyle = s.primaryTextStyle
-        secondaryTextStyle = s.secondaryTextStyle
-        tertiaryTextStyle = s.tertiaryTextStyle
-
-        primaryFont = s.primaryFont
-        secondaryFont = s.secondaryFont
-        tertiaryFont = s.tertiaryFont
-
-        primarySize = s.primarySize
-        secondarySize = s.secondarySize
-        tertiarySize = s.tertiarySize
-
-        primaryWeight = s.primaryWeight
-        secondaryWeight = s.secondaryWeight
-        tertiaryWeight = s.tertiaryWeight
-
-        primaryTextColour = s.primaryTextColour
-        secondaryTextColour = s.secondaryTextColour
-        tertiaryTextColour = s.tertiaryTextColour
-
-        shadowStyle = s.shadowStyle
-        shadowOpacity = s.shadowOpacity
-        shadowRadius = s.shadowRadius
-        shadowX = s.shadowX
-        shadowY = s.shadowY
-
-        usesTheme = s.usesTheme
-        themeImageFileName = s.themeImageFileName
-        themeScale = s.themeScale
-        themeStrategy = s.themeStrategy
-        themeControlsAccent = s.themeControlsAccent
-        themeControlsText = s.themeControlsText
-        themeControlsBackground = s.themeControlsBackground
-
-        weatherScale = s.weatherScale
-        weatherBlur = s.weatherBlur
-    }
 }
-
-// MARK: - ActionBarDraft
-
-struct ActionBarDraft: Hashable {
-    var enabled: Bool
-    var showsIcon: Bool
-    var icon: ActionBarIconToken
-    var label: String
-    var labelSize: Double
-    var labelWeight: FontWeightToken
-    var labelColour: TextColourToken
-    var tint: AccentToken
-    var backgroundOpacity: Double
-    var cornerRadius: Double
-    var padding: Double
-
-    static var defaultDraft: ActionBarDraft {
-        ActionBarDraft(from: WidgetSpec.defaultSpec().actionBar)
-    }
-
-    init(from a: ActionBarSpec) {
-        enabled = a.enabled
-        showsIcon = a.showsIcon
-        icon = a.icon
-        label = a.label
-        labelSize = a.labelSize
-        labelWeight = a.labelWeight
-        labelColour = a.labelColour
-        tint = a.tint
-        backgroundOpacity = a.backgroundOpacity
-        cornerRadius = a.cornerRadius
-        padding = a.padding
-    }
-
-    func toSpec() -> ActionBarSpec {
-        ActionBarSpec(
-            enabled: enabled,
-            showsIcon: showsIcon,
-            icon: icon,
-            label: label,
-            labelSize: labelSize,
-            labelWeight: labelWeight,
-            labelColour: labelColour,
-            tint: tint,
-            backgroundOpacity: backgroundOpacity,
-            cornerRadius: cornerRadius,
-            padding: padding
-        ).normalised()
-    }
-
-    mutating func apply(spec a: ActionBarSpec) {
-        enabled = a.enabled
-        showsIcon = a.showsIcon
-        icon = a.icon
-        label = a.label
-        labelSize = a.labelSize
-        labelWeight = a.labelWeight
-        labelColour = a.labelColour
-        tint = a.tint
-        backgroundOpacity = a.backgroundOpacity
-        cornerRadius = a.cornerRadius
-        padding = a.padding
-    }
-}
-
-// MARK: - FamilyDraft
 
 struct FamilyDraft: Hashable {
-    // Layout
-    var template: LayoutTemplateToken
-    var axis: LayoutAxisToken
-    var alignment: LayoutAlignmentToken
-    var spacing: Double
-    var padding: Double
-    var showsAccentBar: Bool
-
-    // Primary text
+    // Text
     var primaryText: String
-    var primaryTextRole: TextRoleToken
-    var primaryTextAlignment: TextAlignmentToken
-    var primaryMaxLines: Int
-
-    // Secondary text
     var secondaryText: String
-    var secondaryTextRole: TextRoleToken
-    var secondaryTextAlignment: TextAlignmentToken
-    var secondaryMaxLines: Int
-
-    // Tertiary text
-    var tertiaryText: String
-    var tertiaryTextRole: TextRoleToken
-    var tertiaryTextAlignment: TextAlignmentToken
-    var tertiaryMaxLines: Int
 
     // Symbol
-    var symbol: String
+    var symbolName: String
+    var symbolPlacement: SymbolPlacementToken
+    var symbolSize: Double
+    var symbolWeight: SymbolWeightToken
     var symbolRenderingMode: SymbolRenderingModeToken
     var symbolTint: SymbolTintToken
-    var symbolWeight: SymbolWeightToken
-    var symbolScale: Double
-    var symbolOpacity: Double
-    var symbolPlacement: SymbolPlacementToken
 
     // Image
     var imageFileName: String
@@ -284,203 +112,514 @@ struct FamilyDraft: Hashable {
     var imageHeight: Double
     var imageCornerRadius: Double
 
-    // Smart Photo metadata (auto-crop + per-widget renders)
-    var imageSmartPhoto: WidgetWeaverSmartPhotoSpec?
+    // Layout
+    var template: LayoutTemplateToken
+    var showsAccentBar: Bool
+    var axis: LayoutAxisToken
+    var alignment: LayoutAlignmentToken
+    var spacing: Double
+    var primaryLineLimitSmall: Int
+    var primaryLineLimit: Int
+    var secondaryLineLimit: Int
 
-    static var defaultDraft: FamilyDraft {
-        FamilyDraft(from: WidgetSpec.defaultSpec().base)
-    }
+    static var defaultDraft: FamilyDraft { FamilyDraft(from: WidgetSpec.defaultSpec()) }
 
-    init(from s: WidgetSpecVariant) {
-        template = s.layout.template
-        axis = s.layout.axis
-        alignment = s.layout.alignment
-        spacing = s.layout.spacing
-        padding = s.layout.padding
-        showsAccentBar = s.layout.showsAccentBar
+    init(from spec: WidgetSpec) {
+        let s = spec.normalised()
 
-        primaryText = s.primaryText
-        primaryTextRole = s.primaryTextRole
-        primaryTextAlignment = s.primaryTextAlignment
-        primaryMaxLines = s.primaryMaxLines
+        self.primaryText = s.primaryText
+        self.secondaryText = s.secondaryText ?? ""
 
-        secondaryText = s.secondaryText ?? ""
-        secondaryTextRole = s.secondaryTextRole
-        secondaryTextAlignment = s.secondaryTextAlignment
-        secondaryMaxLines = s.secondaryMaxLines
-
-        tertiaryText = s.tertiaryText ?? ""
-        tertiaryTextRole = s.tertiaryTextRole
-        tertiaryTextAlignment = s.tertiaryTextAlignment
-        tertiaryMaxLines = s.tertiaryMaxLines
-
-        symbol = s.symbol?.name ?? ""
-        symbolRenderingMode = s.symbol?.renderingMode ?? .monochrome
-        symbolTint = s.symbol?.tint ?? .accent
-        symbolWeight = s.symbol?.weight ?? .regular
-        symbolScale = s.symbol?.scale ?? 1.0
-        symbolOpacity = s.symbol?.opacity ?? 1.0
-        symbolPlacement = s.symbol?.placement ?? .above
+        if let sym = s.symbol {
+            self.symbolName = sym.name
+            self.symbolPlacement = sym.placement
+            self.symbolSize = sym.size
+            self.symbolWeight = sym.weight
+            self.symbolRenderingMode = sym.renderingMode
+            self.symbolTint = sym.tint
+        } else {
+            self.symbolName = ""
+            self.symbolPlacement = .beforeName
+            self.symbolSize = 18
+            self.symbolWeight = .regular
+            self.symbolRenderingMode = .monochrome
+            self.symbolTint = .accent
+        }
 
         if let img = s.image {
-            imageFileName = img.fileName
-            imageContentMode = img.contentMode
-            imageHeight = img.height
-            imageCornerRadius = img.cornerRadius
-            imageSmartPhoto = img.smartPhoto
+            self.imageFileName = img.fileName
+            self.imageContentMode = img.contentMode
+            self.imageHeight = img.height
+            self.imageCornerRadius = img.cornerRadius
         } else {
-            imageFileName = ""
-            imageContentMode = .fill
-            imageHeight = 120
-            imageCornerRadius = 16
-            imageSmartPhoto = nil
+            self.imageFileName = ""
+            self.imageContentMode = .fill
+            self.imageHeight = 120
+            self.imageCornerRadius = 16
         }
+
+        self.template = s.layout.template
+        self.showsAccentBar = s.layout.showsAccentBar
+        self.axis = s.layout.axis
+        self.alignment = s.layout.alignment
+        self.spacing = s.layout.spacing
+        self.primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        self.primaryLineLimit = s.layout.primaryLineLimit
+        self.secondaryLineLimit = s.layout.secondaryLineLimit
     }
 
-    func toVariantSpec() -> WidgetSpecVariant {
-        let secondary: String? = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : secondaryText
-        let tertiary: String? = tertiaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : tertiaryText
+    func toFlatSpec(id: UUID, name: String, style: StyleSpec, updatedAt: Date) -> WidgetSpec {
+        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let symbolSpec: SymbolSpec? = {
-            let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-            return SymbolSpec(
-                name: trimmed,
-                renderingMode: symbolRenderingMode,
-                tint: symbolTint,
-                weight: symbolWeight,
-                scale: symbolScale,
-                opacity: symbolOpacity,
-                placement: symbolPlacement
-            ).normalised()
-        }()
+        let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbol: SymbolSpec? = symName.isEmpty ? nil : SymbolSpec(
+            name: symName,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint,
+            placement: symbolPlacement
+        )
 
         let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
             fileName: imgName,
             contentMode: imageContentMode,
             height: imageHeight,
-            cornerRadius: imageCornerRadius,
-            smartPhoto: imageSmartPhoto
+            cornerRadius: imageCornerRadius
         )
 
         let layout = LayoutSpec(
             template: template,
+            showsAccentBar: showsAccentBar,
             axis: axis,
             alignment: alignment,
             spacing: spacing,
-            padding: padding,
-            showsAccentBar: showsAccentBar
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
         ).normalised()
 
-        return WidgetSpecVariant(
+        return WidgetSpec(
+            id: id,
+            name: name,
+            primaryText: template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
+            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
+            updatedAt: updatedAt,
+            symbol: symbol,
+            image: image,
             layout: layout,
-            primaryText: primaryText,
-            primaryTextRole: primaryTextRole,
-            primaryTextAlignment: primaryTextAlignment,
-            primaryMaxLines: primaryMaxLines,
-            secondaryText: secondary,
-            secondaryTextRole: secondaryTextRole,
-            secondaryTextAlignment: secondaryTextAlignment,
-            secondaryMaxLines: secondaryMaxLines,
-            tertiaryText: tertiary,
-            tertiaryTextRole: tertiaryTextRole,
-            tertiaryTextAlignment: tertiaryTextAlignment,
-            tertiaryMaxLines: tertiaryMaxLines,
-            symbol: symbolSpec,
-            image: image
+            style: style,
+            matchedSet: nil
         ).normalised()
     }
 
-    mutating func apply(flatSpec s: WidgetSpec) {
-        let base = s.base
+    func toVariantSpec() -> WidgetSpecVariant {
+        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        template = base.layout.template
-        axis = base.layout.axis
-        alignment = base.layout.alignment
-        spacing = base.layout.spacing
-        padding = base.layout.padding
-        showsAccentBar = base.layout.showsAccentBar
+        let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbol: SymbolSpec? = symName.isEmpty ? nil : SymbolSpec(
+            name: symName,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint,
+            placement: symbolPlacement
+        )
 
-        primaryText = base.primaryText
-        primaryTextRole = base.primaryTextRole
-        primaryTextAlignment = base.primaryTextAlignment
-        primaryMaxLines = base.primaryMaxLines
+        let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
+            fileName: imgName,
+            contentMode: imageContentMode,
+            height: imageHeight,
+            cornerRadius: imageCornerRadius
+        )
 
-        secondaryText = base.secondaryText ?? ""
-        secondaryTextRole = base.secondaryTextRole
-        secondaryTextAlignment = base.secondaryTextAlignment
-        secondaryMaxLines = base.secondaryMaxLines
+        let layout = LayoutSpec(
+            template: template,
+            showsAccentBar: showsAccentBar,
+            axis: axis,
+            alignment: alignment,
+            spacing: spacing,
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
+        ).normalised()
 
-        tertiaryText = base.tertiaryText ?? ""
-        tertiaryTextRole = base.tertiaryTextRole
-        tertiaryTextAlignment = base.tertiaryTextAlignment
-        tertiaryMaxLines = base.tertiaryMaxLines
+        return WidgetSpecVariant(
+            primaryText: layout.template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
+            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
+            symbol: symbol,
+            image: image,
+            layout: layout
+        ).normalised()
+    }
 
-        symbol = base.symbol?.name ?? ""
-        symbolRenderingMode = base.symbol?.renderingMode ?? .monochrome
-        symbolTint = base.symbol?.tint ?? .accent
-        symbolWeight = base.symbol?.weight ?? .regular
-        symbolScale = base.symbol?.scale ?? 1.0
-        symbolOpacity = base.symbol?.opacity ?? 1.0
-        symbolPlacement = base.symbol?.placement ?? .above
+    mutating func apply(flatSpec spec: WidgetSpec) {
+        let s = spec.normalised()
 
-        if let img = base.image {
+        primaryText = s.primaryText
+        secondaryText = s.secondaryText ?? ""
+
+        if let sym = s.symbol {
+            symbolName = sym.name
+            symbolPlacement = sym.placement
+            symbolSize = sym.size
+            symbolWeight = sym.weight
+            symbolRenderingMode = sym.renderingMode
+            symbolTint = sym.tint
+        } else {
+            symbolName = ""
+        }
+
+        if let img = s.image {
             imageFileName = img.fileName
             imageContentMode = img.contentMode
             imageHeight = img.height
             imageCornerRadius = img.cornerRadius
-            imageSmartPhoto = img.smartPhoto
         } else {
             imageFileName = ""
-            imageSmartPhoto = nil
         }
+
+        template = s.layout.template
+        showsAccentBar = s.layout.showsAccentBar
+        axis = s.layout.axis
+        alignment = s.layout.alignment
+        spacing = s.layout.spacing
+        primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        primaryLineLimit = s.layout.primaryLineLimit
+        secondaryLineLimit = s.layout.secondaryLineLimit
     }
 }
 
-// MARK: - MatchedDrafts
 
-struct MatchedDrafts: Hashable {
-    var small: FamilyDraft
-    var medium: FamilyDraft
-    var large: FamilyDraft
+// MARK: - Actions (Interactive Widget Buttons)
 
-    init(small: FamilyDraft, medium: FamilyDraft, large: FamilyDraft) {
-        self.small = small
-        self.medium = medium
-        self.large = large
+struct ActionBarDraft: Hashable {
+    var isEnabled: Bool
+    var style: WidgetActionButtonStyleToken
+    var actions: [WidgetActionDraft]
+
+    static var defaultDraft: ActionBarDraft {
+        ActionBarDraft(isEnabled: false, style: .prominent, actions: [])
     }
 
-    init(from s: MatchedSetSpec?) {
-        if let s = s {
-            small = FamilyDraft(from: s.small ?? WidgetSpecVariant.defaultVariantSpec())
-            medium = FamilyDraft(from: s.medium ?? WidgetSpecVariant.defaultVariantSpec())
-            large = FamilyDraft(from: s.large ?? WidgetSpecVariant.defaultVariantSpec())
-        } else {
-            small = .defaultDraft
-            medium = .defaultDraft
-            large = .defaultDraft
+    init(isEnabled: Bool, style: WidgetActionButtonStyleToken, actions: [WidgetActionDraft]) {
+        self.isEnabled = isEnabled
+        self.style = style
+        self.actions = actions
+    }
+
+    init(from spec: WidgetActionBarSpec?) {
+        guard let bar = spec?.normalisedOrNil() else {
+            self = .defaultDraft
+            return
+        }
+        self.isEnabled = true
+        self.style = bar.style
+        self.actions = bar.actions.map { WidgetActionDraft(from: $0) }
+    }
+
+    func toActionBarSpec() -> WidgetActionBarSpec? {
+        guard isEnabled else { return nil }
+        let specs = actions.compactMap { $0.toActionSpecOrNil() }
+        return WidgetActionBarSpec(actions: specs, style: style).normalisedOrNil()
+    }
+
+    mutating func move(fromOffsets: IndexSet, toOffset: Int) {
+        actions.move(fromOffsets: fromOffsets, toOffset: toOffset)
+    }
+
+    mutating func moveUp(id: UUID) {
+        guard let idx = actions.firstIndex(where: { $0.id == id }), idx > 0 else { return }
+        actions.swapAt(idx, idx - 1)
+    }
+
+    mutating func moveDown(id: UUID) {
+        guard let idx = actions.firstIndex(where: { $0.id == id }), idx < actions.count - 1 else { return }
+        actions.swapAt(idx, idx + 1)
+    }
+
+    mutating func replace(with preset: ActionBarPreset) {
+        isEnabled = true
+        actions = preset.buildActions()
+    }
+}
+
+enum VariableKeyValidationResult: Hashable {
+    case ok
+    case warning(String)
+}
+
+enum ActionBarPreset: String, CaseIterable, Identifiable {
+    case counter
+    case habitStreak
+    case donePlusOne
+    case hydration
+    case pomodoro
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .counter: return "Counter"
+        case .habitStreak: return "Habit Streak"
+        case .donePlusOne: return "Done +1"
+        case .hydration: return "Hydration"
+        case .pomodoro: return "Pomodoro"
         }
     }
 
-    func toSpecIfEnabled(enabled: Bool) -> MatchedSetSpec? {
-        guard enabled else { return nil }
-        return MatchedSetSpec(
-            small: small.toVariantSpec(),
-            medium: medium.toVariantSpec(),
-            large: large.toVariantSpec()
-        ).normalised()
+    var description: String {
+        switch self {
+        case .counter:
+            return "Count up/down (key: count)."
+        case .habitStreak:
+            return "Track a streak with Done/Undo (key: streak)."
+        case .donePlusOne:
+            return "Single Done button (key: done)."
+        case .hydration:
+            return "Quick adds for water intake (key: waterMl)."
+        case .pomodoro:
+            return "Start/Stop as a simple counter (key: pomo)."
+        }
     }
 
-    mutating func apply(spec: MatchedSetSpec?) {
-        if let s = spec {
-            small = FamilyDraft(from: s.small ?? WidgetSpecVariant.defaultVariantSpec())
-            medium = FamilyDraft(from: s.medium ?? WidgetSpecVariant.defaultVariantSpec())
-            large = FamilyDraft(from: s.large ?? WidgetSpecVariant.defaultVariantSpec())
-        } else {
-            small = .defaultDraft
-            medium = .defaultDraft
-            large = .defaultDraft
+    func buildActions() -> [WidgetActionDraft] {
+        let out: [WidgetActionDraft] = {
+            switch self {
+            case .counter:
+                return [
+                    WidgetActionDraft(
+                        title: "+1",
+                        systemImage: "plus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "-1",
+                        systemImage: "minus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .habitStreak:
+                return [
+                    WidgetActionDraft(
+                        title: "Done +1",
+                        systemImage: "checkmark.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "Undo -1",
+                        systemImage: "arrow.uturn.backward.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .donePlusOne:
+                return [
+                    WidgetActionDraft(
+                        title: "Done +1",
+                        systemImage: "checkmark.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "done",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .hydration:
+                return [
+                    WidgetActionDraft(
+                        title: "+25ml",
+                        systemImage: "drop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 25,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "+50ml",
+                        systemImage: "drop.circle",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 50,
+                        nowFormat: .iso8601
+                    )
+                ]
+
+            case .pomodoro:
+                return [
+                    WidgetActionDraft(
+                        title: "Start",
+                        systemImage: "play.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    ),
+                    WidgetActionDraft(
+                        title: "Stop",
+                        systemImage: "stop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
+                ]
+            }
+        }()
+
+        return Array(out.prefix(WidgetActionBarSpec.maxActions))
+    }
+}
+
+struct WidgetActionDraft: Hashable, Identifiable {
+    var id: UUID
+    var title: String
+    var systemImage: String
+    var kind: WidgetActionKindToken
+    var variableKey: String
+    var incrementAmount: Int
+    var nowFormat: WidgetNowFormatToken
+
+    init(
+        id: UUID = UUID(),
+        title: String = "",
+        systemImage: String = "",
+        kind: WidgetActionKindToken = .incrementVariable,
+        variableKey: String = "",
+        incrementAmount: Int = 1,
+        nowFormat: WidgetNowFormatToken = .iso8601
+    ) {
+        self.id = id
+        self.title = title
+        self.systemImage = systemImage
+        self.kind = kind
+        self.variableKey = variableKey
+        self.incrementAmount = incrementAmount
+        self.nowFormat = nowFormat
+    }
+
+    init(from spec: WidgetActionSpec) {
+        self.id = spec.id
+        self.title = spec.title
+        self.systemImage = spec.systemImage ?? ""
+        self.kind = spec.kind
+        self.variableKey = spec.variableKey
+        self.incrementAmount = spec.incrementAmount
+        self.nowFormat = spec.nowFormat
+    }
+
+    static func defaultIncrement() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "+1",
+            systemImage: "plus.circle.fill",
+            kind: .incrementVariable,
+            variableKey: "counter",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
+    }
+
+    static func defaultDone() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "Done",
+            systemImage: "checkmark.circle.fill",
+            kind: .setVariableToNow,
+            variableKey: "last_done",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
+    }
+
+    func toActionSpecOrNil() -> WidgetActionSpec? {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return WidgetActionSpec(
+            id: id,
+            title: trimmedTitle.isEmpty ? (kind == .incrementVariable ? "+1" : "Done") : trimmedTitle,
+            systemImage: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
+            kind: kind,
+            variableKey: trimmedKey,
+            incrementAmount: incrementAmount,
+            nowFormat: nowFormat
+        ).normalisedOrNil()
+    }
+
+    var previewString: String {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keyPart = key.isEmpty ? "(No key)" : key
+
+        switch kind {
+        case .incrementVariable:
+            let amt = incrementAmount
+            let signed = amt >= 0 ? "+\(amt)" : "\(amt)"
+            return "Increment \(signed) → \(keyPart)"
+        case .setVariableToNow:
+            let fmt: String = {
+                switch nowFormat {
+                case .iso8601: return "ISO"
+                case .unixSeconds: return "Unix s"
+                case .unixMilliseconds: return "Unix ms"
+                case .dateOnly: return "Date"
+                case .timeOnly: return "Time"
+                }
+            }()
+            return "Set Now (\(fmt)) → \(keyPart)"
         }
+    }
+
+    func validateVariableKey() -> VariableKeyValidationResult {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !key.isEmpty else {
+            return .warning("Key is required.")
+        }
+
+        if key.hasPrefix("__") {
+            return .warning("Reserved key (starts with \"__\").")
+        }
+
+        if key.count > 32 {
+            return .warning("Key is too long (max 32 characters).")
+        }
+
+        guard let first = key.unicodeScalars.first, Self.isASCIIAlpha(first) else {
+            return .warning("Key must start with a letter.")
+        }
+
+        for s in key.unicodeScalars {
+            if Self.isASCIIAlpha(s) { continue }
+            if Self.isASCIIDigit(s) { continue }
+            if s.value == 95 { continue }
+            return .warning("Only letters, numbers, and _ are allowed.")
+        }
+
+        return .ok
+    }
+
+    private static func isASCIIAlpha(_ s: UnicodeScalar) -> Bool {
+        (s.value >= 65 && s.value <= 90) || (s.value >= 97 && s.value <= 122)
+    }
+
+    private static func isASCIIDigit(_ s: UnicodeScalar) -> Bool {
+        (s.value >= 48 && s.value <= 57)
     }
 }
