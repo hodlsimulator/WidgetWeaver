@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import WidgetKit
 
 @MainActor
 final class NoiseMachineViewModel: ObservableObject {
@@ -22,6 +23,10 @@ final class NoiseMachineViewModel: ObservableObject {
         self.resumeOnLaunch = store.isResumeOnLaunchEnabled()
     }
 
+    private func reloadNoiseMachineWidget() {
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
+    }
+
     func onAppear() {
         NoiseMachineDebugLogStore.shared.append(.info, "NoiseMachineViewModel onAppear")
         Task {
@@ -29,6 +34,7 @@ final class NoiseMachineViewModel: ObservableObject {
             await NoiseMachineController.shared.apply(state: store.loadLastMix())
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 
@@ -71,6 +77,7 @@ final class NoiseMachineViewModel: ObservableObject {
             await NoiseMachineController.shared.apply(state: .default)
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 
@@ -85,6 +92,7 @@ final class NoiseMachineViewModel: ObservableObject {
             await NoiseMachineController.shared.togglePlayPause()
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 
@@ -94,6 +102,7 @@ final class NoiseMachineViewModel: ObservableObject {
             await NoiseMachineController.shared.stop()
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 
@@ -116,6 +125,7 @@ final class NoiseMachineViewModel: ObservableObject {
             await NoiseMachineController.shared.setSlotEnabled(index, enabled: enabled)
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 

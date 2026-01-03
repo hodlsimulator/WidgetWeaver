@@ -7,10 +7,10 @@
 //  Split out of WidgetPreviewDock.swift on 12/23/25.
 //
 
-import Foundation
+@preconcurrency import Foundation
 import SwiftUI
 import WidgetKit
-import UIKit
+@preconcurrency import UIKit
 
 // MARK: - External dependency fingerprints (shared, cheap per-cell)
 
@@ -39,13 +39,6 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
         }
 
         scheduleRecompute(delayNanoseconds: 0)
-    }
-
-    deinit {
-        if let observer {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        recomputeTask?.cancel()
     }
 
     func dependencyFingerprint(for spec: WidgetSpec) -> String {
@@ -176,8 +169,6 @@ private final class WidgetPreviewThumbnailRasterCache {
         WidgetPreviewThumbnailCacheSignal.shared.bumpCoalesced()
     }
 
-    /// Cache key changes whenever the spec content changes (even if `updatedAt` is not bumped yet),
-    /// or when external rendering dependencies change (weather snapshot, variables, etc.).
     func makeKey(
         spec: WidgetSpec,
         family: WidgetFamily,

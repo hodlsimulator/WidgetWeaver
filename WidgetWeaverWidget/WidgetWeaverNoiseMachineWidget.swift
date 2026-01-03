@@ -61,12 +61,21 @@ private struct NoiseMachineWidgetView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(intent: TogglePlayPauseIntent()) {
-                Image(systemName: entry.state.wasPlaying ? "pause.fill" : "play.fill")
-                    .font(.title2.weight(.semibold))
-                    .frame(width: 44, height: 44)
+            if entry.state.wasPlaying {
+                Button(intent: PauseNoiseIntent()) {
+                    Image(systemName: "pause.fill")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(intent: PlayNoiseIntent()) {
+                    Image(systemName: "play.fill")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
 
             Button(intent: StopNoiseIntent()) {
                 Image(systemName: "stop.fill")
