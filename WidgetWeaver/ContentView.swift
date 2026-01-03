@@ -41,80 +41,69 @@ struct ContentView: View {
     )
 
     @State var pickedPhoto: PhotosPickerItem?
+    @State var lastImageThemeFileName: String = ""
+    @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
+
+    @State var remixVariants: [WidgetWeaverRemixEngine.Variant] = []
+
+    @State var aiPrompt: String = ""
+    @State var aiMakeGeneratedDefault: Bool = true
+    @State var aiPatchInstruction: String = ""
+    @State var aiStatusMessage: String = ""
+
+    @State var previewFamily: WidgetFamily = .systemSmall
 
     @State var lastSavedAt: Date?
     @State var lastWidgetRefreshAt: Date?
     @State var saveStatusMessage: String = ""
 
-    @State var selectedTab: ContentTab = .library
-    @State var activeSheet: ContentSheet? = nil
+    @State var showDeleteConfirmation: Bool = false
+    @State var showImageCleanupConfirmation: Bool = false
+    @State var showRevertConfirmation: Bool = false
 
-    @AppStorage("widgetweaver.preview.family") var previewFamily: WidgetFamily = .systemSmall
-    @AppStorage("widgetweaver.preview.device") var previewDevice: WidgetPreviewDeviceToken = .current
-    @AppStorage("widgetweaver.preview.colorScheme") var previewColorScheme: WidgetPreviewColorSchemeToken = .system
+    enum AppTab: Int, Hashable {
+        case explore = 1
+        case library = 2
+        case editor = 3
+    }
 
-    @AppStorage("widgetweaver.internal.showTools") var showInternalTools: Bool = false
-    @AppStorage("widgetweaver.internal.thumbnailRenderingEnabled") var thumbnailRenderingEnabled: Bool = true
+    @State var selectedTab: AppTab = .explore
 
-    // MARK: - Store
+    enum ActiveSheet: Identifiable {
+        case widgetHelp
+        case pro
+        case variables
+        case inspector
+        case remix
+        case weather
+        case steps
+        case activity
+        case importReview
+
+        var id: Int {
+            switch self {
+            case .widgetHelp: return 1
+            case .pro: return 2
+            case .variables: return 3
+            case .weather: return 4
+            case .inspector: return 5
+            case .remix: return 6
+            case .steps: return 7
+            case .activity: return 8
+            case .importReview: return 9
+            }
+        }
+    }
+
+    @State var activeSheet: ActiveSheet?
+
+    @State var showImportPicker: Bool = false
+    @State var importInProgress: Bool = false
+    
+    @State var importReviewModel: WidgetWeaverImportReviewModel?
+    @State var importReviewSelection: Set<UUID> = []
 
     let store = WidgetSpecStore.shared
-
-    // MARK: - Tabs
-
-    enum ContentTab: String, CaseIterable, Identifiable {
-        case library
-        case editor
-        case preview
-        case weather
-        case variables
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .library: return "Library"
-            case .editor: return "Editor"
-            case .preview: return "Preview"
-            case .weather: return "Weather"
-            case .variables: return "Variables"
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .library: return "square.grid.2x2"
-            case .editor: return "slider.horizontal.3"
-            case .preview: return "rectangle.inset.filled"
-            case .weather: return "cloud.sun"
-            case .variables: return "curlybraces"
-            }
-        }
-    }
-
-    enum ContentSheet: Identifiable {
-        case share
-        case importReview(model: WidgetWeaverImportReviewModel)
-        case widgetsHelp
-        case support(spec: WidgetSpec)
-        case pro
-        case calendarPermission
-        case weatherPermission
-        case variablesHelp
-
-        var id: String {
-            switch self {
-            case .share: return "share"
-            case .importReview(let model): return "importReview.\(model.id.uuidString)"
-            case .widgetsHelp: return "widgetsHelp"
-            case .support(let spec): return "support.\(spec.id.uuidString)"
-            case .pro: return "pro"
-            case .calendarPermission: return "calendarPermission"
-            case .weatherPermission: return "weatherPermission"
-            case .variablesHelp: return "variablesHelp"
-            }
-        }
-    }
 
     enum LibrarySort: String, CaseIterable, Identifiable {
         case updated
@@ -132,15 +121,17 @@ struct ContentView: View {
             case .accent: return "Accent"
             }
         }
+
+        static var ordered: [LibrarySort] { [.updated, .name, .template, .accent] }
     }
 
     enum LibraryFilter: String, CaseIterable, Identifiable {
         case all
-        case `default`
+        case `default` = "default"
         case weather
-        case nextUp
+        case nextUp = "nextUp"
         case steps
-        case withImage
+        case withImage = "withImage"
 
         var id: String { rawValue }
 
@@ -155,9 +146,7 @@ struct ContentView: View {
             }
         }
 
-        static var ordered: [LibraryFilter] {
-            [.all, .default, .weather, .nextUp, .steps, .withImage]
-        }
+        static var ordered: [LibraryFilter] { [.all, .default, .weather, .nextUp, .steps, .withImage] }
     }
 
     private struct LibraryItem: Identifiable {
@@ -217,7 +206,7 @@ struct ContentView: View {
                 return item.spec.usesStepsRendering()
 
             case .withImage:
-                return !item.spec.normalised().allReferencedImageFileNames().isEmpty
+                return item.spec.image != nil
             }
         }
 
@@ -269,256 +258,416 @@ struct ContentView: View {
                     libraryFilterChip(filter)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
         }
-        .scrollDismissesKeyboard(.interactively)
     }
 
     private func libraryFilterChip(_ filter: LibraryFilter) -> some View {
-        let isSelected = (libraryFilter == filter)
+        let isSelected = filter == libraryFilter
 
         return Button {
             libraryFilterRaw = filter.rawValue
         } label: {
             Text(filter.title)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.06))
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
+                            lineWidth: 1
+                        )
                 )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(filter.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private var librarySortMenu: some View {
-        Menu {
-            Picker("Sort", selection: $librarySortRaw) {
-                ForEach(LibrarySort.allCases) { sort in
-                    Text(sort.title).tag(sort.rawValue)
-                }
-            }
-        } label: {
-            Image(systemName: "arrow.up.arrow.down")
-        }
-        .accessibilityLabel("Sort")
+    init() {
+        Self.applyAppearanceIfNeeded()
     }
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            libraryTab
-                .tabItem { Label(ContentTab.library.title, systemImage: ContentTab.library.systemImage) }
-                .tag(ContentTab.library)
-
-            editorTab
-                .tabItem { Label(ContentTab.editor.title, systemImage: ContentTab.editor.systemImage) }
-                .tag(ContentTab.editor)
-
-            previewTab
-                .tabItem { Label(ContentTab.preview.title, systemImage: ContentTab.preview.systemImage) }
-                .tag(ContentTab.preview)
-
-            weatherTab
-                .tabItem { Label(ContentTab.weather.title, systemImage: ContentTab.weather.systemImage) }
-                .tag(ContentTab.weather)
-
-            variablesTab
-                .tabItem { Label(ContentTab.variables.title, systemImage: ContentTab.variables.systemImage) }
-                .tag(ContentTab.variables)
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .share:
-                WidgetWeaverShareSheet(
-                    specs: savedSpecs,
-                    defaultSpecID: defaultSpecID,
-                    onDismiss: { activeSheet = nil }
-                )
-
-            case .importReview(let model):
-                WidgetWeaverImportReviewContainer(
-                    model: model,
-                    proManager: proManager,
-                    onDismiss: { activeSheet = nil },
-                    onImported: {
-                        refreshSavedSpecs(preservingSelection: true)
-                        activeSheet = nil
-                    }
-                )
-
-            case .widgetsHelp:
-                WidgetWorkflowHelpView()
-
-            case .support(let spec):
-                WidgetWeaverSupportSheet(spec: spec)
-
-            case .pro:
-                WidgetWeaverProSheet()
-
-            case .calendarPermission:
-                WidgetWeaverCalendarPermissionSheet()
-
-            case .weatherPermission:
-                WidgetWeaverWeatherPermissionSheet()
-
-            case .variablesHelp:
-                WidgetWeaverVariablesHelpSheet()
+            NavigationStack {
+                exploreRoot
             }
-        }
-        .task {
-            refreshSavedSpecs(preservingSelection: false)
-        }
-        .onChange(of: selectedTab) { _ in
-            if selectedTab == .library {
-                refreshSavedSpecs(preservingSelection: true)
+            .tabItem { Label("Explore", systemImage: "sparkles") }
+            .tag(AppTab.explore)
+
+            NavigationStack {
+                libraryRoot
             }
+            .tabItem { Label("Library", systemImage: "square.grid.2x2") }
+            .tag(AppTab.library)
+
+            NavigationStack {
+                editorRoot
+            }
+            .tabItem { Label("Editor", systemImage: "pencil.and.outline") }
+            .tag(AppTab.editor)
         }
+        .sheet(item: $activeSheet, content: sheetContent)
+        .fileImporter(
+            isPresented: $showImportPicker,
+            allowedContentTypes: WidgetWeaverSharePackage.importableTypes,
+            allowsMultipleSelection: false,
+            onCompletion: handleImportResult
+        )
+        .confirmationDialog(
+            "Delete this design?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { deleteCurrentDesign() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
+        }
+        .confirmationDialog(
+            "Clean up unused images?",
+            isPresented: $showImageCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
+        }
+        .confirmationDialog(
+            "Revert unsaved changes?",
+            isPresented: $showRevertConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Revert", role: .destructive) { revertUnsavedChanges() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This discards current draft edits and reloads the last saved version of this design.")
+        }
+        .onAppear(perform: bootstrap)
+        .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+        .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
     }
 
-    // MARK: - Tabs
+    private var exploreRoot: some View {
+        WidgetWeaverAboutView(
+            proManager: proManager,
+            onAddTemplate: { spec, makeDefault in
+                addTemplateDesign(spec, makeDefault: makeDefault)
+                selectedTab = .editor
+            },
+            onShowPro: { activeSheet = .pro },
+            onShowWidgetHelp: { activeSheet = .widgetHelp },
+            onOpenWeatherSettings: { activeSheet = .weather },
+            onOpenStepsSettings: { activeSheet = .steps },
+            onGoToLibrary: { selectedTab = .library }
+        )
+    }
 
-    private var libraryTab: some View {
-        NavigationStack {
-            ZStack {
-                EditorBackground()
+    private var libraryRoot: some View {
+        let displayedSpecs = libraryDisplayedSpecs
 
-                VStack(spacing: 0) {
-                    libraryHeader
+        return ZStack {
+            WidgetWeaverAboutBackground()
 
-                    if libraryDisplayedSpecs.isEmpty {
-                        libraryEmptyState
+            List {
+                Section {
+                    libraryFilterChipsRow
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                        .listRowSeparator(.hidden)
+                }
+
+                Section {
+                    if savedSpecs.isEmpty {
+                        Text("No designs yet. Create one in Explore.")
+                            .foregroundStyle(.secondary)
+
+                    } else if displayedSpecs.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No matches. Clear search or choose All.")
+                                .foregroundStyle(.secondary)
+
+                            if libraryIsFilteringOrSearching {
+                                Button("Clear") { clearLibrarySearchAndFilter() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+
                     } else {
-                        libraryList
+                        ForEach(displayedSpecs) { spec in
+                            Button {
+                                selectDesignFromLibrary(spec)
+                            } label: {
+                                libraryRow(spec: spec)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    selectDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+
+                                if spec.id != defaultSpecID {
+                                    Button {
+                                        makeDefaultFromLibrary(spec)
+                                    } label: {
+                                        Label("Make Default", systemImage: "star")
+                                    }
+                                }
+
+                                Button {
+                                    duplicateDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Duplicate", systemImage: "doc.on.doc")
+                                }
+
+                                Button(role: .destructive) {
+                                    deleteDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(savedSpecs.count <= 1)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Designs")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !proManager.isProUnlocked {
+                            Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-            }
-            .navigationTitle("WidgetWeaver")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    librarySortMenu
-                }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            activeSheet = .share
-                        } label: {
-                            Label("Share designs", systemImage: "square.and.arrow.up")
-                        }
-
-                        Button {
-                            importTapped()
-                        } label: {
-                            Label("Import designs", systemImage: "square.and.arrow.down")
-                        }
-
-                        Button {
-                            activeSheet = .widgetsHelp
-                        } label: {
-                            Label("Widgets help", systemImage: "questionmark.circle")
-                        }
-
-                        Button {
-                            activeSheet = .pro
-                        } label: {
-                            Label("Pro", systemImage: "crown")
-                        }
-
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
-            }
-        }
-    }
-
-    private var editorTab: some View {
-        NavigationStack {
-            ZStack {
-                EditorBackground()
-
-                ScrollView {
-                    VStack(spacing: 14) {
-                        editorHeader
-                        editorSections
-                        proUpsellIfNeeded
-                        internalToolsIfNeeded
-                        Spacer(minLength: 40)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                }
-            }
-            .navigationTitle("Editor")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                Section {
                     Button {
-                        activeSheet = .widgetsHelp
+                        selectedTab = .explore
                     } label: {
-                        Image(systemName: "questionmark.circle")
+                        Label("Browse templates (Explore)", systemImage: "sparkles")
                     }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New blank design", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Quick start")
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
+        }
+        .navigationTitle("Library")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $librarySearchText, placement: .navigationBarDrawer(displayMode: .always))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $librarySortRaw) {
+                        ForEach(LibrarySort.ordered) { sort in
+                            Text(sort.title).tag(sort.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        selectedTab = .explore
+                    } label: {
+                        Label("Explore templates", systemImage: "sparkles")
+                    }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New design", systemImage: "plus")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle")
                 }
             }
         }
     }
 
-    private var previewTab: some View {
-        WidgetPreviewDock(
-            spec: draftSpec(id: selectedSpecID),
-            previewFamily: $previewFamily,
-            previewDevice: $previewDevice,
-            previewColorScheme: $previewColorScheme,
-            selectedTab: $selectedTab
-        )
-    }
+    private func libraryRow(spec: WidgetSpec) -> some View {
+        HStack(spacing: 12) {
+            WidgetPreviewThumbnail(spec: spec, family: .systemSmall, height: 62)
+                .frame(width: 62, height: 62)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-    private var weatherTab: some View {
-        WidgetWeaverWeatherScreen(
-            proManager: proManager,
-            onNeedPermission: { activeSheet = .weatherPermission }
-        )
-    }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(specDisplayName(spec))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
-    private var variablesTab: some View {
-        WidgetWeaverVariablesScreen(
-            proManager: proManager,
-            onNeedHelp: { activeSheet = .variablesHelp },
-            onNeedPro: { activeSheet = .pro }
-        )
-    }
+                Text("\(spec.layout.template.displayName) • \(spec.style.accent.displayName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
-    // MARK: - Editor sections
+                Text(spec.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
-    private var editorSections: some View {
-        VStack(spacing: 14) {
-            contentSection
-            matchedSetSection
-            textSection
-            symbolSection
-            imageSection
-            layoutSection
-            styleSection
-            actionBarSection
-        }
-    }
+            Spacer(minLength: 0)
 
-    private var proUpsellIfNeeded: some View {
-        Group {
-            if !proManager.isProUnlocked {
-                proUpsellSection
+            if spec.id == defaultSpecID {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Default design")
             }
         }
+        .contentShape(Rectangle())
     }
 
-    private var internalToolsIfNeeded: some View {
-        Group {
-            if showInternalTools {
-                internalToolsSection
-            }
+    private func selectDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        selectedTab = .editor
+    }
+
+    private func makeDefaultFromLibrary(_ spec: WidgetSpec) {
+        store.setDefault(id: spec.id)
+        defaultSpecID = store.defaultSpecID()
+        refreshWidgets()
+        saveStatusMessage = "Made default.\nWidgets refreshed."
+    }
+
+    private func duplicateDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        duplicateCurrentDesign()
+        selectedTab = .editor
+    }
+
+    private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        showDeleteConfirmation = true
+    }
+
+    private var editorRoot: some View {
+        ZStack {
+            WidgetWeaverAboutBackground()
+            editorLayout
         }
+        .navigationTitle("Editor")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { editorToolbar }
+    }
+
+    @ToolbarContentBuilder
+    private var editorToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) { remixToolbarButton }
+        ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
+
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") { Keyboard.dismiss() }
+        }
+    }
+
+    private func sheetContent(_ sheet: ActiveSheet) -> AnyView {
+        switch sheet {
+        case .widgetHelp:
+            return AnyView(WidgetWorkflowHelpView())
+
+        case .pro:
+            return AnyView(WidgetWeaverProView(manager: proManager))
+
+        case .variables:
+            return AnyView(
+                WidgetWeaverVariablesView(
+                    proManager: proManager,
+                    onShowPro: { activeSheet = .pro }
+                )
+            )
+
+        case .inspector:
+            return AnyView(
+                WidgetWeaverDesignInspectorView(
+                    spec: draftSpec(id: selectedSpecID),
+                    initialFamily: previewFamily
+                )
+            )
+
+        case .remix:
+            return AnyView(
+                WidgetWeaverRemixSheet(
+                    variants: remixVariants,
+                    family: previewFamily,
+                    onApply: { spec in applyRemixVariant(spec) },
+                    onAgain: { remixAgain() },
+                    onClose: { activeSheet = nil }
+                )
+            )
+
+        case .weather:
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverWeatherSettingsView(onClose: { activeSheet = nil })
+                }
+            )
+
+        case .steps:
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverStepsSettingsView(onClose: { activeSheet = nil })
+                }
+            )
+            
+        case .activity:
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverActivitySettingsView(onClose: { activeSheet = nil })
+                }
+            )
+
+        case .importReview:
+            return importReviewSheetAnyView()
+
+        }
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task { await prepareImportReview(from: url) }
+
+        case .failure(let error):
+            if (error as NSError).code == NSUserCancelledError { return }
+            saveStatusMessage = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func handlePickedPhotoChange(_ newItem: PhotosPickerItem?) {
+        guard let newItem else { return }
+        Task { await importPickedImage(newItem) }
     }
 }

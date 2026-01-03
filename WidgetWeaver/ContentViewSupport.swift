@@ -48,9 +48,9 @@ struct WidgetWorkflowHelpView: View {
     }
 }
 
-// MARK: - Editor background
+// MARK: - About background
 
-struct EditorBackground: View {
+struct WidgetWeaverAboutBackground: View {
     var body: some View {
         ZStack {
             Color(uiColor: .secondarySystemGroupedBackground)
@@ -88,7 +88,7 @@ enum Keyboard {
     }
 }
 
-// MARK: - Pro (StoreKit 2) (Milestone 8)
+// MARK: - Pro (StoreKit 2)
 
 @MainActor
 final class WidgetWeaverProManager: ObservableObject {
@@ -126,21 +126,28 @@ final class WidgetWeaverProManager: ObservableObject {
 
         do {
             let result = try await product.purchase()
+
             switch result {
             case .success(let verification):
                 switch verification {
-                case .verified:
+                case .verified(let transaction):
                     WidgetWeaverEntitlements.setProUnlocked(true)
-                    syncFromLocalEntitlements(status: "Pro unlocked.")
+                    isProUnlocked = true
+                    statusMessage = "Pro unlocked."
+                    await transaction.finish()
+
                 case .unverified:
                     statusMessage = "Purchase could not be verified."
                 }
+
             case .userCancelled:
                 statusMessage = "Purchase cancelled."
+
             case .pending:
                 statusMessage = "Purchase pending."
+
             @unknown default:
-                statusMessage = "Purchase failed."
+                statusMessage = "Purchase did not complete."
             }
         } catch {
             statusMessage = "Purchase failed: \(error.localizedDescription)"
@@ -154,14 +161,15 @@ final class WidgetWeaverProManager: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlementFromStoreKitIfNeeded()
+            statusMessage = isProUnlocked ? "Purchases restored." : "No purchases found."
         } catch {
             statusMessage = "Restore failed: \(error.localizedDescription)"
         }
     }
-
-    func syncFromLocalEntitlements(status: String) {
+    
+    func syncFromLocalEntitlements(status: String? = nil) {
         isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
-        statusMessage = status
+        if let status { statusMessage = status }
     }
 
     private func loadProduct() async {
@@ -169,79 +177,102 @@ final class WidgetWeaverProManager: ObservableObject {
             let products = try await Product.products(for: [Self.productID])
             product = products.first
         } catch {
-            product = nil
+            statusMessage = "Store unavailable: \(error.localizedDescription)"
         }
     }
 
     private func refreshEntitlementFromStoreKitIfNeeded() async {
-        do {
-            var unlocked = false
+        if WidgetWeaverEntitlements.isProUnlocked {
+            isProUnlocked = true
+            return
+        }
 
-            for await result in Transaction.currentEntitlements {
-                if case .verified(let t) = result, t.productID == Self.productID {
-                    unlocked = true
-                    break
-                }
+        var found = false
+        for await entitlement in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = entitlement else { continue }
+            if transaction.productID == Self.productID {
+                found = true
+                break
             }
+        }
 
-            if unlocked != WidgetWeaverEntitlements.isProUnlocked {
-                WidgetWeaverEntitlements.setProUnlocked(unlocked)
-            }
-
-            syncFromLocalEntitlements(status: unlocked ? "Pro unlocked." : "Pro locked.")
-        } catch {
-            statusMessage = "Could not refresh entitlement."
+        if found {
+            WidgetWeaverEntitlements.setProUnlocked(true)
+            isProUnlocked = true
         }
     }
 
     private func observeTransactionUpdates() async {
         for await result in Transaction.updates {
-            if case .verified(let t) = result, t.productID == Self.productID {
+            guard case .verified(let transaction) = result else { continue }
+
+            if transaction.productID == Self.productID {
                 WidgetWeaverEntitlements.setProUnlocked(true)
-                syncFromLocalEntitlements(status: "Pro unlocked.")
-                await t.finish()
+                isProUnlocked = true
             }
+
+            await transaction.finish()
         }
     }
 }
 
-struct WidgetWeaverProSheet: View {
-    @StateObject private var manager = WidgetWeaverProManager()
-    @Environment(\.dismiss) private var dismiss
-
-    @AppStorage("widgetweaver.internal.showTools") private var showInternalTools: Bool = false
+struct WidgetWeaverProView: View {
+    @ObservedObject var manager: WidgetWeaverProManager
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text("WidgetWeaver Pro unlocks matched sets, variables, and unlimited saved designs.")
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("Pro")
+                    if manager.isProUnlocked {
+                        Label("Pro is unlocked.", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.primary)
+                    } else {
+                        Label("Unlock Pro to remove limits.", systemImage: "crown.fill")
+                            .foregroundStyle(.primary)
+                    }
                 }
 
                 Section {
-                    if let product = manager.product {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Pro includes:")
+                            .font(.headline)
+
+                        Text("• Unlimited designs\n• Matched sets (per-size overrides)\n• Variables\n• Interactive buttons\n• Import beyond free limit")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section {
+                    if manager.isProUnlocked {
+                        Button {
+                            Task { await manager.refresh() }
+                        } label: {
+                            Label("Refresh status", systemImage: "arrow.clockwise")
+                        }
+                    } else {
                         Button {
                             Task { await manager.purchasePro() }
                         } label: {
-                            HStack {
-                                Label("Unlock Pro", systemImage: "crown.fill")
-                                Spacer()
-                                Text(product.displayPrice)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Label("Unlock Pro", systemImage: "crown.fill")
                         }
                         .disabled(manager.isBusy)
 
-                        Button("Restore Purchases") {
+                        Button {
                             Task { await manager.restorePurchases() }
+                        } label: {
+                            Label("Restore purchases", systemImage: "arrow.uturn.backward")
                         }
                         .disabled(manager.isBusy)
-                    } else {
-                        Text("Loading…")
-                            .foregroundStyle(.secondary)
+                    }
+
+                    if manager.isBusy {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Working…")
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     if !manager.statusMessage.isEmpty {
@@ -249,432 +280,10 @@ struct WidgetWeaverProSheet: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-
-                } header: {
-                    Text("Actions")
-                }
-
-                if showInternalTools {
-                    Section {
-                        Button {
-                            WidgetWeaverEntitlements.setProUnlocked(true)
-                            manager.syncFromLocalEntitlements(status: "Pro unlocked (internal).")
-                        } label: {
-                            Label("Unlock Pro (Internal)", systemImage: "wand.and.stars")
-                        }
-
-                        Button(role: .destructive) {
-                            WidgetWeaverEntitlements.setProUnlocked(false)
-                            manager.syncFromLocalEntitlements(status: "Pro reset (internal).")
-                        } label: {
-                            Label("Reset Pro flag (Internal)", systemImage: "xmark.seal")
-                        }
-                    } header: {
-                        Text("Internal Testing")
-                    }
                 }
             }
-            .navigationTitle("Pro")
+            .navigationTitle("WidgetWeaver Pro")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .task { await manager.refresh() }
         }
-    }
-}
-
-// MARK: - Inspector
-
-struct WidgetWeaverDesignInspectorView: View {
-    let spec: WidgetSpec
-
-    @State private var family: WidgetFamily
-    @State private var statusMessage: String = ""
-
-    @Environment(\.dismiss) private var dismiss
-
-    init(spec: WidgetSpec, initialFamily: WidgetFamily = .systemSmall) {
-        self.spec = spec
-        _family = State(initialValue: initialFamily)
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                overviewSection
-                resolutionSection
-                variablesSection
-                jsonLinksSection
-                imagesSection
-
-                if !statusMessage.isEmpty {
-                    Section {
-                        Text(statusMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .navigationTitle("Inspector")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private var overviewSection: some View {
-        Section {
-            LabeledContent("Name", value: spec.normalised().name)
-            LabeledContent("ID", value: spec.id.uuidString)
-                .font(.caption)
-                .textSelection(.enabled)
-
-            LabeledContent("Schema version", value: "\(spec.normalised().version)")
-            LabeledContent("Updated", value: spec.normalised().updatedAt.formatted(date: .abbreviated, time: .standard))
-
-            let hasMatched = (spec.normalised().matchedSet != nil)
-            LabeledContent("Matched set", value: hasMatched ? "Yes" : "No")
-        } header: {
-            Text("Overview")
-        }
-    }
-
-    private var resolutionSection: some View {
-        Section {
-            Picker("Preview size", selection: $family) {
-                Text("Small").tag(WidgetFamily.systemSmall)
-                Text("Medium").tag(WidgetFamily.systemMedium)
-                Text("Large").tag(WidgetFamily.systemLarge)
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-
-            let resolved = resolvedSpec(for: family)
-
-            LabeledContent("Resolved name", value: resolved.name)
-            LabeledContent("Primary", value: resolved.primaryText)
-
-            if let sec = resolved.secondaryText, !sec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                LabeledContent("Secondary", value: sec)
-            } else {
-                LabeledContent("Secondary", value: "—")
-                    .foregroundStyle(.secondary)
-            }
-
-            if let sym = resolved.symbol {
-                Text("Symbol: \(sym.name) • \(Int(sym.size))pt • \(sym.weight.rawValue) • \(sym.renderingMode.rawValue) • \(sym.tint.rawValue) • \(sym.placement.rawValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } else {
-                Text("Symbol: —")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let img = resolved.image {
-                Text("Image base: \(img.fileName) • \(img.contentMode.rawValue) • h=\(Int(img.height)) • r=\(Int(img.cornerRadius))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                let renderFileName = img.fileNameForFamily(family)
-                Text("Widget render (\(familyLabel(family))): \(renderFileName)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                if let sp = img.smartPhoto {
-                    Text("Smart master: \(sp.masterFileName)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            } else {
-                Text("Image: —")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Layout: \(resolved.layout.axis.rawValue) • \(resolved.layout.alignment.rawValue) • spacing=\(Int(resolved.layout.spacing)) • lines(s)=\(resolved.layout.primaryLineLimitSmall) • lines=\(resolved.layout.primaryLineLimit)/\(resolved.layout.secondaryLineLimit)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-
-            Text("Style: \(resolved.style.background.rawValue) • \(resolved.style.accent.rawValue) • pad=\(Int(resolved.style.padding)) • r=\(Int(resolved.style.cornerRadius)) • fonts=\(resolved.style.nameTextStyle.rawValue)/\(resolved.style.primaryTextStyle.rawValue)/\(resolved.style.secondaryTextStyle.rawValue)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-
-        } header: {
-            Text("Resolved (matched set + variables)")
-        } footer: {
-            Text("Resolution matches the widget render path: matched-set variant first, then variables.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var variablesSection: some View {
-        Section {
-            if WidgetWeaverEntitlements.isProUnlocked {
-                let vars = WidgetWeaverVariableStore.shared.loadAll()
-                LabeledContent("Saved variables", value: "\(vars.count)")
-
-                if vars.isEmpty {
-                    Text("No variables saved.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(Array(vars.keys.sorted().prefix(6)), id: \.self) { key in
-                        let val = vars[key] ?? ""
-                        LabeledContent(key, value: val.isEmpty ? " " : val)
-                    }
-                }
-            } else {
-                Text("Variables are locked (Pro).")
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Variables")
-        }
-    }
-
-    private var jsonLinksSection: some View {
-        let base = spec.normalised()
-        let resolved = resolvedSpec(for: family)
-
-        let baseJSON = jsonString(for: base)
-        let resolvedJSON = jsonString(for: resolved)
-
-        let exchangeJSON = exchangeJSONString(for: base)
-
-        return Section {
-            NavigationLink {
-                WidgetWeaverMonospaceTextView(
-                    title: "Design JSON",
-                    text: baseJSON,
-                    onCopy: { copyToClipboard(baseJSON, message: "Copied design JSON.") }
-                )
-            } label: {
-                Label("Design JSON", systemImage: "doc.plaintext")
-            }
-
-            NavigationLink {
-                WidgetWeaverMonospaceTextView(
-                    title: "Resolved JSON",
-                    text: resolvedJSON,
-                    onCopy: { copyToClipboard(resolvedJSON, message: "Copied resolved JSON.") }
-                )
-            } label: {
-                Label("Resolved JSON (\(familyLabel(family)))", systemImage: "doc.text.magnifyingglass")
-            }
-
-            NavigationLink {
-                WidgetWeaverMonospaceTextView(
-                    title: "Exchange JSON (no images)",
-                    text: exchangeJSON,
-                    onCopy: { copyToClipboard(exchangeJSON, message: "Copied exchange JSON.") }
-                )
-            } label: {
-                Label("Exchange JSON (no images)", systemImage: "shippingbox")
-            }
-
-        } header: {
-            Text("JSON")
-        } footer: {
-            Text("Exchange JSON matches the import/export format (with images omitted).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var imagesSection: some View {
-        let infos = imageInfos(in: spec.normalised())
-
-        return Section {
-            if infos.isEmpty {
-                Text("No image references in this design.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(infos) { info in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(info.fileName)
-                            .font(.subheadline.weight(.semibold))
-                            .textSelection(.enabled)
-
-                        Text(info.detailLine)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-
-                        if !info.roleLine.isEmpty {
-                            Text(info.roleLine)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .contextMenu {
-                        Button {
-                            UIPasteboard.general.string = info.fileName
-                            statusMessage = "Copied image file name."
-                        } label: {
-                            Label("Copy file name", systemImage: "doc.on.doc")
-                        }
-                    }
-                }
-            }
-        } header: {
-            Text("Images")
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func resolvedSpec(for family: WidgetFamily) -> WidgetSpec {
-        let base = spec.normalised()
-        return base
-            .resolved(for: family)
-            .resolvingVariables()
-            .normalised()
-    }
-
-    private func familyLabel(_ family: WidgetFamily) -> String {
-        switch family {
-        case .systemSmall: return "Small"
-        case .systemMedium: return "Medium"
-        case .systemLarge: return "Large"
-        default: return "Small"
-        }
-    }
-
-    private func jsonString<T: Encodable>(for value: T) -> String {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(value)
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            return "Encoding failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func exchangeJSONString(for spec: WidgetSpec) -> String {
-        do {
-            let data = try WidgetSpecStore.shared.exportExchangeData(specs: [spec], includeImages: false)
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            return "Export failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func copyToClipboard(_ text: String, message: String) {
-        UIPasteboard.general.string = text
-        statusMessage = message
-    }
-
-    private struct ImageInfo: Identifiable {
-        let id: String
-        let fileName: String
-        let detailLine: String
-        let roleLine: String
-    }
-
-    private func imageInfos(in spec: WidgetSpec) -> [ImageInfo] {
-        let base = spec.normalised()
-
-        var rolesByFileName: [String: Set<String>] = [:]
-
-        func sanitisedFileName(_ raw: String) -> String {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            let last = (trimmed as NSString).lastPathComponent
-            return String(last.prefix(256))
-        }
-
-        func addRole(fileName raw: String, role: String) {
-            let safe = sanitisedFileName(raw)
-            guard !safe.isEmpty else { return }
-            rolesByFileName[safe, default: []].insert(role)
-        }
-
-        func annotate(image: ImageSpec?, origin: String) {
-            guard let image else { return }
-
-            addRole(fileName: image.fileName, role: "\(origin) • base")
-
-            if let sp = image.smartPhoto {
-                addRole(fileName: sp.masterFileName, role: "\(origin) • master")
-                if let v = sp.small { addRole(fileName: v.renderFileName, role: "\(origin) • small render") }
-                if let v = sp.medium { addRole(fileName: v.renderFileName, role: "\(origin) • medium render") }
-                if let v = sp.large { addRole(fileName: v.renderFileName, role: "\(origin) • large render") }
-            }
-        }
-
-        annotate(image: base.image, origin: "Base spec")
-
-        if let matched = base.matchedSet {
-            annotate(image: matched.small?.image, origin: "Small variant")
-            annotate(image: matched.medium?.image, origin: "Medium variant")
-            annotate(image: matched.large?.image, origin: "Large variant")
-        }
-
-        let names = base.allReferencedImageFileNames()
-
-        return names.map { fileName in
-            let url = AppGroup.imageFileURL(fileName: fileName)
-            let exists = FileManager.default.fileExists(atPath: url.path)
-
-            var bytesText = "unknown size"
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-               let size = attrs[.size] as? NSNumber {
-                bytesText = ByteCountFormatter.string(fromByteCount: size.int64Value, countStyle: .file)
-            }
-
-            let detail = exists ? "On disk • \(bytesText)" : "Missing on disk"
-            let roles = rolesByFileName[fileName]?.sorted().joined(separator: " · ") ?? ""
-
-            return ImageInfo(
-                id: fileName,
-                fileName: fileName,
-                detailLine: detail,
-                roleLine: roles
-            )
-        }
-    }
-}
-
-private struct WidgetWeaverMonospaceTextView: View {
-    let title: String
-    let text: String
-    let onCopy: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ScrollView([.vertical, .horizontal]) {
-            Text(text)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(16)
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Copy") { onCopy() }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Close") { dismiss() }
-            }
-        }
-        .background(Color(uiColor: .systemBackground))
     }
 }
