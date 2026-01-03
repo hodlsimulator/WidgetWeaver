@@ -19,34 +19,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    @State private var baseDate: Date
-    @State private var started: Bool = false
-
-    @State private var minutePhase: Double = 0
-    @State private var hourPhase: Double = 0
-
     private static let timerStartBiasSeconds: TimeInterval = 0.25
 
-    /// Maximum safe spillover: the seconds-hand font only contains ligatures for `0:SS` and `1:SS`.
-    /// Allowing almost a full extra minute keeps the seconds hand moving even if the next WidgetKit
-    /// minute entry arrives late.
+    /// Keeps the seconds hand moving even if the next WidgetKit minute entry arrives late.
+    /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
-
-    init(
-        palette: WidgetWeaverClockPalette,
-        entryDate: Date,
-        tickMode: WidgetWeaverClockTickMode,
-        tickSeconds: TimeInterval
-    ) {
-        self.palette = palette
-        self.entryDate = entryDate
-        self.tickMode = tickMode
-        self.tickSeconds = tickSeconds
-
-        let wallNow = Date()
-        let initialBase = (entryDate > wallNow) ? entryDate : wallNow
-        _baseDate = State(initialValue: initialBase)
-    }
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
@@ -58,73 +35,75 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
             // Seconds hand anchor:
             // - Use the timeline entry minute so WidgetKit pre-rendering stays deterministic.
-            // - Permit a large spillover so late minute delivery does not freeze the hand.
+            // - Permit large spillover so late minute delivery does not freeze the seconds hand.
             let secondsMinuteAnchor = Self.floorToMinute(entryDate)
 
             let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
             let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
 
-            let wallNow = Date()
-            let isPreRender = entryDate.timeIntervalSince(wallNow) > 5.0
-
-            // Hour/minute hands:
-            // Run compositor-backed sweeps so the minute hand is aligned to the real clock even if
-            // WidgetKit swaps timeline entries slightly late.
-            //
-            // Reduce Motion is intentionally NOT used to disable this, because doing so reintroduces
-            // the late “minute tick” behaviour.
-            let liveHandsEnabled = showSeconds && !isPlaceholder && !isPreRender
-
-            let tickAnchor = Self.floorToMinute(entryDate)
-            let tick = WWClockTickAngles(date: tickAnchor)
-
-            let smooth = WWClockSmoothAngles(date: baseDate)
-
-            let minuteDeg = liveHandsEnabled ? (smooth.minute + (minutePhase * 360.0)) : tick.minute
-            let hourDeg = liveHandsEnabled ? (smooth.hour + (hourPhase * 360.0)) : tick.hour
-
+            // Force font registration once per render pass (also useful in logs).
             let fontOK = WWClockSecondHandFont.isAvailable()
-            let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
-            let expectedString = String(format: "0:%02d", expectedSeconds)
 
-            let redactLabel: String = {
-                if isPlaceholder && isPrivacy { return "placeholder+privacy" }
-                if isPlaceholder { return "placeholder" }
-                if isPrivacy { return "privacy" }
-                return "none"
-            }()
-
-            // IMPORTANT: side-effect call must be bound, otherwise @ViewBuilder tries to treat () as a View.
-            let _ = WWClockDebugLog.appendLazy(
-                category: "clock",
-                throttleID: "clockWidget.render",
-                minInterval: 30.0,
-                now: wallNow
-            ) {
-                let entryRef = Int(entryDate.timeIntervalSinceReferenceDate.rounded())
-                let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
-                let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
-                let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
-                let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
-                let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
-
-                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) liveHands=\(liveHandsEnabled ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
-            }
+            // Drive hands from wall-clock time (not WidgetKit’s minute entry swap timing).
+            // Align the periodic schedule to the next whole second so the minute tick happens on-time.
+            let scheduleStart = Self.ceilToSecond(Date())
+            let interval: TimeInterval = showSeconds ? 1.0 : 60.0
 
             ZStack {
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: .degrees(hourDeg),
-                    minuteAngle: .degrees(minuteDeg),
-                    secondAngle: .degrees(0.0),
-                    showsSecondHand: false,
-                    showsHandShadows: true,
-                    showsGlows: true,
-                    showsCentreHub: false,
-                    handsOpacity: handsOpacity
-                )
+                TimelineView(.periodic(from: scheduleStart, by: interval)) { context in
+                    let wallNow = context.date
 
+                    // Pre-render safety:
+                    // If WidgetKit renders a future entry ahead-of-time, keep hands at least at entryDate.
+                    let displayNow = (wallNow < entryDate) ? entryDate : wallNow
+
+                    // Tick hands at the minute boundary.
+                    let tickAnchor = Self.floorToMinute(displayNow)
+                    let tick = WWClockTickAngles(date: tickAnchor)
+
+                    let redactLabel: String = {
+                        if isPlaceholder && isPrivacy { return "placeholder+privacy" }
+                        if isPlaceholder { return "placeholder" }
+                        if isPrivacy { return "privacy" }
+                        return "none"
+                    }()
+
+                    // IMPORTANT: side-effect call must be bound, otherwise @ViewBuilder tries to treat () as a View.
+                    let _ = WWClockDebugLog.appendLazy(
+                        category: "clock",
+                        throttleID: "clockWidget.render",
+                        minInterval: 30.0,
+                        now: wallNow
+                    ) {
+                        let entryRef = Int(entryDate.timeIntervalSinceReferenceDate.rounded())
+                        let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
+                        let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
+
+                        let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                        let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
+                        let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
+
+                        let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
+                        let expectedString = String(format: "0:%02d", expectedSeconds)
+
+                        return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                    }
+
+                    WidgetWeaverClockIconView(
+                        palette: palette,
+                        hourAngle: .degrees(tick.hour),
+                        minuteAngle: .degrees(tick.minute),
+                        secondAngle: .degrees(0.0),
+                        showsSecondHand: false,
+                        showsHandShadows: true,
+                        showsGlows: true,
+                        showsCentreHub: false,
+                        handsOpacity: handsOpacity
+                    )
+                }
+
+                // Keep the seconds hand + hub overlay exactly as before (centred + palette.accent).
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
                     showsSeconds: showSeconds,
@@ -133,44 +112,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 )
             }
             .widgetURL(URL(string: "widgetweaver://clock"))
-            .onAppear {
-                if liveHandsEnabled {
-                    DispatchQueue.main.async {
-                        syncAndStartIfNeeded()
-                    }
-                }
-            }
-            .task {
-                if liveHandsEnabled {
-                    DispatchQueue.main.async {
-                        syncAndStartIfNeeded()
-                    }
-                }
-            }
-        }
-    }
-
-    private func syncAndStartIfNeeded() {
-        let now = Date()
-
-        // Start once per view lifetime, but also re-sync if the anchor is stale.
-        let shouldResync = (!started) || (abs(now.timeIntervalSince(baseDate)) > 1.0)
-        guard shouldResync else { return }
-
-        started = true
-        baseDate = now
-
-        withAnimation(.none) {
-            minutePhase = 0
-            hourPhase = 0
-        }
-
-        // CoreAnimation-backed infinite sweeps.
-        withAnimation(.linear(duration: 3600.0).repeatForever(autoreverses: false)) {
-            minutePhase = 1
-        }
-        withAnimation(.linear(duration: 43200.0).repeatForever(autoreverses: false)) {
-            hourPhase = 1
         }
     }
 
@@ -178,6 +119,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static func ceilToSecond(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let ceiled = ceil(t)
+        return Date(timeIntervalSinceReferenceDate: ceiled)
     }
 }
 
@@ -198,29 +145,6 @@ private struct WWClockTickAngles {
 
         self.minute = minuteInt * 6.0
         self.hour = (hour12 + (minuteInt / 60.0)) * 30.0
-    }
-}
-
-// MARK: - Smooth angles (wall-clock sweep)
-
-private struct WWClockSmoothAngles {
-    let hour: Double
-    let minute: Double
-
-    init(date: Date) {
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-
-        let hour24 = Double(comps.hour ?? 0)
-        let minuteInt = Double(comps.minute ?? 0)
-        let secondInt = Double(comps.second ?? 0)
-        let nano = Double(comps.nanosecond ?? 0)
-
-        let sec = secondInt + (nano / 1_000_000_000.0)
-        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
-
-        self.minute = (minuteInt + sec / 60.0) * 6.0
-        self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
     }
 }
 
