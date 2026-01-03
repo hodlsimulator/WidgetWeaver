@@ -45,14 +45,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
             // Force font registration once per render pass (also useful in logs).
             let fontOK = WWClockSecondHandFont.isAvailable()
 
-            // Minutes/hours only need a minute-boundary tick.
+            // Minute/hour hands:
             //
-            // In practice, WidgetKit can coalesce TimelineView updates when the output is stable.
-            // If the schedule start is not aligned to :00, the minute hand can appear to “tick late”
-            // by a constant offset. Anchoring the schedule to the entry’s minute boundary keeps the
-            // tick aligned to the top of the minute without touching the seconds-hand glyph overlay.
+            // WidgetKit can deliver the next minute entry 1–2 seconds late.
+            // A once-per-minute TimelineView often gets coalesced, so the minute hand “ticks late”.
+            //
+            // Running a 1Hz schedule (aligned to the entry’s minute boundary) ensures there is a render
+            // pass at :00 within the currently-displayed entry. The angles are floored to the minute,
+            // so the hands still only *change* once per minute.
             let scheduleStart = secondsMinuteAnchor
-            let interval: TimeInterval = 60.0
+            let interval: TimeInterval = showSeconds ? 1.0 : 60.0
 
             ZStack {
                 TimelineView(.periodic(from: scheduleStart, by: interval)) { context in
@@ -126,8 +128,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
         let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
     }
-
-    // NOTE: no ceilToSecond() here anymore — minutes/hours tick on a minute schedule.
 }
 
 // MARK: - Tick angles (minute boundary)
