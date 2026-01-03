@@ -15,62 +15,64 @@ import WidgetKit
 private final class ImageCacheBox: @unchecked Sendable {
     let cache: NSCache<NSString, UIImage>
 
-    init(countLimit: Int, totalCostLimit: Int) {
+    init(countLimit: Int, totalCostLimitBytes: Int?) {
         let c = NSCache<NSString, UIImage>()
         c.countLimit = countLimit
-        c.totalCostLimit = totalCostLimit
+        if let bytes = totalCostLimitBytes {
+            c.totalCostLimit = bytes
+        }
         self.cache = c
     }
 }
 
-private extension UIImage {
-    var estimatedDecodedByteCount: Int {
-        if let cg = self.cgImage {
-            return cg.bytesPerRow * cg.height
-        }
-
-        let w = max(1, Int(size.width * scale))
-        let h = max(1, Int(size.height * scale))
-        return w * h * 4
-    }
-}
-
 public enum AppGroup {
+    public static let identifier = "group.com.conornolan.widgetweaver"
 
-    public static let groupID = "group.conor.WidgetWeaver"
-    public static let imagesDirectoryName = "images"
-    public static let widgetSpecsFileName = "widget-specs-v3.json"
-
-    // Keep widget memory usage low: widgets run under much tighter memory constraints than the app.
-    private static let isWidgetExtension: Bool = Bundle.main.bundleURL.pathExtension == "appex"
-
-    private static let imageCache: ImageCacheBox = {
-        if isWidgetExtension {
-            return ImageCacheBox(countLimit: 6, totalCostLimit: 12 * 1024 * 1024)
+    public static var userDefaults: UserDefaults {
+        if let ud = UserDefaults(suiteName: identifier) {
+            return ud
         }
-        return ImageCacheBox(countLimit: 64, totalCostLimit: 96 * 1024 * 1024)
-    }()
+        assertionFailure("App Group UserDefaults unavailable.\nCheck App Groups entitlement: \(identifier)")
+        return .standard
+    }
 
     public static var containerURL: URL {
-        guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
-            fatalError("App group container URL not found. Check group ID setup.")
+        if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
+            return url
         }
-        return url
+        assertionFailure("App Group container URL unavailable.\nCheck App Groups entitlement: \(identifier)")
+        return FileManager.default.temporaryDirectory
     }
 
     public static var imagesDirectoryURL: URL {
-        containerURL.appendingPathComponent(imagesDirectoryName, isDirectory: true)
+        containerURL.appendingPathComponent("WidgetWeaverImages", isDirectory: true)
     }
 
-    public static var widgetSpecsFileURL: URL {
-        containerURL.appendingPathComponent(widgetSpecsFileName)
+    private static var isWidgetExtension: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
     }
 
-    public static func ensureImagesDirectoryExists() throws {
-        let dir = imagesDirectoryURL
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    private static let imageCache: ImageCacheBox = {
+        // Widgets are memory constrained. Use a smaller cache in the extension.
+        if isWidgetExtension {
+            return ImageCacheBox(countLimit: 6, totalCostLimitBytes: 12 * 1024 * 1024)
+        } else {
+            return ImageCacheBox(countLimit: 32, totalCostLimitBytes: 96 * 1024 * 1024)
         }
+    }()
+
+    public static func ensureImagesDirectoryExists() {
+        let url = imagesDirectoryURL
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            // Intentionally ignored (fallbacks handle missing images).
+        }
+    }
+
+    public static func imageFileURL(fileName: String) -> URL {
+        ensureImagesDirectoryExists()
+        return imagesDirectoryURL.appendingPathComponent(fileName)
     }
 
     public static func createImageFileName(ext: String = "jpg") -> String {
@@ -78,25 +80,53 @@ public enum AppGroup {
     }
 
     public static func createImageFileName(prefix: String, ext: String = "jpg") -> String {
-        let p = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safePrefix = p.isEmpty ? "image" : String(p.prefix(32))
+        let cleanedPrefix = prefix
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "-")
+        let safePrefix = cleanedPrefix.isEmpty ? "image" : String(cleanedPrefix.prefix(32))
         return "\(safePrefix)-\(UUID().uuidString).\(ext)"
     }
 
-    public static func imageFileURL(fileName: String) -> URL {
-        imagesDirectoryURL.appendingPathComponent(fileName)
+    public static func writeImageData(_ data: Data, fileName: String) throws {
+        ensureImagesDirectoryExists()
+        let url = imagesDirectoryURL.appendingPathComponent(fileName)
+        try data.write(to: url, options: [.atomic])
+        imageCache.cache.removeObject(forKey: fileName as NSString)
     }
 
-    public static func listAllImageFiles() -> [URL] {
-        let dir = imagesDirectoryURL
-        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
-            return []
+    public static func writeUIImage(_ image: UIImage, fileName: String, compressionQuality: CGFloat = 0.85) throws {
+        try writeUIImage(image, fileName: fileName, compressionQuality: compressionQuality, maxPixel: 1024)
+    }
+
+    /// Writes a JPEG into the App Group container.
+    /// - Parameters:
+    ///   - maxPixel: Maximum width/height in pixels for the stored file (preserves aspect ratio).
+    public static func writeUIImage(
+        _ image: UIImage,
+        fileName: String,
+        compressionQuality: CGFloat = 0.85,
+        maxPixel: CGFloat
+    ) throws {
+        ensureImagesDirectoryExists()
+
+        let normalised = image.normalisedOrientation()
+        let downsized = normalised.downsampled(maxPixel: maxPixel)
+
+        if let data = downsized.jpegData(compressionQuality: compressionQuality) {
+            try writeImageData(data, fileName: fileName)
+            return
         }
-        return files
+
+        if let data = normalised.jpegData(compressionQuality: compressionQuality) {
+            try writeImageData(data, fileName: fileName)
+            return
+        }
+
+        throw CocoaError(.fileWriteUnknown)
     }
 
     public static func loadUIImage(fileName: String) -> UIImage? {
-        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if let cached = imageCache.cache.object(forKey: trimmed as NSString) {
@@ -104,40 +134,15 @@ public enum AppGroup {
         }
 
         let url = imagesDirectoryURL.appendingPathComponent(trimmed)
-        guard FileManager.default.fileExists(atPath: url.path),
-              let img = UIImage(contentsOfFile: url.path) else {
-            return nil
-        }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let img = UIImage(contentsOfFile: url.path) else { return nil }
 
         imageCache.cache.setObject(img, forKey: trimmed as NSString, cost: img.estimatedDecodedByteCount)
         return img
     }
 
-    public static func writeImageData(_ data: Data, fileName: String) throws {
-        try ensureImagesDirectoryExists()
-        let url = imagesDirectoryURL.appendingPathComponent(fileName)
-        try data.write(to: url, options: .atomic)
-    }
-
-    /// Writes an image as JPG. If `maxPixel` is provided, the image is downsampled to keep the longest edge <= maxPixel.
-    public static func writeUIImage(_ image: UIImage, fileName: String, compressionQuality: CGFloat = 0.85, maxPixel: CGFloat = 1024) throws {
-        try ensureImagesDirectoryExists()
-
-        let normalised = image.normalisedOrientation()
-        let downsized = normalised.downsampled(maxPixel: maxPixel)
-
-        guard let jpg = downsized.jpegData(compressionQuality: compressionQuality) else {
-            throw NSError(domain: "AppGroup", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create JPEG data"])
-        }
-
-        let url = imagesDirectoryURL.appendingPathComponent(fileName)
-        try jpg.write(to: url, options: .atomic)
-
-        imageCache.cache.setObject(downsized, forKey: fileName as NSString, cost: downsized.estimatedDecodedByteCount)
-    }
-
-    public static func deleteImageFile(fileName: String) {
-        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    public static func deleteImage(fileName: String) {
+        let trimmed = fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let url = imagesDirectoryURL.appendingPathComponent(trimmed)
@@ -145,49 +150,83 @@ public enum AppGroup {
         imageCache.cache.removeObject(forKey: trimmed as NSString)
     }
 
-    public static func saveSpecs(_ specs: [WidgetSpec]) throws {
-        let data = try JSONEncoder().encode(specs)
-        try data.write(to: widgetSpecsFileURL, options: .atomic)
-
-        #if canImport(WidgetKit)
-        WidgetCenter.shared.reloadAllTimelines()
-        #endif
-    }
-
-    public static func loadSpecs() -> [WidgetSpec] {
-        guard let data = try? Data(contentsOf: widgetSpecsFileURL) else { return [] }
-        return (try? JSONDecoder().decode([WidgetSpec].self, from: data)) ?? []
+    public static func listImageFileNames() -> [String] {
+        ensureImagesDirectoryExists()
+        do {
+            let urls = try FileManager.default.contentsOfDirectory(
+                at: imagesDirectoryURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            return urls.map(\.lastPathComponent).sorted()
+        } catch {
+            return []
+        }
     }
 }
 
-public extension UIImage {
+private extension UIImage {
     func normalisedOrientation() -> UIImage {
         if imageOrientation == .up { return self }
-
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        format.opaque = false
-
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
-            draw(in: CGRect(origin: .zero, size: size))
-        }
+        UIGraphicsBeginImageContextWithOptions(size, false, scale)
+        draw(in: CGRect(origin: .zero, size: size))
+        let img = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return img ?? self
     }
 
     func downsampled(maxPixel: CGFloat) -> UIImage {
-        let maxSide = max(size.width, size.height)
-        guard maxSide > maxPixel, maxSide > 0 else { return self }
+        let maxSide = max(size.width * scale, size.height * scale)
+        guard maxSide > 0, maxSide > maxPixel else { return self }
 
-        let scaleFactor = maxPixel / maxSide
-        let newSize = CGSize(width: size.width * scaleFactor, height: size.height * scaleFactor)
+        let ratio = maxPixel / maxSide
+        let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
 
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        format.opaque = false
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        draw(in: CGRect(origin: .zero, size: newSize))
+        let img = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return img ?? self
+    }
 
-        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
-        return renderer.image { _ in
-            draw(in: CGRect(origin: .zero, size: newSize))
+    var estimatedDecodedByteCount: Int {
+        guard let cg = cgImage else {
+            let px = Int((size.width * scale).rounded(.up))
+            let py = Int((size.height * scale).rounded(.up))
+            return max(1, px * py * 4)
         }
+        return max(1, cg.bytesPerRow * cg.height)
+    }
+}
+
+// MARK: - Monetisation / Entitlements (Milestone 8)
+
+public enum WidgetWeaverEntitlements {
+    private static let proUnlockedKey = "widgetweaver.pro.v1.unlocked"
+
+    public static let maxFreeDesigns: Int = 3
+
+    public static var isProUnlocked: Bool {
+        AppGroup.userDefaults.bool(forKey: proUnlockedKey)
+    }
+
+    public static func setProUnlocked(_ unlocked: Bool) {
+        AppGroup.userDefaults.set(unlocked, forKey: proUnlockedKey)
+        flushAndNotifyWidgets()
+    }
+
+    public static func flushAndNotifyWidgets() {
+        AppGroup.userDefaults.synchronize()
+
+        #if canImport(WidgetKit)
+        let kind = WidgetWeaverWidgetKinds.main
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+        #endif
     }
 }

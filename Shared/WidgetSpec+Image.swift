@@ -7,12 +7,12 @@
 
 import Foundation
 
-#if canImport(WidgetKit)
-import WidgetKit
-#endif
-
 #if canImport(UIKit)
 import UIKit
+#endif
+
+#if canImport(WidgetKit)
+import WidgetKit
 #endif
 
 public enum ImageContentModeToken: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
@@ -20,14 +20,23 @@ public enum ImageContentModeToken: String, CaseIterable, Codable, Hashable, Iden
     case fit
 
     public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .fill: return "Fill"
+        case .fit: return "Fit"
+        }
+    }
 }
 
-/// Reserved for future (e.g. storing a crop identifier or params).
-public typealias ImageCropToken = String
+/// Backwards-compatible alias used by older specs/code.
+public typealias ImageCropToken = ImageContentModeToken
 
-// MARK: - Smart Photo
+// MARK: - Smart Photo (auto-crop + per-family renders)
 
-public struct WWNormalizedRect: Codable, Hashable, Sendable {
+/// A unit rectangle in normalised image coordinates, origin at top-left.
+/// Values are clamped into 0...1 during normalisation.
+public struct WidgetWeaverNormalizedRect: Codable, Hashable, Sendable {
     public var x: Double
     public var y: Double
     public var width: Double
@@ -38,115 +47,115 @@ public struct WWNormalizedRect: Codable, Hashable, Sendable {
         self.y = y
         self.width = width
         self.height = height
+        self = normalised()
     }
 
-    #if canImport(CoreGraphics)
-    public init(_ rect: CGRect) {
-        self.x = Double(rect.origin.x)
-        self.y = Double(rect.origin.y)
-        self.width = Double(rect.size.width)
-        self.height = Double(rect.size.height)
-    }
+    public func normalised() -> WidgetWeaverNormalizedRect {
+        var r = self
 
-    public var cgRect: CGRect {
-        CGRect(x: x, y: y, width: width, height: height)
-    }
-    #endif
+        // Clamp origin and size to sane bounds.
+        r.x = r.x.clamped(to: 0...1)
+        r.y = r.y.clamped(to: 0...1)
+        r.width = r.width.clamped(to: 0...1)
+        r.height = r.height.clamped(to: 0...1)
 
-    public func normalised() -> WWNormalizedRect {
-        func clamp(_ v: Double) -> Double { min(max(v, 0.0), 1.0) }
+        // Ensure width/height do not overflow beyond 1.0.
+        if r.x + r.width > 1 { r.width = max(0, 1 - r.x) }
+        if r.y + r.height > 1 { r.height = max(0, 1 - r.y) }
 
-        var out = self
-        out.x = clamp(out.x)
-        out.y = clamp(out.y)
-        out.width = clamp(out.width)
-        out.height = clamp(out.height)
+        // Avoid degenerate rects.
+        let minSize: Double = 0.0001
+        if r.width < minSize { r.width = minSize }
+        if r.height < minSize { r.height = minSize }
 
-        if out.width <= 0 { out.width = 1 }
-        if out.height <= 0 { out.height = 1 }
-
-        if out.x + out.width > 1 { out.x = max(0, 1 - out.width) }
-        if out.y + out.height > 1 { out.y = max(0, 1 - out.height) }
-
-        return out
+        return r
     }
 }
 
-public struct WWSmartPhotoVariant: Codable, Hashable, Sendable {
+public struct WidgetWeaverSmartPhotoVariant: Codable, Hashable, Sendable {
     public var renderFileName: String
-    public var cropRect: WWNormalizedRect
+    public var cropRect: WidgetWeaverNormalizedRect
     public var pixelWidth: Int?
     public var pixelHeight: Int?
 
-    public init(renderFileName: String, cropRect: WWNormalizedRect, pixelWidth: Int? = nil, pixelHeight: Int? = nil) {
+    public init(renderFileName: String, cropRect: WidgetWeaverNormalizedRect, pixelWidth: Int? = nil, pixelHeight: Int? = nil) {
         self.renderFileName = renderFileName
         self.cropRect = cropRect
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
+        self = normalised()
     }
 
-    public func normalised() -> WWSmartPhotoVariant {
-        var out = self
-        out.renderFileName = String(renderFileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(256))
-        out.cropRect = cropRect.normalised()
+    public func normalised() -> WidgetWeaverSmartPhotoVariant {
+        var v = self
 
-        if let w = pixelWidth { out.pixelWidth = max(1, min(w, 10_000)) }
-        if let h = pixelHeight { out.pixelHeight = max(1, min(h, 10_000)) }
+        let trimmed = v.renderFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let last = (trimmed as NSString).lastPathComponent
+        v.renderFileName = String(last.prefix(256))
 
-        return out
+        v.cropRect = v.cropRect.normalised()
+
+        if let w = v.pixelWidth { v.pixelWidth = max(1, w) }
+        if let h = v.pixelHeight { v.pixelHeight = max(1, h) }
+
+        return v
     }
 }
 
-public struct WWSmartPhotoSpec: Codable, Hashable, Sendable {
+public struct WidgetWeaverSmartPhotoSpec: Codable, Hashable, Sendable {
     public static let currentAlgorithmVersion: Int = 1
 
     public var algorithmVersion: Int
-    public var masterFileName: String
-    public var small: WWSmartPhotoVariant?
-    public var medium: WWSmartPhotoVariant?
-    public var large: WWSmartPhotoVariant?
     public var preparedAt: Date
 
+    /// A larger “master” photo used to regenerate crops later without re-importing.
+    public var masterFileName: String
+
+    public var small: WidgetWeaverSmartPhotoVariant?
+    public var medium: WidgetWeaverSmartPhotoVariant?
+    public var large: WidgetWeaverSmartPhotoVariant?
+
     public init(
-        algorithmVersion: Int = WWSmartPhotoSpec.currentAlgorithmVersion,
+        algorithmVersion: Int = WidgetWeaverSmartPhotoSpec.currentAlgorithmVersion,
+        preparedAt: Date = Date(),
         masterFileName: String,
-        small: WWSmartPhotoVariant?,
-        medium: WWSmartPhotoVariant?,
-        large: WWSmartPhotoVariant?,
-        preparedAt: Date = Date()
+        small: WidgetWeaverSmartPhotoVariant? = nil,
+        medium: WidgetWeaverSmartPhotoVariant? = nil,
+        large: WidgetWeaverSmartPhotoVariant? = nil
     ) {
         self.algorithmVersion = algorithmVersion
+        self.preparedAt = preparedAt
         self.masterFileName = masterFileName
         self.small = small
         self.medium = medium
         self.large = large
-        self.preparedAt = preparedAt
+        self = normalised()
     }
 
-    public func normalised() -> WWSmartPhotoSpec {
-        var out = self
+    public func normalised() -> WidgetWeaverSmartPhotoSpec {
+        var s = self
 
-        out.algorithmVersion = max(1, min(out.algorithmVersion, 999))
-        out.masterFileName = String(masterFileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(256))
+        let trimmed = s.masterFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let last = (trimmed as NSString).lastPathComponent
+        s.masterFileName = String(last.prefix(256))
 
-        out.small = out.small?.normalised()
-        out.medium = out.medium?.normalised()
-        out.large = out.large?.normalised()
+        s.algorithmVersion = max(0, s.algorithmVersion)
 
-        return out
+        if let v = s.small?.normalised() { s.small = v }
+        if let v = s.medium?.normalised() { s.medium = v }
+        if let v = s.large?.normalised() { s.large = v }
+
+        return s
     }
 
     public func allFileNames() -> [String] {
-        var names: [String] = []
-
-        let master = masterFileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !master.isEmpty { names.append(master) }
-
-        if let s = small?.renderFileName.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty { names.append(s) }
-        if let m = medium?.renderFileName.trimmingCharacters(in: .whitespacesAndNewlines), !m.isEmpty { names.append(m) }
-        if let l = large?.renderFileName.trimmingCharacters(in: .whitespacesAndNewlines), !l.isEmpty { names.append(l) }
-
-        return names
+        var out: [String] = []
+        let m = masterFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if !m.isEmpty { out.append(m) }
+        if let s = small?.renderFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines), !s.isEmpty { out.append(s) }
+        if let m = medium?.renderFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines), !m.isEmpty { out.append(m) }
+        if let l = large?.renderFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines), !l.isEmpty { out.append(l) }
+        return out
     }
 
     #if canImport(WidgetKit)
@@ -155,102 +164,110 @@ public struct WWSmartPhotoSpec: Codable, Hashable, Sendable {
         case .systemSmall: return small?.renderFileName
         case .systemMedium: return medium?.renderFileName
         case .systemLarge: return large?.renderFileName
-        default: return medium?.renderFileName
+        default: return medium?.renderFileName ?? small?.renderFileName ?? large?.renderFileName
         }
     }
     #endif
 }
 
-// MARK: - Image Spec
-
-public struct ImageSpec: Codable, Hashable, Sendable {
+public struct ImageSpec: Hashable, Codable, Sendable {
     public var fileName: String
     public var contentMode: ImageContentModeToken
     public var height: Double
     public var cornerRadius: Double
-    public var crop: ImageCropToken?
-    public var smartPhoto: WWSmartPhotoSpec?
+
+    /// Optional metadata + per-family renders for Smart Photo.
+    public var smartPhoto: WidgetWeaverSmartPhotoSpec?
 
     public init(
         fileName: String,
-        contentMode: ImageContentModeToken,
-        height: Double,
-        cornerRadius: Double,
-        crop: ImageCropToken? = nil,
-        smartPhoto: WWSmartPhotoSpec? = nil
+        contentMode: ImageContentModeToken = .fill,
+        height: Double = 120,
+        cornerRadius: Double = 16,
+        smartPhoto: WidgetWeaverSmartPhotoSpec? = nil
     ) {
         self.fileName = fileName
         self.contentMode = contentMode
         self.height = height
         self.cornerRadius = cornerRadius
-        self.crop = crop
-        self.smartPhoto = smartPhoto
+        self.smartPhoto = smartPhoto?.normalised()
     }
 
     public func normalised() -> ImageSpec {
-        var out = self
+        var s = self
 
-        let trimmed = out.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Trim + strip any path components (defensive against imported specs).
+        let trimmed = s.fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         let last = (trimmed as NSString).lastPathComponent
-        out.fileName = String(last.prefix(256))
+        s.fileName = String(last.prefix(256))
 
-        out.height = max(1, min(out.height, 10_000))
-        out.cornerRadius = max(0, min(out.cornerRadius, 1_000))
+        // Keep values in a sane range.
+        s.height = s.height.clamped(to: 0...512)
+        s.cornerRadius = s.cornerRadius.clamped(to: 0...128)
 
-        if let crop = out.crop {
-            let c = crop.trimmingCharacters(in: .whitespacesAndNewlines)
-            out.crop = c.isEmpty ? nil : String(c.prefix(512))
+        if let sp = s.smartPhoto?.normalised() {
+            if sp.masterFileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                s.smartPhoto = nil
+            } else {
+                s.smartPhoto = sp
+            }
+        } else {
+            s.smartPhoto = nil
         }
 
-        out.smartPhoto = out.smartPhoto?.normalised()
-
-        return out
+        return s
     }
 
     public func allReferencedFileNames() -> [String] {
-        var names: [String] = []
+        var set = Set<String>()
 
-        let base = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !base.isEmpty { names.append(base) }
+        let base = fileName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if !base.isEmpty { set.insert(base) }
 
-        if let smartPhoto {
-            names.append(contentsOf: smartPhoto.allFileNames())
+        if let smart = smartPhoto {
+            for name in smart.allFileNames() {
+                let trimmed = name.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                if !trimmed.isEmpty { set.insert(trimmed) }
+            }
         }
 
-        // De-dupe while preserving order.
-        var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }
+        return Array(set).sorted()
     }
 
-    #if canImport(WidgetKit)
-    public func fileNameForRender(family: WidgetFamily) -> String {
-        if let smart = smartPhoto, let fn = smart.renderFileName(for: family) {
-            let trimmed = fn.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
-        }
-        return fileName
-    }
-    #endif
+    // MARK: Codable compatibility (older specs may omit newer keys)
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case fileName
         case contentMode
         case height
         case cornerRadius
-        case crop
         case smartPhoto
+
+        // Older key name used by an earlier schema.
+        case crop
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
-        fileName = try c.decodeIfPresent(String.self, forKey: .fileName) ?? ""
-        contentMode = try c.decodeIfPresent(ImageContentModeToken.self, forKey: .contentMode) ?? .fill
-        height = try c.decodeIfPresent(Double.self, forKey: .height) ?? 120
-        cornerRadius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 16
-        crop = try c.decodeIfPresent(ImageCropToken.self, forKey: .crop)
-        smartPhoto = try c.decodeIfPresent(WWSmartPhotoSpec.self, forKey: .smartPhoto)
+        let fileName = (try? c.decode(String.self, forKey: .fileName)) ?? ""
 
+        let mode =
+            (try? c.decode(ImageContentModeToken.self, forKey: .contentMode))
+            ?? (try? c.decode(ImageContentModeToken.self, forKey: .crop))
+            ?? .fill
+
+        let height = (try? c.decode(Double.self, forKey: .height)) ?? 120
+        let cornerRadius = (try? c.decode(Double.self, forKey: .cornerRadius)) ?? 16
+        let smartPhoto = (try? c.decodeIfPresent(WidgetWeaverSmartPhotoSpec.self, forKey: .smartPhoto)) ?? nil
+
+        self.init(
+            fileName: fileName,
+            contentMode: mode,
+            height: height,
+            cornerRadius: cornerRadius,
+            smartPhoto: smartPhoto
+        )
         self = self.normalised()
     }
 
@@ -261,19 +278,29 @@ public struct ImageSpec: Codable, Hashable, Sendable {
         try c.encode(contentMode, forKey: .contentMode)
         try c.encode(height, forKey: .height)
         try c.encode(cornerRadius, forKey: .cornerRadius)
-        try c.encodeIfPresent(crop, forKey: .crop)
         try c.encodeIfPresent(smartPhoto, forKey: .smartPhoto)
-    }
 
-    #if canImport(UIKit)
-    public func loadUIImageFromAppGroup() -> UIImage? {
+        // Backwards compatibility for older readers.
+        try c.encode(contentMode, forKey: .crop)
+    }
+}
+
+#if canImport(UIKit)
+public extension ImageSpec {
+    func loadUIImageFromAppGroup() -> UIImage? {
         AppGroup.loadUIImage(fileName: fileName)
     }
 
     #if canImport(WidgetKit)
-    public func loadUIImageFromAppGroup(for family: WidgetFamily) -> UIImage? {
-        AppGroup.loadUIImage(fileName: fileNameForRender(family: family))
+    func loadUIImageFromAppGroup(for family: WidgetFamily) -> UIImage? {
+        if let smart = smartPhoto?.renderFileName(for: family) {
+            let trimmed = smart.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            if !trimmed.isEmpty, let img = AppGroup.loadUIImage(fileName: trimmed) {
+                return img
+            }
+        }
+        return AppGroup.loadUIImage(fileName: fileName)
     }
     #endif
-    #endif
 }
+#endif

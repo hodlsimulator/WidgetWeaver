@@ -2,117 +2,199 @@
 //  EditorDraftModels.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/17/25.
+//  Created by . . on 12/18/25.
 //
 
 import Foundation
-import SwiftUI
 import WidgetKit
 
 struct EditorDraft: Hashable {
-    var baseDraft: FamilyDraft
-    var matchedEnabled: Bool
-    var smallDraft: FamilyDraft
-    var mediumDraft: FamilyDraft
-    var largeDraft: FamilyDraft
+    var id: UUID
+    var name: String
 
-    static func fromSpec(_ spec: WidgetSpec) -> EditorDraft {
-        if let matched = spec.matchedSet {
-            return EditorDraft(
-                baseDraft: FamilyDraft(from: spec),
-                matchedEnabled: true,
-                smallDraft: FamilyDraft(from: matched.small ?? spec),
-                mediumDraft: FamilyDraft(from: matched.medium ?? spec),
-                largeDraft: FamilyDraft(from: matched.large ?? spec)
-            )
-        } else {
-            let d = FamilyDraft(from: spec)
-            return EditorDraft(
-                baseDraft: d,
-                matchedEnabled: false,
-                smallDraft: d,
-                mediumDraft: d,
-                largeDraft: d
-            )
-        }
+    var style: StyleDraft
+    var base: FamilyDraft
+
+    // Matched variants (Pro only)
+    var hasMatchedVariants: Bool
+    var small: FamilyDraft
+    var medium: FamilyDraft
+    var large: FamilyDraft
+
+    var updatedAt: Date
+
+    static func makeNew() -> EditorDraft {
+        EditorDraft(
+            id: UUID(),
+            name: "New Design",
+            style: StyleDraft(from: StyleSpec.defaultSpec()),
+            base: FamilyDraft(from: WidgetSpec.defaultSpec()),
+            hasMatchedVariants: false,
+            small: FamilyDraft(from: WidgetSpec.defaultSpec()),
+            medium: FamilyDraft(from: WidgetSpec.defaultSpec()),
+            large: FamilyDraft(from: WidgetSpec.defaultSpec()),
+            updatedAt: Date()
+        )
     }
 
-    func toSpec(id: UUID) -> WidgetSpec {
-        let base = baseDraft.toFlatSpec(id: id)
+    init(from spec: WidgetSpec) {
+        let s = spec.normalised()
+        self.id = s.id
+        self.name = s.name
+        self.style = StyleDraft(from: s.style)
+        self.base = FamilyDraft(from: s)
 
-        if matchedEnabled {
-            let matched = WidgetSpecMatchedSet(
-                small: smallDraft.toVariantSpec(id: id),
-                medium: mediumDraft.toVariantSpec(id: id),
-                large: largeDraft.toVariantSpec(id: id)
-            )
-            var out = base
-            out.matchedSet = matched
+        if let matched = s.matchedSet {
+            self.hasMatchedVariants = true
+            self.small = FamilyDraft(from: matched.small?.toSpecFallbacking(base: s) ?? s)
+            self.medium = FamilyDraft(from: matched.medium?.toSpecFallbacking(base: s) ?? s)
+            self.large = FamilyDraft(from: matched.large?.toSpecFallbacking(base: s) ?? s)
+        } else {
+            self.hasMatchedVariants = false
+            self.small = FamilyDraft(from: s)
+            self.medium = FamilyDraft(from: s)
+            self.large = FamilyDraft(from: s)
+        }
+
+        self.updatedAt = s.updatedAt
+    }
+
+    func toWidgetSpec() -> WidgetSpec {
+        let now = Date()
+
+        let flat = base.toFlatSpec(
+            id: id,
+            name: name,
+            style: style.toStyleSpec(),
+            updatedAt: now
+        )
+
+        if hasMatchedVariants, WidgetWeaverEntitlements.isProUnlocked {
+            var matched = MatchedSetSpec(
+                small: small.toVariantSpec(for: .systemSmall),
+                medium: medium.toVariantSpec(for: .systemMedium),
+                large: large.toVariantSpec(for: .systemLarge)
+            ).normalised()
+
+            // Do not store variants identical to base (saves space, simplifies export).
+            if matched.small == nil, matched.medium == nil, matched.large == nil {
+                matched = MatchedSetSpec(small: nil, medium: nil, large: nil)
+            }
+
+            var out = flat
+            if matched.small != nil || matched.medium != nil || matched.large != nil {
+                out.matchedSet = matched
+            } else {
+                out.matchedSet = nil
+            }
+            out.updatedAt = now
             return out.normalised()
         }
 
-        return base.normalised()
+        return flat.normalised()
+    }
+}
+
+struct StyleDraft: Hashable {
+    var backgroundColorHex: String
+    var accentColorHex: String
+    var primaryTextColorHex: String
+    var secondaryTextColorHex: String
+
+    var primaryFont: FontToken
+    var secondaryFont: FontToken
+
+    // Theme support
+    var usesTheme: Bool
+    var themeImageFileName: String
+    var themeStrategy: ThemeStrategyToken
+    var themeScale: Double
+    var weatherScale: Double
+
+    init(from spec: StyleSpec) {
+        let s = spec.normalised()
+        self.backgroundColorHex = s.backgroundColorHex
+        self.accentColorHex = s.accentColorHex
+        self.primaryTextColorHex = s.primaryTextColorHex
+        self.secondaryTextColorHex = s.secondaryTextColorHex
+        self.primaryFont = s.primaryFont
+        self.secondaryFont = s.secondaryFont
+
+        self.usesTheme = s.usesTheme
+        self.themeImageFileName = s.themeImageFileName
+        self.themeStrategy = s.themeStrategy
+        self.themeScale = s.themeScale
+        self.weatherScale = s.weatherScale
     }
 
-    mutating func applySpec(_ spec: WidgetSpec) {
-        self = EditorDraft.fromSpec(spec)
-    }
-
-    static func defaultDraft() -> EditorDraft {
-        fromSpec(WidgetSpec.defaultSpec())
+    func toStyleSpec() -> StyleSpec {
+        StyleSpec(
+            backgroundColorHex: backgroundColorHex,
+            accentColorHex: accentColorHex,
+            primaryTextColorHex: primaryTextColorHex,
+            secondaryTextColorHex: secondaryTextColorHex,
+            primaryFont: primaryFont,
+            secondaryFont: secondaryFont,
+            usesTheme: usesTheme,
+            themeImageFileName: themeImageFileName,
+            themeStrategy: themeStrategy,
+            themeScale: themeScale,
+            weatherScale: weatherScale
+        ).normalised()
     }
 }
 
 struct FamilyDraft: Hashable {
-    // MARK: Layout
-    var titleText: String
-    var subtitleText: String
-    var backgroundHex: String
-    var titleHex: String
-    var subtitleHex: String
+    // Text
+    var primaryText: String
+    var secondaryText: String
 
-    // MARK: Chips
-    var chips: [ChipDraft]
+    // Symbol
+    var symbolName: String
+    var symbolPlacement: SymbolPlacementToken
+    var symbolSize: Double
+    var symbolWeight: SymbolWeightToken
+    var symbolRenderingMode: SymbolRenderingModeToken
+    var symbolTint: WidgetColorToken
 
-    // MARK: Image (poster background)
+    // Image
     var imageFileName: String
     var imageContentMode: ImageContentModeToken
     var imageHeight: Double
     var imageCornerRadius: Double
-    var imageSmartPhoto: WWSmartPhotoSpec?
+    var imageSmartPhoto: WidgetWeaverSmartPhotoSpec?
 
-    // MARK: Template & Layout
-    var template: LayoutTemplate
-    var padding: Double
-    var titleFontSize: Double
-    var subtitleFontSize: Double
-    var titleMaxLines: Int
-    var subtitleMaxLines: Int
-    var chipsColumnsSmall: Int
-    var chipsColumnsMedium: Int
-    var chipsColumnsLarge: Int
-    var chipFontSize: Double
-    var chipIconSize: Double
-    var chipCornerRadius: Double
-    var chipHorizontalPadding: Double
-    var chipVerticalPadding: Double
-    var chipBackgroundOpacity: Double
-    var hSpacing: Double
-    var vSpacing: Double
-    var posterTitleFontSize: Double
-    var posterSubtitleFontSize: Double
+    // Layout
+    var template: LayoutTemplateToken
+    var showsAccentBar: Bool
+    var axis: LayoutAxisToken
+    var alignment: LayoutAlignmentToken
+    var spacing: Double
+    var primaryLineLimitSmall: Int
+    var primaryLineLimit: Int
+    var secondaryLineLimit: Int
 
     init(from spec: WidgetSpec) {
         let s = spec.normalised()
 
-        self.titleText = s.title ?? ""
-        self.subtitleText = s.subtitle ?? ""
+        self.primaryText = s.primaryText
+        self.secondaryText = s.secondaryText ?? ""
 
-        self.backgroundHex = s.backgroundColor ?? ""
-        self.titleHex = s.titleColor ?? "#FFFFFF"
-        self.subtitleHex = s.subtitleColor ?? "#BFBFBF"
-
-        self.chips = (s.chips ?? []).map { ChipDraft(from: $0) }
+        if let sym = s.symbol {
+            self.symbolName = sym.name
+            self.symbolPlacement = sym.placement
+            self.symbolSize = sym.size
+            self.symbolWeight = sym.weight
+            self.symbolRenderingMode = sym.renderingMode
+            self.symbolTint = sym.tint
+        } else {
+            self.symbolName = ""
+            self.symbolPlacement = .leading
+            self.symbolSize = 42
+            self.symbolWeight = .semibold
+            self.symbolRenderingMode = .monochrome
+            self.symbolTint = .white
+        }
 
         if let img = s.image {
             self.imageFileName = img.fileName
@@ -128,32 +210,31 @@ struct FamilyDraft: Hashable {
             self.imageSmartPhoto = nil
         }
 
-        let layout = s.layout
-        self.template = layout.template
-        self.padding = layout.padding
-        self.titleFontSize = layout.titleFontSize
-        self.subtitleFontSize = layout.subtitleFontSize
-        self.titleMaxLines = layout.titleMaxLines
-        self.subtitleMaxLines = layout.subtitleMaxLines
-        self.chipsColumnsSmall = layout.chipsColumnsSmall
-        self.chipsColumnsMedium = layout.chipsColumnsMedium
-        self.chipsColumnsLarge = layout.chipsColumnsLarge
-        self.chipFontSize = layout.chipFontSize
-        self.chipIconSize = layout.chipIconSize
-        self.chipCornerRadius = layout.chipCornerRadius
-        self.chipHorizontalPadding = layout.chipHorizontalPadding
-        self.chipVerticalPadding = layout.chipVerticalPadding
-        self.chipBackgroundOpacity = layout.chipBackgroundOpacity
-        self.hSpacing = layout.hSpacing
-        self.vSpacing = layout.vSpacing
-        self.posterTitleFontSize = layout.posterTitleFontSize
-        self.posterSubtitleFontSize = layout.posterSubtitleFontSize
+        self.template = s.layout.template
+        self.showsAccentBar = s.layout.showsAccentBar
+        self.axis = s.layout.axis
+        self.alignment = s.layout.alignment
+        self.spacing = s.layout.spacing
+        self.primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        self.primaryLineLimit = s.layout.primaryLineLimit
+        self.secondaryLineLimit = s.layout.secondaryLineLimit
     }
 
-    func toFlatSpec(id: UUID) -> WidgetSpec {
-        let chipsSpec: [ChipSpec] = chips.map { $0.toSpec() }
-        let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    func toFlatSpec(id: UUID, name: String, style: StyleSpec, updatedAt: Date) -> WidgetSpec {
+        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbol: SymbolSpec? = symName.isEmpty ? nil : SymbolSpec(
+            name: symName,
+            placement: symbolPlacement,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint
+        )
+
+        let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
             fileName: imgName,
             contentMode: imageContentMode,
@@ -164,45 +245,46 @@ struct FamilyDraft: Hashable {
 
         let layout = LayoutSpec(
             template: template,
-            padding: padding,
-            titleFontSize: titleFontSize,
-            subtitleFontSize: subtitleFontSize,
-            titleMaxLines: titleMaxLines,
-            subtitleMaxLines: subtitleMaxLines,
-            chipsColumnsSmall: chipsColumnsSmall,
-            chipsColumnsMedium: chipsColumnsMedium,
-            chipsColumnsLarge: chipsColumnsLarge,
-            chipFontSize: chipFontSize,
-            chipIconSize: chipIconSize,
-            chipCornerRadius: chipCornerRadius,
-            chipHorizontalPadding: chipHorizontalPadding,
-            chipVerticalPadding: chipVerticalPadding,
-            chipBackgroundOpacity: chipBackgroundOpacity,
-            hSpacing: hSpacing,
-            vSpacing: vSpacing,
-            posterTitleFontSize: posterTitleFontSize,
-            posterSubtitleFontSize: posterSubtitleFontSize
+            showsAccentBar: showsAccentBar,
+            axis: axis,
+            alignment: alignment,
+            spacing: spacing,
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
         )
 
         return WidgetSpec(
             id: id,
-            title: titleText,
-            subtitle: subtitleText,
-            backgroundColor: backgroundHex.isEmpty ? nil : backgroundHex,
-            titleColor: titleHex,
-            subtitleColor: subtitleHex,
-            chips: chipsSpec.isEmpty ? nil : chipsSpec,
+            name: name,
+            primaryText: trimmedPrimary.isEmpty ? "Widget Weaver" : trimmedPrimary,
+            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
+            symbol: symbol,
             image: image,
+            style: style,
             layout: layout,
             matchedSet: nil,
-            updatedAt: Date()
+            updatedAt: updatedAt
         ).normalised()
     }
 
-    func toVariantSpec(id: UUID) -> WidgetSpecVariant {
-        let chipsSpec: [ChipSpec] = chips.map { $0.toSpec() }
-        let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    func toVariantSpec(for family: WidgetFamily) -> WidgetSpecVariant? {
+        let s = WidgetSpec.defaultSpec().resolved(for: family)
 
+        let trimmedPrimary = primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecondary = secondaryText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let symName = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbol: SymbolSpec? = symName.isEmpty ? nil : SymbolSpec(
+            name: symName,
+            placement: symbolPlacement,
+            size: symbolSize,
+            weight: symbolWeight,
+            renderingMode: symbolRenderingMode,
+            tint: symbolTint
+        )
+
+        let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
             fileName: imgName,
             contentMode: imageContentMode,
@@ -213,50 +295,52 @@ struct FamilyDraft: Hashable {
 
         let layout = LayoutSpec(
             template: template,
-            padding: padding,
-            titleFontSize: titleFontSize,
-            subtitleFontSize: subtitleFontSize,
-            titleMaxLines: titleMaxLines,
-            subtitleMaxLines: subtitleMaxLines,
-            chipsColumnsSmall: chipsColumnsSmall,
-            chipsColumnsMedium: chipsColumnsMedium,
-            chipsColumnsLarge: chipsColumnsLarge,
-            chipFontSize: chipFontSize,
-            chipIconSize: chipIconSize,
-            chipCornerRadius: chipCornerRadius,
-            chipHorizontalPadding: chipHorizontalPadding,
-            chipVerticalPadding: chipVerticalPadding,
-            chipBackgroundOpacity: chipBackgroundOpacity,
-            hSpacing: hSpacing,
-            vSpacing: vSpacing,
-            posterTitleFontSize: posterTitleFontSize,
-            posterSubtitleFontSize: posterSubtitleFontSize
+            showsAccentBar: showsAccentBar,
+            axis: axis,
+            alignment: alignment,
+            spacing: spacing,
+            primaryLineLimitSmall: primaryLineLimitSmall,
+            primaryLineLimit: primaryLineLimit,
+            secondaryLineLimit: secondaryLineLimit
         )
 
-        return WidgetSpecVariant(
-            title: titleText,
-            subtitle: subtitleText,
-            backgroundColor: backgroundHex.isEmpty ? nil : backgroundHex,
-            titleColor: titleHex,
-            subtitleColor: subtitleHex,
-            chips: chipsSpec.isEmpty ? nil : chipsSpec,
+        let candidate = WidgetSpecVariant(
+            primaryText: trimmedPrimary.isEmpty ? s.primaryText : trimmedPrimary,
+            secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
+            symbol: symbol,
             image: image,
-            layout: layout,
-            updatedAt: Date()
+            layout: layout
         ).normalised()
+
+        let base = s.normalised()
+        if candidate.primaryText == base.primaryText,
+           candidate.secondaryText == base.secondaryText,
+           candidate.symbol == base.symbol,
+           candidate.image == base.image,
+           candidate.layout == base.layout
+        {
+            return nil
+        }
+
+        return candidate
     }
 
-    mutating func apply(flatSpec: WidgetSpec) {
-        let s = flatSpec.normalised()
+    mutating func apply(flatSpec spec: WidgetSpec) {
+        let s = spec.normalised()
 
-        titleText = s.title ?? ""
-        subtitleText = s.subtitle ?? ""
+        primaryText = s.primaryText
+        secondaryText = s.secondaryText ?? ""
 
-        backgroundHex = s.backgroundColor ?? ""
-        titleHex = s.titleColor ?? "#FFFFFF"
-        subtitleHex = s.subtitleColor ?? "#BFBFBF"
-
-        chips = (s.chips ?? []).map { ChipDraft(from: $0) }
+        if let sym = s.symbol {
+            symbolName = sym.name
+            symbolPlacement = sym.placement
+            symbolSize = sym.size
+            symbolWeight = sym.weight
+            symbolRenderingMode = sym.renderingMode
+            symbolTint = sym.tint
+        } else {
+            symbolName = ""
+        }
 
         if let img = s.image {
             imageFileName = img.fileName
@@ -269,55 +353,23 @@ struct FamilyDraft: Hashable {
             imageSmartPhoto = nil
         }
 
-        let layout = s.layout
-        template = layout.template
-        padding = layout.padding
-        titleFontSize = layout.titleFontSize
-        subtitleFontSize = layout.subtitleFontSize
-        titleMaxLines = layout.titleMaxLines
-        subtitleMaxLines = layout.subtitleMaxLines
-        chipsColumnsSmall = layout.chipsColumnsSmall
-        chipsColumnsMedium = layout.chipsColumnsMedium
-        chipsColumnsLarge = layout.chipsColumnsLarge
-        chipFontSize = layout.chipFontSize
-        chipIconSize = layout.chipIconSize
-        chipCornerRadius = layout.chipCornerRadius
-        chipHorizontalPadding = layout.chipHorizontalPadding
-        chipVerticalPadding = layout.chipVerticalPadding
-        chipBackgroundOpacity = layout.chipBackgroundOpacity
-        hSpacing = layout.hSpacing
-        vSpacing = layout.vSpacing
-        posterTitleFontSize = layout.posterTitleFontSize
-        posterSubtitleFontSize = layout.posterSubtitleFontSize
+        template = s.layout.template
+        showsAccentBar = s.layout.showsAccentBar
+        axis = s.layout.axis
+        alignment = s.layout.alignment
+        spacing = s.layout.spacing
+        primaryLineLimitSmall = s.layout.primaryLineLimitSmall
+        primaryLineLimit = s.layout.primaryLineLimit
+        secondaryLineLimit = s.layout.secondaryLineLimit
     }
 }
 
-struct ChipDraft: Hashable, Identifiable {
+
+// MARK: - Actions (Interactive Widget Buttons)
+
+struct ActionDraft: Hashable, Identifiable {
     var id: UUID
-    var text: String
-    var icon: String
-    var backgroundHex: String
-    var textHex: String
-    var iconHex: String
-
-    init(from spec: ChipSpec) {
-        let s = spec.normalised()
-        id = s.id
-        text = s.text
-        icon = s.icon ?? ""
-        backgroundHex = s.backgroundColor ?? "#2A2A2E"
-        textHex = s.textColor ?? "#FFFFFF"
-        iconHex = s.iconColor ?? "#FFFFFF"
-    }
-
-    func toSpec() -> ChipSpec {
-        ChipSpec(
-            id: id,
-            text: text,
-            icon: icon.isEmpty ? nil : icon,
-            backgroundColor: backgroundHex.isEmpty ? nil : backgroundHex,
-            textColor: textHex.isEmpty ? nil : textHex,
-            iconColor: iconHex.isEmpty ? nil : iconHex
-        ).normalised()
-    }
+    var title: String
+    var message: String
+    var urlString: String
 }
