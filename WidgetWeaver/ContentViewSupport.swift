@@ -304,20 +304,13 @@ struct WidgetWeaverProView: View {
                         .disabled(manager.isBusy)
                     }
 
-                    if manager.isBusy {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                            Text("Working…").foregroundStyle(.secondary)
-                        }
-                    }
-
                     if !manager.statusMessage.isEmpty {
                         Text(manager.statusMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } header: {
-                    Text("Actions")
+                    Text("Purchase")
                 }
 
                 if showInternalTools {
@@ -372,6 +365,7 @@ struct WidgetWeaverDesignInspectorView: View {
             List {
                 overviewSection
                 resolutionSection
+                widgetImageRenderSection
                 variablesSection
                 jsonLinksSection
                 imagesSection
@@ -469,6 +463,61 @@ struct WidgetWeaverDesignInspectorView: View {
             Text("Resolved (matched set + variables)")
         } footer: {
             Text("Resolution matches the widget render path: matched-set variant first, then variables.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var widgetImageRenderSection: some View {
+        let resolved = resolvedSpec(for: family)
+
+        return Section {
+            if let img = resolved.image {
+                let preferred = img.fileNameForFamily(family)
+                let base = img.fileName
+
+                fileInfoBlock(title: "Widget render file (\(familyLabel(family)))", fileName: preferred)
+
+                if preferred != base {
+                    fileInfoBlock(title: "Fallback base file", fileName: base)
+
+                    let preferredExists = fileInfo(for: preferred).exists
+                    if !preferredExists {
+                        Text("Preferred render is missing. Widget render will fall back to the base image.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let smart = img.smartPhoto {
+                    fileInfoBlock(title: "Smart master file", fileName: smart.masterFileName)
+
+                    Text("Smart metadata: v\(smart.algorithmVersion) • prepared \(smart.preparedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                let referenced = img.allReferencedFileNames()
+                if !referenced.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Referenced by this image")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(referenced, id: \.self) { name in
+                            fileInfoInlineRow(fileName: name)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            } else {
+                Text("No image is set for this size.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Widget image render")
+        } footer: {
+            Text("Matches the widget behaviour: prefer per-family render (Smart Photo), then fall back to the base file.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -626,6 +675,77 @@ struct WidgetWeaverDesignInspectorView: View {
         statusMessage = message
     }
 
+    private struct FileInfo {
+        let fileName: String
+        let exists: Bool
+        let sizeText: String
+    }
+
+    private func fileInfo(for fileName: String) -> FileInfo {
+        let url = AppGroup.imageFileURL(fileName: fileName)
+        let exists = FileManager.default.fileExists(atPath: url.path)
+
+        var bytesText = "unknown size"
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? NSNumber {
+            bytesText = ByteCountFormatter.string(fromByteCount: size.int64Value, countStyle: .file)
+        }
+
+        return FileInfo(fileName: fileName, exists: exists, sizeText: bytesText)
+    }
+
+    @ViewBuilder
+    private func fileInfoBlock(title: String, fileName: String) -> some View {
+        let info = fileInfo(for: fileName)
+
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(info.fileName)
+                .font(.subheadline.weight(.semibold))
+                .textSelection(.enabled)
+
+            Text(info.exists ? "On disk • \(info.sizeText)" : "Missing on disk")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = info.fileName
+                statusMessage = "Copied image file name."
+            } label: {
+                Label("Copy file name", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fileInfoInlineRow(fileName: String) -> some View {
+        let info = fileInfo(for: fileName)
+
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(info.fileName)
+                .font(.caption)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 0)
+
+            Text(info.exists ? info.sizeText : "missing")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = info.fileName
+                statusMessage = "Copied image file name."
+            } label: {
+                Label("Copy file name", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
     private struct ImageInfo: Identifiable {
         let id: String
         let fileName: String
@@ -633,36 +753,12 @@ struct WidgetWeaverDesignInspectorView: View {
     }
 
     private func imageInfos(in spec: WidgetSpec) -> [ImageInfo] {
-        var names: Set<String> = []
+        let names = spec.allReferencedImageFileNames()
+        if names.isEmpty { return [] }
 
-        if let img = spec.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            names.insert(img)
-        }
-
-        if let matched = spec.matchedSet {
-            if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
-            }
-            if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
-            }
-            if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
-            }
-        }
-
-        let sorted = names.sorted()
-        return sorted.map { fileName in
-            let url = AppGroup.imageFileURL(fileName: fileName)
-            let exists = FileManager.default.fileExists(atPath: url.path)
-
-            var bytesText = "unknown size"
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-               let size = attrs[.size] as? NSNumber {
-                bytesText = ByteCountFormatter.string(fromByteCount: size.int64Value, countStyle: .file)
-            }
-
-            let detail = exists ? "On disk • \(bytesText)" : "Missing on disk"
+        return names.map { fileName in
+            let info = fileInfo(for: fileName)
+            let detail = info.exists ? "On disk • \(info.sizeText)" : "Missing on disk"
             return ImageInfo(id: fileName, fileName: fileName, detailLine: detail)
         }
     }
