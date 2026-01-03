@@ -344,6 +344,19 @@ public extension ImageSpec {
     func loadUIImageFromAppGroup(family: WidgetFamily) -> UIImage? {
         AppGroup.loadUIImage(fileName: fileNameForFamily(family))
     }
+
+    /// Loads the image used for rendering, preferring any Smart Photo per-family render when available.
+    /// Falls back to the base `fileName` if the per-family render is missing on disk.
+    func loadUIImageForRender(family: WidgetFamily?) -> UIImage? {
+        if let family {
+            let candidate = fileNameForFamily(family)
+            if let img = AppGroup.loadUIImage(fileName: candidate) {
+                return img
+            }
+        }
+
+        return AppGroup.loadUIImage(fileName: fileName)
+    }
     #endif
 }
 #endif

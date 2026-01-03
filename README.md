@@ -8,6 +8,7 @@ It runs on **iOS 26** and ships with:
 - A searchable design Library (set Default, duplicate, delete)
 - An Editor that pushes updates to widgets on Save
 - Share/export/import JSON design packages (with embedded images) with an Import Review step (preview + selective import)
+- Smart Photos for Poster images (app-only Vision prep + per-family renders; widget loads a single size-appropriate file)
 - Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
 - Weather, Calendar, and Steps setups that cache snapshots for offline widget rendering
 - A small Home Screen clock widget (ticking seconds hand via the glyphs method)
@@ -56,6 +57,11 @@ Pro features (matched sets, variables, actions) are unlocked via an in-app purch
 - `WidgetWeaver/WidgetSharePackage.swift` — export format + image embedding
 - `WidgetWeaver/WidgetImportReviewSheet.swift` — Import Review (preview + selective import)
 
+### Smart Photos (app-only)
+
+- `WidgetWeaver/SmartPhotoPipeline.swift` — app-only Vision pipeline that analyses a picked photo and writes a master + Small/Medium/Large pre-rendered crops into the App Group
+- `Shared/WidgetSpec+Image.swift` — `ImageSpec.smartPhoto` metadata (master + per-family render file names) + helpers (`fileNameForFamily`, `allReferencedFileNames`)
+- `Shared/AppGroup.swift` — App Group image IO (atomic writes) + widget-safe cache limits
 
 ### Noise Machine
 
@@ -148,6 +154,35 @@ Steps widgets render from a cached “today snapshot” stored in the App Group:
 
 ---
 
+## Featured — Smart Photos (Poster)
+
+WidgetWeaver can prepare photos in the app so widgets always show a good crop per size, without doing heavy work in the widget extension.
+
+### Current implementation (Phase 0)
+
+- The app runs a one-time “photo prep” step when importing a photo:
+  - Vision analysis in the app (faces/pets/saliency fallback)
+  - writes a **master** image plus **Small/Medium/Large** pre-rendered crops into the App Group
+- `ImageSpec` stores:
+  - `fileName` (currently set to the Medium render for backwards compatibility)
+  - optional `smartPhoto` metadata with `masterFileName` and the per-family render filenames
+- The widget extension:
+  - does **not** import Vision
+  - loads exactly **one** already-cropped image file for the current widget family (Poster background path is family-aware)
+  - uses a smaller, cost-limited in-memory image cache to reduce jetsam risk
+- Import/export and cleanup treat Smart Photo images as first-class:
+  - export embeds the master + all render files used by a design
+  - import rewrites embedded filenames consistently
+  - cleanup removes unreferenced masters/renders
+
+### Why Vision stays out of the widget
+
+Widgets have tight CPU/memory budgets and timeline generation can be terminated; all Vision work is done in the app so widget rendering stays deterministic and fast.
+
+**Note:** per-family loading is currently wired into the Poster template’s background image path. Other templates that reference `ImageSpec.fileName` will show the Medium render until they adopt family-aware loading.
+
+---
+
 ## Featured — Clock (Home Screen)
 
 WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV116`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
@@ -218,6 +253,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ Robust previews (Home Screen + Lock Screen)
 - ✅ Import Review (preview + selective import)
 - ✅ Theme extraction + more remixes
+- ✅ Smart Photos (app-only prep pipeline: Vision analysis + per-family renders stored in the App Group)
 - ✅ Noise Machine (4-layer procedural mixer + instant resume + widget controls)
 - ✅ Noise Machine diagnostics (shareable log + audio status dump + engine rebuild)
 - ✅ Pro: matched sets (S/M/L) share style tokens
@@ -233,6 +269,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 ### Widgets
 
 - ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
+- ✅ Poster templates can load per-family Smart Photo crops (no Vision in widget; single-file render per size)
 - ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
