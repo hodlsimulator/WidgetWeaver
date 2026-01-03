@@ -164,7 +164,7 @@ extension WidgetWeaverAboutView {
 
     static let patchIdeas: [String] = [
         "Change the accent colour to teal and enable the background glow.",
-        "Switch the background to Sunset and increase corner radius slightly.",
+        "Switch thech the background to Sunset and increase corner radius slightly.",
         "Turn on the accent bar and shorten the secondary text.",
         "Use Hero template and increase primary font size one step.",
         "Make the design more vibrant: add a background overlay at ~10% opacity.",
@@ -310,14 +310,15 @@ extension WidgetWeaverAboutView {
         return spec.normalised()
     }
 
-
     static func specActivity() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Activity"
-        spec.primaryText = "{{__activity_steps_today|--|number:0}} steps"
-        spec.secondaryText = "{{__activity_flights_today|--|number:0}} flights • {{__activity_distance_km|--}} • {{__activity_active_energy_kcal|--|number:0}} kcal"
+        spec.primaryText = "{{__activity_steps_today|--|number:0}}"
+        spec.secondaryText = "{{__activity_distance_km|--}} • {{__activity_flights_today|--|number:0}} flights\n{{__activity_active_energy_kcal|--|number:0}} kcal"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
+        spec.layout.secondaryLineLimitSmall = 2
+        spec.layout.secondaryLineLimit = 2
         spec.style.accent = .orange
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .plain

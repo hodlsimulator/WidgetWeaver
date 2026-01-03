@@ -223,104 +223,206 @@ struct WidgetWeaverHomeScreenStepsView: View {
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        let goal = max(0, entry.goal)
-        let steps = entry.snapshot?.steps ?? 0
-        let fraction = (goal > 0) ? min(1.0, Double(steps) / Double(goal)) : 0.0
-        let pct = Int((fraction * 100.0).rounded())
-
         ZStack {
             switch entry.access {
             case .denied, .notDetermined, .notAvailable:
                 locked
             case .unknown, .authorised:
-                content(goal: goal, steps: steps, fraction: fraction, pct: pct)
+                content
             }
         }
         .padding(12)
-        .wwWidgetContainerBackground() // ✅ fixes “Please adopt container background API”
+        .wwWidgetContainerBackground()
     }
 
     @ViewBuilder
     private var locked: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "figure.walk")
                 Text("Steps")
                     .font(.headline)
                     .bold()
                 Spacer()
             }
-            Text("Open the app to enable Steps.")
+
+            Text(entry.access == .denied ? "Denied" : "Open the app to enable Health access.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
-    private func content(goal: Int, steps: Int, fraction: Double, pct: Int) -> some View {
+    private var content: some View {
+        let snap = entry.snapshot
+        let goal = max(0, entry.goal)
+
+        let steps = snap?.steps ?? 0
+
+        let fraction: Double = {
+            guard goal > 0 else { return 0.0 }
+            return min(1.0, Double(steps) / Double(goal))
+        }()
+
+        let pct: Int? = {
+            guard goal > 0 else { return nil }
+            return Int((min(1.0, Double(steps) / Double(goal)) * 100.0).rounded())
+        }()
+
+        let stepsText = formatSteps(steps)
+        let goalText = (goal > 0) ? formatSteps(goal) : nil
+
         switch family {
         case .systemSmall:
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    StepsRing(fraction: fraction, lineWidth: 10)
-                        .frame(width: 44, height: 44)
-                    Spacer()
+                HStack(spacing: 8) {
+                    Image(systemName: "figure.walk")
+                        .font(.headline)
+                    Text("Steps")
+                        .font(.headline)
+                        .bold()
+                    Spacer(minLength: 0)
+                    if let updatedAt = snap?.fetchedAt {
+                        Text(formatTime(updatedAt))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                Text(formatSteps(steps))
-                    .font(.system(.title2, design: .rounded).weight(.bold))
-                    .monospacedDigit()
-                Text(goal > 0 ? "today • \(pct)%" : "today")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        StepsRing(fraction: fraction, lineWidth: 10)
+                        Text(pct.map { "\($0)%" } ?? "")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(width: 54, height: 54)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(stepsText)
+                            .font(.system(.title2, design: .rounded).weight(.bold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        Text(goalText.map { "Goal \($0)" } ?? "Steps today")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
                 Spacer()
             }
 
         case .systemMedium:
-            HStack(spacing: 14) {
-                StepsRing(fraction: fraction, lineWidth: 12)
-                    .frame(width: 54, height: 54)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Steps today")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "figure.walk")
+                        .font(.headline)
+                    Text("Steps")
                         .font(.headline)
                         .bold()
-                    Text(formatSteps(steps))
-                        .font(.system(.title2, design: .rounded).weight(.bold))
-                        .monospacedDigit()
-                    if goal > 0 {
-                        Text("Goal \(formatSteps(goal)) • \(pct)%")
-                            .font(.caption)
+                    Spacer(minLength: 0)
+                    if let updatedAt = snap?.fetchedAt {
+                        Text(formatTime(updatedAt))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        StepsRing(fraction: fraction, lineWidth: 12)
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
-                }
-                Spacer()
-            }
+                    .frame(width: 60, height: 60)
 
-        default: // .systemLarge
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 14) {
-                    StepsRing(fraction: fraction, lineWidth: 12)
-                        .frame(width: 56, height: 56)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Steps today")
-                            .font(.headline)
-                            .bold()
-                        Text(formatSteps(steps))
-                            .font(.system(.title, design: .rounded).weight(.bold))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(stepsText)
+                            .font(.system(.title2, design: .rounded).weight(.bold))
                             .monospacedDigit()
-                        if goal > 0 {
-                            Text("Goal \(formatSteps(goal)) • \(pct)%")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        if let goalText, let pct {
+                            Text("Goal \(goalText) • \(pct)%")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Steps today")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    Spacer()
+
+                    Spacer(minLength: 0)
                 }
 
-                if let updated = entry.snapshot?.fetchedAt {
-                    Text("Updated \(formatTime(updated))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+
+        default: // .systemLarge and others
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "figure.walk")
+                        .font(.headline)
+                    Text("Steps")
+                        .font(.headline)
+                        .bold()
+                    Spacer(minLength: 0)
+                    if let updatedAt = snap?.fetchedAt {
+                        Text(formatTime(updatedAt))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        StepsRing(fraction: fraction, lineWidth: 12)
+                        Text(pct.map { "\($0)%" } ?? "")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(width: 66, height: 66)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(stepsText)
+                            .font(.system(.title, design: .rounded).weight(.bold))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        if let goalText, let pct {
+                            Text("Goal \(goalText) • \(pct)%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Steps today")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
                 }
 
                 Spacer()
@@ -353,12 +455,11 @@ struct WidgetWeaverHomeScreenStepsWidget: Widget {
             WidgetWeaverHomeScreenStepsView(entry: entry)
         }
         .configurationDisplayName("Steps (Home)")
-        .description("Today’s steps with a clean goal ring.")
+        .description("A clean steps snapshot for today.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
 }
-
 
 // MARK: - Lock Screen Activity (multi-metric)
 
@@ -728,10 +829,10 @@ struct WidgetWeaverHomeScreenActivityView: View {
 
                 HStack(spacing: 8) {
                     MetricPill(systemImage: "map", text: distanceText)
-                    MetricPill(systemImage: "flame.fill", text: energyText)
+                    MetricPill(systemImage: "arrow.up", text: flightsText + " flights")
                 }
 
-                MetricPill(systemImage: "arrow.up", text: flightsText + " flights")
+                MetricPill(systemImage: "flame.fill", text: energyText)
 
                 if entry.access == .partial {
                     Text("Some metrics disabled")
@@ -744,61 +845,66 @@ struct WidgetWeaverHomeScreenActivityView: View {
             }
 
         case .systemMedium:
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 10) {
-                    headerRow(updatedAt: snap?.fetchedAt)
+            VStack(alignment: .leading, spacing: 10) {
+                headerRow(updatedAt: snap?.fetchedAt)
+                    .padding(.top, 2)
 
-                    HStack(alignment: .center, spacing: 12) {
-                        ZStack {
-                            StepsRing(fraction: fraction, lineWidth: 12)
-                            Image(systemName: "figure.walk")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: 60, height: 60)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(stepsText)
-                                .font(.system(.title2, design: .rounded).weight(.bold))
-                                .monospacedDigit()
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-
-                            if let goalText, let pct {
-                                Text("Goal \(goalText) • \(pct)%")
-                                    .font(.caption)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .center, spacing: 12) {
+                            ZStack {
+                                StepsRing(fraction: fraction, lineWidth: 12)
+                                Image(systemName: "figure.walk")
+                                    .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            } else {
-                                Text("Steps today")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
                             }
+                            .frame(width: 60, height: 60)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(stepsText)
+                                    .font(.system(.title2, design: .rounded).weight(.bold))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+
+                                if let goalText, let pct {
+                                    Text("Goal \(goalText) • \(pct)%")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                } else {
+                                    Text("Steps today")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.75)
+                                }
+                            }
+
+                            Spacer(minLength: 0)
                         }
 
-                        Spacer(minLength: 0)
+                        MetricPill(systemImage: "map", text: distanceText)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if entry.access == .partial {
-                        Text("Some metrics are disabled in Health.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    VStack(spacing: 10) {
+                        MetricRow(systemImage: "flame.fill", title: "Active energy", value: energyText)
+                        MetricRow(systemImage: "arrow.up", title: "Flights climbed", value: flightsText)
                     }
-
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(spacing: 10) {
-                    MetricRow(systemImage: "map", title: "Distance", value: distanceText)
-                    MetricRow(systemImage: "flame.fill", title: "Active energy", value: energyText)
-                    MetricRow(systemImage: "arrow.up", title: "Flights climbed", value: flightsText)
+                if entry.access == .partial {
+                    Text("Some metrics are disabled in Health.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 0)
             }
-
         default: // .systemLarge and others
             VStack(alignment: .leading, spacing: 12) {
                 headerRow(updatedAt: snap?.fetchedAt)
