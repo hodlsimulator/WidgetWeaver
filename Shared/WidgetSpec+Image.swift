@@ -65,8 +65,8 @@ public struct NormalisedRect: Codable, Hashable, Sendable {
     public func normalised() -> NormalisedRect {
         func clamp01(_ v: Double) -> Double { min(1.0, max(0.0, v)) }
 
-        var nx = clamp01(x)
-        var ny = clamp01(y)
+        let nx = clamp01(x)
+        let ny = clamp01(y)
         var nw = max(0.0, clamp01(width))
         var nh = max(0.0, clamp01(height))
 

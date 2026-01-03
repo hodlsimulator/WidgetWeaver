@@ -9,6 +9,7 @@ import Foundation
 import ImageIO
 import UIKit
 import Vision
+import WidgetKit
 
 /// Pixel targets for the per-family widget renders.
 ///
@@ -66,29 +67,31 @@ struct SmartPhotoPipeline {
             throw SmartPhotoPipelineError.decodeFailed
         }
 
-        let analysisSize = CGSize(width: analysisImage.size.width * analysisImage.scale, height: analysisImage.size.height * analysisImage.scale)
+        let analysisCGWidth = analysisImage.cgImage?.width ?? Int(analysisImage.size.width * analysisImage.scale)
+        let analysisCGHeight = analysisImage.cgImage?.height ?? Int(analysisImage.size.height * analysisImage.scale)
+        let analysisSize = CGSize(width: analysisCGWidth, height: analysisCGHeight)
 
         let detection = SmartPhotoSubjectDetector.detectSubjects(in: analysisImage)
 
         let preparedAt = Date()
 
         // Crop rects are computed in normalised space (0...1) so they can be applied to master.
-        let smallVariant = SmartPhotoVariantBuilder.buildVariant(
-            family: .systemSmall,
+        let smallPlan = SmartPhotoVariantBuilder.buildVariant(
+            family: WidgetFamily.systemSmall,
             targetPixels: renderTargets.small,
             detection: detection,
             analysisSize: analysisSize
         )
 
-        let mediumVariant = SmartPhotoVariantBuilder.buildVariant(
-            family: .systemMedium,
+        let mediumPlan = SmartPhotoVariantBuilder.buildVariant(
+            family: WidgetFamily.systemMedium,
             targetPixels: renderTargets.medium,
             detection: detection,
             analysisSize: analysisSize
         )
 
-        let largeVariant = SmartPhotoVariantBuilder.buildVariant(
-            family: .systemLarge,
+        let largePlan = SmartPhotoVariantBuilder.buildVariant(
+            family: WidgetFamily.systemLarge,
             targetPixels: renderTargets.large,
             detection: detection,
             analysisSize: analysisSize
@@ -105,9 +108,9 @@ struct SmartPhotoPipeline {
         try AppGroup.writeImageData(masterData, fileName: masterFileName)
 
         // Renders: keep widget-safe.
-        let renderedSmall = SmartPhotoRenderer.render(master: masterImage, cropRect: smallVariant.cropRect, targetPixels: renderTargets.small)
-        let renderedMedium = SmartPhotoRenderer.render(master: masterImage, cropRect: mediumVariant.cropRect, targetPixels: renderTargets.medium)
-        let renderedLarge = SmartPhotoRenderer.render(master: masterImage, cropRect: largeVariant.cropRect, targetPixels: renderTargets.large)
+        let renderedSmall = SmartPhotoRenderer.render(master: masterImage, cropRect: smallPlan.cropRect, targetPixels: renderTargets.small)
+        let renderedMedium = SmartPhotoRenderer.render(master: masterImage, cropRect: mediumPlan.cropRect, targetPixels: renderTargets.medium)
+        let renderedLarge = SmartPhotoRenderer.render(master: masterImage, cropRect: largePlan.cropRect, targetPixels: renderTargets.large)
 
         let smallData = try SmartPhotoJPEG.encode(image: renderedSmall, startQuality: 0.85, maxBytes: 450_000)
         let mediumData = try SmartPhotoJPEG.encode(image: renderedMedium, startQuality: 0.85, maxBytes: 650_000)
@@ -119,19 +122,19 @@ struct SmartPhotoPipeline {
 
         let smartPhoto = SmartPhotoSpec(
             masterFileName: masterFileName,
-            small: SmartPhotoVariant(
+            small: SmartPhotoVariantSpec(
                 renderFileName: smallFileName,
-                cropRect: smallVariant.cropRect,
+                cropRect: smallPlan.cropRect,
                 pixelSize: renderTargets.small
             ),
-            medium: SmartPhotoVariant(
+            medium: SmartPhotoVariantSpec(
                 renderFileName: mediumFileName,
-                cropRect: mediumVariant.cropRect,
+                cropRect: mediumPlan.cropRect,
                 pixelSize: renderTargets.medium
             ),
-            large: SmartPhotoVariant(
+            large: SmartPhotoVariantSpec(
                 renderFileName: largeFileName,
-                cropRect: largeVariant.cropRect,
+                cropRect: largePlan.cropRect,
                 pixelSize: renderTargets.large
             ),
             algorithmVersion: algorithmVersion,
@@ -229,7 +232,11 @@ private enum SmartPhotoSubjectDetector {
             return []
         }
 
-        return out.compactMap { $0.intersection(CGRect(origin: .zero, size: imageSize)).isNull ? nil : $0.intersection(CGRect(origin: .zero, size: imageSize)) }
+        let bounds = CGRect(origin: .zero, size: imageSize)
+        return out.compactMap {
+            let r = $0.intersection(bounds)
+            return (r.isNull || r.isEmpty) ? nil : r
+        }
     }
 
     private static func detectAnimals(in cgImage: CGImage, imageSize: CGSize) -> [CGRect] {
@@ -248,7 +255,11 @@ private enum SmartPhotoSubjectDetector {
             return []
         }
 
-        return out.compactMap { $0.intersection(CGRect(origin: .zero, size: imageSize)).isNull ? nil : $0.intersection(CGRect(origin: .zero, size: imageSize)) }
+        let bounds = CGRect(origin: .zero, size: imageSize)
+        return out.compactMap {
+            let r = $0.intersection(bounds)
+            return (r.isNull || r.isEmpty) ? nil : r
+        }
     }
 
     private static func detectSaliency(in cgImage: CGImage, imageSize: CGSize) -> [CGRect] {
@@ -256,16 +267,24 @@ private enum SmartPhotoSubjectDetector {
 
         var boxes: [CGRect] = []
 
-        // Objectness-based saliency tends to give useful bounding boxes.
         let objReq = VNGenerateObjectnessBasedSaliencyImageRequest { request, _ in
-            guard let results = request.results as? [VNSaliencyImageObservation], let obs = results.first else { return }
-            boxes.append(contentsOf: obs.salientObjects.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) })
+            guard let results = request.results as? [VNSaliencyImageObservation],
+                  let obs = results.first
+            else { return }
+
+            if let salient = obs.salientObjects {
+                boxes.append(contentsOf: salient.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) })
+            }
         }
 
-        // Attention-based saliency can help when objectness is empty.
         let attReq = VNGenerateAttentionBasedSaliencyImageRequest { request, _ in
-            guard let results = request.results as? [VNSaliencyImageObservation], let obs = results.first else { return }
-            boxes.append(contentsOf: obs.salientObjects.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) })
+            guard let results = request.results as? [VNSaliencyImageObservation],
+                  let obs = results.first
+            else { return }
+
+            if let salient = obs.salientObjects {
+                boxes.append(contentsOf: salient.map { toPixelTopLeftRect($0.boundingBox, imageSize: imageSize) })
+            }
         }
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -275,8 +294,11 @@ private enum SmartPhotoSubjectDetector {
             return []
         }
 
-        let clamped = boxes.compactMap { $0.intersection(CGRect(origin: .zero, size: imageSize)).isNull ? nil : $0.intersection(CGRect(origin: .zero, size: imageSize)) }
-        return clamped
+        let bounds = CGRect(origin: .zero, size: imageSize)
+        return boxes.compactMap {
+            let r = $0.intersection(bounds)
+            return (r.isNull || r.isEmpty) ? nil : r
+        }
     }
 
     /// Vision bounding boxes are normalised with origin at bottom-left.
@@ -392,14 +414,12 @@ private enum SmartPhotoVariantBuilder {
             selected = Array(ranked.prefix(1))
         }
 
-        // Expand boxes (headroom + breathing room) and union them.
         let expanded = selected.map { expandSubjectBox($0, kind: detection.kind, family: family, imageSize: imageSize).intersection(bounds) }
         var focus = expanded.first ?? centredCropRect(imageSize: imageSize, targetAspect: targetAspect)
         for r in expanded.dropFirst() {
             focus = focus.union(r)
         }
 
-        // Add gentle padding around the union.
         let padScale: CGFloat = {
             switch family {
             case .systemSmall: return 1.20
@@ -410,7 +430,6 @@ private enum SmartPhotoVariantBuilder {
         }()
         focus = scaleRect(focus, factor: padScale).intersection(bounds)
 
-        // Fit an aspect-ratio crop around the focus rect.
         var cropW = focus.width
         var cropH = focus.height
         let focusAspect = max(0.0001, cropW) / max(0.0001, cropH)
@@ -421,7 +440,6 @@ private enum SmartPhotoVariantBuilder {
             cropW = cropH * targetAspect
         }
 
-        // Slight extra context.
         let extraScale: CGFloat = {
             switch family {
             case .systemSmall: return 1.06
@@ -433,7 +451,6 @@ private enum SmartPhotoVariantBuilder {
         cropW *= extraScale
         cropH *= extraScale
 
-        // Avoid extreme zoom (especially on panoramas / tiny detections).
         let minDimFrac: CGFloat = {
             switch family {
             case .systemSmall: return 0.38
@@ -454,7 +471,6 @@ private enum SmartPhotoVariantBuilder {
             cropW = cropH * targetAspect
         }
 
-        // Clamp to image bounds.
         if cropW > imageSize.width {
             cropW = imageSize.width
             cropH = cropW / targetAspect
@@ -464,7 +480,6 @@ private enum SmartPhotoVariantBuilder {
             cropW = cropH * targetAspect
         }
 
-        // Position crop around focus centre (with upward bias for faces).
         var centre = CGPoint(x: focus.midX, y: focus.midY)
         if detection.kind == .face {
             let biasFactor: CGFloat = {
@@ -492,7 +507,6 @@ private enum SmartPhotoVariantBuilder {
 
         switch kind {
         case .face:
-            // Faces: add headroom (top) and a touch more side padding.
             let side = r.width * 0.20
             let top = r.height * 0.32
             let bottom = r.height * 0.14
@@ -501,13 +515,11 @@ private enum SmartPhotoVariantBuilder {
             r.size.height += top + bottom
 
         case .animal:
-            // Animals: padding all around.
             let dx = r.width * 0.18
             let dy = r.height * 0.18
             r = r.insetBy(dx: -dx, dy: -dy)
 
         case .saliency:
-            // Saliency boxes can be noisy; keep padding modest.
             let dx = r.width * 0.12
             let dy = r.height * 0.12
             r = r.insetBy(dx: -dx, dy: -dy)
@@ -516,7 +528,6 @@ private enum SmartPhotoVariantBuilder {
             break
         }
 
-        // Additional breathing room for rounded corners on small widgets.
         if family == .systemSmall {
             r = r.insetBy(dx: -r.width * 0.06, dy: -r.height * 0.06)
         }
@@ -578,7 +589,6 @@ private enum SmartPhotoJPEG {
             throw SmartPhotoPipelineError.encodeFailed
         }
 
-        // If too large, iteratively reduce quality (small number of steps).
         var steps = 0
         while data.count > maxBytes && q > minQ && steps < 6 {
             q = max(minQ, q - 0.05)
