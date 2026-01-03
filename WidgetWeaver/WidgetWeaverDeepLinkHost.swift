@@ -30,6 +30,7 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
     private let content: Content
 
     @State private var activeDeepLink: WidgetWeaverDeepLink?
+    @StateObject private var noiseMachinePresentationTracker = NoiseMachinePresentationTracker()
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -37,8 +38,17 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
 
     var body: some View {
         content
+            .environment(\.noiseMachinePresentationTracker, noiseMachinePresentationTracker)
             .onOpenURL { url in
                 guard let link = WidgetWeaverDeepLink.from(url: url) else { return }
+
+                switch link {
+                case .noiseMachine:
+                    if noiseMachinePresentationTracker.isVisible {
+                        return
+                    }
+                }
+
                 activeDeepLink = link
             }
             .sheet(item: $activeDeepLink) { link in

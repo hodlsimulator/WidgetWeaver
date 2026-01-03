@@ -13,6 +13,8 @@ struct NoiseMachineView: View {
     @StateObject private var logModel = NoiseMachineDebugLogModel()
     @State private var expandedEQ: Set<Int> = []
 
+    @Environment(\.noiseMachinePresentationTracker) private var presentationTracker
+
     var body: some View {
         List {
             masterSection
@@ -24,10 +26,12 @@ struct NoiseMachineView: View {
         .navigationTitle("Noise Machine")
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
+            presentationTracker?.setVisible(true)
             logModel.start()
             model.onAppear()
         }
         .onDisappear {
+            presentationTracker?.setVisible(false)
             logModel.stop()
         }
     }
@@ -386,5 +390,26 @@ private final class NoiseMachineDebugLogModel: ObservableObject {
             return "\(date) [\(entry.level.rawValue.uppercased())] [\(entry.origin)] \(entry.message)"
         }
         return "\(date) [\(entry.level.rawValue.uppercased())] \(entry.message)"
+    }
+}
+
+final class NoiseMachinePresentationTracker: ObservableObject {
+    @Published private(set) var isVisible: Bool = false
+
+    func setVisible(_ visible: Bool) {
+        if isVisible != visible {
+            isVisible = visible
+        }
+    }
+}
+
+private struct NoiseMachinePresentationTrackerKey: EnvironmentKey {
+    static var defaultValue: NoiseMachinePresentationTracker? { nil }
+}
+
+extension EnvironmentValues {
+    var noiseMachinePresentationTracker: NoiseMachinePresentationTracker? {
+        get { self[NoiseMachinePresentationTrackerKey.self] }
+        set { self[NoiseMachinePresentationTrackerKey.self] = newValue }
     }
 }
