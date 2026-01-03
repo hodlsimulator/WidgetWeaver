@@ -772,7 +772,6 @@ private final class NoiseSlotNode {
     func stop() {
         playerNode.stop()
         hasScheduled = false
-        scheduleIfNeeded()
 
         if lastEnabled {
             slotMixer.outputVolume = lastVolume
