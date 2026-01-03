@@ -69,39 +69,15 @@ enum WidgetWeaverImportReviewLogic {
     }
 
     private static func specHasAnyImage(_ spec: WidgetSpec) -> Bool {
-        func hasFileName(_ image: ImageSpec?) -> Bool {
-            guard let image else { return false }
-            return !image.fileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-
-        if hasFileName(spec.image) { return true }
-
-        if let matched = spec.matchedSet {
-            if hasFileName(matched.small?.image) { return true }
-            if hasFileName(matched.medium?.image) { return true }
-            if hasFileName(matched.large?.image) { return true }
-        }
-
-        return false
+        !spec.normalised().allReferencedImageFileNames().isEmpty
     }
 
     private static func referencedImageFileNames(in specs: [WidgetSpec]) -> Set<String> {
         var out = Set<String>()
 
-        func add(_ image: ImageSpec?) {
-            guard let image else { return }
-            let trimmed = image.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
-            out.insert(trimmed)
-        }
-
         for spec in specs {
-            add(spec.image)
-
-            if let matched = spec.matchedSet {
-                add(matched.small?.image)
-                add(matched.medium?.image)
-                add(matched.large?.image)
+            for name in spec.normalised().allReferencedImageFileNames() {
+                out.insert(name)
             }
         }
 

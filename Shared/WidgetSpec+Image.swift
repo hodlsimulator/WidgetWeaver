@@ -304,6 +304,36 @@ public struct ImageSpec: Hashable, Codable, Sendable {
     }
 }
 
+
+// MARK: - Referenced image file names (spec-level)
+
+public extension WidgetSpec {
+    /// Returns a de-duped list of all image file names referenced by this design, including:
+    /// - base `image.fileName`
+    /// - Smart Photo master + per-family renders (when present)
+    /// - matched-set variants (Small / Medium / Large)
+    func allReferencedImageFileNames() -> [String] {
+        var set = Set<String>()
+
+        func insert(_ image: ImageSpec?) {
+            guard let image else { return }
+            for name in image.allReferencedFileNames() {
+                set.insert(name)
+            }
+        }
+
+        insert(image)
+
+        if let matchedSet {
+            insert(matchedSet.small?.image)
+            insert(matchedSet.medium?.image)
+            insert(matchedSet.large?.image)
+        }
+
+        return Array(set).sorted()
+    }
+}
+
 #if canImport(UIKit)
 public extension ImageSpec {
     func loadUIImageFromAppGroup() -> UIImage? {

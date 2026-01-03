@@ -58,260 +58,39 @@ extension ContentView {
                             Label("Apply to all sizes", systemImage: "square.on.square")
                         }
                     }
-
-                    Divider()
-
-                    Button {
-                        activeSheet = .steps
-                    } label: {
-                        Label("Open Steps settings", systemImage: "heart")
-                    }
                 } label: {
-                    Label("Steps", systemImage: "figure.walk")
+                    Label("Steps", systemImage: "figure.walk.circle.fill")
                 }
-            }
-            .controlSize(.small)
-
-            if currentTemplate == .weather {
-                Button {
-                    activeSheet = .weather
-                } label: {
-                    Label("Weather settings", systemImage: "cloud.rain")
-                }
-
-                Text("Weather template renders from cached Weather snapshots.\nUse Weather settings to pick a location and force an update.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if currentTemplate == .nextUpCalendar {
-                Button {
-                    Task {
-                        let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
-                        if granted {
-                            _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
-                            await MainActor.run { saveStatusMessage = "Calendar refreshed.\nWidgets will update on next reload." }
-                        } else {
-                            await MainActor.run { saveStatusMessage = "Calendar access is off.\nEnable access to use Next Up." }
-                        }
+                if canReadCalendar {
+                    Label("Calendar access granted", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        activeSheet = .calendarPermission
+                    } label: {
+                        Label("Enable Calendar access", systemImage: "calendar.badge.exclamationmark")
                     }
-                } label: {
-                    Label(
-                        canReadCalendar ? "Refresh Calendar cache" : "Enable Calendar access",
-                        systemImage: canReadCalendar ? "arrow.clockwise" : "checkmark.circle.fill"
-                    )
                 }
-
-                Text("Next Up reads events on-device via EventKit and caches a small snapshot for widgets.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
-            Button {
-                selectedTab = .explore
-            } label: {
-                Label("Browse templates (Explore)", systemImage: "sparkles")
-            }
         } header: {
             sectionHeader("Content")
         } footer: {
-            Text("Template controls the overall renderer.\nUse Explore for curated starters (Weather / Next Up / Steps) and then customise here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Existing sections (unchanged)
-    var designsSection: some View {
-        Section {
-            if savedSpecs.isEmpty {
-                Text("No saved designs yet.")
+            switch currentTemplate {
+            case .nextUpCalendar:
+                Text("Calendar widgets show the next event from the selected calendar(s).")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            } else {
-                Picker("Design", selection: $selectedSpecID) {
-                    ForEach(savedSpecs) { spec in
-                        Text(specDisplayName(spec)).tag(spec.id)
-                    }
-                }
-                .pickerStyle(.menu)
-            }
-
-            if let defaultName {
-                LabeledContent("App default", value: defaultName)
-            }
-
-            if !proManager.isProUnlocked {
-                LabeledContent("Free tier designs", value: "\(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
-            }
-
-            if selectedSpecID == defaultSpecID {
-                Text("This design is the app default.\nWidgets set to \"Default (App)\" will show it.")
-                    .font(.caption)
+            case .weather:
+                Text("Weather widgets use the device’s saved location. You can refresh it from the Weather screen.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            } else {
-                Text("This design is not the app default.\nUse \"Save & Make Default\" to update widgets set to \"Default (App)\".")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            default:
+                EmptyView()
             }
-
-            ControlGroup {
-                Button { createNewDesign() } label: { Label("New", systemImage: "plus") }
-                Button { duplicateCurrentDesign() } label: { Label("Duplicate", systemImage: "doc.on.doc") }
-                    .disabled(savedSpecs.isEmpty)
-                Button(role: .destructive) { showDeleteConfirmation = true } label: { Label("Delete", systemImage: "trash") }
-                    .disabled(savedSpecs.count <= 1)
-            }
-            .controlSize(.small)
-        } header: {
-            sectionHeader("Design")
-        } footer: {
-            Text("Each widget instance can be configured to follow \"Default (App)\" or a specific saved design (long-press the widget → Edit Widget).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var proSection: some View {
-        Section {
-            if proManager.isProUnlocked {
-                Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                Button { activeSheet = .pro } label: { Label("Manage Pro", systemImage: "crown.fill") }
-            } else {
-                Label("Free tier", systemImage: "sparkles")
-                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, and variables.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-                if !proManager.statusMessage.isEmpty {
-                    Text(proManager.statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            sectionHeader("Pro")
-        }
-    }
-
-    var variablesManagerSection: some View {
-        Section {
-            if proManager.isProUnlocked {
-                let vars = WidgetWeaverVariableStore.shared.loadAll()
-                LabeledContent("Saved variables", value: "\(vars.count)")
-                if vars.isEmpty {
-                    Text("No variables yet.\nAdd some here, or update via Shortcuts.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    let preview = vars.keys.sorted().prefix(3)
-                    ForEach(Array(preview), id: \.self) { k in
-                        let v = vars[k] ?? ""
-                        LabeledContent(k, value: v.isEmpty ? " " : v)
-                    }
-                }
-
-                Button { activeSheet = .variables } label: { Label("Manage Variables", systemImage: "slider.horizontal.3") }
-            } else {
-                Text("Variables are a Pro feature.\nUse {{key}} templates in text fields, then update values via Shortcuts or in-app once Pro is unlocked.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-            }
-        } header: {
-            sectionHeader("Variables")
-        } footer: {
-            Text("Variables render at widget render time.\nTemplate syntax: {{key}} or {{key|fallback}}.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var sharingSection: some View {
-        Section {
-            if importInProgress {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Importing…").foregroundStyle(.secondary)
-                }
-            }
-
-            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("WidgetWeaver Design")) {
-                Label("Share This Design", systemImage: "square.and.arrow.up")
-            }
-            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("WidgetWeaver Designs")) {
-                Label("Share All Designs", systemImage: "square.and.arrow.up.on.square")
-            }
-            Button { showImportPicker = true } label: { Label("Import designs…", systemImage: "square.and.arrow.down") }
-            Button(role: .destructive) { showImageCleanupConfirmation = true } label: { Label("Clean Up Unused Images", systemImage: "trash.slash") }
-        } header: {
-            sectionHeader("Sharing")
-        } footer: {
-            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.\n\"Clean Up\" removes image files not referenced by any saved design.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var matchedSetSection: some View {
-        Section {
-            Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
-                .disabled(!proManager.isProUnlocked)
-
-            if !proManager.isProUnlocked {
-                Text("Matched sets are a Pro feature.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-            } else if matchedSetEnabled {
-                Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { copyCurrentSizeToAllSizes() } label: { Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square") }
-            } else {
-                Text("When enabled, Small and Large can differ while sharing the same style tokens.\nMedium is treated as the base.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            sectionHeader("Matched set")
-        }
-    }
-
-    var widgetWorkflowSection: some View {
-        Section {
-            Button { saveSelected(makeDefault: true) } label: { Label("Save & Make Default", systemImage: "checkmark.circle.fill") }
-            Button { saveSelected(makeDefault: false) } label: { Label("Save (Keep Default)", systemImage: "tray.and.arrow.down") }
-
-            if selectedSpecID != defaultSpecID {
-                Button {
-                    store.setDefault(id: selectedSpecID)
-                    defaultSpecID = store.defaultSpecID()
-                    lastWidgetRefreshAt = Date()
-                    saveStatusMessage = "Made default.\nWidgets refreshed."
-                } label: {
-                    Label("Make This Design Default", systemImage: "star")
-                }
-            }
-
-            Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
-
-            if !saveStatusMessage.isEmpty {
-                Text(saveStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let lastWidgetRefreshAt {
-                Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .standard))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            sectionHeader("Widgets")
-        } footer: {
-            Text("If a widget doesn’t change, check which Design it is using (Edit Widget).\nWidgets set to \"Default (App)\" always follow the app default design.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -379,6 +158,28 @@ extension ContentView {
         let currentImageFileName = currentFamilyDraft().imageFileName
         let hasImage = !currentImageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
+        let smart = currentFamilyDraft().imageSmartPhoto
+
+        let previewFileName: String = {
+            guard let smart else { return currentImageFileName }
+
+            let candidate: String?
+            switch editingFamily {
+            case .small:
+                candidate = smart.small?.renderFileName
+            case .medium:
+                candidate = smart.medium?.renderFileName
+            case .large:
+                candidate = smart.large?.renderFileName
+            }
+
+            let trimmed = (candidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+
+            return currentImageFileName
+        }()
         return Section {
             PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
                 Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
@@ -387,12 +188,29 @@ extension ContentView {
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
 
             if hasImage {
-                if let uiImage = AppGroup.loadUIImage(fileName: currentImageFileName) {
+                if let uiImage = AppGroup.loadUIImage(fileName: previewFileName) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    if let smart = smart {
+                        DisclosureGroup("Smart Photo details") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Previewing: \(previewFileName)")
+                                Text("Master: \(smart.masterFileName)")
+                                Text("Small: \(smart.small?.renderFileName ?? "—")")
+                                Text("Medium: \(smart.medium?.renderFileName ?? "—")")
+                                Text("Large: \(smart.large?.renderFileName ?? "—")")
+                            }
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .padding(.top, 4)
+                        }
+                    }
+
                 } else {
                     Text("Selected image file not found in App Group.")
                         .foregroundStyle(.secondary)
@@ -519,313 +337,167 @@ extension ContentView {
                 }
             }
 
-            Picker("Background", selection: $styleDraft.background) {
-                ForEach(BackgroundToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
             Picker("Accent", selection: $styleDraft.accent) {
-                ForEach(AccentToken.allCases) { token in
+                ForEach(AccentColorToken.allCases) { token in
                     Text(token.displayName).tag(token)
                 }
             }
 
-            Button { randomiseStyleDraft() } label: { Label("Randomise Style (Draft)", systemImage: "shuffle") }
-
-            if matchedSetEnabled {
-                Text("Style is shared across Small/Medium/Large.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Picker("Background", selection: $styleDraft.background) {
+                ForEach(BackgroundStyleToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
             }
+
+            Picker("Text style: Name", selection: $styleDraft.nameTextStyle) {
+                ForEach(TextStyleToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Picker("Text style: Primary", selection: $styleDraft.primaryTextStyle) {
+                ForEach(TextStyleToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Picker("Text style: Secondary", selection: $styleDraft.secondaryTextStyle) {
+                ForEach(TextStyleToken.allCases) { token in
+                    Text(token.displayName).tag(token)
+                }
+            }
+
+            Toggle("Show icon shadow", isOn: $styleDraft.showSymbolShadow)
+            Toggle("Show text shadow", isOn: $styleDraft.showTextShadow)
+
         } header: {
             sectionHeader("Style")
         }
     }
 
-    var typographySection: some View {
+    var actionBarSection: some View {
         Section {
-            Picker("Name text style", selection: $styleDraft.nameTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+            Toggle("Show action bar", isOn: $actionBarDraft.enabled)
+
+            if actionBarDraft.enabled {
+                Picker("Style", selection: $actionBarDraft.style) {
+                    ForEach(ActionBarStyleToken.allCases) { token in
+                        Text(token.displayName).tag(token)
+                    }
+                }
+
+                Picker("Accent", selection: $actionBarDraft.accent) {
+                    ForEach(AccentColorToken.allCases) { token in
+                        Text(token.displayName).tag(token)
+                    }
+                }
+
+                Stepper(
+                    "Items: \(actionBarDraft.items.count)",
+                    value: Binding(
+                        get: { actionBarDraft.items.count },
+                        set: { newCount in
+                            actionBarDraft.items = ActionBarDraft.adjustedItems(actionBarDraft.items, targetCount: newCount)
+                        }
+                    ),
+                    in: 1...6
+                )
+
+                ForEach(Array(actionBarDraft.items.enumerated()), id: \.offset) { idx, _ in
+                    NavigationLink {
+                        ActionBarItemEditor(
+                            item: $actionBarDraft.items[idx],
+                            index: idx,
+                            showInternalTools: showInternalTools
+                        )
+                    } label: {
+                        HStack {
+                            Text("Item \(idx + 1)")
+                            Spacer()
+                            Text(actionBarDraft.items[idx].kind.displayName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
-            Picker("Primary text style", selection: $styleDraft.primaryTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
+        } header: {
+            sectionHeader("Action Bar")
+        }
+    }
 
-            Picker("Secondary text style", selection: $styleDraft.secondaryTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
+    var matchedSetSection: some View {
+        Section {
+            Toggle("Matched set (Small / Medium / Large)", isOn: matchedSetBinding)
 
             if matchedSetEnabled {
-                Text("Typography is shared across Small/Medium/Large.")
-                    .font(.caption)
+                Picker("Editing", selection: $previewFamily) {
+                    Text("Small").tag(WidgetFamily.systemSmall)
+                    Text("Medium").tag(WidgetFamily.systemMedium)
+                    Text("Large").tag(WidgetFamily.systemLarge)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+
+                Button {
+                    copyCurrentSizeToAllSizes()
+                } label: {
+                    Label("Copy \(editingFamilyLabel) to all sizes (draft)", systemImage: "square.on.square")
+                }
+            } else {
+                Text("When enabled, Small/Medium/Large can have different text, images, and layouts.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         } header: {
-            sectionHeader("Typography")
+            sectionHeader("Matched Set")
+        } footer: {
+            if matchedSetEnabled {
+                Text("Matched sets are stored inside the design and resolved by widget size at render time.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    var actionsSection: some View {
+    var proUpsellSection: some View {
         Section {
-            if !proManager.isProUnlocked {
-                Toggle("Interactive buttons (Pro)", isOn: .constant(false))
-                    .disabled(true)
-
-                Text("Interactive widget buttons are a Pro feature.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-            } else {
-                Toggle("Interactive buttons", isOn: $actionBarDraft.isEnabled)
-
-                if actionBarDraft.isEnabled {
-                    Picker("Button style", selection: $actionBarDraft.style) {
-                        ForEach(WidgetActionButtonStyleToken.allCases) { token in
-                            Text(token.displayName).tag(token)
-                        }
-                    }
-
-                    HStack {
-                        Menu {
-                            ForEach(ActionBarPreset.allCases) { preset in
-                                Button {
-                                    withAnimation {
-                                        actionBarDraft.replace(with: preset)
-                                    }
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(preset.title)
-                                        Text(preset.description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label("Presets", systemImage: "sparkles")
-                        }
-
-                        Spacer()
-
-                        Button {
-                            if actionBarDraft.actions.count < WidgetActionBarSpec.maxActions {
-                                actionBarDraft.actions.append(.defaultIncrement())
-                            }
-                        } label: {
-                            Label("Add button", systemImage: "plus")
-                        }
-                        .disabled(actionBarDraft.actions.count >= WidgetActionBarSpec.maxActions)
-                    }
-                    .controlSize(.small)
-
-                    if actionBarDraft.actions.isEmpty {
-                        Button { actionBarDraft.actions = [ .defaultIncrement(), .defaultDone() ] } label: {
-                            Label("Add starter buttons", systemImage: "sparkles")
-                        }
-                    } else {
-                        ForEach($actionBarDraft.actions) { $action in
-                            let idx = actionBarDraft.actions.firstIndex(where: { $0.id == action.id })
-                            let canMoveUp = (idx ?? 0) > 0
-                            let canMoveDown = idx != nil && idx! < (actionBarDraft.actions.count - 1)
-                            let keyValidation = action.validateVariableKey()
-
-                            DisclosureGroup {
-                                TextField("Button title", text: $action.title)
-                                    .textInputAutocapitalization(.words)
-
-                                TextField("SF Symbol (optional)", text: $action.systemImage)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled(true)
-
-                                Picker("Action", selection: $action.kind) {
-                                    ForEach(WidgetActionKindToken.allCases) { token in
-                                        Text(token.displayName).tag(token)
-                                    }
-                                }
-
-                                TextField("Variable key", text: $action.variableKey)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled(true)
-
-                                if case .warning(let message) = keyValidation {
-                                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                                        .font(.caption2)
-                                        .foregroundStyle(.red)
-                                }
-
-                                switch action.kind {
-                                case .incrementVariable:
-                                    Stepper(
-                                        "Increment amount: \(action.incrementAmount)",
-                                        value: $action.incrementAmount,
-                                        in: -99...99
-                                    )
-                                case .setVariableToNow:
-                                    Picker("Now format", selection: $action.nowFormat) {
-                                        ForEach(WidgetNowFormatToken.allCases) { token in
-                                            Text(token.displayName).tag(token)
-                                        }
-                                    }
-                                }
-
-                                ControlGroup {
-                                    Button {
-                                        withAnimation { actionBarDraft.moveUp(id: action.id) }
-                                    } label: {
-                                        Label("Move Up", systemImage: "arrow.up")
-                                    }
-                                    .disabled(!canMoveUp)
-
-                                    Button {
-                                        withAnimation { actionBarDraft.moveDown(id: action.id) }
-                                    } label: {
-                                        Label("Move Down", systemImage: "arrow.down")
-                                    }
-                                    .disabled(!canMoveDown)
-                                }
-                                .controlSize(.small)
-
-                                Button(role: .destructive) {
-                                    actionBarDraft.actions.removeAll { $0.id == action.id }
-                                } label: {
-                                    Label("Remove button", systemImage: "trash")
-                                }
-                            } label: {
-                                HStack(alignment: .center, spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(No label)" : action.title)
-                                                .lineLimit(1)
-
-                                            if case .warning = keyValidation {
-                                                Image(systemName: "exclamationmark.triangle.fill")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.red)
-                                                    .accessibilityHidden(true)
-                                            }
-                                        }
-
-                                        Text(action.previewString)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-
-                                    Spacer(minLength: 8)
-
-                                    VStack(spacing: 6) {
-                                        Button {
-                                            withAnimation { actionBarDraft.moveUp(id: action.id) }
-                                        } label: {
-                                            Image(systemName: "arrow.up")
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .disabled(!canMoveUp)
-                                        .accessibilityLabel("Move up")
-
-                                        Button {
-                                            withAnimation { actionBarDraft.moveDown(id: action.id) }
-                                        } label: {
-                                            Image(systemName: "arrow.down")
-                                        }
-                                        .buttonStyle(.borderless)
-                                        .disabled(!canMoveDown)
-                                        .accessibilityLabel("Move down")
-                                    }
-                                }
-                            }
-                        }
-                        .onMove { fromOffsets, toOffset in
-                            withAnimation {
-                                actionBarDraft.move(fromOffsets: fromOffsets, toOffset: toOffset)
-                            }
-                        }
-                        .environment(\.editMode, .constant(.active))
-                    }
-
-                    Text("Buttons render on iOS 17+ as interactive widgets.\nThey update variables stored in the App Group.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            Button {
+                activeSheet = .pro
+            } label: {
+                Label("Unlock Pro", systemImage: "crown.fill")
             }
-        } header: {
-            sectionHeader("Actions")
+        } footer: {
+            Text("Pro unlocks variables, matched sets, and unlimited saved designs.")
         }
     }
 
-    var aiSection: some View {
+    var internalToolsSection: some View {
         Section {
-            Text(WidgetSpecAIService.availabilityMessage())
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Toggle("Show internal tools", isOn: $showInternalTools)
 
-            Text("Optional on-device generation/edits.\nImages are never generated.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if showInternalTools {
+                Toggle("Enable thumbnail rendering", isOn: $thumbnailRenderingEnabled)
+                    .onChange(of: thumbnailRenderingEnabled) { _ in
+                        WidgetPreviewThumbnailCacheSignal.shared.bumpCoalesced()
+                    }
 
-            TextField("Prompt (new design)", text: $aiPrompt, axis: .vertical)
-                .lineLimit(3, reservesSpace: true)
+                Button {
+                    WidgetWeaverEntitlements.setProUnlocked(true)
+                    proManager.syncFromLocalEntitlements(status: "Pro unlocked (internal).")
+                } label: {
+                    Label("Unlock Pro flag (internal)", systemImage: "wand.and.stars")
+                }
 
-            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
-
-            Button("Generate New Design") { Task { await generateNewDesignFromPrompt() } }
-                .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Divider()
-
-            TextField("Patch instruction (edit current design)", text: $aiPatchInstruction, axis: .vertical)
-                .lineLimit(3, reservesSpace: true)
-
-            Button("Apply Patch To Current Design") { Task { await applyPatchToCurrentDesign() } }
-                .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            if !aiStatusMessage.isEmpty {
-                Text(aiStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button(role: .destructive) {
+                    WidgetWeaverEntitlements.setProUnlocked(false)
+                    proManager.syncFromLocalEntitlements(status: "Pro locked (internal).")
+                } label: {
+                    Label("Reset Pro flag (internal)", systemImage: "xmark.seal")
+                }
             }
         } header: {
-            sectionHeader("AI")
-        }
-    }
-
-    var statusSection: some View {
-        Section {
-            if hasUnsavedChanges {
-                Label("Unsaved changes", systemImage: "pencil.tip.crop.circle.badge.exclamationmark")
-                    .foregroundStyle(.secondary)
-
-                Button(role: .destructive) { showRevertConfirmation = true } label: {
-                    Label("Revert to last saved", systemImage: "arrow.uturn.backward")
-                }
-
-                Button { activeSheet = .inspector } label: {
-                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
-                }
-            } else {
-                Button { activeSheet = .inspector } label: {
-                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
-                }
-            }
-
-            if let lastSavedAt {
-                Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Not saved yet.")
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            sectionHeader("Status")
+            sectionHeader("Internal")
         }
     }
 }

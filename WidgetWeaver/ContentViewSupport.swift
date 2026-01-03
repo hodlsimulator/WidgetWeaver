@@ -126,28 +126,21 @@ final class WidgetWeaverProManager: ObservableObject {
 
         do {
             let result = try await product.purchase()
-
             switch result {
             case .success(let verification):
                 switch verification {
-                case .verified(let transaction):
+                case .verified:
                     WidgetWeaverEntitlements.setProUnlocked(true)
-                    isProUnlocked = true
-                    statusMessage = "Pro unlocked."
-                    await transaction.finish()
-
+                    syncFromLocalEntitlements(status: "Pro unlocked.")
                 case .unverified:
                     statusMessage = "Purchase could not be verified."
                 }
-
             case .userCancelled:
                 statusMessage = "Purchase cancelled."
-
             case .pending:
                 statusMessage = "Purchase pending."
-
             @unknown default:
-                statusMessage = "Purchase did not complete."
+                statusMessage = "Purchase failed."
             }
         } catch {
             statusMessage = "Purchase failed: \(error.localizedDescription)"
@@ -161,15 +154,14 @@ final class WidgetWeaverProManager: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlementFromStoreKitIfNeeded()
-            statusMessage = isProUnlocked ? "Purchases restored." : "No purchases found."
         } catch {
             statusMessage = "Restore failed: \(error.localizedDescription)"
         }
     }
-    
-    func syncFromLocalEntitlements(status: String? = nil) {
+
+    func syncFromLocalEntitlements(status: String) {
         isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
-        if let status { statusMessage = status }
+        statusMessage = status
     }
 
     private func loadProduct() async {
@@ -177,138 +169,79 @@ final class WidgetWeaverProManager: ObservableObject {
             let products = try await Product.products(for: [Self.productID])
             product = products.first
         } catch {
-            statusMessage = "Store unavailable: \(error.localizedDescription)"
+            product = nil
         }
     }
 
     private func refreshEntitlementFromStoreKitIfNeeded() async {
-        if WidgetWeaverEntitlements.isProUnlocked {
-            isProUnlocked = true
-            return
-        }
+        do {
+            var unlocked = false
 
-        var found = false
-        for await entitlement in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = entitlement else { continue }
-            if transaction.productID == Self.productID {
-                found = true
-                break
+            for await result in Transaction.currentEntitlements {
+                if case .verified(let t) = result, t.productID == Self.productID {
+                    unlocked = true
+                    break
+                }
             }
-        }
 
-        if found {
-            WidgetWeaverEntitlements.setProUnlocked(true)
-            isProUnlocked = true
-        } else {
-            isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
+            if unlocked != WidgetWeaverEntitlements.isProUnlocked {
+                WidgetWeaverEntitlements.setProUnlocked(unlocked)
+            }
+
+            syncFromLocalEntitlements(status: unlocked ? "Pro unlocked." : "Pro locked.")
+        } catch {
+            statusMessage = "Could not refresh entitlement."
         }
     }
 
     private func observeTransactionUpdates() async {
-        for await update in Transaction.updates {
-            guard case .verified(let transaction) = update else { continue }
-
-            if transaction.productID == Self.productID {
+        for await result in Transaction.updates {
+            if case .verified(let t) = result, t.productID == Self.productID {
                 WidgetWeaverEntitlements.setProUnlocked(true)
-                isProUnlocked = true
+                syncFromLocalEntitlements(status: "Pro unlocked.")
+                await t.finish()
             }
-
-            await transaction.finish()
         }
     }
 }
 
-private struct ProFeatureRow: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: "checkmark.seal.fill")
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct WidgetWeaverProView: View {
-    @ObservedObject var manager: WidgetWeaverProManager
-
-    @State private var showInternalTools: Bool = false
-
+struct WidgetWeaverProSheet: View {
+    @StateObject private var manager = WidgetWeaverProManager()
     @Environment(\.dismiss) private var dismiss
+
+    @AppStorage("widgetweaver.internal.showTools") private var showInternalTools: Bool = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if manager.isProUnlocked {
-                            Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                            Text("Matched sets, variables, and unlimited designs are enabled.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Label("WidgetWeaver Pro", systemImage: "crown.fill")
-                            Text("Unlock matched sets, variables, and unlimited designs.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 7) {
-                        showInternalTools.toggle()
-                    }
+                    Text("WidgetWeaver Pro unlocks matched sets, variables, and unlimited saved designs.")
+                        .foregroundStyle(.secondary)
                 } header: {
-                    Text("Status")
+                    Text("Pro")
                 }
 
                 Section {
-                    ProFeatureRow(
-                        title: "Unlimited designs",
-                        subtitle: "Free tier is limited to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs."
-                    )
-                    ProFeatureRow(
-                        title: "Matched sets",
-                        subtitle: "Per-size overrides for Small/Medium/Large while sharing style and typography."
-                    )
-                    ProFeatureRow(
-                        title: "Variables + Shortcuts",
-                        subtitle: "Use {{key}} templates plus App Intents actions to update widget values."
-                    )
-                } header: {
-                    Text("What Pro unlocks")
-                }
-
-                Section {
-                    if manager.isProUnlocked {
-                        Button { dismiss() } label: {
-                            Label("Done", systemImage: "checkmark")
-                        }
-                    } else {
+                    if let product = manager.product {
                         Button {
                             Task { await manager.purchasePro() }
                         } label: {
-                            let price = manager.product?.displayPrice ?? "…"
-                            Label("Unlock Pro (\(price))", systemImage: "crown.fill")
-                        }
-                        .disabled(manager.isBusy || manager.product == nil)
-
-                        Button {
-                            Task { await manager.restorePurchases() }
-                        } label: {
-                            Label("Restore Purchases", systemImage: "arrow.clockwise")
+                            HStack {
+                                Label("Unlock Pro", systemImage: "crown.fill")
+                                Spacer()
+                                Text(product.displayPrice)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .disabled(manager.isBusy)
-                    }
 
-                    if manager.isBusy {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                            Text("Working…").foregroundStyle(.secondary)
+                        Button("Restore Purchases") {
+                            Task { await manager.restorePurchases() }
                         }
+                        .disabled(manager.isBusy)
+                    } else {
+                        Text("Loading…")
+                            .foregroundStyle(.secondary)
                     }
 
                     if !manager.statusMessage.isEmpty {
@@ -316,6 +249,7 @@ struct WidgetWeaverProView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
                 } header: {
                     Text("Actions")
                 }
@@ -445,10 +379,23 @@ struct WidgetWeaverDesignInspectorView: View {
             }
 
             if let img = resolved.image {
-                Text("Image: \(img.fileName) • \(img.contentMode.rawValue) • h=\(Int(img.height)) • r=\(Int(img.cornerRadius))")
+                Text("Image base: \(img.fileName) • \(img.contentMode.rawValue) • h=\(Int(img.height)) • r=\(Int(img.cornerRadius))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+
+                let renderFileName = img.fileNameForFamily(family)
+                Text("Widget render (\(familyLabel(family))): \(renderFileName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                if let sp = img.smartPhoto {
+                    Text("Smart master: \(sp.masterFileName)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             } else {
                 Text("Image: —")
                     .font(.caption)
@@ -565,6 +512,13 @@ struct WidgetWeaverDesignInspectorView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+
+                        if !info.roleLine.isEmpty {
+                            Text(info.roleLine)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
                     }
                     .contextMenu {
                         Button {
@@ -630,29 +584,50 @@ struct WidgetWeaverDesignInspectorView: View {
         let id: String
         let fileName: String
         let detailLine: String
+        let roleLine: String
     }
 
     private func imageInfos(in spec: WidgetSpec) -> [ImageInfo] {
-        var names: Set<String> = []
+        let base = spec.normalised()
 
-        if let img = spec.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            names.insert(img)
+        var rolesByFileName: [String: Set<String>] = [:]
+
+        func sanitisedFileName(_ raw: String) -> String {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let last = (trimmed as NSString).lastPathComponent
+            return String(last.prefix(256))
         }
 
-        if let matched = spec.matchedSet {
-            if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
-            }
-            if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
-            }
-            if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                names.insert(img)
+        func addRole(fileName raw: String, role: String) {
+            let safe = sanitisedFileName(raw)
+            guard !safe.isEmpty else { return }
+            rolesByFileName[safe, default: []].insert(role)
+        }
+
+        func annotate(image: ImageSpec?, origin: String) {
+            guard let image else { return }
+
+            addRole(fileName: image.fileName, role: "\(origin) • base")
+
+            if let sp = image.smartPhoto {
+                addRole(fileName: sp.masterFileName, role: "\(origin) • master")
+                if let v = sp.small { addRole(fileName: v.renderFileName, role: "\(origin) • small render") }
+                if let v = sp.medium { addRole(fileName: v.renderFileName, role: "\(origin) • medium render") }
+                if let v = sp.large { addRole(fileName: v.renderFileName, role: "\(origin) • large render") }
             }
         }
 
-        let sorted = names.sorted()
-        return sorted.map { fileName in
+        annotate(image: base.image, origin: "Base spec")
+
+        if let matched = base.matchedSet {
+            annotate(image: matched.small?.image, origin: "Small variant")
+            annotate(image: matched.medium?.image, origin: "Medium variant")
+            annotate(image: matched.large?.image, origin: "Large variant")
+        }
+
+        let names = base.allReferencedImageFileNames()
+
+        return names.map { fileName in
             let url = AppGroup.imageFileURL(fileName: fileName)
             let exists = FileManager.default.fileExists(atPath: url.path)
 
@@ -663,7 +638,14 @@ struct WidgetWeaverDesignInspectorView: View {
             }
 
             let detail = exists ? "On disk • \(bytesText)" : "Missing on disk"
-            return ImageInfo(id: fileName, fileName: fileName, detailLine: detail)
+            let roles = rolesByFileName[fileName]?.sorted().joined(separator: " · ") ?? ""
+
+            return ImageInfo(
+                id: fileName,
+                fileName: fileName,
+                detailLine: detail,
+                roleLine: roles
+            )
         }
     }
 }
