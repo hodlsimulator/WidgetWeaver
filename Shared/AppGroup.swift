@@ -15,9 +15,10 @@ import WidgetKit
 private final class ImageCacheBox: @unchecked Sendable {
     let cache: NSCache<NSString, UIImage>
 
-    init(countLimit: Int) {
+    init(countLimit: Int, totalCostLimit: Int) {
         let c = NSCache<NSString, UIImage>()
         c.countLimit = countLimit
+        c.totalCostLimit = totalCostLimit
         self.cache = c
     }
 }
@@ -51,7 +52,26 @@ public enum AppGroup {
         return url.path.contains(".appex/")
     }
 
-    private static let imageCache = ImageCacheBox(countLimit: isAppExtension ? 8 : 32)
+    private static let imageCache = ImageCacheBox(
+        countLimit: isAppExtension ? 6 : 32,
+        totalCostLimit: isAppExtension ? (12 * 1024 * 1024) : (64 * 1024 * 1024)
+    )
+
+    private static func estimatedDecodedByteCount(_ image: UIImage) -> Int {
+        if let cg = image.cgImage {
+            let bytes = Int64(cg.bytesPerRow) * Int64(cg.height)
+            if bytes > Int64(Int.max) { return Int.max }
+            if bytes <= 0 { return 1 }
+            return Int(bytes)
+        }
+
+        let w = Int64(image.size.width * image.scale)
+        let h = Int64(image.size.height * image.scale)
+        let bytes = w * h * 4
+        if bytes > Int64(Int.max) { return Int.max }
+        if bytes <= 0 { return 1 }
+        return Int(bytes)
+    }
 
     public static func ensureImagesDirectoryExists() {
         let url = imagesDirectoryURL
@@ -137,7 +157,7 @@ public enum AppGroup {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         guard let img = UIImage(contentsOfFile: url.path) else { return nil }
 
-        imageCache.cache.setObject(img, forKey: safe as NSString)
+        imageCache.cache.setObject(img, forKey: safe as NSString, cost: estimatedDecodedByteCount(img))
         return img
     }
 
