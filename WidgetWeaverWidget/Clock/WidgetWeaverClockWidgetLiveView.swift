@@ -42,7 +42,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
         self.entryDate = entryDate
         self.tickMode = tickMode
         self.tickSeconds = tickSeconds
-        _baseDate = State(initialValue: entryDate)
+
+        let wallNow = Date()
+        let initialBase = (entryDate > wallNow) ? entryDate : wallNow
+        _baseDate = State(initialValue: initialBase)
     }
 
     var body: some View {
@@ -62,10 +65,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
 
+            let wallNow = Date()
+            let isPreRender = entryDate.timeIntervalSince(wallNow) > 5.0
+
             // Hour/minute hands:
-            // Prefer a CoreAnimation-backed sweep synced to the wall clock when the widget is live.
-            // This avoids relying on WidgetKit's minute boundary delivery (which can be ~1–2s late).
-            let liveHandsEnabled = showSeconds && !reduceMotion && !isPlaceholder
+            // Run compositor-backed sweeps so the minute hand is aligned to the real clock even if
+            // WidgetKit swaps timeline entries slightly late.
+            //
+            // Reduce Motion is intentionally NOT used to disable this, because doing so reintroduces
+            // the late “minute tick” behaviour.
+            let liveHandsEnabled = showSeconds && !isPlaceholder && !isPreRender
 
             let tickAnchor = Self.floorToMinute(entryDate)
             let tick = WWClockTickAngles(date: tickAnchor)
@@ -75,7 +84,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let minuteDeg = liveHandsEnabled ? (smooth.minute + (minutePhase * 360.0)) : tick.minute
             let hourDeg = liveHandsEnabled ? (smooth.hour + (hourPhase * 360.0)) : tick.hour
 
-            let wallNow = Date()
             let fontOK = WWClockSecondHandFont.isAvailable()
             let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
             let expectedString = String(format: "0:%02d", expectedSeconds)

@@ -25,6 +25,14 @@ enum WWClockSecondHandFont {
     }
 
     private static let registerOnce: Void = {
+        #if canImport(UIKit)
+        // The font is listed in the widget extension Info.plist (UIAppFonts),
+        // so it is often already registered. Avoid logging a scary failure in that case.
+        if UIFont(name: postScriptName, size: 12) != nil {
+            return
+        }
+        #endif
+
         guard let url = resourceBundle.url(
             forResource: bundledFileName,
             withExtension: bundledFileExtension
@@ -43,6 +51,12 @@ enum WWClockSecondHandFont {
         let ok = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &cfErr)
 
         if !ok {
+            #if canImport(UIKit)
+            if UIFont(name: postScriptName, size: 12) != nil {
+                return
+            }
+            #endif
+
             let err = cfErr?.takeRetainedValue().localizedDescription ?? "unknown"
             WWClockDebugLog.append(
                 "secondHandFont register failed err=\(err)",
