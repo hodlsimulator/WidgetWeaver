@@ -12,6 +12,147 @@ import SwiftUI
 import WidgetKit
 import UIKit
 
+// MARK: - External dependency fingerprints (shared, cheap per-cell)
+
+@MainActor
+final class WidgetPreviewThumbnailDependencies: ObservableObject {
+    static let shared = WidgetPreviewThumbnailDependencies()
+
+    @Published private(set) var variablesFingerprint: String = "0000000000000000"
+    @Published private(set) var weatherFingerprint: String = "0000000000000000"
+
+    private let userDefaults: UserDefaults
+    private var observer: NSObjectProtocol?
+    private var recomputeTask: Task<Void, Never>?
+
+    private init(userDefaults: UserDefaults = AppGroup.userDefaults) {
+        self.userDefaults = userDefaults
+
+        observer = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: userDefaults,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleRecompute(delayNanoseconds: 150_000_000)
+            }
+        }
+
+        scheduleRecompute(delayNanoseconds: 0)
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        recomputeTask?.cancel()
+    }
+
+    func dependencyFingerprint(for spec: WidgetSpec) -> String {
+        if spec.usesWeatherRendering() {
+            return "\(variablesFingerprint).\(weatherFingerprint)"
+        }
+        return variablesFingerprint
+    }
+
+    private func scheduleRecompute(delayNanoseconds: UInt64) {
+        recomputeTask?.cancel()
+
+        recomputeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+
+            guard !Task.isCancelled else { return }
+
+            // Extract inputs on the main actor (UserDefaults is not Sendable).
+            let variablesData = self.userDefaults.data(forKey: "widgetweaver.variables.v1") ?? Data()
+
+            let locationData = self.userDefaults.data(forKey: WidgetWeaverWeatherStore.Keys.locationData) ?? Data()
+            let snapshotData = self.userDefaults.data(forKey: WidgetWeaverWeatherStore.Keys.snapshotData) ?? Data()
+            let attributionData = self.userDefaults.data(forKey: WidgetWeaverWeatherStore.Keys.attributionData) ?? Data()
+
+            let unitPreferenceRaw = self.userDefaults.string(forKey: WidgetWeaverWeatherStore.Keys.unitPreference) ?? ""
+            let lastErrorRaw = self.userDefaults.string(forKey: WidgetWeaverWeatherStore.Keys.lastError) ?? ""
+
+            let (variables, weather) = await Task.detached(priority: .utility) {
+                Self.computeFingerprints(
+                    variablesData: variablesData,
+                    locationData: locationData,
+                    snapshotData: snapshotData,
+                    attributionData: attributionData,
+                    unitPreferenceRaw: unitPreferenceRaw,
+                    lastErrorRaw: lastErrorRaw
+                )
+            }.value
+
+            if self.variablesFingerprint != variables {
+                self.variablesFingerprint = variables
+            }
+            if self.weatherFingerprint != weather {
+                self.weatherFingerprint = weather
+            }
+        }
+    }
+
+    nonisolated private static func computeFingerprints(
+        variablesData: Data,
+        locationData: Data,
+        snapshotData: Data,
+        attributionData: Data,
+        unitPreferenceRaw: String,
+        lastErrorRaw: String
+    ) -> (String, String) {
+        let variables = fnv1a64Hex(variablesData)
+
+        let weatherParts: [String] = [
+            fnv1a64Hex(locationData),
+            fnv1a64Hex(snapshotData),
+            fnv1a64Hex(attributionData),
+            fnv1a64Hex(Data(unitPreferenceRaw.utf8)),
+            fnv1a64Hex(Data(lastErrorRaw.utf8)),
+        ]
+
+        let weather = weatherParts.joined(separator: ".")
+        return (variables, weather)
+    }
+
+    nonisolated private static func fnv1a64Hex(_ data: Data) -> String {
+        var hash: UInt64 = 14695981039346656037
+        for b in data {
+            hash ^= UInt64(b)
+            hash &*= 1099511628211
+        }
+        return String(format: "%016llx", hash)
+    }
+}
+
+@MainActor
+final class WidgetPreviewThumbnailCacheSignal: ObservableObject {
+    static let shared = WidgetPreviewThumbnailCacheSignal()
+
+    @Published private(set) var pulse: UInt64 = 0
+
+    private var scheduledTask: Task<Void, Never>?
+
+    private init() {}
+
+    func bumpCoalesced() {
+        if scheduledTask != nil { return }
+
+        scheduledTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+
+            guard let self else { return }
+            self.pulse &+= 1
+            self.scheduledTask = nil
+        }
+    }
+}
+
 // MARK: - Thumbnail raster cache (smooth scrolling)
 
 @MainActor
@@ -32,6 +173,7 @@ private final class WidgetPreviewThumbnailRasterCache {
 
     func store(_ image: UIImage, forKey key: String) {
         cache.setObject(image, forKey: key as NSString)
+        WidgetPreviewThumbnailCacheSignal.shared.bumpCoalesced()
     }
 
     /// Cache key changes whenever the spec content changes (even if `updatedAt` is not bumped yet),
@@ -76,24 +218,9 @@ private final class WidgetPreviewThumbnailRasterCache {
     }
 
     private static func contentFingerprint(for spec: WidgetSpec) -> String {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(spec.normalised())
-            return fnv1a64Hex(data)
-        } catch {
-            return "0000000000000000"
-        }
-    }
-
-    private static func fnv1a64Hex(_ data: Data) -> String {
-        var hash: UInt64 = 14695981039346656037
-        for b in data {
-            hash ^= UInt64(b)
-            hash &*= 1099511628211
-        }
-        return String(format: "%016llx", hash)
+        let v = spec.normalised().hashValue
+        let u = UInt64(bitPattern: Int64(v))
+        return String(format: "%016llx", u)
     }
 }
 
@@ -115,16 +242,8 @@ struct WidgetPreviewThumbnail: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
 
-    // These are inputs that can affect the rendered output without changing the WidgetSpec.
-    // Including them in the raster cache key prevents the collapsed preview from showing stale thumbnails.
-    @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults) private var variablesData: Data = Data()
-    @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults) private var specsData: Data = Data()
-
-    @AppStorage(WidgetWeaverWeatherStore.Keys.locationData, store: AppGroup.userDefaults) private var weatherLocationData: Data = Data()
-    @AppStorage(WidgetWeaverWeatherStore.Keys.snapshotData, store: AppGroup.userDefaults) private var weatherSnapshotData: Data = Data()
-    @AppStorage(WidgetWeaverWeatherStore.Keys.attributionData, store: AppGroup.userDefaults) private var weatherAttributionData: Data = Data()
-    @AppStorage(WidgetWeaverWeatherStore.Keys.unitPreference, store: AppGroup.userDefaults) private var weatherUnitPreferenceRaw: String = ""
-    @AppStorage(WidgetWeaverWeatherStore.Keys.lastError, store: AppGroup.userDefaults) private var weatherLastError: String = ""
+    @ObservedObject private var deps = WidgetPreviewThumbnailDependencies.shared
+    @ObservedObject private var cacheSignal = WidgetPreviewThumbnailCacheSignal.shared
 
     @State private var image: UIImage? = nil
     @State private var imageKey: String? = nil
@@ -160,12 +279,14 @@ struct WidgetPreviewThumbnail: View {
 
     @available(iOS 16.0, *)
     private func renderedBody(renderImmediately: Bool) -> some View {
+        let _ = cacheSignal.pulse
+
         let base = WidgetPreview.widgetSize(for: family)
         let s = WidgetPreviewMetrics.thumbnailScale(nativeSize: base, targetHeight: height, allowUpscale: false)
         let displaySize = WidgetPreviewMetrics.scaledSize(baseSize: base, scale: s, displayScale: displayScale)
 
         let rendererScale = min(displayScale, 2.0)
-        let dependencyFingerprint = buildDependencyFingerprint()
+        let dependencyFingerprint = deps.dependencyFingerprint(for: spec)
 
         let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
             spec: spec,
@@ -259,31 +380,60 @@ struct WidgetPreviewThumbnail: View {
         let base: CGFloat = (UIDevice.current.userInterfaceIdiom == .pad) ? 24 : 22
         return WidgetPreviewMetrics.floorToPixel(base * max(0, scale), scale: max(1, displayScale))
     }
+}
 
-    private func buildDependencyFingerprint() -> String {
-        let usesWeather = spec.normalised().usesWeatherRendering()
+// MARK: - Cache warming
 
-        var parts: [String] = []
-        parts.append(fnv1a64Hex(variablesData))
-        parts.append(fnv1a64Hex(specsData))
+extension WidgetPreviewThumbnail {
+    @MainActor
+    static func preheat(
+        specs: [WidgetSpec],
+        families: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge],
+        colorScheme: ColorScheme,
+        displayScale: CGFloat
+    ) async {
+        guard #available(iOS 16.0, *) else { return }
 
-        if usesWeather {
-            parts.append(fnv1a64Hex(weatherLocationData))
-            parts.append(fnv1a64Hex(weatherSnapshotData))
-            parts.append(fnv1a64Hex(weatherAttributionData))
-            parts.append(fnv1a64Hex(Data(weatherUnitPreferenceRaw.utf8)))
-            parts.append(fnv1a64Hex(Data(weatherLastError.utf8)))
+        let rendererScale = min(displayScale, 2.0)
+
+        var seen = Set<UUID>()
+        let dedupedSpecs = specs.filter { seen.insert($0.id).inserted }
+
+        for spec in dedupedSpecs {
+            guard !Task.isCancelled else { return }
+
+            let dependencyFingerprint = WidgetPreviewThumbnailDependencies.shared.dependencyFingerprint(for: spec)
+
+            for family in families {
+                guard !Task.isCancelled else { return }
+
+                let base = WidgetPreview.widgetSize(for: family)
+
+                let key = WidgetPreviewThumbnailRasterCache.shared.makeKey(
+                    spec: spec,
+                    family: family,
+                    renderSize: base,
+                    colorScheme: colorScheme,
+                    rendererScale: rendererScale,
+                    dependencyFingerprint: dependencyFingerprint
+                )
+
+                if WidgetPreviewThumbnailRasterCache.shared.cachedImage(forKey: key) != nil {
+                    continue
+                }
+
+                if let rendered = WidgetPreviewThumbnailRasterCache.shared.renderThumbnail(
+                    spec: spec,
+                    family: family,
+                    renderSize: base,
+                    colorScheme: colorScheme,
+                    rendererScale: rendererScale
+                ) {
+                    WidgetPreviewThumbnailRasterCache.shared.store(rendered, forKey: key)
+                }
+
+                await Task.yield()
+            }
         }
-
-        return parts.joined(separator: ".")
-    }
-
-    private func fnv1a64Hex(_ data: Data) -> String {
-        var hash: UInt64 = 14695981039346656037
-        for b in data {
-            hash ^= UInt64(b)
-            hash &*= 1099511628211
-        }
-        return String(format: "%016llx", hash)
     }
 }

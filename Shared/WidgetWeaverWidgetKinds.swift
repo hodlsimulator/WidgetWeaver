@@ -16,7 +16,7 @@ public enum WidgetWeaverWidgetKinds {
 
     public static let homeScreenSteps = "WidgetWeaverHomeScreenStepsWidget"
 
-    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV114"
+    public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV115"
 
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
 }

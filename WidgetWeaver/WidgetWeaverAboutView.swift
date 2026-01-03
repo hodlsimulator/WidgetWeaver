@@ -15,6 +15,11 @@ import EventKit
 struct WidgetWeaverAboutView: View {
     @ObservedObject var proManager: WidgetWeaverProManager
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
+
+    @ObservedObject private var thumbnailDeps = WidgetPreviewThumbnailDependencies.shared
+
     /// Adds a template into the design library.
     /// The caller owns ID/UUID creation and any persistence details.
     var onAddTemplate: @MainActor @Sendable (_ spec: WidgetSpec, _ makeDefault: Bool) -> Void
@@ -60,6 +65,9 @@ struct WidgetWeaverAboutView: View {
             }
             .listStyle(.plain)
             .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
+            .task(id: preheatTaskID) {
+                await preheatExploreThumbnailsIfNeeded()
+            }
             .scrollIndicators(.hidden)
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.immediately)
@@ -71,6 +79,22 @@ struct WidgetWeaverAboutView: View {
         }
         .navigationTitle("Explore")
         .navigationBarTitleDisplayMode(.large)
+    }
+
+    private var preheatTaskID: String {
+        let scheme = (colorScheme == .dark) ? "dark" : "light"
+        return "\(scheme)|\(thumbnailDeps.variablesFingerprint)|\(thumbnailDeps.weatherFingerprint)"
+    }
+
+    private func preheatExploreThumbnailsIfNeeded() async {
+        guard #available(iOS 16.0, *) else { return }
+
+        let specs = (Self.starterTemplatesAll + Self.proTemplates).map { $0.spec }
+        await WidgetPreviewThumbnail.preheat(
+            specs: specs,
+            colorScheme: colorScheme,
+            displayScale: displayScale
+        )
     }
 
     // MARK: - Helpers
