@@ -12,6 +12,7 @@ It runs on **iOS 26** and ships with:
 - Weather, Calendar, and Steps setups that cache snapshots for offline widget rendering
 - A small Home Screen clock widget (ticking seconds hand via the glyphs method)
 - A Sleep Machine-style Noise Machine (4-layer procedural noise) with instant resume + Home Screen controller widget
+- Shareable Noise Machine diagnostics log (Dump status / Rebuild engine / Share log)
 
 WidgetWeaver uses an App Group so the app and widget extension share designs, snapshots, and images.
 
@@ -48,6 +49,7 @@ Pro features (matched sets, variables, actions) are unlocked via an in-app purch
 
 - `WidgetWeaver/WidgetThemeExtractor.swift` — image palette extraction (robust, widget-safe)
 - `WidgetWeaver/WidgetWeaverRemixEngine.swift` + `WidgetWeaver/WidgetWeaverRemixEngine+Looks.swift` — remix generation
+- `WidgetWeaver/WidgetWeaverRemixEngine.swift` + `WidgetWeaver/WidgetWeaverRemixEngine+Looks.swift` — remix generation
 
 ### Import / export
 
@@ -59,10 +61,12 @@ Pro features (matched sets, variables, actions) are unlocked via an in-app purch
 
 - `Shared/NoiseMachine/NoiseMixState.swift` — Codable model for the last mix (4 slots)
 - `Shared/NoiseMachine/NoiseMixStore.swift` — App Group persistence (debounced writes + safe defaults)
+- `Shared/NoiseMachine/NoiseMixStore.swift` — also contains `NoiseMachineDebugLogStore` (250-entry ring buffer log, stored in the App Group, shareable export)
 - `Shared/NoiseMachine/NoiseMachineController.swift` — AVAudioEngine graph + procedural noise (white/pink/brown) + smoothing
 - `Shared/NoiseMachine/NoiseMachineIntents.swift` — App Intents used by the widget (AudioPlaybackIntent)
 - `Shared/NoiseMachine/NoiseMachineView.swift` + `Shared/NoiseMachine/NoiseMachineViewModel.swift` — in-app controls
 - `WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift` — Home Screen controller widget (play/pause/stop + layer toggles)
+
 ### Weather nowcast chart (current)
 
 The nowcast surface is a procedural renderer used by the Lock Screen Weather template. It is deterministic, widget-safe, and designed to avoid cliffs and seams.
@@ -95,14 +99,12 @@ The snapshot includes:
 - location name + attribution fields,
 - derived flags for “rain soon”, “rain ending”, and uncertainty.
 
-Weather templates render from this cached snapshot so they can work offline and avoid calling network APIs inside widgets.
-
 ### Weather setup checklist
 
 1) Open **Weather** settings inside the app.
-2) Select a location and provider.
+2) Grant location permission.
 3) Confirm the “nowcast snapshot” is updating.
-4) Add the Weather widget.
+4) Add the Lock Screen widget and confirm it renders offline (Airplane Mode).
 
 ---
 
@@ -134,10 +136,8 @@ WidgetWeaver includes Steps templates for both Lock Screen and Home Screen.
 Steps widgets render from a cached “today snapshot” stored in the App Group:
 
 - current day step count
-- goal and progress fraction (if configured)
-- derived streak / milestone values (if enabled)
-
-Health access can be inspected via the Steps settings screen.
+- optional goal + ring
+- last updated timestamp
 
 ### Steps setup checklist
 
@@ -150,7 +150,7 @@ Health access can be inspected via the Steps settings screen.
 
 ## Featured — Clock (Home Screen)
 
-WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidget...`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV116`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
 
 ### Current approach
 
@@ -185,6 +185,18 @@ The full mix is stored as a single **Last Mix** record in the App Group so:
 - the widget can reflect the current state instantly
 - the app can **resume immediately on relaunch** (optional)
 
+
+Noise Machine generates audio procedurally (no bundled audio files) and runs on `AVAudioEngine`.
+It requests `AVAudioSession` category `.playback` with `.mixWithOthers` and falls back to plain `.playback` if needed.
+
+### Diagnostics
+
+If playback is flaky (won’t start, won’t resume after Pause, or stops unexpectedly), use the built-in diagnostics:
+
+- **Diagnostics → Dump status** writes a one-shot engine/session snapshot to the log.
+- **Diagnostics → Rebuild engine** tears down and recreates the audio graph, then re-applies the saved mix.
+- **Diagnostics → Share log** exports the last ~250 log entries (app + widget intents) as plain text.
+
 ### Noise Machine setup checklist
 
 1) In Xcode, enable **Background Modes → Audio** on the **WidgetWeaver** app target (required for playback with the screen off).
@@ -207,6 +219,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ Import Review (preview + selective import)
 - ✅ Theme extraction + more remixes
 - ✅ Noise Machine (4-layer procedural mixer + instant resume + widget controls)
+- ✅ Noise Machine diagnostics (shareable log + audio status dump + engine rebuild)
 - ✅ Pro: matched sets (S/M/L) share style tokens
 - ✅ Share/export/import JSON (optionally embedding images) with Import Review (preview + selective import)
 - ✅ On-device AI (generate + patch)
@@ -268,42 +281,25 @@ Pro features require a Pro unlock; Variables and Actions become available in the
 
 ### Layout templates
 
-WidgetWeaver ships with multiple “starter” layout templates and remixes, including:
-
-- **Weather**: nowcast surface + decision text + temperature
-- **Next Up**: next event with countdown + then line
-- **Steps**: step count + goal + streak
-- **Actions**: compact action bar (buttons)
-- **Gallery**: tiled images with captions
-- **Banner**: single-line compact template
-- **Chip (Calendar)**: Lock Screen-friendly chip with event + countdown
+Widget specs are built from a small set of layout templates and style tokens.
 
 ### Action bars (Pro)
 
-- Optional action bar with up to 2 buttons
-- Buttons can trigger App Intents
-- Buttons can update Pro variables
-- No Shortcuts setup required
+Action Bars can add up to 2 interactive buttons that can trigger App Intents (no Shortcuts required).
 
 ### Variables (Pro)
 
-- Variables are stored in the App Group and can be referenced in any spec
-- Variable values can be updated by App Intents (buttons) and reflected in widgets
-- Variables unlock additional “dynamic” templates and remixes
+Variables can be referenced inside text fields and updated via App Intents.
 
 ---
 
 ## AI
 
-WidgetWeaver includes optional on-device AI for:
-
-- generating a starter spec from a prompt
-- patch-editing an existing spec (“more minimal”, “bigger title”, etc.)
-
-AI is additive and not required to use the app.
+AI features are optional and are built around structured generation into the WidgetSpec schema.
 
 ---
 
 ## Licence / notes
 
-This repository is an active app project, not a polished library. Expect breaking changes while features are being consolidated.
+WidgetWeaver is a personal project. All assets and code are for the repo owner.
+ 
