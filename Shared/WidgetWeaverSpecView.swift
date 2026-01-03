@@ -359,7 +359,7 @@ public struct WidgetWeaverSpecView: View {
                 weatherBackdrop(style: style, accent: accent)
             } else if layout.template == .poster,
                       let image = spec.image,
-                      let uiImage = image.loadUIImageFromAppGroup() {
+                      let uiImage = image.loadUIImageFromAppGroup(family: family) {
                 Color(uiColor: .systemBackground)
 
                 Image(uiImage: uiImage)

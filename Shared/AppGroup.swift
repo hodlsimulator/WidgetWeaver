@@ -45,7 +45,13 @@ public enum AppGroup {
         containerURL.appendingPathComponent("WidgetWeaverImages", isDirectory: true)
     }
 
-    private static let imageCache = ImageCacheBox(countLimit: 32)
+    private static var isAppExtension: Bool {
+        let url = Bundle.main.bundleURL
+        if url.pathExtension == "appex" { return true }
+        return url.path.contains(".appex/")
+    }
+
+    private static let imageCache = ImageCacheBox(countLimit: isAppExtension ? 8 : 32)
 
     public static func ensureImagesDirectoryExists() {
         let url = imagesDirectoryURL
@@ -56,20 +62,45 @@ public enum AppGroup {
         }
     }
 
+    private static func sanitisedFileName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = (trimmed as NSString).lastPathComponent
+        return String(last.prefix(256))
+    }
+
     public static func imageFileURL(fileName: String) -> URL {
         ensureImagesDirectoryExists()
-        return imagesDirectoryURL.appendingPathComponent(fileName)
+        let safe = sanitisedFileName(fileName)
+        return imagesDirectoryURL.appendingPathComponent(safe)
     }
 
     public static func createImageFileName(ext: String = "jpg") -> String {
-        "image-\(UUID().uuidString).\(ext)"
+        createImageFileName(prefix: "image", ext: ext)
+    }
+
+    public static func createImageFileName(prefix: String, ext: String = "jpg") -> String {
+        let trimmedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safePrefix = trimmedPrefix.isEmpty ? "image" : String(trimmedPrefix.prefix(32))
+        let safeExt = ext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "jpg" : ext
+        return "\(safePrefix)-\(UUID().uuidString).\(safeExt)"
     }
 
     public static func writeImageData(_ data: Data, fileName: String) throws {
         ensureImagesDirectoryExists()
-        let url = imagesDirectoryURL.appendingPathComponent(fileName)
+        let safe = sanitisedFileName(fileName)
+        let url = imagesDirectoryURL.appendingPathComponent(safe)
         try data.write(to: url, options: [.atomic])
-        imageCache.cache.removeObject(forKey: fileName as NSString)
+        imageCache.cache.removeObject(forKey: safe as NSString)
+    }
+
+    /// Reads raw image data for export/import.
+    public static func readImageData(fileName: String) -> Data? {
+        let safe = sanitisedFileName(fileName)
+        guard !safe.isEmpty else { return nil }
+
+        let url = imagesDirectoryURL.appendingPathComponent(safe)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     public static func writeUIImage(_ image: UIImage, fileName: String, compressionQuality: CGFloat = 0.85) throws {
@@ -95,15 +126,18 @@ public enum AppGroup {
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let cached = imageCache.cache.object(forKey: trimmed as NSString) {
+        let safe = sanitisedFileName(trimmed)
+        guard !safe.isEmpty else { return nil }
+
+        if let cached = imageCache.cache.object(forKey: safe as NSString) {
             return cached
         }
 
-        let url = imagesDirectoryURL.appendingPathComponent(trimmed)
+        let url = imagesDirectoryURL.appendingPathComponent(safe)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         guard let img = UIImage(contentsOfFile: url.path) else { return nil }
 
-        imageCache.cache.setObject(img, forKey: trimmed as NSString)
+        imageCache.cache.setObject(img, forKey: safe as NSString)
         return img
     }
 
@@ -111,9 +145,12 @@ public enum AppGroup {
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let url = imagesDirectoryURL.appendingPathComponent(trimmed)
+        let safe = sanitisedFileName(trimmed)
+        guard !safe.isEmpty else { return }
+
+        let url = imagesDirectoryURL.appendingPathComponent(safe)
         try? FileManager.default.removeItem(at: url)
-        imageCache.cache.removeObject(forKey: trimmed as NSString)
+        imageCache.cache.removeObject(forKey: safe as NSString)
     }
 
     public static func listImageFileNames() -> [String] {

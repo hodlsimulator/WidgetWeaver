@@ -108,6 +108,7 @@ struct FamilyDraft: Hashable {
 
     // Image
     var imageFileName: String
+    var imageSmartPhoto: SmartPhotoSpec?
     var imageContentMode: ImageContentModeToken
     var imageHeight: Double
     var imageCornerRadius: Double
@@ -148,11 +149,13 @@ struct FamilyDraft: Hashable {
 
         if let img = s.image {
             self.imageFileName = img.fileName
+            self.imageSmartPhoto = img.smartPhoto
             self.imageContentMode = img.contentMode
             self.imageHeight = img.height
             self.imageCornerRadius = img.cornerRadius
         } else {
             self.imageFileName = ""
+            self.imageSmartPhoto = nil
             self.imageContentMode = .fill
             self.imageHeight = 120
             self.imageCornerRadius = 16
@@ -187,7 +190,8 @@ struct FamilyDraft: Hashable {
             fileName: imgName,
             contentMode: imageContentMode,
             height: imageHeight,
-            cornerRadius: imageCornerRadius
+            cornerRadius: imageCornerRadius,
+            smartPhoto: imageSmartPhoto
         )
 
         let layout = LayoutSpec(
@@ -234,7 +238,8 @@ struct FamilyDraft: Hashable {
             fileName: imgName,
             contentMode: imageContentMode,
             height: imageHeight,
-            cornerRadius: imageCornerRadius
+            cornerRadius: imageCornerRadius,
+            smartPhoto: imageSmartPhoto
         )
 
         let layout = LayoutSpec(
@@ -276,11 +281,13 @@ struct FamilyDraft: Hashable {
 
         if let img = s.image {
             imageFileName = img.fileName
+            imageSmartPhoto = img.smartPhoto
             imageContentMode = img.contentMode
             imageHeight = img.height
             imageCornerRadius = img.cornerRadius
         } else {
             imageFileName = ""
+            imageSmartPhoto = nil
         }
 
         template = s.layout.template

@@ -461,10 +461,7 @@ private extension WidgetSpecStore {
                 let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return nil }
 
-                let url = AppGroup.imageFileURL(fileName: trimmed)
-                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-                guard let data = try? Data(contentsOf: url) else { return nil }
-
+                guard let data = AppGroup.readImageData(fileName: trimmed) else { return nil }
                 return WidgetWeaverEmbeddedImage(originalFileName: trimmed, data: data)
             }
         }
@@ -479,15 +476,22 @@ private extension WidgetSpecStore {
     func collectUniqueImageFileNames(in specs: [WidgetSpec]) -> [String] {
         var set = Set<String>()
 
-        for spec in specs {
-            if let img = spec.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                set.insert(img)
+        func insertImage(_ img: ImageSpec?) {
+            guard let img else { return }
+            for raw in img.allReferencedFileNames() {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                set.insert(trimmed)
             }
+        }
+
+        for spec in specs {
+            insertImage(spec.image)
 
             if let matched = spec.matchedSet {
-                if let v = matched.small, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
-                if let v = matched.medium, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
-                if let v = matched.large, let img = v.image?.fileName, !img.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { set.insert(img) }
+                if let v = matched.small { insertImage(v.image) }
+                if let v = matched.medium { insertImage(v.image) }
+                if let v = matched.large { insertImage(v.image) }
             }
         }
 
@@ -503,12 +507,8 @@ private extension WidgetSpec {
 
         var out = self
 
-        if var base = out.image {
-            let old = base.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let new = map[old] {
-                base.fileName = new
-                out.image = base
-            }
+        if let base = out.image {
+            out.image = base.rewritingFileNames(using: map)
         }
 
         if var matched = out.matchedSet {
@@ -527,12 +527,57 @@ private extension WidgetSpecVariant {
         guard !map.isEmpty else { return self }
 
         var out = self
-        if var img = out.image {
-            let old = img.fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let new = map[old] {
-                img.fileName = new
-                out.image = img
+        if let img = out.image {
+            out.image = img.rewritingFileNames(using: map)
+        }
+
+        return out.normalised()
+    }
+}
+
+private extension ImageSpec {
+    func rewritingFileNames(using map: [String: String]) -> ImageSpec {
+        guard !map.isEmpty else { return self }
+
+        func mapped(_ raw: String) -> String? {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            if let direct = map[trimmed] { return direct }
+
+            let last = (trimmed as NSString).lastPathComponent
+            if let lastMapped = map[last] { return lastMapped }
+
+            return nil
+        }
+
+        var out = self
+
+        if let new = mapped(out.fileName) {
+            out.fileName = new
+        }
+
+        if var sp = out.smartPhoto {
+            if let newMaster = mapped(sp.masterFileName) {
+                sp.masterFileName = newMaster
             }
+
+            if var v = sp.small, let new = mapped(v.renderFileName) {
+                v.renderFileName = new
+                sp.small = v
+            }
+
+            if var v = sp.medium, let new = mapped(v.renderFileName) {
+                v.renderFileName = new
+                sp.medium = v
+            }
+
+            if var v = sp.large, let new = mapped(v.renderFileName) {
+                v.renderFileName = new
+                sp.large = v
+            }
+
+            out.smartPhoto = sp
         }
 
         return out.normalised()
