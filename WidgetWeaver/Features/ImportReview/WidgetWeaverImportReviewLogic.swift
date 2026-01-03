@@ -2,62 +2,113 @@
 //  WidgetWeaverImportReviewLogic.swift
 //  WidgetWeaver
 //
-//  Created by . . on 01/03/26.
+//  Created by . . on 01/01/26.
 //
 
 import Foundation
 
-enum WidgetWeaverImportReviewError: Error, LocalizedError {
-    case invalidText
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidText:
-            return "Could not decode the shared design text."
-        }
-    }
-}
-
-struct WidgetWeaverImportReviewSummary: Hashable, Sendable {
-    var designCount: Int
-    var imageCount: Int
-    var totalImageBytes: Int
-    var newestUpdatedAt: Date?
-    var includesSmartPhotos: Bool
-}
-
 enum WidgetWeaverImportReviewLogic {
 
-    static func decodePayload(from rawText: String) throws -> WidgetWeaverDesignExchangePayload {
-        let trimmed = rawText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        guard let payload = WidgetWeaverDesignExchangeCodec.decodeFromText(trimmed) else {
-            throw WidgetWeaverImportReviewError.invalidText
-        }
-        return payload
+    static func decodeImportFile(data: Data) throws -> WidgetWeaverDesignExchangePayload {
+        try WidgetWeaverDesignExchangeCodec.decodeAny(data)
     }
 
-    static func summarise(payload: WidgetWeaverDesignExchangePayload) -> WidgetWeaverImportReviewSummary {
-        let designCount = payload.specs.count
-        let imageCount = payload.images.count
-        let totalBytes = payload.images.reduce(0) { $0 + $1.data.count }
-        let newest = payload.specs.map { $0.updatedAt }.max()
+    static func makeReviewModel(
+        payload: WidgetWeaverDesignExchangePayload,
+        fileName: String
+    ) -> WidgetWeaverImportReviewModel {
+        let items = deriveItems(payload: payload)
+        return WidgetWeaverImportReviewModel(
+            fileName: fileName,
+            items: items,
+            payload: payload,
+            createdAt: payload.createdAt
+        )
+    }
 
-        var includesSmart = false
-        for s in payload.specs {
-            if s.image?.smartPhoto != nil { includesSmart = true; break }
-            if let matched = s.matchedSet {
-                if matched.small?.image?.smartPhoto != nil { includesSmart = true; break }
-                if matched.medium?.image?.smartPhoto != nil { includesSmart = true; break }
-                if matched.large?.image?.smartPhoto != nil { includesSmart = true; break }
+    static func deriveItems(payload: WidgetWeaverDesignExchangePayload) -> [WidgetWeaverImportReviewItem] {
+        let sortedSpecs = payload.specs.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+
+        return sortedSpecs.map { spec in
+            WidgetWeaverImportReviewItem(
+                id: spec.id,
+                name: spec.name,
+                templateDisplay: spec.layout.template.displayName,
+                updatedAt: spec.updatedAt,
+                hasImage: specHasAnyImage(spec)
+            )
+        }
+    }
+
+    static func makeSubsetPayload(
+        payload: WidgetWeaverDesignExchangePayload,
+        selectedIDs: Set<UUID>
+    ) -> WidgetWeaverDesignExchangePayload {
+        let selectedSpecs = payload.specs.filter { selectedIDs.contains($0.id) }
+        let referencedFileNames = referencedImageFileNames(in: selectedSpecs)
+
+        var seen = Set<String>()
+        let selectedImages = payload.images.compactMap { embedded -> WidgetWeaverEmbeddedImage? in
+            let trimmed = embedded.originalFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            guard referencedFileNames.contains(trimmed) else { return nil }
+            guard seen.insert(trimmed).inserted else { return nil }
+            return embedded
+        }
+
+        return WidgetWeaverDesignExchangePayload(
+            magic: payload.magic,
+            formatVersion: payload.formatVersion,
+            createdAt: payload.createdAt,
+            specs: selectedSpecs,
+            images: selectedImages
+        )
+    }
+
+    private static func specHasAnyImage(_ spec: WidgetSpec) -> Bool {
+        func hasAnyFileName(_ image: ImageSpec?) -> Bool {
+            guard let image else { return false }
+            return image.allReferencedFileNames().contains {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
         }
 
-        return WidgetWeaverImportReviewSummary(
-            designCount: designCount,
-            imageCount: imageCount,
-            totalImageBytes: totalBytes,
-            newestUpdatedAt: newest,
-            includesSmartPhotos: includesSmart
-        )
+        if hasAnyFileName(spec.image) { return true }
+
+        if let matched = spec.matchedSet {
+            if hasAnyFileName(matched.small?.image) { return true }
+            if hasAnyFileName(matched.medium?.image) { return true }
+            if hasAnyFileName(matched.large?.image) { return true }
+        }
+
+        return false
+    }
+
+    private static func referencedImageFileNames(in specs: [WidgetSpec]) -> Set<String> {
+        var out = Set<String>()
+
+        func add(_ image: ImageSpec?) {
+            guard let image else { return }
+            for fileName in image.allReferencedFileNames() {
+                let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                out.insert(trimmed)
+            }
+        }
+
+        for spec in specs {
+            add(spec.image)
+
+            if let matched = spec.matchedSet {
+                add(matched.small?.image)
+                add(matched.medium?.image)
+                add(matched.large?.image)
+            }
+        }
+
+        return out
     }
 }

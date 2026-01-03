@@ -40,21 +40,44 @@ struct WidgetWeaverSmartPhotoTargets: Hashable, Sendable {
 
     @MainActor
     private static func currentScreen() -> UIScreen {
-        if let activeScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive })
-        {
-            return activeScene.screen
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+
+        if let screen = screenFromWindowScenes(scenes, preferForegroundActive: true) {
+            return screen
+        }
+        if let screen = screenFromWindowScenes(scenes, preferForegroundActive: false) {
+            return screen
+        }
+        if let screen = scenes.first?.screen {
+            return screen
+        }
+        if let screen = UIScreen.screens.first {
+            return screen
         }
 
-        if let anyScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first
-        {
-            return anyScene.screen
+        preconditionFailure("WidgetWeaverSmartPhotoTargets.currentScreen(): no UIScreen available")
+    }
+
+    @MainActor
+    private static func screenFromWindowScenes(_ scenes: [UIWindowScene], preferForegroundActive: Bool) -> UIScreen? {
+        let orderedScenes: [UIWindowScene]
+        if preferForegroundActive {
+            let active = scenes.filter { $0.activationState == .foregroundActive }
+            orderedScenes = active.isEmpty ? scenes : active
+        } else {
+            orderedScenes = scenes
         }
 
-        return UIScreen.main
+        for scene in orderedScenes {
+            if let key = scene.windows.first(where: { $0.isKeyWindow }) {
+                return key.screen
+            }
+            if let any = scene.windows.first {
+                return any.screen
+            }
+        }
+
+        return nil
     }
 }
 
@@ -186,7 +209,7 @@ private func detectFocusBoxes(in cgImage: CGImage) -> [WidgetWeaverFocusBox] {
         // Best-effort: fall through with whatever results are available.
     }
 
-    if let results = faces.results as? [VNFaceObservation] {
+    if let results = faces.results {
         for face in results {
             let r = visionRectToTopLeft(face.boundingBox)
             let area = Double(r.width * r.height)
@@ -207,9 +230,9 @@ private func detectFocusBoxes(in cgImage: CGImage) -> [WidgetWeaverFocusBox] {
         }
     }
 
-    if let sal = (saliency.results as? [VNSaliencyImageObservation])?.first {
+    if let sal = saliency.results?.first {
         // `salientObjects` are rectangles (often rough). Convert using corner points.
-        let rects: [CGRect] = sal.salientObjects.compactMap { rectObs in
+        let rects: [CGRect] = (sal.salientObjects ?? []).compactMap { rectObs in
             let xs = [rectObs.topLeft.x, rectObs.topRight.x, rectObs.bottomLeft.x, rectObs.bottomRight.x]
             let ys = [rectObs.topLeft.y, rectObs.topRight.y, rectObs.bottomLeft.y, rectObs.bottomRight.y]
 

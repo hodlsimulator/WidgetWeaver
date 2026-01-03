@@ -10,7 +10,7 @@ import SwiftUI
 import WidgetKit
 import PhotosUI
 import UIKit
-
+ 
 extension ContentView {
 
     // MARK: - Photos import
@@ -19,8 +19,7 @@ extension ContentView {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { return }
 
-            // Widget render targets depend on the current device + screen scale.
-            let targets = await MainActor.run { WidgetWeaverSmartPhotoTargets.current() }
+            let targets = WidgetWeaverSmartPhotoTargets.current()
 
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try WidgetWeaverSmartPhotoPipeline.prepareAndStore(imageData: data, targets: targets)
@@ -32,9 +31,12 @@ extension ContentView {
                 d.imageSmartPhoto = prepared.imageSpec.smartPhoto
                 setCurrentFamilyDraft(d)
 
-                if let uiImage = AppGroup.loadUIImage(fileName: prepared.themeImageFileName) {
-                    handleImportedImageTheme(uiImage: uiImage, fileName: prepared.themeImageFileName)
+                if let themeUIImage = AppGroup.loadUIImage(fileName: prepared.themeImageFileName) {
+                    handleImportedImageTheme(uiImage: themeUIImage, fileName: prepared.themeImageFileName)
+                } else if let fallback = UIImage(data: data) {
+                    handleImportedImageTheme(uiImage: fallback, fileName: prepared.imageSpec.fileName)
                 }
+
                 pickedPhoto = nil
             }
         } catch {
@@ -42,73 +44,91 @@ extension ContentView {
         }
     }
 
-    // MARK: - Share / Import (Design Exchange)
+    // MARK: - Actions
 
-    func exportDesignExchangeText(includeImages: Bool) {
-        let text = WidgetSpecStore.shared.exportExchangeFile(includeImages: includeImages)
-        UIPasteboard.general.string = text
-        exportStatusMessage = includeImages ? "Copied design + images to clipboard." : "Copied design to clipboard."
+    func saveCurrentSpec() {
+        let spec = draftSpec(id: selectedSpecID)
+        let results = store.saveSpec(spec)
+
+        savedSpecs = results.savedSpecs
+        defaultSpecID = results.defaultSpecID
+
+        selectedSpecID = spec.id
+        lastSavedAt = Date()
+
+        saveStatusMessage = "Saved."
     }
 
-    func importDesignExchangeText(from rawText: String, mergeStrategy: WidgetWeaverImportMergeStrategy) {
-        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let payload = WidgetWeaverDesignExchangeCodec.decodeFromText(trimmed) else {
-            importStatusMessage = "Import failed: invalid text."
+    func deleteCurrentSpec() {
+        let old = selectedSpecID
+        let results = store.deleteSpec(id: old)
+
+        savedSpecs = results.savedSpecs
+        defaultSpecID = results.defaultSpecID
+
+        if let first = savedSpecs.first {
+            selectedSpecID = first.id
+        } else {
+            selectedSpecID = UUID()
+        }
+
+        lastSavedAt = Date()
+        saveStatusMessage = "Deleted."
+    }
+
+    func setAsDefaultSpec() {
+        let id = selectedSpecID
+        store.setDefaultSpecID(id)
+        defaultSpecID = id
+        saveStatusMessage = "Default set."
+    }
+
+    func refreshWidgets() {
+        WidgetCenter.shared.reloadAllTimelines()
+        lastWidgetRefreshAt = Date()
+        saveStatusMessage = "Widget refresh requested."
+    }
+
+    func exportDesignToClipboard(includeImages: Bool) {
+        do {
+            let specs = savedSpecs
+            let payload = try store.exportExchangePayload(specs: specs, includeImages: includeImages)
+            let data = try WidgetWeaverDesignExchangeCodec.encode(payload)
+            let text = data.base64EncodedString()
+
+            UIPasteboard.general.string = text
+            saveStatusMessage = includeImages ? "Copied design + images to clipboard." : "Copied design to clipboard."
+        } catch {
+            saveStatusMessage = "Export failed."
+        }
+    }
+
+    func importDesignFromClipboard() {
+        guard let raw = UIPasteboard.general.string else {
+            saveStatusMessage = "Clipboard empty."
+            return
+        }
+
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = Data(base64Encoded: trimmed) else {
+            saveStatusMessage = "Import failed: invalid text."
             return
         }
 
         do {
-            try WidgetSpecStore.shared.importExchangePayload(payload, mergeStrategy: mergeStrategy)
-            importStatusMessage = "Import complete."
+            let payload = try WidgetWeaverDesignExchangeCodec.decodeAny(data)
+            let results = try store.importExchangePayload(payload, dedupePolicy: .renameIncomingIfConflict)
+
+            savedSpecs = results.savedSpecs
+            defaultSpecID = results.defaultSpecID
+
+            if let first = results.importedIDs.first {
+                selectedSpecID = first
+            }
+
+            saveStatusMessage = "Import complete."
         } catch {
-            importStatusMessage = "Import failed."
-        }
-    }
-
-    // MARK: - Widget refresh
-
-    func reloadWidgets() {
-        WidgetWeaverEntitlements.flushAndNotifyWidgets()
-        widgetStatusMessage = "Requested widget reload."
-    }
-
-    // MARK: - Draft management
-
-    func startNewDraft() {
-        draft = EditorDraft.makeNew()
-        isEditingExisting = false
-        editorStatusMessage = "New design."
-    }
-
-    func startEditingSpec(_ spec: WidgetSpec) {
-        draft = EditorDraft(from: spec)
-        isEditingExisting = true
-        editorStatusMessage = "Editing: \(spec.name)"
-    }
-
-    func saveDraft() {
-        let spec = draft.toWidgetSpec()
-        WidgetSpecStore.shared.upsertSpec(spec)
-        isEditingExisting = true
-        editorStatusMessage = "Saved."
-    }
-
-    func deleteCurrentDesign() {
-        let id = draft.id
-        WidgetSpecStore.shared.deleteSpec(id: id)
-        let fallback = WidgetSpecStore.shared.loadDefaultSpec()
-        draft = EditorDraft(from: fallback)
-        isEditingExisting = true
-        editorStatusMessage = "Deleted."
-    }
-
-    func revertDraftToSaved() {
-        let id = draft.id
-        let specs = WidgetSpecStore.shared.loadAllSpecs()
-        if let saved = specs.first(where: { $0.id == id }) {
-            draft = EditorDraft(from: saved)
-            isEditingExisting = true
-            editorStatusMessage = "Reverted to last saved."
+            saveStatusMessage = "Import failed."
         }
     }
 }

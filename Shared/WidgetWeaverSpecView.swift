@@ -5,393 +5,331 @@
 //  Created by . . on 12/17/25.
 //
 
-import Foundation
 import SwiftUI
 import WidgetKit
-import UIKit
-import AppIntents
 
-public enum WidgetWeaverRenderContext: String, Codable, Sendable {
-    case widget
-    case preview
-    case simulator
-}
+struct WidgetWeaverSpecView: View {
+    let spec: WidgetSpec
+    let family: WidgetFamily
+    let context: WidgetRenderingContext
 
-public struct WidgetWeaverSpecView: View {
-    public let spec: WidgetSpec
-    public let family: WidgetFamily
-    public let context: WidgetWeaverRenderContext
+    var body: some View {
+        let resolved = spec.resolvingVariables(context: context, now: WidgetWeaverRenderClock.now)
+        let style = resolved.style
+        let layout = resolved.layout
+        let accent = style.accent.color
 
-    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext = .widget) {
-        self.spec = spec
-        self.family = family
-        self.context = context
+        ZStack {
+            backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
+
+            contentView(spec: resolved, layout: layout, style: style, accent: accent)
+                .padding(layout.padding)
+        }
     }
 
-    public var body: some View {
-        let s = spec.resolved(for: family)
-        ZStack {
-            backgroundView(spec: s)
+    // MARK: - Content
 
-            HStack(spacing: 0) {
-                if s.layout.showsAccentBar {
-                    Rectangle()
-                        .fill(s.style.accentColor.colorValue)
-                        .frame(width: 6)
+    private func contentView(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        switch layout.template {
+        case .classic:
+            return AnyView(classic(spec: spec, layout: layout, style: style, accent: accent))
+
+        case .hero:
+            return AnyView(hero(spec: spec, layout: layout, style: style, accent: accent))
+
+        case .poster:
+            return AnyView(poster(spec: spec, layout: layout, style: style, accent: accent))
+
+        case .weather:
+            return AnyView(weather(spec: spec, layout: layout, style: style, accent: accent))
+
+        case .nextUpCalendar:
+            return AnyView(nextUpCalendar(spec: spec, layout: layout, style: style, accent: accent))
+        }
+    }
+
+    private func classic(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let text = WidgetWeaverResolvedText(spec: spec)
+        let symbol = spec.symbol
+
+        return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            if layout.showsAccentBar {
+                Rectangle()
+                    .fill(accent)
+                    .frame(height: 4)
+                    .cornerRadius(2)
+            }
+
+            if let symbol {
+                symbolView(symbol: symbol, accent: accent)
+            }
+
+            textView(
+                text: text.primary,
+                role: spec.primaryTextRole,
+                style: style,
+                maxLines: spec.primaryMaxLines,
+                alignment: spec.primaryTextAlignment
+            )
+
+            if let secondary = text.secondary {
+                textView(
+                    text: secondary,
+                    role: spec.secondaryTextRole,
+                    style: style,
+                    maxLines: spec.secondaryMaxLines,
+                    alignment: spec.secondaryTextAlignment
+                )
+            }
+
+            if let tertiary = text.tertiary {
+                textView(
+                    text: tertiary,
+                    role: spec.tertiaryTextRole,
+                    style: style,
+                    maxLines: spec.tertiaryMaxLines,
+                    alignment: spec.tertiaryTextAlignment
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            if spec.actionBar.enabled {
+                actionBar(spec: spec, style: style, accent: accent)
+            }
+        }
+    }
+
+    private func hero(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let text = WidgetWeaverResolvedText(spec: spec)
+        let symbol = spec.symbol
+
+        return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            HStack(spacing: 10) {
+                if let symbol {
+                    symbolView(symbol: symbol, accent: accent)
                 }
 
-                contentView(spec: s)
-                    .padding(.leading, s.layout.showsAccentBar ? 10 : 0)
-                    .padding(.trailing, 12)
-            }
-            .padding(.vertical, 12)
-        }
-        .containerBackgroundIfNeeded(spec: s, context: context)
-    }
+                VStack(alignment: layout.alignment.alignment, spacing: 2) {
+                    textView(
+                        text: text.primary,
+                        role: spec.primaryTextRole,
+                        style: style,
+                        maxLines: spec.primaryMaxLines,
+                        alignment: spec.primaryTextAlignment
+                    )
 
-    @ViewBuilder
-    private func backgroundView(spec: WidgetSpec) -> some View {
-        switch spec.layout.template {
-        case .none:
-            spec.style.backgroundColor.colorValue
-        case .poster:
-            let bg = spec.style.backgroundColor.colorValue
-            ZStack {
-                bg
-                if let image = spec.image {
-                    let uiImage = image.loadUIImageFromAppGroup(for: family)
-                    if let uiImage {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: image.contentMode == .fit ? .fit : .fill)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .overlay(
-                                LinearGradient(
-                                    colors: [
-                                        .black.opacity(0.50),
-                                        .black.opacity(0.10),
-                                        .black.opacity(0.00)
-                                    ],
-                                    startPoint: .bottom,
-                                    endPoint: .top
-                                )
-                            )
+                    if let secondary = text.secondary {
+                        textView(
+                            text: secondary,
+                            role: spec.secondaryTextRole,
+                            style: style,
+                            maxLines: spec.secondaryMaxLines,
+                            alignment: spec.secondaryTextAlignment
+                        )
                     }
                 }
-            }
-        case .weather:
-            WeatherBackgroundView(style: spec.style)
-        case .nextUpCalendar:
-            NextUpBackgroundView(style: spec.style)
-        case .checklist:
-            ChecklistBackgroundView(style: spec.style)
-        }
-    }
 
-    @ViewBuilder
-    private func contentView(spec: WidgetSpec) -> some View {
-        switch spec.layout.template {
-        case .none:
-            BasicLayoutView(spec: spec, family: family, context: context)
-        case .poster:
-            PosterLayoutView(spec: spec, family: family, context: context)
-        case .weather:
-            WeatherLayoutView(spec: spec, family: family, context: context)
-        case .nextUpCalendar:
-            NextUpLayoutView(spec: spec, family: family, context: context)
-        case .checklist:
-            ChecklistLayoutView(spec: spec, family: family, context: context)
-        }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func containerBackgroundIfNeeded(spec: WidgetSpec, context: WidgetWeaverRenderContext) -> some View {
-        switch context {
-        case .widget:
-            self.containerBackground(for: .widget) { spec.style.backgroundColor.colorValue }
-        case .preview:
-            self.background(spec.style.backgroundColor.colorValue)
-        case .simulator:
-            self.background(spec.style.backgroundColor.colorValue)
-        }
-    }
-}
-
-// MARK: - Basic Layout
-
-private struct BasicLayoutView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-
-    var body: some View {
-        let axis = spec.layout.axis
-        let spacing = spec.layout.spacing
-        let alignment = spec.layout.alignment
-
-        if axis == .horizontal {
-            HStack(alignment: alignment.horizontalStackAlignment, spacing: spacing) {
-                symbolView
-                textStack
                 Spacer(minLength: 0)
             }
-        } else {
-            VStack(alignment: alignment.verticalStackAlignment, spacing: spacing) {
-                symbolView
-                textStack
-                Spacer(minLength: 0)
+
+            if let tertiary = text.tertiary {
+                textView(
+                    text: tertiary,
+                    role: spec.tertiaryTextRole,
+                    style: style,
+                    maxLines: spec.tertiaryMaxLines,
+                    alignment: spec.tertiaryTextAlignment
+                )
             }
-        }
-    }
 
-    @ViewBuilder
-    private var symbolView: some View {
-        if let symbol = spec.symbol {
-            WidgetSymbolView(symbol: symbol, style: spec.style)
-        }
-    }
-
-    private var textStack: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(spec.primaryText)
-                .font(spec.style.primaryFont.fontValue)
-                .foregroundStyle(spec.style.primaryTextColor.colorValue)
-                .lineLimit(family == .systemSmall ? spec.layout.primaryLineLimitSmall : spec.layout.primaryLineLimit)
-
-            if let secondary = spec.secondaryText {
-                Text(secondary)
-                    .font(spec.style.secondaryFont.fontValue)
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
-                    .lineLimit(spec.layout.secondaryLineLimit)
-            }
-        }
-    }
-}
-
-// MARK: - Poster Layout
-
-private struct PosterLayoutView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
             Spacer(minLength: 0)
 
-            Text(spec.primaryText)
-                .font(spec.style.primaryFont.fontValue)
-                .foregroundStyle(.white)
-                .lineLimit(family == .systemSmall ? spec.layout.primaryLineLimitSmall : spec.layout.primaryLineLimit)
-
-            if let secondary = spec.secondaryText {
-                Text(secondary)
-                    .font(spec.style.secondaryFont.fontValue)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(spec.layout.secondaryLineLimit)
+            if spec.actionBar.enabled {
+                actionBar(spec: spec, style: style, accent: accent)
             }
         }
     }
-}
 
-// MARK: - Weather Template
+    private func poster(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let text = WidgetWeaverResolvedText(spec: spec)
 
-private struct WeatherBackgroundView: View {
-    let style: StyleSpec
+        return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            Spacer(minLength: 0)
 
-    var body: some View {
-        LinearGradient(
-            colors: [
-                style.backgroundColor.colorValue,
-                style.backgroundColor.colorValue.opacity(0.75)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
+            VStack(alignment: layout.alignment.alignment, spacing: 2) {
+                textView(
+                    text: text.primary,
+                    role: spec.primaryTextRole,
+                    style: style,
+                    maxLines: spec.primaryMaxLines,
+                    alignment: spec.primaryTextAlignment
+                )
+
+                if let secondary = text.secondary {
+                    textView(
+                        text: secondary,
+                        role: spec.secondaryTextRole,
+                        style: style,
+                        maxLines: spec.secondaryMaxLines,
+                        alignment: spec.secondaryTextAlignment
+                    )
+                }
+
+                if let tertiary = text.tertiary {
+                    textView(
+                        text: tertiary,
+                        role: spec.tertiaryTextRole,
+                        style: style,
+                        maxLines: spec.tertiaryMaxLines,
+                        alignment: spec.tertiaryTextAlignment
+                    )
+                }
+            }
+            .padding(14)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+
+            if spec.actionBar.enabled {
+                actionBar(spec: spec, style: style, accent: accent)
+            }
+        }
+    }
+
+    private func weather(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        WidgetWeaverWeatherWidgetView(
+            spec: spec,
+            family: family,
+            context: context
         )
     }
-}
 
-private struct WeatherLayoutView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(spec.primaryText)
-                    .font(spec.style.primaryFont.fontValue)
-                    .foregroundStyle(spec.style.primaryTextColor.colorValue)
-                Spacer()
-                Text("☀️")
-            }
-
-            if let secondary = spec.secondaryText {
-                Text(secondary)
-                    .font(spec.style.secondaryFont.fontValue)
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
-            }
-
-            Spacer(minLength: 0)
-
-            if family != .systemSmall {
-                Text("Weather template placeholder")
-                    .font(.caption)
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue.opacity(0.7))
-            }
-        }
-    }
-}
-
-// MARK: - Next Up Calendar Template
-
-private struct NextUpBackgroundView: View {
-    let style: StyleSpec
-
-    var body: some View {
-        LinearGradient(
-            colors: [
-                style.backgroundColor.colorValue.opacity(0.9),
-                style.backgroundColor.colorValue
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+    private func nextUpCalendar(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        WidgetWeaverNextUpCalendarWidgetView(
+            spec: spec,
+            family: family,
+            context: context
         )
     }
-}
 
-private struct NextUpLayoutView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
+    // MARK: - Components
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(spec.primaryText)
-                    .font(spec.style.primaryFont.fontValue)
-                    .foregroundStyle(spec.style.primaryTextColor.colorValue)
-                Spacer()
-                Image(systemName: "calendar")
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
-            }
+    private func textView(text: String, role: TextRoleToken, style: StyleSpec, maxLines: Int, alignment: TextAlignmentToken) -> some View {
+        let resolved = style.textSpec(for: role)
+        let colour = resolved.colour(for: role).color
 
-            if let secondary = spec.secondaryText {
-                Text(secondary)
-                    .font(spec.style.secondaryFont.fontValue)
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
-                    .lineLimit(spec.layout.secondaryLineLimit)
-            }
-
-            Spacer(minLength: 0)
-
-            Text("Next Up template placeholder")
-                .font(.caption)
-                .foregroundStyle(spec.style.secondaryTextColor.colorValue.opacity(0.7))
-        }
+        return Text(text)
+            .font(resolved.font.swiftUIFont(size: resolved.size, weight: resolved.weight.swiftUIFontWeight))
+            .foregroundColor(colour)
+            .multilineTextAlignment(alignment.swiftUI)
+            .lineLimit(maxLines)
+            .shadow(
+                color: style.shadowStyle.shadowColor.opacity(style.shadowOpacity),
+                radius: style.shadowRadius,
+                x: style.shadowX,
+                y: style.shadowY
+            )
     }
-}
 
-// MARK: - Checklist Template
-
-private struct ChecklistBackgroundView: View {
-    let style: StyleSpec
-
-    var body: some View {
-        style.backgroundColor.colorValue
-    }
-}
-
-private struct ChecklistLayoutView: View {
-    let spec: WidgetSpec
-    let family: WidgetFamily
-    let context: WidgetWeaverRenderContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(spec.primaryText)
-                    .font(spec.style.primaryFont.fontValue)
-                    .foregroundStyle(spec.style.primaryTextColor.colorValue)
-                Spacer()
-                Image(systemName: "checklist")
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
+    private func symbolView(symbol: SymbolSpec, accent: Color) -> some View {
+        let colour: Color = {
+            switch symbol.tint {
+            case .accent:
+                return accent
+            case .white:
+                return .white
+            case .black:
+                return .black
             }
+        }()
 
-            if let secondary = spec.secondaryText {
-                Text(secondary)
-                    .font(spec.style.secondaryFont.fontValue)
-                    .foregroundStyle(spec.style.secondaryTextColor.colorValue)
-            }
-
-            Spacer(minLength: 0)
-
-            Text("Checklist template placeholder")
-                .font(.caption)
-                .foregroundStyle(spec.style.secondaryTextColor.colorValue.opacity(0.7))
-        }
-    }
-}
-
-// MARK: - Symbol View
-
-private struct WidgetSymbolView: View {
-    let symbol: SymbolSpec
-    let style: StyleSpec
-
-    var body: some View {
-        Image(systemName: symbol.name)
+        return Image(systemName: symbol.name)
             .symbolRenderingMode(symbol.renderingMode.swiftUISymbolRenderingMode)
-            .font(.system(size: symbol.size, weight: symbol.weight.swiftUIFontWeight))
-            .foregroundStyle(symbol.tint.colorValue)
-            .frame(width: symbol.size * 1.4, height: symbol.size * 1.4, alignment: .center)
+            .font(.system(size: 36 * symbol.scale))
+            .fontWeight(symbol.weight.swiftUIFontWeight)
+            .foregroundColor(colour.opacity(symbol.opacity))
     }
-}
 
-private extension SymbolWeightToken {
-    var swiftUIFontWeight: Font.Weight {
-        switch self {
-        case .ultraLight: return .ultraLight
-        case .thin: return .thin
-        case .light: return .light
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        case .heavy: return .heavy
-        case .black: return .black
+    private func actionBar(spec: WidgetSpec, style: StyleSpec, accent: Color) -> some View {
+        let bar = spec.actionBar
+        let colour = style.textSpec(for: .secondary).colour(for: .secondary).color
+        let tint = bar.tint.color
+
+        return HStack(spacing: 8) {
+            if bar.showsIcon {
+                Image(systemName: bar.icon.symbolName)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundColor(tint)
+            }
+
+            Text(bar.label)
+                .font(.system(size: bar.labelSize, weight: bar.labelWeight.swiftUIFontWeight))
+                .foregroundColor(colour)
+
+            Spacer(minLength: 0)
         }
+        .padding(bar.padding)
+        .background(tint.opacity(bar.backgroundOpacity))
+        .cornerRadius(bar.cornerRadius)
     }
-}
 
-private extension SymbolRenderingModeToken {
-    var swiftUISymbolRenderingMode: SymbolRenderingMode {
-        switch self {
-        case .monochrome: return .monochrome
-        case .hierarchical: return .hierarchical
-        case .palette: return .palette
-        case .multicolor: return .multicolor
+    // MARK: - Background
+
+    private func backgroundView(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        ZStack {
+            if layout.template == .weather {
+                weatherBackdrop(style: style, accent: accent)
+            } else if layout.template == .poster,
+                      let image = spec.image,
+                      let uiImage = image.loadUIImageFromAppGroup(for: family) {
+                Color(uiColor: .systemBackground)
+
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .overlay {
+                        LinearGradient(
+                            colors: [
+                                .black.opacity(0.55),
+                                .black.opacity(0.12),
+                                .clear
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    }
+                    .clipped()
+            } else {
+                style.background.view
+            }
         }
-    }
-}
-
-private extension LayoutAlignmentToken {
-    var horizontalStackAlignment: VerticalAlignment {
-        switch self {
-        case .leading: return .center
-        case .center: return .center
-        case .trailing: return .center
-        }
+        .ignoresSafeArea()
     }
 
-    var verticalStackAlignment: HorizontalAlignment {
-        switch self {
-        case .leading: return .leading
-        case .center: return .center
-        case .trailing: return .trailing
+    /// Weather uses a lot of `.ultraThinMaterial`. In WidgetKit, materials take their blur source from the
+    /// widget container background. If the container background is clear, materials render as black.
+    /// This backdrop is used as the widget container background so the weather glass has a real source.
+    private func weatherBackdrop(style: StyleSpec, accent: Color) -> some View {
+        let store = WidgetWeaverWeatherStore.shared
+        let now = WidgetWeaverRenderClock.now
+        let snapshot = store.snapshotForRender(context: context)
+
+        let palette: WeatherPalette = {
+            if let snapshot {
+                return WeatherPalette.forSnapshot(snapshot, now: now, accent: accent)
+            }
+            return WeatherPalette.fallback(accent: accent)
+        }()
+
+        return ZStack {
+            palette.background
+                .overlay(palette.vignette.opacity(style.weatherBlur.clamped(to: 0...1)))
+
+            if style.weatherBlur > 0.001 {
+                palette.background
+                    .blur(radius: 12 * style.weatherBlur)
+                    .opacity(0.55)
+            }
         }
     }
 }
