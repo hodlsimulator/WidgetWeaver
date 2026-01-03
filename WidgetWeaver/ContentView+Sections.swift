@@ -198,202 +198,133 @@ extension ContentView {
             if proManager.isProUnlocked {
                 let vars = WidgetWeaverVariableStore.shared.loadAll()
                 LabeledContent("Saved variables", value: "\(vars.count)")
-                Button { activeSheet = .variables } label: { Label("Manage variables", systemImage: "curlybraces") }
-            } else {
-                Toggle("Variables (Pro)", isOn: .constant(false))
-                    .disabled(true)
+                if vars.isEmpty {
+                    Text("No variables yet.\nAdd some here, or update via Shortcuts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    let preview = vars.keys.sorted().prefix(3)
+                    ForEach(Array(preview), id: \.self) { k in
+                        let v = vars[k] ?? ""
+                        LabeledContent(k, value: v.isEmpty ? " " : v)
+                    }
+                }
 
-                Text("Variables let widgets show dynamic content.\nUnlock Pro to use variables.")
+                Button { activeSheet = .variables } label: { Label("Manage Variables", systemImage: "slider.horizontal.3") }
+            } else {
+                Text("Variables are a Pro feature.\nUse {{key}} templates in text fields, then update values via Shortcuts or in-app once Pro is unlocked.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
                 Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
             }
         } header: {
             sectionHeader("Variables")
+        } footer: {
+            Text("Variables render at widget render time.\nTemplate syntax: {{key}} or {{key|fallback}}.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    var previewSection: some View {
+    var sharingSection: some View {
         Section {
-            Picker("Preview size", selection: $previewFamily) {
-                Text("Small").tag(WidgetFamily.systemSmall)
-                Text("Medium").tag(WidgetFamily.systemMedium)
-                Text("Large").tag(WidgetFamily.systemLarge)
+            if importInProgress {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Importing…").foregroundStyle(.secondary)
+                }
             }
-            .pickerStyle(.segmented)
 
-            WidgetWeaverSpecView(
-                spec: draftSpec(id: selectedSpecID),
-                family: previewFamily,
-                now: Date(),
-                isPreview: true
-            )
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-
-            ControlGroup {
-                Button { activeSheet = .inspector } label: { Label("Inspector", systemImage: "info.circle") }
-                Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
+            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("WidgetWeaver Design")) {
+                Label("Share This Design", systemImage: "square.and.arrow.up")
             }
-            .controlSize(.small)
+            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("WidgetWeaver Designs")) {
+                Label("Share All Designs", systemImage: "square.and.arrow.up.on.square")
+            }
+            Button { showImportPicker = true } label: { Label("Import designs…", systemImage: "square.and.arrow.down") }
+            Button(role: .destructive) { showImageCleanupConfirmation = true } label: { Label("Clean Up Unused Images", systemImage: "trash.slash") }
+        } header: {
+            sectionHeader("Sharing")
+        } footer: {
+            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.\n\"Clean Up\" removes image files not referenced by any saved design.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 
-            if let lastWidgetRefreshAt {
-                Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2)
+    var matchedSetSection: some View {
+        Section {
+            Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
+                .disabled(!proManager.isProUnlocked)
+
+            if !proManager.isProUnlocked {
+                Text("Matched sets are a Pro feature.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
+            } else if matchedSetEnabled {
+                Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button { copyCurrentSizeToAllSizes() } label: { Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square") }
+            } else {
+                Text("When enabled, Small and Large can differ while sharing the same style tokens.\nMedium is treated as the base.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } header: {
-            sectionHeader("Preview")
+            sectionHeader("Matched set")
         }
     }
 
-    var saveSection: some View {
+    var widgetWorkflowSection: some View {
         Section {
-            TextField("Design name", text: $designName)
-                .textInputAutocapitalization(.words)
+            Button { saveSelected(makeDefault: true) } label: { Label("Save & Make Default", systemImage: "checkmark.circle.fill") }
+            Button { saveSelected(makeDefault: false) } label: { Label("Save (Keep Default)", systemImage: "tray.and.arrow.down") }
 
-            ControlGroup {
-                Button { saveSelected(makeDefault: false) } label: { Label("Save", systemImage: "square.and.arrow.down") }
-                Button { saveSelected(makeDefault: true) } label: { Label("Save & Default", systemImage: "star.fill") }
-                Button(role: .destructive) { showRevertConfirmation = true } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
-                    .disabled(savedSpecs.isEmpty)
+            if selectedSpecID != defaultSpecID {
+                Button {
+                    store.setDefault(id: selectedSpecID)
+                    defaultSpecID = store.defaultSpecID()
+                    lastWidgetRefreshAt = Date()
+                    saveStatusMessage = "Made default.\nWidgets refreshed."
+                } label: {
+                    Label("Make This Design Default", systemImage: "star")
+                }
             }
-            .controlSize(.small)
 
-            if let lastSavedAt {
-                Text("Last saved: \(lastSavedAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
 
             if !saveStatusMessage.isEmpty {
                 Text(saveStatusMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        } header: {
-            sectionHeader("Save")
-        }
-    }
 
-    var shareSection: some View {
-        Section {
-            Button {
-                shareTapped()
-            } label: {
-                Label("Share designs", systemImage: "square.and.arrow.up")
-            }
-
-            Button {
-                importTapped()
-            } label: {
-                Label("Import designs", systemImage: "square.and.arrow.down")
-            }
-        } header: {
-            sectionHeader("Share")
-        } footer: {
-            Text("Sharing exports a .wwdesigns file.\nImporting will review designs before saving.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var cleanupSection: some View {
-        Section {
-            Button(role: .destructive) {
-                showImageCleanupConfirmation = true
-            } label: {
-                Label("Clean up unused images", systemImage: "trash")
-            }
-        } header: {
-            sectionHeader("Maintenance")
-        } footer: {
-            Text("Removes image files in the App Group container that are not referenced by any saved design.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var editorLayout: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                designsSection
-                proSection
-                variablesManagerSection
-                previewSection
-
-                contentSection
-
-                matchedSetSection
-                textSection
-                symbolSection
-                imageSection
-                layoutSection
-                styleSection
-                typographySection
-                actionsSection
-
-                saveSection
-                shareSection
-                cleanupSection
-
-                Spacer(minLength: 50)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-        }
-    }
-
-    // MARK: - Matched set
-    var matchedSetSection: some View {
-        Section {
-            if proManager.isProUnlocked {
-                Toggle("Matched Set (per-size overrides)", isOn: matchedSetBinding)
-
-                if matchedSetEnabled {
-                    Picker("Editing size", selection: $previewFamily) {
-                        Text("Small").tag(WidgetFamily.systemSmall)
-                        Text("Medium").tag(WidgetFamily.systemMedium)
-                        Text("Large").tag(WidgetFamily.systemLarge)
-                    }
-                    .pickerStyle(.segmented)
-
-                    Button {
-                        copyCurrentSizeToAllSizes()
-                    } label: {
-                        Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
-                    }
-                }
-
-            } else {
-                Toggle("Matched Set (Pro)", isOn: .constant(false))
-                    .disabled(true)
-
-                Text("Matched Set allows you to customise Small/Medium/Large independently.\nUnlock Pro to use Matched Set.")
+            if let lastWidgetRefreshAt {
+                Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .standard))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
             }
         } header: {
-            sectionHeader("Matched Set")
+            sectionHeader("Widgets")
+        } footer: {
+            Text("If a widget doesn’t change, check which Design it is using (Edit Widget).\nWidgets set to \"Default (App)\" always follow the app default design.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Text
     var textSection: some View {
         Section {
-            TextField("Primary text", text: binding(\.primaryText), axis: .vertical)
-                .lineLimit(1...3)
+            TextField("Design name", text: $designName)
+                .textInputAutocapitalization(.words)
 
-            TextField("Secondary text (optional)", text: binding(\.secondaryText), axis: .vertical)
-                .lineLimit(1...4)
+            TextField("Primary text", text: binding(\.primaryText))
+            TextField("Secondary text (optional)", text: binding(\.secondaryText))
 
-            if proManager.isProUnlocked {
-                Button { activeSheet = .variables } label: { Label("Insert variable", systemImage: "curlybraces") }
-            } else {
-                Text("Variables (Pro) let you insert dynamic content.")
+            if matchedSetEnabled {
+                Text("Text fields are currently editing: \(editingFamilyLabel)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -402,22 +333,21 @@ extension ContentView {
         }
     }
 
-    // MARK: - Symbol
     var symbolSection: some View {
         Section {
-            TextField("SF Symbol", text: binding(\.symbolName))
+            TextField("SF Symbol name (optional)", text: binding(\.symbolName))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
 
             Picker("Placement", selection: binding(\.symbolPlacement)) {
                 ForEach(SymbolPlacementToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue).tag(token)
                 }
             }
 
             HStack {
                 Text("Size")
-                Slider(value: binding(\.symbolSize), in: 10...44, step: 1)
+                Slider(value: binding(\.symbolSize), in: 8...96, step: 1)
                 Text("\(Int(currentFamilyDraft().symbolSize))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -664,12 +594,50 @@ extension ContentView {
                         }
                     }
 
+                    HStack {
+                        Menu {
+                            ForEach(ActionBarPreset.allCases) { preset in
+                                Button {
+                                    withAnimation {
+                                        actionBarDraft.replace(with: preset)
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(preset.title)
+                                        Text(preset.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Presets", systemImage: "sparkles")
+                        }
+
+                        Spacer()
+
+                        Button {
+                            if actionBarDraft.actions.count < WidgetActionBarSpec.maxActions {
+                                actionBarDraft.actions.append(.defaultIncrement())
+                            }
+                        } label: {
+                            Label("Add button", systemImage: "plus")
+                        }
+                        .disabled(actionBarDraft.actions.count >= WidgetActionBarSpec.maxActions)
+                    }
+                    .controlSize(.small)
+
                     if actionBarDraft.actions.isEmpty {
                         Button { actionBarDraft.actions = [ .defaultIncrement(), .defaultDone() ] } label: {
                             Label("Add starter buttons", systemImage: "sparkles")
                         }
                     } else {
                         ForEach($actionBarDraft.actions) { $action in
+                            let idx = actionBarDraft.actions.firstIndex(where: { $0.id == action.id })
+                            let canMoveUp = (idx ?? 0) > 0
+                            let canMoveDown = idx != nil && idx! < (actionBarDraft.actions.count - 1)
+                            let keyValidation = action.validateVariableKey()
+
                             DisclosureGroup {
                                 TextField("Button title", text: $action.title)
                                     .textInputAutocapitalization(.words)
@@ -688,49 +656,176 @@ extension ContentView {
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
 
-                                if action.kind == .openURL {
-                                    TextField("URL", text: $action.url)
-                                        .textInputAutocapitalization(.never)
-                                        .autocorrectionDisabled(true)
+                                if case .warning(let message) = keyValidation {
+                                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(.red)
                                 }
 
-                                if action.kind == .openApp {
-                                    Picker("Screen", selection: $action.openAppScreen) {
-                                        ForEach(WidgetWeaverOpenAppScreenToken.allCases) { token in
+                                switch action.kind {
+                                case .incrementVariable:
+                                    Stepper(
+                                        "Increment amount: \(action.incrementAmount)",
+                                        value: $action.incrementAmount,
+                                        in: -99...99
+                                    )
+                                case .setVariableToNow:
+                                    Picker("Now format", selection: $action.nowFormat) {
+                                        ForEach(WidgetNowFormatToken.allCases) { token in
                                             Text(token.displayName).tag(token)
                                         }
                                     }
                                 }
 
-                                Button(role: .destructive) {
-                                    removeAction(id: action.id)
-                                } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
+                                ControlGroup {
+                                    Button {
+                                        withAnimation { actionBarDraft.moveUp(id: action.id) }
+                                    } label: {
+                                        Label("Move Up", systemImage: "arrow.up")
+                                    }
+                                    .disabled(!canMoveUp)
 
+                                    Button {
+                                        withAnimation { actionBarDraft.moveDown(id: action.id) }
+                                    } label: {
+                                        Label("Move Down", systemImage: "arrow.down")
+                                    }
+                                    .disabled(!canMoveDown)
+                                }
+                                .controlSize(.small)
+
+                                Button(role: .destructive) {
+                                    actionBarDraft.actions.removeAll { $0.id == action.id }
+                                } label: {
+                                    Label("Remove button", systemImage: "trash")
+                                }
                             } label: {
-                                Text(action.title.isEmpty ? "Button" : action.title)
+                                HStack(alignment: .center, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "(No label)" : action.title)
+                                                .lineLimit(1)
+
+                                            if case .warning = keyValidation {
+                                                Image(systemName: "exclamationmark.triangle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.red)
+                                                    .accessibilityHidden(true)
+                                            }
+                                        }
+
+                                        Text(action.previewString)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer(minLength: 8)
+
+                                    VStack(spacing: 6) {
+                                        Button {
+                                            withAnimation { actionBarDraft.moveUp(id: action.id) }
+                                        } label: {
+                                            Image(systemName: "arrow.up")
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .disabled(!canMoveUp)
+                                        .accessibilityLabel("Move up")
+
+                                        Button {
+                                            withAnimation { actionBarDraft.moveDown(id: action.id) }
+                                        } label: {
+                                            Image(systemName: "arrow.down")
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .disabled(!canMoveDown)
+                                        .accessibilityLabel("Move down")
+                                    }
+                                }
                             }
                         }
+                        .onMove { fromOffsets, toOffset in
+                            withAnimation {
+                                actionBarDraft.move(fromOffsets: fromOffsets, toOffset: toOffset)
+                            }
+                        }
+                        .environment(\.editMode, .constant(.active))
                     }
-                } else {
-                    Text("Enable to show buttons below the content.\nActions run via App Intents.")
+
+                    Text("Buttons render on iOS 17+ as interactive widgets.\nThey update variables stored in the App Group.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         } header: {
             sectionHeader("Actions")
-        } footer: {
-            if proManager.isProUnlocked {
-                Text("Tip: interactive widgets update on tap, but iOS may delay timeline reloads.\nUse variables for dynamic content.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
-    private func removeAction(id: UUID) {
-        actionBarDraft.actions.removeAll { $0.id == id }
+    var aiSection: some View {
+        Section {
+            Text(WidgetSpecAIService.availabilityMessage())
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Optional on-device generation/edits.\nImages are never generated.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextField("Prompt (new design)", text: $aiPrompt, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+
+            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+
+            Button("Generate New Design") { Task { await generateNewDesignFromPrompt() } }
+                .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Divider()
+
+            TextField("Patch instruction (edit current design)", text: $aiPatchInstruction, axis: .vertical)
+                .lineLimit(3, reservesSpace: true)
+
+            Button("Apply Patch To Current Design") { Task { await applyPatchToCurrentDesign() } }
+                .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if !aiStatusMessage.isEmpty {
+                Text(aiStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            sectionHeader("AI")
+        }
+    }
+
+    var statusSection: some View {
+        Section {
+            if hasUnsavedChanges {
+                Label("Unsaved changes", systemImage: "pencil.tip.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.secondary)
+
+                Button(role: .destructive) { showRevertConfirmation = true } label: {
+                    Label("Revert to last saved", systemImage: "arrow.uturn.backward")
+                }
+
+                Button { activeSheet = .inspector } label: {
+                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
+                }
+            } else {
+                Button { activeSheet = .inspector } label: {
+                    Label("Open Inspector", systemImage: "doc.text.magnifyingglass")
+                }
+            }
+
+            if let lastSavedAt {
+                Text("Saved: \(lastSavedAt.formatted(date: .abbreviated, time: .standard))")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Not saved yet.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            sectionHeader("Status")
+        }
     }
 }
