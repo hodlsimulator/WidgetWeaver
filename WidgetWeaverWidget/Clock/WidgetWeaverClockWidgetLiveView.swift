@@ -45,10 +45,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
             // Force font registration once per render pass (also useful in logs).
             let fontOK = WWClockSecondHandFont.isAvailable()
 
-            // Drive hands from wall-clock time (not WidgetKit’s minute entry swap timing).
-            // Align the periodic schedule to the next whole second so the minute tick happens on-time.
-            let scheduleStart = Self.ceilToSecond(Date())
-            let interval: TimeInterval = showSeconds ? 1.0 : 60.0
+            // Minutes/hours only need a minute-boundary tick.
+            //
+            // In practice, WidgetKit can coalesce TimelineView updates when the output is stable.
+            // If the schedule start is not aligned to :00, the minute hand can appear to “tick late”
+            // by a constant offset. Anchoring the schedule to the entry’s minute boundary keeps the
+            // tick aligned to the top of the minute without touching the seconds-hand glyph overlay.
+            let scheduleStart = secondsMinuteAnchor
+            let interval: TimeInterval = 60.0
 
             ZStack {
                 TimelineView(.periodic(from: scheduleStart, by: interval)) { context in
@@ -61,6 +65,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     // Tick hands at the minute boundary.
                     let tickAnchor = Self.floorToMinute(displayNow)
                     let tick = WWClockTickAngles(date: tickAnchor)
+                    let minuteID = Int(tickAnchor.timeIntervalSinceReferenceDate / 60.0)
 
                     let redactLabel: String = {
                         if isPlaceholder && isPrivacy { return "placeholder+privacy" }
@@ -101,6 +106,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         showsCentreHub: false,
                         handsOpacity: handsOpacity
                     )
+                    .id(minuteID)
                 }
 
                 // Keep the seconds hand + hub overlay exactly as before (centred + palette.accent).
@@ -121,11 +127,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 
-    private static func ceilToSecond(_ date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let ceiled = ceil(t)
-        return Date(timeIntervalSinceReferenceDate: ceiled)
-    }
+    // NOTE: no ceilToSecond() here anymore — minutes/hours tick on a minute schedule.
 }
 
 // MARK: - Tick angles (minute boundary)
