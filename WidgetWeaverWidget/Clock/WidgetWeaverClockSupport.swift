@@ -39,7 +39,12 @@ extension View {
     func wwWidgetContainerBackground<Background: View>(
         @ViewBuilder _ background: () -> Background
     ) -> some View {
-        // iOS 26-only: always adopt the widget container background API.
-        self.containerBackground(for: .widget) { background() }
+        // Prefer the widget container background API when available.
+        // On older OS versions, fall back to a regular background so widgets never render as black.
+        if #available(iOS 17.0, *) {
+            self.containerBackground(for: .widget) { background() }
+        } else {
+            self.background(background())
+        }
     }
 }
