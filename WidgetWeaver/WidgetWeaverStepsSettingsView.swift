@@ -31,6 +31,11 @@ struct WidgetWeaverStepsSettingsView: View {
     @State private var lastError: String?
     @State private var statusMessage: String?
 
+    @State private var activitySnapshot: WidgetWeaverActivitySnapshot?
+    @State private var activityAccess: WidgetWeaverActivityAccess = .unknown
+    @State private var activityLastError: String?
+    @State private var activityStatusMessage: String?
+
     private var schedule: WidgetWeaverStepsGoalSchedule {
         WidgetWeaverStepsGoalSchedule(
             weekdayGoalSteps: WidgetWeaverStepsGoalSchedule.clampGoal(weekdayGoalSteps),
@@ -61,6 +66,56 @@ struct WidgetWeaverStepsSettingsView: View {
                     access: access,
                     fetchedAt: snapshot?.fetchedAt
                 )
+            }
+
+            Section("Activity (steps + more)") {
+                ActivityTodayCard(
+                    snapshot: activitySnapshot,
+                    access: activityAccess
+                )
+
+                if activityAccess == .authorised || activityAccess == .partial {
+                    ActivityMetricsBar(snapshot: activitySnapshot)
+                }
+
+                if let activityLastError, !activityLastError.isEmpty {
+                    Text(activityLastError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if activityAccess == .notDetermined || activityAccess == .denied || activityAccess == .unknown {
+                    Button {
+                        Task { await requestActivityAccessAndRefresh() }
+                    } label: {
+                        Label("Request Activity Access", systemImage: "hand.raised.fill")
+                    }
+                    .disabled(isRefreshing)
+
+                    Text("This requests read access for Steps, Flights Climbed, Walking/Running Distance, and Active Energy.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                NavigationLink {
+                    WidgetWeaverActivitySettingsView()
+                } label: {
+                    HStack {
+                        Image(systemName: "info.circle")
+                        Text("Activity details & __activity_* keys")
+                    }
+                }
+
+                if let activityStatusMessage, !activityStatusMessage.isEmpty {
+                    Text(activityStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Activity metrics are cached for widget rendering and can be used inside any design via built-in __activity_* keys.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Goal schedule") {
@@ -160,7 +215,7 @@ struct WidgetWeaverStepsSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Steps are read from Health. Refreshing here keeps widgets snappy.")
+                Text("Steps and Activity are read from Health. Refreshing here keeps widgets snappy.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -177,22 +232,6 @@ struct WidgetWeaverStepsSettingsView: View {
                         Text("Timeline, calendar & heatmap")
                     }
                 }
-            }
-
-
-            Section("More") {
-                NavigationLink {
-                    WidgetWeaverActivitySettingsView()
-                } label: {
-                    HStack {
-                        Image(systemName: "figure.walk.circle")
-                        Text("Activity (steps + more)")
-                    }
-                }
-
-                Text("Activity can request more Health data in one prompt (Flights, Distance, Active Energy) and powers __activity_* template keys.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Steps")
@@ -215,6 +254,11 @@ struct WidgetWeaverStepsSettingsView: View {
         access = store.loadLastAccess()
         lastError = store.loadLastError()
 
+        let activityStore = WidgetWeaverActivityStore.shared
+        activitySnapshot = activityStore.snapshotForToday()
+        activityAccess = activityStore.loadLastAccess()
+        activityLastError = activityStore.loadLastError()
+
         let s = store.loadGoalSchedule()
         weekdayGoalSteps = s.weekdayGoalSteps
         weekendGoalSteps = s.weekendGoalSteps
@@ -230,16 +274,30 @@ struct WidgetWeaverStepsSettingsView: View {
         statusMessage = ok ? "Access request completed." : "Access request failed."
     }
 
+    private func requestActivityAccessAndRefresh() async {
+        activityStatusMessage = nil
+        let ok = await WidgetWeaverActivityEngine.shared.requestReadAuthorisation()
+        await refresh(force: true)
+        activityStatusMessage = ok ? "Access request completed." : "Access request failed."
+    }
+
     private func refresh(force: Bool) async {
         if isRefreshing { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let result = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: force)
-        snapshot = result.snapshot
-        access = result.access
+        let stepsResult = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: force)
+        snapshot = stepsResult.snapshot
+        access = stepsResult.access
         lastError = WidgetWeaverStepsStore.shared.loadLastError()
+
+        let activityResult = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: force)
+        activitySnapshot = activityResult.snapshot
+        activityAccess = activityResult.access
+        activityLastError = WidgetWeaverActivityStore.shared.loadLastError()
+
         statusMessage = nil
+        activityStatusMessage = nil
 
         WidgetSpecStore.shared.reloadWidgets()
     }
@@ -260,6 +318,57 @@ struct WidgetWeaverStepsSettingsView: View {
         case .authorised: return "Enabled"
         case .denied: return "Denied"
         }
+    }
+}
+
+
+// MARK: - Activity metrics (in-app)
+
+private struct ActivityMetricsBar: View {
+    let snapshot: WidgetWeaverActivitySnapshot?
+
+    var body: some View {
+        let flights = snapshot?.flightsClimbed.map { "\($0)" } ?? "—"
+        let distance = snapshot?.distanceWalkingRunningMeters.map(wwFormatDistanceKM) ?? "—"
+        let energy = snapshot?.activeEnergyBurnedKilocalories.map(wwFormatKcal) ?? "—"
+
+        return HStack(spacing: 10) {
+            ActivityMetricPill(systemImage: "arrow.up", title: "Flights", value: flights)
+            ActivityMetricPill(systemImage: "map", title: "Distance", value: distance)
+            ActivityMetricPill(systemImage: "flame.fill", title: "Energy", value: energy)
+        }
+    }
+}
+
+private struct ActivityMetricPill: View {
+    let systemImage: String
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(value)
+                .font(.system(.subheadline, design: .rounded).weight(.bold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

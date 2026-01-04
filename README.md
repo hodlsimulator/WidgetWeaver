@@ -10,7 +10,7 @@ It runs on **iOS 26** and ships with:
 - Share/export/import JSON design packages (with embedded images) with an Import Review step (preview + selective import)
 - Smart Photos for Poster images (app-only Vision prep + per-family renders; widget loads a single size-appropriate file)
 - Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
-- Weather, Calendar, and Steps setups that cache snapshots for offline widget rendering
+- Weather, Calendar, Steps, and Activity setups that cache snapshots for offline widget rendering
 - A small Home Screen clock widget (ticking seconds hand via the glyphs method)
 - A Sleep Machine-style Noise Machine (4-layer procedural noise) with instant resume + Home Screen controller widget
 - Shareable Noise Machine diagnostics log (Dump status / Rebuild engine / Share log)
@@ -23,7 +23,7 @@ WidgetWeaver uses an App Group so the app and widget extension share designs, sn
 
 WidgetWeaver has three tabs:
 
-- **Explore**: featured templates + remixes (Weather / Calendar / Steps / Clock) + Noise Machine
+- **Explore**: featured templates + remixes (Weather / Calendar / Steps / Activity / Clock) + Noise Machine
 - **Library**: saved designs (search, set Default, duplicate, delete)
 - **Editor**: edit a design and Save to push updates to widgets
 
@@ -38,85 +38,36 @@ Pro features (matched sets, variables, actions) are unlocked via an in-app purch
 - `Shared/WidgetSpec.swift` — the design model used by the app and widget extension
 - `Shared/WidgetWeaverSpecView.swift` — deterministic SwiftUI renderer for a spec
 - `WidgetWeaverWidget/WidgetWeaverWidget.swift` — widget entry points (Home Screen + Lock Screen families)
-- `WidgetWeaverWidget/WidgetWeaverTimelineProviders.swift` — provider timelines (mostly conservative; time-sensitive templates are best-effort)
 
-### Previews / thumbnails (app)
+### Data snapshots (Weather / Calendar / Steps)
 
-- `WidgetWeaver/WidgetPreview.swift` — live preview renderer (app)
-- `WidgetWeaver/WidgetPreviewDock.swift` — preview container (size + live toggle)
-- `WidgetWeaver/WidgetPreviewThumbnail.swift` — library thumbnails (crisp, size-correct)
+Widgets do not fetch heavy data directly. Instead the app builds and caches small snapshots in the App Group:
 
-### Theme extraction / remixes
-
-- `WidgetWeaver/WidgetThemeExtractor.swift` — image palette extraction (robust, widget-safe)
-- `WidgetWeaver/WidgetWeaverRemixEngine.swift` + `WidgetWeaver/WidgetWeaverRemixEngine+Looks.swift` — remix generation
-- `WidgetWeaver/WidgetWeaverRemixEngine.swift` + `WidgetWeaver/WidgetWeaverRemixEngine+Looks.swift` — remix generation
-
-### Import / export
-
-- `WidgetWeaver/WidgetSharePackage.swift` — export format + image embedding
-- `WidgetWeaver/WidgetImportReviewSheet.swift` — Import Review (preview + selective import)
-
-### Smart Photos (app-only)
-
-- `WidgetWeaver/SmartPhotoPipeline.swift` — app-only Vision pipeline that analyses a picked photo and writes a master + Small/Medium/Large pre-rendered crops into the App Group
-- `Shared/WidgetSpec+Image.swift` — `ImageSpec.smartPhoto` metadata (master + per-family render file names) + helpers (`fileNameForFamily`, `allReferencedFileNames`)
-- `Shared/AppGroup.swift` — App Group image IO (atomic writes) + widget-safe cache limits
-
-### Noise Machine
-
-- `Shared/NoiseMachine/NoiseMixState.swift` — Codable model for the last mix (4 slots)
-- `Shared/NoiseMachine/NoiseMixStore.swift` — App Group persistence (debounced writes + safe defaults)
-- `Shared/NoiseMachine/NoiseMixStore.swift` — also contains `NoiseMachineDebugLogStore` (250-entry ring buffer log, stored in the App Group, shareable export)
-- `Shared/NoiseMachine/NoiseMachineController.swift` — AVAudioEngine graph + procedural noise (white/pink/brown) + smoothing
-- `Shared/NoiseMachine/NoiseMachineIntents.swift` — App Intents used by the widget (AudioPlaybackIntent)
-- `Shared/NoiseMachine/NoiseMachineView.swift` + `Shared/NoiseMachine/NoiseMachineViewModel.swift` — in-app controls
-- `WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift` — Home Screen controller widget (play/pause/stop + layer toggles)
-
-### Weather nowcast chart (current)
-
-The nowcast surface is a procedural renderer used by the Lock Screen Weather template. It is deterministic, widget-safe, and designed to avoid cliffs and seams.
-
-- `Shared/RainForecastSurfaceRenderer.swift` — procedural surface renderer (builds the rain “body” from segments, adds tapered ends, glint, and shading)
-- `Shared/RainForecastSurfaceRenderer+Dissipation.swift` — dissipation shading using seamless tiled noise (constant-cost passes, widget-safe)
-- `Shared/RainSurfaceSeamlessNoiseTile.swift` — generates periodic noise tiles used by dissipation (cached and small to reduce cold-start cost)
-- `Shared/RainSurfacePRNG.swift` — deterministic PRNG used for stable jitter/offsets
-
-**Not used for the Weather nowcast chart (legacy / experiments)**
-
-- `Shared/RainSurfaceDrawing.swift`
-- `Shared/RainSurfaceDrawing+Core.swift`
-- `Shared/RainSurfaceDrawing+Fuzz.swift`
-- `Shared/RainSurfaceDrawing+Rim.swift`
-- `Shared/RainSurfaceGeometry.swift`
-- `Shared/RainSurfaceMath.swift`
-- `Shared/RainSurfaceStyleHarness.swift`
+- `Shared/WidgetWeaverWeatherEngine.swift` — location + weather snapshot
+- `Shared/WidgetWeaverCalendarEngine.swift` — Next Up snapshot via EventKit
+- `Shared/WidgetWeaverStepsEngine.swift` — Steps + Activity snapshots via HealthKit
+- `Shared/AppGroup.swift` — shared file + UserDefaults access
 
 ---
 
 ## Featured — Weather
 
-WidgetWeaver includes a Next Hour precipitation template and a Lock Screen Weather widget powered by a cached “nowcast snapshot” stored in the App Group.
+WidgetWeaver includes a rain-first Weather template for Lock Screen and Home Screen.
 
-The snapshot includes:
-
-- next-hour precipitation intensity timeline (minutes 0–60),
-- current temperature and feels-like,
-- location name + attribution fields,
-- derived flags for “rain soon”, “rain ending”, and uncertainty.
+Weather templates render from a cached Weather snapshot built in the app.
 
 ### Weather setup checklist
 
 1) Open **Weather** settings inside the app.
-2) Grant location permission.
-3) Confirm the “nowcast snapshot” is updating.
-4) Add the Lock Screen widget and confirm it renders offline (Airplane Mode).
+2) Pick a location.
+3) Confirm attribution is shown.
+4) Confirm widgets update when you Refresh.
 
 ---
 
-## Featured — Calendar (Next Up)
+## Featured — Next Up (Calendar)
 
-WidgetWeaver includes a “Next Up” calendar template that can render in Lock Screen families and on the Home Screen.
+WidgetWeaver includes Next Up templates for Lock Screen and Home Screen.
 
 A cached “Next Up snapshot” is built in the app using EventKit and contains:
 
@@ -151,6 +102,30 @@ Steps widgets render from a cached “today snapshot” stored in the App Group:
 2) Grant Health access.
 3) Set a goal (optional).
 4) Confirm the “today snapshot” is updating.
+
+---
+
+## Featured — Activity
+
+WidgetWeaver includes Activity templates for both Lock Screen and Home Screen.
+
+Activity widgets render from a cached “today snapshot” stored in the App Group:
+
+- steps today
+- flights climbed
+- walking/running distance
+- active energy
+- last updated timestamp
+
+The **Steps** screen in the app includes an **Activity (steps + more)** section so the same snapshot that powers Activity widgets (and `__activity_*` keys) is visible in-app.
+
+### Activity setup checklist
+
+1) Open **Steps** settings inside the app.
+2) Scroll to **Activity (steps + more)**.
+3) Tap **Request Activity Access**.
+4) Confirm the “today snapshot” is updating.
+5) Add an Activity widget and confirm it renders offline (Airplane Mode).
 
 ---
 
@@ -194,10 +169,9 @@ WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenC
   - A custom font (`WWClockSecondHand-Regular.ttf`) contains a pre-drawn seconds hand glyph at the corresponding angle.
   - The widget view uses `Text(timerInterval: timerRange, countsDown: false)` updating once per second and the font turns it into the correct hand.
 
-This keeps the seconds hand moving without scheduling high-frequency WidgetKit timelines. The ligature-glyph approach is the current “throttle-proof” path.
-
 ### Notes
 
+- The clock attempts frequent updates; WidgetKit delivery is best-effort.
 - A small spillover past `:59` is allowed to avoid a brief blank hand if the next minute entry arrives slightly late.
 - During iteration, WidgetKit can keep an archived snapshot; remove/re-add the widget or bump `WidgetWeaverWidgetKinds.homeScreenClock`.
 
@@ -262,6 +236,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ Weather setup + cached snapshot + attribution
 - ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
 - ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
+- ✅ Activity setup (HealthKit access + cached today snapshot: steps + distance + flights + active energy; surfaced in Steps → Activity (steps + more))
 - ✅ Steps History (timeline + monthly calendar + year heatmap / calendar) + insights + “Pin this day”
 - ✅ Inspector sheet (resolved spec + JSON + quick checks)
 - ✅ In-app preview dock (preview vs live, Small/Medium/Large)
@@ -274,6 +249,8 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
 - ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
+- ✅ **Lock Screen widget (“Activity (WidgetWeaver)”)** multi-metric activity snapshot (steps / distance / flights / energy)
+- ✅ **Home Screen widget (“Activity (Home)”)** multi-metric activity snapshot (Small / Medium / Large)
 - ✅ **Home Screen widget (“Clock (Icon)”)** analogue clock face with minute ticks and a ticking seconds hand (glyphs method)
 - ✅ **Home Screen widget (“Noise Machine (WidgetWeaver)”)** controller widget (play/pause/stop + 4 layer toggles)
 - ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
@@ -282,11 +259,12 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ Steps widgets render from a cached “today” snapshot stored in the App Group
 - ✅ `__weather_*` built-in variables available in any design (free)
 - ✅ `__steps_*` built-in variables available in any design once Steps is set up (free)
+- ✅ `__activity_*` built-in variables available in any design once Activity is set up (free)
 - ✅ Time-sensitive designs can attempt minute-level timeline updates (delivery is best-effort; WidgetKit can delay or coalesce updates)
 
 ### Layout + style
 
-- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up / Steps / Gallery / Banner / Chip (Calendar) (includes a starter Steps design via `__steps_*` keys)
+- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up / Steps / Activity / Gallery / Banner / Chip (Calendar) (includes starter designs via `__steps_*` and `__activity_*` keys)
 - ✅ More remixes for templates (Explore)
 - ✅ Image themes (palette extraction + background/foreground harmonisation)
 - ✅ Inline validation (spec clamps + safe defaults)
@@ -306,7 +284,7 @@ First run expectations:
 
 - First run: templates added from **Explore** into the Library
 - Designs edited in **Editor**, then saved to push updates to widgets
-- Weather / Calendar / Steps setup performed (for templates that depend on cached snapshots)
+- Weather / Calendar / Steps / Activity setup performed (for templates that depend on cached snapshots)
 
 Widgets can be added from the Home Screen / Lock Screen widget gallery and configured to select a specific saved design when relevant.
 
@@ -339,4 +317,3 @@ AI features are optional and are built around structured generation into the Wid
 ## Licence / notes
 
 WidgetWeaver is a personal project. All assets and code are for the repo owner.
- 
