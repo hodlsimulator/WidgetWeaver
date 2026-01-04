@@ -193,9 +193,12 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Ensure Home Screen redraws as WidgetKit advances timeline entries.
+            // Avoid forcing a full view identity swap on every minute.
+            // Keeping a stable identity reduces visible “blinks” during timeline advances.
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
