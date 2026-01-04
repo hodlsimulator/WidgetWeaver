@@ -379,6 +379,30 @@ extension ContentView {
         let currentImageFileName = currentFamilyDraft().imageFileName
         let hasImage = !currentImageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
+        let legacyFamilies: [EditingFamily] = {
+            guard matchedSetEnabled else { return [] }
+
+            var out: [EditingFamily] = []
+
+            let small = matchedDrafts.small
+            let medium = matchedDrafts.medium
+            let large = matchedDrafts.large
+
+            if !small.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, small.imageSmartPhoto == nil {
+                out.append(.small)
+            }
+            if !medium.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, medium.imageSmartPhoto == nil {
+                out.append(.medium)
+            }
+            if !large.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, large.imageSmartPhoto == nil {
+                out.append(.large)
+            }
+
+            return out
+        }()
+
+        let legacyFamiliesLabel = legacyFamilies.map { $0.label }.joined(separator: ", ")
+
         return Section {
             PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
                 Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
@@ -455,6 +479,19 @@ extension ContentView {
                 }
             } else {
                 Text("No image selected.")
+                    .foregroundStyle(.secondary)
+            }
+
+            if matchedSetEnabled, !legacyFamilies.isEmpty {
+                Button {
+                    Task { await upgradeLegacyPhotosInCurrentDesign(maxUpgrades: 3) }
+                } label: {
+                    Label("Upgrade legacy photos in this design", systemImage: "wand.and.stars")
+                }
+                .disabled(importInProgress)
+
+                Text("Upgrades up to 3 legacy images across sizes. Legacy in: \(legacyFamiliesLabel)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } header: {

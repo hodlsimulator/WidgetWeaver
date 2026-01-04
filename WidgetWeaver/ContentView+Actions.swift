@@ -130,6 +130,116 @@ extension ContentView {
         }
     }
 
+    func upgradeLegacyPhotosInCurrentDesign(maxUpgrades: Int = 3) async {
+        let clampedMax = max(1, min(3, maxUpgrades))
+
+        guard matchedSetEnabled else {
+            // Single-size designs already have a per-size “Make Smart Photo” button.
+            // This helper upgrades the current size if it’s still legacy.
+            if currentFamilyDraft().imageSmartPhoto == nil {
+                await regenerateSmartPhotoRenders()
+            } else {
+                saveStatusMessage = "This photo is already a Smart Photo."
+            }
+            return
+        }
+
+        let orderedFamilies: [EditingFamily] = [.small, .medium, .large]
+
+        var uniqueLegacyFiles: [String] = []
+        var familiesByFile: [String: [EditingFamily]] = [:]
+
+        for family in orderedFamilies {
+            let draft = matchedDrafts[family]
+
+            let trimmed = draft.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            guard draft.imageSmartPhoto == nil else { continue }
+
+            let safeFileName = SmartPhotoSpec.sanitisedFileName(trimmed)
+            guard !safeFileName.isEmpty else { continue }
+
+            if familiesByFile[safeFileName] == nil {
+                uniqueLegacyFiles.append(safeFileName)
+                familiesByFile[safeFileName] = []
+            }
+            familiesByFile[safeFileName, default: []].append(family)
+        }
+
+        guard !uniqueLegacyFiles.isEmpty else {
+            saveStatusMessage = "No legacy photos to upgrade in this design."
+            return
+        }
+
+        let filesToProcess = Array(uniqueLegacyFiles.prefix(clampedMax))
+        let remaining = max(0, uniqueLegacyFiles.count - filesToProcess.count)
+
+        saveStatusMessage = "Upgrading legacy photos…"
+
+        let targets = SmartPhotoRenderTargets.forCurrentDevice()
+
+        var upgradedFamilies = Set<EditingFamily>()
+        var failures: [String] = []
+
+        for fileName in filesToProcess {
+            guard let data = AppGroup.readImageData(fileName: fileName) else {
+                failures.append(fileName)
+                continue
+            }
+
+            do {
+                let imageSpec = try await Task.detached(priority: .userInitiated) {
+                    try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
+                }.value
+
+                let families = familiesByFile[fileName] ?? []
+                for family in families {
+                    var d = matchedDrafts[family]
+                    d.imageFileName = imageSpec.fileName
+                    d.imageSmartPhoto = imageSpec.smartPhoto
+                    matchedDrafts[family] = d
+                    upgradedFamilies.insert(family)
+                }
+            } catch {
+                failures.append(fileName)
+            }
+        }
+
+        if upgradedFamilies.isEmpty {
+            if failures.isEmpty {
+                saveStatusMessage = "No upgrades were performed."
+            } else {
+                saveStatusMessage = "Upgrade failed for \(failures.count) photo\(failures.count == 1 ? "" : "s").\nTry again, or upgrade each size individually using “Make Smart Photo”."
+            }
+            return
+        }
+
+        func sortKey(_ family: EditingFamily) -> Int {
+            switch family {
+            case .small: return 0
+            case .medium: return 1
+            case .large: return 2
+            }
+        }
+
+        let upgradedLabel = upgradedFamilies
+            .sorted { sortKey($0) < sortKey($1) }
+            .map { $0.label }
+            .joined(separator: ", ")
+
+        var message = "Upgraded legacy photos to Smart Photo for: \(upgradedLabel) (draft only).\nSave to update widgets."
+
+        if remaining > 0 {
+            message += "\n\nMore legacy images remain (\(remaining)). Tap again to continue."
+        }
+
+        if !failures.isEmpty {
+            message += "\n\nSome photos failed to upgrade (\(failures.count))."
+        }
+
+        saveStatusMessage = message
+    }
+
     // MARK: - Actions
 
     func loadSelected() {

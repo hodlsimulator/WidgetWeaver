@@ -2,8 +2,6 @@
 //  NoiseMachineController+Session.swift
 //  WidgetWeaver
 //
-//  Created by . . on 1/4/26.
-//
 
 import AVFoundation
 import AudioToolbox
@@ -85,7 +83,8 @@ extension NoiseMachineController {
                 return
             }
 
-            await self.performSessionDeactivationIfIdle()
+            // Task { } inherits actor context here, so no await needed.
+            self.performSessionDeactivationIfIdle()
         }
     }
 
