@@ -72,6 +72,64 @@ extension ContentView {
         }
     }
 
+
+    // MARK: - Smart Photo
+
+    func regenerateSmartPhotoRenders() async {
+        let current = currentFamilyDraft()
+        let baseFileName = current.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !baseFileName.isEmpty else {
+            saveStatusMessage = "No photo selected."
+            return
+        }
+
+        saveStatusMessage = "Regenerating smart renders…"
+
+        let targets = SmartPhotoRenderTargets.forCurrentDevice()
+
+        let sourceData: Data
+        if let smart = current.imageSmartPhoto,
+           let master = AppGroup.readImageData(fileName: smart.masterFileName) {
+            sourceData = master
+        } else if let base = AppGroup.readImageData(fileName: baseFileName) {
+            sourceData = base
+        } else {
+            saveStatusMessage = "Image file not found in App Group."
+            return
+        }
+
+        do {
+            let imageSpec = try await Task.detached(priority: .userInitiated) {
+                try SmartPhotoPipeline.prepare(from: sourceData, renderTargets: targets)
+            }.value
+
+            var d = currentFamilyDraft()
+            d.imageFileName = imageSpec.fileName
+            d.imageSmartPhoto = imageSpec.smartPhoto
+            setCurrentFamilyDraft(d)
+
+            var appliedTheme = false
+            if let uiImage = AppGroup.loadUIImage(fileName: imageSpec.fileName) {
+                let suggestion = WidgetWeaverImageThemeExtractor.suggestTheme(from: uiImage)
+                lastImageThemeFileName = imageSpec.fileName
+                lastImageThemeSuggestion = suggestion
+
+                if autoThemeFromImage {
+                    styleDraft.accent = suggestion.accent
+                    styleDraft.background = suggestion.background
+                    appliedTheme = true
+                }
+            }
+
+            saveStatusMessage = appliedTheme
+                ? "Regenerated smart renders and applied theme (draft only).\nSave to update widgets."
+                : "Regenerated smart renders (draft only).\nSave to update widgets."
+        } catch {
+            saveStatusMessage = "Regeneration failed: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Actions
 
     func loadSelected() {

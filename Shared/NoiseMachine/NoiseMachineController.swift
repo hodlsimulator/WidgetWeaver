@@ -32,10 +32,11 @@ public actor NoiseMachineController {
 
     private var isSessionActive: Bool = false
     private var pendingSessionDeactivationTask: Task<Void, Never>?
-    private let sessionDeactivationGraceSeconds: TimeInterval = 0.8
+    private let sessionDeactivationGraceSeconds: TimeInterval = 2.0
 
     private var currentState: NoiseMixState = .default
     private var isEngineRunning: Bool = false
+    private var playbackRequestID: UInt64 = 0
 
     private let fallbackSampleRate: Double = 48_000
     private let preferredSampleRate: Double = 48_000
@@ -47,6 +48,12 @@ public actor NoiseMachineController {
     private var graphChannelCount: AVAudioChannelCount = 2
 
     private init() {}
+
+    @discardableResult
+    private func bumpPlaybackRequestID() -> UInt64 {
+        playbackRequestID &+= 1
+        return playbackRequestID
+    }
 
     // MARK: - Debug
 
@@ -112,67 +119,83 @@ public actor NoiseMachineController {
 
     public func prepareIfNeeded() async {
         if engine != nil { return }
-        log("prepareIfNeeded: building audio engine")
 
+        log("prepareIfNeeded: building audio engine")
         await configureSessionIfNeeded()
         buildGraph()
         installObserversIfNeeded()
-
-        currentState = store.loadLastMix()
         applyTargets(from: currentState, savePolicy: .none)
     }
 
+    private func installObserversIfNeeded() {
+        if observersInstalled { return }
+        observersInstalled = true
+
+        let nc = NotificationCenter.default
+
+        notificationTokens.append(
+            nc.addObserver(
+                forName: AVAudioSession.interruptionNotification,
+                object: nil,
+                queue: .main
+            ) { n in
+                let typeRaw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let optionsRaw = n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+                Task {
+                    await NoiseMachineController.shared.handleInterruption(typeRaw: typeRaw, optionsRaw: optionsRaw)
+                }
+            }
+        )
+
+        notificationTokens.append(
+            nc.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: nil,
+                queue: .main
+            ) { n in
+                let reasonRaw = n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+                Task {
+                    await NoiseMachineController.shared.handleRouteChange(reasonRaw: reasonRaw)
+                }
+            }
+        )
+
+        notificationTokens.append(
+            nc.addObserver(
+                forName: AVAudioSession.mediaServicesWereResetNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task {
+                    await NoiseMachineController.shared.handleMediaServicesReset()
+                }
+            }
+        )
+    }
+
     // MARK: - Public API
+
+    public func currentMixState() async -> NoiseMixState {
+        currentState
+    }
 
     public func apply(state: NoiseMixState) async {
         await prepareIfNeeded()
         let s = state.sanitised()
         currentState = s
-        applyTargets(from: s, savePolicy: .immediate)
+        applyTargets(from: s, savePolicy: .none)
     }
 
-    public func play() async {
+    public func setMasterVolume(_ v: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
-        log("play")
-
         var s = currentState
-        s.wasPlaying = true
+        s.masterVolume = v
         s.updatedAt = Date()
         currentState = s
-
-        applyTargets(from: s, savePolicy: .immediate)
-        await startEngineIfNeeded()
+        applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func pause() async {
-        await pause(savePolicy: .immediate)
-    }
-
-    public func stop() async {
-        await prepareIfNeeded()
-        log("stop")
-
-        var s = currentState
-        s.wasPlaying = false
-        s.updatedAt = Date()
-        currentState = s
-
-        applyTargets(from: s, savePolicy: .immediate)
-        await stopEngineSoon()
-    }
-
-    public func togglePlayPause() async {
-        log("togglePlayPause")
-        await prepareIfNeeded()
-
-        if currentState.wasPlaying {
-            await pause()
-        } else {
-            await play()
-        }
-    }
-
-    public func setSlotEnabled(_ index: Int, enabled: Bool, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotEnabled(_ index: Int, enabled: Bool) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -181,14 +204,14 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: .immediate)
 
         if s.wasPlaying {
-            await startEngineIfNeeded()
+            await startEngineIfNeeded(requestID: playbackRequestID)
         }
     }
 
-    public func setSlotVolume(_ index: Int, volume: Float, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotVolume(_ index: Int, volume: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -200,7 +223,7 @@ public actor NoiseMachineController {
         applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func setSlotColour(_ index: Int, colour: Float, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotColour(_ index: Int, colour: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -212,7 +235,7 @@ public actor NoiseMachineController {
         applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func setSlotLowCut(_ index: Int, hz: Float, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotLowCut(_ index: Int, hz: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -224,7 +247,7 @@ public actor NoiseMachineController {
         applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func setSlotHighCut(_ index: Int, hz: Float, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotHighCut(_ index: Int, hz: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -236,7 +259,7 @@ public actor NoiseMachineController {
         applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func setSlotEQ(_ index: Int, eq: EQState, savePolicy: SavePolicy = .immediate) async {
+    public func setSlotEQ(_ index: Int, eq: EQState, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
@@ -248,42 +271,57 @@ public actor NoiseMachineController {
         applyTargets(from: s, savePolicy: savePolicy)
     }
 
-    public func setMasterVolume(_ volume: Float, savePolicy: SavePolicy = .immediate) async {
+    public func play() async {
         await prepareIfNeeded()
+        log("play")
+
+        let requestID = bumpPlaybackRequestID()
 
         var s = currentState
-        s.masterVolume = volume
+        s.wasPlaying = true
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: savePolicy)
+        applyTargets(from: s, savePolicy: .immediate)
+        await startEngineIfNeeded(requestID: requestID)
+    }
+
+    public func pause() async {
+        await pause(savePolicy: .immediate)
+    }
+
+    public func pauseWithoutSaving() async {
+        await pause(savePolicy: .none)
+    }
+
+    public func stop() async {
+        await prepareIfNeeded()
+        log("stop")
+
+        bumpPlaybackRequestID()
+
+        var s = currentState
+        s.wasPlaying = false
+        s.updatedAt = Date()
+        currentState = s
+
+        applyTargets(from: s, savePolicy: .immediate)
+        await stopEngineSoon()
+    }
+
+    public func togglePlayPause() async {
+        if currentState.wasPlaying {
+            await pause()
+        } else {
+            await play()
+        }
     }
 
     public func flushPersistence() async {
         store.flushPendingWrites()
     }
 
-    public func currentMixState() async -> NoiseMixState {
-        currentState
-    }
-
-    public func debugDumpAudioStatus(reason: String = "manual") async {
-        let snapshot = await debugSnapshot()
-        log("Debug snapshot (\(reason)):\n\(snapshot)")
-    }
-
-    public func debugAudioStatusString() async -> String {
-        await debugSnapshot()
-    }
-
-    public func debugRebuildEngine() async {
-        await rebuildEngine(reason: "manual")
-        if currentState.wasPlaying {
-            await startEngineIfNeeded()
-        }
-    }
-
-    // MARK: - Session (best-effort preferences)
+    // MARK: - Session configuration
 
     private func configureSessionIfNeeded() async {
         if didConfigureSession { return }
@@ -292,51 +330,42 @@ public actor NoiseMachineController {
 
     private func configureSessionBestEffort() -> Bool {
         let session = AVAudioSession.sharedInstance()
-
         log("AVAudioSession configure begin")
 
-        // Some category options combinations can fail with OSStatus -50 on certain routes.
-        // Prefer mixing (so other audio can continue), but fall back to plain playback if needed.
         do {
-            try session.setCategory(
-                .playback,
-                mode: .default,
-                options: [.mixWithOthers]
-            )
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             log("AVAudioSession setCategory(.playback, options: [.mixWithOthers]) ok")
         } catch {
-            logError("AVAudioSession setCategory(.playback, options: [.mixWithOthers])", error, level: .warning)
-
+            logError("AVAudioSession setCategory(.playback, .mixWithOthers)", error, level: .warning)
             do {
-                try session.setCategory(.playback, mode: .default)
-                log("AVAudioSession setCategory(.playback) ok (no options)")
+                try session.setCategory(.playback, mode: .default, options: [])
+                log("AVAudioSession setCategory(.playback) ok (fallback)")
             } catch {
-                logError("AVAudioSession setCategory(.playback)", error, level: .error)
+                logError("AVAudioSession setCategory(.playback) fallback", error, level: .error)
                 return false
             }
         }
 
-        // Preferences: useful when accepted, but not required for playback.
         do {
             try session.setPreferredSampleRate(preferredSampleRate)
             log("AVAudioSession setPreferredSampleRate(\(preferredSampleRate)) ok")
         } catch {
-            logError("AVAudioSession setPreferredSampleRate(\(preferredSampleRate))", error, level: .warning)
+            logError("AVAudioSession setPreferredSampleRate", error, level: .warning)
         }
 
-        var didSetBuffer = false
-        for d in preferredIOBufferCandidates {
+        var didSetIO = false
+        for cand in preferredIOBufferCandidates {
             do {
-                try session.setPreferredIOBufferDuration(d)
-                log("AVAudioSession setPreferredIOBufferDuration(\(String(format: "%.4f", d))) ok")
-                didSetBuffer = true
+                try session.setPreferredIOBufferDuration(cand)
+                log("AVAudioSession setPreferredIOBufferDuration(\(String(format: "%.4f", cand))) ok")
+                didSetIO = true
                 break
             } catch {
-                logError("AVAudioSession setPreferredIOBufferDuration(\(String(format: "%.4f", d)))", error, level: .warning)
+                logError("AVAudioSession setPreferredIOBufferDuration(\(String(format: "%.4f", cand)))", error, level: .warning)
             }
         }
-        if !didSetBuffer {
-            log("AVAudioSession preferred IO buffer not set (using system default)", level: .warning)
+        if !didSetIO {
+            log("AVAudioSession IO buffer: using system default", level: .warning)
         }
 
         log("AVAudioSession configure end")
@@ -357,7 +386,16 @@ public actor NoiseMachineController {
 
         pendingSessionDeactivationTask = Task { [delay] in
             let ns = UInt64(max(0, delay) * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: ns)
+            do {
+                try await Task.sleep(nanoseconds: ns)
+            } catch {
+                return
+            }
+
+            if Task.isCancelled {
+                return
+            }
+
             self.performSessionDeactivationIfIdle()
         }
     }
@@ -365,13 +403,12 @@ public actor NoiseMachineController {
     private func performSessionDeactivationIfIdle() {
         pendingSessionDeactivationTask = nil
 
-        if currentState.wasPlaying || engine?.isRunning == true {
-            return
-        }
+        guard !currentState.wasPlaying else { return }
+        guard engine?.isRunning != true else { return }
+        guard isSessionActive else { return }
 
-        let session = AVAudioSession.sharedInstance()
         do {
-            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             isSessionActive = false
             log("AVAudioSession setActive(false) ok")
         } catch {
@@ -381,31 +418,54 @@ public actor NoiseMachineController {
 
     private func isTransientSessionActivationError(_ error: Error) -> Bool {
         let ns = error as NSError
-        guard ns.domain == NSOSStatusErrorDomain else { return false }
-        let status = OSStatus(ns.code)
 
-        // '!pla' (cannotStartPlaying) and '!pri' (insufficientPriority) are commonly transient.
-        switch status {
-        case 561015905, 561017449:
-            return true
-        default:
-            return false
+        // The AVAudioSession error domain constant is not available in this build; compare by string.
+        if ns.domain == "AVAudioSessionErrorDomain" {
+            if let code = AVAudioSession.ErrorCode(rawValue: ns.code) {
+                switch code {
+                case .isBusy, .cannotStartPlaying:
+                    return true
+                default:
+                    break
+                }
+            }
         }
+
+        // Observed failing cases in logs are OSStatus '!pla' / '!pri'.
+        if ns.domain == NSOSStatusErrorDomain {
+            let status = OSStatus(ns.code)
+            switch status {
+            case 561015905: // '!pla'
+                return true
+            case 561017449: // '!pri'
+                return true
+            default:
+                return false
+            }
+        }
+
+        return false
     }
 
     private func activationBackoffSeconds(forAttempt attempt: Int) -> TimeInterval {
         // attempt is 1-based
         switch attempt {
-        case 1: return 0.12
-        case 2: return 0.25
-        case 3: return 0.45
-        case 4: return 0.80
-        default: return 1.10
+        case 1: return 0.15
+        case 2: return 0.30
+        case 3: return 0.55
+        case 4: return 0.85
+        case 5: return 1.20
+        case 6: return 1.60
+        default: return 2.00
         }
     }
 
-    private func activateSessionIfNeeded() async throws {
+    private func activateSessionIfNeeded(requestID: UInt64) async throws {
         cancelPendingSessionDeactivation()
+
+        guard currentState.wasPlaying, playbackRequestID == requestID else {
+            throw CancellationError()
+        }
 
         let session = AVAudioSession.sharedInstance()
 
@@ -426,8 +486,13 @@ public actor NoiseMachineController {
         }
 
         var lastError: Error?
+        let maxAttempts = 10
 
-        for attempt in 1...5 {
+        for attempt in 1...maxAttempts {
+            guard currentState.wasPlaying, playbackRequestID == requestID else {
+                throw CancellationError()
+            }
+
             do {
                 if attempt > 1 {
                     didConfigureSession = configureSessionBestEffort()
@@ -440,14 +505,19 @@ public actor NoiseMachineController {
             } catch {
                 lastError = error
 
-                let level: NoiseMachineLogLevel = (attempt == 5) ? .error : .warning
+                let level: NoiseMachineLogLevel = (attempt == maxAttempts) ? .error : .warning
                 logError("AVAudioSession setActive(true) attempt \(attempt)", error, level: level)
 
-                guard attempt < 5, isTransientSessionActivationError(error) else { break }
+                guard attempt < maxAttempts, isTransientSessionActivationError(error) else { break }
 
                 let delay = activationBackoffSeconds(forAttempt: attempt)
                 let ns = UInt64(delay * 1_000_000_000)
-                try? await Task.sleep(nanoseconds: ns)
+
+                do {
+                    try await Task.sleep(nanoseconds: ns)
+                } catch {
+                    throw CancellationError()
+                }
             }
         }
 
@@ -515,24 +585,36 @@ public actor NoiseMachineController {
         self.masterMixer = master
         self.limiter = limiter
         self.slotNodes = slots
-        self.isEngineRunning = false
     }
 
-    private func startEngineIfNeeded() async {
+    // MARK: - Engine start/stop
+
+    private func startEngineIfNeeded(requestID: UInt64) async {
         if engine == nil {
             await prepareIfNeeded()
         }
+
+        guard currentState.wasPlaying, playbackRequestID == requestID else { return }
         guard let engine else { return }
         if isEngineRunning, engine.isRunning { return }
 
         do {
             log("startEngineIfNeeded: activating session")
-            try await activateSessionIfNeeded()
+            try await activateSessionIfNeeded(requestID: requestID)
+
+            guard currentState.wasPlaying, playbackRequestID == requestID else { return }
 
             engine.prepare()
 
             log("startEngineIfNeeded: starting engine")
             try engine.start()
+
+            guard currentState.wasPlaying, playbackRequestID == requestID else {
+                engine.stop()
+                isEngineRunning = false
+                deactivateSessionIfPossible()
+                return
+            }
 
             for slot in slotNodes {
                 slot.playIfNeeded()
@@ -540,19 +622,23 @@ public actor NoiseMachineController {
 
             isEngineRunning = true
             log("Engine started")
+        } catch is CancellationError {
+            log("startEngineIfNeeded: cancelled", level: .warning)
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine start", error, level: .error)
 
-            await recoverFromEngineStartFailure(originalError: error)
+            await recoverFromEngineStartFailure(originalError: error, requestID: requestID)
 
-            if self.engine?.isRunning != true {
+            if self.engine?.isRunning != true,
+               currentState.wasPlaying,
+               playbackRequestID == requestID {
                 await handleFailedStart(error: error)
             }
         }
     }
 
-    private func handleFailedStart(error: Error) async {
+    private func handleFailedStart(error _: Error) async {
         if currentState.wasPlaying {
             var s = currentState
             s.wasPlaying = false
@@ -587,7 +673,9 @@ public actor NoiseMachineController {
         applyTargets(from: currentState, savePolicy: .none)
     }
 
-    private func recoverFromEngineStartFailure(originalError: Error) async {
+    private func recoverFromEngineStartFailure(originalError _: Error, requestID: UInt64) async {
+        guard currentState.wasPlaying, playbackRequestID == requestID else { return }
+
         log("Attempting recovery after engine start failure…", level: .warning)
 
         // Attempt 1: reset engine and retry.
@@ -595,9 +683,19 @@ public actor NoiseMachineController {
             engine?.stop()
             engine?.reset()
             isEngineRunning = false
-            try await activateSessionIfNeeded()
+
+            try await activateSessionIfNeeded(requestID: requestID)
+            guard currentState.wasPlaying, playbackRequestID == requestID else { throw CancellationError() }
+
             engine?.prepare()
             try engine?.start()
+
+            guard currentState.wasPlaying, playbackRequestID == requestID else {
+                engine?.stop()
+                isEngineRunning = false
+                deactivateSessionIfPossible()
+                return
+            }
 
             for slot in slotNodes {
                 slot.playIfNeeded()
@@ -606,18 +704,32 @@ public actor NoiseMachineController {
             isEngineRunning = true
             log("Recovery succeeded after engine reset")
             return
+        } catch is CancellationError {
+            return
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine restart after reset", error, level: .error)
         }
 
+        guard currentState.wasPlaying, playbackRequestID == requestID else { return }
+
         // Attempt 2: rebuild graph and retry.
         await rebuildEngine(reason: "engine.start failed")
         do {
             guard let engine else { return }
-            try await activateSessionIfNeeded()
+
+            try await activateSessionIfNeeded(requestID: requestID)
+            guard currentState.wasPlaying, playbackRequestID == requestID else { throw CancellationError() }
+
             engine.prepare()
             try engine.start()
+
+            guard currentState.wasPlaying, playbackRequestID == requestID else {
+                engine.stop()
+                isEngineRunning = false
+                deactivateSessionIfPossible()
+                return
+            }
 
             for slot in slotNodes {
                 slot.playIfNeeded()
@@ -625,6 +737,8 @@ public actor NoiseMachineController {
 
             isEngineRunning = true
             log("Recovery succeeded after rebuild")
+        } catch is CancellationError {
+            return
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine start after rebuild", error, level: .error)
@@ -636,6 +750,8 @@ public actor NoiseMachineController {
     private func pause(savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         log("pause")
+
+        bumpPlaybackRequestID()
 
         var s = currentState
         s.wasPlaying = false
@@ -693,6 +809,15 @@ public actor NoiseMachineController {
     private func applyTargets(from state: NoiseMixState, savePolicy: SavePolicy) {
         let state = state.sanitised()
 
+        masterMixer?.outputVolume = state.masterVolume
+
+        for idx in 0..<NoiseMixState.slotCount {
+            guard slotNodes.indices.contains(idx) else { continue }
+            let slot = slotNodes[idx]
+            let slotState = state.slots.indices.contains(idx) ? state.slots[idx] : .default
+            slot.apply(slot: slotState)
+        }
+
         switch savePolicy {
         case .none:
             break
@@ -701,81 +826,70 @@ public actor NoiseMachineController {
         case .immediate:
             store.saveImmediate(state)
         }
+    }
 
-        masterMixer?.outputVolume = state.masterVolume
+    // MARK: - Debugging / Diagnostics
 
-        for idx in 0..<min(slotNodes.count, state.slots.count) {
-            slotNodes[idx].apply(slot: state.slots[idx])
+    public func debugDumpAudioStatus(reason: String) async {
+        let snap = await debugSnapshot()
+        log("Debug snapshot (\(reason)):\n\(snap)")
+    }
+
+    public func debugAudioStatusString() async -> String {
+        await debugSnapshot()
+    }
+
+    private func debugSnapshot() async -> String {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+
+        let enabled = currentState.slots.enumerated().filter { $0.element.enabled }.map { $0.offset + 1 }
+        let layerVols = currentState.slots.enumerated().map { "L\($0.offset + 1)=\(String(format: "%.2f", $0.element.volume))" }.joined(separator: " ")
+
+        let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
+        let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }
+
+        let fmt = "time=\(ISO8601DateFormatter().string(from: Date()))\n" +
+        "engineExists=\(engine != nil) engineRunning=\(engine?.isRunning == true) internalFlag=\(isEngineRunning)\n" +
+        "graph sr=\(String(format: "%.1f", graphSampleRate)) ch=\(graphChannelCount)\n" +
+        "sessionCategory=\(session.category.rawValue) mode=\(session.mode.rawValue)\n" +
+        "sampleRate=\(String(format: "%.1f", session.sampleRate)) preferred=\(String(format: "%.1f", session.preferredSampleRate))\n" +
+        "ioBuffer=\(String(format: "%.4f", session.ioBufferDuration)) preferred=\(String(format: "%.4f", session.preferredIOBufferDuration))\n" +
+        "outputVolume=\(String(format: "%.2f", session.outputVolume)) otherAudioPlaying=\(session.isOtherAudioPlaying)\n" +
+        "routeOutputs=\(outputs) routeInputs=\(inputs)\n" +
+        "state.wasPlaying=\(currentState.wasPlaying) master=\(String(format: "%.2f", currentState.masterVolume)) enabledSlots=\(enabled) \(layerVols)"
+
+        return fmt
+    }
+
+    public func debugRebuildEngine() async {
+        await rebuildEngine(reason: "manual")
+        if currentState.wasPlaying {
+            await startEngineIfNeeded(requestID: playbackRequestID)
         }
     }
 
-    // MARK: - Observers
-
-    private func installObserversIfNeeded() {
-        if observersInstalled { return }
-        observersInstalled = true
-
-        let nc = NotificationCenter.default
-
-        let interruptionToken = nc.addObserver(
-            forName: AVAudioSession.interruptionNotification,
-            object: nil,
-            queue: .main
-        ) { note in
-            let typeRaw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            let optionsRaw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
-            Task { await NoiseMachineController.shared.handleInterruption(typeRaw: typeRaw, optionsRaw: optionsRaw) }
-        }
-
-        let routeChangeToken = nc.addObserver(
-            forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: .main
-        ) { note in
-            let reasonRaw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
-            Task { await NoiseMachineController.shared.handleRouteChange(reasonRaw: reasonRaw) }
-        }
-
-        let lostToken = nc.addObserver(
-            forName: AVAudioSession.mediaServicesWereLostNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task { await NoiseMachineController.shared.handleMediaServicesLost() }
-        }
-
-        let resetToken = nc.addObserver(
-            forName: AVAudioSession.mediaServicesWereResetNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task { await NoiseMachineController.shared.handleMediaServicesReset() }
-        }
-
-        notificationTokens = [interruptionToken, routeChangeToken, lostToken, resetToken]
-    }
+    // MARK: - Notifications
 
     private func handleInterruption(typeRaw: UInt?, optionsRaw: UInt?) async {
-        guard let typeRaw, let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
+        guard let typeRaw,
+              let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
 
         switch type {
         case .began:
             log("AVAudioSession interruption began", level: .warning)
             isEngineRunning = false
             isSessionActive = false
-            cancelPendingSessionDeactivation()
-
-            for slot in slotNodes {
-                slot.stop()
-            }
-            engine?.stop()
+            engine?.pause()
+            for slot in slotNodes { slot.stop() }
 
         case .ended:
             let opts = AVAudioSession.InterruptionOptions(rawValue: optionsRaw ?? 0)
             log("AVAudioSession interruption ended (shouldResume=\(opts.contains(.shouldResume)))", level: .warning)
 
+            isSessionActive = false
             if currentState.wasPlaying, opts.contains(.shouldResume) {
-                await startEngineIfNeeded()
+                await startEngineIfNeeded(requestID: playbackRequestID)
             }
 
         @unknown default:
@@ -787,119 +901,78 @@ public actor NoiseMachineController {
         guard let reasonRaw,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw) else { return }
 
-        log("AVAudioSession route change reason=\(reason.rawValue)", level: .warning)
+        log("AVAudioSession routeChange reason=\(reason.rawValue)", level: .warning)
 
-        var needsRebuild = false
-
-        if let existingEngine = engine {
-            let fmt = existingEngine.outputNode.inputFormat(forBus: 0)
-            if fmt.sampleRate != graphSampleRate || fmt.channelCount != graphChannelCount {
-                needsRebuild = true
-            }
-        }
-
-        switch reason {
-        case .newDeviceAvailable, .oldDeviceUnavailable, .routeConfigurationChange, .noSuitableRouteForCategory:
-            needsRebuild = true
-        default:
-            break
-        }
-
-        if needsRebuild, engine != nil {
-            await rebuildEngine(reason: "route change \(reason.rawValue)")
-        }
-
+        // Route changes can make an engine stop or break connections; be defensive.
         if currentState.wasPlaying {
-            await startEngineIfNeeded()
+            isEngineRunning = false
+            isSessionActive = false
+            await startEngineIfNeeded(requestID: playbackRequestID)
         }
-    }
-
-    private func handleMediaServicesLost() async {
-        log("AVAudioSession media services were lost", level: .warning)
-        isEngineRunning = false
-        isSessionActive = false
-        cancelPendingSessionDeactivation()
-        teardownEngine()
     }
 
     private func handleMediaServicesReset() async {
-        log("AVAudioSession media services were reset", level: .warning)
-        isEngineRunning = false
-        isSessionActive = false
-        cancelPendingSessionDeactivation()
+        log("AVAudioSession mediaServicesWereReset", level: .warning)
+        observersInstalled = false
+        notificationTokens.removeAll()
         teardownEngine()
         didConfigureSession = false
+        isSessionActive = false
         await prepareIfNeeded()
 
         if currentState.wasPlaying {
-            await startEngineIfNeeded()
+            await startEngineIfNeeded(requestID: playbackRequestID)
         }
-    }
-
-    // MARK: - Debug Snapshot
-
-    private func debugSnapshot() async -> String {
-        let session = AVAudioSession.sharedInstance()
-        let route = session.currentRoute
-
-        let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
-        let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }
-
-        var enabledSlots: [Int] = []
-        for idx in 0..<NoiseMixState.slotCount {
-            if currentState.slots[idx].enabled { enabledSlots.append(idx + 1) }
-        }
-
-        let lines: [String] = [
-            "time=\(ISO8601DateFormatter().string(from: Date()))",
-            "engineExists=\(engine != nil) engineRunning=\(engine?.isRunning == true) internalFlag=\(isEngineRunning)",
-            "graph sr=\(String(format: "%.1f", graphSampleRate)) ch=\(graphChannelCount)",
-            "sessionCategory=\(session.category.rawValue) mode=\(session.mode.rawValue)",
-            "sampleRate=\(String(format: "%.1f", session.sampleRate)) preferred=\(String(format: "%.1f", session.preferredSampleRate))",
-            "ioBuffer=\(String(format: "%.4f", session.ioBufferDuration)) preferred=\(String(format: "%.4f", session.preferredIOBufferDuration))",
-            "outputVolume=\(String(format: "%.2f", session.outputVolume)) otherAudioPlaying=\(session.isOtherAudioPlaying)",
-            "routeOutputs=\(outputs) routeInputs=\(inputs)",
-            "state.wasPlaying=\(currentState.wasPlaying) master=\(String(format: "%.2f", currentState.masterVolume)) enabledSlots=\(enabledSlots) L1=\(String(format: "%.2f", currentState.slots[0].volume)) L2=\(String(format: "%.2f", currentState.slots[1].volume)) L3=\(String(format: "%.2f", currentState.slots[2].volume)) L4=\(String(format: "%.2f", currentState.slots[3].volume))"
-        ]
-
-        return lines.joined(separator: "\n")
     }
 }
 
+// MARK: - Slot Node
+
 private final class NoiseSlotNode {
     let index: Int
-    let format: AVAudioFormat
 
     let playerNode: AVAudioPlayerNode
     let eqNode: AVAudioUnitEQ
     let slotMixer: AVAudioMixerNode
 
-    private var buffer: AVAudioPCMBuffer
+    let format: AVAudioFormat
+
+    private var noiseBuffer: AVAudioPCMBuffer
     private var hasScheduled: Bool = false
 
     private var lastEnabled: Bool = false
-    private var lastVolume: Float = 0
+    private var lastVolume: Float = 0.0
 
     init(index: Int, sampleRate: Double, channelCount: AVAudioChannelCount) {
         self.index = index
-        self.format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount)!
+
+        let fmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount)!
+        self.format = fmt
 
         self.playerNode = AVAudioPlayerNode()
         self.eqNode = AVAudioUnitEQ(numberOfBands: 5)
         self.slotMixer = AVAudioMixerNode()
+        self.slotMixer.outputVolume = 0.0
 
-        self.slotMixer.outputVolume = 0
-        self.eqNode.globalGain = 0
-
-        self.buffer = NoiseSlotNode.makeNoiseBuffer(format: self.format, seconds: 8.0, seed: UInt64(0xC0FFEE) &+ UInt64(index) &* 17)
+        self.noiseBuffer = Self.makeNoiseBuffer(
+            format: fmt,
+            seconds: 0.25,
+            seed: UInt64(0xA1B2C3D4) ^ UInt64(index &* 991)
+        )
 
         configureEQBands()
     }
 
     func scheduleIfNeeded() {
         guard !hasScheduled else { return }
-        playerNode.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
         hasScheduled = true
+
+        playerNode.scheduleBuffer(
+            noiseBuffer,
+            at: nil,
+            options: [.loops, .interruptsAtLoop],
+            completionHandler: nil
+        )
     }
 
     func playIfNeeded() {
@@ -913,11 +986,8 @@ private final class NoiseSlotNode {
         playerNode.stop()
         hasScheduled = false
 
-        if lastEnabled {
-            slotMixer.outputVolume = lastVolume
-        } else {
-            slotMixer.outputVolume = 0
-        }
+        // Restore mixer to its last applied state; apply(slot:) will re-assert on next tick.
+        slotMixer.outputVolume = lastEnabled ? lastVolume : 0
     }
 
     func apply(slot: NoiseSlotState) {
