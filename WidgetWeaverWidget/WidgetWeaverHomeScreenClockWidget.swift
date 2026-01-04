@@ -193,9 +193,11 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Avoid forcing a full view identity swap on every minute.
-            // Keeping a stable identity reduces visible “blinks” during timeline advances.
+            // Force per-entry refresh on the Home Screen.
+            // Without an entry-keyed identity, WidgetKit can keep an archived snapshot and the minute hand
+            // will lag (even if the provider is generating correct minute-boundary entries).
             WidgetWeaverHomeScreenClockView(entry: entry)
+                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
