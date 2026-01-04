@@ -25,6 +25,17 @@ struct WidgetWeaverClockWidgetLiveView: View {
     /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
 
+    /// Update cadence for the hour/minute hands when showing seconds.
+    ///
+    /// WidgetKit minute-boundary delivery is not guaranteed to be second-accurate, but SwiftUI’s
+    /// animation timeline is permitted to drive a lightweight 1 Hz update loop while the widget is
+    /// actually on-screen.
+    private static let liveHandsMinimumIntervalSeconds: TimeInterval = 1.0
+
+    /// If the timeline context date is close to wall-clock time, the widget is likely “live” on-screen.
+    /// When the system is pre-rendering future entries, the context date can be far from wall time.
+    private static let liveClockToleranceSeconds: TimeInterval = 2.0
+
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let isPrivacy = redactionReasons.contains(.privacy)
@@ -45,27 +56,25 @@ struct WidgetWeaverClockWidgetLiveView: View {
             // Force font registration once per render pass (also useful in logs).
             let fontOK = WWClockSecondHandFont.isAvailable()
 
-            // Minute/hour hands:
-            //
-            // WidgetKit can deliver the next minute entry 1–2 seconds late.
-            // A once-per-minute TimelineView often gets coalesced, so the minute hand “ticks late”.
-            //
-            // Running a 1Hz schedule (aligned to the entry’s minute boundary) ensures there is a render
-            // pass at :00 within the currently-displayed entry. The angles are floored to the minute,
-            // so the hands still only *change* once per minute.
-            let scheduleStart = secondsMinuteAnchor
-            let interval: TimeInterval = showSeconds ? 1.0 : 60.0
+            let handsInterval: TimeInterval = showSeconds ? Self.liveHandsMinimumIntervalSeconds : 60.0
 
             ZStack {
-                TimelineView(.periodic(from: scheduleStart, by: interval)) { context in
-                    let wallNow = context.date
+                // Hour + minute hands:
+                //
+                // Drive updates from an animation timeline, not WidgetKit’s minute-boundary entry swaps.
+                // When the widget is actually visible, the timeline will tick at ~1 Hz and the hands can
+                // change exactly at :00 (based on wall-clock time).
+                TimelineView(.animation(minimumInterval: handsInterval, paused: false)) { context in
+                    let ctxNow = context.date
+                    let sysNow = Date()
 
-                    // Pre-render safety:
-                    // If WidgetKit renders a future entry ahead-of-time, keep hands at least at entryDate.
-                    let displayNow = (wallNow < entryDate) ? entryDate : wallNow
+                    // Prefer wall-clock time when the widget is live; fall back to the context date for
+                    // deterministic pre-render snapshots.
+                    let isLive = abs(ctxNow.timeIntervalSince(sysNow)) <= Self.liveClockToleranceSeconds
+                    let wallNow = isLive ? sysNow : ctxNow
 
                     // Tick hands at the minute boundary.
-                    let tickAnchor = Self.floorToMinute(displayNow)
+                    let tickAnchor = Self.floorToMinute(wallNow)
                     let tick = WWClockTickAngles(date: tickAnchor)
                     let minuteID = Int(tickAnchor.timeIntervalSinceReferenceDate / 60.0)
 
@@ -87,6 +96,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         let wallRef = Int(wallNow.timeIntervalSinceReferenceDate.rounded())
                         let wallMinusEntry = Int((wallNow.timeIntervalSince(entryDate)).rounded())
 
+                        let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
+                        let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
+                        let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
+
                         let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
                         let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
                         let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
@@ -94,7 +107,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         let expectedSeconds = Calendar.autoupdatingCurrent.component(.second, from: wallNow)
                         let expectedString = String(format: "0:%02d", expectedSeconds)
 
-                        return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                        let liveLabel = isLive ? "1" : "0"
+
+                        return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s live=\(liveLabel) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) dt=\(dynamicTypeSize) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
                     }
 
                     WidgetWeaverClockIconView(
@@ -111,7 +126,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     .id(minuteID)
                 }
 
-                // Keep the seconds hand + hub overlay exactly as before (centred + palette.accent).
+                // Seconds hand + hub overlay (centred + palette.accent).
                 WWClockSecondsAndHubOverlay(
                     palette: palette,
                     showsSeconds: showSeconds,
