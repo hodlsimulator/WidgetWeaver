@@ -398,6 +398,31 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
 
+                // Smart Photo controls (new)
+                if let smart = currentFamilyDraft().imageSmartPhoto {
+                    Button {
+                        Task { await regenerateSmartPhotoRenders() }
+                    } label: {
+                        Label("Regenerate smart renders", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(importInProgress)
+
+                    Text("Smart Photo: v\(smart.algorithmVersion) • prepared \(smart.preparedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        Task { await regenerateSmartPhotoRenders() }
+                    } label: {
+                        Label("Make Smart Photo (per-size renders)", systemImage: "sparkles")
+                    }
+                    .disabled(importInProgress)
+
+                    Text("Generates per-size crops for Small/Medium/Large.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Picker("Content mode", selection: binding(\.imageContentMode)) {
                     ForEach(ImageContentModeToken.allCases) { token in
                         Text(token.rawValue).tag(token)
@@ -423,6 +448,7 @@ extension ContentView {
                 Button(role: .destructive) {
                     var d = currentFamilyDraft()
                     d.imageFileName = ""
+                    d.imageSmartPhoto = nil
                     setCurrentFamilyDraft(d)
                 } label: {
                     Text("Remove image")
