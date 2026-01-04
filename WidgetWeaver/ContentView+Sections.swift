@@ -16,7 +16,7 @@ extension ContentView {
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
     }
-
+ 
     // MARK: - New: Content (template + data sources)
     var contentSection: some View {
         let currentTemplate = currentFamilyDraft().template
