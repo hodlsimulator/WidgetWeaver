@@ -132,6 +132,22 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             next = next.addingTimeInterval(60.0)
         }
 
+        WWClockDebugLog.appendLazy(
+            category: "clock",
+            throttleID: "clockWidget.provider.timeline",
+            minInterval: 60.0,
+            now: now
+        ) {
+            let nowRef = Int(now.timeIntervalSinceReferenceDate.rounded())
+            let anchorRef = Int(minuteAnchorNow.timeIntervalSinceReferenceDate.rounded())
+            let nextRef = Int(nextMinuteBoundary.timeIntervalSinceReferenceDate.rounded())
+
+            let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
+            let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
+
+            return "provider.timeline nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
+        }
+
         return Timeline(entries: entries, policy: .atEnd)
     }
 
