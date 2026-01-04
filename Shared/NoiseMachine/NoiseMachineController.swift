@@ -453,6 +453,8 @@ public actor NoiseMachineController {
                 return true
             case 561017449: // '!pri'
                 return true
+            case 2003329396: // 'what'
+                return true
             default:
                 return false
             }
@@ -461,16 +463,51 @@ public actor NoiseMachineController {
         return false
     }
 
+    private func isStartIOFailure(_ error: Error) -> Bool {
+        let ns = error as NSError
+
+        // Most commonly observed with AVAudioEngineGraph Start / AUIOClient_StartIO failures.
+        if ns.code == 2003329396 { return true } // 'what'
+
+        // Defensive: treat the old-style 'what' fourCC as StartIO-ish even if bridged differently.
+        if ns.domain == NSOSStatusErrorDomain {
+            let status = OSStatus(ns.code)
+            if status == 2003329396 { return true }
+        }
+
+        return false
+    }
+
+    private func hardResetSessionForStartIOFailure() async {
+        cancelPendingSessionDeactivation()
+
+        let session = AVAudioSession.sharedInstance()
+
+        // AUIOClient_StartIO can get stuck after interruptions/route flips; forcing a deactivate can
+        // nudge the system back into a sane state.
+        do {
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+            log("AVAudioSession hard reset: setActive(false) ok", level: .warning)
+        } catch {
+            logError("AVAudioSession hard reset: setActive(false)", error, level: .warning)
+        }
+
+        isSessionActive = false
+        didConfigureSession = configureSessionBestEffort()
+
+        // Give CoreAudio a beat to settle.
+        try? await Task.sleep(nanoseconds: 150_000_000)
+    }
+
     private func activationBackoffSeconds(forAttempt attempt: Int) -> TimeInterval {
         // attempt is 1-based
+        // Keep this short; widget-driven App Intents can be cancelled if activation work takes too long.
         switch attempt {
-        case 1: return 0.15
-        case 2: return 0.30
-        case 3: return 0.55
-        case 4: return 0.85
-        case 5: return 1.20
-        case 6: return 1.60
-        default: return 2.00
+        case 1: return 0.05
+        case 2: return 0.10
+        case 3: return 0.20
+        case 4: return 0.35
+        default: return 0.50
         }
     }
 
@@ -495,12 +532,13 @@ public actor NoiseMachineController {
             )
         }
 
-        if isSessionActive {
-            return
-        }
-
+        // Never trust our own flag here: the system can implicitly deactivate our session when we're
+        // idle/backgrounded, and then AVAudioEngine start can fail with AUIOClient_StartIO ("what")
+        // if we skip re-activation.
         var lastError: Error?
-        let maxAttempts = 10
+        var forcedExclusive: Bool = false
+
+        let maxAttempts = 4
 
         for attempt in 1...maxAttempts {
             guard currentState.wasPlaying, playbackRequestID == requestID else {
@@ -508,8 +546,20 @@ public actor NoiseMachineController {
             }
 
             do {
-                if attempt > 1 {
+                if attempt > 1, !forcedExclusive {
                     didConfigureSession = configureSessionBestEffort()
+                }
+
+                // If other audio is playing and we can't activate, become the primary session as a
+                // best-effort fallback (this will stop non-mixable audio from other apps).
+                if attempt == 2, session.isOtherAudioPlaying {
+                    do {
+                        try session.setCategory(.playback, mode: .default, options: [])
+                        forcedExclusive = true
+                        log("AVAudioSession setCategory(.playback) ok (exclusive fallback)", level: .warning)
+                    } catch {
+                        logError("AVAudioSession setCategory(.playback) exclusive fallback", error, level: .warning)
+                    }
                 }
 
                 try session.setActive(true, options: [])
@@ -518,6 +568,7 @@ public actor NoiseMachineController {
                 return
             } catch {
                 lastError = error
+                isSessionActive = false
 
                 let level: NoiseMachineLogLevel = (attempt == maxAttempts) ? .error : .warning
                 logError("AVAudioSession setActive(true) attempt \(attempt)", error, level: level)
@@ -638,8 +689,15 @@ public actor NoiseMachineController {
             log("Engine started")
         } catch is CancellationError {
             log("startEngineIfNeeded: cancelled", level: .warning)
+
+            // If this is still the current request, treat a cancellation as a failed start (this
+            // can happen when widget-driven App Intents exceed the system’s execution budget).
+            if currentState.wasPlaying, playbackRequestID == requestID {
+                await handleFailedStart(error: CancellationError())
+            }
         } catch {
             isEngineRunning = false
+            isSessionActive = false
             logError("AVAudioEngine start", error, level: .error)
 
             await recoverFromEngineStartFailure(originalError: error, requestID: requestID)
@@ -680,6 +738,8 @@ public actor NoiseMachineController {
 
     private func rebuildEngine(reason: String) async {
         log("Rebuilding audio engine (\(reason))", level: .warning)
+        cancelPendingSessionDeactivation()
+        isSessionActive = false
         teardownEngine()
         didConfigureSession = false
         await configureSessionIfNeeded()
@@ -687,8 +747,15 @@ public actor NoiseMachineController {
         applyTargets(from: currentState, savePolicy: .none)
     }
 
-    private func recoverFromEngineStartFailure(originalError _: Error, requestID: UInt64) async {
+    private func recoverFromEngineStartFailure(originalError: Error, requestID: UInt64) async {
         guard currentState.wasPlaying, playbackRequestID == requestID else { return }
+
+        isSessionActive = false
+
+        if isStartIOFailure(originalError) {
+            log("Detected StartIO failure ('what'); hard-resetting audio session", level: .warning)
+            await hardResetSessionForStartIOFailure()
+        }
 
         log("Attempting recovery after engine start failure…", level: .warning)
 
@@ -722,6 +789,7 @@ public actor NoiseMachineController {
             return
         } catch {
             isEngineRunning = false
+            isSessionActive = false
             logError("AVAudioEngine restart after reset", error, level: .error)
         }
 
@@ -755,6 +823,7 @@ public actor NoiseMachineController {
             return
         } catch {
             isEngineRunning = false
+            isSessionActive = false
             logError("AVAudioEngine start after rebuild", error, level: .error)
         }
     }
@@ -917,10 +986,14 @@ public actor NoiseMachineController {
 
         log("AVAudioSession routeChange reason=\(reason.rawValue)", level: .warning)
 
-        // Route changes can make an engine stop or break connections; be defensive.
+        // Route changes can make an engine stop or leave the graph using a stale hardware format.
+        // Rebuild even if currently paused so the next widget play has a clean, route-matched graph.
+        isEngineRunning = false
+        isSessionActive = false
+
+        await rebuildEngine(reason: "routeChange(\(reason.rawValue))")
+
         if currentState.wasPlaying {
-            isEngineRunning = false
-            isSessionActive = false
             await startEngineIfNeeded(requestID: playbackRequestID)
         }
     }
