@@ -12,6 +12,7 @@ struct WidgetWeaverClockMinuteDotsView: View {
     let radius: CGFloat
     let dotDiameter: CGFloat
     let dotColour: Color
+    let cardinalDotColour: Color
     let scale: CGFloat
 
     var body: some View {
@@ -27,30 +28,33 @@ struct WidgetWeaverClockMinuteDotsView: View {
             return [0, q1, q2, q3]
         }()
 
-        let majorOutset = max(px * 1.6, dotDiameter * 0.35)
+        // Slightly larger + a tight glow so the 60-minute dots read closer to the mock.
+        let minorDiameter = WWClock.pixel(dotDiameter * 1.10, scale: scale)
+        let minorGlowBlur = max(px, minorDiameter * 0.26)
+
+        // Cardinal dots use the accent colour and sit a touch further out so they replace the normal dot.
+        let majorOutset = max(px * 1.6, dotDiameter * 0.40)
         let majorRadius = WWClock.pixel(radius + majorOutset, scale: scale)
-        let majorDiameter = WWClock.pixel(dotDiameter * 1.55, scale: scale)
+        let majorDiameter = WWClock.pixel(dotDiameter * 1.60, scale: scale)
+        let majorGlowBlur = max(px, majorDiameter * 0.34)
 
         ZStack {
             ForEach(0..<count, id: \.self) { i in
                 let degrees = (Double(i) / Double(count)) * 360.0
 
                 if quarterIndices.contains(i) {
-                    ZStack {
-                        Circle()
-                            .fill(dotColour)
-
-                        // Slight density boost without needing a separate palette colour.
-                        Circle()
-                            .fill(dotColour.opacity(0.35))
-                    }
-                    .frame(width: majorDiameter, height: majorDiameter)
-                    .offset(y: -majorRadius)
-                    .rotationEffect(.degrees(degrees))
+                    Circle()
+                        .fill(cardinalDotColour)
+                        .frame(width: majorDiameter, height: majorDiameter)
+                        .shadow(color: cardinalDotColour.opacity(0.65), radius: majorGlowBlur, x: 0, y: 0)
+                        .shadow(color: cardinalDotColour.opacity(0.22), radius: majorGlowBlur * 1.45, x: 0, y: 0)
+                        .offset(y: -majorRadius)
+                        .rotationEffect(.degrees(degrees))
                 } else {
                     Circle()
                         .fill(dotColour)
-                        .frame(width: dotDiameter, height: dotDiameter)
+                        .frame(width: minorDiameter, height: minorDiameter)
+                        .shadow(color: dotColour.opacity(0.20), radius: minorGlowBlur, x: 0, y: 0)
                         .offset(y: -radius)
                         .rotationEffect(.degrees(degrees))
                 }

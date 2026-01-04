@@ -100,7 +100,7 @@ struct WidgetWeaverClockPalette {
         let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.060)
 
         // Minute dots: slightly softer than the hands/indices.
-        let minuteDot: Color = WWClock.colour(0xB8C4D8, alpha: 0.70)
+        let minuteDot: Color = WWClock.colour(0xB8C4D8, alpha: 0.80)
 
         // Batons: crisp bevel range.
         let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.96)

@@ -98,13 +98,6 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
 
-            let pipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.016, min: R * 0.014, max: R * 0.018),
-                scale: displayScale
-            )
-            let pipInset = WWClock.pixel(1.5, scale: displayScale)
-            let pipRadius = dotRadius - pipInset
-
             let numeralsRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.70, min: R * 0.66, max: R * 0.74),
                 scale: displayScale
@@ -124,9 +117,9 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.86),
                 scale: displayScale
             )
-            // Slightly thicker (subtle) vs fc685a7.
+            // Slightly thicker (subtle) to better match the mock.
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.036, min: R * 0.032, max: R * 0.040),
+                WWClock.clamp(R * 0.040, min: R * 0.035, max: R * 0.044),
                 scale: displayScale
             )
 
@@ -134,9 +127,9 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
                 scale: displayScale
             )
-            // Slightly thinner vs fc685a7.
+            // Slightly thinner (subtle) to reduce dominance.
             let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.0052, min: R * 0.0038, max: R * 0.0062),
+                WWClock.clamp(R * 0.0044, min: R * 0.0034, max: R * 0.0054),
                 scale: displayScale
             )
             let secondTipSide = WWClock.pixel(
@@ -170,6 +163,7 @@ struct WidgetWeaverClockIconView: View {
                         radius: dotRadius,
                         dotDiameter: dotDiameter,
                         dotColour: palette.minuteDot,
+                        cardinalDotColour: palette.accent,
                         scale: displayScale
                     )
 
@@ -182,12 +176,6 @@ struct WidgetWeaverClockIconView: View {
                         capLength: capLength,
                         capColour: palette.accent,
                         scale: displayScale
-                    )
-
-                    WidgetWeaverClockCardinalPipsView(
-                        pipColour: palette.accent,
-                        side: pipSide,
-                        radius: pipRadius
                     )
 
                     WidgetWeaverClockNumeralsView(
@@ -235,8 +223,6 @@ struct WidgetWeaverClockIconView: View {
                                 batonLength: batonLength,
                                 batonWidth: batonWidth,
                                 capLength: capLength,
-                                pipSide: pipSide,
-                                pipRadius: pipRadius,
                                 minuteAngle: minuteAngle,
                                 minuteLength: minuteLength,
                                 minuteWidth: minuteWidth,
