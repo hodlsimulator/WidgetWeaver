@@ -32,7 +32,7 @@ public actor NoiseMachineController {
 
     private var isSessionActive: Bool = false
     private var pendingSessionDeactivationTask: Task<Void, Never>?
-    private let sessionDeactivationGraceSeconds: TimeInterval = 2.0
+    private let sessionDeactivationGraceSeconds: TimeInterval = 30.0
 
     private var currentState: NoiseMixState = .default
     private var isEngineRunning: Bool = false
@@ -407,8 +407,22 @@ public actor NoiseMachineController {
         guard engine?.isRunning != true else { return }
         guard isSessionActive else { return }
 
+        let session = AVAudioSession.sharedInstance()
+
+        // Avoid deactivating while other audio is playing.
+        //
+        // In practice, deactivating during mixing can make later re-activation from widget-driven
+        // App Intents unreliable, often returning OSStatus '!pla' (cannotStartPlaying).
+        if session.isOtherAudioPlaying {
+            log("AVAudioSession deactivation skipped (otherAudioPlaying=true); will retry later", level: .warning)
+
+            // Try again later in case the other app stops playback.
+            scheduleSessionDeactivationIfIdle(after: max(sessionDeactivationGraceSeconds, 15.0))
+            return
+        }
+
         do {
-            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
             isSessionActive = false
             log("AVAudioSession setActive(false) ok")
         } catch {
