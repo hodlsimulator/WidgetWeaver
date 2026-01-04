@@ -130,98 +130,6 @@ extension ContentView {
         }
     }
 
-    // MARK: - Smart Photo manual crop
-
-    func applyManualSmartCrop(family: EditingFamily, cropRect: NormalisedRect) async {
-        let crop = cropRect.normalised()
-
-        var d = currentFamilyDraft()
-        guard var smart = d.imageSmartPhoto else {
-            saveStatusMessage = "No Smart Photo to edit."
-            return
-        }
-
-        let existingVariant: SmartPhotoVariantSpec?
-        switch family {
-        case .small: existingVariant = smart.small
-        case .medium: existingVariant = smart.medium
-        case .large: existingVariant = smart.large
-        }
-
-        guard let variant = existingVariant else {
-            saveStatusMessage = "Smart Photo render info missing for \(family.label)."
-            return
-        }
-
-        guard let masterData = AppGroup.readImageData(fileName: smart.masterFileName) else {
-            saveStatusMessage = "Smart Photo master is missing on disk."
-            return
-        }
-
-        saveStatusMessage = "Applying crop…"
-
-        let targetPixels = variant.pixelSize.normalised()
-        let oldRenderFile = variant.renderFileName
-
-        let newRenderFile = AppGroup.createImageFileName(prefix: "smart-\(family.rawValue)-manual", ext: "jpg")
-
-        let maxBytes: Int
-        switch family {
-        case .small: maxBytes = 450_000
-        case .medium: maxBytes = 650_000
-        case .large: maxBytes = 900_000
-        }
-
-        do {
-            try await Task.detached(priority: .userInitiated) {
-                guard let masterImage = UIImage(data: masterData) else {
-                    throw ManualSmartCropError.decodeFailed
-                }
-
-                let rendered = ManualSmartCropRenderer.render(
-                    master: masterImage,
-                    cropRect: crop,
-                    targetPixels: targetPixels
-                )
-
-                let jpeg = try ManualSmartCropRenderer.encodeJPEG(
-                    image: rendered,
-                    startQuality: 0.85,
-                    maxBytes: maxBytes
-                )
-
-                try AppGroup.writeImageData(jpeg, fileName: newRenderFile)
-                AppGroup.deleteImage(fileName: oldRenderFile)
-            }.value
-
-            var updatedVariant = variant
-            updatedVariant.cropRect = crop
-            updatedVariant.renderFileName = newRenderFile
-
-            switch family {
-            case .small: smart.small = updatedVariant
-            case .medium: smart.medium = updatedVariant
-            case .large: smart.large = updatedVariant
-            }
-
-            smart.preparedAt = Date()
-            smart = smart.normalised()
-
-            d.imageSmartPhoto = smart
-
-            // `imageFileName` is the backwards-compatible medium render.
-            if family == .medium {
-                d.imageFileName = newRenderFile
-            }
-
-            setCurrentFamilyDraft(d)
-
-            saveStatusMessage = "Updated \(family.label) framing (draft only).\nSave to update widgets."
-        } catch {
-            saveStatusMessage = "Crop update failed: \(error.localizedDescription)"
-        }
-    }
-
     func upgradeLegacyPhotosInCurrentDesign(maxUpgrades: Int = 3) async {
         let clampedMax = max(1, min(3, maxUpgrades))
 
@@ -579,31 +487,7 @@ extension ContentView {
         saveStatusMessage = "Patched design saved.\nWidgets refreshed."
     }
 
-    // MARK: - Import Review (Milestone 8)
-
-    func cancelImportReview() {
-        importReviewModel = nil
-        importReviewSelection = []
-        activeSheet = nil
-    }
-
-    func importReviewSelectAll() {
-        guard let model = importReviewModel else { return }
-        importReviewSelection = Set(model.items.map(\.id))
-    }
-
-    func importReviewSelectNone() {
-        importReviewSelection = []
-    }
-
-    func importReviewLimitState() -> WidgetWeaverImportReviewLimitState {
-        let availableSlots = max(0, WidgetWeaverEntitlements.maxFreeDesigns - savedSpecs.count)
-        return WidgetWeaverImportReviewModel.limitState(
-            isProUnlocked: proManager.isProUnlocked,
-            selectionCount: importReviewSelection.count,
-            availableSlots: availableSlots
-        )
-    }
+    // MARK: - Import
 
     func prepareImportReview(from url: URL) async {
         guard !importInProgress else { return }
@@ -634,20 +518,45 @@ extension ContentView {
             activeSheet = .importReview
         } catch {
             saveStatusMessage = "Import failed: \(error.localizedDescription)"
-            importReviewModel = nil
-            importReviewSelection = []
         }
     }
 
-    func performImportReview() async {
+    func importReviewSelectAll() {
         guard let model = importReviewModel else { return }
+        importReviewSelection = Set(model.items.map(\.id))
+    }
+
+    func importReviewSelectNone() {
+        importReviewSelection.removeAll()
+    }
+
+    func importReviewLimitState() -> WidgetWeaverImportReviewLimitState {
+        let availableSlots = max(0, WidgetWeaverEntitlements.maxFreeDesigns - savedSpecs.count)
+        return WidgetWeaverImportReviewModel.limitState(
+            isProUnlocked: proManager.isProUnlocked,
+            selectionCount: importReviewSelection.count,
+            availableSlots: availableSlots
+        )
+    }
+
+    func cancelImportReview() {
+        activeSheet = nil
+        importReviewModel = nil
+        importReviewSelection.removeAll()
+    }
+
+    func performImportReview() async {
+        guard let model = importReviewModel else {
+            cancelImportReview()
+            return
+        }
 
         let selectedCount = importReviewSelection.count
         let totalCount = model.items.count
         let skippedNotSelected = max(0, totalCount - selectedCount)
 
         guard selectedCount > 0 else {
-            saveStatusMessage = "No designs selected to import."
+            saveStatusMessage = "No designs selected."
             return
         }
 
@@ -723,8 +632,6 @@ extension ContentView {
             )
         )
     }
-
-    // MARK: - Import (legacy direct import)
 
     func importDesigns(from url: URL) async {
         guard !importInProgress else { return }
@@ -802,76 +709,5 @@ extension ContentView {
 
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
-    }
-}
-
-// MARK: - Manual Smart Photo crop support
-
-private enum ManualSmartCropError: LocalizedError {
-    case decodeFailed
-    case encodeFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .decodeFailed: return "Decode failed."
-        case .encodeFailed: return "JPEG encode failed."
-        }
-    }
-}
-
-private enum ManualSmartCropRenderer {
-    static func render(master: UIImage, cropRect: NormalisedRect, targetPixels: PixelSize) -> UIImage {
-        guard let sourceCg = master.cgImage else { return master }
-
-        let cropRectPixels = CGRect(
-            x: CGFloat(cropRect.x) * CGFloat(sourceCg.width),
-            y: CGFloat(cropRect.y) * CGFloat(sourceCg.height),
-            width: CGFloat(cropRect.width) * CGFloat(sourceCg.width),
-            height: CGFloat(cropRect.height) * CGFloat(sourceCg.height)
-        ).integral
-
-        let bounds = CGRect(x: 0, y: 0, width: sourceCg.width, height: sourceCg.height)
-        let safeRect = cropRectPixels.intersection(bounds)
-        let cropCg = (safeRect.isNull || safeRect.isEmpty) ? sourceCg : (sourceCg.cropping(to: safeRect) ?? sourceCg)
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-
-        let renderer = UIGraphicsImageRenderer(
-            size: CGSize(width: targetPixels.width, height: targetPixels.height),
-            format: format
-        )
-
-        return renderer.image { ctx in
-            UIColor.black.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: targetPixels.width, height: targetPixels.height))
-
-            let cropped = UIImage(cgImage: cropCg, scale: 1, orientation: .up)
-            cropped.draw(in: CGRect(x: 0, y: 0, width: targetPixels.width, height: targetPixels.height))
-        }
-    }
-
-    static func encodeJPEG(image: UIImage, startQuality: CGFloat, maxBytes: Int) throws -> Data {
-        var q = min(0.95, max(0.1, startQuality))
-        let minQ: CGFloat = 0.65
-
-        guard var data = image.jpegData(compressionQuality: q) else {
-            throw ManualSmartCropError.encodeFailed
-        }
-
-        var steps = 0
-        while data.count > maxBytes && q > minQ && steps < 6 {
-            q = max(minQ, q - 0.05)
-            guard let next = image.jpegData(compressionQuality: q) else { break }
-            data = next
-            steps += 1
-        }
-
-        if data.isEmpty {
-            throw ManualSmartCropError.encodeFailed
-        }
-
-        return data
     }
 }
