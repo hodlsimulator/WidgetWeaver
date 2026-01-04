@@ -398,7 +398,7 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
 
-                // Smart Photo controls (new)
+                // Smart Photo controls
                 if let smart = currentFamilyDraft().imageSmartPhoto {
                     Button {
                         Task { await regenerateSmartPhotoRenders() }
