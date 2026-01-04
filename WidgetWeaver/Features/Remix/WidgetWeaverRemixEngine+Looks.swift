@@ -23,7 +23,7 @@ extension WidgetWeaverRemixEngine {
 
     static func selectionCycle(context: RemixContext) -> [Kind] {
         if context.isWeatherTemplate {
-            return [.subtle, .layout, .colour, .typography, .bold]
+            return [.subtle, .colour, .typography, .bold]
         }
         if context.isNextUpTemplate {
             return [.subtle, .typography, .colour, .bold]

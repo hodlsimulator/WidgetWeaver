@@ -91,7 +91,7 @@ enum WidgetWeaverRemixEngine {
         var rng = SeededRNG(seed: seed ?? UInt64.random(in: 0...UInt64.max))
 
         let looks = makeLooks(context: context)
-        let looksByKind = Dictionary(grouping: looks, by: { $0.kind })
+        var looksByKind = Dictionary(grouping: looks, by: { $0.kind })
 
         var out: [Variant] = []
         out.reserveCapacity(max(0, count))
@@ -99,67 +99,72 @@ enum WidgetWeaverRemixEngine {
         var usedSpecs = Set<WidgetSpec>()
 
         let kindCycle = selectionCycle(context: context)
-
-        func pickAvailableKind(cycleIndex: Int) -> Kind? {
-            if !kindCycle.isEmpty {
-                for offset in 0..<kindCycle.count {
-                    let k = kindCycle[(cycleIndex + offset) % kindCycle.count]
-                    if let bucket = looksByKind[k], !bucket.isEmpty {
-                        return k
-                    }
-                }
-            }
-            return looksByKind.keys.min(by: { $0.sortOrder < $1.sortOrder })
-        }
-
-        let maxAttempts = max(500, count * 120)
         var guardCounter = 0
 
-        while out.count < count && guardCounter < maxAttempts {
+        while out.count < count && guardCounter < 500 {
             guardCounter += 1
 
-            let cycleIndex = kindCycle.isEmpty ? 0 : (out.count % kindCycle.count)
+            let desiredKind = kindCycle[out.count % kindCycle.count]
 
-            guard let chosenKind = pickAvailableKind(cycleIndex: cycleIndex),
-                  let bucket = looksByKind[chosenKind],
-                  !bucket.isEmpty else {
+            if var bucket = looksByKind[desiredKind], !bucket.isEmpty {
+                let idx = rng.int(in: 0...(bucket.count - 1))
+                let look = bucket.remove(at: idx)
+                looksByKind[desiredKind] = bucket
+
+                let recipe = look.makeRecipe(&rng, context)
+                let spec = apply(recipe: recipe, to: base)
+
+                if spec == base { continue }
+                if usedSpecs.insert(spec).inserted {
+                    out.append(
+                        Variant(
+                            title: look.title,
+                            subtitle: look.subtitle,
+                            kind: desiredKind,
+                            spec: spec
+                        )
+                    )
+                }
+                continue
+            }
+
+            // Bucket empty; try any remaining bucket.
+            let remainingKinds = looksByKind
+                .filter { !$0.value.isEmpty }
+                .map { $0.key }
+
+            guard let fallbackKind = remainingKinds.min(by: { $0.sortOrder < $1.sortOrder }) else {
                 break
             }
 
-            // Looks are intentionally reusable. Each look randomises knobs internally,
-            // which prevents special templates (Weather / Next Up) from collapsing into Wildcards.
-            let idx = rng.int(in: 0...(bucket.count - 1))
-            let look = bucket[idx]
+            if var bucket = looksByKind[fallbackKind], !bucket.isEmpty {
+                let idx = rng.int(in: 0...(bucket.count - 1))
+                let look = bucket.remove(at: idx)
+                looksByKind[fallbackKind] = bucket
 
-            let recipe = look.makeRecipe(&rng, context)
-            let spec = apply(recipe: recipe, to: base)
+                let recipe = look.makeRecipe(&rng, context)
+                let spec = apply(recipe: recipe, to: base)
 
-            if spec == base { continue }
-
-            if usedSpecs.insert(spec).inserted {
-                out.append(
-                    Variant(
-                        title: look.title,
-                        subtitle: look.subtitle,
-                        kind: chosenKind,
-                        spec: spec
+                if spec == base { continue }
+                if usedSpecs.insert(spec).inserted {
+                    out.append(
+                        Variant(
+                            title: look.title,
+                            subtitle: look.subtitle,
+                            kind: fallbackKind,
+                            spec: spec
+                        )
                     )
-                )
+                }
             }
         }
 
         if out.count < count {
             // Fallback: bounded random recipes so the sheet always fills.
-            // This should be rare now that looks are reusable.
-            var fallbackGuard = 0
-            while out.count < count && fallbackGuard < 2500 {
-                fallbackGuard += 1
-
+            while out.count < count {
                 let recipe = randomRecipe(using: &rng, context: context)
                 let spec = apply(recipe: recipe, to: base)
-
                 if spec == base { continue }
-
                 if usedSpecs.insert(spec).inserted {
                     out.append(
                         Variant(
