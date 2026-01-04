@@ -47,11 +47,11 @@ extension NoiseMachineController {
             let slot = NoiseSlotNode(index: idx, sampleRate: sr, channelCount: ch)
             slots.append(slot)
 
-            engine.attach(slot.playerNode)
+            engine.attach(slot.sourceNode)
             engine.attach(slot.eqNode)
             engine.attach(slot.slotMixer)
 
-            engine.connect(slot.playerNode, to: slot.eqNode, format: slot.format)
+            engine.connect(slot.sourceNode, to: slot.eqNode, format: slot.format)
             engine.connect(slot.eqNode, to: slot.slotMixer, format: slot.format)
             engine.connect(slot.slotMixer, to: master, format: slot.format)
 

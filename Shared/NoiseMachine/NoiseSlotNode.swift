@@ -6,19 +6,19 @@
 //
 
 import AVFoundation
+import AudioToolbox
 import Foundation
 
 final class NoiseSlotNode {
     let index: Int
 
-    let playerNode: AVAudioPlayerNode
+    let sourceNode: AVAudioSourceNode
     let eqNode: AVAudioUnitEQ
     let slotMixer: AVAudioMixerNode
 
     let format: AVAudioFormat
 
-    private var noiseBuffer: AVAudioPCMBuffer
-    private var hasScheduled: Bool = false
+    private let renderState: RenderState
 
     private var lastEnabled: Bool = false
     private var lastVolume: Float = 0.0
@@ -29,43 +29,33 @@ final class NoiseSlotNode {
         let fmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount)!
         self.format = fmt
 
-        self.playerNode = AVAudioPlayerNode()
         self.eqNode = AVAudioUnitEQ(numberOfBands: 5)
         self.slotMixer = AVAudioMixerNode()
         self.slotMixer.outputVolume = 0.0
 
-        self.noiseBuffer = Self.makeNoiseBuffer(
-            format: fmt,
-            seconds: 0.25,
-            seed: UInt64(0xA1B2C3D4) ^ UInt64(index &* 991)
-        )
+        let seed = UInt64(0xA1B2C3D4) ^ UInt64(index &* 991)
+        let state = RenderState(seed: seed, channelCount: Int(channelCount), amplitude: 0.22)
+        self.renderState = state
+
+        self.sourceNode = AVAudioSourceNode(format: fmt) { isSilence, _, frameCount, audioBufferList -> OSStatus in
+            isSilence.pointee = false
+            state.render(frameCount: Int(frameCount), audioBufferList: audioBufferList)
+            return noErr
+        }
 
         configureEQBands()
     }
 
     func scheduleIfNeeded() {
-        guard !hasScheduled else { return }
-        hasScheduled = true
-
-        playerNode.scheduleBuffer(
-            noiseBuffer,
-            at: nil,
-            options: [.loops, .interruptsAtLoop],
-            completionHandler: nil
-        )
+        // No scheduling required for AVAudioSourceNode.
     }
 
     func playIfNeeded() {
-        scheduleIfNeeded()
-        if !playerNode.isPlaying {
-            playerNode.play()
-        }
+        // AVAudioSourceNode has no explicit play/stop; the engine pulls samples when running.
     }
 
     func stop() {
-        playerNode.stop()
-        hasScheduled = false
-
+        // No-op for AVAudioSourceNode.
         // Restore mixer to its last applied state; apply(slot:) will re-assert on next tick.
         slotMixer.outputVolume = lastEnabled ? lastVolume : 0
     }
@@ -148,49 +138,82 @@ final class NoiseSlotNode {
         highShelf.gain = 0
         highShelf.bypass = false
     }
+}
 
-    private static func makeNoiseBuffer(format: AVAudioFormat, seconds: Double, seed: UInt64) -> AVAudioPCMBuffer {
-        let frames = AVAudioFrameCount(max(1, Int(format.sampleRate * seconds)))
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
-        buffer.frameLength = frames
+private final class RenderState {
+    private var rngs: [SplitMix64]
+    private let amplitude: Float
+    private let channelCount: Int
 
-        guard let channels = buffer.floatChannelData else {
-            return buffer
+    init(seed: UInt64, channelCount: Int, amplitude: Float) {
+        self.channelCount = max(1, channelCount)
+        self.amplitude = amplitude
+
+        self.rngs = (0..<self.channelCount).map { idx in
+            let mix = UInt64(truncatingIfNeeded: idx &* 0x9E3779B9)
+            return SplitMix64(seed: seed ^ mix ^ 0xD1B54A32D192ED03)
         }
 
-        var rng = SeededRandom(seed: seed)
-        let chCount = Int(format.channelCount)
-        let frameCount = Int(frames)
-
-        for ch in 0..<chCount {
-            let out = channels[ch]
-            for i in 0..<frameCount {
-                let r = rng.nextFloatMinus1To1()
-                out[i] = r * 0.22
-            }
+        for i in rngs.indices {
+            _ = rngs[i].nextUInt64()
+            _ = rngs[i].nextUInt64()
         }
-
-        return buffer
     }
 
-    private struct SeededRandom {
+    func render(frameCount: Int, audioBufferList: UnsafeMutablePointer<AudioBufferList>) {
+        let frames = max(0, frameCount)
+        if frames == 0 { return }
+
+        let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
+
+        if abl.count == 1, channelCount > 1 {
+            let buf = abl[0]
+            guard let mData = buf.mData else { return }
+            let ptr = mData.assumingMemoryBound(to: Float.self)
+            let stride = channelCount
+
+            for frame in 0..<frames {
+                let base = frame * stride
+                for ch in 0..<channelCount {
+                    var r = rngs[ch]
+                    ptr[base + ch] = r.nextFloatMinus1To1() * amplitude
+                    rngs[ch] = r
+                }
+            }
+            return
+        }
+
+        let actualChannels = min(channelCount, abl.count)
+        for ch in 0..<actualChannels {
+            let buf = abl[ch]
+            guard let mData = buf.mData else { continue }
+            let ptr = mData.assumingMemoryBound(to: Float.self)
+
+            var r = rngs[ch]
+            for i in 0..<frames {
+                ptr[i] = r.nextFloatMinus1To1() * amplitude
+            }
+            rngs[ch] = r
+        }
+    }
+
+    private struct SplitMix64 {
         private var state: UInt64
 
         init(seed: UInt64) {
             self.state = seed == 0 ? 0xDEADBEEF : seed
         }
 
-        mutating func nextUInt32() -> UInt32 {
+        mutating func nextUInt64() -> UInt64 {
             state &+= 0x9E3779B97F4A7C15
             var z = state
             z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
             z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
-            let x = z ^ (z >> 31)
-            return UInt32(truncatingIfNeeded: x)
+            return z ^ (z >> 31)
         }
 
         mutating func nextFloatMinus1To1() -> Float {
-            let u = Float(nextUInt32()) / Float(UInt32.max)
+            let u = Float(nextUInt64() >> 40) / Float(1 << 24)
             return (u * 2.0) - 1.0
         }
     }
