@@ -2,6 +2,8 @@
 //  NoiseMachineController+Session.swift
 //  WidgetWeaver
 //
+//  Created by . . on 1/4/26.
+//
 
 import AVFoundation
 import AudioToolbox
@@ -23,12 +25,16 @@ extension NoiseMachineController {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             log("AVAudioSession setCategory(.playback, options: [.mixWithOthers]) ok")
         } catch {
+            // Refuse an exclusive fallback. Plain `.playback` can stop other audio (podcasts/music),
+            // which is never acceptable for the Noise Machine.
             logError("AVAudioSession setCategory(.playback, .mixWithOthers)", error, level: .warning)
+
+            // Best-effort mix-safe fallback: duck instead of interrupting.
             do {
-                try session.setCategory(.playback, mode: .default, options: [])
-                log("AVAudioSession setCategory(.playback) ok (fallback)")
+                try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+                log("AVAudioSession setCategory(.playback, options: [.duckOthers]) ok (mix-safe fallback)", level: .warning)
             } catch {
-                logError("AVAudioSession setCategory(.playback) fallback", error, level: .error)
+                logError("AVAudioSession setCategory(.playback, .duckOthers) fallback", error, level: .error)
                 return false
             }
         }
@@ -206,7 +212,6 @@ extension NoiseMachineController {
         }
 
         var lastError: Error?
-        var forcedExclusive: Bool = false
 
         let maxAttempts = 4
 
@@ -216,20 +221,13 @@ extension NoiseMachineController {
             }
 
             do {
-                if attempt > 1, !forcedExclusive {
+                if attempt > 1 {
                     didConfigureSession = configureSessionBestEffort()
                 }
 
-                if attempt == 2, session.isOtherAudioPlaying {
-                    do {
-                        try session.setCategory(.playback, mode: .default, options: [])
-                        forcedExclusive = true
-                        log("AVAudioSession setCategory(.playback) ok (exclusive fallback)", level: .warning)
-                    } catch {
-                        logError("AVAudioSession setCategory(.playback) exclusive fallback", error, level: .warning)
-                    }
-                }
-
+                // Never switch to an exclusive category while other audio is playing. If the audio
+                // system is in a bad state (e.g. after another audio app was force-quit) and we
+                // cannot activate with mixing, fail instead of stopping the user’s podcast/music.
                 try session.setActive(true, options: [])
                 isSessionActive = true
                 log("AVAudioSession setActive(true) ok (attempt=\(attempt) sr=\(String(format: "%.1f", session.sampleRate)) io=\(String(format: "%.4f", session.ioBufferDuration)))")
