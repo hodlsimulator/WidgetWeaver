@@ -358,7 +358,7 @@ public actor NoiseMachineController {
         pendingSessionDeactivationTask = Task { [delay] in
             let ns = UInt64(max(0, delay) * 1_000_000_000)
             try? await Task.sleep(nanoseconds: ns)
-            await self.performSessionDeactivationIfIdle()
+            self.performSessionDeactivationIfIdle()
         }
     }
 
