@@ -12,14 +12,13 @@ struct WidgetWeaverClockMinuteDotsView: View {
     let radius: CGFloat
     let dotDiameter: CGFloat
     let dotColour: Color
-    let cardinalDotColour: Color
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Emphasise the quarter-hour dots behind 12/3/6/9.
-        // These sit slightly further out so they replace the minor dot at the same angle.
+        // Quarter-hour dots at 12/3/6/9.
+        // These replace the minor dot at the same index (so there is only one dot per angle).
         let quarterIndices: Set<Int> = {
             guard count > 0 else { return [] }
             let q1 = (count * 1) / 4
@@ -28,33 +27,37 @@ struct WidgetWeaverClockMinuteDotsView: View {
             return [0, q1, q2, q3]
         }()
 
-        // Slightly larger + a tight glow so the 60-minute dots read closer to the mock.
+        // Slight prominence bump for the minute dots (subtle, closer to the mock).
         let minorDiameter = WWClock.pixel(dotDiameter * 1.10, scale: scale)
-        let minorGlowBlur = max(px, minorDiameter * 0.26)
+        let minorGlowBlur = max(px, minorDiameter * 0.22)
 
-        // Cardinal dots use the accent colour and sit a touch further out so they replace the normal dot.
-        let majorOutset = max(px * 1.6, dotDiameter * 0.40)
-        let majorRadius = WWClock.pixel(radius + majorOutset, scale: scale)
-        let majorDiameter = WWClock.pixel(dotDiameter * 1.60, scale: scale)
-        let majorGlowBlur = max(px, majorDiameter * 0.34)
+        // Quarter-hour dots: keep a single dot (no duplicate), but avoid any “major” top marker.
+        // These stay the same size as the other minute dots, with only a small density boost.
+        let majorDiameter = minorDiameter
+        let majorGlowBlur = minorGlowBlur
 
         ZStack {
             ForEach(0..<count, id: \.self) { i in
                 let degrees = (Double(i) / Double(count)) * 360.0
 
                 if quarterIndices.contains(i) {
-                    Circle()
-                        .fill(cardinalDotColour)
-                        .frame(width: majorDiameter, height: majorDiameter)
-                        .shadow(color: cardinalDotColour.opacity(0.65), radius: majorGlowBlur, x: 0, y: 0)
-                        .shadow(color: cardinalDotColour.opacity(0.22), radius: majorGlowBlur * 1.45, x: 0, y: 0)
-                        .offset(y: -majorRadius)
-                        .rotationEffect(.degrees(degrees))
+                    ZStack {
+                        Circle()
+                            .fill(dotColour)
+
+                        // Slight density boost without introducing a second marker.
+                        Circle()
+                            .fill(dotColour.opacity(0.30))
+                    }
+                    .frame(width: majorDiameter, height: majorDiameter)
+                    .shadow(color: dotColour.opacity(0.18), radius: majorGlowBlur, x: 0, y: 0)
+                    .offset(y: -radius)
+                    .rotationEffect(.degrees(degrees))
                 } else {
                     Circle()
                         .fill(dotColour)
                         .frame(width: minorDiameter, height: minorDiameter)
-                        .shadow(color: dotColour.opacity(0.20), radius: minorGlowBlur, x: 0, y: 0)
+                        .shadow(color: dotColour.opacity(0.14), radius: minorGlowBlur, x: 0, y: 0)
                         .offset(y: -radius)
                         .rotationEffect(.degrees(degrees))
                 }

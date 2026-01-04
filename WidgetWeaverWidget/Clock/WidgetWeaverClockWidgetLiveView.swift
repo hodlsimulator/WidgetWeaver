@@ -210,7 +210,7 @@ private struct WWClockSecondHandGlyphView: View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
-            .scaleEffect(x: 0.90, y: 1.0, anchor: .center)
+            .scaleEffect(x: 0.92, y: 1.0, anchor: .center)
             .foregroundStyle(palette.accent)
             .lineLimit(1)
             .multilineTextAlignment(.center)

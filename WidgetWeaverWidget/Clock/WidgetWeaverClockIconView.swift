@@ -128,10 +128,11 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
             // Slightly thinner (subtle) to reduce dominance.
-            let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.0044, min: R * 0.0034, max: R * 0.0054),
+            let secondWidthRaw = WWClock.pixel(
+                WWClock.clamp(R * 0.0046, min: R * 0.0036, max: R * 0.0058),
                 scale: displayScale
             )
+            let secondWidth = max(WWClock.px(scale: displayScale), secondWidthRaw)
             let secondTipSide = WWClock.pixel(
                 WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
                 scale: displayScale
@@ -163,7 +164,6 @@ struct WidgetWeaverClockIconView: View {
                         radius: dotRadius,
                         dotDiameter: dotDiameter,
                         dotColour: palette.minuteDot,
-                        cardinalDotColour: palette.accent,
                         scale: displayScale
                     )
 
