@@ -98,6 +98,13 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
 
+            let pipSide = WWClock.pixel(
+                WWClock.clamp(R * 0.016, min: R * 0.014, max: R * 0.018),
+                scale: displayScale
+            )
+            let pipInset = WWClock.pixel(1.5, scale: displayScale)
+            let pipRadius = dotRadius - pipInset
+
             let numeralsRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.70, min: R * 0.66, max: R * 0.74),
                 scale: displayScale
@@ -117,9 +124,8 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.86),
                 scale: displayScale
             )
-            // Slightly thicker (subtle) to better match the mock.
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.040, min: R * 0.035, max: R * 0.044),
+                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
                 scale: displayScale
             )
 
@@ -127,12 +133,10 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
                 scale: displayScale
             )
-            // Slightly thinner (subtle) to reduce dominance.
-            let secondWidthRaw = WWClock.pixel(
-                WWClock.clamp(R * 0.0046, min: R * 0.0036, max: R * 0.0058),
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
                 scale: displayScale
             )
-            let secondWidth = max(WWClock.px(scale: displayScale), secondWidthRaw)
             let secondTipSide = WWClock.pixel(
                 WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
                 scale: displayScale
@@ -176,6 +180,12 @@ struct WidgetWeaverClockIconView: View {
                         capLength: capLength,
                         capColour: palette.accent,
                         scale: displayScale
+                    )
+
+                    WidgetWeaverClockCardinalPipsView(
+                        pipColour: palette.accent,
+                        side: pipSide,
+                        radius: pipRadius
                     )
 
                     WidgetWeaverClockNumeralsView(
@@ -223,6 +233,8 @@ struct WidgetWeaverClockIconView: View {
                                 batonLength: batonLength,
                                 batonWidth: batonWidth,
                                 capLength: capLength,
+                                pipSide: pipSide,
+                                pipRadius: pipRadius,
                                 minuteAngle: minuteAngle,
                                 minuteLength: minuteLength,
                                 minuteWidth: minuteWidth,

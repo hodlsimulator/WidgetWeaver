@@ -98,8 +98,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     minuteAngle: minuteAngle,
                     secondAngle: .degrees(0),
                     showsSecondHand: false,
-                    showsHandShadows: true,
-                    showsGlows: true,
+                    showsHandShadows: false,
+                    showsGlows: false,
                     showsCentreHub: false,
                     handsOpacity: handsOpacity
                 )
@@ -210,7 +210,6 @@ private struct WWClockSecondHandGlyphView: View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
-            .scaleEffect(x: 0.92, y: 1.0, anchor: .center)
             .foregroundStyle(palette.accent)
             .lineLimit(1)
             .multilineTextAlignment(.center)

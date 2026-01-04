@@ -16,6 +16,10 @@ struct WidgetWeaverClockGlowsOverlayView: View {
     let batonWidth: CGFloat
     let capLength: CGFloat
 
+    // Pips
+    let pipSide: CGFloat
+    let pipRadius: CGFloat
+
     // Minute edge emission glow
     let minuteAngle: Angle
     let minuteLength: CGFloat
@@ -34,16 +38,11 @@ struct WidgetWeaverClockGlowsOverlayView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // 5-minute bar cap glows (existing geometry; just slightly stronger + a tighter pass).
-        let capGlowBlur = max(px, capLength * 0.20)
-        let capGlowBlurTight = max(px, capLength * 0.12)
+        let capGlowBlur = max(px, capLength * 0.18)
+        let pipGlowBlur = max(px, pipSide * 0.20)
 
-        // Minute hand edge emission glow (slightly stronger + a tighter pass for crispness).
         let minuteGlowWidth = max(px, minuteWidth * 0.14)
-        let minuteGlowBlur = max(px, minuteWidth * 0.22)
-
-        let minuteGlowWidthTight = max(px, minuteWidth * 0.10)
-        let minuteGlowBlurTight = max(px, minuteWidth * 0.12)
+        let minuteGlowBlur = max(px, minuteWidth * 0.20)
 
         let secondGlowBlur = max(px, secondWidth * 0.95)
         let secondTipGlowBlur = max(px, secondWidth * 1.05)
@@ -51,32 +50,33 @@ struct WidgetWeaverClockGlowsOverlayView: View {
         ZStack {
             ForEach(hourIndices, id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
-
                 RoundedRectangle(cornerRadius: batonWidth * 0.18, style: .continuous)
-                    .fill(palette.accent.opacity(0.40))
+                    .fill(palette.accent.opacity(0.32))
                     .frame(width: batonWidth, height: capLength)
                     .offset(y: -(hourCapCentreRadius + (batonLength * 0.5) - (capLength * 0.5)))
                     .rotationEffect(.degrees(degrees))
                     .blur(radius: capGlowBlur)
                     .blendMode(.screen)
+            }
 
-                RoundedRectangle(cornerRadius: batonWidth * 0.18, style: .continuous)
-                    .fill(palette.accent.opacity(0.30))
-                    .frame(width: batonWidth, height: capLength)
-                    .offset(y: -(hourCapCentreRadius + (batonLength * 0.5) - (capLength * 0.5)))
+            ForEach([3, 6, 9], id: \.self) { i in
+                let degrees = (Double(i) / 12.0) * 360.0
+                RoundedRectangle(cornerRadius: pipSide * 0.14, style: .continuous)
+                    .fill(palette.accent.opacity(0.26))
+                    .frame(width: pipSide, height: pipSide)
+                    .offset(y: -pipRadius)
                     .rotationEffect(.degrees(degrees))
-                    .blur(radius: capGlowBlurTight)
+                    .blur(radius: pipGlowBlur)
                     .blendMode(.screen)
             }
 
-            // Outer (soft) minute glow.
             Rectangle()
                 .fill(
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: palette.accent.opacity(0.00), location: 0.00),
-                            .init(color: palette.accent.opacity(0.10), location: 0.55),
-                            .init(color: palette.accent.opacity(0.40), location: 1.00)
+                            .init(color: palette.accent.opacity(0.08), location: 0.55),
+                            .init(color: palette.accent.opacity(0.34), location: 1.00)
                         ]),
                         startPoint: .bottom,
                         endPoint: .top
@@ -88,27 +88,6 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                 .rotationEffect(minuteAngle, anchor: .bottom)
                 .offset(y: -minuteLength / 2.0)
                 .blur(radius: minuteGlowBlur)
-                .blendMode(.screen)
-
-            // Inner (tighter) minute glow to keep the edge crisp.
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.accent.opacity(0.00), location: 0.00),
-                            .init(color: palette.accent.opacity(0.08), location: 0.55),
-                            .init(color: palette.accent.opacity(0.32), location: 1.00)
-                        ]),
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
-                .frame(width: minuteGlowWidthTight, height: minuteLength)
-                .offset(x: minuteWidth * 0.36, y: 0)
-                .frame(width: minuteWidth, height: minuteLength)
-                .rotationEffect(minuteAngle, anchor: .bottom)
-                .offset(y: -minuteLength / 2.0)
-                .blur(radius: minuteGlowBlurTight)
                 .blendMode(.screen)
 
             Rectangle()
