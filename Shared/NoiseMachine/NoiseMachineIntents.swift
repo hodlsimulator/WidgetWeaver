@@ -21,10 +21,13 @@ public struct PlayNoiseIntent: AudioPlaybackIntent {
 
     public func perform() async throws -> some IntentResult {
         let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(.info, "Intent PlayNoise", origin: origin)
+        NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent PlayNoise", origin: origin)
 
         await NoiseMachineController.shared.play()
         await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-play")
+
+        // Ensure App Group state is written before the widget reloads.
+        await NoiseMachineController.shared.flushPersistence()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -46,10 +49,12 @@ public struct PauseNoiseIntent: AudioPlaybackIntent {
 
     public func perform() async throws -> some IntentResult {
         let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(.info, "Intent PauseNoise", origin: origin)
+        NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent PauseNoise", origin: origin)
 
         await NoiseMachineController.shared.pause()
         await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-pause")
+
+        await NoiseMachineController.shared.flushPersistence()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -71,10 +76,12 @@ public struct TogglePlayPauseIntent: AudioPlaybackIntent {
 
     public func perform() async throws -> some IntentResult {
         let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(.info, "Intent TogglePlayPause", origin: origin)
+        NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent TogglePlayPause", origin: origin)
 
         await NoiseMachineController.shared.togglePlayPause()
         await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggle")
+
+        await NoiseMachineController.shared.flushPersistence()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -96,10 +103,12 @@ public struct StopNoiseIntent: AudioPlaybackIntent {
 
     public func perform() async throws -> some IntentResult {
         let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(.info, "Intent StopNoise", origin: origin)
+        NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent StopNoise", origin: origin)
 
         await NoiseMachineController.shared.stop()
         await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-stop")
+
+        await NoiseMachineController.shared.flushPersistence()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -128,7 +137,11 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
 
     public func perform() async throws -> some IntentResult {
         let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(.info, "Intent ToggleSlot layerIndex=\(layerIndex)", origin: origin)
+        NoiseMachineDebugLogStore.shared.append(
+            NoiseMachineLogLevel.info,
+            "Intent ToggleSlot layerIndex=\(layerIndex)",
+            origin: origin
+        )
 
         let store = NoiseMixStore.shared
         let state = store.loadLastMix()
@@ -138,6 +151,8 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
 
         await NoiseMachineController.shared.setSlotEnabled(idx, enabled: enabled)
         await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggleSlot")
+
+        await NoiseMachineController.shared.flushPersistence()
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
