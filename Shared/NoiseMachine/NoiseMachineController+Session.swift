@@ -152,11 +152,18 @@ extension NoiseMachineController {
 
     func isStartIOFailure(_ error: Error) -> Bool {
         let ns = error as NSError
-        if ns.code == 2003329396 { return true }
+
+        // In practice these can show up either when starting IO ("what") or when the output
+        // unit fails to initialise because the session is in a bad state ("!pla"/"!pri").
+        if ns.code == 2003329396 || ns.code == 561015905 || ns.code == 561017449 {
+            return true
+        }
 
         if ns.domain == NSOSStatusErrorDomain {
             let status = OSStatus(ns.code)
-            if status == 2003329396 { return true }
+            if status == 2003329396 || status == 561015905 || status == 561017449 {
+                return true
+            }
         }
 
         return false

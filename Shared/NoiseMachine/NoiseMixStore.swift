@@ -20,13 +20,19 @@ public final class NoiseMixStore: @unchecked Sendable {
     private let defaults = AppGroup.userDefaults
 
     private let queue = DispatchQueue(label: "NoiseMixStore.queue", qos: .utility)
+    private let queueKey = DispatchSpecificKey<UInt8>()
 
     private var pendingWorkItem: DispatchWorkItem?
     private var lastSavedDataHash: Int?
 
+    // Widget timeline reloads can be throttled by the system. Coalesce repeated requests.
+    private var lastWidgetReloadUptime: TimeInterval = 0
+    private let widgetReloadCoalesceSeconds: TimeInterval = 0.30
+
     private init() {
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
+        queue.setSpecific(key: queueKey, value: 1)
     }
 
     public func loadLastMix() -> NoiseMixState {
@@ -42,22 +48,22 @@ public final class NoiseMixStore: @unchecked Sendable {
         }
     }
 
+    /// Writes synchronously so widget-triggered AppIntents can reliably reload after a state change.
     public func saveImmediate(_ state: NoiseMixState) {
         let state = state.sanitised()
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.pendingWorkItem?.cancel()
-            self.pendingWorkItem = nil
+        performOnQueueSync {
+            pendingWorkItem?.cancel()
+            pendingWorkItem = nil
 
             do {
-                let data = try self.encoder.encode(state)
+                let data = try encoder.encode(state)
                 let hash = data.hashValue
-                if self.lastSavedDataHash == hash { return }
-                self.lastSavedDataHash = hash
+                if lastSavedDataHash == hash { return }
+                lastSavedDataHash = hash
 
-                self.defaults.set(data, forKey: self.lastMixKey)
-                self.defaults.synchronize()
-                self.notifyWidgets()
+                defaults.set(data, forKey: lastMixKey)
+                defaults.synchronize()
+                notifyWidgetsCoalesced()
             } catch {
                 // ignore
             }
@@ -81,7 +87,7 @@ public final class NoiseMixStore: @unchecked Sendable {
 
                     self.defaults.set(data, forKey: self.lastMixKey)
                     self.defaults.synchronize()
-                    self.notifyWidgets()
+                    self.notifyWidgetsCoalesced()
                 } catch {
                     // ignore
                 }
@@ -93,9 +99,11 @@ public final class NoiseMixStore: @unchecked Sendable {
     }
 
     public func flushPendingWrites() {
-        queue.sync {
-            pendingWorkItem?.perform()
+        performOnQueueSync {
+            guard let item = pendingWorkItem else { return }
             pendingWorkItem = nil
+            item.cancel()
+            item.perform()
         }
     }
 
@@ -110,10 +118,27 @@ public final class NoiseMixStore: @unchecked Sendable {
     public func setResumeOnLaunchEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: resumeOnLaunchKey)
         defaults.synchronize()
-        notifyWidgets()
+        notifyWidgetsCoalesced()
     }
 
-    private func notifyWidgets() {
+    // MARK: - Internals
+
+    private func performOnQueueSync(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            work()
+        } else {
+            queue.sync(execute: work)
+        }
+    }
+
+    private func notifyWidgetsCoalesced() {
+        // Runs on queue (serial), so no extra synchronisation needed.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastWidgetReloadUptime < widgetReloadCoalesceSeconds {
+            return
+        }
+        lastWidgetReloadUptime = now
+
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
         }

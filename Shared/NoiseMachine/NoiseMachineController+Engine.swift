@@ -11,14 +11,47 @@ import Foundation
 extension NoiseMachineController {
     // MARK: - Engine start/stop
 
+    func cancelPendingEngineStop() {
+        pendingEngineStopTask?.cancel()
+        pendingEngineStopTask = nil
+    }
+
+    private func scheduleEngineStopIfIdle(after delay: TimeInterval, requestID: UInt64) {
+        cancelPendingEngineStop()
+
+        pendingEngineStopTask = Task { [delay, requestID] in
+            let ns = UInt64(max(0, delay) * 1_000_000_000)
+            do {
+                try await Task.sleep(nanoseconds: ns)
+            } catch {
+                return
+            }
+
+            if Task.isCancelled { return }
+            if currentState.wasPlaying { return }
+            if playbackRequestID != requestID { return }
+
+            await stopEngineSoon()
+        }
+    }
+
     func startEngineIfNeeded(requestID: UInt64) async {
         if engine == nil {
             await prepareIfNeeded()
         }
 
+        cancelPendingEngineStop()
+
         guard currentState.wasPlaying, playbackRequestID == requestID else { return }
         guard let engine else { return }
-        if isEngineRunning, engine.isRunning { return }
+
+        if engine.isRunning {
+            isEngineRunning = true
+            for slot in slotNodes {
+                slot.playIfNeeded()
+            }
+            return
+        }
 
         do {
             log("startEngineIfNeeded: activating session")
@@ -80,6 +113,8 @@ extension NoiseMachineController {
     }
 
     func teardownEngine() {
+        cancelPendingEngineStop()
+
         for slot in slotNodes {
             slot.stop()
         }
@@ -88,7 +123,6 @@ extension NoiseMachineController {
         engine?.reset()
         engine = nil
         masterMixer = nil
-        limiter = nil
         slotNodes = []
         isEngineRunning = false
     }
@@ -96,6 +130,7 @@ extension NoiseMachineController {
     func rebuildEngine(reason: String) async {
         log("Rebuilding audio engine (\(reason))", level: .warning)
         cancelPendingSessionDeactivation()
+        cancelPendingEngineStop()
         isSessionActive = false
         teardownEngine()
         didConfigureSession = false
@@ -110,7 +145,7 @@ extension NoiseMachineController {
         isSessionActive = false
 
         if isStartIOFailure(originalError) {
-            log("Detected StartIO failure ('what'); hard-resetting audio session", level: .warning)
+            log("Detected StartIO/session failure; hard-resetting audio session", level: .warning)
             await hardResetSessionForStartIOFailure()
         }
 
@@ -191,7 +226,13 @@ extension NoiseMachineController {
         await prepareIfNeeded()
         log("pause")
 
-        bumpPlaybackRequestID()
+        if !currentState.wasPlaying, engine?.isRunning != true {
+            applyTargets(from: currentState, savePolicy: savePolicy)
+            deactivateSessionIfPossible()
+            return
+        }
+
+        let requestID = bumpPlaybackRequestID()
 
         var s = currentState
         s.wasPlaying = false
@@ -199,10 +240,43 @@ extension NoiseMachineController {
         currentState = s
 
         applyTargets(from: s, savePolicy: savePolicy)
-        await stopEngineSoon()
+
+        // Mute quickly but keep the engine alive briefly to avoid rapid stop/start thrash
+        // from widget taps (which can trigger '!pla' / StartIO failures).
+        await muteEngineForPause()
+
+        if currentState.wasPlaying {
+            return
+        }
+
+        scheduleEngineStopIfIdle(after: engineStopGraceSeconds, requestID: requestID)
+    }
+
+    private func muteEngineForPause() async {
+        guard let engine else { return }
+
+        if !engine.isRunning {
+            masterMixer?.outputVolume = 0
+            isEngineRunning = false
+            deactivateSessionIfPossible()
+            return
+        }
+
+        await fadeMaster(to: 0, over: 0.06)
+
+        if currentState.wasPlaying {
+            masterMixer?.outputVolume = currentState.masterVolume
+            isEngineRunning = true
+            return
+        }
+
+        masterMixer?.outputVolume = 0
+        isEngineRunning = true
     }
 
     func stopEngineSoon() async {
+        cancelPendingEngineStop()
+
         guard let engine else { return }
         if !engine.isRunning {
             isEngineRunning = false
@@ -217,6 +291,7 @@ extension NoiseMachineController {
         // avoid stopping the engine and restore the intended master volume.
         if currentState.wasPlaying {
             masterMixer?.outputVolume = currentState.masterVolume
+            isEngineRunning = true
             return
         }
 

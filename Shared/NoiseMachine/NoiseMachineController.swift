@@ -22,7 +22,6 @@ public actor NoiseMachineController {
 
     var engine: AVAudioEngine?
     var masterMixer: AVAudioMixerNode?
-    var limiter: AVAudioUnitEffect?
 
     var slotNodes: [NoiseSlotNode] = []
 
@@ -33,6 +32,11 @@ public actor NoiseMachineController {
     var isSessionActive: Bool = false
     var pendingSessionDeactivationTask: Task<Void, Never>?
     let sessionDeactivationGraceSeconds: TimeInterval = 30.0
+
+    // When pausing via widget taps, immediate stop/start cycles can trigger AVAudioEngine init failures.
+    // Keep the engine alive briefly (muted) and only stop after a short idle grace period.
+    var pendingEngineStopTask: Task<Void, Never>?
+    let engineStopGraceSeconds: TimeInterval = 6.0
 
     var currentState: NoiseMixState = .default
     var isEngineRunning: Bool = false
@@ -182,6 +186,16 @@ public actor NoiseMachineController {
         await prepareIfNeeded()
         log("play")
 
+        cancelPendingSessionDeactivation()
+        cancelPendingEngineStop()
+
+        if currentState.wasPlaying, engine?.isRunning == true {
+            // Playback already active; ensure the master gain is restored in case the engine was muted for pause.
+            masterMixer?.outputVolume = currentState.masterVolume
+            isEngineRunning = true
+            return
+        }
+
         let requestID = bumpPlaybackRequestID()
 
         var s = currentState
@@ -205,6 +219,7 @@ public actor NoiseMachineController {
         await prepareIfNeeded()
         log("stop")
 
+        cancelPendingEngineStop()
         bumpPlaybackRequestID()
 
         var s = currentState

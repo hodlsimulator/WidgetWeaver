@@ -33,7 +33,7 @@ public struct NoiseMixState: Codable, Hashable, Sendable {
                 enabled: idx == 0,
                 volume: idx == 0 ? 0.65 : 0.0,
                 colour: 0.0,
-                lowCutHz: 20,
+                lowCutHz: idx == 0 ? 80 : 20,
                 highCutHz: 18_000,
                 eq: .default
             )

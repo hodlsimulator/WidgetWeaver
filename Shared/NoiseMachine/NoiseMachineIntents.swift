@@ -24,10 +24,12 @@ public struct PlayNoiseIntent: AudioPlaybackIntent {
         NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent PlayNoise", origin: origin)
 
         await NoiseMachineController.shared.play()
-        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-play")
 
-        // Ensure App Group state is written before the widget reloads.
-        await NoiseMachineController.shared.flushPersistence()
+        #if DEBUG
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-play")
+        }
+        #endif
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -52,9 +54,12 @@ public struct PauseNoiseIntent: AudioPlaybackIntent {
         NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent PauseNoise", origin: origin)
 
         await NoiseMachineController.shared.pause()
-        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-pause")
 
-        await NoiseMachineController.shared.flushPersistence()
+        #if DEBUG
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-pause")
+        }
+        #endif
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -79,9 +84,12 @@ public struct TogglePlayPauseIntent: AudioPlaybackIntent {
         NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent TogglePlayPause", origin: origin)
 
         await NoiseMachineController.shared.togglePlayPause()
-        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggle")
 
-        await NoiseMachineController.shared.flushPersistence()
+        #if DEBUG
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggle")
+        }
+        #endif
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -106,9 +114,12 @@ public struct StopNoiseIntent: AudioPlaybackIntent {
         NoiseMachineDebugLogStore.shared.append(NoiseMachineLogLevel.info, "Intent StopNoise", origin: origin)
 
         await NoiseMachineController.shared.stop()
-        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-stop")
 
-        await NoiseMachineController.shared.flushPersistence()
+        #if DEBUG
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-stop")
+        }
+        #endif
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
@@ -150,9 +161,12 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
         let enabled = (state.slots.indices.contains(idx) ? !state.slots[idx].enabled : true)
 
         await NoiseMachineController.shared.setSlotEnabled(idx, enabled: enabled)
-        await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggleSlot")
 
-        await NoiseMachineController.shared.flushPersistence()
+        #if DEBUG
+        Task {
+            await NoiseMachineController.shared.debugDumpAudioStatus(reason: "intent-toggleSlot")
+        }
+        #endif
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)

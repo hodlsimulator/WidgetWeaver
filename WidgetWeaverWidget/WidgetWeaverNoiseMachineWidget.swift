@@ -43,6 +43,13 @@ struct WidgetWeaverNoiseMachineWidget: Widget {
 private struct NoiseMachineWidgetView: View {
     let entry: WidgetWeaverNoiseMachineWidget.Entry
 
+    private var state: NoiseMixState {
+        // Interactive widgets are often re-rendered without a fresh timeline entry.
+        // Read the App Group-backed state at render time so the play/pause button reflects
+        // changes immediately after a tap.
+        NoiseMixStore.shared.loadLastMix()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -61,7 +68,7 @@ private struct NoiseMachineWidgetView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            if entry.state.wasPlaying {
+            if state.wasPlaying {
                 Button(intent: PauseNoiseIntent()) {
                     Image(systemName: "pause.fill")
                         .font(.title2.weight(.semibold))
@@ -89,7 +96,7 @@ private struct NoiseMachineWidgetView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Noise")
                     .font(.headline)
-                Text(entry.state.wasPlaying ? "Playing" : "Paused")
+                Text(state.wasPlaying ? "Playing" : "Paused")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -98,18 +105,18 @@ private struct NoiseMachineWidgetView: View {
 
     @ViewBuilder
     private func layerButton(index: Int) -> some View {
-        let enabled = entry.state.slots.indices.contains(index) ? entry.state.slots[index].enabled : false
+        let enabled = state.slots.indices.contains(index) ? state.slots[index].enabled : false
 
         if enabled {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
-                Text("\(index + 1)")
+                Text("\\(index + 1)")
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.borderedProminent)
         } else {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
-                Text("\(index + 1)")
+                Text("\\(index + 1)")
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 36)
             }

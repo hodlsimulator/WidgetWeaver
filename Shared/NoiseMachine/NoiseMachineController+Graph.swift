@@ -6,7 +6,6 @@
 //
 
 import AVFoundation
-import AudioToolbox
 import Foundation
 
 extension NoiseMachineController {
@@ -29,17 +28,7 @@ extension NoiseMachineController {
         let master = AVAudioMixerNode()
         master.outputVolume = 1.0
 
-        let limiterDesc = AudioComponentDescription(
-            componentType: kAudioUnitType_Effect,
-            componentSubType: kAudioUnitSubType_PeakLimiter,
-            componentManufacturer: kAudioUnitManufacturer_Apple,
-            componentFlags: 0,
-            componentFlagsMask: 0
-        )
-        let limiter = AVAudioUnitEffect(audioComponentDescription: limiterDesc)
-
         engine.attach(master)
-        engine.attach(limiter)
 
         var slots: [NoiseSlotNode] = []
 
@@ -58,14 +47,12 @@ extension NoiseMachineController {
             slot.scheduleIfNeeded()
         }
 
-        engine.connect(master, to: limiter, format: outFormat)
-        engine.connect(limiter, to: engine.outputNode, format: outFormat)
+        engine.connect(master, to: engine.outputNode, format: outFormat)
 
         engine.prepare()
 
         self.engine = engine
         self.masterMixer = master
-        self.limiter = limiter
         self.slotNodes = slots
     }
 }
