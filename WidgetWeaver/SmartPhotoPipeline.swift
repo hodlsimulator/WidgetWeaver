@@ -46,7 +46,7 @@ enum SmartPhotoPipelineError: Error {
 }
 
 struct SmartPhotoPipeline {
-    static let algorithmVersion: Int = 3
+    static let algorithmVersion: Int = 4
 
     /// Creates:
     /// - master (largest preserved)
@@ -190,51 +190,69 @@ private enum SmartPhotoSubjectKind {
 private struct SmartPhotoDetection {
     var kind: SmartPhotoSubjectKind
     var boxes: [CGRect] // pixel coords in analysis image (top-left origin)
+
+    /// Ranked boxes per detector kind so small-crop logic can build a robust pair/cluster
+    /// even when the chosen `kind` only produces a single box.
+    var faces: [CGRect]
+    var humans: [CGRect]
+    var animals: [CGRect]
+    var saliency: [CGRect]
 }
 
 private enum SmartPhotoSubjectDetector {
     static func detectSubjects(in analysisImage: UIImage) -> SmartPhotoDetection {
         guard let cg = analysisImage.cgImage else {
-            return SmartPhotoDetection(kind: .none, boxes: [])
+            return SmartPhotoDetection(kind: .none, boxes: [], faces: [], humans: [], animals: [], saliency: [])
         }
 
         let size = CGSize(width: cg.width, height: cg.height)
 
-        let faces = detectFaces(in: cg, imageSize: size)
+        let faces = rank(boxes: detectFaces(in: cg, imageSize: size), imageSize: size)
+        let humans = rank(boxes: detectHumans(in: cg, imageSize: size), imageSize: size)
+        let animals = rank(boxes: detectAnimals(in: cg, imageSize: size), imageSize: size)
+        let saliency = rank(boxes: detectSaliency(in: cg, imageSize: size), imageSize: size)
+
+        let chosenKind: SmartPhotoSubjectKind
+        let chosenBoxes: [CGRect]
+
         if faces.count >= 2 {
-            return SmartPhotoDetection(kind: .face, boxes: rank(boxes: faces, imageSize: size))
-        }
-
-        if faces.count == 1 {
-            let humans = detectHumans(in: cg, imageSize: size)
+            chosenKind = .face
+            chosenBoxes = faces
+        } else if faces.count == 1 {
             if humans.count >= 2 {
-                return SmartPhotoDetection(kind: .human, boxes: rank(boxes: humans, imageSize: size))
+                chosenKind = .human
+                chosenBoxes = humans
+            } else if saliency.count >= 2 {
+                chosenKind = .saliency
+                chosenBoxes = saliency
+            } else {
+                chosenKind = .face
+                chosenBoxes = faces
             }
-
-            let saliency = detectSaliency(in: cg, imageSize: size)
-            if saliency.count >= 2 {
-                return SmartPhotoDetection(kind: .saliency, boxes: rank(boxes: saliency, imageSize: size))
+        } else {
+            if !animals.isEmpty {
+                chosenKind = .animal
+                chosenBoxes = animals
+            } else if !humans.isEmpty {
+                chosenKind = .human
+                chosenBoxes = humans
+            } else if !saliency.isEmpty {
+                chosenKind = .saliency
+                chosenBoxes = saliency
+            } else {
+                chosenKind = .none
+                chosenBoxes = []
             }
-
-            return SmartPhotoDetection(kind: .face, boxes: rank(boxes: faces, imageSize: size))
         }
 
-        let animals = detectAnimals(in: cg, imageSize: size)
-        if !animals.isEmpty {
-            return SmartPhotoDetection(kind: .animal, boxes: rank(boxes: animals, imageSize: size))
-        }
-
-        let humans = detectHumans(in: cg, imageSize: size)
-        if !humans.isEmpty {
-            return SmartPhotoDetection(kind: .human, boxes: rank(boxes: humans, imageSize: size))
-        }
-
-        let saliency = detectSaliency(in: cg, imageSize: size)
-        if !saliency.isEmpty {
-            return SmartPhotoDetection(kind: .saliency, boxes: rank(boxes: saliency, imageSize: size))
-        }
-
-        return SmartPhotoDetection(kind: .none, boxes: [])
+        return SmartPhotoDetection(
+            kind: chosenKind,
+            boxes: chosenBoxes,
+            faces: faces,
+            humans: humans,
+            animals: animals,
+            saliency: saliency
+        )
     }
 
     private static func detectFaces(in cgImage: CGImage, imageSize: CGSize) -> [CGRect] {
@@ -449,35 +467,40 @@ private enum SmartPhotoVariantBuilder {
 
         let ranked = detection.boxes
 
-        let selected: [CGRect]
-        let usesGroupModeForSmall: Bool
+        var selected: [CGRect] = []
+        var effectiveKind: SmartPhotoSubjectKind = detection.kind
+
         switch family {
         case .systemSmall:
-            if shouldGroupTopTwoForSmall(detection: detection, imageSize: imageSize) {
-                selected = Array(ranked.prefix(2))
-                usesGroupModeForSmall = true
+            if let pair = pickPairForSmall(detection: detection, imageSize: imageSize) {
+                selected = pair.boxes
+                effectiveKind = pair.kind
             } else {
                 selected = Array(ranked.prefix(1))
-                usesGroupModeForSmall = false
+                effectiveKind = detection.kind
             }
 
         case .systemMedium:
             selected = Array(ranked.prefix(2))
-            usesGroupModeForSmall = false
+            effectiveKind = detection.kind
 
         case .systemLarge:
             selected = ranked
-            usesGroupModeForSmall = false
+            effectiveKind = detection.kind
 
         default:
             selected = Array(ranked.prefix(1))
-            usesGroupModeForSmall = false
+            effectiveKind = detection.kind
         }
 
-        let expanded = selected.map { expandSubjectBox($0, kind: detection.kind, family: family, imageSize: imageSize).intersection(bounds) }
-        var focus = expanded.first ?? centredCropRect(imageSize: imageSize, targetAspect: targetAspect)
+        guard !selected.isEmpty else {
+            return centredCropRect(imageSize: imageSize, targetAspect: targetAspect)
+        }
+
+        let expanded = selected.map { expandSubjectBox($0, kind: effectiveKind, family: family, imageSize: imageSize).intersection(bounds) }
+        var unionRect = expanded.first ?? centredCropRect(imageSize: imageSize, targetAspect: targetAspect)
         for r in expanded.dropFirst() {
-            focus = focus.union(r)
+            unionRect = unionRect.union(r)
         }
 
         let padScale: CGFloat = {
@@ -488,16 +511,25 @@ private enum SmartPhotoVariantBuilder {
             default: return 1.15
             }
         }()
-        focus = scaleRect(focus, factor: padScale).intersection(bounds)
 
-        var cropW = focus.width
-        var cropH = focus.height
-        let focusAspect = max(0.0001, cropW) / max(0.0001, cropH)
+        // Padding is about safety; centre remains based on the subject union.
+        let focus = scaleRect(unionRect, factor: padScale).intersection(bounds)
+
+        // Small uses the union centre to keep pairs fairly centred, even if padding is clipped.
+        // Medium/Large keep the previous behaviour (centre from the padded focus rect).
+        var centre = CGPoint(x: focus.midX, y: focus.midY)
+        if family == .systemSmall {
+            centre = CGPoint(x: unionRect.midX, y: unionRect.midY)
+        }
+
+        var baseW = focus.width
+        var baseH = focus.height
+        let focusAspect = max(0.0001, baseW) / max(0.0001, baseH)
 
         if focusAspect > targetAspect {
-            cropH = cropW / targetAspect
+            baseH = baseW / targetAspect
         } else {
-            cropW = cropH * targetAspect
+            baseW = baseH * targetAspect
         }
 
         let extraScale: CGFloat = {
@@ -508,8 +540,9 @@ private enum SmartPhotoVariantBuilder {
             default: return 1.04
             }
         }()
-        cropW *= extraScale
-        cropH *= extraScale
+
+        var cropW = baseW * extraScale
+        var cropH = baseH * extraScale
 
         let minDimFrac: CGFloat = {
             switch family {
@@ -519,8 +552,29 @@ private enum SmartPhotoVariantBuilder {
             default: return 0.40
             }
         }()
+
         let minW = imageSize.width * minDimFrac
         let minH = imageSize.height * minDimFrac
+
+        // Minimum size that still preserves the padded subject union.
+        var minAllowedW = baseW
+        var minAllowedH = baseH
+        if minAllowedW < minW {
+            minAllowedW = minW
+            minAllowedH = minAllowedW / targetAspect
+        }
+        if minAllowedH < minH {
+            minAllowedH = minH
+            minAllowedW = minAllowedH * targetAspect
+        }
+        if minAllowedW > imageSize.width {
+            minAllowedW = imageSize.width
+            minAllowedH = minAllowedW / targetAspect
+        }
+        if minAllowedH > imageSize.height {
+            minAllowedH = imageSize.height
+            minAllowedW = minAllowedH * targetAspect
+        }
 
         if cropW < minW {
             cropW = minW
@@ -540,17 +594,9 @@ private enum SmartPhotoVariantBuilder {
             cropW = cropH * targetAspect
         }
 
-        var centre = CGPoint(x: focus.midX, y: focus.midY)
-
-        if family == .systemSmall && usesGroupModeForSmall && selected.count >= 2 {
-            let c1 = CGPoint(x: selected[0].midX, y: selected[0].midY)
-            let c2 = CGPoint(x: selected[1].midX, y: selected[1].midY)
-            centre = CGPoint(x: (c1.x + c2.x) / 2.0, y: (c1.y + c2.y) / 2.0)
-        }
-
-        if detection.kind == .face || detection.kind == .human {
+        if effectiveKind == .face || effectiveKind == .human {
             let biasFactor: CGFloat = {
-                switch detection.kind {
+                switch effectiveKind {
                 case .face:
                     switch family {
                     case .systemSmall: return 0.12
@@ -573,7 +619,41 @@ private enum SmartPhotoVariantBuilder {
             }()
 
             if biasFactor > 0 {
-                centre.y -= focus.height * biasFactor
+                let biasHeight = (family == .systemSmall) ? unionRect.height : focus.height
+                centre.y -= biasHeight * biasFactor
+            }
+        }
+
+        // Small-specific clamp to avoid extreme zoom-out.
+        if family == .systemSmall {
+            let maxCropAreaFracSmall: CGFloat = 0.75
+            let imageArea = max(1, imageSize.width * imageSize.height)
+            let maxArea = imageArea * maxCropAreaFracSmall
+            let cropArea = cropW * cropH
+
+            if cropArea > maxArea {
+                let maxWByArea = sqrt(maxArea * targetAspect)
+                let maxWByBounds = min(imageSize.width, imageSize.height * targetAspect)
+                let maxW = min(maxWByArea, maxWByBounds)
+                let maxH = maxW / targetAspect
+
+                if maxW >= minAllowedW && maxH >= minAllowedH {
+                    cropW = min(cropW, maxW)
+                    cropH = cropW / targetAspect
+                }
+            }
+        }
+
+        // Soft clamp for small: try shrinking toward the minimum acceptable size before shifting to bounds.
+        if family == .systemSmall {
+            let maxWBoundForCentre = 2.0 * min(centre.x, imageSize.width - centre.x)
+            let maxHBoundForCentre = 2.0 * min(centre.y, imageSize.height - centre.y)
+            let maxWCentred = min(maxWBoundForCentre, maxHBoundForCentre * targetAspect)
+            let maxHCentred = maxWCentred / targetAspect
+
+            if cropW > maxWCentred, maxWCentred >= minAllowedW, maxHCentred >= minAllowedH {
+                cropW = maxWCentred
+                cropH = maxHCentred
             }
         }
 
@@ -586,31 +666,113 @@ private enum SmartPhotoVariantBuilder {
         return CGRect(x: x, y: y, width: cropW, height: cropH).intersection(bounds)
     }
 
-    private static func shouldGroupTopTwoForSmall(detection: SmartPhotoDetection, imageSize: CGSize) -> Bool {
-        guard detection.kind != .none else { return false }
+    private static func pickPairForSmall(detection: SmartPhotoDetection, imageSize: CGSize) -> (kind: SmartPhotoSubjectKind, boxes: [CGRect])? {
+        let ordered: [(SmartPhotoSubjectKind, [CGRect])] = [
+            (.face, detection.faces),
+            (.human, detection.humans),
+            (.animal, detection.animals),
+            (.saliency, detection.saliency)
+        ]
 
-        let ranked = detection.boxes
-        guard ranked.count >= 2 else { return false }
+        for (kind, boxes) in ordered {
+            guard boxes.count >= 2 else { continue }
+            if let pair = bestPairCandidate(from: boxes, imageSize: imageSize) {
+                return (kind: kind, boxes: pair)
+            }
+        }
 
-        let a = ranked[0]
-        let b = ranked[1]
+        return nil
+    }
 
-        let imageW = max(1, imageSize.width)
-        let imageH = max(1, imageSize.height)
-        let imageArea = imageW * imageH
+    private static func bestPairCandidate(from boxes: [CGRect], imageSize: CGSize) -> [CGRect]? {
+        guard imageSize.width > 1, imageSize.height > 1 else { return nil }
 
-        func area(_ r: CGRect) -> CGFloat { max(0, r.width) * max(0, r.height) }
+        let considered = Array(boxes.prefix(8))
+        guard considered.count >= 2 else { return nil }
 
-        let minCoverage: CGFloat = (detection.kind == .saliency) ? 0.03 : 0.05
-        let maxHorizontalSeparation: CGFloat = 0.55
+        func normalised(_ r: CGRect) -> CGRect {
+            CGRect(
+                x: r.minX / imageSize.width,
+                y: r.minY / imageSize.height,
+                width: r.width / imageSize.width,
+                height: r.height / imageSize.height
+            )
+        }
 
-        let coverage = (area(a) + area(b)) / max(1, imageArea)
-        if coverage < minCoverage { return false }
+        func area(_ r: CGRect) -> CGFloat {
+            max(0, r.width) * max(0, r.height)
+        }
 
-        let dx = abs(a.midX - b.midX) / imageW
-        if dx > maxHorizontalSeparation { return false }
+        func iou(_ a: CGRect, _ b: CGRect) -> CGFloat {
+            let inter = a.intersection(b)
+            if inter.isNull || inter.isEmpty { return 0 }
+            let interA = area(inter)
+            let unionA = area(a) + area(b) - interA
+            return unionA > 0 ? interA / unionA : 0
+        }
 
-        return true
+        func score(_ r: CGRect) -> CGFloat {
+            let a = area(r)
+            let cx = r.midX
+            let cy = r.midY
+            let dx = cx - 0.5
+            let dy = cy - 0.5
+            let dist = sqrt(dx * dx + dy * dy)
+            let maxDist: CGFloat = 0.70710678
+            let prox = max(0, 1.0 - min(1.0, dist / maxDist))
+            return a * 0.6 + prox * 0.4
+        }
+
+        let minEachArea: CGFloat = 0.015
+        let minUnionArea: CGFloat = 0.06
+        let maxHorizontalSeparation: CGFloat = 0.60
+        let maxVerticalSeparation: CGFloat = 0.35
+        let maxIou: CGFloat = 0.55
+        let minUnionAspect: CGFloat = 0.35
+        let maxUnionAspect: CGFloat = 2.80
+
+        var best: (i: Int, j: Int, score: CGFloat) = (0, 1, -1)
+        for i in 0..<(considered.count - 1) {
+            for j in (i + 1)..<considered.count {
+                let aP = considered[i]
+                let bP = considered[j]
+
+                let a = normalised(aP)
+                let b = normalised(bP)
+
+                let aArea = area(a)
+                let bArea = area(b)
+                let union = a.union(b)
+                let unionArea = area(union)
+
+                if (aArea < minEachArea || bArea < minEachArea) && unionArea < minUnionArea {
+                    continue
+                }
+
+                let dx = abs(a.midX - b.midX)
+                let dy = abs(a.midY - b.midY)
+                if dx > maxHorizontalSeparation || dy > maxVerticalSeparation {
+                    continue
+                }
+
+                let unionAspect = union.width / max(0.0001, union.height)
+                if unionAspect < minUnionAspect || unionAspect > maxUnionAspect {
+                    continue
+                }
+
+                if iou(a, b) > maxIou {
+                    continue
+                }
+
+                let s = score(a) + score(b)
+                if s > best.score {
+                    best = (i: i, j: j, score: s)
+                }
+            }
+        }
+
+        if best.score < 0 { return nil }
+        return [considered[best.i], considered[best.j]]
     }
 
     private static func expandSubjectBox(_ rect: CGRect, kind: SmartPhotoSubjectKind, family: WidgetFamily, imageSize: CGSize) -> CGRect {
