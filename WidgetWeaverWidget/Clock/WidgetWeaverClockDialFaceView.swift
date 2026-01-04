@@ -26,13 +26,32 @@ struct WidgetWeaverClockDialFaceView: View {
                     endRadius: radius
                 )
             )
+            // Subtle top-to-bottom tone curve (helps the dial read as dark graphite, not pure black).
+            //
+            // Avoid fully-transparent stops: WidgetKit can rasterise those into hard seams.
+            .overlay(
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.06), location: 0.00),
+                                .init(color: Color.black.opacity(0.02), location: 0.55),
+                                .init(color: Color.black.opacity(0.22), location: 1.00)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .blendMode(.overlay)
+                    .opacity(0.90)
+            )
             // Perimeter vignette: darken outer ~12–18%.
             .overlay(
                 Circle()
                     .fill(
                         RadialGradient(
                             gradient: Gradient(stops: [
-                                .init(color: Color.clear, location: 0.0),
+                                .init(color: palette.dialVignette.opacity(0.00), location: 0.0),
                                 .init(color: palette.dialVignette, location: 1.0)
                             ]),
                             center: .center,
@@ -47,15 +66,14 @@ struct WidgetWeaverClockDialFaceView: View {
             // Note:
             // A previous “lower-half darkening” layer used multiply-blended gradients with
             // fully-transparent stops. WidgetKit can occasionally rasterise that into a hard
-            // horizontal seam that reads like a rectangular overlay. The dial looks close
-            // enough without that extra layer, and removing it avoids the artefact entirely.
+            // horizontal seam that reads like a rectangular overlay.
             .overlay(
                 Ellipse()
                     .fill(
                         RadialGradient(
                             gradient: Gradient(stops: [
                                 .init(color: palette.dialDomeHighlight, location: 0.0),
-                                .init(color: Color.clear, location: 1.0)
+                                .init(color: Color.white.opacity(0.00), location: 1.0)
                             ]),
                             center: .center,
                             startRadius: 0,

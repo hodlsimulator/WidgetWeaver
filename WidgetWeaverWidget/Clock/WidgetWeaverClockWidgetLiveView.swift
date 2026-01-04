@@ -98,8 +98,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     minuteAngle: minuteAngle,
                     secondAngle: .degrees(0),
                     showsSecondHand: false,
-                    showsHandShadows: false,
-                    showsGlows: false,
+                    showsHandShadows: true,
+                    showsGlows: true,
                     showsCentreHub: false,
                     handsOpacity: handsOpacity
                 )

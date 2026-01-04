@@ -156,23 +156,67 @@ struct WidgetWeaverClockNumeralsView: View {
             .font(.system(size: fontSize, weight: .semibold, design: .default))
             .fixedSize()
 
-        ZStack {
-            face
-                .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: px, y: px)
+        // Bevel thickness needs to scale with the numeral size.
+        // Using 1 px makes the emboss vanish at typical widget scales.
+        let bevel = max(px, fontSize * 0.028)
+        let bevelBlur = max(px, bevel * 0.65)
 
+        // Use a single metal field for consistent lighting (top-left → bottom-right).
+        let metalField = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.numeralLight, location: 0.00),
+                .init(color: palette.numeralMid, location: 0.58),
+                .init(color: palette.numeralDark, location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(width: radius * 2.0, height: radius * 2.0)
+
+        ZStack {
+            // Soft edge darkening so the numbers read as raised metal.
+            face
+                .foregroundStyle(palette.numeralDark.opacity(0.55))
+                .blur(radius: max(px, bevel * 0.55))
+
+            // Main metal face.
+            metalField
+                .mask(face)
+
+            // Inner bevel: highlight (top-left).
             face
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -px, y: -px)
+                .offset(x: -bevel, y: -bevel)
+                .blur(radius: bevelBlur)
+                .blendMode(.screen)
+                .mask(face)
 
+            // Inner bevel: shade (bottom-right).
             face
-                .foregroundStyle(palette.numeralLight)
+                .foregroundStyle(palette.numeralInnerShade)
+                .offset(x: bevel, y: bevel)
+                .blur(radius: bevelBlur)
+                .blendMode(.multiply)
+                .mask(face)
+
+            // Subtle specular sweep across the face.
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: Color.white.opacity(0.28), location: 0.00),
+                    .init(color: Color.white.opacity(0.08), location: 0.42),
+                    .init(color: Color.black.opacity(0.12), location: 1.00)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .mask(face)
+            .blendMode(.overlay)
         }
         .shadow(
             color: palette.numeralShadow,
-            radius: max(px, fontSize * 0.06),
+            radius: max(px, fontSize * 0.050),
             x: 0,
-            y: max(px, fontSize * 0.03)
+            y: max(px, fontSize * 0.030)
         )
     }
 }
