@@ -19,6 +19,7 @@ struct WidgetWeaverClockGlowsOverlayView: View {
     // Pips
     let pipSide: CGFloat
     let pipRadius: CGFloat
+    let includesTopPip: Bool
 
     // Minute edge emission glow
     let minuteAngle: Angle
@@ -59,14 +60,19 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     .blendMode(.screen)
             }
 
-            ForEach([3, 6, 9], id: \.self) { i in
-                let degrees = (Double(i) / 12.0) * 360.0
+            let pipIndices: [Int] = includesTopPip ? [12, 3, 6, 9] : [3, 6, 9]
+
+            ForEach(pipIndices, id: \.self) { i in
+                let idx = i % 12
+                let degrees = (Double(idx) / 12.0) * 360.0
+                let isTop = (idx == 0)
+
                 RoundedRectangle(cornerRadius: pipSide * 0.14, style: .continuous)
-                    .fill(palette.accent.opacity(0.26))
-                    .frame(width: pipSide, height: pipSide)
+                    .fill(palette.accent.opacity(isTop ? 0.18 : 0.26))
+                    .frame(width: isTop ? pipSide * 0.92 : pipSide, height: isTop ? pipSide * 0.92 : pipSide)
                     .offset(y: -pipRadius)
                     .rotationEffect(.degrees(degrees))
-                    .blur(radius: pipGlowBlur)
+                    .blur(radius: isTop ? pipGlowBlur * 0.90 : pipGlowBlur)
                     .blendMode(.screen)
             }
 

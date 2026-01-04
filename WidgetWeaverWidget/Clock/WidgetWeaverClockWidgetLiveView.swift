@@ -209,7 +209,7 @@ private struct WWClockSecondHandGlyphView: View {
     var body: some View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(WWClockSecondHandFont.font(size: diameter))
+            .font(WWClockSecondHandFont.font(size: diameter * 0.985))
             .foregroundStyle(palette.accent)
             .lineLimit(1)
             .multilineTextAlignment(.center)

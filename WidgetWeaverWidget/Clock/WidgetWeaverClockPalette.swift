@@ -94,19 +94,19 @@ struct WidgetWeaverClockPalette {
         // The mock dial reads as dark graphite with a soft centre glow.
         let dialCenter: Color = WWClock.colour(0x1B212B, alpha: 1.0)
         let dialMid: Color = WWClock.colour(0x0F141C, alpha: 1.0)
-        let dialEdge: Color = WWClock.colour(0x070A0F, alpha: 1.0)
+        let dialEdge: Color = WWClock.colour(0x080C12, alpha: 1.0)
 
-        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.58)
-        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.060)
+        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.50)
+        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.055)
 
         // Minute dots: slightly softer than the hands/indices.
-        let minuteDot: Color = WWClock.colour(0xB8C4D8, alpha: 0.62)
+        let minuteDot: Color = WWClock.colour(0xB8C4D8, alpha: 0.80)
 
         // Batons: crisp bevel range.
-        let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.96)
-        let batonMid: Color = WWClock.colour(0xC3D0E2, alpha: 0.92)
+        let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.98)
+        let batonMid: Color = WWClock.colour(0xC3D0E2, alpha: 0.96)
         let batonDark: Color = WWClock.colour(0x5E6E89, alpha: 0.96)
-        let batonEdgeLight: Color = WWClock.colour(0xFFFFFF, alpha: 0.52)
+        let batonEdgeLight: Color = WWClock.colour(0xFFFFFF, alpha: 0.66)
         let batonEdgeDark: Color = WWClock.colour(0x000000, alpha: 0.55)
         let batonShadow: Color = WWClock.colour(0x000000, alpha: 0.18)
 

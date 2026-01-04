@@ -128,6 +128,28 @@ struct WidgetWeaverClockHandsView: View {
                         )
                 )
                 .overlay(
+                    // Centre seam: two planes meeting; subtle highlight/shade pair.
+                    ZStack {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.22))
+                            .frame(width: max(px, hourWidth * 0.050), height: hourLength)
+                            .offset(x: -hourWidth * 0.02, y: 0)
+
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(width: max(px, hourWidth * 0.045), height: hourLength)
+                            .offset(x: hourWidth * 0.04, y: 0)
+                    }
+                    .frame(width: hourWidth, height: hourLength)
+                    .mask(
+                        WidgetWeaverClockHourWedgeShape()
+                            .frame(width: hourWidth, height: hourLength)
+                    )
+                    .rotationEffect(hourAngle, anchor: .bottom)
+                    .offset(y: -hourLength / 2.0)
+                    .blendMode(.overlay)
+                )
+                .overlay(
                     WidgetWeaverClockHourWedgeShape()
                         .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
                         .frame(width: hourWidth, height: hourLength)
