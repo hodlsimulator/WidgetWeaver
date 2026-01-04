@@ -130,6 +130,103 @@ extension ContentView {
         }
     }
 
+
+    // MARK: - Manual Smart Crop (per-size override)
+
+    func applyManualSmartCrop(family: EditingFamily, cropRect: NormalisedRect) async {
+        let newCrop = cropRect.normalised()
+
+        var d = currentFamilyDraft()
+        guard var smart = d.imageSmartPhoto else {
+            saveStatusMessage = "No Smart Photo to edit."
+            return
+        }
+
+        let existingVariant: SmartPhotoVariantSpec?
+        switch family {
+        case .small: existingVariant = smart.small
+        case .medium: existingVariant = smart.medium
+        case .large: existingVariant = smart.large
+        }
+
+        guard let variant = existingVariant else {
+            saveStatusMessage = "Smart render data missing for \(family.label)."
+            return
+        }
+
+        guard let masterData = AppGroup.readImageData(fileName: smart.masterFileName) else {
+            saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
+            return
+        }
+
+        saveStatusMessage = "Applying crop…"
+
+        let targetPixels = variant.pixelSize.normalised()
+        let oldRenderFileName = variant.renderFileName
+
+        let newRenderFileName = AppGroup.createImageFileName(prefix: "smart-\(family.rawValue)-manual", ext: "jpg")
+
+        let maxBytes: Int = {
+            switch family {
+            case .small: return 450_000
+            case .medium: return 650_000
+            case .large: return 900_000
+            }
+        }()
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                guard let masterImage = UIImage(data: masterData) else {
+                    throw ManualSmartCropError.decodeFailed
+                }
+
+                let rendered = ManualSmartCropRenderer.render(
+                    master: masterImage,
+                    cropRect: newCrop,
+                    targetPixels: targetPixels
+                )
+
+                let jpeg = try ManualSmartCropRenderer.encodeJPEG(
+                    image: rendered,
+                    startQuality: 0.85,
+                    maxBytes: maxBytes
+                )
+
+                try AppGroup.writeImageData(jpeg, fileName: newRenderFileName)
+
+                if !oldRenderFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    AppGroup.deleteImage(fileName: oldRenderFileName)
+                }
+            }.value
+
+            var updated = variant
+            updated.cropRect = newCrop
+            updated.renderFileName = newRenderFileName
+
+            switch family {
+            case .small: smart.small = updated
+            case .medium: smart.medium = updated
+            case .large: smart.large = updated
+            }
+
+            smart.preparedAt = Date()
+            smart = smart.normalised()
+
+            d.imageSmartPhoto = smart
+
+            // Backwards compatibility: ImageSpec.fileName remains the Medium render.
+            if family == .medium {
+                d.imageFileName = newRenderFileName
+            }
+
+            setCurrentFamilyDraft(d)
+
+            saveStatusMessage = "Updated \(family.label) framing (draft only).\nSave to update widgets."
+        } catch {
+            saveStatusMessage = "Crop update failed: \(error.localizedDescription)"
+        }
+    }
+
     func upgradeLegacyPhotosInCurrentDesign(maxUpgrades: Int = 3) async {
         let clampedMax = max(1, min(3, maxUpgrades))
 
@@ -709,5 +806,74 @@ extension ContentView {
 
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    }
+}
+
+// MARK: - Manual Smart Crop helpers
+
+private enum ManualSmartCropError: Error {
+    case decodeFailed
+    case encodeFailed
+}
+
+private enum ManualSmartCropRenderer {
+    static func render(master: UIImage, cropRect: NormalisedRect, targetPixels: PixelSize) -> UIImage {
+        guard let sourceCg = master.cgImage else { return master }
+
+        let cropRectPixels = CGRect(
+            x: CGFloat(cropRect.x) * CGFloat(sourceCg.width),
+            y: CGFloat(cropRect.y) * CGFloat(sourceCg.height),
+            width: CGFloat(cropRect.width) * CGFloat(sourceCg.width),
+            height: CGFloat(cropRect.height) * CGFloat(sourceCg.height)
+        ).integral
+
+        let bounds = CGRect(x: 0, y: 0, width: sourceCg.width, height: sourceCg.height)
+        let safeRect = cropRectPixels.intersection(bounds)
+
+        let cropCg = (safeRect.isNull || safeRect.isEmpty)
+        ? sourceCg
+        : (sourceCg.cropping(to: safeRect) ?? sourceCg)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: targetPixels.width, height: targetPixels.height),
+            format: format
+        )
+
+        let img = renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: targetPixels.width, height: targetPixels.height))
+
+            let cropped = UIImage(cgImage: cropCg, scale: 1, orientation: .up)
+            cropped.draw(in: CGRect(x: 0, y: 0, width: targetPixels.width, height: targetPixels.height))
+        }
+
+        return img
+    }
+
+    static func encodeJPEG(image: UIImage, startQuality: CGFloat, maxBytes: Int) throws -> Data {
+        var q = min(0.95, max(0.1, startQuality))
+        let minQ: CGFloat = 0.65
+
+        guard var data = image.jpegData(compressionQuality: q) else {
+            throw ManualSmartCropError.encodeFailed
+        }
+
+        var steps = 0
+        while data.count > maxBytes && q > minQ && steps < 6 {
+            q = max(minQ, q - 0.05)
+            guard let next = image.jpegData(compressionQuality: q) else { break }
+            data = next
+            steps += 1
+        }
+
+        if data.isEmpty {
+            throw ManualSmartCropError.encodeFailed
+        }
+
+        return data
     }
 }

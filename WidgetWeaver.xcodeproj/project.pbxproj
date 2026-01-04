@@ -91,6 +91,8 @@
 		E1C835D62F050F8E00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */; };
 		E1E8783C2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */; };
 		E1E8783D2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */; };
+		E1E878632F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */; };
+		E1E878642F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -167,6 +169,7 @@
 		E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RainForecastSurfaceRenderer+Dissipation.swift"; sourceTree = "<group>"; };
 		E1E877872F07162D00C9AA14 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WWClockDebugLog.swift; sourceTree = "<group>"; };
+		E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupDarwinNotifications.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -290,6 +293,7 @@
 			isa = PBXGroup;
 			children = (
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
+				E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */,
 				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */,
@@ -483,6 +487,7 @@
 				E1C834CC2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
+				E1E878642F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */,
 				E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
@@ -494,6 +499,7 @@
 			files = (
 				E15B0BAD2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E18676A92EF240B30098B095 /* AppGroup.swift in Sources */,
+				E1E878632F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */,
 				E1E8783D2F08606300C9AA14 /* WWClockDebugLog.swift in Sources */,
 				E1C835BD2EFF427200E3AA98 /* RainSurfaceStyleHarness.swift in Sources */,
 				E1C834DB2EFB33F100E3AA98 /* RainSurfaceDrawing.swift in Sources */,

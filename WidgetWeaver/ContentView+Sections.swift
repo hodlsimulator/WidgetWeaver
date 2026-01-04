@@ -121,6 +121,96 @@ extension ContentView {
         }
     }
 
+
+    // MARK: - Status / Tools
+
+    var statusSection: some View {
+        Section {
+            HStack {
+                Label("Preview size", systemImage: "rectangle.3.group")
+                Spacer()
+                Text(editingFamilyLabel)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastSavedAt {
+                Text("Last saved: \(lastSavedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Not saved yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ControlGroup {
+                Button { activeSheet = .inspector } label: {
+                    Label("Inspector", systemImage: "info.circle")
+                }
+
+                Button { activeSheet = .widgetHelp } label: {
+                    Label("Widget help", systemImage: "questionmark.circle")
+                }
+            }
+            .controlSize(.small)
+
+            Button {
+                showRevertConfirmation = true
+            } label: {
+                Label("Revert unsaved changes…", systemImage: "arrow.uturn.backward.circle")
+            }
+        } header: {
+            sectionHeader("Status")
+        } footer: {
+            Text("Edits are applied to a draft.\nUse Save to update widgets.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+
+    // MARK: - AI
+
+    var aiSection: some View {
+        Section {
+            TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
+                .lineLimit(2...6)
+
+            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+
+            Button {
+                Task { await generateNewDesignFromPrompt() }
+            } label: {
+                Label("Generate design", systemImage: "sparkles")
+            }
+            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Divider()
+
+            TextField("Patch instruction (edit this design)", text: $aiPatchInstruction, axis: .vertical)
+                .lineLimit(2...6)
+
+            Button {
+                Task { await applyPatchToCurrentDesign() }
+            } label: {
+                Label("Apply patch", systemImage: "wand.and.stars")
+            }
+            .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if !aiStatusMessage.isEmpty {
+                Text(aiStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            sectionHeader("AI")
+        } footer: {
+            Text("AI runs on-device where available.\nGenerated designs are saved to the library like any other design.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Existing sections (unchanged)
     var designsSection: some View {
         Section {
@@ -198,82 +288,65 @@ extension ContentView {
             if proManager.isProUnlocked {
                 let vars = WidgetWeaverVariableStore.shared.loadAll()
                 LabeledContent("Saved variables", value: "\(vars.count)")
-                if vars.isEmpty {
-                    Text("No variables yet.\nAdd some here, or update via Shortcuts.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    let preview = vars.keys.sorted().prefix(3)
-                    ForEach(Array(preview), id: \.self) { k in
-                        let v = vars[k] ?? ""
-                        LabeledContent(k, value: v.isEmpty ? " " : v)
-                    }
-                }
+                Button { activeSheet = .variables } label: { Label("Open Variables", systemImage: "curlybraces.square") }
 
-                Button { activeSheet = .variables } label: { Label("Manage Variables", systemImage: "slider.horizontal.3") }
-            } else {
-                Text("Variables are a Pro feature.\nUse {{key}} templates in text fields, then update values via Shortcuts or in-app once Pro is unlocked.")
+                Text("Variables are stored on-device.\nUse them in text via {{__var_key|fallback}}.")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Variables require WidgetWeaver Pro.")
                     .foregroundStyle(.secondary)
                 Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
             }
         } header: {
             sectionHeader("Variables")
-        } footer: {
-            Text("Variables render at widget render time.\nTemplate syntax: {{key}} or {{key|fallback}}.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
     var sharingSection: some View {
         Section {
-            if importInProgress {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Importing…").foregroundStyle(.secondary)
-                }
+            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("Design", icon: Image(systemName: "square.and.arrow.up"))) {
+                Label("Share this design", systemImage: "square.and.arrow.up")
             }
 
-            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("WidgetWeaver Design")) {
-                Label("Share This Design", systemImage: "square.and.arrow.up")
+            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("Designs", icon: Image(systemName: "square.and.arrow.up"))) {
+                Label("Share all designs", systemImage: "square.and.arrow.up")
             }
-            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("WidgetWeaver Designs")) {
-                Label("Share All Designs", systemImage: "square.and.arrow.up.on.square")
+
+            Button {
+                showImportPicker = true
+            } label: {
+                Label("Import designs…", systemImage: "square.and.arrow.down")
             }
-            Button { showImportPicker = true } label: { Label("Import designs…", systemImage: "square.and.arrow.down") }
-            Button(role: .destructive) { showImageCleanupConfirmation = true } label: { Label("Clean Up Unused Images", systemImage: "trash.slash") }
-        } header: {
-            sectionHeader("Sharing")
-        } footer: {
-            Text("Exports are JSON and include embedded images when available.\nImported designs are duplicated with new IDs to avoid overwriting.\n\"Clean Up\" removes image files not referenced by any saved design.")
+            .disabled(importInProgress)
+
+            Text("Sharing exports a .wwdesign file.\nImports are reviewed before applying.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        } header: {
+            sectionHeader("Sharing")
         }
     }
 
     var matchedSetSection: some View {
         Section {
             Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
-                .disabled(!proManager.isProUnlocked)
 
-            if !proManager.isProUnlocked {
-                Text("Matched sets are a Pro feature.")
+            if matchedSetEnabled {
+                Text("Matched set is on.\nEdits apply to \(editingFamilyLabel).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-            } else if matchedSetEnabled {
-                Text("Editing is per preview size: \(editingFamilyLabel).\nUse the preview size picker to edit Small/Medium/Large.\nStyle and typography are shared.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { copyCurrentSizeToAllSizes() } label: { Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square") }
+
+                Button { copyCurrentSizeToAllSizes() } label: {
+                    Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
+                }
             } else {
-                Text("When enabled, Small and Large can differ while sharing the same style tokens.\nMedium is treated as the base.")
+                Text("Matched set off.\nThe design is a single spec (Medium default).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } header: {
-            sectionHeader("Matched set")
+            sectionHeader("Matched Set")
         }
     }
 
@@ -361,14 +434,20 @@ extension ContentView {
 
             Picker("Rendering", selection: binding(\.symbolRenderingMode)) {
                 ForEach(SymbolRenderingModeToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
             }
 
             Picker("Tint", selection: binding(\.symbolTint)) {
                 ForEach(SymbolTintToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+                    Text(token.displayName).tag(token)
                 }
+            }
+
+            if matchedSetEnabled {
+                Text("Symbol settings are currently editing: \(editingFamilyLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         } header: {
             sectionHeader("Symbol")
@@ -519,11 +598,11 @@ extension ContentView {
                 Button {
                     Task { await upgradeLegacyPhotosInCurrentDesign(maxUpgrades: 3) }
                 } label: {
-                    Label("Upgrade legacy photos in this design", systemImage: "wand.and.stars")
+                    Label("Upgrade legacy photos to Smart Photo (\(legacyFamiliesLabel))", systemImage: "sparkles")
                 }
                 .disabled(importInProgress)
 
-                Text("Upgrades up to 3 legacy images across sizes. Legacy in: \(legacyFamiliesLabel)")
+                Text("Upgrades up to 3 legacy image files per tap.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -532,48 +611,35 @@ extension ContentView {
         }
     }
 
-    // MARK: - Updated: Layout is now layout-only (no templates, no steps)
     var layoutSection: some View {
         Section {
-            Toggle("Accent bar", isOn: binding(\.showsAccentBar))
-
-            Picker("Axis", selection: binding(\.axis)) {
-                ForEach(LayoutAxisToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+            Picker("Layout template", selection: binding(\.template)) {
+                ForEach(LayoutTemplateToken.allCases) { token in
+                    Text(token.displayName).tag(token)
                 }
             }
 
-            Picker("Alignment", selection: binding(\.alignment)) {
-                ForEach(LayoutAlignmentToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
-                }
-            }
+            Toggle("Show accent bar", isOn: binding(\.showsAccentBar))
 
-            HStack {
-                Text("Spacing")
-                Slider(value: binding(\.spacing), in: 0...32, step: 1)
-                Text("\(Int(currentFamilyDraft().spacing))")
-                    .monospacedDigit()
+            Toggle("Show name", isOn: binding(\.showsName))
+            Toggle("Show secondary text", isOn: binding(\.showsSecondaryText))
+
+            Stepper(
+                "Max primary lines: \(currentFamilyDraft().primaryLineLimit)",
+                value: binding(\.primaryLineLimit),
+                in: 1...6
+            )
+
+            Stepper(
+                "Max secondary lines: \(currentFamilyDraft().secondaryLineLimit)",
+                value: binding(\.secondaryLineLimit),
+                in: 0...6
+            )
+
+            if matchedSetEnabled {
+                Text("Layout is currently editing: \(editingFamilyLabel)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            if editingFamily == .small {
-                Stepper(
-                    "Primary line limit: \(currentFamilyDraft().primaryLineLimitSmall)",
-                    value: binding(\.primaryLineLimitSmall),
-                    in: 1...8
-                )
-            } else {
-                Stepper(
-                    "Primary line limit: \(currentFamilyDraft().primaryLineLimit)",
-                    value: binding(\.primaryLineLimit),
-                    in: 1...10
-                )
-                Stepper(
-                    "Secondary line limit: \(currentFamilyDraft().secondaryLineLimit)",
-                    value: binding(\.secondaryLineLimit),
-                    in: 1...10
-                )
             }
         } header: {
             sectionHeader("Layout")
@@ -584,17 +650,25 @@ extension ContentView {
         Section {
             HStack {
                 Text("Padding")
-                Slider(value: $styleDraft.padding, in: 0...32, step: 1)
+                Slider(value: $styleDraft.padding, in: 0...40, step: 1)
                 Text("\(Int(styleDraft.padding))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Inner corner radius")
+                Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
+                Text("\(Int(styleDraft.cornerRadius))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            if styleDraft.cornerRadius > 0 {
                 HStack {
-                    Text("Corner radius")
-                    Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
-                    Text("\(Int(styleDraft.cornerRadius))")
+                    Text("Secondary radius")
+                    Slider(value: $styleDraft.secondaryCornerRadius, in: 0...44, step: 1)
+                    Text("\(Int(styleDraft.secondaryCornerRadius))")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
@@ -728,27 +802,28 @@ extension ContentView {
                             Label("Add starter buttons", systemImage: "sparkles")
                         }
                     } else {
-                        ForEach($actionBarDraft.actions) { $action in
-                            let idx = actionBarDraft.actions.firstIndex(where: { $0.id == action.id })
+                        ForEach($actionBarDraft.actions) { action in
+                            let actionValue = action.wrappedValue
+                            let idx = actionBarDraft.actions.firstIndex(where: { $0.id == actionValue.id })
                             let canMoveUp = (idx ?? 0) > 0
                             let canMoveDown = idx != nil && idx! < (actionBarDraft.actions.count - 1)
-                            let keyValidation = action.validateVariableKey()
+                            let keyValidation = actionValue.validateVariableKey()
 
                             DisclosureGroup {
-                                TextField("Button title", text: $action.title)
+                                TextField("Button title", text: action.title)
                                     .textInputAutocapitalization(.words)
 
-                                TextField("SF Symbol (optional)", text: $action.systemImage)
+                                TextField("SF Symbol (optional)", text: action.systemImage)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
 
-                                Picker("Action", selection: $action.kind) {
+                                Picker("Action", selection: action.kind) {
                                     ForEach(WidgetActionKindToken.allCases) { token in
                                         Text(token.displayName).tag(token)
                                     }
                                 }
 
-                                TextField("Variable key", text: $action.variableKey)
+                                TextField("Variable key", text: action.variableKey)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
 
@@ -758,15 +833,15 @@ extension ContentView {
                                         .foregroundStyle(.red)
                                 }
 
-                                switch action.kind {
+                                switch actionValue.kind {
                                 case .incrementVariable:
                                     Stepper(
-                                        "Increment amount: \(action.incrementAmount)",
-                                        value: $action.incrementAmount,
+                                        "Increment amount: \(actionValue.incrementAmount)",
+                                        value: action.incrementAmount,
                                         in: -99...99
                                     )
                                 case .setVariableToNow:
-                                    Picker("Now format", selection: $action.nowFormat) {
+                                    Picker("Now format", selection: action.nowFormat) {
                                         ForEach(WidgetNowFormatToken.allCases) { token in
                                             Text(token.displayName).tag(token)
                                         }
@@ -775,14 +850,14 @@ extension ContentView {
 
                                 ControlGroup {
                                     Button {
-                                        withAnimation { actionBarDraft.moveUp(id: action.id) }
+                                        withAnimation { actionBarDraft.moveUp(id: actionValue.id) }
                                     } label: {
                                         Label("Move Up", systemImage: "arrow.up")
                                     }
                                     .disabled(!canMoveUp)
 
                                     Button {
-                                        withAnimation { actionBarDraft.moveDown(id: action.id) }
+                                        withAnimation { actionBarDraft.moveDown(id: actionValue.id) }
                                     } label: {
                                         Label("Move Down", systemImage: "arrow.down")
                                     }
@@ -791,16 +866,16 @@ extension ContentView {
                                 .controlSize(.small)
 
                                 Button(role: .destructive) {
-                                    withAnimation { actionBarDraft.remove(id: action.id) }
+                                    withAnimation { actionBarDraft.actions.removeAll(where: { $0.id == actionValue.id }) }
                                 } label: {
                                     Label("Remove button", systemImage: "trash")
                                 }
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(action.title.isEmpty ? "Button" : action.title)
+                                    Text(actionValue.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Button" : actionValue.title)
                                         .font(.headline)
 
-                                    Text(action.kind.displayName)
+                                    Text(actionValue.kind.displayName)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
