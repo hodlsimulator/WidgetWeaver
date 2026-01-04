@@ -14,17 +14,33 @@ struct WidgetWeaverClockBackgroundView: View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
             let corner = s * 0.205
-            let px = max(CGFloat(1), s * 0.003)
 
-            let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-
-            shape
-                // Solid background (no gradient) per the dial mock.
-                .fill(palette.backgroundBottom)
-                // Thin outer edge highlight (keeps the rounded-square readable without shading the fill).
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [palette.backgroundTop, palette.backgroundBottom]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
-                    shape
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: px)
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: max(1, s * 0.003))
+                        .blendMode(.overlay)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.white.opacity(0.10),
+                                    Color.white.opacity(0.00),
+                                    Color.black.opacity(0.22)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                         .blendMode(.overlay)
                 )
         }
