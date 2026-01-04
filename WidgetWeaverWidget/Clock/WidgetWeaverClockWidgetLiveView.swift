@@ -103,6 +103,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsCentreHub: false,
                     handsOpacity: handsOpacity
                 )
+                .id(renderNow)
+                .transition(.identity)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
 
                 // Seconds hand glyph + hub overlay.
                 // Driven by `Text(timerInterval:)` and does not require frequent timeline reloads.
