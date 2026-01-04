@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UIKit
 
 struct WidgetWeaverClockHourIndicesView: View {
     let palette: WidgetWeaverClockPalette
@@ -130,17 +129,19 @@ struct WidgetWeaverClockNumeralsView: View {
     let scale: CGFloat
 
     var body: some View {
+        let px = WWClock.px(scale: scale)
+
         ZStack {
-            WWClockRenderedNumeralImage(text: "12", palette: palette, fontSize: fontSize, scale: scale)
+            numeral("12", px: px)
                 .offset(x: 0, y: -radius)
 
-            WWClockRenderedNumeralImage(text: "3", palette: palette, fontSize: fontSize, scale: scale)
+            numeral("3", px: px)
                 .offset(x: radius, y: 0)
 
-            WWClockRenderedNumeralImage(text: "6", palette: palette, fontSize: fontSize, scale: scale)
+            numeral("6", px: px)
                 .offset(x: 0, y: radius)
 
-            WWClockRenderedNumeralImage(text: "9", palette: palette, fontSize: fontSize, scale: scale)
+            numeral("9", px: px)
                 .offset(x: -radius, y: 0)
         }
         .allowsHitTesting(false)
@@ -148,89 +149,30 @@ struct WidgetWeaverClockNumeralsView: View {
         // If WidgetKit is applying placeholder redaction, force these to render normally.
         .unredacted()
     }
-}
 
-private struct WWClockRenderedNumeralImage: View {
-    let text: String
-    let palette: WidgetWeaverClockPalette
-    let fontSize: CGFloat
-    let scale: CGFloat
+    @ViewBuilder
+    private func numeral(_ text: String, px: CGFloat) -> some View {
+        let face = Text(text)
+            .font(.system(size: fontSize, weight: .semibold, design: .default))
+            .fixedSize()
 
-    var body: some View {
-        let uiImage = renderNumeralUIImage(
-            text: text,
-            fontSize: fontSize,
-            scale: scale,
-            face: UIColor(palette.numeralLight),
-            highlight: UIColor(palette.numeralInnerHighlight),
-            shade: UIColor(palette.numeralInnerShade)
-        )
+        ZStack {
+            face
+                .foregroundStyle(palette.numeralInnerShade)
+                .offset(x: px, y: px)
 
-        Image(uiImage: uiImage)
-            .interpolation(.none)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
+            face
+                .foregroundStyle(palette.numeralInnerHighlight)
+                .offset(x: -px, y: -px)
 
-    private func renderNumeralUIImage(
-        text: String,
-        fontSize: CGFloat,
-        scale: CGFloat,
-        face: UIColor,
-        highlight: UIColor,
-        shade: UIColor
-    ) -> UIImage {
-        let px = WWClock.px(scale: scale)
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
-
-        let baseAttributes: [NSAttributedString.Key: Any] = [
-            .font: font
-        ]
-
-        let measureSize = (text as NSString).size(withAttributes: baseAttributes)
-
-        let pad = ceil(max(2.0 * px, 2.0))
-        let size = CGSize(
-            width: ceil(measureSize.width + pad * 2.0),
-            height: ceil(measureSize.height + pad * 2.0)
-        )
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = max(1.0, scale)
-        format.opaque = false
-
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-
-        return renderer.image { _ in
-            let origin = CGPoint(x: pad, y: pad)
-
-            let shadeAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: shade
-            ]
-            let highlightAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: highlight
-            ]
-            let faceAttributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: face
-            ]
-
-            (text as NSString).draw(
-                at: CGPoint(x: origin.x + px, y: origin.y + px),
-                withAttributes: shadeAttributes
-            )
-
-            (text as NSString).draw(
-                at: CGPoint(x: origin.x - px, y: origin.y - px),
-                withAttributes: highlightAttributes
-            )
-
-            (text as NSString).draw(
-                at: origin,
-                withAttributes: faceAttributes
-            )
+            face
+                .foregroundStyle(palette.numeralLight)
         }
+        .shadow(
+            color: palette.numeralShadow,
+            radius: max(px, fontSize * 0.06),
+            x: 0,
+            y: max(px, fontSize * 0.03)
+        )
     }
 }
