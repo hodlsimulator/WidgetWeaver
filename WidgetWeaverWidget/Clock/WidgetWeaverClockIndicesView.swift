@@ -146,7 +146,6 @@ struct WidgetWeaverClockNumeralsView: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        // If WidgetKit is applying placeholder redaction, force these to render normally.
         .unredacted()
     }
 
@@ -156,23 +155,59 @@ struct WidgetWeaverClockNumeralsView: View {
             .font(.system(size: fontSize, weight: .semibold, design: .default))
             .fixedSize()
 
+        let bevel = max(px, fontSize * 0.028)
+        let bevelBlur = max(px, bevel * 0.65)
+
+        let metalField = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.numeralLight, location: 0.00),
+                .init(color: palette.numeralMid, location: 0.58),
+                .init(color: palette.numeralDark, location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(width: radius * 2.0, height: radius * 2.0)
+
         ZStack {
             face
-                .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: px, y: px)
+                .foregroundStyle(palette.numeralDark.opacity(0.55))
+                .blur(radius: max(px, bevel * 0.55))
+
+            metalField
+                .mask(face)
 
             face
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -px, y: -px)
+                .offset(x: -bevel, y: -bevel)
+                .blur(radius: bevelBlur)
+                .blendMode(.screen)
+                .mask(face)
 
             face
-                .foregroundStyle(palette.numeralLight)
+                .foregroundStyle(palette.numeralInnerShade)
+                .offset(x: bevel, y: bevel)
+                .blur(radius: bevelBlur)
+                .blendMode(.multiply)
+                .mask(face)
+
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: Color.white.opacity(0.28), location: 0.00),
+                    .init(color: Color.white.opacity(0.08), location: 0.42),
+                    .init(color: Color.black.opacity(0.12), location: 1.00)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .mask(face)
+            .blendMode(.overlay)
         }
         .shadow(
             color: palette.numeralShadow,
-            radius: max(px, fontSize * 0.06),
+            radius: max(px, fontSize * 0.050),
             x: 0,
-            y: max(px, fontSize * 0.03)
+            y: max(px, fontSize * 0.030)
         )
     }
 }

@@ -46,16 +46,19 @@ struct WidgetWeaverClockDialFaceView: View {
                     .opacity(0.90)
             )
             // Perimeter vignette: darken outer ~12–18%.
+            //
+            // Spread the transition over a slightly wider band to avoid a hard edge just inside the dots.
             .overlay(
                 Circle()
                     .fill(
                         RadialGradient(
                             gradient: Gradient(stops: [
-                                .init(color: palette.dialVignette.opacity(0.00), location: 0.0),
-                                .init(color: palette.dialVignette, location: 1.0)
+                                .init(color: palette.dialVignette.opacity(0.02), location: 0.00),
+                                .init(color: palette.dialVignette.opacity(0.22), location: 0.55),
+                                .init(color: palette.dialVignette, location: 1.00)
                             ]),
                             center: .center,
-                            startRadius: radius * 0.82,
+                            startRadius: radius * 0.76,
                             endRadius: radius
                         )
                     )

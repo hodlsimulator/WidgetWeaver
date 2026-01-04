@@ -124,8 +124,9 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.86),
                 scale: displayScale
             )
+            // Slightly thicker (subtle) vs fc685a7.
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
+                WWClock.clamp(R * 0.036, min: R * 0.032, max: R * 0.040),
                 scale: displayScale
             )
 
@@ -133,8 +134,9 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
                 scale: displayScale
             )
+            // Slightly thinner vs fc685a7.
             let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                WWClock.clamp(R * 0.0052, min: R * 0.0038, max: R * 0.0062),
                 scale: displayScale
             )
             let secondTipSide = WWClock.pixel(
