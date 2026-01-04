@@ -731,6 +731,15 @@ struct WidgetWeaverHomeScreenActivityProvider: TimelineProvider {
 struct WidgetWeaverHomeScreenActivityView: View {
     let entry: WidgetWeaverHomeScreenActivityEntry
     @Environment(\.widgetFamily) private var family
+    
+    private var headerTopInset: CGFloat {
+        switch family {
+        case .systemSmall, .systemMedium:
+            return 4
+        default:
+            return 0
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -757,6 +766,7 @@ struct WidgetWeaverHomeScreenActivityView: View {
                     .bold()
                 Spacer()
             }
+            .padding(.top, headerTopInset)
 
             Text(entry.access == .denied ? "Denied" : "Open the app to enable Health access.")
                 .font(.caption)
@@ -996,6 +1006,7 @@ struct WidgetWeaverHomeScreenActivityView: View {
                     .lineLimit(1)
             }
         }
+        .padding(.top, headerTopInset)
     }
 
     private struct Badge: View {
