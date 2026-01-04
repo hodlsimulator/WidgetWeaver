@@ -193,7 +193,9 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
+            // Ensure Home Screen redraws as WidgetKit advances timeline entries.
             WidgetWeaverHomeScreenClockView(entry: entry)
+                .id(entry.date)
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
