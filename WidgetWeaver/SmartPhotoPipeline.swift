@@ -46,7 +46,7 @@ enum SmartPhotoPipelineError: Error {
 }
 
 struct SmartPhotoPipeline {
-    static let algorithmVersion: Int = 4
+    static let algorithmVersion: Int = 5
 
     /// Creates:
     /// - master (largest preserved)
@@ -666,25 +666,213 @@ private enum SmartPhotoVariantBuilder {
         return CGRect(x: x, y: y, width: cropW, height: cropH).intersection(bounds)
     }
 
+    private struct SmartPhotoPairChoice {
+        var boxes: [CGRect]
+        var score: CGFloat
+    }
+
+    private struct SmartPhotoPairCandidate {
+        var kind: SmartPhotoSubjectKind
+        var boxes: [CGRect]
+        var score: CGFloat
+    }
+
     private static func pickPairForSmall(detection: SmartPhotoDetection, imageSize: CGSize) -> (kind: SmartPhotoSubjectKind, boxes: [CGRect])? {
-        let ordered: [(SmartPhotoSubjectKind, [CGRect])] = [
+        var candidates: [SmartPhotoPairCandidate] = []
+
+        func kindWeight(_ kind: SmartPhotoSubjectKind) -> CGFloat {
+            switch kind {
+            case .face:
+                return 1.00
+            case .human:
+                return 0.97
+            case .animal:
+                return 0.94
+            case .saliency:
+                return 0.88
+            case .none:
+                return 0
+            }
+        }
+
+        let perKind: [(SmartPhotoSubjectKind, [CGRect])] = [
             (.face, detection.faces),
             (.human, detection.humans),
             (.animal, detection.animals),
             (.saliency, detection.saliency)
         ]
 
-        for (kind, boxes) in ordered {
+        for (kind, boxes) in perKind {
             guard boxes.count >= 2 else { continue }
-            if let pair = bestPairCandidate(from: boxes, imageSize: imageSize) {
-                return (kind: kind, boxes: pair)
+            if let choice = bestPairCandidate(from: boxes, imageSize: imageSize) {
+                candidates.append(SmartPhotoPairCandidate(kind: kind, boxes: choice.boxes, score: choice.score))
             }
         }
 
-        return nil
+        candidates.append(contentsOf: syntheticFacePartnerCandidates(detection: detection, imageSize: imageSize))
+
+        guard !candidates.isEmpty else { return nil }
+
+        let chosen = candidates.max { lhs, rhs in
+            let l = lhs.score * kindWeight(lhs.kind)
+            let r = rhs.score * kindWeight(rhs.kind)
+
+            if abs(l - r) > 0.0005 {
+                return l < r
+            }
+
+            return lhs.score < rhs.score
+        }
+
+        guard let best = chosen else { return nil }
+        return (kind: best.kind, boxes: best.boxes)
     }
 
-    private static func bestPairCandidate(from boxes: [CGRect], imageSize: CGSize) -> [CGRect]? {
+    private static func syntheticFacePartnerCandidates(detection: SmartPhotoDetection, imageSize: CGSize) -> [SmartPhotoPairCandidate] {
+        guard !detection.faces.isEmpty else { return [] }
+        guard imageSize.width > 1, imageSize.height > 1 else { return [] }
+
+        let faces = Array(detection.faces.prefix(2))
+        let humans = Array(detection.humans.prefix(6))
+        let animals = Array(detection.animals.prefix(6))
+        let saliency = Array(detection.saliency.prefix(8))
+
+        func normalised(_ r: CGRect) -> CGRect {
+            CGRect(
+                x: r.minX / imageSize.width,
+                y: r.minY / imageSize.height,
+                width: r.width / imageSize.width,
+                height: r.height / imageSize.height
+            )
+        }
+
+        func area(_ r: CGRect) -> CGFloat {
+            max(0, r.width) * max(0, r.height)
+        }
+
+        func iou(_ a: CGRect, _ b: CGRect) -> CGFloat {
+            let inter = a.intersection(b)
+            if inter.isNull || inter.isEmpty { return 0 }
+            let interA = area(inter)
+            let unionA = area(a) + area(b) - interA
+            return unionA > 0 ? interA / unionA : 0
+        }
+
+        func overlapRatioMin(_ a: CGRect, _ b: CGRect) -> CGFloat {
+            let inter = a.intersection(b)
+            if inter.isNull || inter.isEmpty { return 0 }
+            let interA = area(inter)
+            let minA = min(area(a), area(b))
+            return minA > 0 ? interA / minA : 0
+        }
+
+        func score(_ r: CGRect) -> CGFloat {
+            let a = area(r)
+            let cx = r.midX
+            let cy = r.midY
+            let dx = cx - 0.5
+            let dy = cy - 0.5
+            let dist = sqrt(dx * dx + dy * dy)
+            let maxDist: CGFloat = 0.70710678
+            let prox = max(0, 1.0 - min(1.0, dist / maxDist))
+            return a * 0.6 + prox * 0.4
+        }
+
+        let minEachArea: CGFloat = 0.015
+        let minUnionArea: CGFloat = 0.06
+        let maxHorizontalSeparation: CGFloat = 0.60
+        let maxVerticalSeparation: CGFloat = 0.35
+        let maxIou: CGFloat = 0.55
+        let minUnionAspect: CGFloat = 0.35
+        let maxUnionAspect: CGFloat = 2.80
+
+        func pairPassesBaseConstraints(_ a: CGRect, _ b: CGRect) -> Bool {
+            let aArea = area(a)
+            let bArea = area(b)
+            let union = a.union(b)
+            let unionArea = area(union)
+
+            if (aArea < minEachArea || bArea < minEachArea) && unionArea < minUnionArea {
+                return false
+            }
+
+            let dx = abs(a.midX - b.midX)
+            let dy = abs(a.midY - b.midY)
+            if dx > maxHorizontalSeparation || dy > maxVerticalSeparation {
+                return false
+            }
+
+            let unionAspect = union.width / max(0.0001, union.height)
+            if unionAspect < minUnionAspect || unionAspect > maxUnionAspect {
+                return false
+            }
+
+            if iou(a, b) > maxIou {
+                return false
+            }
+
+            return true
+        }
+
+        func facePartnerAllowed(face: CGRect, partner: CGRect, partnerKind: SmartPhotoSubjectKind) -> Bool {
+            let baseIoU = iou(face, partner)
+            if baseIoU > maxIou {
+                return false
+            }
+
+            // Humans/animals often include the face region for the same subject.
+            // This rejects that case so a second subject can still be found.
+            if partnerKind == .human || partnerKind == .animal {
+                if overlapRatioMin(face, partner) > 0.78 {
+                    return false
+                }
+            }
+
+            // Saliency boxes can be broad; keep a cap to avoid selecting the whole image.
+            if partnerKind == .saliency {
+                let a = area(partner)
+                if a < 0.025 || a > 0.70 {
+                    return false
+                }
+            }
+
+            return true
+        }
+
+        var out: [SmartPhotoPairCandidate] = []
+
+        for facePx in faces {
+            let face = normalised(facePx)
+
+            var bestPartner: (rect: CGRect, kind: SmartPhotoSubjectKind, pairScore: CGFloat)? = nil
+
+            func considerPartners(kind: SmartPhotoSubjectKind, list: [CGRect]) {
+                for pPx in list {
+                    let partner = normalised(pPx)
+                    guard facePartnerAllowed(face: face, partner: partner, partnerKind: kind) else { continue }
+                    guard pairPassesBaseConstraints(face, partner) else { continue }
+
+                    let s = score(face) + score(partner)
+                    if bestPartner == nil || s > (bestPartner?.pairScore ?? -1) {
+                        bestPartner = (rect: pPx, kind: kind, pairScore: s)
+                    }
+                }
+            }
+
+            considerPartners(kind: .human, list: humans)
+            considerPartners(kind: .animal, list: animals)
+            considerPartners(kind: .saliency, list: saliency)
+
+            if let partner = bestPartner {
+                // When a face is in play, treating the crop kind as human preserves headroom bias.
+                out.append(SmartPhotoPairCandidate(kind: .human, boxes: [facePx, partner.rect], score: partner.pairScore))
+            }
+        }
+
+        return out
+    }
+
+    private static func bestPairCandidate(from boxes: [CGRect], imageSize: CGSize) -> SmartPhotoPairChoice? {
         guard imageSize.width > 1, imageSize.height > 1 else { return nil }
 
         let considered = Array(boxes.prefix(8))
@@ -772,7 +960,7 @@ private enum SmartPhotoVariantBuilder {
         }
 
         if best.score < 0 { return nil }
-        return [considered[best.i], considered[best.j]]
+        return SmartPhotoPairChoice(boxes: [considered[best.i], considered[best.j]], score: best.score)
     }
 
     private static func expandSubjectBox(_ rect: CGRect, kind: SmartPhotoSubjectKind, family: WidgetFamily, imageSize: CGSize) -> CGRect {

@@ -30,6 +30,10 @@ public actor NoiseMachineController {
     private var observersInstalled: Bool = false
     private var notificationTokens: [NSObjectProtocol] = []
 
+    private var isSessionActive: Bool = false
+    private var pendingSessionDeactivationTask: Task<Void, Never>?
+    private let sessionDeactivationGraceSeconds: TimeInterval = 0.8
+
     private var currentState: NoiseMixState = .default
     private var isEngineRunning: Bool = false
 
@@ -339,7 +343,70 @@ public actor NoiseMachineController {
         return true
     }
 
-    private func activateSessionIfNeeded() throws {
+    private func cancelPendingSessionDeactivation() {
+        pendingSessionDeactivationTask?.cancel()
+        pendingSessionDeactivationTask = nil
+    }
+
+    private func deactivateSessionIfPossible() {
+        scheduleSessionDeactivationIfIdle(after: sessionDeactivationGraceSeconds)
+    }
+
+    private func scheduleSessionDeactivationIfIdle(after delay: TimeInterval) {
+        cancelPendingSessionDeactivation()
+
+        pendingSessionDeactivationTask = Task { [delay] in
+            let ns = UInt64(max(0, delay) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: ns)
+            await self.performSessionDeactivationIfIdle()
+        }
+    }
+
+    private func performSessionDeactivationIfIdle() {
+        pendingSessionDeactivationTask = nil
+
+        if currentState.wasPlaying || engine?.isRunning == true {
+            return
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setActive(false, options: [.notifyOthersOnDeactivation])
+            isSessionActive = false
+            log("AVAudioSession setActive(false) ok")
+        } catch {
+            logError("AVAudioSession setActive(false)", error, level: .warning)
+        }
+    }
+
+    private func isTransientSessionActivationError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == NSOSStatusErrorDomain else { return false }
+        let status = OSStatus(ns.code)
+
+        // '!pla' (cannotStartPlaying) and '!pri' (insufficientPriority) are commonly transient.
+        switch status {
+        case 561015905, 561017449:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func activationBackoffSeconds(forAttempt attempt: Int) -> TimeInterval {
+        // attempt is 1-based
+        switch attempt {
+        case 1: return 0.12
+        case 2: return 0.25
+        case 3: return 0.45
+        case 4: return 0.80
+        default: return 1.10
+        }
+    }
+
+    private func activateSessionIfNeeded() async throws {
+        cancelPendingSessionDeactivation()
+
         let session = AVAudioSession.sharedInstance()
 
         if !didConfigureSession {
@@ -354,23 +421,41 @@ public actor NoiseMachineController {
             )
         }
 
-        do {
-            try session.setActive(true, options: [])
-            log("AVAudioSession setActive(true) ok (sr=\(String(format: "%.1f", session.sampleRate)) io=\(String(format: "%.4f", session.ioBufferDuration)))")
-        } catch {
-            logError("AVAudioSession setActive(true)", error, level: .error)
-            throw error
+        if isSessionActive {
+            return
         }
-    }
 
-    private func deactivateSessionIfPossible() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setActive(false, options: [.notifyOthersOnDeactivation])
-            log("AVAudioSession setActive(false) ok")
-        } catch {
-            logError("AVAudioSession setActive(false)", error, level: .warning)
+        var lastError: Error?
+
+        for attempt in 1...5 {
+            do {
+                if attempt > 1 {
+                    didConfigureSession = configureSessionBestEffort()
+                }
+
+                try session.setActive(true, options: [])
+                isSessionActive = true
+                log("AVAudioSession setActive(true) ok (attempt=\(attempt) sr=\(String(format: "%.1f", session.sampleRate)) io=\(String(format: "%.4f", session.ioBufferDuration)))")
+                return
+            } catch {
+                lastError = error
+
+                let level: NoiseMachineLogLevel = (attempt == 5) ? .error : .warning
+                logError("AVAudioSession setActive(true) attempt \(attempt)", error, level: level)
+
+                guard attempt < 5, isTransientSessionActivationError(error) else { break }
+
+                let delay = activationBackoffSeconds(forAttempt: attempt)
+                let ns = UInt64(delay * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: ns)
+            }
         }
+
+        throw lastError ?? NSError(
+            domain: "NoiseMachine",
+            code: -2,
+            userInfo: [NSLocalizedDescriptionKey: "Audio session activation failed"]
+        )
     }
 
     // MARK: - Graph
@@ -442,7 +527,7 @@ public actor NoiseMachineController {
 
         do {
             log("startEngineIfNeeded: activating session")
-            try activateSessionIfNeeded()
+            try await activateSessionIfNeeded()
 
             engine.prepare()
 
@@ -458,8 +543,25 @@ public actor NoiseMachineController {
         } catch {
             isEngineRunning = false
             logError("AVAudioEngine start", error, level: .error)
+
             await recoverFromEngineStartFailure(originalError: error)
+
+            if self.engine?.isRunning != true {
+                await handleFailedStart(error: error)
+            }
         }
+    }
+
+    private func handleFailedStart(error: Error) async {
+        if currentState.wasPlaying {
+            var s = currentState
+            s.wasPlaying = false
+            s.updatedAt = Date()
+            currentState = s
+            applyTargets(from: s, savePolicy: .immediate)
+        }
+
+        await stopEngineSoon()
     }
 
     private func teardownEngine() {
@@ -493,7 +595,7 @@ public actor NoiseMachineController {
             engine?.stop()
             engine?.reset()
             isEngineRunning = false
-            try activateSessionIfNeeded()
+            try await activateSessionIfNeeded()
             engine?.prepare()
             try engine?.start()
 
@@ -513,7 +615,7 @@ public actor NoiseMachineController {
         await rebuildEngine(reason: "engine.start failed")
         do {
             guard let engine else { return }
-            try activateSessionIfNeeded()
+            try await activateSessionIfNeeded()
             engine.prepare()
             try engine.start()
 
@@ -554,6 +656,13 @@ public actor NoiseMachineController {
 
         // Fade down quickly to avoid pops.
         await fadeMaster(to: 0, over: 0.08)
+
+        // Actor methods can interleave at await points. If playback was re-enabled while fading,
+        // avoid stopping the engine and restore the intended master volume.
+        if currentState.wasPlaying {
+            masterMixer?.outputVolume = currentState.masterVolume
+            return
+        }
 
         for slot in slotNodes {
             slot.stop()
@@ -653,6 +762,13 @@ public actor NoiseMachineController {
         case .began:
             log("AVAudioSession interruption began", level: .warning)
             isEngineRunning = false
+            isSessionActive = false
+            cancelPendingSessionDeactivation()
+
+            for slot in slotNodes {
+                slot.stop()
+            }
+            engine?.stop()
 
         case .ended:
             let opts = AVAudioSession.InterruptionOptions(rawValue: optionsRaw ?? 0)
@@ -673,6 +789,26 @@ public actor NoiseMachineController {
 
         log("AVAudioSession route change reason=\(reason.rawValue)", level: .warning)
 
+        var needsRebuild = false
+
+        if let existingEngine = engine {
+            let fmt = existingEngine.outputNode.inputFormat(forBus: 0)
+            if fmt.sampleRate != graphSampleRate || fmt.channelCount != graphChannelCount {
+                needsRebuild = true
+            }
+        }
+
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable, .routeConfigurationChange, .noSuitableRouteForCategory:
+            needsRebuild = true
+        default:
+            break
+        }
+
+        if needsRebuild, engine != nil {
+            await rebuildEngine(reason: "route change \(reason.rawValue)")
+        }
+
         if currentState.wasPlaying {
             await startEngineIfNeeded()
         }
@@ -681,12 +817,16 @@ public actor NoiseMachineController {
     private func handleMediaServicesLost() async {
         log("AVAudioSession media services were lost", level: .warning)
         isEngineRunning = false
+        isSessionActive = false
+        cancelPendingSessionDeactivation()
         teardownEngine()
     }
 
     private func handleMediaServicesReset() async {
         log("AVAudioSession media services were reset", level: .warning)
         isEngineRunning = false
+        isSessionActive = false
+        cancelPendingSessionDeactivation()
         teardownEngine()
         didConfigureSession = false
         await prepareIfNeeded()
