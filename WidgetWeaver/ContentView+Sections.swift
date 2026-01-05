@@ -434,13 +434,13 @@ extension ContentView {
 
             Picker("Rendering", selection: binding(\.symbolRenderingMode)) {
                 ForEach(SymbolRenderingModeToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue.capitalized).tag(token)
                 }
             }
 
             Picker("Tint", selection: binding(\.symbolTint)) {
                 ForEach(SymbolTintToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                    Text(token.rawValue.capitalized).tag(token)
                 }
             }
 
@@ -501,7 +501,6 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
 
-                // Smart Photo controls
                 if let smart = currentFamilyDraft().imageSmartPhoto {
                     Button {
                         Task { await regenerateSmartPhotoRenders() }
@@ -513,7 +512,6 @@ extension ContentView {
                     Text("Smart Photo: v\(smart.algorithmVersion) • prepared \(smart.preparedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-
 
                     let family = editingFamily
                     let familyLabel = editingFamilyLabel
@@ -621,9 +619,6 @@ extension ContentView {
 
             Toggle("Show accent bar", isOn: binding(\.showsAccentBar))
 
-            Toggle("Show name", isOn: binding(\.showsName))
-            Toggle("Show secondary text", isOn: binding(\.showsSecondaryText))
-
             Stepper(
                 "Max primary lines: \(currentFamilyDraft().primaryLineLimit)",
                 value: binding(\.primaryLineLimit),
@@ -664,20 +659,10 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
-            if styleDraft.cornerRadius > 0 {
-                HStack {
-                    Text("Secondary radius")
-                    Slider(value: $styleDraft.secondaryCornerRadius, in: 0...44, step: 1)
-                    Text("\(Int(styleDraft.secondaryCornerRadius))")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if currentFamilyDraft().template == .weather {
                 HStack {
