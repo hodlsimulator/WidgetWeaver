@@ -162,18 +162,76 @@ Widgets have tight CPU/memory budgets and timeline generation can be terminated;
 
 WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV116`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
 
+Key implementation files:
+
+- Provider + widget entry point: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+- Live view (hands rendering): `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
+
 ### Current approach
 
-- **Minutes / hours:** driven by minute-boundary WidgetKit timeline entries from the provider (low refresh cost).
+- **Minutes / hours:** driven by minute-boundary WidgetKit timeline entries from the provider (budget-safe; ~120 minutes precomputed per timeline).
 - **Seconds (ticking, no sweep):** rendered using the **glyphs method**:
   - A custom font (`WWClockSecondHand-Regular.ttf`) contains a pre-drawn seconds hand glyph at the corresponding angle.
   - The widget view uses `Text(timerInterval: timerRange, countsDown: false)` updating once per second and the font turns it into the correct hand.
 
+### 🚨 Do not break these invariants (easy to regress)
+
+If the clock looks fine in the widget gallery preview but is wrong on the Home Screen, these are the two repeat offenders.
+
+#### 1) Minute hand can look “slow” if hour/minute render from the entry date
+
+WidgetKit delivery of minute-boundary entries is best-effort. A `:16:00` entry can arrive a few seconds late on the Home Screen. If hour/minute angles are computed from the timeline entry’s date, the minute hand visibly lags behind real time.
+
+Fix / rule:
+
+- When the widget is actually on-screen (“live”), compute hour/minute from `Date()` (wall clock).
+- When WidgetKit is pre-rendering future entries (timeline caching), compute from the entry date for deterministic snapshots.
+
+The shipped implementation uses `WidgetWeaverRenderClock.withNow(entryDate)` plus a pre-render check:
+
+    let sysNow = Date()
+    let ctxNow = WidgetWeaverRenderClock.now   // pinned to the timeline entry date
+
+    // If ctxNow is far ahead of sysNow, WidgetKit is pre-rendering a future entry.
+    let isPrerender = ctxNow.timeIntervalSince(sysNow) > 5.0
+
+    // Hour/minute angles MUST use renderNow.
+    let renderNow = isPrerender ? ctxNow : sysNow
+
+If the minute hand is ever “slow again”, confirm this logic still exists and that hour/minute angles are derived from `renderNow` (not from `entryDate` directly).
+
+Do NOT “fix” minute accuracy by switching to 1-second WidgetKit timeline entries or adding timers. The design is intentionally budget-safe.
+
+#### 2) Home Screen can cache a stale snapshot unless the widget tree is entry-keyed
+
+During iteration (especially after many edits / reinstalls), WidgetKit can keep an archived snapshot and stop applying timeline advances to the rendered view.
+
+Typical symptoms:
+
+- minute hand appears frozen,
+- the widget tile can go black for a while after adding to the Home Screen,
+- preview looks fine but Home Screen is wrong.
+
+Fix / rule:
+
+- Keep the Home Screen clock widget keyed by the timeline entry date in the widget configuration closure:
+
+    AppIntentConfiguration(...) { entry in
+        WidgetWeaverHomeScreenClockView(entry: entry)
+            .id(entry.date)
+    }
+
+Removing this has repeatedly caused “black tile + frozen minute hand” regressions.
+
 ### Notes
 
 - The clock attempts frequent updates; WidgetKit delivery is best-effort.
-- A small spillover past `:59` is allowed to avoid a brief blank hand if the next minute entry arrives slightly late.
-- During iteration, WidgetKit can keep an archived snapshot; remove/re-add the widget or bump `WidgetWeaverWidgetKinds.homeScreenClock`.
+- A small spillover past `:59` is allowed to avoid a brief blank seconds hand if the next minute entry arrives slightly late.
+- If you’re fiddling with the clock, always do a 2-minute Home Screen test after changes:
+  - minute boundary tick is on time (not slow),
+  - no black tile on add,
+  - minute hand actually advances on Home Screen,
+  - seconds hand behaviour unchanged.
 
 ---
 
