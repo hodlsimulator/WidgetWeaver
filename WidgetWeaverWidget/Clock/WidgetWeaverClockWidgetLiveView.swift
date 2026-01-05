@@ -29,14 +29,24 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let sysNow = Date()
             let ctxNow = WidgetWeaverRenderClock.now
 
-            // WidgetKit can render a timeline entry ahead-of-time. In those cases, `Date()` is not
-            // stable and using wall-clock time will produce a snapshot that does not match the
-            // entry being rendered.
+            // WidgetKit can pre-render a future entry very close to a minute boundary.
+            // A small timing skew (e.g. 100–200ms) is enough to accidentally render the *previous*
+            // minute for an entry that will be displayed on the *next* minute.
             //
-            // When the entry is due (or slightly overdue), prefer wall-clock time so the minute
-            // hand does not appear “slow” if WidgetKit delivers the minute entry a few seconds late.
-            let isPrerender = ctxNow.timeIntervalSince(sysNow) > 5.0
+            // Make pre-render detection minute-anchor based:
+            // - If the context minute is ahead of the wall-clock minute, this render pass is for a
+            //   future minute entry → render using ctxNow (deterministic for that entry).
+            // - Otherwise, the entry is due/overdue → render using sysNow (so late delivery doesn’t
+            //   look “slow”).
+            let sysMinuteAnchor = Self.floorToMinute(sysNow)
+            let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
+
+            let isPrerender = (ctxMinuteAnchor > sysMinuteAnchor)
             let renderNow = isPrerender ? ctxNow : sysNow
+
+            // IMPORTANT:
+            // Hour + minute hands must be computed from `renderNow` (including seconds).
+            // Snapping to the minute makes the minute hand appear “slow” against the live seconds hand.
 
             let isPrivacy = redactionReasons.contains(.privacy)
             let isPlaceholder = redactionReasons.contains(.placeholder)
@@ -49,7 +59,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let minuteAngle = Angle.degrees(baseAngles.minute)
 
             // Seconds anchor:
-            // - Use the entry minute so WidgetKit pre-rendering stays deterministic.
+            // - Anchor to the minute boundary for determinism and the "0:SS" ligature font.
             // - Permit spillover so late minute delivery does not freeze the seconds hand.
             let secondsMinuteAnchor = Self.floorToMinute(renderNow)
             let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
@@ -59,7 +69,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
             // Trigger font registration once per render pass (useful for logs).
             let fontOK = showSeconds ? WWClockSecondHandFont.isAvailable() : true
 
-            // Lightweight render log (throttled).
             let _ = WWClockDebugLog.appendLazy(
                 category: "clock",
                 throttleID: "clockWidget.render",
@@ -68,18 +77,23 @@ struct WidgetWeaverClockWidgetLiveView: View {
             ) {
                 let cal = Calendar.autoupdatingCurrent
 
+                let ctxLeadSeconds = ctxNow.timeIntervalSince(sysNow)
+                let ctxMinusSys = Int(ctxLeadSeconds.rounded())
+                let leadMs = Int((ctxLeadSeconds * 1000.0).rounded())
+
                 let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
                 let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
                 let renderRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
+                let sysMinRef = Int(sysMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                let ctxMinRef = Int(ctxMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
 
-                let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
                 let wallMinusRender = Int((sysNow.timeIntervalSince(renderNow)).rounded())
 
                 let entryH = cal.component(.hour, from: renderNow)
                 let entryM = cal.component(.minute, from: renderNow)
                 let entryS = cal.component(.second, from: renderNow)
 
-                let minuteBoundary = abs(renderNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
+                let minuteBoundary = abs(sysNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
 
                 let hDeg = Int(baseAngles.hour.rounded())
                 let mDeg = Int(baseAngles.minute.rounded())
@@ -98,12 +112,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     return "none"
                 }()
 
-                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s live=\(isPrerender ? 0 : 1) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
-                // Hour + minute hands are snapshot-driven (timeline entries). Home Screen widgets
-                // do not reliably run continuous animations, so keep this view deterministic.
+                // Hour + minute hands are snapshot-driven (timeline entries).
+                // They use `renderNow` (wall clock time on due/overdue renders) so they stay aligned
+                // with the live seconds hand.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: hourAngle,
