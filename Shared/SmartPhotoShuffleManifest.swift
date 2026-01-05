@@ -24,13 +24,17 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
         public var preparedAt: Date?
         public var flags: [String]
 
+        /// Higher is better. Nil means not yet scored.
+        public var score: Double?
+
         public init(
             id: String,
             smallFile: String? = nil,
             mediumFile: String? = nil,
             largeFile: String? = nil,
             preparedAt: Date? = nil,
-            flags: [String] = []
+            flags: [String] = [],
+            score: Double? = nil
         ) {
             self.id = id
             self.smallFile = smallFile
@@ -38,6 +42,7 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
             self.largeFile = largeFile
             self.preparedAt = preparedAt
             self.flags = flags
+            self.score = score
         }
 
         public var isPrepared: Bool {
@@ -45,6 +50,10 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
             let m = (mediumFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let l = (largeFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return !s.isEmpty && !m.isEmpty && !l.isEmpty
+        }
+
+        public var scoreValue: Double {
+            score ?? 0
         }
     }
 

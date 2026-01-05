@@ -7,6 +7,9 @@
 
 import SwiftUI
 import Photos
+import Vision
+import ImageIO
+import WidgetKit
 
 /// App-only progressive processing for Smart Photo album shuffle.
 ///
@@ -23,6 +26,8 @@ struct SmartPhotoAlbumShuffleControls: View {
     @State private var albumPickerState: AlbumPickerState = .idle
     @State private var albums: [SmartPhotoAlbumOption] = []
     @State private var progress: SmartPhotoShuffleProgressSummary?
+
+    @State private var rankingPreview: [SmartPhotoRankingRow] = []
 
     private var manifestFileName: String {
         (smartPhoto?.shuffleManifestFileName ?? "")
@@ -48,6 +53,10 @@ struct SmartPhotoAlbumShuffleControls: View {
             statusText
 
             controls
+
+            if shuffleEnabled {
+                rankingDebug
+            }
         }
         .sheet(isPresented: $showAlbumPicker) {
             NavigationStack {
@@ -105,7 +114,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             }
         }
         .task(id: manifestFileName) {
-            progress = await SmartPhotoAlbumShuffleEngine.loadProgressSummary(manifestFileName: manifestFileName)
+            await refreshProgressAndRanking()
         }
     }
 
@@ -167,6 +176,60 @@ struct SmartPhotoAlbumShuffleControls: View {
         .controlSize(.small)
     }
 
+    private var rankingDebug: some View {
+        DisclosureGroup {
+            if rankingPreview.isEmpty {
+                Text("No prepared photos yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rankingPreview) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(row.isCurrent ? "▶︎" : " ")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            Text(row.scoreText)
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+
+                            Text(row.flagsText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        } label: {
+            Text("Ranking debug")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func refreshProgressAndRanking() async {
+        let mf = manifestFileName
+        guard !mf.isEmpty else {
+            await MainActor.run {
+                progress = nil
+                rankingPreview = []
+            }
+            return
+        }
+
+        let newProgress = await SmartPhotoAlbumShuffleEngine.loadProgressSummary(manifestFileName: mf)
+        let newRanking = await SmartPhotoAlbumShuffleEngine.loadRankingPreview(manifestFileName: mf, maxRows: 6)
+
+        await MainActor.run {
+            progress = newProgress
+            rankingPreview = newRanking
+        }
+    }
+
     // MARK: - Album picker
 
     private func loadAlbumsIfNeeded() async {
@@ -221,12 +284,12 @@ struct SmartPhotoAlbumShuffleControls: View {
         }.value
 
         if assetIDs.isEmpty {
-            saveStatusMessage = "No images found in \(album.title)."
+            saveStatusMessage = "No usable images found in \(album.title).\nScreenshots and very low-res images are ignored."
             return
         }
 
         let manifest = SmartPhotoShuffleManifest(
-            version: 1,
+            version: 2,
             sourceID: album.id,
             entries: assetIDs.map { SmartPhotoShuffleManifest.Entry(id: $0) },
             currentIndex: 0,
@@ -257,6 +320,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         smartPhoto = sp.normalised()
 
         progress = nil
+        rankingPreview = []
         saveStatusMessage = "Album shuffle disabled (draft only).\nSave to update widgets."
     }
 
@@ -305,7 +369,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             WidgetWeaverWidgetRefresh.forceKick()
         }
 
-        progress = await SmartPhotoAlbumShuffleEngine.loadProgressSummary(manifestFileName: mf)
+        await refreshProgressAndRanking()
         saveStatusMessage = "Advanced to next prepared photo (index \(next))."
     }
 
@@ -366,18 +430,27 @@ struct SmartPhotoAlbumShuffleControls: View {
                     throw SmartPhotoShufflePrepError.missingVariants
                 }
 
+                let scored = await Task.detached(priority: .utility) {
+                    SmartPhotoQualityScorer.score(entryID: entry.id, smartPhoto: sp)
+                }.value
+
                 entry.smallFile = small
                 entry.mediumFile = medium
                 entry.largeFile = large
                 entry.preparedAt = Date()
+                entry.score = scored.score
+                entry.flags = SmartPhotoQualityScorer.mergeFlags(existing: entry.flags, adding: scored.flags)
                 entry.flags.removeAll(where: { $0 == "failed" })
 
                 manifest.entries[idx] = entry
+
+                SmartPhotoAlbumShuffleEngine.resortPreparedEntriesByScoreKeepingCurrentStable(&manifest)
+
                 try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
 
                 preparedNow += 1
             } catch {
-                entry.flags = Array(Set(entry.flags + ["failed"]))
+                entry.flags = SmartPhotoQualityScorer.mergeFlags(existing: entry.flags, adding: ["failed"])
                 manifest.entries[idx] = entry
                 try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
                 failedNow += 1
@@ -388,7 +461,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             WidgetWeaverWidgetRefresh.forceKick()
         }
 
-        progress = await SmartPhotoAlbumShuffleEngine.loadProgressSummary(manifestFileName: mf)
+        await refreshProgressAndRanking()
 
         if preparedNow == 0, failedNow == 0 {
             saveStatusMessage = "No more photos to prepare right now."
@@ -397,6 +470,25 @@ struct SmartPhotoAlbumShuffleControls: View {
         } else {
             saveStatusMessage = "Prepared \(preparedNow) photos (\(failedNow) failed).\nIf this is your first time enabling shuffle, tap Save once."
         }
+    }
+}
+
+// MARK: - UI models
+
+private struct SmartPhotoRankingRow: Identifiable, Hashable, Sendable {
+    var id: String
+    var isCurrent: Bool
+    var score: Double
+    var flags: [String]
+
+    var scoreText: String {
+        let s = Int(score.rounded())
+        return "\(s)"
+    }
+
+    var flagsText: String {
+        if flags.isEmpty { return "—" }
+        return flags.joined(separator: ", ")
     }
 }
 
@@ -513,9 +605,20 @@ private enum SmartPhotoAlbumShuffleEngine {
 
         var ids: [String] = []
         ids.reserveCapacity(assets.count)
+
         assets.enumerateObjects { asset, _, _ in
+            if asset.mediaSubtypes.contains(.photoScreenshot) {
+                return
+            }
+
+            let minDim = min(asset.pixelWidth, asset.pixelHeight)
+            if minDim < 800 {
+                return
+            }
+
             ids.append(asset.localIdentifier)
         }
+
         return ids
     }
 
@@ -563,5 +666,297 @@ private enum SmartPhotoAlbumShuffleEngine {
                 currentIndex: manifest.currentIndex
             )
         }.value
+    }
+
+    static func loadRankingPreview(manifestFileName: String, maxRows: Int) async -> [SmartPhotoRankingRow] {
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else { return [] }
+
+        return await Task.detached(priority: .utility) {
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return [] }
+
+            let currentID: String? = {
+                guard manifest.entries.indices.contains(manifest.currentIndex) else { return nil }
+                return manifest.entries[manifest.currentIndex].id
+            }()
+
+            let prepared = manifest.entries.filter { $0.isPrepared }
+            let sorted = prepared.sorted { a, b in
+                let sa = a.scoreValue
+                let sb = b.scoreValue
+                if sa != sb { return sa > sb }
+                let da = a.preparedAt ?? .distantPast
+                let db = b.preparedAt ?? .distantPast
+                if da != db { return da > db }
+                return a.id < b.id
+            }
+
+            let rows = sorted.prefix(max(1, maxRows)).map { entry in
+                SmartPhotoRankingRow(
+                    id: entry.id,
+                    isCurrent: (entry.id == currentID),
+                    score: entry.scoreValue,
+                    flags: SmartPhotoQualityScorer.displayFlags(entry.flags)
+                )
+            }
+
+            return Array(rows)
+        }.value
+    }
+
+    static func resortPreparedEntriesByScoreKeepingCurrentStable(_ manifest: inout SmartPhotoShuffleManifest) {
+        let currentID: String? = {
+            guard manifest.entries.indices.contains(manifest.currentIndex) else { return nil }
+            return manifest.entries[manifest.currentIndex].id
+        }()
+
+        let indexed = manifest.entries.enumerated().map { (idx: $0.offset, entry: $0.element) }
+
+        let prepared = indexed.filter { $0.entry.isPrepared }
+        let unprepared = indexed.filter { !$0.entry.isPrepared }
+
+        let preparedSorted = prepared.sorted { a, b in
+            let sa = a.entry.scoreValue
+            let sb = b.entry.scoreValue
+            if sa != sb { return sa > sb }
+
+            let da = a.entry.preparedAt ?? .distantPast
+            let db = b.entry.preparedAt ?? .distantPast
+            if da != db { return da > db }
+
+            return a.idx < b.idx
+        }
+
+        manifest.entries = preparedSorted.map { $0.entry } + unprepared.map { $0.entry }
+
+        if let currentID, let newIndex = manifest.entries.firstIndex(where: { $0.id == currentID }) {
+            manifest.currentIndex = newIndex
+        } else {
+            manifest.currentIndex = max(0, min(manifest.currentIndex, manifest.entries.count - 1))
+        }
+    }
+}
+
+// MARK: - Scoring (Batch I)
+
+private enum SmartPhotoQualityScorer {
+    struct Result: Sendable {
+        var score: Double
+        var flags: [String]
+    }
+
+    static func mergeFlags(existing: [String], adding: [String]) -> [String] {
+        var set = Set(existing)
+        for f in adding {
+            let t = f.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { set.insert(t) }
+        }
+        return Array(set).sorted()
+    }
+
+    static func displayFlags(_ flags: [String]) -> [String] {
+        let drop: Set<String> = ["failed"]
+        let kept = flags.filter { !drop.contains($0) }
+        return Array(Set(kept)).sorted()
+    }
+
+    static func score(entryID: String, smartPhoto: SmartPhotoSpec) -> Result {
+        let analysis = analysisCGImage(masterFileName: smartPhoto.masterFileName, maxPixel: 480)
+
+        var faceCount: Int = 0
+        var faceConfSum: Double = 0
+        var blackFrac: Double = 0
+        var whiteFrac: Double = 0
+        var sharpNorm: Double = 0
+
+        if let analysis {
+            let faces = detectFaces(analysis)
+            faceCount = faces.count
+            faceConfSum = faces.confidenceSum
+
+            let metrics = exposureAndSharpness(analysis)
+            blackFrac = metrics.blackFrac
+            whiteFrac = metrics.whiteFrac
+            sharpNorm = metrics.sharpNorm
+        }
+
+        let cropStats = cropHeuristics(smartPhoto)
+
+        var flags: [String] = []
+        flags.append("faces\(faceCount)")
+
+        if faceCount == 0 {
+            flags.append("noFaces")
+        }
+
+        if sharpNorm < 0.18 {
+            flags.append("soft")
+        } else {
+            flags.append("sharp")
+        }
+
+        if blackFrac > 0.45 {
+            flags.append("dark")
+        } else if whiteFrac > 0.45 {
+            flags.append("bright")
+        } else {
+            flags.append("okExposure")
+        }
+
+        if cropStats.minArea < 0.12 {
+            flags.append("extremeZoom")
+        } else if cropStats.minArea < 0.20 {
+            flags.append("zoom")
+        }
+
+        if cropStats.touchesEdges {
+            flags.append("tight")
+        }
+
+        var score: Double = 100
+
+        score += Double(min(faceCount, 4)) * 18
+        score += faceConfSum * 12
+
+        score += sharpNorm * 25
+
+        let extreme = min(1.0, (blackFrac + whiteFrac) * 1.25)
+        score += (1.0 - extreme) * 15
+
+        if blackFrac > 0.45 { score -= 25 }
+        if whiteFrac > 0.45 { score -= 25 }
+
+        if cropStats.minArea < 0.12 { score -= 35 }
+        else if cropStats.minArea < 0.20 { score -= 18 }
+
+        if cropStats.touchesEdges { score -= 10 }
+
+        return Result(score: score, flags: flags)
+    }
+
+    private static func cropHeuristics(_ smartPhoto: SmartPhotoSpec) -> (minArea: Double, touchesEdges: Bool) {
+        let variants: [SmartPhotoVariantSpec] = [smartPhoto.small, smartPhoto.medium, smartPhoto.large].compactMap { $0 }
+
+        var minArea: Double = 1.0
+        var touches = false
+
+        for v in variants {
+            let r = v.cropRect.normalised()
+            minArea = min(minArea, r.width * r.height)
+
+            let left = r.x
+            let top = r.y
+            let right = r.x + r.width
+            let bottom = r.y + r.height
+
+            if left < 0.02 || top < 0.02 || right > 0.98 || bottom > 0.98 {
+                touches = true
+            }
+        }
+
+        return (minArea, touches)
+    }
+
+    private static func analysisCGImage(masterFileName: String, maxPixel: Int) -> CGImage? {
+        let safe = SmartPhotoSpec.sanitisedFileName(masterFileName)
+        guard !safe.isEmpty else { return nil }
+
+        let url = AppGroup.imageFileURL(fileName: safe)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false
+        ]
+
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
+
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(64, maxPixel),
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
+        ]
+
+        return CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOptions as CFDictionary)
+    }
+
+    private static func detectFaces(_ cgImage: CGImage) -> (count: Int, confidenceSum: Double) {
+        let request = VNDetectFaceRectanglesRequest()
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+
+        do {
+            try handler.perform([request])
+            let faces = (request.results as? [VNFaceObservation]) ?? []
+            let sum = faces.reduce(0.0) { $0 + Double($1.confidence) }
+            return (faces.count, sum)
+        } catch {
+            return (0, 0)
+        }
+    }
+
+    private static func exposureAndSharpness(_ cgImage: CGImage) -> (blackFrac: Double, whiteFrac: Double, sharpNorm: Double) {
+        let w = max(1, cgImage.width)
+        let h = max(1, cgImage.height)
+
+        var pixels = [UInt8](repeating: 0, count: w * h)
+
+        let ok: Bool = pixels.withUnsafeMutableBytes { buf in
+            guard let base = buf.baseAddress else { return false }
+
+            guard let ctx = CGContext(
+                data: base,
+                width: w,
+                height: h,
+                bitsPerComponent: 8,
+                bytesPerRow: w,
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return false }
+
+            ctx.interpolationQuality = .low
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+
+        guard ok else { return (0, 0, 0) }
+
+        let step = max(1, min(w, h) / 220)
+
+        var count = 0
+        var black = 0
+        var white = 0
+
+        var mean = 0.0
+        var m2 = 0.0
+
+        for y in stride(from: 1, to: h - 1, by: step) {
+            for x in stride(from: 1, to: w - 1, by: step) {
+                let i = y * w + x
+                let p = Int(pixels[i])
+
+                if p <= 10 { black += 1 }
+                if p >= 245 { white += 1 }
+
+                let lap = Int(pixels[i - 1]) + Int(pixels[i + 1]) + Int(pixels[i - w]) + Int(pixels[i + w]) - (4 * p)
+                let v = Double(lap)
+
+                count += 1
+                let delta = v - mean
+                mean += delta / Double(count)
+                let delta2 = v - mean
+                m2 += delta * delta2
+            }
+        }
+
+        guard count > 1 else { return (0, 0, 0) }
+
+        let variance = max(0.0, m2 / Double(count - 1))
+        let blackFrac = Double(black) / Double(count)
+        let whiteFrac = Double(white) / Double(count)
+
+        let sharpLog = log10(variance + 1.0)
+        let sharpNorm = min(1.0, max(0.0, sharpLog / 4.0))
+
+        return (blackFrac, whiteFrac, sharpNorm)
     }
 }
