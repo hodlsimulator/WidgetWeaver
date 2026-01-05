@@ -8,7 +8,7 @@ It runs on **iOS 26** and ships with:
 - A searchable design Library (set Default, duplicate, delete)
 - An Editor that pushes updates to widgets on Save
 - Share/export/import JSON design packages (with embedded images) with an Import Review step (preview + selective import)
-- Smart Photos for Poster images (app-only Vision prep + per-family renders; widget loads a single size-appropriate file)
+- Smart Photos for Poster images (app-only Vision prep + per-family renders + per-size preview strip + manual framing editor; widget loads a single size-appropriate file)
 - Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
 - Weather, Calendar, Steps, and Activity setups that cache snapshots for offline widget rendering
 - A small Home Screen clock widget (ticking seconds hand via the glyphs method)
@@ -150,6 +150,74 @@ WidgetWeaver can prepare photos in the app so widgets always show a good crop pe
   - import rewrites embedded filenames consistently
   - cleanup removes unreferenced masters/renders
 
+### Editor feature set (Batch D + Batch E)
+
+- Choosing a photo in the Editor prefers Smart Photo import:
+  - One master + per-family renders are generated immediately.
+  - If Smart Photo prep fails (decode/Vision), the app falls back to the legacy single-file import.
+- When a design has Smart Photo metadata:
+  - **Regenerate smart renders** rebuilds master + Small/Medium/Large renders using the current device’s pixel targets.
+  - The per-size preview strip shows the exact Small/Medium/Large renders:
+    - Tap **S/M/L** to switch which size you’re editing (drives `previewFamily`).
+    - A **Manual** badge appears when the render file name contains `-manual`.
+  - **Fix framing (Small/Medium/Large)** opens the manual crop editor for the selected size.
+- Matched sets:
+  - If a matched-set design still uses legacy images, **Upgrade legacy photos to Smart Photo** upgrades up to 3 legacy files per tap.
+
+### Pipeline details (what gets written)
+
+- Render targets are device-specific pixel sizes derived from `WidgetPreviewMetrics` (widget points × screen scale).
+- Smart Photo prep writes 4 JPEG files into the App Group images directory:
+  - `smart-master-<uuid>.jpg` — downsampled master (~3072px longest edge), size-capped (~2.5 MB).
+  - `smart-small-<uuid>.jpg` — Small render, size-capped (~450 KB).
+  - `smart-medium-<uuid>.jpg` — Medium render, size-capped (~650 KB).
+  - `smart-large-<uuid>.jpg` — Large render, size-capped (~900 KB).
+- Crop rectangles are stored in **normalised 0…1 space** (top-left origin) so the exact crop can be re-applied to the master.
+- Detection runs on an analysis image (~1024px longest edge) and uses a fallback order:
+  - faces → animals → humans (upper body) → saliency → centred crop.
+- Per-family framing strategy (high-level):
+  - **Small:** prefers a robust pair/cluster when possible (keeps two subjects from drifting off-edge).
+  - **Medium:** usually frames the top two ranked detections.
+  - **Large:** can include a broader union of detections.
+
+### Manual framing (per-size override)
+
+- Manual framing always uses the Smart master image as the source and re-renders only the chosen size.
+- A manual render is written with a `-manual` suffix in the prefix, e.g. `smart-small-manual-<uuid>.jpg`.
+- When a manual render is applied:
+  - that size’s `SmartPhotoVariantSpec` is updated (cropRect + renderFileName),
+  - the previous render file for that size is deleted,
+  - `ImageSpec.fileName` is kept pointing at the Medium render for backwards compatibility (and is updated when the Medium render is manually overridden).
+
+### Widget rendering behaviour (what the extension does)
+
+- The widget remains a pure render client:
+  - no Vision imports,
+  - no crop decisions,
+  - no probing multiple variants.
+- For a Smart Photo image, the widget resolves a single per-family render filename and loads exactly **one** pre-rendered image file for that entry.
+
+### Debug overlay (app-only, DEBUG builds)
+
+- The Smart Photo crop editor includes a DEBUG-only ladybug menu:
+  - Toggle **Debug overlay** to draw Vision detections on top of the master.
+  - **Re-run detection** forces a fresh run.
+- The overlay is app-only and does not change widget code paths.
+
+### Import/export/cleanup rules (Smart Photos are first-class)
+
+- Export packages include every image file referenced by a design, including Smart Photo masters and all per-family renders (including manual overrides).
+- Imports rewrite embedded filenames to avoid collisions and keep references consistent.
+- Cleanup treats Smart Photo masters/renders as regular assets when deciding what is unreferenced and safe to delete.
+
+### Roadmap (next)
+
+- Batch F: Widget memory hardening (single decode + downsample-at-decode in the widget render path; minimal/no caching).
+- Batch G: Privacy modes (hide/blur when locked; default OFF).
+- Batch H: Album shuffle MVP (progressive processing + manifest).
+- Batch I: Quality ranking (explainable heuristics; no heavy ML).
+- Batch J: Rotation scheduling & manifest (WidgetKit-throttle-friendly rotation).
+
 ### Why Vision stays out of the widget
 
 Widgets have tight CPU/memory budgets and timeline generation can be terminated; all Vision work is done in the app so widget rendering stays deterministic and fast.
@@ -286,6 +354,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 - ✅ Import Review (preview + selective import)
 - ✅ Theme extraction + more remixes
 - ✅ Smart Photos (app-only prep pipeline: Vision analysis + per-family renders stored in the App Group)
+- ✅ Smart Photos editor tools (per-size preview strip + manual “Fix framing” crop editor + DEBUG Vision overlay)
 - ✅ Noise Machine (4-layer procedural mixer + instant resume + widget controls)
 - ✅ Noise Machine diagnostics (shareable log + audio status dump + engine rebuild)
 - ✅ Pro: matched sets (S/M/L) share style tokens
@@ -303,6 +372,7 @@ The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) t
 
 - ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
 - ✅ Poster templates can load per-family Smart Photo crops (no Vision in widget; single-file render per size)
+- ✅ Widget image cache is memory-capped in the extension (small count + total decoded cost limit) to reduce jetsam risk
 - ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
 - ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
 - ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
