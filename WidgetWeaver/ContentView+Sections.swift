@@ -8,6 +8,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import WidgetKit
 
 extension ContentView {
     func sectionHeader(_ title: String) -> some View {
@@ -16,7 +17,15 @@ extension ContentView {
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
     }
- 
+
+    private func widgetFamily(for family: EditingFamily) -> WidgetFamily {
+        switch family {
+        case .small: return .systemSmall
+        case .medium: return .systemMedium
+        case .large: return .systemLarge
+        }
+    }
+
     // MARK: - New: Content (template + data sources)
     var contentSection: some View {
         let currentTemplate = currentFamilyDraft().template
@@ -512,6 +521,14 @@ extension ContentView {
                     Text("Smart Photo: v\(smart.algorithmVersion) • prepared \(smart.preparedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    SmartPhotoPreviewStripView(
+                        smart: smart,
+                        selectedFamily: editingFamily,
+                        onSelectFamily: { family in
+                            previewFamily = widgetFamily(for: family)
+                        }
+                    )
 
                     let family = editingFamily
                     let familyLabel = editingFamilyLabel
