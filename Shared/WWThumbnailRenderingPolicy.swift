@@ -1,5 +1,5 @@
 //
-//  WWThumbnailRenderingPolicyWWThumbnailRenderingPolicy.swift
+//  WWThumbnailRenderingPolicy.swift
 //  WidgetWeaver
 //
 //  Created by . . on 12/21/25.
