@@ -5,10 +5,10 @@
 //  Created by . . on 01/02/26.
 //
 
-import Foundation
-import WidgetKit
-import SwiftUI
 import AppIntents
+import Foundation
+import SwiftUI
+import WidgetKit
 
 struct WidgetWeaverNoiseMachineWidget: Widget {
     var body: some WidgetConfiguration {
@@ -41,25 +41,38 @@ struct WidgetWeaverNoiseMachineWidget: Widget {
     }
 }
 
+@MainActor
+private final class NoiseMachineWidgetLiveState: ObservableObject {
+    @Published var tick: UInt64 = 0
+    private var token: DarwinNotificationToken?
+
+    init() {
+        token = DarwinNotificationToken(name: AppGroupDarwinNotifications.noiseMachineStateDidChange) { [weak self] in
+            guard let self else { return }
+            self.tick &+= 1
+        }
+    }
+}
+
 private struct NoiseMachineWidgetView: View {
     let entry: WidgetWeaverNoiseMachineWidget.Entry
 
-    // Reading the App Group value via AppStorage makes the widget redraw quickly after a tap,
-    // even if the system doesn't fetch a new timeline entry immediately.
-    @AppStorage("NoiseMachine.LastMixState.v1", store: AppGroup.userDefaults)
-    private var lastMixData: Data = Data()
-
-    private static let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
-    }()
+    @StateObject private var liveState = NoiseMachineWidgetLiveState()
 
     private var state: NoiseMixState {
-        if let decoded = try? Self.decoder.decode(NoiseMixState.self, from: lastMixData) {
-            return decoded.sanitised()
+        // Force `body` to depend on the Darwin notification tick. When a tap triggers an App Intent
+        // in a different process (app/intents), the widget cannot rely on `@AppStorage` change
+        // propagation, so this is a cheap cross-process "poke" to re-read the App Group value.
+        _ = liveState.tick
+
+        let loaded = NoiseMixStore.shared.loadLastMix().sanitised()
+
+        // If the App Group value is unavailable (first render / race), fall back to the timeline entry.
+        if loaded == .default, entry.state != .default {
+            return entry.state.sanitised()
         }
-        return entry.state.sanitised()
+
+        return loaded
     }
 
     private var slots: [NoiseSlotState] {
