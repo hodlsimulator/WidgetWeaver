@@ -135,12 +135,9 @@ struct SmartPhotoCropEditorView: View {
         .task {
             if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
-            if debugOverlayEnabled {
-                runDebugDetection(force: false)
-            }
         }
-        .onChange(of: debugOverlayEnabled) { newValue in
-            if newValue {
+        .task(id: debugOverlayEnabled) {
+            if debugOverlayEnabled {
                 runDebugDetection(force: false)
             } else {
                 debugStatusMessage = ""
@@ -492,7 +489,7 @@ private enum SmartPhotoDebugDetector {
             return []
         }
 
-        let results = req.results as? [VNFaceObservation] ?? []
+        let results = req.results ?? []
         return results.map { toTopLeftNormalisedRect($0.boundingBox) }.filter { isUseful($0) }
     }
 
@@ -509,7 +506,7 @@ private enum SmartPhotoDebugDetector {
             return []
         }
 
-        let results = req.results as? [VNHumanObservation] ?? []
+        let results = req.results ?? []
         return results.map { toTopLeftNormalisedRect($0.boundingBox) }.filter { isUseful($0) }
     }
 
@@ -525,7 +522,7 @@ private enum SmartPhotoDebugDetector {
             return []
         }
 
-        let results = req.results as? [VNRecognizedObjectObservation] ?? []
+        let results = req.results ?? []
         return results.map { toTopLeftNormalisedRect($0.boundingBox) }.filter { isUseful($0) }
     }
 
