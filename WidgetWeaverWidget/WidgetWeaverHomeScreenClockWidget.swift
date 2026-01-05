@@ -64,8 +64,9 @@ private enum WWClockTimelineConfig {
     static let maxEntriesPerTimeline: Int = 121
 
     /// Hour/minute refresh cadence.
-    /// 30s reduces the “slow minute hand” effect while staying far away from 1s timelines.
-    static let tickStepSeconds: TimeInterval = 30.0
+    /// Keep this at 60s (minute boundary).
+    /// Smooth/continuous motion is handled in-view (time-aware) for the seconds-sweep mode.
+    static let tickStepSeconds: TimeInterval = 60.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -124,7 +125,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         )
 
-        // Step entries (30s cadence).
+        // Step entries (minute cadence).
         var next = nextBoundary
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
