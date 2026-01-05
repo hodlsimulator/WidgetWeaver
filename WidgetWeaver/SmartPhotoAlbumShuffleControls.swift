@@ -430,8 +430,12 @@ struct SmartPhotoAlbumShuffleControls: View {
                     throw SmartPhotoShufflePrepError.missingVariants
                 }
 
+                // Capture only Sendable, immutable values for the detached task.
+                let entryID = entry.id
+                let spCopy = sp
+
                 let scored = await Task.detached(priority: .utility) {
-                    SmartPhotoQualityScorer.score(entryID: entry.id, smartPhoto: sp)
+                    SmartPhotoQualityScorer.score(entryID: entryID, smartPhoto: spCopy)
                 }.value
 
                 entry.smallFile = small
@@ -831,6 +835,8 @@ private enum SmartPhotoQualityScorer {
 
         if cropStats.touchesEdges { score -= 10 }
 
+        _ = entryID // reserved for future per-entry logging, kept stable for debugging
+
         return Result(score: score, flags: flags)
     }
 
@@ -886,7 +892,7 @@ private enum SmartPhotoQualityScorer {
 
         do {
             try handler.perform([request])
-            let faces = (request.results as? [VNFaceObservation]) ?? []
+            let faces = request.results ?? []
             let sum = faces.reduce(0.0) { $0 + Double($1.confidence) }
             return (faces.count, sum)
         } catch {
