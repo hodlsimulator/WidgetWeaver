@@ -26,7 +26,17 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
-            let renderNow = WidgetWeaverRenderClock.now
+            let sysNow = Date()
+            let ctxNow = WidgetWeaverRenderClock.now
+
+            // WidgetKit can render a timeline entry ahead-of-time. In those cases, `Date()` is not
+            // stable and using wall-clock time will produce a snapshot that does not match the
+            // entry being rendered.
+            //
+            // When the entry is due (or slightly overdue), prefer wall-clock time so the minute
+            // hand does not appear “slow” if WidgetKit delivers the minute entry a few seconds late.
+            let isPrerender = ctxNow.timeIntervalSince(sysNow) > 5.0
+            let renderNow = isPrerender ? ctxNow : sysNow
 
             let isPrivacy = redactionReasons.contains(.privacy)
             let isPlaceholder = redactionReasons.contains(.placeholder)
@@ -54,14 +64,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 category: "clock",
                 throttleID: "clockWidget.render",
                 minInterval: 30.0,
-                now: Date()
+                now: sysNow
             ) {
-                let sysNow = Date()
                 let cal = Calendar.autoupdatingCurrent
 
-                let entryRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
-                let wallRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
-                let wallMinusEntry = Int((sysNow.timeIntervalSince(renderNow)).rounded())
+                let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
+                let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
+                let renderRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
+
+                let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
+                let wallMinusRender = Int((sysNow.timeIntervalSince(renderNow)).rounded())
 
                 let entryH = cal.component(.hour, from: renderNow)
                 let entryM = cal.component(.minute, from: renderNow)
@@ -86,7 +98,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     return "none"
                 }()
 
-                return "render entryRef=\(entryRef) wallRef=\(wallRef) wall-entry=\(wallMinusEntry)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s live=\(isPrerender ? 0 : 1) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
