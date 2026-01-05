@@ -34,3 +34,6 @@ fastlane/test_output
 # IDE settings
 .idea/
 .vscode/
+
+# Local artifacts
+*.zip

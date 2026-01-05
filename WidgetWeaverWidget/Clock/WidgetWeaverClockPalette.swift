@@ -97,8 +97,8 @@ struct WidgetWeaverClockPalette {
         let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.68)
         let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.045)
 
-        // Minute dots: materially more visible, uniform.
-        let minuteDot: Color = WWClock.colour(0xC7D3E6, alpha: 0.72)
+        // Minute dots: slightly more visible, uniform.
+        let minuteDot: Color = WWClock.colour(0xC7D3E6, alpha: 0.80)
 
         // Batons: crisp bevel range.
         let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.96)
