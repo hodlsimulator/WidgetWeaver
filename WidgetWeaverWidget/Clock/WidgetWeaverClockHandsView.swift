@@ -25,15 +25,15 @@ struct WidgetWeaverClockHandShadowsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let hourShadowBlur = max(px, hourWidth * 0.065)
-        let hourShadowOffset = max(px, hourWidth * 0.062)
+        let hourShadowBlur = max(px, hourWidth * 0.055)
+        let hourShadowOffset = max(px, hourWidth * 0.055)
 
-        let minuteShadowBlur = max(px, minuteWidth * 0.058)
-        let minuteShadowOffset = max(px, minuteWidth * 0.056)
+        let minuteShadowBlur = max(px, minuteWidth * 0.050)
+        let minuteShadowOffset = max(px, minuteWidth * 0.050)
 
         ZStack {
             WidgetWeaverClockHourWedgeShape()
-                .fill(palette.handShadow.opacity(0.65))
+                .fill(palette.handShadow.opacity(0.55))
                 .frame(width: hourWidth, height: hourLength)
                 .rotationEffect(hourAngle, anchor: .bottom)
                 .offset(y: -hourLength / 2.0)
@@ -41,7 +41,7 @@ struct WidgetWeaverClockHandShadowsView: View {
                 .blur(radius: hourShadowBlur)
 
             WidgetWeaverClockMinuteNeedleShape()
-                .fill(palette.handShadow.opacity(0.47))
+                .fill(palette.handShadow.opacity(0.40))
                 .frame(width: minuteWidth, height: minuteLength)
                 .rotationEffect(minuteAngle, anchor: .bottom)
                 .offset(y: -minuteLength / 2.0)
