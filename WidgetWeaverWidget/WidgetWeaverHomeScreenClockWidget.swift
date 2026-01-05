@@ -59,14 +59,8 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    /// Keep the entry count fixed for budget safety.
-    /// 1 “now” entry + 120 scheduled entries.
+    /// 120 minute-boundary entries (plus an initial “now” entry) ≈ 2 hours of reliable ticking.
     static let maxEntriesPerTimeline: Int = 121
-
-    /// Hour/minute refresh cadence.
-    /// Keep this at 60s (minute boundary).
-    /// Smooth/continuous motion is handled in-view (time-aware) for the seconds-sweep mode.
-    static let tickStepSeconds: TimeInterval = 60.0
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -102,15 +96,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
-        // Hour/minute hands: timeline-driven. Seconds: time-aware glyph text.
-        return makeTickTimeline(now: now, colourScheme: scheme)
+        // Minute-boundary entries are reliable for hour/minute ticks.
+        // The seconds hand is handled by a time-aware SwiftUI text view, not the timeline.
+        return makeMinuteTimeline(now: now, colourScheme: scheme)
     }
 
-    private func makeTickTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
-        let step = WWClockTimelineConfig.tickStepSeconds
-
-        let stepAnchorNow = Self.floorToStep(now, stepSeconds: step)
-        let nextBoundary = stepAnchorNow.addingTimeInterval(step)
+    private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+        let minuteAnchorNow = Self.floorToMinute(now)
+        let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
@@ -125,8 +118,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         )
 
-        // Step entries (minute cadence).
-        var next = nextBoundary
+        // Minute-boundary entries.
+        var next = nextMinuteBoundary
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
@@ -136,7 +129,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                     colourScheme: colourScheme
                 )
             )
-            next = next.addingTimeInterval(step)
+            next = next.addingTimeInterval(60.0)
         }
 
         WWClockDebugLog.appendLazy(
@@ -146,23 +139,21 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             now: now
         ) {
             let nowRef = Int(now.timeIntervalSinceReferenceDate.rounded())
-            let anchorRef = Int(stepAnchorNow.timeIntervalSinceReferenceDate.rounded())
-            let nextRef = Int(nextBoundary.timeIntervalSinceReferenceDate.rounded())
+            let anchorRef = Int(minuteAnchorNow.timeIntervalSinceReferenceDate.rounded())
+            let nextRef = Int(nextMinuteBoundary.timeIntervalSinceReferenceDate.rounded())
 
             let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
             let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
 
-            let stepMs = Int((step * 1000.0).rounded())
-
-            return "provider.timeline nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) stepMs=\(stepMs) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
+            return "provider.timeline nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
         }
 
         return Timeline(entries: entries, policy: .atEnd)
     }
 
-    private static func floorToStep(_ date: Date, stepSeconds: TimeInterval) -> Date {
+    private static func floorToMinute(_ date: Date) -> Date {
         let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t / stepSeconds) * stepSeconds
+        let floored = floor(t / 60.0) * 60.0
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
