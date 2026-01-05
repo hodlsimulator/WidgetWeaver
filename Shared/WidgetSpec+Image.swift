@@ -115,30 +115,43 @@ public struct SmartPhotoSpec: Codable, Hashable, Sendable {
     public var algorithmVersion: Int
     public var preparedAt: Date
 
+
+    /// Optional shuffle manifest file name stored in the App Group container.
+    public var shuffleManifestFileName: String?
     public init(
         masterFileName: String,
         small: SmartPhotoVariantSpec?,
         medium: SmartPhotoVariantSpec?,
         large: SmartPhotoVariantSpec?,
         algorithmVersion: Int,
-        preparedAt: Date
+        preparedAt: Date,
+        shuffleManifestFileName: String? = nil
     ) {
+
         self.masterFileName = masterFileName
         self.small = small
         self.medium = medium
         self.large = large
         self.algorithmVersion = algorithmVersion
         self.preparedAt = preparedAt
+        self.shuffleManifestFileName = shuffleManifestFileName
     }
 
     public func normalised() -> SmartPhotoSpec {
-        SmartPhotoSpec(
+        let safeShuffle: String? = {
+            guard let raw = shuffleManifestFileName else { return nil }
+            let safe = Self.sanitisedFileName(raw)
+            return safe.isEmpty ? nil : safe
+        }()
+
+        return SmartPhotoSpec(
             masterFileName: Self.sanitisedFileName(masterFileName),
             small: small?.normalised(),
             medium: medium?.normalised(),
             large: large?.normalised(),
             algorithmVersion: max(0, algorithmVersion),
-            preparedAt: preparedAt
+            preparedAt: preparedAt,
+            shuffleManifestFileName: safeShuffle
         )
     }
 
@@ -358,8 +371,27 @@ public extension ImageSpec {
 
         if isAppExtension {
             // Resolve the single file name to load (no decode attempts on multiple candidates).
-            let resolvedFileName: String = {
+            //
+            // Smart Photo shuffle uses a manifest JSON in the App Group to choose the current entry’s
+            // per-family render file. If the manifest is missing or empty, render should be blank.
+            let resolvedFileName: String? = {
                 guard let family else { return fileName }
+
+                if let sp = smartPhoto,
+                   let manifestFile = sp.shuffleManifestFileName,
+                   !manifestFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFile),
+                          let entry = manifest.entryForRender()
+                    else {
+                        return nil
+                    }
+
+                    let chosen = entry.fileName(for: family)
+                    let trimmed = (chosen ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { return trimmed }
+                    return nil
+                }
 
                 let candidate = fileNameForFamily(family)
                 let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -399,6 +431,7 @@ public extension ImageSpec {
                 return 1024
             }()
 
+            guard let resolvedFileName else { return nil }
             return AppGroup.loadWidgetImage(fileName: resolvedFileName, maxPixel: maxPixel)
         }
 

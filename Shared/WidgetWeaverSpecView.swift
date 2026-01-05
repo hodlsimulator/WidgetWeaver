@@ -370,6 +370,32 @@ public struct WidgetWeaverSpecView: View {
                 Rectangle()
                     .fill(style.backgroundOverlay.shapeStyle(accent: accent))
                     .opacity(style.backgroundOverlayOpacity)
+            } else if layout.template == .poster,
+                      let image = spec.image,
+                      let manifestFile = image.smartPhoto?.shuffleManifestFileName,
+                      !manifestFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Color(uiColor: .systemBackground)
+
+                Rectangle()
+                    .fill(style.background.shapeStyle(accent: accent))
+
+                VStack(spacing: 10) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text("No photo configured")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(14)
+
+                Rectangle()
+                    .fill(style.backgroundOverlay.shapeStyle(accent: accent))
+                    .opacity(style.backgroundOverlayOpacity)
+
+                backgroundEffects(style: style, accent: accent)
             } else {
                 Color(uiColor: .systemBackground)
 
