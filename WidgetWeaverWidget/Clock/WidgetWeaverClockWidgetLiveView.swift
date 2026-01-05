@@ -20,6 +20,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     private static let timerStartBiasSeconds: TimeInterval = 0.25
 
+    /// WidgetKit may pre-render an entry slightly ahead of its actual on-screen display.
+    ///
+    /// If the render pass is ahead-of-time (even by a small amount), `Date()` would produce a
+    /// snapshot that is already “slow” when the cached image is later shown.
+    ///
+    /// Prefer render-context time (`WidgetWeaverRenderClock.now`) for any future entry.
+    private static let prerenderLeadThresholdSeconds: TimeInterval = 0.25
+
     /// Keeps the seconds hand moving even if the next WidgetKit minute entry arrives late.
     /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
@@ -35,7 +43,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
             //
             // When the entry is due (or slightly overdue), prefer wall-clock time so the minute
             // hand does not appear “slow” if WidgetKit delivers the minute entry a few seconds late.
-            let isPrerender = ctxNow.timeIntervalSince(sysNow) > 5.0
+            let ctxLeadSeconds = ctxNow.timeIntervalSince(sysNow)
+            let isPrerender = ctxLeadSeconds > Self.prerenderLeadThresholdSeconds
             let renderNow = isPrerender ? ctxNow : sysNow
 
             let isPrivacy = redactionReasons.contains(.privacy)
@@ -72,7 +81,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
                 let renderRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
 
-                let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
+                let ctxMinusSys = Int(ctxLeadSeconds.rounded())
+                let leadMs = Int((ctxLeadSeconds * 1000.0).rounded())
                 let wallMinusRender = Int((sysNow.timeIntervalSince(renderNow)).rounded())
 
                 let entryH = cal.component(.hour, from: renderNow)
@@ -98,7 +108,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     return "none"
                 }()
 
-                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s live=\(isPrerender ? 0 : 1) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
