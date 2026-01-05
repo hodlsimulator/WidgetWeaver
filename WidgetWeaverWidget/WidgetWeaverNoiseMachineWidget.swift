@@ -59,49 +59,84 @@ private struct NoiseMachineWidgetView: View {
 
     @StateObject private var liveState = NoiseMachineWidgetLiveState()
 
+    /// Keep a lightweight, in-memory copy of the last-known state.
+    ///
+    /// Reading and decoding the App Group blob during every render can make the first interaction
+    /// after a cold start feel unresponsive.
+    @State private var renderedState: NoiseMixState
+
     /// WidgetKit timeline reloads (and cross-process notifications) are not guaranteed to update
-    /// immediately. This local state provides an *optimistic* UI flip so the play/pause button and
-    /// status text change instantly on tap, then fall back to the persisted App Group state.
+    /// immediately. This provides an optimistic UI flip so the play/pause button and status text
+    /// change instantly on tap, then reconcile back to the persisted App Group state.
     @State private var optimisticWasPlaying: Bool? = nil
     @State private var optimisticToken: UInt64 = 0
 
-    private var state: NoiseMixState {
-        // Force `body` to depend on the Darwin notification tick. When a tap triggers an App Intent
-        // in a different process (app/intents), the widget cannot rely on `@AppStorage` change
-        // propagation, so this is a cheap cross-process "poke" to re-read the App Group value.
-        _ = liveState.tick
-
-        let loaded = NoiseMixStore.shared.loadLastMix().sanitised()
-
-        // If the App Group value is unavailable (first render / race), fall back to the timeline entry.
-        if loaded == .default, entry.state != .default {
-            return entry.state.sanitised()
-        }
-
-        return loaded
+    init(entry: WidgetWeaverNoiseMachineWidget.Entry) {
+        self.entry = entry
+        _renderedState = State(initialValue: entry.state.sanitised())
     }
 
-    private var displayWasPlaying: Bool {
-        optimisticWasPlaying ?? state.wasPlaying
+    private var displayState: NoiseMixState {
+        var s = renderedState
+        if let optimisticWasPlaying {
+            s.wasPlaying = optimisticWasPlaying
+        }
+        return s
+    }
+
+    private func refreshFromStore() {
+        renderedState = NoiseMixStore.shared.loadLastMix().sanitised()
+    }
+
+    private func scheduleOptimisticReconcile(desiredWasPlaying: Bool, token: UInt64) {
+        Task { @MainActor in
+            // Poll with backoff so the first tap after a cold start can still feel instant, even if
+            // the App Intent takes a few seconds to start and persist the new state.
+            let delays: [UInt64] = [
+                150_000_000,
+                300_000_000,
+                600_000_000,
+                1_000_000_000,
+                1_600_000_000,
+                2_400_000_000,
+                3_200_000_000,
+            ]
+
+            for ns in delays {
+                try? await Task.sleep(nanoseconds: ns)
+                if optimisticToken != token { return }
+
+                refreshFromStore()
+
+                if renderedState.wasPlaying == desiredWasPlaying {
+                    optimisticWasPlaying = nil
+                    return
+                }
+            }
+
+            if optimisticToken == token {
+                optimisticWasPlaying = nil
+                refreshFromStore()
+            }
+        }
     }
 
     private func setOptimisticWasPlaying(_ playing: Bool) {
         optimisticToken &+= 1
         let token = optimisticToken
+
         optimisticWasPlaying = playing
 
-        // Clear after a short delay so the widget settles back to the App Group state even if the
-        // system delays a timeline reload.
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            if optimisticToken == token {
-                optimisticWasPlaying = nil
-            }
-        }
+        // Update the local snapshot immediately so a redraw doesn't need to hit UserDefaults.
+        renderedState.wasPlaying = playing
+        renderedState.updatedAt = Date()
+
+        scheduleOptimisticReconcile(desiredWasPlaying: playing, token: token)
     }
 
     private var slots: [NoiseSlotState] {
-        let s = state
+        let s = displayState
+
         if s.slots.count == NoiseMixState.slotCount {
             return s.slots
         }
@@ -119,15 +154,21 @@ private struct NoiseMachineWidgetView: View {
         .containerBackground(.fill.tertiary, for: .widget)
         .padding(12)
         .widgetURL(URL(string: "widgetweaver://noisemachine")!)
+        .task {
+            refreshFromStore()
+        }
         .onChange(of: liveState.tick) { _, _ in
-            // Any confirmed cross-process state change should win over optimistic UI.
+            // A confirmed cross-process update should win over optimistic UI.
+            refreshFromStore()
             optimisticWasPlaying = nil
         }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            if displayWasPlaying {
+        let isPlaying = displayState.wasPlaying
+
+        return HStack(spacing: 10) {
+            if isPlaying {
                 Button(intent: PauseNoiseIntent()) {
                     Image(systemName: "pause.fill")
                         .font(.title2.weight(.semibold))
@@ -164,7 +205,7 @@ private struct NoiseMachineWidgetView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Noise")
                     .font(.headline)
-                Text(displayWasPlaying ? "Playing" : "Paused")
+                Text(isPlaying ? "Playing" : "Paused")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
