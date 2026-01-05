@@ -174,6 +174,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             }
         }
         .controlSize(.small)
+        .buttonStyle(BorderlessButtonStyle())
     }
 
     private var rankingDebug: some View {
