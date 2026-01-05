@@ -63,6 +63,12 @@ extension ContentView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+
+        SmartPhotoAlbumShuffleControls(
+            smartPhoto: binding(\.imageSmartPhoto),
+            importInProgress: $importInProgress,
+            saveStatusMessage: $saveStatusMessage
+        )
     }
 
     private func lastThemeSuggestionIfMatches(fileName: String) -> WidgetWeaverImageThemeSuggestion? {
