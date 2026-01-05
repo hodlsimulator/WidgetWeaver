@@ -63,6 +63,8 @@ public final class NoiseMixStore: @unchecked Sendable {
 
                 defaults.set(data, forKey: lastMixKey)
                 defaults.synchronize()
+
+                AppGroupDarwinNotificationCenter.post(AppGroupDarwinNotifications.noiseMachineStateDidChange)
                 notifyWidgetsCoalesced()
             } catch {
                 // ignore
@@ -87,6 +89,8 @@ public final class NoiseMixStore: @unchecked Sendable {
 
                     self.defaults.set(data, forKey: self.lastMixKey)
                     self.defaults.synchronize()
+
+                    AppGroupDarwinNotificationCenter.post(AppGroupDarwinNotifications.noiseMachineStateDidChange)
                     self.notifyWidgetsCoalesced()
                 } catch {
                     // ignore
@@ -118,6 +122,8 @@ public final class NoiseMixStore: @unchecked Sendable {
     public func setResumeOnLaunchEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: resumeOnLaunchKey)
         defaults.synchronize()
+
+        AppGroupDarwinNotificationCenter.post(AppGroupDarwinNotifications.noiseMachineStateDidChange)
         notifyWidgetsCoalesced()
     }
 
