@@ -24,6 +24,13 @@ struct WidgetWeaverClockWidgetLiveView: View {
     /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
 
+    /// WidgetKit can deliver minute-boundary entries slightly late (often ~0.5–1.0s).
+    /// When hour/minute angles are derived from wall-clock time in those cases, the minute hand can
+    /// land fractionally past the tick, which reads as a “late” tick.
+    ///
+    /// Snap very small lateness back to the entry minute so the hand lands exactly on the mark.
+    private static let minuteBoundarySnapMaxLatenessSeconds: TimeInterval = 1.25
+
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             let sysNow = Date()
@@ -42,9 +49,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let sysMinuteAnchor = Self.floorToMinute(sysNow)
             let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
             let leadSeconds = ctxNow.timeIntervalSince(sysNow)
+            let latenessSeconds = sysNow.timeIntervalSince(ctxNow)
 
             let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
-            let renderNow = isPrerender ? ctxNow : sysNow
+
+            // If the entry is a clean minute boundary (:SS == 0) and WidgetKit delivers it a hair late,
+            // using wall-clock time places the minute hand slightly past the tick. Snap tiny lateness
+            // back to the entry time so the hand lands on the mark, while still using wall-clock time
+            // for larger delays to avoid a visibly “slow” clock.
+            let ctxOnMinuteBoundary = abs(ctxNow.timeIntervalSince(ctxMinuteAnchor)) < 0.001
+            let snapSlightLatenessToEntry = (!isPrerender)
+                && ctxOnMinuteBoundary
+                && (latenessSeconds > 0.0)
+                && (latenessSeconds <= Self.minuteBoundarySnapMaxLatenessSeconds)
+                && (ctxMinuteAnchor == sysMinuteAnchor)
+
+            let renderNow = (isPrerender || snapSlightLatenessToEntry) ? ctxNow : sysNow
 
             let isPrivacy = redactionReasons.contains(.privacy)
             let isPlaceholder = redactionReasons.contains(.placeholder)
@@ -110,7 +130,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     return "none"
                 }()
 
-                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) snap=\(snapSlightLatenessToEntry ? 1 : 0) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
