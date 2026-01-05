@@ -31,12 +31,21 @@ public actor NoiseMachineController {
 
     var isSessionActive: Bool = false
     var pendingSessionDeactivationTask: Task<Void, Never>?
-    let sessionDeactivationGraceSeconds: TimeInterval = 30.0
+    // Widget-driven App Intents can take noticeably longer to reflect in the widget UI because
+    // WidgetKit timeline refreshes are async and throttled. If the engine/session are torn down
+    // too quickly after a pause, a subsequent "Play" tap can arrive after teardown and then fail
+    // to restart while the app is running in the background (e.g. '!pla' / cannotStartPlaying).
+    //
+    // Keep the session alive longer so the common "pause → wait for widget to update → play" flow
+    // can resume by unmuting instead of forcing a full session re-activation.
+    let sessionDeactivationGraceSeconds: TimeInterval = 180.0
 
     // When pausing via widget taps, immediate stop/start cycles can trigger AVAudioEngine init failures.
     // Keep the engine alive briefly (muted) and only stop after a short idle grace period.
     var pendingEngineStopTask: Task<Void, Never>?
-    let engineStopGraceSeconds: TimeInterval = 6.0
+    // Keep the engine alive (muted) for longer after pausing so a resume tap has a high chance of
+    // happening before teardown, even if WidgetKit updates lag behind the user’s taps.
+    let engineStopGraceSeconds: TimeInterval = 180.0
 
     var currentState: NoiseMixState = .default
     var isEngineRunning: Bool = false

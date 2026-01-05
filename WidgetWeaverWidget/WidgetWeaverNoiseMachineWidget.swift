@@ -59,6 +59,12 @@ private struct NoiseMachineWidgetView: View {
 
     @StateObject private var liveState = NoiseMachineWidgetLiveState()
 
+    /// WidgetKit timeline reloads (and cross-process notifications) are not guaranteed to update
+    /// immediately. This local state provides an *optimistic* UI flip so the play/pause button and
+    /// status text change instantly on tap, then fall back to the persisted App Group state.
+    @State private var optimisticWasPlaying: Bool? = nil
+    @State private var optimisticToken: UInt64 = 0
+
     private var state: NoiseMixState {
         // Force `body` to depend on the Darwin notification tick. When a tap triggers an App Intent
         // in a different process (app/intents), the widget cannot rely on `@AppStorage` change
@@ -73,6 +79,25 @@ private struct NoiseMachineWidgetView: View {
         }
 
         return loaded
+    }
+
+    private var displayWasPlaying: Bool {
+        optimisticWasPlaying ?? state.wasPlaying
+    }
+
+    private func setOptimisticWasPlaying(_ playing: Bool) {
+        optimisticToken &+= 1
+        let token = optimisticToken
+        optimisticWasPlaying = playing
+
+        // Clear after a short delay so the widget settles back to the App Group state even if the
+        // system delays a timeline reload.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if optimisticToken == token {
+                optimisticWasPlaying = nil
+            }
+        }
     }
 
     private var slots: [NoiseSlotState] {
@@ -93,20 +118,25 @@ private struct NoiseMachineWidgetView: View {
         }
         .containerBackground(.fill.tertiary, for: .widget)
         .padding(12)
-
-        // Intentionally no .widgetURL here.
-        // With interactive controls, widgetURL can sometimes steal taps and make buttons feel flaky.
+        .widgetURL(URL(string: "widgetweaver://noisemachine")!)
+        .onChange(of: liveState.tick) { _, _ in
+            // Any confirmed cross-process state change should win over optimistic UI.
+            optimisticWasPlaying = nil
+        }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            if state.wasPlaying {
+            if displayWasPlaying {
                 Button(intent: PauseNoiseIntent()) {
                     Image(systemName: "pause.fill")
                         .font(.title2.weight(.semibold))
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(TapGesture().onEnded {
+                    setOptimisticWasPlaying(false)
+                })
             } else {
                 Button(intent: PlayNoiseIntent()) {
                     Image(systemName: "play.fill")
@@ -114,6 +144,9 @@ private struct NoiseMachineWidgetView: View {
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(TapGesture().onEnded {
+                    setOptimisticWasPlaying(true)
+                })
             }
 
             Button(intent: StopNoiseIntent()) {
@@ -122,13 +155,16 @@ private struct NoiseMachineWidgetView: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.bordered)
+            .simultaneousGesture(TapGesture().onEnded {
+                setOptimisticWasPlaying(false)
+            })
 
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Noise")
                     .font(.headline)
-                Text(state.wasPlaying ? "Playing" : "Paused")
+                Text(displayWasPlaying ? "Playing" : "Paused")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
