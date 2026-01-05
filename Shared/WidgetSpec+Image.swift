@@ -346,8 +346,63 @@ public extension ImageSpec {
     }
 
     /// Loads the image used for rendering, preferring any Smart Photo per-family render when available.
-    /// Falls back to the base `fileName` if the per-family render is missing on disk.
+    ///
+    /// WidgetKit builds (app extensions) use an ImageIO downsampled single-decode path to reduce memory
+    /// pressure and avoid multi-entry image caching.
     func loadUIImageForRender(family: WidgetFamily?) -> UIImage? {
+        let isAppExtension: Bool = {
+            let url = Bundle.main.bundleURL
+            if url.pathExtension == "appex" { return true }
+            return url.path.contains(".appex/")
+        }()
+
+        if isAppExtension {
+            // Resolve the single file name to load (no decode attempts on multiple candidates).
+            let resolvedFileName: String = {
+                guard let family else { return fileName }
+
+                let candidate = fileNameForFamily(family)
+                let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                guard !trimmed.isEmpty else { return fileName }
+
+                // Avoid a second decode fallback attempt by checking existence first.
+                let url = AppGroup.imageFileURL(fileName: trimmed)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    return trimmed
+                }
+
+                return fileName
+            }()
+
+            // Prefer the Smart Photo variant’s recorded pixel target.
+            let maxPixel: Int = {
+                guard let family, let sp = smartPhoto else { return 1024 }
+
+                let px: PixelSize? = {
+                    switch family {
+                    case .systemSmall:
+                        return sp.small?.pixelSize
+                    case .systemMedium:
+                        return sp.medium?.pixelSize
+                    case .systemLarge:
+                        return sp.large?.pixelSize
+                    default:
+                        return nil
+                    }
+                }()
+
+                if let px {
+                    return max(px.width, px.height)
+                }
+
+                return 1024
+            }()
+
+            return AppGroup.loadWidgetImage(fileName: resolvedFileName, maxPixel: maxPixel)
+        }
+
+        // App / previews: keep the existing cached path.
         if let family {
             let candidate = fileNameForFamily(family)
             if let img = AppGroup.loadUIImage(fileName: candidate) {

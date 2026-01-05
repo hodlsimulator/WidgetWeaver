@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import ImageIO
 
 #if canImport(WidgetKit)
 import WidgetKit
@@ -159,6 +160,57 @@ public enum AppGroup {
 
         imageCache.cache.setObject(img, forKey: safe as NSString, cost: estimatedDecodedByteCount(img))
         return img
+    }
+
+    /// Widget-first image loader: exactly one file read + one decode, no multi-image cache.
+    ///
+    /// Uses ImageIO thumbnailing to downsample at decode time (prevents decoding a large image
+    /// into memory when only widget-sized pixels are needed).
+    ///
+    /// - Note: This intentionally performs **no** caching. SwiftUI/WidgetKit should own the
+    ///   lifetime of the current render image.
+    public static func loadWidgetImage(fileName: String, maxPixel: Int) -> UIImage? {
+        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let safe = sanitisedFileName(trimmed)
+        guard !safe.isEmpty else { return nil }
+
+        // Resolve URL inside the App Group container.
+        let url = imagesDirectoryURL.appendingPathComponent(safe)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let clampedMaxPixel = max(1, maxPixel)
+        let t0 = CFAbsoluteTimeGetCurrent()
+
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false,
+        ]
+
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+            return nil
+        }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: clampedMaxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false,
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            return nil
+        }
+
+        let dtMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000.0).rounded())
+
+        #if DEBUG
+        print("[WWWidgetImage] file=\(safe) px=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms")
+        #endif
+
+        return UIImage(cgImage: cgImage)
     }
 
     public static func deleteImage(fileName: String) {
