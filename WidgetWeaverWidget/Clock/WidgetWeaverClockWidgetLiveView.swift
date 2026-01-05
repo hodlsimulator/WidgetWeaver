@@ -30,25 +30,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let ctxNow = WidgetWeaverRenderClock.now
 
             // WidgetKit can pre-render a future entry very close to a minute boundary.
-            // A small timing skew (e.g. 100–200ms) is enough to accidentally render the *previous*
-            // minute for an entry that will be displayed on the *next* minute.
-            //
-            // Make pre-render detection minute-anchor based:
+            // Pre-render detection is minute-anchor based:
             // - If the context minute is ahead of the wall-clock minute, this render pass is for a
             //   future minute entry → render using ctxNow (deterministic for that entry).
             // - Otherwise, the entry is due/overdue → render using sysNow (so late delivery doesn’t
-            //   look “slow”).
+            //   look slow).
             let sysMinuteAnchor = Self.floorToMinute(sysNow)
             let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
 
             let isPrerender = (ctxMinuteAnchor > sysMinuteAnchor)
             let renderNow = isPrerender ? ctxNow : sysNow
-
-            // Robust “not slow” hands:
-            // Hour + minute hands are snapped to the current minute (seconds = 0).
-            // This avoids the classic widget artefact where the seconds hand keeps moving but the
-            // minute hand becomes progressively behind between WidgetKit re-renders.
-            let handsNow = Self.floorToMinute(renderNow)
 
             let isPrivacy = redactionReasons.contains(.privacy)
             let isPlaceholder = redactionReasons.contains(.placeholder)
@@ -56,14 +47,16 @@ struct WidgetWeaverClockWidgetLiveView: View {
             let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
             let showSeconds = (tickMode == .secondsSweep)
 
-            let baseAngles = WWClockBaseAngles(date: handsNow)
+            // Hour/minute hands use continuous angles (includes seconds) so the hand position is
+            // correct at the moment of render (even if WidgetKit delivers an entry slightly late).
+            let baseAngles = WWClockBaseAngles(date: renderNow)
             let hourAngle = Angle.degrees(baseAngles.hour)
             let minuteAngle = Angle.degrees(baseAngles.minute)
 
             // Seconds anchor:
-            // - Use the same minute anchor as the snapped hands so everything agrees.
+            // - Use a minute-floor anchor so the glyph text stays stable for the current minute.
             // - Permit spillover so late minute delivery does not freeze the seconds hand.
-            let secondsMinuteAnchor = handsNow
+            let secondsMinuteAnchor = Self.floorToMinute(renderNow)
             let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
             let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
             let timerRange = timerStart...timerEnd
@@ -86,7 +79,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
                 let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
                 let renderRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
-                let handsRef = Int(handsNow.timeIntervalSinceReferenceDate.rounded())
 
                 let sysMinRef = Int(sysMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
                 let ctxMinRef = Int(ctxMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
@@ -97,10 +89,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let entryM = cal.component(.minute, from: renderNow)
                 let entryS = cal.component(.second, from: renderNow)
 
-                let handH = cal.component(.hour, from: handsNow)
-                let handM = cal.component(.minute, from: handsNow)
-
-                let minuteBoundary = abs(sysNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
+                let minuteBoundary = abs(renderNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
 
                 let hDeg = Int(baseAngles.hour.rounded())
                 let mDeg = Int(baseAngles.minute.rounded())
@@ -119,12 +108,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     return "none"
                 }()
 
-                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) handsRef=\(handsRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) handHM=\(handH):\(handM) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
             }
 
             ZStack {
                 // Hour + minute hands are snapshot-driven (timeline entries).
-                // These are snapped to the minute so they do not appear “slow” versus the live seconds.
+                // Continuous angles ensure correct hand position at render time.
                 WidgetWeaverClockIconView(
                     palette: palette,
                     hourAngle: hourAngle,
@@ -136,7 +125,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     showsCentreHub: false,
                     handsOpacity: handsOpacity
                 )
-                .id(handsNow)
                 .transition(.identity)
                 .transaction { transaction in
                     transaction.animation = nil
