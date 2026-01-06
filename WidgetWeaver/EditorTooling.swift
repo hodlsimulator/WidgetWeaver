@@ -166,9 +166,41 @@ enum EditorToolRegistry {
     static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
         let caps = capabilities(for: context)
 
-        return tools
+        let eligible = tools
             .filter { $0.isEligible(capabilities: caps) }
             .sorted { $0.order < $1.order }
             .map { $0.id }
+
+        let focusGroup = editorToolFocusGroup(for: context.focus)
+        let gated = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
+
+        if focusGroup == .smartPhotos, gated != eligible {
+            return prioritiseToolsForSmartPhotos(gated)
+        }
+
+        return gated
+    }
+
+    private static func prioritiseToolsForSmartPhotos(_ toolIDs: [EditorToolID]) -> [EditorToolID] {
+        var out: [EditorToolID] = []
+
+        // 1) Album tools first.
+        if toolIDs.contains(.albumShuffle) {
+            out.append(.albumShuffle)
+        }
+
+        // 2) Smart Photo crop entry points (currently live in Image).
+        if toolIDs.contains(.image) {
+            out.append(.image)
+        }
+
+        // 3) Remaining tools (keep relative order), with Style last.
+        out.append(contentsOf: toolIDs.filter { !out.contains($0) && $0 != .style })
+
+        if toolIDs.contains(.style), !out.contains(.style) {
+            out.append(.style)
+        }
+
+        return out
     }
 }
