@@ -62,34 +62,138 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
 
     public var entries: [Entry]
 
+    /// The persisted base index. Rotation is anchored to this index + `nextChangeDate`.
     public var currentIndex: Int
+
+    /// User-selected rotation interval in minutes. A value <= 0 disables rotation.
     public var rotationIntervalMinutes: Int
+
+    /// The next scheduled rotation time for `currentIndex`.
+    /// If nil, rotation is disabled (or not yet scheduled).
+    public var nextChangeDate: Date?
 
     public init(
         version: Int = 1,
         sourceID: String,
         entries: [Entry] = [],
         currentIndex: Int = 0,
-        rotationIntervalMinutes: Int = 60
+        rotationIntervalMinutes: Int = 60,
+        nextChangeDate: Date? = nil
     ) {
         self.version = version
         self.sourceID = sourceID
         self.entries = entries
         self.currentIndex = currentIndex
         self.rotationIntervalMinutes = rotationIntervalMinutes
+        self.nextChangeDate = nextChangeDate
     }
 
     /// Returns the best entry to render:
-    /// - Prefer `currentIndex` when it points at a prepared entry.
-    /// - Otherwise, fall back to the first prepared entry.
+    /// - Uses time-based rotation if enabled (`rotationIntervalMinutes` + `nextChangeDate`).
+    /// - Otherwise prefers `currentIndex` when it points at a prepared entry.
+    /// - Falls back to the first prepared entry.
+    ///
+    /// Note:
+    /// WidgetKit may render future timeline entries ahead-of-time. This uses
+    /// `WidgetWeaverRenderClock.now` so the chosen entry matches the current timeline entry date.
     public func entryForRender() -> Entry? {
-        guard !entries.isEmpty else { return nil }
+        let now = WidgetWeaverRenderClock.now
 
-        let idx = max(0, min(currentIndex, entries.count - 1))
-        let preferred = entries[idx]
-        if preferred.isPrepared { return preferred }
+        let prepared = preparedEntriesInOrder()
+        guard !prepared.isEmpty else { return nil }
 
-        return entries.first(where: { $0.isPrepared })
+        let baseIdx = max(0, min(currentIndex, entries.count - 1))
+
+        var currentPreparedPos: Int = 0
+        if entries.indices.contains(baseIdx),
+           entries[baseIdx].isPrepared,
+           let pos = prepared.firstIndex(where: { $0.index == baseIdx })
+        {
+            currentPreparedPos = pos
+        }
+
+        let steps = rotationStepsElapsed(now: now)
+        let rotatedPos = (currentPreparedPos + steps) % prepared.count
+        return prepared[rotatedPos].entry
+    }
+
+    /// Returns the next scheduled rotation date relative to `now`.
+    /// If rotation is off or not scheduled, returns nil.
+    public func nextChangeDateFrom(now: Date) -> Date? {
+        guard let intervalSeconds = rotationIntervalSeconds(),
+              let anchor = nextChangeDate
+        else {
+            return nil
+        }
+
+        if now < anchor { return anchor }
+
+        let elapsed = now.timeIntervalSince(anchor)
+        let steps = Int(floor(elapsed / intervalSeconds)) + 1
+        return anchor.addingTimeInterval(TimeInterval(steps) * intervalSeconds)
+    }
+
+    /// Advances `currentIndex` and `nextChangeDate` to catch up with time-based rotation.
+    ///
+    /// This is safe for the app to call when opened (or when the user interacts with shuffle controls)
+    /// so persisted state doesn't drift when WidgetKit is throttled.
+    ///
+    /// Returns true if the manifest was modified.
+    public mutating func catchUpRotation(now: Date) -> Bool {
+        let steps = rotationStepsElapsed(now: now)
+        guard steps > 0 else { return false }
+
+        let prepared = preparedEntriesInOrder()
+        guard !prepared.isEmpty else {
+            nextChangeDate = nextChangeDateFrom(now: now)
+            return true
+        }
+
+        let baseIdx = max(0, min(currentIndex, entries.count - 1))
+
+        var currentPreparedPos: Int = 0
+        if entries.indices.contains(baseIdx),
+           entries[baseIdx].isPrepared,
+           let pos = prepared.firstIndex(where: { $0.index == baseIdx })
+        {
+            currentPreparedPos = pos
+        }
+
+        let rotatedPos = (currentPreparedPos + steps) % prepared.count
+        currentIndex = prepared[rotatedPos].index
+        nextChangeDate = nextChangeDateFrom(now: now)
+
+        return true
+    }
+
+    // MARK: - Rotation helpers
+
+    private func rotationIntervalSeconds() -> TimeInterval? {
+        let minutes = rotationIntervalMinutes
+        guard minutes > 0 else { return nil }
+        return TimeInterval(minutes) * 60.0
+    }
+
+    private func rotationStepsElapsed(now: Date) -> Int {
+        guard let intervalSeconds = rotationIntervalSeconds(),
+              let anchor = nextChangeDate
+        else {
+            return 0
+        }
+
+        if now < anchor { return 0 }
+
+        let elapsed = now.timeIntervalSince(anchor)
+        let steps = Int(floor(elapsed / intervalSeconds)) + 1
+        return max(0, steps)
+    }
+
+    private func preparedEntriesInOrder() -> [(index: Int, entry: Entry)] {
+        entries.enumerated().compactMap { pair in
+            let (idx, entry) = pair
+            guard entry.isPrepared else { return nil }
+            return (idx, entry)
+        }
     }
 }
 
