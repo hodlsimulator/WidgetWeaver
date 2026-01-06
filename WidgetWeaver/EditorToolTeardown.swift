@@ -12,32 +12,33 @@ enum EditorToolTeardownAction: Hashable, Sendable {
     case resetEditorFocusToWidgetDefault
 }
 
-enum EditorToolTeardown {
-    static func teardownActions(
-        previousVisibleTools: [EditorToolID],
-        newVisibleTools: [EditorToolID],
-        currentFocus: EditorFocusTarget
-    ) -> [EditorToolTeardownAction] {
-        let previousSet = Set(previousVisibleTools)
-        let newSet = Set(newVisibleTools)
-        let removedTools = previousSet.subtracting(newSet)
+func editorToolTeardownActions(
+    old: [EditorToolID],
+    new: [EditorToolID],
+    currentFocus: EditorFocusTarget
+) -> [EditorToolTeardownAction] {
+    var actions: [EditorToolTeardownAction] = []
 
-        var actions: [EditorToolTeardownAction] = []
+    let removedTools = Set(old).subtracting(Set(new))
 
-        // If Album Shuffle disappears, dismiss the picker and reset focus if needed.
-        if removedTools.contains(.albumShuffle) {
-            actions.append(.dismissAlbumShufflePicker)
+    if removedTools.contains(.albumShuffle) {
+        actions.append(.dismissAlbumShufflePicker)
 
-            if case .albumContainer(id: "smartPhotoAlbumPicker", subtype: _) = currentFocus {
-                actions.append(.resetEditorFocusToWidgetDefault)
-            }
-        }
+        let albumPickerTarget: EditorFocusTarget = .albumContainer(
+            id: "smartPhotoAlbumPicker",
+            subtype: .smart
+        )
 
-
-        if removedTools.contains(.smartRules), case .smartRuleEditor = currentFocus {
+        if currentFocus == albumPickerTarget {
             actions.append(.resetEditorFocusToWidgetDefault)
         }
-
-        return actions
     }
+
+    if removedTools.contains(.smartRules) {
+        if case .smartRuleEditor = currentFocus {
+            actions.append(.resetEditorFocusToWidgetDefault)
+        }
+    }
+
+    return actions
 }

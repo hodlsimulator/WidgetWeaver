@@ -2,226 +2,231 @@
 //  EditorTooling.swift
 //  WidgetWeaver
 //
-//  Created by . . on 1/4/26.
+//  Created by . . on 1/6/26.
 //
 
 import Foundation
 
-enum EditorToolID: String, CaseIterable, Hashable, Sendable {
-    // Layout
+// MARK: - Context-aware editor tools
+
+/// A compact, testable summary of what the editor is currently editing.
+///
+/// This is deliberately plain data (no SwiftUI state) so it can be derived from view state
+/// and used to drive capability-based tool filtering.
+struct EditorToolContext: Hashable {
+    var template: LayoutTemplateToken
+    var isProUnlocked: Bool
+    var matchedSetEnabled: Bool
+
+    var selection: EditorSelectionKind
+    var focus: EditorFocusTarget
+
+    var hasSymbolConfigured: Bool
+    var hasImageConfigured: Bool
+    var hasSmartPhotoConfigured: Bool
+
+    init(
+        template: LayoutTemplateToken,
+        isProUnlocked: Bool,
+        matchedSetEnabled: Bool,
+        selection: EditorSelectionKind,
+        focus: EditorFocusTarget,
+        hasSymbolConfigured: Bool,
+        hasImageConfigured: Bool,
+        hasSmartPhotoConfigured: Bool
+    ) {
+        self.template = template
+        self.isProUnlocked = isProUnlocked
+        self.matchedSetEnabled = matchedSetEnabled
+        self.selection = selection
+        self.focus = focus
+        self.hasSymbolConfigured = hasSymbolConfigured
+        self.hasImageConfigured = hasImageConfigured
+        self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
+    }
+}
+
+/// A vocabulary for what the *current content* supports editing.
+///
+/// Tools declare requirements in terms of these capabilities.
+struct EditorCapabilities: OptionSet, Hashable {
+    let rawValue: UInt64
+
+    init(rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+
+    static let canEditLayout = EditorCapabilities(rawValue: 1 << 0)
+    static let canEditTextContent = EditorCapabilities(rawValue: 1 << 1)
+    static let canEditSymbol = EditorCapabilities(rawValue: 1 << 2)
+    static let canEditImage = EditorCapabilities(rawValue: 1 << 3)
+    static let canEditSmartPhoto = EditorCapabilities(rawValue: 1 << 4)
+    static let canEditStyle = EditorCapabilities(rawValue: 1 << 5)
+    static let canEditTypography = EditorCapabilities(rawValue: 1 << 6)
+    static let canEditActions = EditorCapabilities(rawValue: 1 << 7)
+    static let canEditAlbumShuffle = EditorCapabilities(rawValue: 1 << 8)
+}
+
+/// Stable identifiers for the editor’s primary tool surface.
+///
+/// In the current app UI, each tool maps to a single `Form` section.
+enum EditorToolID: String, CaseIterable, Hashable, Identifiable {
+    case status
+    case designs
+    case widgets
+
     case layout
-    case padding
-    case background
-    case border
-
-    // Text
     case text
-    case typography
-
-    // Symbols
-    case symbols
-
-    // Media
+    case symbol
     case image
     case smartPhoto
     case smartPhotoCrop
     case smartRules
     case albumShuffle
-
-    // Style
     case style
-
-    // Actions
+    case typography
     case actions
+
+    case matchedSet
+    case variables
+    case sharing
+    case ai
+    case pro
+
+    var id: String { rawValue }
 }
 
-struct EditorToolDefinition: Hashable, Sendable {
-    let id: EditorToolID
-    let order: Int
-    let requiredCapabilities: Set<EditorCapability>
+struct EditorToolDefinition: Hashable {
+    var id: EditorToolID
+    var order: Int
+    var requiredCapabilities: EditorCapabilities
 
-    init(
-        id: EditorToolID,
-        order: Int,
-        requiredCapabilities: Set<EditorCapability>
-    ) {
+    init(id: EditorToolID, order: Int, requiredCapabilities: EditorCapabilities = []) {
         self.id = id
         self.order = order
         self.requiredCapabilities = requiredCapabilities
     }
+
+    func isEligible(capabilities: EditorCapabilities) -> Bool {
+        capabilities.isSuperset(of: requiredCapabilities)
+    }
 }
 
 enum EditorToolRegistry {
+    /// The tool manifest. This is the sole source of truth for what tools exist and their ordering.
     static let tools: [EditorToolDefinition] = [
-        // Layout
-        EditorToolDefinition(id: .layout, order: 10, requiredCapabilities: [.canEditLayout]),
-        EditorToolDefinition(id: .padding, order: 12, requiredCapabilities: [.canEditLayout]),
-        EditorToolDefinition(id: .background, order: 14, requiredCapabilities: [.canEditLayout]),
-        EditorToolDefinition(id: .border, order: 16, requiredCapabilities: [.canEditLayout]),
+        EditorToolDefinition(id: .status, order: 0),
+        EditorToolDefinition(id: .designs, order: 10),
+        EditorToolDefinition(id: .widgets, order: 20),
 
-        // Text
-        EditorToolDefinition(id: .text, order: 30, requiredCapabilities: [.canEditText]),
-        EditorToolDefinition(id: .typography, order: 32, requiredCapabilities: [.canEditTypography]),
-
-        // Symbols
-        EditorToolDefinition(id: .symbols, order: 40, requiredCapabilities: [.canEditSymbol]),
-
-        // Media
+        EditorToolDefinition(id: .layout, order: 30, requiredCapabilities: [.canEditLayout]),
+        EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
+        EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
         EditorToolDefinition(id: .image, order: 60, requiredCapabilities: [.canEditImage]),
         EditorToolDefinition(id: .smartPhoto, order: 62, requiredCapabilities: [.canEditSmartPhoto]),
         EditorToolDefinition(id: .smartPhotoCrop, order: 63, requiredCapabilities: [.canEditSmartPhoto]),
         EditorToolDefinition(id: .smartRules, order: 64, requiredCapabilities: [.canEditSmartPhoto]),
         EditorToolDefinition(id: .albumShuffle, order: 65, requiredCapabilities: [.canEditAlbumShuffle]),
-
-        // Style
         EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle]),
+        EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography]),
+        EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions]),
 
-        // Actions
-        EditorToolDefinition(id: .actions, order: 80, requiredCapabilities: [.canEditActions]),
+        EditorToolDefinition(id: .matchedSet, order: 100),
+        EditorToolDefinition(id: .variables, order: 110),
+        EditorToolDefinition(id: .sharing, order: 120),
+        EditorToolDefinition(id: .ai, order: 130),
+        EditorToolDefinition(id: .pro, order: 140),
     ]
 
-    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let eligible = eligibleTools(for: context)
-        let gated = EditorToolFocusGating.editorToolIDsApplyingFocusGate(
-            eligibleToolIDs: eligible,
-            focusGroup: context.focusGroup
-        )
-        return prioritiseToolsForFocusGroup(toolIDs: gated, focusGroup: context.focusGroup)
-    }
+    /// Derives capabilities from the current editing context.
+    ///
+    /// This should be cheap (no I/O, no image work) so it can run synchronously on every relevant state change.
+    static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
+        var c: EditorCapabilities = [.canEditLayout, .canEditTextContent, .canEditStyle]
 
-    static func eligibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let eligible = tools
-            .filter { def in
-                def.requiredCapabilities.isSubset(of: context.capabilities)
-            }
-            .sorted { $0.order < $1.order }
-            .map(\.id)
+        switch context.template {
+        case .classic, .hero:
+            c.insert(.canEditSymbol)
+            c.insert(.canEditTypography)
+            c.insert(.canEditActions)
 
-        return eligible
-    }
+        case .poster:
+            c.insert(.canEditImage)
+            c.insert(.canEditSmartPhoto)
+            c.insert(.canEditAlbumShuffle)
+            c.insert(.canEditTypography)
 
-    static func prioritiseToolsForFocusGroup(toolIDs: [EditorToolID], focusGroup: EditorToolFocusGroup) -> [EditorToolID] {
-        switch focusGroup {
-        case .smartPhotos:
-            return prioritiseToolsForSmartPhotos(toolIDs: toolIDs)
-        default:
-            return toolIDs
+        case .weather:
+            // Weather is data-driven; symbol/image/actions/typography are not applied.
+            break
+
+        case .nextUpCalendar:
+            // Calendar is data-driven; symbol/image/actions/typography are not applied.
+            break
         }
+
+        return c
     }
 
-    private static func prioritiseToolsForSmartPhotos(toolIDs: [EditorToolID]) -> [EditorToolID] {
-        var out: [EditorToolID] = []
-        out.reserveCapacity(toolIDs.count)
+    /// Returns the ordered tool identifiers that should be visible for the given context.
+    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
+        let caps = capabilities(for: context)
 
-        // 1) Album Shuffle first (it is the "container" for Smart Photo inputs)
-        if toolIDs.contains(.albumShuffle) {
+        let eligible = tools
+            .filter { $0.isEligible(capabilities: caps) }
+            .sorted { $0.order < $1.order }
+            .map { $0.id }
+
+        let focusGroup = editorToolFocusGroup(for: context.focus)
+        let gated = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
+
+        if focusGroup == .smartPhotos {
+            return prioritiseToolsForSmartPhotos(gated, focus: context.focus)
+        }
+
+        return gated
+    }
+
+    private static func prioritiseToolsForSmartPhotos(_ toolIDs: [EditorToolID], focus: EditorFocusTarget) -> [EditorToolID] {
+        var out: [EditorToolID] = []
+
+        // If the user is actively editing Smart Rules, keep that tool first.
+        if case .smartRuleEditor = focus, toolIDs.contains(.smartRules) {
+            out.append(.smartRules)
+        }
+
+        // 1) Album tools first.
+        if toolIDs.contains(.albumShuffle), !out.contains(.albumShuffle) {
             out.append(.albumShuffle)
         }
 
         // 2) Smart Photo framing tools next.
-        if toolIDs.contains(.smartPhotoCrop) {
+        if toolIDs.contains(.smartPhotoCrop), !out.contains(.smartPhotoCrop) {
             out.append(.smartPhotoCrop)
         }
 
         // 3) Smart Rules / album criteria tools.
-        if toolIDs.contains(.smartRules) {
+        if toolIDs.contains(.smartRules), !out.contains(.smartRules) {
             out.append(.smartRules)
         }
 
         // 4) Smart Photo creation/regeneration tools.
-        if toolIDs.contains(.smartPhoto) {
+        if toolIDs.contains(.smartPhoto), !out.contains(.smartPhoto) {
             out.append(.smartPhoto)
         }
 
         // 5) Related image controls.
-        if toolIDs.contains(.image) {
+        if toolIDs.contains(.image), !out.contains(.image) {
             out.append(.image)
         }
 
-        // 6) Remaining tools (keep relative order), with Style last.
-        let already = Set(out)
-        for id in toolIDs where !already.contains(id) && id != .style {
-            out.append(id)
-        }
-        if toolIDs.contains(.style) {
+        // 5) Remaining tools (keep relative order), with Style last.
+        out.append(contentsOf: toolIDs.filter { !out.contains($0) && $0 != .style })
+
+        if toolIDs.contains(.style), !out.contains(.style) {
             out.append(.style)
         }
 
         return out
-    }
-}
-
-enum EditorCapability: String, Hashable, Sendable {
-    // Layout
-    case canEditLayout
-
-    // Text
-    case canEditText
-    case canEditTypography
-
-    // Symbols
-    case canEditSymbol
-
-    // Media
-    case canEditImage
-    case canEditSmartPhoto
-    case canEditAlbumShuffle
-
-    // Style
-    case canEditStyle
-
-    // Actions
-    case canEditActions
-}
-
-struct EditorToolContext: Hashable, Sendable {
-    var selection: EditorSelectionKind
-    var focus: EditorFocusTarget
-    var focusGroup: EditorToolFocusGroup
-    var capabilities: Set<EditorCapability>
-}
-
-extension EditorCapability {
-    static func derived(for template: WidgetTemplate) -> Set<EditorCapability> {
-        switch template {
-        case .classic:
-            return [
-                .canEditLayout,
-                .canEditText,
-                .canEditTypography,
-                .canEditSymbol,
-                .canEditStyle,
-                .canEditActions,
-            ]
-        case .poster:
-            return [
-                .canEditLayout,
-                .canEditText,
-                .canEditTypography,
-                .canEditImage,
-                .canEditSmartPhoto,
-                .canEditAlbumShuffle,
-                .canEditStyle,
-                .canEditActions,
-            ]
-        case .lockScreen:
-            return [
-                .canEditLayout,
-                .canEditText,
-                .canEditTypography,
-                .canEditSymbol,
-                .canEditStyle,
-                .canEditActions,
-            ]
-        case .clock:
-            return [
-                .canEditLayout,
-                .canEditText,
-                .canEditTypography,
-                .canEditSymbol,
-                .canEditStyle,
-                .canEditActions,
-            ]
-        }
     }
 }
