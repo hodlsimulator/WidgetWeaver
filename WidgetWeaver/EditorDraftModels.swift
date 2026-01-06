@@ -400,203 +400,222 @@ enum ActionBarPreset: String, CaseIterable, Identifiable {
             case .counter:
                 return [
                     WidgetActionDraft(
-                        title: "+1",
-                        systemImage: "plus.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "count",
-                        incrementAmount: 1,
-                        nowFormat: .iso8601
+                        label: "−",
+                        systemImage: "minus",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "count", delta: -1, clampMin: nil, clampMax: nil)
                     ),
                     WidgetActionDraft(
-                        title: "-1",
-                        systemImage: "minus.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "count",
-                        incrementAmount: -1,
-                        nowFormat: .iso8601
-                    )
+                        label: "+",
+                        systemImage: "plus",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "count", delta: 1, clampMin: nil, clampMax: nil)
+                    ),
                 ]
 
             case .habitStreak:
                 return [
                     WidgetActionDraft(
-                        title: "Done +1",
-                        systemImage: "checkmark.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "streak",
-                        incrementAmount: 1,
-                        nowFormat: .iso8601
+                        label: "Done",
+                        systemImage: "checkmark",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "streak", delta: 1, clampMin: 0, clampMax: nil)
                     ),
                     WidgetActionDraft(
-                        title: "Undo -1",
-                        systemImage: "arrow.uturn.backward.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "streak",
-                        incrementAmount: -1,
-                        nowFormat: .iso8601
-                    )
+                        label: "Undo",
+                        systemImage: "arrow.uturn.left",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "streak", delta: -1, clampMin: 0, clampMax: nil)
+                    ),
                 ]
 
             case .donePlusOne:
                 return [
                     WidgetActionDraft(
-                        title: "Done +1",
+                        label: "Done",
                         systemImage: "checkmark.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "done",
-                        incrementAmount: 1,
-                        nowFormat: .iso8601
-                    )
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "done", delta: 1, clampMin: 0, clampMax: nil)
+                    ),
                 ]
 
             case .hydration:
                 return [
                     WidgetActionDraft(
-                        title: "+25ml",
-                        systemImage: "drop.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "waterMl",
-                        incrementAmount: 25,
-                        nowFormat: .iso8601
+                        label: "+250ml",
+                        systemImage: "drop.fill",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "waterMl", delta: 250, clampMin: 0, clampMax: nil)
                     ),
                     WidgetActionDraft(
-                        title: "+50ml",
-                        systemImage: "drop.circle",
-                        kind: .incrementVariable,
-                        variableKey: "waterMl",
-                        incrementAmount: 50,
-                        nowFormat: .iso8601
-                    )
+                        label: "+500ml",
+                        systemImage: "drop.fill",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "waterMl", delta: 500, clampMin: 0, clampMax: nil)
+                    ),
                 ]
 
             case .pomodoro:
                 return [
                     WidgetActionDraft(
-                        title: "Start",
-                        systemImage: "play.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "pomo",
-                        incrementAmount: 1,
-                        nowFormat: .iso8601
+                        label: "Start",
+                        systemImage: "play.fill",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "pomo", delta: 1, clampMin: 0, clampMax: nil)
                     ),
                     WidgetActionDraft(
-                        title: "Stop",
-                        systemImage: "stop.circle.fill",
-                        kind: .incrementVariable,
-                        variableKey: "pomo",
-                        incrementAmount: -1,
-                        nowFormat: .iso8601
-                    )
+                        label: "Stop",
+                        systemImage: "stop.fill",
+                        destination: .stepsVariableAdjust,
+                        adjust: .init(key: "pomo", delta: -1, clampMin: 0, clampMax: nil)
+                    ),
                 ]
             }
         }()
 
-        return Array(out.prefix(WidgetActionBarSpec.maxActions))
+        return out.enumerated().map { idx, d in
+            var v = d
+            v.order = idx
+            return v
+        }
+    }
+}
+
+enum WidgetActionDestinationDraft: Hashable, CaseIterable, Identifiable {
+    case openURL
+    case stepsVariableAdjust
+
+    var id: String {
+        switch self {
+        case .openURL: return "openURL"
+        case .stepsVariableAdjust: return "stepsVariableAdjust"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .openURL: return "Open URL"
+        case .stepsVariableAdjust: return "Adjust Variable"
+        }
+    }
+}
+
+struct StepsVariableAdjustDraft: Hashable {
+    var key: String
+    var delta: Int
+    var clampMin: Int?
+    var clampMax: Int?
+
+    init(key: String, delta: Int, clampMin: Int?, clampMax: Int?) {
+        self.key = key
+        self.delta = delta
+        self.clampMin = clampMin
+        self.clampMax = clampMax
+    }
+
+    init(from spec: StepsVariableAdjustSpec?) {
+        guard let s = spec?.normalisedOrNil() else {
+            self = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil)
+            return
+        }
+        self.key = s.key
+        self.delta = s.delta
+        self.clampMin = s.clampMin
+        self.clampMax = s.clampMax
+    }
+
+    func toSpecOrNil() -> StepsVariableAdjustSpec? {
+        let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !k.isEmpty else { return nil }
+        return StepsVariableAdjustSpec(key: k, delta: delta, clampMin: clampMin, clampMax: clampMax).normalisedOrNil()
     }
 }
 
 struct WidgetActionDraft: Hashable, Identifiable {
     var id: UUID
-    var title: String
-    var systemImage: String
-    var kind: WidgetActionKindToken
-    var variableKey: String
-    var incrementAmount: Int
-    var nowFormat: WidgetNowFormatToken
+
+    var label: String
+    var systemImage: String?
+
+    var destination: WidgetActionDestinationDraft
+    var openURLString: String
+    var adjust: StepsVariableAdjustDraft
+
+    var order: Int
 
     init(
         id: UUID = UUID(),
-        title: String = "",
-        systemImage: String = "",
-        kind: WidgetActionKindToken = .incrementVariable,
-        variableKey: String = "",
-        incrementAmount: Int = 1,
-        nowFormat: WidgetNowFormatToken = .iso8601
+        label: String,
+        systemImage: String?,
+        destination: WidgetActionDestinationDraft,
+        openURLString: String = "",
+        adjust: StepsVariableAdjustDraft = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil),
+        order: Int = 0
     ) {
         self.id = id
-        self.title = title
+        self.label = label
         self.systemImage = systemImage
-        self.kind = kind
-        self.variableKey = variableKey
-        self.incrementAmount = incrementAmount
-        self.nowFormat = nowFormat
+        self.destination = destination
+        self.openURLString = openURLString
+        self.adjust = adjust
+        self.order = order
     }
 
     init(from spec: WidgetActionSpec) {
         self.id = spec.id
-        self.title = spec.title
-        self.systemImage = spec.systemImage ?? ""
-        self.kind = spec.kind
-        self.variableKey = spec.variableKey
-        self.incrementAmount = spec.incrementAmount
-        self.nowFormat = spec.nowFormat
-    }
+        self.label = spec.label
+        self.systemImage = spec.systemImage
+        self.order = spec.order
 
-    static func defaultIncrement() -> WidgetActionDraft {
-        WidgetActionDraft(
-            title: "+1",
-            systemImage: "plus.circle.fill",
-            kind: .incrementVariable,
-            variableKey: "counter",
-            incrementAmount: 1,
-            nowFormat: .iso8601
-        )
-    }
+        switch spec.destination {
+        case .openURL(let u):
+            self.destination = .openURL
+            self.openURLString = u
+            self.adjust = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil)
 
-    static func defaultDone() -> WidgetActionDraft {
-        WidgetActionDraft(
-            title: "Done",
-            systemImage: "checkmark.circle.fill",
-            kind: .setVariableToNow,
-            variableKey: "last_done",
-            incrementAmount: 1,
-            nowFormat: .iso8601
-        )
-    }
-
-    func toActionSpecOrNil() -> WidgetActionSpec? {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedKey = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return WidgetActionSpec(
-            id: id,
-            title: trimmedTitle.isEmpty ? (kind == .incrementVariable ? "+1" : "Done") : trimmedTitle,
-            systemImage: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
-            kind: kind,
-            variableKey: trimmedKey,
-            incrementAmount: incrementAmount,
-            nowFormat: nowFormat
-        ).normalisedOrNil()
-    }
-
-    var previewString: String {
-        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let keyPart = key.isEmpty ? "(No key)" : key
-
-        switch kind {
-        case .incrementVariable:
-            let amt = incrementAmount
-            let signed = amt >= 0 ? "+\(amt)" : "\(amt)"
-            return "Increment \(signed) → \(keyPart)"
-        case .setVariableToNow:
-            let fmt: String = {
-                switch nowFormat {
-                case .iso8601: return "ISO"
-                case .unixSeconds: return "Unix s"
-                case .unixMilliseconds: return "Unix ms"
-                case .dateOnly: return "Date"
-                case .timeOnly: return "Time"
-                }
-            }()
-            return "Set Now (\(fmt)) → \(keyPart)"
+        case .stepsVariableAdjust(let a):
+            self.destination = .stepsVariableAdjust
+            self.openURLString = ""
+            self.adjust = StepsVariableAdjustDraft(from: a)
         }
     }
 
-    func validateVariableKey() -> VariableKeyValidationResult {
-        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    func toActionSpecOrNil() -> WidgetActionSpec? {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else { return nil }
 
-        guard !key.isEmpty else {
+        let dest: WidgetActionDestinationSpec? = {
+            switch destination {
+            case .openURL:
+                let u = openURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+                return u.isEmpty ? nil : .openURL(u)
+
+            case .stepsVariableAdjust:
+                guard let a = adjust.toSpecOrNil() else { return nil }
+                return .stepsVariableAdjust(a)
+            }
+        }()
+
+        guard let d = dest else { return nil }
+
+        let img = systemImage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sys = (img?.isEmpty ?? true) ? nil : img
+
+        return WidgetActionSpec(
+            id: id,
+            label: trimmedLabel,
+            systemImage: sys,
+            destination: d,
+            order: order
+        ).normalised()
+    }
+}
+
+enum VariableKeyValidator {
+    static func validate(_ key: String) -> VariableKeyValidationResult {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
             return .warning("Key is required.")
         }
 
@@ -628,161 +647,5 @@ struct WidgetActionDraft: Hashable, Identifiable {
 
     private static func isASCIIDigit(_ s: UnicodeScalar) -> Bool {
         (s.value >= 48 && s.value <= 57)
-    }
-}
-
-
-// MARK: - Context-aware editor tools
-
-/// A compact, testable summary of what the editor is currently editing.
-///
-/// This is deliberately plain data (no SwiftUI state) so it can be derived from view state
-/// and used to drive capability-based tool filtering.
-struct EditorToolContext: Hashable {
-    var template: LayoutTemplateToken
-    var isProUnlocked: Bool
-    var matchedSetEnabled: Bool
-
-    var hasSymbolConfigured: Bool
-    var hasImageConfigured: Bool
-    var hasSmartPhotoConfigured: Bool
-
-    init(
-        template: LayoutTemplateToken,
-        isProUnlocked: Bool,
-        matchedSetEnabled: Bool,
-        hasSymbolConfigured: Bool,
-        hasImageConfigured: Bool,
-        hasSmartPhotoConfigured: Bool
-    ) {
-        self.template = template
-        self.isProUnlocked = isProUnlocked
-        self.matchedSetEnabled = matchedSetEnabled
-        self.hasSymbolConfigured = hasSymbolConfigured
-        self.hasImageConfigured = hasImageConfigured
-        self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
-    }
-}
-
-/// A vocabulary for what the *current content* supports editing.
-///
-/// Tools declare requirements in terms of these capabilities.
-struct EditorCapabilities: OptionSet, Hashable {
-    let rawValue: UInt64
-
-    init(rawValue: UInt64) {
-        self.rawValue = rawValue
-    }
-
-    static let canEditLayout = EditorCapabilities(rawValue: 1 << 0)
-    static let canEditTextContent = EditorCapabilities(rawValue: 1 << 1)
-    static let canEditSymbol = EditorCapabilities(rawValue: 1 << 2)
-    static let canEditImage = EditorCapabilities(rawValue: 1 << 3)
-    static let canEditSmartPhoto = EditorCapabilities(rawValue: 1 << 4)
-    static let canEditStyle = EditorCapabilities(rawValue: 1 << 5)
-    static let canEditTypography = EditorCapabilities(rawValue: 1 << 6)
-    static let canEditActions = EditorCapabilities(rawValue: 1 << 7)
-}
-
-/// Stable identifiers for the editor’s primary tool surface.
-///
-/// In the current app UI, each tool maps to a single `Form` section.
-enum EditorToolID: String, CaseIterable, Hashable, Identifiable {
-    case status
-    case designs
-    case widgets
-
-    case layout
-    case text
-    case symbol
-    case image
-    case style
-    case typography
-    case actions
-
-    case matchedSet
-    case variables
-    case sharing
-    case ai
-    case pro
-
-    var id: String { rawValue }
-}
-
-struct EditorToolDefinition: Hashable {
-    var id: EditorToolID
-    var order: Int
-    var requiredCapabilities: EditorCapabilities
-
-    init(id: EditorToolID, order: Int, requiredCapabilities: EditorCapabilities = []) {
-        self.id = id
-        self.order = order
-        self.requiredCapabilities = requiredCapabilities
-    }
-
-    func isEligible(capabilities: EditorCapabilities) -> Bool {
-        capabilities.isSuperset(of: requiredCapabilities)
-    }
-}
-
-enum EditorToolRegistry {
-    /// The tool manifest. This is the sole source of truth for what tools exist and their ordering.
-    static let tools: [EditorToolDefinition] = [
-        EditorToolDefinition(id: .status, order: 0),
-        EditorToolDefinition(id: .designs, order: 10),
-        EditorToolDefinition(id: .widgets, order: 20),
-
-        EditorToolDefinition(id: .layout, order: 30, requiredCapabilities: [.canEditLayout]),
-        EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
-        EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
-        EditorToolDefinition(id: .image, order: 60, requiredCapabilities: [.canEditImage]),
-        EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle]),
-        EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography]),
-        EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions]),
-
-        EditorToolDefinition(id: .matchedSet, order: 100),
-        EditorToolDefinition(id: .variables, order: 110),
-        EditorToolDefinition(id: .sharing, order: 120),
-        EditorToolDefinition(id: .ai, order: 130),
-        EditorToolDefinition(id: .pro, order: 140),
-    ]
-
-    /// Derives capabilities from the current editing context.
-    ///
-    /// This should be cheap (no I/O, no image work) so it can run synchronously on every relevant state change.
-    static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
-        var c: EditorCapabilities = [.canEditLayout, .canEditTextContent, .canEditStyle]
-
-        switch context.template {
-        case .classic, .hero:
-            c.insert(.canEditSymbol)
-            c.insert(.canEditTypography)
-            c.insert(.canEditActions)
-
-        case .poster:
-            c.insert(.canEditImage)
-            c.insert(.canEditSmartPhoto)
-            c.insert(.canEditTypography)
-
-        case .weather:
-            // Weather is data-driven; symbol/image/actions/typography are not applied.
-            break
-
-        case .nextUpCalendar:
-            // Calendar is data-driven; symbol/image/actions/typography are not applied.
-            break
-        }
-
-        return c
-    }
-
-    /// Returns the ordered tool identifiers that should be visible for the given context.
-    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let caps = capabilities(for: context)
-
-        return tools
-            .filter { $0.isEligible(capabilities: caps) }
-            .sorted { $0.order < $1.order }
-            .map { $0.id }
     }
 }
