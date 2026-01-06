@@ -275,7 +275,12 @@ struct SmartPhotoAlbumShuffleControls: View {
     // MARK: - Configure
 
     private func configureShuffle(album: SmartPhotoAlbumOption) async {
-        guard var sp = smartPhoto else {
+        guard var imageSpec = smartPhoto else {
+            saveStatusMessage = "Make Smart Photo first."
+            return
+        }
+
+        guard var sp = imageSpec.smartPhoto else {
             saveStatusMessage = "Make Smart Photo first."
             return
         }
@@ -318,8 +323,8 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
 
         sp.shuffleManifestFileName = manifestFile
-
-        smartPhoto = sp
+        imageSpec.smartPhoto = sp
+        smartPhoto = imageSpec
 
         saveStatusMessage = "Album chosen.\nTap “Prepare next \(batchSize)” while the app is active.\nSave to update widgets."
 
@@ -327,9 +332,13 @@ struct SmartPhotoAlbumShuffleControls: View {
     }
 
     private func disableShuffle() {
-        guard var sp = smartPhoto else { return }
+        guard var imageSpec = smartPhoto else { return }
+        guard var sp = imageSpec.smartPhoto else { return }
+
         sp.shuffleManifestFileName = nil
-        smartPhoto = sp
+        imageSpec.smartPhoto = sp
+        smartPhoto = imageSpec
+
         saveStatusMessage = "Shuffle disabled.\nSave to update widgets."
     }
 
@@ -549,8 +558,11 @@ struct SmartPhotoAlbumShuffleControls: View {
                 entry.largeFile = large
                 entry.preparedAt = Date()
 
-                let scorer = SmartPhotoQualityScorer()
-                let scoreResult = try await scorer.score(localIdentifier: entry.id, imageData: data, targets: targets)
+                let scoreResult = try await Task.detached(priority: .utility) {
+                    try autoreleasepool {
+                        try SmartPhotoQualityScorer.score(localIdentifier: entry.id, imageData: data, preparedSmartPhoto: sp)
+                    }
+                }.value
                 entry.score = scoreResult.score
                 entry.flags = scoreResult.flags
 

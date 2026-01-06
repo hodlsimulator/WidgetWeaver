@@ -5,8 +5,11 @@
 //  Created by . . on 1/2/26.
 //
 
+import Foundation
 import SwiftUI
 import WidgetKit
+import AppIntents
+import UIKit
 
 public struct WidgetWeaverEntry: TimelineEntry {
     public let date: Date
@@ -24,32 +27,47 @@ public struct WidgetWeaverEntry: TimelineEntry {
 
 // MARK: - App Intent / Design Selection
 
-struct WidgetWeaverDesignChoice: AppEntity, Hashable {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Design"
+public struct WidgetWeaverDesignSelectionIntent: AppIntent {
+    public static var title: LocalizedStringResource = "Design"
+    public static var description = IntentDescription("Choose a saved WidgetWeaver design for this widget.")
 
-    var id: String
-    var name: String
+    @Parameter(title: "Design")
+    public var design: WidgetWeaverDesignChoice?
 
-    var displayRepresentation: DisplayRepresentation {
+    public init() {}
+}
+
+public struct WidgetWeaverDesignChoice: AppEntity, Identifiable, Hashable, Sendable {
+    public let id: String // UUID string
+    public let name: String
+
+    public static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Design")
+    }
+
+    public var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(name)")
     }
 
-    static var defaultQuery = WidgetWeaverDesignQuery()
-}
+    public static var defaultQuery: Query { Query() }
 
-struct WidgetWeaverDesignQuery: EntityQuery {
-    func entities(for identifiers: [WidgetWeaverDesignChoice.ID]) async throws -> [WidgetWeaverDesignChoice] {
-        let store = WidgetSpecStore.shared
-        let all = store.loadAll()
-        let map = Dictionary(uniqueKeysWithValues: all.map { ($0.id.uuidString, $0) })
-        return identifiers.compactMap { id in
-            guard let spec = map[id] else { return nil }
-            return WidgetWeaverDesignChoice(id: spec.id.uuidString, name: spec.name)
+    public struct Query: EntityQuery, Sendable {
+        public init() {}
+
+        public func suggestedEntities() async throws -> [WidgetWeaverDesignChoice] {
+            makeChoices()
         }
-    }
 
-    func suggestedEntities() async throws -> [WidgetWeaverDesignChoice] {
-        await Task.detached(priority: .utility) {
+        public func entities(for identifiers: [String]) async throws -> [WidgetWeaverDesignChoice] {
+            let set = Set(identifiers)
+            return makeChoices().filter { set.contains($0.id) }
+        }
+
+        public func defaultResult() async -> WidgetWeaverDesignChoice? {
+            nil
+        }
+
+        private func makeChoices() -> [WidgetWeaverDesignChoice] {
             let store = WidgetSpecStore.shared
             let all = store.loadAll()
             let sorted = all.sorted { a, b in
@@ -57,7 +75,7 @@ struct WidgetWeaverDesignQuery: EntityQuery {
                 return a.name < b.name
             }
             return sorted.map { WidgetWeaverDesignChoice(id: $0.id.uuidString, name: $0.name) }
-        }.value
+        }
     }
 }
 
@@ -75,10 +93,8 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let spec = resolveSpec(for: configuration)
 
-        // Regression A guardrail:
         // WidgetKit snapshots are often produced under strict time/memory budgets even when
-        // `context.isPreview` is false. Treat all snapshots as low-budget so rainy charts
-        // can’t blow the budget.
+        // `context.isPreview` is false. Treat all snapshots as low-budget.
         return Entry(date: Date(), family: context.family, spec: spec, isWidgetKitPreview: true)
     }
 
@@ -100,29 +116,28 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let usesSteps = spec.usesStepsRendering()
         let usesActivity = spec.usesActivityRendering()
 
-        if !context.isPreview {
-            if usesWeather {
-                let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
-                if hasLocation {
-                    Task.detached(priority: .utility) {
-                        _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
-                    }
+        if usesWeather {
+            let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
+            if hasLocation {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
                 }
             }
-            if usesCalendar {
-                Task.detached(priority: .utility) {
-                    _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
-                }
+        }
+        if usesCalendar {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: false)
             }
-            if usesSteps {
-                Task.detached(priority: .utility) {
-                    _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
-                }
+        }
+        if usesSteps {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: false)
+                _ = await WidgetWeaverStepsEngine.shared.updateHistoryFromBeginningIfNeeded(force: false)
             }
-            if usesActivity {
-                Task.detached(priority: .utility) {
-                    _ = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: false)
-                }
+        }
+        if usesActivity {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: false)
             }
         }
 
@@ -131,6 +146,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let familySpec = spec.resolved(for: context.family)
         let shuffleSchedule = SmartPhotoShuffleSchedule.load(for: familySpec, now: now)
 
+        // Poster-only shuffle: schedule entries exactly at rotation boundaries.
         if let shuffleSchedule,
            !usesWeather,
            !usesTime,
@@ -221,15 +237,14 @@ private struct SmartPhotoShuffleSchedule: Sendable {
         }
 
         guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: fileName) else { return nil }
-
         guard manifest.rotationIntervalMinutes > 0 else { return nil }
-        let intervalSeconds = TimeInterval(manifest.rotationIntervalMinutes) * 60.0
-
-        guard let next = manifest.nextChangeDateFrom(now: now) else { return nil }
 
         // Don't bother scheduling rotations until something is actually prepared.
         guard manifest.entries.contains(where: { $0.isPrepared }) else { return nil }
 
+        guard let next = manifest.nextChangeDateFrom(now: now) else { return nil }
+
+        let intervalSeconds = TimeInterval(manifest.rotationIntervalMinutes) * 60.0
         return SmartPhotoShuffleSchedule(intervalSeconds: intervalSeconds, nextChangeDate: next)
     }
 }
@@ -240,13 +255,18 @@ struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: WidgetWeaverDesignSelectionIntent.self, provider: WidgetWeaverProvider()) { entry in
-            let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
-
+        AppIntentConfiguration(
+            kind: WidgetWeaverWidgetKinds.main,
+            intent: WidgetWeaverDesignSelectionIntent.self,
+            provider: WidgetWeaverProvider()
+        ) { entry in
             WidgetWeaverRenderClock.withNow(entry.date) {
-                WidgetWeaverSpecView(spec: liveSpec, widgetFamily: entry.family, isWidgetKitPreview: entry.isWidgetKitPreview)
-                    .id(entry.date)
+                let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
+                WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
+                    .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
+                    .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
             }
+            .id(entry.date)
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")
@@ -277,61 +297,111 @@ struct WidgetWeaverLockScreenWeatherProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
-        if context.isPreview {
-            completion(Entry(date: Date(), hasLocation: true, snapshot: .sampleSunny()))
-            return
-        }
-        let snap = WidgetWeaverWeatherStore.shared.loadSnapshot()
+        let store = WidgetWeaverWeatherStore.shared
+        let hasLocation = (store.loadLocation() != nil)
+        let snap = store.snapshotForRender(context: context.isPreview ? .preview : .widget)
         completion(Entry(date: Date(), hasLocation: hasLocation, snapshot: snap))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
-        let snap = WidgetWeaverWeatherStore.shared.loadSnapshot()
+        if !context.isPreview {
+            let hasLocation = (WidgetWeaverWeatherStore.shared.loadLocation() != nil)
+            if hasLocation {
+                Task.detached(priority: .utility) {
+                    _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+                }
+            }
+        }
+
+        let store = WidgetWeaverWeatherStore.shared
+        let hasLocation = context.isPreview ? true : (store.loadLocation() != nil)
+        let snap = context.isPreview ? store.snapshotForRender(context: .preview) : store.loadSnapshot()
 
         let now = Date()
-        let entries: [Entry] = [
-            Entry(date: now, hasLocation: hasLocation, snapshot: snap),
-            Entry(date: now.addingTimeInterval(60), hasLocation: hasLocation, snapshot: snap)
-        ]
+        let base = now
+        let count = 60
+
+        var entries: [Entry] = []
+        entries.reserveCapacity(count)
+
+        for i in 0..<count {
+            let d = base.addingTimeInterval(TimeInterval(i) * 60.0)
+            entries.append(Entry(date: d, hasLocation: hasLocation, snapshot: snap))
+        }
 
         completion(Timeline(entries: entries, policy: .atEnd))
     }
 }
 
-struct WidgetWeaverLockScreenWeatherWidget: Widget {
-    let kind: String = WidgetWeaverWidgetKinds.lockWeather
-
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: WidgetWeaverLockScreenWeatherProvider()) { entry in
-            WidgetWeaverLockScreenWeatherView(entry: entry)
-        }
-        .configurationDisplayName("Weather")
-        .description("A lock screen weather widget.")
-        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
-    }
-}
-
-// MARK: - Lock Screen Weather View
-
 struct WidgetWeaverLockScreenWeatherView: View {
     let entry: WidgetWeaverLockScreenWeatherEntry
 
     var body: some View {
-        if let snap = entry.snapshot, entry.hasLocation {
-            WidgetWeaverWeatherTemplateView(snapshot: snap)
-        } else {
-            Text("No weather")
+        let store = WidgetWeaverWeatherStore.shared
+
+        let hasLocation: Bool = {
+            if let _ = store.loadLocation() { return true }
+            return entry.hasLocation
+        }()
+
+        let snapshot: WidgetWeaverWeatherSnapshot? = entry.snapshot ?? store.loadSnapshot()
+
+        Group {
+            if !hasLocation {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Weather")
+                        .font(.headline)
+                    Text("Open the app to set a location.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if let snapshot {
+                weatherBody(snapshot: snapshot, now: entry.date)
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Weather")
+                        .font(.headline)
+                    Text("Updating…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func weatherBody(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
+        let unit = WidgetWeaverWeatherStore.shared.resolvedUnitTemperature()
+        let temp = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius)
+            .converted(to: unit)
+            .value
+        let tempInt = Int(round(temp))
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("\(tempInt)°")
+                .font(.headline)
+                .bold()
+
+            Text(snapshot.conditionDescription)
                 .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(WeatherNowcast(snapshot: snapshot, now: now).primaryText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 }
 
-@main
-struct WidgetWeaverWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        WidgetWeaverWidget()
-        WidgetWeaverLockScreenWeatherWidget()
+struct WidgetWeaverLockScreenWeatherWidget: Widget {
+    let kind: String = WidgetWeaverWidgetKinds.lockScreenWeather
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WidgetWeaverLockScreenWeatherProvider()) { entry in
+            WidgetWeaverLockScreenWeatherView(entry: entry)
+                .wwWidgetContainerBackground()
+        }
+        .configurationDisplayName("Rain (WidgetWeaver)")
+        .description("Next hour precipitation, temperature, and nowcast.")
+        .supportedFamilies([.accessoryRectangular])
     }
 }
