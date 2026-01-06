@@ -27,12 +27,19 @@ public struct WidgetWeaverEntry: TimelineEntry {
 
 // MARK: - App Intent / Design Selection
 
-public struct WidgetWeaverDesignSelectionIntent: AppIntent {
-    public static var title: LocalizedStringResource = "Design"
-    public static var description = IntentDescription("Choose a saved WidgetWeaver design for this widget.")
+public struct WidgetWeaverDesignSelectionIntent: WidgetConfigurationIntent {
+    public static var title: LocalizedStringResource { "Design" }
+
+    public static var description: IntentDescription {
+        IntentDescription("Choose a saved WidgetWeaver design for this widget.")
+    }
 
     @Parameter(title: "Design")
     public var design: WidgetWeaverDesignChoice?
+
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Design: \(\.$design)")
+    }
 
     public init() {}
 }
@@ -398,7 +405,6 @@ struct WidgetWeaverLockScreenWeatherWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: WidgetWeaverLockScreenWeatherProvider()) { entry in
             WidgetWeaverLockScreenWeatherView(entry: entry)
-                .wwWidgetContainerBackground()
         }
         .configurationDisplayName("Rain (WidgetWeaver)")
         .description("Next hour precipitation, temperature, and nowcast.")

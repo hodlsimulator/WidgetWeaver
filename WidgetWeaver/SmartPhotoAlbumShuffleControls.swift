@@ -558,11 +558,10 @@ struct SmartPhotoAlbumShuffleControls: View {
                 entry.largeFile = large
                 entry.preparedAt = Date()
 
-                let scoreResult = try await Task.detached(priority: .utility) {
-                    try autoreleasepool {
-                        try SmartPhotoQualityScorer.score(localIdentifier: entry.id, imageData: data, preparedSmartPhoto: sp)
-                    }
-                }.value
+                let scoreResult = try autoreleasepool {
+                    try SmartPhotoQualityScorer.score(localIdentifier: entry.id, imageData: data, preparedSmartPhoto: sp)
+                }
+
                 entry.score = scoreResult.score
                 entry.flags = scoreResult.flags
 
