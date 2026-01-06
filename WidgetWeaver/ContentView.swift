@@ -321,179 +321,163 @@ struct ContentView: View {
         .sheet(item: $activeSheet, content: sheetContent)
         .fileImporter(
             isPresented: $showImportPicker,
-            allowedContentTypes: [.json],
+            allowedContentTypes: WidgetWeaverSharePackage.importableTypes,
             allowsMultipleSelection: false,
             onCompletion: handleImportResult
         )
-        .onChange(of: selectedSpecID) { _ in loadSelected() }
-        .onChange(of: selectedTab) { _ in tabDidChange() }
-        .onChange(of: pickedPhoto, perform: handlePickedPhotoChange)
-        .task { bootstrap() }
-        .onAppear { proManager.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            refreshSavedSpecs()
-            proManager.refresh()
+        .confirmationDialog(
+            "Delete this design?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { deleteCurrentDesign() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
         }
+        .confirmationDialog(
+            "Clean up unused images?",
+            isPresented: $showImageCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
+        }
+        .confirmationDialog(
+            "Revert unsaved changes?",
+            isPresented: $showRevertConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Revert", role: .destructive) { revertUnsavedChanges() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This discards current draft edits and reloads the last saved version of this design.")
+        }
+        .onAppear(perform: bootstrap)
+        .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+        .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
     }
-
-    // MARK: - Explore
 
     private var exploreRoot: some View {
-        ZStack {
-            WidgetWeaverAboutBackground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    WidgetWeaverAboutHeader()
-                        .padding(.top, 24)
-
-                    WidgetWeaverAboutFeaturedClockTemplateSection(
-                        onPick: { spec in
-                            selectedSpecID = spec.id
-                            applySpec(spec)
-                            duplicateCurrentDesign()
-                            selectedTab = .editor
-                        }
-                    )
-
-                    WidgetWeaverAboutCatalog(
-                        onPick: { spec in
-                            selectedSpecID = spec.id
-                            applySpec(spec)
-                            duplicateCurrentDesign()
-                            selectedTab = .editor
-                        }
-                    )
-                    .padding(.horizontal, 16)
-                }
-                .padding(.bottom, 28)
-            }
-        }
-        .navigationTitle("Explore")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar { exploreToolbar }
-    }
-
-    @ToolbarContentBuilder
-    private var exploreToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                createNewDesign()
+        WidgetWeaverAboutView(
+            proManager: proManager,
+            onAddTemplate: { spec, makeDefault in
+                addTemplateDesign(spec, makeDefault: makeDefault)
                 selectedTab = .editor
-            } label: {
-                Image(systemName: "plus")
-            }
-            .accessibilityLabel("New design")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                showImportPicker = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-            }
-            .accessibilityLabel("Import design")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                activeSheet = .widgetHelp
-            } label: {
-                Image(systemName: "questionmark.circle")
-            }
-            .accessibilityLabel("Help")
-        }
+            },
+            onShowPro: { activeSheet = .pro },
+            onShowWidgetHelp: { activeSheet = .widgetHelp },
+            onOpenWeatherSettings: { activeSheet = .weather },
+            onOpenStepsSettings: { activeSheet = .steps },
+            onGoToLibrary: { selectedTab = .library }
+        )
     }
-
-    // MARK: - Library
 
     private var libraryRoot: some View {
-        ZStack {
+        let displayedSpecs = libraryDisplayedSpecs
+
+        return ZStack {
             WidgetWeaverAboutBackground()
 
-            VStack(spacing: 0) {
-                libraryFilterChipsRow
+            List {
+                Section {
+                    libraryFilterChipsRow
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                        .listRowSeparator(.hidden)
+                }
 
-                if libraryDisplayedSpecs.isEmpty {
-                    VStack(spacing: 14) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 30, weight: .semibold))
+                Section {
+                    if savedSpecs.isEmpty {
+                        Text("No designs yet. Create one in Explore.")
                             .foregroundStyle(.secondary)
 
-                        Text(libraryIsFilteringOrSearching ? "No designs match your filters." : "No designs yet.")
-                            .font(.headline)
+                    } else if displayedSpecs.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No matches. Clear search or choose All.")
+                                .foregroundStyle(.secondary)
 
-                        if libraryIsFilteringOrSearching {
-                            Button("Clear filters") {
-                                clearLibrarySearchAndFilter()
+                            if libraryIsFilteringOrSearching {
+                                Button("Clear") { clearLibrarySearchAndFilter() }
                             }
-                            .buttonStyle(.bordered)
-                        } else {
-                            Button("Create your first design") {
-                                createNewDesign()
-                                selectedTab = .editor
-                            }
-                            .buttonStyle(.borderedProminent)
                         }
-                    }
-                    .padding(.top, 50)
-                    .frame(maxWidth: .infinity)
-                } else {
-                    List {
-                        Section {
-                            ForEach(libraryDisplayedSpecs) { spec in
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+
+                    } else {
+                        ForEach(displayedSpecs) { spec in
+                            Button {
+                                selectDesignFromLibrary(spec)
+                            } label: {
                                 libraryRow(spec: spec)
-                                    .onTapGesture { selectDesignFromLibrary(spec) }
-                                    .contextMenu {
-                                        Button {
-                                            selectDesignFromLibrary(spec)
-                                        } label: {
-                                            Label("Edit", systemImage: "pencil")
-                                        }
-
-                                        Button {
-                                            makeDefaultFromLibrary(spec)
-                                        } label: {
-                                            Label("Make default", systemImage: "star")
-                                        }
-
-                                        Button {
-                                            duplicateDesignFromLibrary(spec)
-                                        } label: {
-                                            Label("Duplicate", systemImage: "doc.on.doc")
-                                        }
-
-                                        Button(role: .destructive) {
-                                            deleteDesignFromLibrary(spec)
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                    }
                             }
-                        }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    selectDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
 
-                        Section {
-                            if proManager.isProUnlocked {
-                                Label("WidgetWeaver Pro is unlocked.", systemImage: "crown.fill")
-                                    .foregroundStyle(.primary)
+                                if spec.id != defaultSpecID {
+                                    Button {
+                                        makeDefaultFromLibrary(spec)
+                                    } label: {
+                                        Label("Make Default", systemImage: "star")
+                                    }
+                                }
 
-                                Button("Manage Pro…") { activeSheet = .pro }
-                            } else {
-                                Label("WidgetWeaver Pro is locked.", systemImage: "crown")
-                                    .foregroundStyle(.secondary)
+                                Button {
+                                    duplicateDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Duplicate", systemImage: "doc.on.doc")
+                                }
 
-                                Button("Unlock Pro…") { activeSheet = .pro }
-                                    .buttonStyle(.borderedProminent)
-
-                                Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Button(role: .destructive) {
+                                    deleteDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(savedSpecs.count <= 1)
                             }
                         }
                     }
-                    .scrollContentBackground(.hidden)
-                    .listStyle(.insetGrouped)
+                } header: {
+                    Text("Designs")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !proManager.isProUnlocked {
+                            Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        selectedTab = .explore
+                    } label: {
+                        Label("Browse templates (Explore)", systemImage: "sparkles")
+                    }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New blank design", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Quick start")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.large)
