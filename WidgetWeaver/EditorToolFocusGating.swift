@@ -7,81 +7,53 @@
 
 import Foundation
 
-/// Coarse focus buckets used to gate tool visibility.
-///
-/// Only `.smartPhotos` is currently used for gating; other cases exist so future
-/// expansion stays local to this file.
-enum EditorToolFocusGroup: String, CaseIterable, Hashable, Sendable {
-    case widget
-    case smartPhotos
-    case clock
-    case other
-}
-
-func editorToolFocusGroup(for focus: EditorFocusTarget) -> EditorToolFocusGroup {
-    switch focus {
-    case .widget:
-        return .widget
-
-    case .clock:
-        return .clock
-
-    case .albumContainer(_, let subtype) where subtype == .smart:
-        return .smartPhotos
-
-    case .albumPhoto(_, _, let subtype) where subtype == .smart:
-        return .smartPhotos
-
-    case .smartRuleEditor:
-        return .smartPhotos
-
-    case .element(let id) where id.hasPrefix("smartPhoto"):
-        // Smart Photo sub-flows that model focus as a generic element target.
-        return .smartPhotos
-
-    case .element:
-        return .other
-
-    case .albumContainer:
-        return .other
-
-    case .albumPhoto:
-        return .other
-    }
-}
-
-func editorToolIDsApplyingFocusGate(
-    eligible: [EditorToolID],
-    focusGroup: EditorToolFocusGroup
-) -> [EditorToolID] {
-    guard focusGroup == .smartPhotos else {
-        return eligible
+enum EditorToolFocusGating {
+    /// Applies focus-group-specific "safety rails" to avoid showing irrelevant tools during deep edits.
+    ///
+    /// Principles:
+    /// - Do not unexpectedly remove primary editing affordances unless we are certain the user is in a focused sub-flow.
+    /// - Always preserve Style (and other global tools) when in doubt.
+    static func editorToolIDsApplyingFocusGate(
+        eligibleToolIDs: [EditorToolID],
+        focusGroup: EditorToolFocusGroup
+    ) -> [EditorToolID] {
+        switch focusGroup {
+        case .smartPhotos:
+            return gateForSmartPhotos(eligibleToolIDs: eligibleToolIDs)
+        default:
+            return eligibleToolIDs
+        }
     }
 
-    // Curated allowlist: keep this tight in the first slice to avoid unexpected UI changes.
-    let allowlist: [EditorToolID] = [
+    private static func gateForSmartPhotos(eligibleToolIDs: [EditorToolID]) -> [EditorToolID] {
+        // Only apply gating when the Smart Photo tool suite is actually present.
+        let primarySmartPhotoTools: Set<EditorToolID> = [.albumShuffle, .smartPhotoCrop, .smartRules, .smartPhoto, .image]
+        if eligibleToolIDs.first(where: { primarySmartPhotoTools.contains($0) }) == nil {
+            return eligibleToolIDs
+        }
+
+        // Allowlist to keep visible during Smart Photo-focused flows.
+        let allowlist: [EditorToolID] = [
         .albumShuffle,
         .smartPhotoCrop,
+        .smartRules,
         .smartPhoto,
         .image,
         .style,
     ]
 
-    let filtered = eligible.filter { allowlist.contains($0) }
+        // Keep the relative order of eligible tools, but only for allowlisted tools.
+        var out: [EditorToolID] = []
+        out.reserveCapacity(eligibleToolIDs.count)
+        for id in eligibleToolIDs where allowlist.contains(id) {
+            out.append(id)
+        }
 
-    // Safety: avoid showing an empty tool list if IDs drift.
-    if filtered.isEmpty {
-        return eligible
+        // If we somehow filtered everything out, fall back to eligible list.
+        if out.isEmpty {
+            return eligibleToolIDs
+        }
+
+        return out
     }
-
-    // Safety: if none of the primary Smart Photo tools are present, do not gate.
-    // This prevents an odd state (e.g. template switch) from collapsing the UI down
-    // to only generic tools such as Style.
-    let primarySmartPhotoTools: Set<EditorToolID> = [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image]
-    let containsPrimary = filtered.contains(where: { primarySmartPhotoTools.contains($0) })
-    if !containsPrimary {
-        return eligible
-    }
-
-    return filtered
 }

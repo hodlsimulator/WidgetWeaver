@@ -2,116 +2,78 @@
 //  ContentView+Layout.swift
 //  WidgetWeaver
 //
-//  Created by . . on 12/18/25.
+//  Created by . . on 1/4/26.
 //
 
 import SwiftUI
-import WidgetKit
 
 extension ContentView {
-    @ViewBuilder
-    var editorLayout: some View {
-        if horizontalSizeClass == .regular {
-            HStack(alignment: .top, spacing: 16) {
-                previewDock(presentation: .sidebar)
-                    .frame(width: 420)
-                    .padding(.top, 8)
+    private var editorVisibleToolIDs: [EditorToolID] {
+        let template = currentFamilyDraft().template
 
-                editorForm
-            }
-            .padding(.horizontal, 16)
-        } else {
-            editorForm
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear
-                        .frame(height: WidgetPreviewDock.reservedInsetHeight(verticalSizeClass: verticalSizeClass))
-                }
-                .overlay(alignment: .bottom) {
-                    previewDock(presentation: .dock)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
-                }
-        }
+        let capabilities = EditorCapability.derived(for: template)
+        let selection = editorFocusSnapshot.selection
+        let focus = editorFocusSnapshot.focus
+        let focusGroup = focus.editorToolFocusGroup
+
+        let context = EditorToolContext(
+            selection: selection,
+            focus: focus,
+            focusGroup: focusGroup,
+            capabilities: capabilities
+        )
+
+        return EditorToolRegistry.visibleTools(for: context)
     }
 
-    var editorForm: some View {
+    var editorToolSurface: some View {
         Form {
+            // Tool surface is now data-driven by editorVisibleToolIDs.
             ForEach(editorVisibleToolIDs, id: \.self) { toolID in
-                editorSection(for: toolID)
-            }
-        }
-        .font(.subheadline)
-        .controlSize(.small)
-        .environment(\.defaultMinListRowHeight, 36)
-        .scrollDismissesKeyboard(.interactively)
-        .scrollContentBackground(.hidden)
-        .animation(.easeInOut(duration: 0.15), value: editorVisibleToolIDs)
-    }
+                switch toolID {
+                case .layout:
+                    layoutSection
 
-    @ViewBuilder
-    private func editorSection(for toolID: EditorToolID) -> some View {
-        switch toolID {
-        case .status:
-            statusSection
+                case .padding:
+                    paddingSection
 
-        case .designs:
-            designsSection
+                case .background:
+                    backgroundSection
 
-        case .widgets:
-            widgetWorkflowSection
+                case .border:
+                    borderSection
 
-        case .layout:
-            layoutSection
+                case .text:
+                    textSection
 
-        case .text:
-            textSection
+                case .typography:
+                    typographySection
 
-        case .symbol:
-            symbolSection
+                case .symbols:
+                    symbolsSection
 
-        case .image:
-            imageSection
+                case .image:
+                    imageSection
 
-        case .smartPhoto:
-            smartPhotoSection(focus: $editorFocusSnapshot)
+                case .smartPhoto:
+                    smartPhotoSection(focus: $editorFocusSnapshot)
 
-        case .smartPhotoCrop:
-            smartPhotoCropSection(focus: $editorFocusSnapshot)
+                case .smartPhotoCrop:
+                    smartPhotoCropSection(focus: $editorFocusSnapshot)
+
+        case .smartRules:
+            smartRulesSection(focus: $editorFocusSnapshot)
 
         case .albumShuffle:
-            albumShuffleSection
+                    albumShuffleSection
 
-        case .style:
-            styleSection
+                case .style:
+                    styleSection
 
-        case .typography:
-            typographySection
-
-        case .actions:
-            actionsSection
-
-        case .matchedSet:
-            matchedSetSection
-
-        case .variables:
-            variablesManagerSection
-
-        case .sharing:
-            sharingSection
-
-        case .ai:
-            aiSection
-
-        case .pro:
-            proSection
+                case .actions:
+                    actionsSection
+                }
+            }
         }
-    }
-
-    func previewDock(presentation: WidgetPreviewDock.Presentation) -> some View {
-        WidgetPreviewDock(
-            spec: draftSpec(id: selectedSpecID),
-            family: $previewFamily,
-            presentation: presentation
-        )
     }
 }
