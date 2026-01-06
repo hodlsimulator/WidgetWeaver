@@ -75,6 +75,9 @@ extension ContentView {
         case .smartPhoto:
             smartPhotoSection(focus: $editorFocusSnapshot)
 
+        case .smartPhotoCrop:
+            smartPhotoCropSection(focus: $editorFocusSnapshot)
+
         case .albumShuffle:
             albumShuffleSection
 

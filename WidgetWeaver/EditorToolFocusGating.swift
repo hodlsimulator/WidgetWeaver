@@ -61,6 +61,7 @@ func editorToolIDsApplyingFocusGate(
     // Curated allowlist: keep this tight in the first slice to avoid unexpected UI changes.
     let allowlist: [EditorToolID] = [
         .albumShuffle,
+        .smartPhotoCrop,
         .smartPhoto,
         .image,
         .style,
@@ -76,7 +77,7 @@ func editorToolIDsApplyingFocusGate(
     // Safety: if none of the primary Smart Photo tools are present, do not gate.
     // This prevents an odd state (e.g. template switch) from collapsing the UI down
     // to only generic tools such as Style.
-    let primarySmartPhotoTools: Set<EditorToolID> = [.albumShuffle, .smartPhoto, .image]
+    let primarySmartPhotoTools: Set<EditorToolID> = [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image]
     let containsPrimary = filtered.contains(where: { primarySmartPhotoTools.contains($0) })
     if !containsPrimary {
         return eligible
