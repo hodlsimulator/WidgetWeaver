@@ -46,6 +46,10 @@ struct ContentView: View {
 
     @State var editorFocusSnapshot: EditorFocusSnapshot = .widgetDefault
 
+
+    @State var albumShufflePickerPresented: Bool = false
+    @State private var previousVisibleToolIDs: [EditorToolID] = []
+
     @State var pickedPhoto: PhotosPickerItem?
     @State var lastImageThemeFileName: String = ""
     @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
@@ -355,7 +359,29 @@ struct ContentView: View {
         } message: {
             Text("This discards current draft edits and reloads the last saved version of this design.")
         }
-        .onAppear(perform: bootstrap)
+        .onAppear {
+            bootstrap()
+            previousVisibleToolIDs = editorVisibleToolIDs
+        }
+        .onChange(of: editorVisibleToolIDs) { _, newValue in
+            let actions = editorToolTeardownActions(
+                old: previousVisibleToolIDs,
+                new: newValue,
+                currentFocus: editorFocusSnapshot.focus
+            )
+
+            for action in actions {
+                switch action {
+                case .dismissAlbumShufflePicker:
+                    albumShufflePickerPresented = false
+
+                case .resetEditorFocusToWidgetDefault:
+                    editorFocusSnapshot = .widgetDefault
+                }
+            }
+
+            previousVisibleToolIDs = newValue
+        }
         .onChange(of: selectedSpecID) { _, _ in loadSelected() }
         .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
     }

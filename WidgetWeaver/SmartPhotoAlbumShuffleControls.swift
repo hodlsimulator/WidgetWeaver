@@ -21,10 +21,12 @@ struct SmartPhotoAlbumShuffleControls: View {
 
     var focus: Binding<EditorFocusSnapshot>? = nil
 
+    var albumPickerPresented: Binding<Bool>? = nil
+
     private let batchSize: Int = 10
     private let rotationOptionsMinutes: [Int] = [0, 15, 30, 60, 180, 360, 720, 1440]
 
-    @State private var showAlbumPicker: Bool = false
+    @State private var internalAlbumPickerPresented: Bool = false
     @State private var previousFocusSnapshot: EditorFocusSnapshot?
     @State private var albumPickerState: AlbumPickerState = .idle
     @State private var albums: [AlbumOption] = []
@@ -42,6 +44,11 @@ struct SmartPhotoAlbumShuffleControls: View {
 
     private var shuffleEnabled: Bool {
         !manifestFileName.isEmpty
+    }
+
+
+    private var albumPickerPresentedBinding: Binding<Bool> {
+        albumPickerPresented ?? $internalAlbumPickerPresented
     }
 
     var body: some View {
@@ -68,7 +75,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                 rankingDebug
             }
         }
-        .sheet(isPresented: $showAlbumPicker) {
+        .sheet(isPresented: albumPickerPresentedBinding) {
             NavigationStack {
                 Group {
                     switch albumPickerState {
@@ -115,7 +122,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                 .navigationTitle("Choose Album")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showAlbumPicker = false }
+                        Button("Cancel") { albumPickerPresentedBinding.wrappedValue = false }
                     }
                 }
             }
@@ -123,7 +130,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                 await loadAlbumsIfNeeded()
             }
         }
-        .onChange(of: showAlbumPicker) { _, newValue in
+        .onChange(of: albumPickerPresentedBinding.wrappedValue) { _, newValue in
             handleAlbumPickerPresentationChange(isPresented: newValue)
         }
         .task(id: manifestFileName) {
@@ -195,7 +202,7 @@ struct SmartPhotoAlbumShuffleControls: View {
     private var actionRow: some View {
         HStack(spacing: 12) {
             Button {
-                showAlbumPicker = true
+                albumPickerPresentedBinding.wrappedValue = true
             } label: {
                 Label("Choose album…", systemImage: "rectangle.stack.badge.plus")
             }
@@ -362,7 +369,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         sp.shuffleManifestFileName = manifestFile
         smartPhoto = sp
 
-        showAlbumPicker = false
+        albumPickerPresentedBinding.wrappedValue = false
         albumPickerState = .idle
 
         WidgetWeaverWidgetRefresh.forceKick()
