@@ -15,11 +15,11 @@ extension ContentView {
 
         return Section {
             if !hasImage {
-                Text("Choose a photo in Image first.\nThen make Smart Photo renders to enable Album Shuffle.")
+                Text("Choose a photo in Image first.\nThen make Smart Photo renders in Smart Photo to enable Album Shuffle.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if !hasSmartPhoto {
-                Text("Album Shuffle requires Smart Photo.\nIn Image, tap ‘Make Smart Photo (per-size renders)’.")
+                Text("Album Shuffle requires Smart Photo.\nIn Smart Photo, tap ‘Make Smart Photo (per-size renders)’.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

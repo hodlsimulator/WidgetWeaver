@@ -79,6 +79,7 @@ enum EditorToolID: String, CaseIterable, Hashable, Identifiable {
     case text
     case symbol
     case image
+    case smartPhoto
     case albumShuffle
     case style
     case typography
@@ -120,6 +121,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
         EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
         EditorToolDefinition(id: .image, order: 60, requiredCapabilities: [.canEditImage]),
+        EditorToolDefinition(id: .smartPhoto, order: 62, requiredCapabilities: [.canEditSmartPhoto]),
         EditorToolDefinition(id: .albumShuffle, order: 65, requiredCapabilities: [.canEditAlbumShuffle]),
         EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle]),
         EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography]),
@@ -189,12 +191,17 @@ enum EditorToolRegistry {
             out.append(.albumShuffle)
         }
 
-        // 2) Smart Photo crop entry points (currently live in Image).
+        // 2) Smart Photo tools next.
+        if toolIDs.contains(.smartPhoto) {
+            out.append(.smartPhoto)
+        }
+
+        // 3) Related image controls.
         if toolIDs.contains(.image) {
             out.append(.image)
         }
 
-        // 3) Remaining tools (keep relative order), with Style last.
+        // 4) Remaining tools (keep relative order), with Style last.
         out.append(contentsOf: toolIDs.filter { !out.contains($0) && $0 != .style })
 
         if toolIDs.contains(.style), !out.contains(.style) {
