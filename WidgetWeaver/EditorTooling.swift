@@ -64,6 +64,7 @@ struct EditorCapabilities: OptionSet, Hashable {
     static let canEditStyle = EditorCapabilities(rawValue: 1 << 5)
     static let canEditTypography = EditorCapabilities(rawValue: 1 << 6)
     static let canEditActions = EditorCapabilities(rawValue: 1 << 7)
+    static let canEditAlbumShuffle = EditorCapabilities(rawValue: 1 << 8)
 }
 
 /// Stable identifiers for the editor’s primary tool surface.
@@ -78,6 +79,7 @@ enum EditorToolID: String, CaseIterable, Hashable, Identifiable {
     case text
     case symbol
     case image
+    case albumShuffle
     case style
     case typography
     case actions
@@ -118,6 +120,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
         EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
         EditorToolDefinition(id: .image, order: 60, requiredCapabilities: [.canEditImage]),
+        EditorToolDefinition(id: .albumShuffle, order: 65, requiredCapabilities: [.canEditAlbumShuffle]),
         EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle]),
         EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography]),
         EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions]),
@@ -144,6 +147,7 @@ enum EditorToolRegistry {
         case .poster:
             c.insert(.canEditImage)
             c.insert(.canEditSmartPhoto)
+            c.insert(.canEditAlbumShuffle)
             c.insert(.canEditTypography)
 
         case .weather:

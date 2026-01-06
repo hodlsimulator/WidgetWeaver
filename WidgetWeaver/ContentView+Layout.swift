@@ -72,6 +72,9 @@ extension ContentView {
         case .image:
             imageSection
 
+        case .albumShuffle:
+            albumShuffleSection
+
         case .style:
             styleSection
 
