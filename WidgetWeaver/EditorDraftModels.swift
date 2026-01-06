@@ -400,222 +400,203 @@ enum ActionBarPreset: String, CaseIterable, Identifiable {
             case .counter:
                 return [
                     WidgetActionDraft(
-                        label: "−",
-                        systemImage: "minus",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "count", delta: -1, clampMin: nil, clampMax: nil)
+                        title: "+1",
+                        systemImage: "plus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
                     ),
                     WidgetActionDraft(
-                        label: "+",
-                        systemImage: "plus",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "count", delta: 1, clampMin: nil, clampMax: nil)
-                    ),
+                        title: "-1",
+                        systemImage: "minus.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "count",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
                 ]
 
             case .habitStreak:
                 return [
                     WidgetActionDraft(
-                        label: "Done",
-                        systemImage: "checkmark",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "streak", delta: 1, clampMin: 0, clampMax: nil)
+                        title: "Done +1",
+                        systemImage: "checkmark.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
                     ),
                     WidgetActionDraft(
-                        label: "Undo",
-                        systemImage: "arrow.uturn.left",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "streak", delta: -1, clampMin: 0, clampMax: nil)
-                    ),
+                        title: "Undo -1",
+                        systemImage: "arrow.uturn.backward.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "streak",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
                 ]
 
             case .donePlusOne:
                 return [
                     WidgetActionDraft(
-                        label: "Done",
+                        title: "Done +1",
                         systemImage: "checkmark.circle.fill",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "done", delta: 1, clampMin: 0, clampMax: nil)
-                    ),
+                        kind: .incrementVariable,
+                        variableKey: "done",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
+                    )
                 ]
 
             case .hydration:
                 return [
                     WidgetActionDraft(
-                        label: "+250ml",
-                        systemImage: "drop.fill",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "waterMl", delta: 250, clampMin: 0, clampMax: nil)
+                        title: "+25ml",
+                        systemImage: "drop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 25,
+                        nowFormat: .iso8601
                     ),
                     WidgetActionDraft(
-                        label: "+500ml",
-                        systemImage: "drop.fill",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "waterMl", delta: 500, clampMin: 0, clampMax: nil)
-                    ),
+                        title: "+50ml",
+                        systemImage: "drop.circle",
+                        kind: .incrementVariable,
+                        variableKey: "waterMl",
+                        incrementAmount: 50,
+                        nowFormat: .iso8601
+                    )
                 ]
 
             case .pomodoro:
                 return [
                     WidgetActionDraft(
-                        label: "Start",
-                        systemImage: "play.fill",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "pomo", delta: 1, clampMin: 0, clampMax: nil)
+                        title: "Start",
+                        systemImage: "play.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: 1,
+                        nowFormat: .iso8601
                     ),
                     WidgetActionDraft(
-                        label: "Stop",
-                        systemImage: "stop.fill",
-                        destination: .stepsVariableAdjust,
-                        adjust: .init(key: "pomo", delta: -1, clampMin: 0, clampMax: nil)
-                    ),
+                        title: "Stop",
+                        systemImage: "stop.circle.fill",
+                        kind: .incrementVariable,
+                        variableKey: "pomo",
+                        incrementAmount: -1,
+                        nowFormat: .iso8601
+                    )
                 ]
             }
         }()
 
-        return out.enumerated().map { idx, d in
-            var v = d
-            v.order = idx
-            return v
-        }
-    }
-}
-
-enum WidgetActionDestinationDraft: Hashable, CaseIterable, Identifiable {
-    case openURL
-    case stepsVariableAdjust
-
-    var id: String {
-        switch self {
-        case .openURL: return "openURL"
-        case .stepsVariableAdjust: return "stepsVariableAdjust"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .openURL: return "Open URL"
-        case .stepsVariableAdjust: return "Adjust Variable"
-        }
-    }
-}
-
-struct StepsVariableAdjustDraft: Hashable {
-    var key: String
-    var delta: Int
-    var clampMin: Int?
-    var clampMax: Int?
-
-    init(key: String, delta: Int, clampMin: Int?, clampMax: Int?) {
-        self.key = key
-        self.delta = delta
-        self.clampMin = clampMin
-        self.clampMax = clampMax
-    }
-
-    init(from spec: StepsVariableAdjustSpec?) {
-        guard let s = spec?.normalisedOrNil() else {
-            self = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil)
-            return
-        }
-        self.key = s.key
-        self.delta = s.delta
-        self.clampMin = s.clampMin
-        self.clampMax = s.clampMax
-    }
-
-    func toSpecOrNil() -> StepsVariableAdjustSpec? {
-        let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !k.isEmpty else { return nil }
-        return StepsVariableAdjustSpec(key: k, delta: delta, clampMin: clampMin, clampMax: clampMax).normalisedOrNil()
+        return Array(out.prefix(WidgetActionBarSpec.maxActions))
     }
 }
 
 struct WidgetActionDraft: Hashable, Identifiable {
     var id: UUID
-
-    var label: String
-    var systemImage: String?
-
-    var destination: WidgetActionDestinationDraft
-    var openURLString: String
-    var adjust: StepsVariableAdjustDraft
-
-    var order: Int
+    var title: String
+    var systemImage: String
+    var kind: WidgetActionKindToken
+    var variableKey: String
+    var incrementAmount: Int
+    var nowFormat: WidgetNowFormatToken
 
     init(
         id: UUID = UUID(),
-        label: String,
-        systemImage: String?,
-        destination: WidgetActionDestinationDraft,
-        openURLString: String = "",
-        adjust: StepsVariableAdjustDraft = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil),
-        order: Int = 0
+        title: String = "",
+        systemImage: String = "",
+        kind: WidgetActionKindToken = .incrementVariable,
+        variableKey: String = "",
+        incrementAmount: Int = 1,
+        nowFormat: WidgetNowFormatToken = .iso8601
     ) {
         self.id = id
-        self.label = label
+        self.title = title
         self.systemImage = systemImage
-        self.destination = destination
-        self.openURLString = openURLString
-        self.adjust = adjust
-        self.order = order
+        self.kind = kind
+        self.variableKey = variableKey
+        self.incrementAmount = incrementAmount
+        self.nowFormat = nowFormat
     }
 
     init(from spec: WidgetActionSpec) {
         self.id = spec.id
-        self.label = spec.label
-        self.systemImage = spec.systemImage
-        self.order = spec.order
+        self.title = spec.title
+        self.systemImage = spec.systemImage ?? ""
+        self.kind = spec.kind
+        self.variableKey = spec.variableKey
+        self.incrementAmount = spec.incrementAmount
+        self.nowFormat = spec.nowFormat
+    }
 
-        switch spec.destination {
-        case .openURL(let u):
-            self.destination = .openURL
-            self.openURLString = u
-            self.adjust = StepsVariableAdjustDraft(key: "", delta: 1, clampMin: 0, clampMax: nil)
+    static func defaultIncrement() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "+1",
+            systemImage: "plus.circle.fill",
+            kind: .incrementVariable,
+            variableKey: "counter",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
+    }
 
-        case .stepsVariableAdjust(let a):
-            self.destination = .stepsVariableAdjust
-            self.openURLString = ""
-            self.adjust = StepsVariableAdjustDraft(from: a)
-        }
+    static func defaultDone() -> WidgetActionDraft {
+        WidgetActionDraft(
+            title: "Done",
+            systemImage: "checkmark.circle.fill",
+            kind: .setVariableToNow,
+            variableKey: "last_done",
+            incrementAmount: 1,
+            nowFormat: .iso8601
+        )
     }
 
     func toActionSpecOrNil() -> WidgetActionSpec? {
-        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedLabel.isEmpty else { return nil }
-
-        let dest: WidgetActionDestinationSpec? = {
-            switch destination {
-            case .openURL:
-                let u = openURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-                return u.isEmpty ? nil : .openURL(u)
-
-            case .stepsVariableAdjust:
-                guard let a = adjust.toSpecOrNil() else { return nil }
-                return .stepsVariableAdjust(a)
-            }
-        }()
-
-        guard let d = dest else { return nil }
-
-        let img = systemImage?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sys = (img?.isEmpty ?? true) ? nil : img
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKey = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return WidgetActionSpec(
             id: id,
-            label: trimmedLabel,
-            systemImage: sys,
-            destination: d,
-            order: order
-        ).normalised()
+            title: trimmedTitle.isEmpty ? (kind == .incrementVariable ? "+1" : "Done") : trimmedTitle,
+            systemImage: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
+            kind: kind,
+            variableKey: trimmedKey,
+            incrementAmount: incrementAmount,
+            nowFormat: nowFormat
+        ).normalisedOrNil()
     }
-}
 
-enum VariableKeyValidator {
-    static func validate(_ key: String) -> VariableKeyValidationResult {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    var previewString: String {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keyPart = key.isEmpty ? "(No key)" : key
 
-        if trimmed.isEmpty {
+        switch kind {
+        case .incrementVariable:
+            let amt = incrementAmount
+            let signed = amt >= 0 ? "+\(amt)" : "\(amt)"
+            return "Increment \(signed) → \(keyPart)"
+        case .setVariableToNow:
+            let fmt: String = {
+                switch nowFormat {
+                case .iso8601: return "ISO"
+                case .unixSeconds: return "Unix s"
+                case .unixMilliseconds: return "Unix ms"
+                case .dateOnly: return "Date"
+                case .timeOnly: return "Time"
+                }
+            }()
+            return "Set Now (\(fmt)) → \(keyPart)"
+        }
+    }
+
+    func validateVariableKey() -> VariableKeyValidationResult {
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !key.isEmpty else {
             return .warning("Key is required.")
         }
 
