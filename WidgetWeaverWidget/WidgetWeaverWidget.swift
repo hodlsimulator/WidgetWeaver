@@ -374,6 +374,8 @@ struct WidgetWeaverLockScreenWeatherView: View {
                 }
             }
         }
+        .containerBackground(.fill.tertiary, for: .widget)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func weatherBody(snapshot: WidgetWeaverWeatherSnapshot, now: Date) -> some View {
@@ -408,6 +410,6 @@ struct WidgetWeaverLockScreenWeatherWidget: Widget {
         }
         .configurationDisplayName("Rain (WidgetWeaver)")
         .description("Next hour precipitation, temperature, and nowcast.")
-        .supportedFamilies([.accessoryRectangular])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular])
     }
 }
