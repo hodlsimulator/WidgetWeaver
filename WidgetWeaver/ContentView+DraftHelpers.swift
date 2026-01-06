@@ -22,6 +22,32 @@ extension ContentView {
         matchedSetEnabled ? matchedDrafts[editingFamily] : baseDraft
     }
 
+    /// Single source of truth for the editor’s current tool context.
+    ///
+    /// The context is derived from draft state + entitlements. Views should not attempt
+    /// to re-derive these conditions independently.
+    var editorToolContext: EditorToolContext {
+        let d = currentFamilyDraft()
+
+        let symbolConfigured = !d.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let imageConfigured = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let smartPhotoConfigured = d.imageSmartPhoto != nil
+
+        return EditorToolContext(
+            template: d.template,
+            isProUnlocked: proManager.isProUnlocked,
+            matchedSetEnabled: matchedSetEnabled,
+            hasSymbolConfigured: symbolConfigured,
+            hasImageConfigured: imageConfigured,
+            hasSmartPhotoConfigured: smartPhotoConfigured
+        )
+    }
+
+    /// Ordered tool identifiers that should be visible for the current context.
+    var editorVisibleToolIDs: [EditorToolID] {
+        EditorToolRegistry.visibleTools(for: editorToolContext)
+    }
+
     func setCurrentFamilyDraft(_ newValue: FamilyDraft) {
         var v = newValue
 
@@ -92,23 +118,16 @@ extension ContentView {
         d.showsAccentBar = true
 
         d.symbolName = "figure.walk"
-        d.symbolPlacement = .beforeName
-        d.symbolSize = 18
-        d.symbolWeight = .semibold
         d.symbolRenderingMode = .hierarchical
-        d.symbolTint = .accent
+        d.symbolWeight = .semibold
+
+        d.spacing = 8
+        d.alignment = .leading
 
         setCurrentFamilyDraft(d)
 
-        if matchedSetEnabled && copyToAllSizes {
-            matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
+        if copyToAllSizes {
+            copyCurrentSizeToAllSizes()
         }
-
-        styleDraft.accent = .green
-        styleDraft.background = .radialGlow
-
-        saveStatusMessage = (matchedSetEnabled && copyToAllSizes)
-            ? "Applied Steps preset to Small/Medium/Large (draft only)."
-            : "Applied Steps preset (draft only)."
     }
 }
