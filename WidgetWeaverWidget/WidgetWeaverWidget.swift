@@ -410,6 +410,6 @@ struct WidgetWeaverLockScreenWeatherWidget: Widget {
         }
         .configurationDisplayName("Rain (WidgetWeaver)")
         .description("Next hour precipitation, temperature, and nowcast.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular])
+        .supportedFamilies([.accessoryRectangular])
     }
 }
