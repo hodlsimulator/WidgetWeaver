@@ -16,4 +16,32 @@ enum EditorContextEvaluator {
         if selectionCount == 1 { return .single }
         return .multi
     }
+
+    static func evaluate(
+        draft: FamilyDraft,
+        isProUnlocked: Bool,
+        matchedSetEnabled: Bool,
+        focus: EditorFocusSnapshot
+    ) -> EditorToolContext {
+        let symbolConfigured = !draft.symbolName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+
+        let imageConfigured = !draft.imageFileName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+
+        let smartPhotoConfigured = (draft.imageSmartPhoto != nil)
+
+        return EditorToolContext(
+            template: draft.template,
+            isProUnlocked: isProUnlocked,
+            matchedSetEnabled: matchedSetEnabled,
+            selection: focus.selection,
+            focus: focus.focus,
+            hasSymbolConfigured: symbolConfigured,
+            hasImageConfigured: imageConfigured,
+            hasSmartPhotoConfigured: smartPhotoConfigured
+        )
+    }
 }

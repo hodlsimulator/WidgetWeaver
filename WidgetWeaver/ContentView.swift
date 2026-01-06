@@ -44,6 +44,8 @@ struct ContentView: View {
         large: .defaultDraft
     )
 
+    @State var editorFocusSnapshot: EditorFocusSnapshot = .widgetDefault
+
     @State var pickedPhoto: PhotosPickerItem?
     @State var lastImageThemeFileName: String = ""
     @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
@@ -319,163 +321,179 @@ struct ContentView: View {
         .sheet(item: $activeSheet, content: sheetContent)
         .fileImporter(
             isPresented: $showImportPicker,
-            allowedContentTypes: WidgetWeaverSharePackage.importableTypes,
+            allowedContentTypes: [.json],
             allowsMultipleSelection: false,
             onCompletion: handleImportResult
         )
-        .confirmationDialog(
-            "Delete this design?",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) { deleteCurrentDesign() }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
+        .onChange(of: selectedSpecID) { _ in loadSelected() }
+        .onChange(of: selectedTab) { _ in tabDidChange() }
+        .onChange(of: pickedPhoto, perform: handlePickedPhotoChange)
+        .task { bootstrap() }
+        .onAppear { proManager.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            refreshSavedSpecs()
+            proManager.refresh()
         }
-        .confirmationDialog(
-            "Clean up unused images?",
-            isPresented: $showImageCleanupConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
-        }
-        .confirmationDialog(
-            "Revert unsaved changes?",
-            isPresented: $showRevertConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Revert", role: .destructive) { revertUnsavedChanges() }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This discards current draft edits and reloads the last saved version of this design.")
-        }
-        .onAppear(perform: bootstrap)
-        .onChange(of: selectedSpecID) { _, _ in loadSelected() }
-        .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
     }
+
+    // MARK: - Explore
 
     private var exploreRoot: some View {
-        WidgetWeaverAboutView(
-            proManager: proManager,
-            onAddTemplate: { spec, makeDefault in
-                addTemplateDesign(spec, makeDefault: makeDefault)
-                selectedTab = .editor
-            },
-            onShowPro: { activeSheet = .pro },
-            onShowWidgetHelp: { activeSheet = .widgetHelp },
-            onOpenWeatherSettings: { activeSheet = .weather },
-            onOpenStepsSettings: { activeSheet = .steps },
-            onGoToLibrary: { selectedTab = .library }
-        )
+        ZStack {
+            WidgetWeaverAboutBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    WidgetWeaverAboutHeader()
+                        .padding(.top, 24)
+
+                    WidgetWeaverAboutFeaturedClockTemplateSection(
+                        onPick: { spec in
+                            selectedSpecID = spec.id
+                            applySpec(spec)
+                            duplicateCurrentDesign()
+                            selectedTab = .editor
+                        }
+                    )
+
+                    WidgetWeaverAboutCatalog(
+                        onPick: { spec in
+                            selectedSpecID = spec.id
+                            applySpec(spec)
+                            duplicateCurrentDesign()
+                            selectedTab = .editor
+                        }
+                    )
+                    .padding(.horizontal, 16)
+                }
+                .padding(.bottom, 28)
+            }
+        }
+        .navigationTitle("Explore")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { exploreToolbar }
     }
 
-    private var libraryRoot: some View {
-        let displayedSpecs = libraryDisplayedSpecs
+    @ToolbarContentBuilder
+    private var exploreToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                createNewDesign()
+                selectedTab = .editor
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("New design")
+        }
 
-        return ZStack {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                showImportPicker = true
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+            }
+            .accessibilityLabel("Import design")
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                activeSheet = .widgetHelp
+            } label: {
+                Image(systemName: "questionmark.circle")
+            }
+            .accessibilityLabel("Help")
+        }
+    }
+
+    // MARK: - Library
+
+    private var libraryRoot: some View {
+        ZStack {
             WidgetWeaverAboutBackground()
 
-            List {
-                Section {
-                    libraryFilterChipsRow
-                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                        .listRowSeparator(.hidden)
-                }
+            VStack(spacing: 0) {
+                libraryFilterChipsRow
 
-                Section {
-                    if savedSpecs.isEmpty {
-                        Text("No designs yet. Create one in Explore.")
+                if libraryDisplayedSpecs.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 30, weight: .semibold))
                             .foregroundStyle(.secondary)
 
-                    } else if displayedSpecs.isEmpty {
-                        VStack(spacing: 10) {
-                            Text("No matches. Clear search or choose All.")
-                                .foregroundStyle(.secondary)
+                        Text(libraryIsFilteringOrSearching ? "No designs match your filters." : "No designs yet.")
+                            .font(.headline)
 
-                            if libraryIsFilteringOrSearching {
-                                Button("Clear") { clearLibrarySearchAndFilter() }
+                        if libraryIsFilteringOrSearching {
+                            Button("Clear filters") {
+                                clearLibrarySearchAndFilter()
                             }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button("Create your first design") {
+                                createNewDesign()
+                                selectedTab = .editor
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-
-                    } else {
-                        ForEach(displayedSpecs) { spec in
-                            Button {
-                                selectDesignFromLibrary(spec)
-                            } label: {
+                    }
+                    .padding(.top, 50)
+                    .frame(maxWidth: .infinity)
+                } else {
+                    List {
+                        Section {
+                            ForEach(libraryDisplayedSpecs) { spec in
                                 libraryRow(spec: spec)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button {
-                                    selectDesignFromLibrary(spec)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
+                                    .onTapGesture { selectDesignFromLibrary(spec) }
+                                    .contextMenu {
+                                        Button {
+                                            selectDesignFromLibrary(spec)
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
 
-                                if spec.id != defaultSpecID {
-                                    Button {
-                                        makeDefaultFromLibrary(spec)
-                                    } label: {
-                                        Label("Make Default", systemImage: "star")
+                                        Button {
+                                            makeDefaultFromLibrary(spec)
+                                        } label: {
+                                            Label("Make default", systemImage: "star")
+                                        }
+
+                                        Button {
+                                            duplicateDesignFromLibrary(spec)
+                                        } label: {
+                                            Label("Duplicate", systemImage: "doc.on.doc")
+                                        }
+
+                                        Button(role: .destructive) {
+                                            deleteDesignFromLibrary(spec)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
-                                }
+                            }
+                        }
 
-                                Button {
-                                    duplicateDesignFromLibrary(spec)
-                                } label: {
-                                    Label("Duplicate", systemImage: "doc.on.doc")
-                                }
+                        Section {
+                            if proManager.isProUnlocked {
+                                Label("WidgetWeaver Pro is unlocked.", systemImage: "crown.fill")
+                                    .foregroundStyle(.primary)
 
-                                Button(role: .destructive) {
-                                    deleteDesignFromLibrary(spec)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                .disabled(savedSpecs.count <= 1)
+                                Button("Manage Pro…") { activeSheet = .pro }
+                            } else {
+                                Label("WidgetWeaver Pro is locked.", systemImage: "crown")
+                                    .foregroundStyle(.secondary)
+
+                                Button("Unlock Pro…") { activeSheet = .pro }
+                                    .buttonStyle(.borderedProminent)
+
+                                Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
-                } header: {
-                    Text("Designs")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if !proManager.isProUnlocked {
-                            Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
-                        selectedTab = .explore
-                    } label: {
-                        Label("Browse templates (Explore)", systemImage: "sparkles")
-                    }
-
-                    Button {
-                        createNewDesign()
-                        selectedTab = .editor
-                    } label: {
-                        Label("New blank design", systemImage: "plus")
-                    }
-                } header: {
-                    Text("Quick start")
+                    .scrollContentBackground(.hidden)
+                    .listStyle(.insetGrouped)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .listStyle(.insetGrouped)
         }
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.large)
@@ -609,12 +627,30 @@ struct ContentView: View {
 
         let tools = editorVisibleToolIDs.map(\.rawValue).joined(separator: ", ")
 
+        let focusLabel: String = {
+            switch ctx.focus {
+            case .widget:
+                return "widget"
+            case .element(let id):
+                return "element(\(id))"
+            case .albumContainer(let id, let subtype):
+                return "albumContainer(\(id), \(subtype.rawValue))"
+            case .albumPhoto(let albumID, let itemID, let subtype):
+                return "albumPhoto(\(albumID), \(itemID), \(subtype.rawValue))"
+            case .smartRuleEditor(let albumID):
+                return "smartRuleEditor(\(albumID))"
+            case .clock:
+                return "clock"
+            }
+        }()
+
         return VStack(alignment: .leading, spacing: 4) {
             Text("Editor Diagnostics")
                 .font(.caption.weight(.semibold))
 
             Text("Template: \(ctx.template.displayName)")
             Text("Matched set: \(ctx.matchedSetEnabled ? "on" : "off") • Pro: \(ctx.isProUnlocked ? "on" : "off")")
+            Text("Selection: \(ctx.selection.rawValue) • Focus: \(focusLabel)")
             Text("Capabilities: \(capabilityLabels.joined(separator: ", "))")
             Text("Visible tools: \(tools)")
         }

@@ -18,6 +18,9 @@ struct EditorToolContext: Hashable {
     var isProUnlocked: Bool
     var matchedSetEnabled: Bool
 
+    var selection: EditorSelectionKind
+    var focus: EditorFocusTarget
+
     var hasSymbolConfigured: Bool
     var hasImageConfigured: Bool
     var hasSmartPhotoConfigured: Bool
@@ -26,6 +29,8 @@ struct EditorToolContext: Hashable {
         template: LayoutTemplateToken,
         isProUnlocked: Bool,
         matchedSetEnabled: Bool,
+        selection: EditorSelectionKind,
+        focus: EditorFocusTarget,
         hasSymbolConfigured: Bool,
         hasImageConfigured: Bool,
         hasSmartPhotoConfigured: Bool
@@ -33,6 +38,8 @@ struct EditorToolContext: Hashable {
         self.template = template
         self.isProUnlocked = isProUnlocked
         self.matchedSetEnabled = matchedSetEnabled
+        self.selection = selection
+        self.focus = focus
         self.hasSymbolConfigured = hasSymbolConfigured
         self.hasImageConfigured = hasImageConfigured
         self.hasSmartPhotoConfigured = hasSmartPhotoConfigured

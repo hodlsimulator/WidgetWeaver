@@ -27,19 +27,11 @@ extension ContentView {
     /// The context is derived from draft state + entitlements. Views should not attempt
     /// to re-derive these conditions independently.
     var editorToolContext: EditorToolContext {
-        let d = currentFamilyDraft()
-
-        let symbolConfigured = !d.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let imageConfigured = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let smartPhotoConfigured = d.imageSmartPhoto != nil
-
-        return EditorToolContext(
-            template: d.template,
+        EditorContextEvaluator.evaluate(
+            draft: currentFamilyDraft(),
             isProUnlocked: proManager.isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            hasSymbolConfigured: symbolConfigured,
-            hasImageConfigured: imageConfigured,
-            hasSmartPhotoConfigured: smartPhotoConfigured
+            focus: editorFocusSnapshot
         )
     }
 
