@@ -29,7 +29,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     /// land fractionally past the tick, which reads as a “late” tick.
     ///
     /// Snap very small post-boundary lateness back to the minute mark so the hand lands exactly on the tick.
-    private static let minuteBoundarySnapMaxLatenessSeconds: TimeInterval = 1.25
+    private static let minuteBoundarySnapMaxLatenessSeconds: TimeInterval = 2.0
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
