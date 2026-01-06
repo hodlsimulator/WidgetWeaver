@@ -118,16 +118,23 @@ extension ContentView {
         d.showsAccentBar = true
 
         d.symbolName = "figure.walk"
-        d.symbolRenderingMode = .hierarchical
+        d.symbolPlacement = .beforeName
+        d.symbolSize = 18
         d.symbolWeight = .semibold
-
-        d.spacing = 8
-        d.alignment = .leading
+        d.symbolRenderingMode = .hierarchical
+        d.symbolTint = .accent
 
         setCurrentFamilyDraft(d)
 
-        if copyToAllSizes {
-            copyCurrentSizeToAllSizes()
+        if matchedSetEnabled && copyToAllSizes {
+            matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
         }
+
+        styleDraft.accent = .green
+        styleDraft.background = .radialGlow
+
+        saveStatusMessage = (matchedSetEnabled && copyToAllSizes)
+            ? "Applied Steps preset to Small/Medium/Large (draft only)."
+            : "Applied Steps preset (draft only)."
     }
 }

@@ -9,8 +9,6 @@ import SwiftUI
 
 extension ContentView {
     var toolbarMenu: some View {
-        let template = editorToolContext.template
-
         Menu {
             Button {
                 selectedTab = .explore
@@ -26,28 +24,24 @@ extension ContentView {
 
             Divider()
 
-            if template == .weather {
-                Button {
-                    activeSheet = .weather
-                } label: {
-                    Label("Weather settings", systemImage: "cloud.sun.fill")
-                }
+            Button {
+                activeSheet = .weather
+            } label: {
+                Label("Weather settings", systemImage: "cloud.sun.fill")
             }
 
-            if template == .nextUpCalendar {
-                Button {
-                    Task {
-                        let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
-                        if granted {
-                            _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
-                            await MainActor.run { saveStatusMessage = "Calendar refreshed.\nWidgets will update on next reload." }
-                        } else {
-                            await MainActor.run { saveStatusMessage = "Calendar access is off.\nEnable access to use Next Up." }
-                        }
+            Button {
+                Task {
+                    let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
+                    if granted {
+                        _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
+                        await MainActor.run { saveStatusMessage = "Calendar refreshed.\nWidgets will update on next reload." }
+                    } else {
+                        await MainActor.run { saveStatusMessage = "Calendar access is off.\nEnable access to use Next Up." }
                     }
-                } label: {
-                    Label("Next Up: refresh Calendar", systemImage: "calendar")
                 }
+            } label: {
+                Label("Next Up: refresh Calendar", systemImage: "calendar")
             }
 
             Button {

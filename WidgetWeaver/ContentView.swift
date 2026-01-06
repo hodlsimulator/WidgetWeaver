@@ -224,19 +224,25 @@ struct ContentView: View {
                 if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
                 return $0.index < $1.index
             }
+
         case .name:
             items.sort {
                 if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
                 return $0.index < $1.index
             }
+
         case .template:
             items.sort {
                 if $0.templateKey != $1.templateKey { return $0.templateKey < $1.templateKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
                 return $0.index < $1.index
             }
+
         case .accent:
             items.sort {
                 if $0.accentKey != $1.accentKey { return $0.accentKey < $1.accentKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
                 return $0.index < $1.index
             }
         }
@@ -244,128 +250,329 @@ struct ContentView: View {
         return items.map(\.spec)
     }
 
-    var body: some View {
-        NavigationStack {
-            TabView(selection: $selectedTab) {
-                exploreRoot
-                    .tag(AppTab.explore)
-                    .tabItem { Label("Explore", systemImage: "sparkles") }
-
-                libraryRoot
-                    .tag(AppTab.library)
-                    .tabItem { Label("Library", systemImage: "square.grid.2x2") }
-
-                editorRoot
-                    .tag(AppTab.editor)
-                    .tabItem { Label("Editor", systemImage: "slider.horizontal.3") }
-            }
-            .onAppear { loadSavedSpecs() }
-            .sheet(item: $activeSheet) { sheet in
-                sheetContent(sheet)
-            }
-            .fileImporter(
-                isPresented: $showImportPicker,
-                allowedContentTypes: [.data],
-                allowsMultipleSelection: false
-            ) { result in
-                handleImportResult(result)
-            }
-            .alert("Delete Design?", isPresented: $showDeleteConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) { deleteSelected() }
-            } message: {
-                Text("This cannot be undone.")
-            }
-            .alert("Clean unused images?", isPresented: $showImageCleanupConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Clean", role: .destructive) { cleanUnusedImages() }
-            } message: {
-                Text("This removes files that are not referenced by any saved design.")
-            }
-            .alert("Revert changes?", isPresented: $showRevertConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Revert", role: .destructive) { revertUnsavedChanges() }
-            } message: {
-                Text("This will reset the draft back to the last saved version.")
-            }
-        }
+    private func clearLibrarySearchAndFilter() {
+        librarySearchText = ""
+        libraryFilterRaw = LibraryFilter.all.rawValue
     }
 
-    private var exploreRoot: some View {
-        ZStack {
-            WidgetWeaverAboutBackground()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    WidgetWeaverAboutHeader()
-
-                    WidgetWeaverAboutSection(
-                        title: "WidgetWeaver",
-                        subtitle: "Design widgets by mixing templates, colours, text, and Smart Photos."
-                    )
-
-                    WidgetWeaverAboutSection(
-                        title: "Smart Photos",
-                        subtitle: "Create a crop + framing that looks good across widget sizes."
-                    )
-
-                    WidgetWeaverAboutSection(
-                        title: "Variables",
-                        subtitle: "Insert dynamic content like steps, activity, date/time, and counters."
-                    )
-
-                    WidgetWeaverAboutSection(
-                        title: "Pro",
-                        subtitle: "Unlock matched sets, action bar widgets, and more."
-                    )
-
-                    Spacer(minLength: 20)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 30)
-            }
-        }
-        .navigationTitle("Explore")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar { exploreToolbar }
-    }
-
-    @ToolbarContentBuilder
-    private var exploreToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
-    }
-
-    private var libraryRoot: some View {
-        ZStack {
-            WidgetWeaverAboutBackground()
-
-            VStack(spacing: 12) {
-                libraryHeader
-
-                if savedSpecs.isEmpty {
-                    ContentUnavailableView(
-                        "No designs yet",
-                        systemImage: "square.grid.2x2",
-                        description: Text("Create a design in the editor, then save it to appear here.")
-                    )
-                    .padding(.top, 30)
-                } else {
-                    libraryList
+    private var libraryFilterChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LibraryFilter.ordered) { filter in
+                    libraryFilterChip(filter)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 20)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func libraryFilterChip(_ filter: LibraryFilter) -> some View {
+        let isSelected = filter == libraryFilter
+
+        return Button {
+            libraryFilterRaw = filter.rawValue
+        } label: {
+            Text(filter.title)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(filter.title)
+    }
+
+    init() {
+        Self.applyAppearanceIfNeeded()
+    }
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                exploreRoot
+            }
+            .tabItem { Label("Explore", systemImage: "sparkles") }
+            .tag(AppTab.explore)
+
+            NavigationStack {
+                libraryRoot
+            }
+            .tabItem { Label("Library", systemImage: "square.grid.2x2") }
+            .tag(AppTab.library)
+
+            NavigationStack {
+                editorRoot
+            }
+            .tabItem { Label("Editor", systemImage: "pencil.and.outline") }
+            .tag(AppTab.editor)
+        }
+        .sheet(item: $activeSheet, content: sheetContent)
+        .fileImporter(
+            isPresented: $showImportPicker,
+            allowedContentTypes: WidgetWeaverSharePackage.importableTypes,
+            allowsMultipleSelection: false,
+            onCompletion: handleImportResult
+        )
+        .confirmationDialog(
+            "Delete this design?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { deleteCurrentDesign() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes the design from the library.\nAny widget using it will fall back to another design.")
+        }
+        .confirmationDialog(
+            "Clean up unused images?",
+            isPresented: $showImageCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clean Up", role: .destructive) { cleanupUnusedImages() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes image files in the App Group container that are not referenced by any saved design.\nWidgets will refresh after cleanup.")
+        }
+        .confirmationDialog(
+            "Revert unsaved changes?",
+            isPresented: $showRevertConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Revert", role: .destructive) { revertUnsavedChanges() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This discards current draft edits and reloads the last saved version of this design.")
+        }
+        .onAppear(perform: bootstrap)
+        .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+        .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
+    }
+
+    private var exploreRoot: some View {
+        WidgetWeaverAboutView(
+            proManager: proManager,
+            onAddTemplate: { spec, makeDefault in
+                addTemplateDesign(spec, makeDefault: makeDefault)
+                selectedTab = .editor
+            },
+            onShowPro: { activeSheet = .pro },
+            onShowWidgetHelp: { activeSheet = .widgetHelp },
+            onOpenWeatherSettings: { activeSheet = .weather },
+            onOpenStepsSettings: { activeSheet = .steps },
+            onGoToLibrary: { selectedTab = .library }
+        )
+    }
+
+    private var libraryRoot: some View {
+        let displayedSpecs = libraryDisplayedSpecs
+
+        return ZStack {
+            WidgetWeaverAboutBackground()
+
+            List {
+                Section {
+                    libraryFilterChipsRow
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                        .listRowSeparator(.hidden)
+                }
+
+                Section {
+                    if savedSpecs.isEmpty {
+                        Text("No designs yet. Create one in Explore.")
+                            .foregroundStyle(.secondary)
+
+                    } else if displayedSpecs.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No matches. Clear search or choose All.")
+                                .foregroundStyle(.secondary)
+
+                            if libraryIsFilteringOrSearching {
+                                Button("Clear") { clearLibrarySearchAndFilter() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+
+                    } else {
+                        ForEach(displayedSpecs) { spec in
+                            Button {
+                                selectDesignFromLibrary(spec)
+                            } label: {
+                                libraryRow(spec: spec)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    selectDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+
+                                if spec.id != defaultSpecID {
+                                    Button {
+                                        makeDefaultFromLibrary(spec)
+                                    } label: {
+                                        Label("Make Default", systemImage: "star")
+                                    }
+                                }
+
+                                Button {
+                                    duplicateDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Duplicate", systemImage: "doc.on.doc")
+                                }
+
+                                Button(role: .destructive) {
+                                    deleteDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(savedSpecs.count <= 1)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Designs")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !proManager.isProUnlocked {
+                            Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        selectedTab = .explore
+                    } label: {
+                        Label("Browse templates (Explore)", systemImage: "sparkles")
+                    }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New blank design", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Quick start")
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("Library")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar { libraryToolbar }
+        .searchable(text: $librarySearchText, placement: .navigationBarDrawer(displayMode: .always))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $librarySortRaw) {
+                        ForEach(LibrarySort.ordered) { sort in
+                            Text(sort.title).tag(sort.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        selectedTab = .explore
+                    } label: {
+                        Label("Explore templates", systemImage: "sparkles")
+                    }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New design", systemImage: "plus")
+                    }
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+            }
+        }
     }
 
-    @ToolbarContentBuilder
-    private var libraryToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) { toolbarMenu }
+    private func libraryRow(spec: WidgetSpec) -> some View {
+        HStack(spacing: 12) {
+            WidgetPreviewThumbnail(spec: spec, family: .systemSmall, height: 62)
+                .frame(width: 62, height: 62)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(specDisplayName(spec))
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("\(spec.layout.template.displayName) • \(spec.style.accent.displayName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(spec.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            if spec.id == defaultSpecID {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Default design")
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func selectDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        selectedTab = .editor
+    }
+
+    private func makeDefaultFromLibrary(_ spec: WidgetSpec) {
+        store.setDefault(id: spec.id)
+        defaultSpecID = store.defaultSpecID()
+        refreshWidgets()
+        saveStatusMessage = "Made default.\nWidgets refreshed."
+    }
+
+    private func duplicateDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        duplicateCurrentDesign()
+        selectedTab = .editor
+    }
+
+    private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        showDeleteConfirmation = true
     }
 
     private var editorRoot: some View {
@@ -384,6 +591,50 @@ struct ContentView: View {
         .toolbar { editorToolbar }
     }
 
+#if DEBUG
+    private var editorDiagnosticsOverlay: some View {
+        let ctx = editorToolContext
+        let caps = EditorToolRegistry.capabilities(for: ctx)
+
+        let capabilityLabels: [String] = [
+            (caps.contains(.canEditLayout), "layout"),
+            (caps.contains(.canEditTextContent), "text"),
+            (caps.contains(.canEditSymbol), "symbol"),
+            (caps.contains(.canEditImage), "image"),
+            (caps.contains(.canEditSmartPhoto), "smartPhoto"),
+            (caps.contains(.canEditStyle), "style"),
+            (caps.contains(.canEditTypography), "typography"),
+            (caps.contains(.canEditActions), "actions"),
+        ].compactMap { $0.0 ? $0.1 : nil }
+
+        let tools = editorVisibleToolIDs.map(\.rawValue).joined(separator: ", ")
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Editor Diagnostics")
+                .font(.caption.weight(.semibold))
+
+            Text("Template: \(ctx.template.displayName)")
+            Text("Matched set: \(ctx.matchedSetEnabled ? "on" : "off") • Pro: \(ctx.isProUnlocked ? "on" : "off")")
+            Text("Capabilities: \(capabilityLabels.joined(separator: ", "))")
+            Text("Visible tools: \(tools)")
+        }
+        .font(.system(.caption2, design: .monospaced))
+        .foregroundStyle(.primary)
+        .padding(10)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+#endif
+
     @ToolbarContentBuilder
     private var editorToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) { remixToolbarButton }
@@ -394,43 +645,6 @@ struct ContentView: View {
             Button("Done") { Keyboard.dismiss() }
         }
     }
-
-#if DEBUG
-    private var editorDiagnosticsOverlay: some View {
-        let ctx = editorToolContext
-        let caps = EditorToolRegistry.capabilities(for: ctx)
-
-        let capLabels: [String] = [
-            (EditorCapabilities.canEditLayout, "layout"),
-            (EditorCapabilities.canEditTextContent, "text"),
-            (EditorCapabilities.canEditSymbol, "symbol"),
-            (EditorCapabilities.canEditImage, "image"),
-            (EditorCapabilities.canEditSmartPhoto, "smartPhoto"),
-            (EditorCapabilities.canEditStyle, "style"),
-            (EditorCapabilities.canEditTypography, "typography"),
-            (EditorCapabilities.canEditActions, "actions")
-        ]
-            .compactMap { caps.contains($0.0) ? $0.1 : nil }
-
-        let tools = editorVisibleToolIDs.map { $0.rawValue }
-
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Context: \(ctx.template.displayName)")
-            Text("Matched: \(ctx.matchedSetEnabled ? "On" : "Off") • Editing: \(editingFamilyLabel)")
-            Text("Configured: image \(ctx.hasImageConfigured ? "yes" : "no"), smart \(ctx.hasSmartPhotoConfigured ? "yes" : "no"), symbol \(ctx.hasSymbolConfigured ? "yes" : "no")")
-            Text("Capabilities: \(capLabels.joined(separator: ", "))")
-            Text("Tools: \(tools.joined(separator: ", "))")
-        }
-        .font(.system(.caption2, design: .monospaced))
-        .padding(8)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-#endif
 
     private func sheetContent(_ sheet: ActiveSheet) -> AnyView {
         switch sheet {
@@ -480,7 +694,7 @@ struct ContentView: View {
                     WidgetWeaverStepsSettingsView(onClose: { activeSheet = nil })
                 }
             )
-
+            
         case .activity:
             return AnyView(
                 NavigationStack {
@@ -489,16 +703,25 @@ struct ContentView: View {
             )
 
         case .importReview:
-            guard let importReviewModel else { return AnyView(EmptyView()) }
-            return AnyView(
-                NavigationStack {
-                    WidgetWeaverImportReviewView(
-                        model: importReviewModel,
-                        selection: $importReviewSelection,
-                        onClose: { activeSheet = nil }
-                    )
-                }
-            )
+            return importReviewSheetAnyView()
+
         }
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task { await prepareImportReview(from: url) }
+
+        case .failure(let error):
+            if (error as NSError).code == NSUserCancelledError { return }
+            saveStatusMessage = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func handlePickedPhotoChange(_ newItem: PhotosPickerItem?) {
+        guard let newItem else { return }
+        Task { await importPickedImage(newItem) }
     }
 }

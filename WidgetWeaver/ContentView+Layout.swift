@@ -35,10 +35,8 @@ extension ContentView {
     }
 
     var editorForm: some View {
-        let visibleTools = editorVisibleToolIDs
-
-        return Form {
-            ForEach(visibleTools, id: \.self) { toolID in
+        Form {
+            ForEach(editorVisibleToolIDs, id: \.self) { toolID in
                 editorSection(for: toolID)
             }
         }
@@ -47,7 +45,7 @@ extension ContentView {
         .environment(\.defaultMinListRowHeight, 36)
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
-        .animation(.easeInOut(duration: 0.15), value: visibleTools)
+        .animation(.easeInOut(duration: 0.15), value: editorVisibleToolIDs)
     }
 
     @ViewBuilder
@@ -66,7 +64,7 @@ extension ContentView {
             layoutSection
 
         case .text:
-            editorTextSection
+            textSection
 
         case .symbol:
             symbolSection
@@ -97,41 +95,6 @@ extension ContentView {
 
         case .pro:
             proSection
-        }
-    }
-
-    private var editorTextSection: some View {
-        let template = currentFamilyDraft().template
-
-        return Section {
-            TextField("Design name", text: $designName)
-                .textInputAutocapitalization(.words)
-
-            switch template {
-            case .nextUpCalendar:
-                Text("This template is driven by Calendar events.\nUse Style/Background to customise the look.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-            case .weather:
-                TextField("Title (optional)", text: binding(\.primaryText))
-
-                Text("The title is shown in the Weather template’s empty state.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-            case .classic, .hero, .poster:
-                TextField("Primary text", text: binding(\.primaryText))
-                TextField("Secondary text (optional)", text: binding(\.secondaryText))
-
-                if matchedSetEnabled {
-                    Text("Text fields are currently editing: \(editingFamilyLabel)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            sectionHeader("Text")
         }
     }
 
