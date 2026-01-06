@@ -64,6 +64,7 @@ extension ContentView {
                 .foregroundStyle(.secondary)
         }
 
+        // Album shuffle controls (Smart Photos)
         SmartPhotoAlbumShuffleControls(
             smartPhoto: binding(\.imageSmartPhoto),
             importInProgress: $importInProgress,

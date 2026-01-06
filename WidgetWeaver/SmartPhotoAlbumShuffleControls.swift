@@ -2,40 +2,40 @@
 //  SmartPhotoAlbumShuffleControls.swift
 //  WidgetWeaver
 //
-//  Created by . . on 1/5/26.
+//  Created by . . on 1/6/26.
 //
 
 import Foundation
-import Photos
 import SwiftUI
-import Vision
+import Photos
+import WidgetKit
 
-/// Batch H/I/J container view (app-only):
-/// - Album selection
-/// - Progressive prep (N per session)
-/// - Quality ranking + debug reasons
-/// - Rotation schedule controls (Batch J)
+/// App-only progressive processing for Smart Photo album shuffle.
 ///
-/// The widget never decodes or analyses album photos.
+/// Rules:
+/// - App does all heavy work (Photos fetch, rendering, scoring).
+/// - Widget reads manifest + loads exactly one pre-rendered file.
 struct SmartPhotoAlbumShuffleControls: View {
-    @Binding var smartPhoto: ImageSpec?
-    @Binding var draftName: String
+    @Binding var smartPhoto: SmartPhotoSpec?
+    @Binding var importInProgress: Bool
+    @Binding var saveStatusMessage: String
 
     private let batchSize: Int = 10
-
     private let rotationOptionsMinutes: [Int] = [0, 15, 30, 60, 180, 360, 720, 1440]
 
-    @State private var importInProgress: Bool = false
-    @State private var saveStatusMessage: String = ""
+    @State private var showAlbumPicker: Bool = false
+    @State private var albumPickerState: AlbumPickerState = .idle
+    @State private var albums: [AlbumOption] = []
 
-    @State private var progress: SmartPhotoShuffleProgressSummary?
-    @State private var rankingPreview: [SmartPhotoRankingRow] = []
+    @State private var progress: ProgressSummary?
+    @State private var rankingRows: [RankingRow] = []
 
     @State private var rotationIntervalMinutes: Int = 60
-    @State private var rotationNextChangeDate: Date?
+    @State private var nextChangeDate: Date?
 
     private var manifestFileName: String {
-        smartPhoto?.smartPhoto?.shuffleManifestFileName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        (smartPhoto?.shuffleManifestFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var shuffleEnabled: Bool {
@@ -43,13 +43,16 @@ struct SmartPhotoAlbumShuffleControls: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Album Shuffle (Smart Photos)")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
 
-            Text("The app prepares per-family renders and a tiny manifest. The widget only loads one pre-rendered file.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Label("Album shuffle (Smart Photos)", systemImage: "photo.stack")
+                Spacer(minLength: 0)
+                Text(shuffleEnabled ? "On" : "Off")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             statusText
 
@@ -57,68 +60,100 @@ struct SmartPhotoAlbumShuffleControls: View {
                 rotationControls
             }
 
-            controls
+            actionRow
 
             if shuffleEnabled {
                 rankingDebug
             }
+        }
+        .sheet(isPresented: $showAlbumPicker) {
+            NavigationStack {
+                Group {
+                    switch albumPickerState {
+                    case .idle, .loading:
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading albums…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if !saveStatusMessage.isEmpty {
-                Text(saveStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
+                    case .failed(let message):
+                        VStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    case .ready:
+                        List(albums) { album in
+                            Button {
+                                Task { await configureShuffle(album: album) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(album.title)
+                                        .font(.headline)
+                                    Text("\(album.count) photos")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .disabled(importInProgress)
+                        }
+                    }
+                }
+                .navigationTitle("Choose Album")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showAlbumPicker = false }
+                    }
+                }
+            }
+            .task {
+                await loadAlbumsIfNeeded()
             }
         }
         .task(id: manifestFileName) {
-            await refreshProgressAndRanking()
+            await refreshFromManifest()
         }
     }
 
+    @ViewBuilder
     private var statusText: some View {
-        Group {
-            if !shuffleEnabled {
-                Text("Not configured. Choose an album to start.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if let progress {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Album ID: \(progress.sourceID)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    Text("Prepared: \(progress.preparedCount) / \(progress.totalCount)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if progress.failedCount > 0 {
-                        Text("Failed: \(progress.failedCount) (skipped)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let current = progress.currentPreparedSummary {
-                        Text("Current: \(current)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Current: (none prepared yet)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Text("Loading…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        if smartPhoto == nil {
+            Text("Album shuffle requires Smart Photo.\nPick a photo and create Smart Photo renders first.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if !shuffleEnabled {
+            Text("Choose an album to start. While the app is open, it will pre-render the next \(batchSize) photos.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if let progress {
+            Text("Prepared \(progress.prepared)/\(progress.total) • failed \(progress.failed) • currentIndex \(progress.currentIndex)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Loading shuffle status…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     private var rotationControls: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Label("Rotate", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Spacer(minLength: 0)
 
                 Menu {
@@ -127,7 +162,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                             Task { await setRotationInterval(minutes: minutes) }
                         } label: {
                             if minutes == rotationIntervalMinutes {
-                                Text("✓ " + rotationLabel(minutes: minutes))
+                                Text("✓ \(rotationLabel(minutes: minutes))")
                             } else {
                                 Text(rotationLabel(minutes: minutes))
                             }
@@ -139,11 +174,9 @@ struct SmartPhotoAlbumShuffleControls: View {
                 }
                 .disabled(importInProgress)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
-            if rotationIntervalMinutes > 0, let next = rotationNextChangeDate {
-                Text("Next change: \(next.formatted(date: .omitted, time: .shortened))")
+            if rotationIntervalMinutes > 0, let nextChangeDate {
+                Text("Next change: \(nextChangeDate.formatted(date: .omitted, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
@@ -154,133 +187,103 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Button {
-                    Task { await pickAlbum() }
-                } label: {
-                    Label("Choose album", systemImage: "photo.on.rectangle")
-                }
-
-                Spacer()
-
-                if shuffleEnabled {
-                    Button {
-                        Task { await prepareNextBatch(alreadyBusy: importInProgress) }
-                    } label: {
-                        Label("Prepare next \(batchSize)", systemImage: "bolt.fill")
-                    }
-
-                    Button {
-                        Task { await advanceToNextPrepared() }
-                    } label: {
-                        Label("Next photo", systemImage: "arrow.right.circle")
-                    }
-
-                    Button(role: .destructive) {
-                        disableShuffle()
-                    } label: {
-                        Label("Disable", systemImage: "xmark.circle")
-                    }
-                }
+    private var actionRow: some View {
+        HStack(spacing: 12) {
+            Button {
+                showAlbumPicker = true
+            } label: {
+                Label("Choose album…", systemImage: "rectangle.stack.badge.plus")
             }
-            .buttonStyle(.borderless)
+            .disabled(importInProgress || smartPhoto == nil)
+
+            if shuffleEnabled {
+                Button {
+                    Task { await prepareNextBatch(alreadyBusy: false) }
+                } label: {
+                    Label("Prepare next \(batchSize)", systemImage: "gearshape.2")
+                }
+                .disabled(importInProgress)
+
+                Button {
+                    Task { await advanceToNextPrepared() }
+                } label: {
+                    Label("Next photo", systemImage: "arrow.right.circle")
+                }
+                .disabled(importInProgress)
+
+                Button(role: .destructive) {
+                    disableShuffle()
+                } label: {
+                    Label("Disable", systemImage: "xmark.circle")
+                }
+                .disabled(importInProgress)
+            }
         }
+        .controlSize(.small)
+        .buttonStyle(BorderlessButtonStyle())
     }
 
     private var rankingDebug: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Ranking (debug)")
-                .font(.subheadline)
-
-            if rankingPreview.isEmpty {
+        DisclosureGroup {
+            if rankingRows.isEmpty {
                 Text("No prepared photos yet.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(rankingPreview) { row in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            Text("#\(row.rank)")
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rankingRows) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(row.isCurrent ? "▶︎" : " ")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
 
                             Text(row.scoreText)
                                 .font(.caption)
                                 .monospacedDigit()
+                                .foregroundStyle(.secondary)
 
-                            if !row.flagsText.isEmpty {
-                                Text(row.flagsText)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if !row.reasonText.isEmpty {
-                            Text(row.reasonText)
+                            Text(row.flagsText)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     }
-                    .padding(.vertical, 2)
                 }
+                .padding(.top, 4)
             }
+        } label: {
+            Text("Ranking debug")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .padding(.top, 8)
     }
 
-    private func refreshProgressAndRanking() async {
-        let mf = manifestFileName
-        guard !mf.isEmpty else {
-            await MainActor.run {
-                progress = nil
-                rankingPreview = []
-                rotationNextChangeDate = nil
-            }
+    // MARK: - Album picker
+
+    private func loadAlbumsIfNeeded() async {
+        if case .ready = albumPickerState, !albums.isEmpty { return }
+
+        albumPickerState = .loading
+        albums = []
+
+        let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+        guard ok else {
+            albumPickerState = .failed("Photo library access is off.\nEnable access in Settings to use album shuffle.")
             return
         }
 
-        let rotation = await Task.detached(priority: .utility) { () -> (minutes: Int, next: Date?, didCatchUp: Bool)? in
-            guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return nil }
-
-            let now = Date()
-            let didCatchUp = manifest.catchUpRotation(now: now)
-            if didCatchUp {
-                try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
-            }
-
-            let next = manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
-            return (manifest.rotationIntervalMinutes, next, didCatchUp)
-        }.value
-
-        let newProgress = await SmartPhotoAlbumShuffleEngine.loadProgressSummary(manifestFileName: mf)
-        let newRanking = await SmartPhotoAlbumShuffleEngine.loadRankingPreview(manifestFileName: mf, maxRows: 6)
+        let result = SmartPhotoAlbumShuffleControlsEngine.fetchAlbumOptions()
 
         await MainActor.run {
-            progress = newProgress
-            rankingPreview = newRanking
-            if let rotation {
-                rotationIntervalMinutes = rotation.minutes
-                rotationNextChangeDate = rotation.next
-                if rotation.didCatchUp {
-                    WidgetWeaverWidgetRefresh.forceKick()
-                }
-            } else {
-                rotationNextChangeDate = nil
-            }
+            self.albums = result
+            self.albumPickerState = result.isEmpty ? .failed("No albums found.") : .ready
         }
     }
 
     // MARK: - Configure
 
-    private func configureShuffle(album: SmartPhotoAlbumOption) async {
-        guard var imageSpec = smartPhoto else {
-            saveStatusMessage = "Make Smart Photo first."
-            return
-        }
-
-        guard var sp = imageSpec.smartPhoto else {
+    private func configureShuffle(album: AlbumOption) async {
+        guard var sp = smartPhoto else {
             saveStatusMessage = "Make Smart Photo first."
             return
         }
@@ -288,23 +291,25 @@ struct SmartPhotoAlbumShuffleControls: View {
         importInProgress = true
         defer { importInProgress = false }
 
-        let ok = await SmartPhotoAlbumShuffleEngine.ensurePhotoAccess()
+        let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
         guard ok else {
             saveStatusMessage = "Photo library access is off."
             return
         }
 
-        let assetIDs = await SmartPhotoAlbumShuffleEngine.fetchImageAssetIdentifiers(albumLocalIdentifier: album.localIdentifier, maxCount: 5_000)
+        saveStatusMessage = "Building album list…"
+
+        let manifestFile = SmartPhotoShuffleManifestStore.createManifestFileName(prefix: "smart-shuffle", ext: "json")
+
+        let assetIDs = SmartPhotoAlbumShuffleControlsEngine.fetchImageAssetIdentifiers(albumID: album.id)
 
         if assetIDs.isEmpty {
-            saveStatusMessage = "No usable photos found.\n(Filtered screenshots + low-res or invalid items.)"
+            saveStatusMessage = "No usable images found in \(album.title).\nScreenshots and very low-res images are ignored."
             return
         }
 
-        let manifestFile = SmartPhotoShuffleManifestStore.createManifestFileName()
-
         let defaultRotationMinutes: Int = 60
-        let nextChange = scheduledNextChangeDate(from: Date(), minutes: defaultRotationMinutes)
+        let next = scheduledNextChangeDate(from: Date(), minutes: defaultRotationMinutes)
 
         let manifest = SmartPhotoShuffleManifest(
             version: 3,
@@ -312,7 +317,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             entries: assetIDs.map { SmartPhotoShuffleManifest.Entry(id: $0) },
             currentIndex: 0,
             rotationIntervalMinutes: defaultRotationMinutes,
-            nextChangeDate: nextChange
+            nextChangeDate: next
         )
 
         do {
@@ -323,24 +328,33 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
 
         sp.shuffleManifestFileName = manifestFile
-        imageSpec.smartPhoto = sp
-        smartPhoto = imageSpec
+        smartPhoto = sp
 
-        saveStatusMessage = "Album chosen.\nTap “Prepare next \(batchSize)” while the app is active.\nSave to update widgets."
+        showAlbumPicker = false
+        albumPickerState = .idle
 
-        await refreshProgressAndRanking()
+        WidgetWeaverWidgetRefresh.forceKick()
+
+        saveStatusMessage = "Album shuffle configured for “\(album.title)” (\(assetIDs.count) photos).\nPreparing next \(batchSize)…"
+
+        await refreshFromManifest()
+        await prepareNextBatch(alreadyBusy: true)
     }
 
     private func disableShuffle() {
-        guard var imageSpec = smartPhoto else { return }
-        guard var sp = imageSpec.smartPhoto else { return }
-
+        guard var sp = smartPhoto else { return }
         sp.shuffleManifestFileName = nil
-        imageSpec.smartPhoto = sp
-        smartPhoto = imageSpec
+        smartPhoto = sp
 
-        saveStatusMessage = "Shuffle disabled.\nSave to update widgets."
+        progress = nil
+        rankingRows = []
+        nextChangeDate = nil
+        rotationIntervalMinutes = 60
+
+        saveStatusMessage = "Album shuffle disabled (draft only).\nSave to update widgets."
     }
+
+    // MARK: - Rotation
 
     private func setRotationInterval(minutes: Int) async {
         let mf = manifestFileName
@@ -371,15 +385,12 @@ struct SmartPhotoAlbumShuffleControls: View {
             return
         }
 
-        await MainActor.run {
-            WidgetWeaverWidgetRefresh.forceKick()
-        }
-
-        await refreshProgressAndRanking()
+        WidgetWeaverWidgetRefresh.forceKick()
+        await refreshFromManifest()
 
         if minutes <= 0 {
             saveStatusMessage = "Rotation turned off (manual only).\nSave to update widgets."
-        } else if let next = manifest.nextChangeDate {
+        } else if let next = manifest.nextChangeDateFrom(now: Date()) ?? manifest.nextChangeDate {
             saveStatusMessage = "Rotation set to \(rotationLabel(minutes: minutes)). Next change at \(next.formatted(date: .omitted, time: .shortened)).\nSave to update widgets."
         } else {
             saveStatusMessage = "Rotation updated.\nSave to update widgets."
@@ -389,16 +400,12 @@ struct SmartPhotoAlbumShuffleControls: View {
     private func rotationLabel(minutes: Int) -> String {
         if minutes <= 0 { return "Off" }
         if minutes < 60 { return "\(minutes)m" }
-
         if minutes % 60 == 0 {
             let hours = minutes / 60
             if hours == 24 { return "1d" }
-            if hours > 24, hours % 24 == 0 {
-                return "\(hours / 24)d"
-            }
+            if hours > 24, hours % 24 == 0 { return "\(hours / 24)d" }
             return "\(hours)h"
         }
-
         let hours = minutes / 60
         let mins = minutes % 60
         return "\(hours)h \(mins)m"
@@ -410,6 +417,8 @@ struct SmartPhotoAlbumShuffleControls: View {
         let cal = Calendar.current
         return cal.date(bySetting: .second, value: 0, of: raw) ?? raw
     }
+
+    // MARK: - Manual advance
 
     private func advanceToNextPrepared() async {
         let mf = manifestFileName
@@ -423,72 +432,44 @@ struct SmartPhotoAlbumShuffleControls: View {
             return
         }
 
-        guard !manifest.entries.isEmpty else {
-            saveStatusMessage = "Manifest is empty."
+        let total = manifest.entries.count
+        guard total > 0 else {
+            saveStatusMessage = "No photos in the shuffle manifest."
             return
         }
 
-        let total = manifest.entries.count
         let start = max(0, min(manifest.currentIndex, total - 1))
 
-        var nextIndex: Int? = nil
-        if total > 1 {
-            for step in 1..<total {
-                let idx = (start + step) % total
-                if manifest.entries[idx].isPrepared {
-                    nextIndex = idx
-                    break
-                }
+        var nextIndex: Int?
+        for step in 1...total {
+            let idx = (start + step) % total
+            if manifest.entries[idx].isPrepared {
+                nextIndex = idx
+                break
             }
         }
 
-        if nextIndex == nil {
-            if manifest.entries[start].isPrepared {
-                nextIndex = start
-            }
-        }
-
-        guard let next = nextIndex else {
-            saveStatusMessage = "No prepared photo yet.\nTap “Prepare next \(batchSize)” first."
+        guard let nextIndex else {
+            saveStatusMessage = "No prepared photos yet.\nTap “Prepare next \(batchSize)” first."
             return
         }
 
-        manifest.currentIndex = next
+        manifest.currentIndex = nextIndex
 
         if manifest.rotationIntervalMinutes > 0 {
             manifest.nextChangeDate = scheduledNextChangeDate(from: Date(), minutes: manifest.rotationIntervalMinutes)
-        } else {
-            manifest.nextChangeDate = nil
         }
 
         do {
             try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
         } catch {
-            saveStatusMessage = "Failed to update manifest: \(error.localizedDescription)"
+            saveStatusMessage = "Failed to update shuffle index: \(error.localizedDescription)"
             return
         }
 
         WidgetWeaverWidgetRefresh.forceKick()
-        saveStatusMessage = "Advanced to next prepared photo.\nSave to update widgets."
-
-        await refreshProgressAndRanking()
-    }
-
-    // MARK: - Album picker
-
-    private func pickAlbum() async {
-        let ok = await SmartPhotoAlbumShuffleEngine.ensurePhotoAccess()
-        guard ok else {
-            saveStatusMessage = "Photo library access is off."
-            return
-        }
-
-        do {
-            let album = try await SmartPhotoAlbumShuffleEngine.pickAlbum()
-            await configureShuffle(album: album)
-        } catch {
-            saveStatusMessage = "Album pick failed: \(error.localizedDescription)"
-        }
+        await refreshFromManifest()
+        saveStatusMessage = "Advanced to next prepared photo (index \(nextIndex)).\nSave to update widgets."
     }
 
     // MARK: - Progressive prep
@@ -504,7 +485,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             if !alreadyBusy { importInProgress = false }
         }
 
-        let ok = await SmartPhotoAlbumShuffleEngine.ensurePhotoAccess()
+        let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
         guard ok else {
             saveStatusMessage = "Photo library access is off."
             return
@@ -520,7 +501,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
         }
 
-        let targets = await MainActor.run { SmartPhotoRenderTargets.forCurrentDevice() }
+        let targets = SmartPhotoRenderTargets.forCurrentDevice()
 
         var preparedNow = 0
         var failedNow = 0
@@ -533,16 +514,14 @@ struct SmartPhotoAlbumShuffleControls: View {
             if entry.flags.contains("failed") { continue }
 
             do {
-                let data = try await SmartPhotoAlbumShuffleEngine.requestImageData(localIdentifier: entry.id)
+                let data = try await SmartPhotoAlbumShuffleControlsEngine.requestImageData(localIdentifier: entry.id)
 
-                let imageSpec = try await Task.detached(priority: .userInitiated) {
-                    try autoreleasepool {
-                        try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
-                    }
-                }.value
+                let imageSpec = try autoreleasepool {
+                    try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
+                }
 
                 guard let sp = imageSpec.smartPhoto else {
-                    throw SmartPhotoShufflePrepError.missingSmartPhoto
+                    throw PrepError.missingSmartPhoto
                 }
 
                 let small = sp.small?.renderFileName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -550,242 +529,277 @@ struct SmartPhotoAlbumShuffleControls: View {
                 let large = sp.large?.renderFileName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
                 if small.isEmpty || medium.isEmpty || large.isEmpty {
-                    throw SmartPhotoShufflePrepError.missingRenderFiles
+                    throw PrepError.missingVariants
+                }
+
+                let scoreResult = try autoreleasepool {
+                    try SmartPhotoQualityScorer.score(localIdentifier: entry.id, imageData: data, preparedSmartPhoto: sp)
                 }
 
                 entry.smallFile = small
                 entry.mediumFile = medium
                 entry.largeFile = large
                 entry.preparedAt = Date()
-
-                let scoreResult = try autoreleasepool {
-                    try SmartPhotoQualityScorer.score(localIdentifier: entry.id, imageData: data, preparedSmartPhoto: sp)
-                }
-
                 entry.score = scoreResult.score
-                entry.flags = scoreResult.flags
+                entry.flags = mergeFlags(existing: entry.flags, adding: scoreResult.flags)
+                entry.flags.removeAll(where: { $0 == "failed" })
 
                 manifest.entries[idx] = entry
+                try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+
                 preparedNow += 1
-
-                do {
-                    try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
-                } catch {
-                    saveStatusMessage = "Failed saving manifest: \(error.localizedDescription)"
-                    return
-                }
-
-                await MainActor.run {
-                    progress = SmartPhotoShuffleProgressSummary(from: manifest)
-                    rankingPreview = SmartPhotoRankingRow.buildPreview(from: manifest, maxRows: 6)
-                }
             } catch {
-                failedNow += 1
-                entry.flags.append("failed")
+                entry.flags = mergeFlags(existing: entry.flags, adding: ["failed"])
                 manifest.entries[idx] = entry
-
-                do {
-                    try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
-                } catch {
-                    saveStatusMessage = "Failed saving manifest: \(error.localizedDescription)"
-                    return
-                }
-
-                await MainActor.run {
-                    progress = SmartPhotoShuffleProgressSummary(from: manifest)
-                    rankingPreview = SmartPhotoRankingRow.buildPreview(from: manifest, maxRows: 6)
-                }
+                try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+                failedNow += 1
             }
         }
 
-        do {
-            manifest.entries = SmartPhotoAlbumShuffleEngine.sortEntriesByScoreKeepingPreparedFirst(manifest.entries)
+        // Batch I: order prepared entries by score (keep current stable).
+        SmartPhotoAlbumShuffleControlsEngine.resortPreparedEntriesByScoreKeepingCurrentStable(&manifest)
+        try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
 
-            if let currentID = progress?.currentEntryID,
-               let newIndex = manifest.entries.firstIndex(where: { $0.id == currentID })
-            {
-                manifest.currentIndex = newIndex
+        WidgetWeaverWidgetRefresh.forceKick()
+        await refreshFromManifest()
+
+        if preparedNow == 0, failedNow == 0 {
+            saveStatusMessage = "No more photos to prepare right now.\nSave to update widgets."
+        } else if failedNow == 0 {
+            saveStatusMessage = "Prepared \(preparedNow) photos for shuffle.\nSave to update widgets."
+        } else {
+            saveStatusMessage = "Prepared \(preparedNow) photos (\(failedNow) failed).\nSave to update widgets."
+        }
+    }
+
+    private func mergeFlags(existing: [String], adding: [String]) -> [String] {
+        var set = Set(existing)
+        for f in adding {
+            let t = f.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { set.insert(t) }
+        }
+        return Array(set).sorted()
+    }
+
+    // MARK: - Manifest refresh
+
+    private func refreshFromManifest() async {
+        let mf = manifestFileName
+        guard !mf.isEmpty else {
+            await MainActor.run {
+                progress = nil
+                rankingRows = []
+                nextChangeDate = nil
+                rotationIntervalMinutes = 60
             }
-
-            try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
-        } catch {
-            saveStatusMessage = "Failed finalising manifest: \(error.localizedDescription)"
             return
         }
 
-        WidgetWeaverWidgetRefresh.forceKick()
-
-        if preparedNow == 0, failedNow == 0 {
-            saveStatusMessage = "Nothing to prepare (already done).\nSave to update widgets."
-        } else {
-            saveStatusMessage = "Prepared \(preparedNow). Failed \(failedNow).\nSave to update widgets."
+        guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            await MainActor.run {
+                progress = nil
+                rankingRows = []
+                nextChangeDate = nil
+            }
+            return
         }
 
-        await refreshProgressAndRanking()
+        let now = Date()
+        let didCatchUp = manifest.catchUpRotation(now: now)
+        if didCatchUp {
+            try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+            WidgetWeaverWidgetRefresh.forceKick()
+        }
+
+        let next = manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
+
+        let p = ProgressSummary.from(manifest: manifest)
+        let rows = RankingRow.preview(from: manifest, maxRows: 6)
+
+        await MainActor.run {
+            progress = p
+            rankingRows = rows
+            rotationIntervalMinutes = manifest.rotationIntervalMinutes
+            nextChangeDate = next
+        }
     }
 }
 
-// MARK: - Models used by the controls view
+// MARK: - Engine + helpers
 
-struct SmartPhotoAlbumOption: Identifiable, Hashable, Sendable {
+private enum PrepError: Error {
+    case missingSmartPhoto
+    case missingVariants
+}
+
+private enum AlbumPickerState: Equatable {
+    case idle
+    case loading
+    case ready
+    case failed(String)
+}
+
+private struct AlbumOption: Identifiable, Hashable, Sendable {
     var id: String
-    var localIdentifier: String
     var title: String
+    var count: Int
 }
 
-struct SmartPhotoShuffleProgressSummary: Hashable, Sendable {
-    var sourceID: String
-    var totalCount: Int
-    var preparedCount: Int
-    var failedCount: Int
+private struct ProgressSummary: Hashable, Sendable {
+    var total: Int
+    var prepared: Int
+    var failed: Int
     var currentIndex: Int
-    var currentEntryID: String?
 
-    var currentPreparedSummary: String? {
-        guard let currentEntryID else { return nil }
-        return currentEntryID
-    }
-
-    init(from manifest: SmartPhotoShuffleManifest) {
-        sourceID = manifest.sourceID
-        totalCount = manifest.entries.count
-        preparedCount = manifest.entries.filter { $0.isPrepared }.count
-        failedCount = manifest.entries.filter { $0.flags.contains("failed") }.count
-        currentIndex = manifest.currentIndex
-        if manifest.entries.indices.contains(manifest.currentIndex) {
-            currentEntryID = manifest.entries[manifest.currentIndex].id
-        } else {
-            currentEntryID = nil
-        }
+    static func from(manifest: SmartPhotoShuffleManifest) -> ProgressSummary {
+        let total = manifest.entries.count
+        let prepared = manifest.entries.filter { $0.isPrepared }.count
+        let failed = manifest.entries.filter { $0.flags.contains("failed") && !$0.isPrepared }.count
+        let currentIndex = manifest.currentIndex
+        return ProgressSummary(total: total, prepared: prepared, failed: failed, currentIndex: currentIndex)
     }
 }
 
-struct SmartPhotoRankingRow: Identifiable, Hashable, Sendable {
-    var id: String { entryID }
-
-    var rank: Int
-    var entryID: String
+private struct RankingRow: Identifiable, Hashable, Sendable {
+    var id: String
+    var isCurrent: Bool
     var score: Double
     var flags: [String]
-    var reasonText: String
 
     var scoreText: String {
-        String(format: "%.1f", score)
+        let s = Int(score.rounded())
+        return "\(s)"
     }
 
     var flagsText: String {
-        flags.joined(separator: ", ")
+        if flags.isEmpty { return "—" }
+        return flags.joined(separator: ", ")
     }
 
-    static func buildPreview(from manifest: SmartPhotoShuffleManifest, maxRows: Int) -> [SmartPhotoRankingRow] {
-        let prepared = manifest.entries.enumerated().compactMap { (idx, entry) -> (idx: Int, entry: SmartPhotoShuffleManifest.Entry)? in
-            guard entry.isPrepared else { return nil }
-            return (idx, entry)
-        }
+    static func preview(from manifest: SmartPhotoShuffleManifest, maxRows: Int) -> [RankingRow] {
+        let currentID: String? = {
+            guard manifest.entries.indices.contains(manifest.currentIndex) else { return nil }
+            return manifest.entries[manifest.currentIndex].id
+        }()
 
+        let prepared = manifest.entries.filter { $0.isPrepared }
         let sorted = prepared.sorted { a, b in
-            if a.entry.scoreValue != b.entry.scoreValue { return a.entry.scoreValue > b.entry.scoreValue }
-            return a.idx < b.idx
-        }
-
-        let top = sorted.prefix(maxRows)
-        return top.enumerated().map { (i, pair) in
-            SmartPhotoRankingRow(
-                rank: i + 1,
-                entryID: pair.entry.id,
-                score: pair.entry.scoreValue,
-                flags: pair.entry.flags,
-                reasonText: SmartPhotoAlbumShuffleEngine.reasonText(from: pair.entry.flags)
-            )
-        }
-    }
-}
-
-// MARK: - Engine helpers (Batch H/I)
-
-enum SmartPhotoShufflePrepError: Error {
-    case missingSmartPhoto
-    case missingRenderFiles
-}
-
-enum SmartPhotoAlbumShuffleEngine {
-    static func ensurePhotoAccess() async -> Bool {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        if status == .authorized || status == .limited {
-            return true
-        }
-
-        return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { newStatus in
-                continuation.resume(returning: (newStatus == .authorized || newStatus == .limited))
-            }
-        }
-    }
-
-    static func pickAlbum() async throws -> SmartPhotoAlbumOption {
-        let collections = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
-        guard collections.count > 0 else {
-            throw NSError(domain: "SmartPhotoAlbumShuffle", code: 1, userInfo: [NSLocalizedDescriptionKey: "No albums found"])
-        }
-
-        var options: [SmartPhotoAlbumOption] = []
-        options.reserveCapacity(collections.count)
-
-        collections.enumerateObjects { collection, _, _ in
-            let title = collection.localizedTitle ?? "Album"
-            options.append(
-                SmartPhotoAlbumOption(
-                    id: collection.localIdentifier,
-                    localIdentifier: collection.localIdentifier,
-                    title: title
-                )
-            )
-        }
-
-        let sorted = options.sorted { a, b in
-            if a.title != b.title { return a.title < b.title }
+            let sa = a.scoreValue
+            let sb = b.scoreValue
+            if sa != sb { return sa > sb }
+            let da = a.preparedAt ?? .distantPast
+            let db = b.preparedAt ?? .distantPast
+            if da != db { return da > db }
             return a.id < b.id
         }
 
-        if let first = sorted.first {
-            return first
+        return sorted.prefix(max(1, maxRows)).map { entry in
+            RankingRow(
+                id: entry.id,
+                isCurrent: (entry.id == currentID),
+                score: entry.scoreValue,
+                flags: entry.flags.filter { $0 != "failed" }
+            )
         }
+    }
+}
 
-        throw NSError(domain: "SmartPhotoAlbumShuffle", code: 2, userInfo: [NSLocalizedDescriptionKey: "No album selected"])
+private enum SmartPhotoAlbumShuffleControlsEngine {
+
+    @MainActor
+    static func ensurePhotoAccess() async -> Bool {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        switch status {
+        case .authorized, .limited:
+            return true
+        case .notDetermined:
+            let updated = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            return updated == .authorized || updated == .limited
+        default:
+            return false
+        }
     }
 
-    static func fetchImageAssetIdentifiers(albumLocalIdentifier: String, maxCount: Int) async -> [String] {
-        let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [albumLocalIdentifier], options: nil).firstObject
-        guard let album else { return [] }
+    static func fetchAlbumOptions() -> [AlbumOption] {
+        let imageOptions: PHFetchOptions = {
+            let o = PHFetchOptions()
+            o.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+            return o
+        }()
+
+        func countImages(in collection: PHAssetCollection) -> Int {
+            PHAsset.fetchAssets(in: collection, options: imageOptions).count
+        }
+
+        var out: [AlbumOption] = []
+        var seen = Set<String>()
+
+        func appendCollection(_ collection: PHAssetCollection, overrideTitle: String? = nil) {
+            let id = collection.localIdentifier
+            guard !seen.contains(id) else { return }
+            seen.insert(id)
+
+            let title = (overrideTitle ?? collection.localizedTitle ?? "Album")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let count = countImages(in: collection)
+            guard count > 0 else { return }
+
+            out.append(AlbumOption(id: id, title: title.isEmpty ? "Album" : title, count: count))
+        }
+
+        if let c = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumUserLibrary, options: nil).firstObject {
+            appendCollection(c, overrideTitle: "All Photos")
+        }
+        if let c = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumFavorites, options: nil).firstObject {
+            appendCollection(c, overrideTitle: "Favourites")
+        }
+        if let c = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumRecentlyAdded, options: nil).firstObject {
+            appendCollection(c, overrideTitle: "Recently Added")
+        }
+
+        var user: [AlbumOption] = []
+        PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumRegular, options: nil)
+            .enumerateObjects { collection, _, _ in
+                let id = collection.localIdentifier
+                if seen.contains(id) { return }
+
+                let title = (collection.localizedTitle ?? "Album").trimmingCharacters(in: .whitespacesAndNewlines)
+                let count = countImages(in: collection)
+                guard count > 0 else { return }
+
+                user.append(AlbumOption(id: id, title: title.isEmpty ? "Album" : title, count: count))
+            }
+
+        user.sort { $0.title.lowercased() < $1.title.lowercased() }
+        out.append(contentsOf: user)
+        return out
+    }
+
+    static func fetchImageAssetIdentifiers(albumID: String) -> [String] {
+        let collections = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [albumID], options: nil)
+        guard let collection = collections.firstObject else { return [] }
 
         let options = PHFetchOptions()
-        options.includeHiddenAssets = false
+        options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
 
-        let assets = PHAsset.fetchAssets(in: album, options: options)
-        guard assets.count > 0 else { return [] }
+        let assets = PHAsset.fetchAssets(in: collection, options: options)
 
         var ids: [String] = []
-        ids.reserveCapacity(min(maxCount, assets.count))
+        ids.reserveCapacity(assets.count)
 
-        var count = 0
-        assets.enumerateObjects { asset, _, stop in
-            if count >= maxCount {
-                stop.pointee = true
+        assets.enumerateObjects { asset, _, _ in
+            if asset.mediaSubtypes.contains(.photoScreenshot) {
                 return
             }
 
-            if asset.mediaType != .image { return }
-            if asset.pixelWidth < 512 || asset.pixelHeight < 512 { return }
-
-            if #available(iOS 9.0, *) {
-                if asset.mediaSubtypes.contains(.photoScreenshot) {
-                    return
-                }
+            let minDim = min(asset.pixelWidth, asset.pixelHeight)
+            if minDim < 800 {
+                return
             }
 
             ids.append(asset.localIdentifier)
-            count += 1
         }
 
         return ids
@@ -794,67 +808,60 @@ enum SmartPhotoAlbumShuffleEngine {
     static func requestImageData(localIdentifier: String) async throws -> Data {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = assets.firstObject else {
-            throw NSError(domain: "SmartPhotoAlbumShuffle", code: 10, userInfo: [NSLocalizedDescriptionKey: "Asset not found"])
+            throw NSError(domain: "SmartPhotoShuffle", code: 1, userInfo: [NSLocalizedDescriptionKey: "Asset not found"])
         }
 
-        let opts = PHImageRequestOptions()
-        opts.deliveryMode = .highQualityFormat
-        opts.isNetworkAccessAllowed = true
-        opts.isSynchronous = false
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .none
+        options.version = .current
+        options.isSynchronous = false
 
-        return try await withCheckedThrowingContinuation { continuation in
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: opts) { data, _, _, info in
-                if let info,
-                   let cancelled = info[PHImageCancelledKey] as? Bool,
-                   cancelled
-                {
-                    continuation.resume(throwing: NSError(domain: "SmartPhotoAlbumShuffle", code: 11, userInfo: [NSLocalizedDescriptionKey: "Cancelled"]))
+        return try await withCheckedThrowingContinuation { cont in
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
+                if let error = info?[PHImageErrorKey] as? Error {
+                    cont.resume(throwing: error)
                     return
                 }
-
-                if let info,
-                   let error = info[PHImageErrorKey] as? NSError
-                {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
                 guard let data else {
-                    continuation.resume(throwing: NSError(domain: "SmartPhotoAlbumShuffle", code: 12, userInfo: [NSLocalizedDescriptionKey: "No image data"]))
+                    cont.resume(throwing: NSError(domain: "SmartPhotoShuffle", code: 2, userInfo: [NSLocalizedDescriptionKey: "No image data"]))
                     return
                 }
-
-                continuation.resume(returning: data)
+                cont.resume(returning: data)
             }
         }
     }
 
-    static func loadProgressSummary(manifestFileName: String) async -> SmartPhotoShuffleProgressSummary? {
-        await Task.detached(priority: .utility) {
-            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFileName) else { return nil }
-            return SmartPhotoShuffleProgressSummary(from: manifest)
-        }.value
-    }
+    static func resortPreparedEntriesByScoreKeepingCurrentStable(_ manifest: inout SmartPhotoShuffleManifest) {
+        let currentID: String? = {
+            guard manifest.entries.indices.contains(manifest.currentIndex) else { return nil }
+            return manifest.entries[manifest.currentIndex].id
+        }()
 
-    static func loadRankingPreview(manifestFileName: String, maxRows: Int) async -> [SmartPhotoRankingRow] {
-        await Task.detached(priority: .utility) {
-            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFileName) else { return [] }
-            return SmartPhotoRankingRow.buildPreview(from: manifest, maxRows: maxRows)
-        }.value
-    }
+        let indexed = manifest.entries.enumerated().map { (idx: $0.offset, entry: $0.element) }
 
-    static func sortEntriesByScoreKeepingPreparedFirst(_ entries: [SmartPhotoShuffleManifest.Entry]) -> [SmartPhotoShuffleManifest.Entry] {
-        let prepared = entries.filter { $0.isPrepared }.sorted { a, b in
-            if a.scoreValue != b.scoreValue { return a.scoreValue > b.scoreValue }
-            return a.id < b.id
+        let prepared = indexed.filter { $0.entry.isPrepared }
+        let unprepared = indexed.filter { !$0.entry.isPrepared }
+
+        let preparedSorted = prepared.sorted { a, b in
+            let sa = a.entry.scoreValue
+            let sb = b.entry.scoreValue
+            if sa != sb { return sa > sb }
+
+            let da = a.entry.preparedAt ?? .distantPast
+            let db = b.entry.preparedAt ?? .distantPast
+            if da != db { return da > db }
+
+            return a.idx < b.idx
         }
 
-        let unprepared = entries.filter { !$0.isPrepared }
-        return prepared + unprepared
-    }
+        manifest.entries = preparedSorted.map { $0.entry } + unprepared.map { $0.entry }
 
-    static func reasonText(from flags: [String]) -> String {
-        if flags.isEmpty { return "" }
-        return flags.joined(separator: " • ")
+        if let currentID, let newIndex = manifest.entries.firstIndex(where: { $0.id == currentID }) {
+            manifest.currentIndex = newIndex
+        } else {
+            manifest.currentIndex = max(0, min(manifest.currentIndex, max(0, manifest.entries.count - 1)))
+        }
     }
 }
