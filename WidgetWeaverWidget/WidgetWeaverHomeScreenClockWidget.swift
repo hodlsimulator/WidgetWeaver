@@ -59,7 +59,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    /// 120 minute-boundary entries (plus an initial “now” entry) ≈ 2 hours of reliable ticking.
+    /// 120 minute-boundary entries (plus the current minute anchor) ≈ 2 hours of reliable ticking.
     static let maxEntriesPerTimeline: Int = 121
 }
 
@@ -108,10 +108,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry.
+        // Immediate entry (aligned to the current minute boundary).
+        //
+        // Using `now` here causes the minute hand to jump mid-minute whenever WidgetKit reloads the
+        // timeline, which reads as “late ticking”. Keeping the first entry on the minute anchor makes
+        // the widget stable until the next minute-boundary entry.
         entries.append(
             Entry(
-                date: now,
+                date: minuteAnchorNow,
                 tickMode: .secondsSweep,
                 tickSeconds: 0.0,
                 colourScheme: colourScheme
