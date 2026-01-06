@@ -104,6 +104,7 @@ extension ContentView {
                                 masterFileName: smart.masterFileName,
                                 targetPixels: variant.pixelSize,
                                 initialCropRect: variant.cropRect,
+                                focus: $editorFocusSnapshot,
                                 onApply: { rect in
                                     await applyManualSmartCrop(family: family, cropRect: rect)
                                 }

@@ -68,7 +68,8 @@ extension ContentView {
         SmartPhotoAlbumShuffleControls(
             smartPhoto: binding(\.imageSmartPhoto),
             importInProgress: $importInProgress,
-            saveStatusMessage: $saveStatusMessage
+            saveStatusMessage: $saveStatusMessage,
+            focus: $editorFocusSnapshot
         )
     }
 

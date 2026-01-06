@@ -14,6 +14,7 @@ struct SmartPhotoCropEditorView: View {
     let masterFileName: String
     let targetPixels: PixelSize
     let initialCropRect: NormalisedRect
+    let focus: Binding<EditorFocusSnapshot>?
     let onApply: (NormalisedRect) async -> Void
 
     @State private var masterImage: UIImage?
@@ -23,6 +24,8 @@ struct SmartPhotoCropEditorView: View {
 
     @State private var dragStartRect: NormalisedRect?
     @State private var pinchStartRect: NormalisedRect?
+
+    @State private var previousFocusSnapshot: EditorFocusSnapshot?
 
     // Debug overlay (Batch E)
     @AppStorage("widgetweaver.smartphoto.debugOverlay.enabled")
@@ -39,12 +42,14 @@ struct SmartPhotoCropEditorView: View {
         masterFileName: String,
         targetPixels: PixelSize,
         initialCropRect: NormalisedRect,
+        focus: Binding<EditorFocusSnapshot>? = nil,
         onApply: @escaping (NormalisedRect) async -> Void
     ) {
         self.family = family
         self.masterFileName = masterFileName
         self.targetPixels = targetPixels.normalised()
         self.initialCropRect = initialCropRect.normalised()
+        self.focus = focus
         self.onApply = onApply
 
         _cropRect = State(initialValue: initialCropRect.normalised())
@@ -91,6 +96,12 @@ struct SmartPhotoCropEditorView: View {
         }
         .navigationTitle("Fix framing")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            pushFocusIfNeeded()
+        }
+        .onDisappear {
+            restoreFocusIfNeeded()
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
@@ -169,6 +180,29 @@ struct SmartPhotoCropEditorView: View {
                 isApplying = false
                 dismiss()
             }
+        }
+    }
+
+    private func pushFocusIfNeeded() {
+        guard let focus else { return }
+
+        if previousFocusSnapshot == nil {
+            previousFocusSnapshot = focus.wrappedValue
+        }
+
+        focus.wrappedValue = EditorFocusSnapshot(
+            selection: .single,
+            focus: .element(id: "smartPhotoCrop")
+        )
+    }
+
+    private func restoreFocusIfNeeded() {
+        guard let focus else { return }
+        guard let previous = previousFocusSnapshot else { return }
+        defer { previousFocusSnapshot = nil }
+
+        if focus.wrappedValue.focus == .element(id: "smartPhotoCrop") {
+            focus.wrappedValue = previous
         }
     }
 

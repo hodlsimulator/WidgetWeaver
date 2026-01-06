@@ -19,10 +19,13 @@ struct SmartPhotoAlbumShuffleControls: View {
     @Binding var importInProgress: Bool
     @Binding var saveStatusMessage: String
 
+    var focus: Binding<EditorFocusSnapshot>? = nil
+
     private let batchSize: Int = 10
     private let rotationOptionsMinutes: [Int] = [0, 15, 30, 60, 180, 360, 720, 1440]
 
     @State private var showAlbumPicker: Bool = false
+    @State private var previousFocusSnapshot: EditorFocusSnapshot?
     @State private var albumPickerState: AlbumPickerState = .idle
     @State private var albums: [AlbumOption] = []
 
@@ -119,6 +122,9 @@ struct SmartPhotoAlbumShuffleControls: View {
             .task {
                 await loadAlbumsIfNeeded()
             }
+        }
+        .onChange(of: showAlbumPicker) { _, newValue in
+            handleAlbumPickerPresentationChange(isPresented: newValue)
         }
         .task(id: manifestFileName) {
             await refreshFromManifest()
@@ -258,6 +264,33 @@ struct SmartPhotoAlbumShuffleControls: View {
     }
 
     // MARK: - Album picker
+
+    private func handleAlbumPickerPresentationChange(isPresented: Bool) {
+        guard let focus else { return }
+
+        let pickerTarget: EditorFocusTarget = .albumContainer(
+            id: "smartPhotoAlbumPicker",
+            subtype: .smart
+        )
+
+        if isPresented {
+            if previousFocusSnapshot == nil {
+                previousFocusSnapshot = focus.wrappedValue
+            }
+
+            focus.wrappedValue = EditorFocusSnapshot(
+                selection: .none,
+                focus: pickerTarget
+            )
+        } else {
+            guard let previous = previousFocusSnapshot else { return }
+            defer { previousFocusSnapshot = nil }
+
+            if focus.wrappedValue.focus == pickerTarget {
+                focus.wrappedValue = previous
+            }
+        }
+    }
 
     private func loadAlbumsIfNeeded() async {
         if case .ready = albumPickerState, !albums.isEmpty { return }
