@@ -7,83 +7,44 @@
 
 import Foundation
 
-/// Coarse cardinality for the current editor selection.
-///
-/// The editor tracks cardinality separately from focus so the UI can express
-/// interactions like multi-select while still having a focused target.
+/// Cardinality of the current selection (if any).
 enum EditorSelectionKind: String, CaseIterable, Hashable, Sendable {
     case none
     case single
     case multi
-
-    var cardinalityLabel: String {
-        switch self {
-        case .none: return "none"
-        case .single: return "single"
-        case .multi: return "multi"
-        }
-    }
 }
 
-/// Broad categorisation for album-backed content.
+/// Album subtype for album editing focus.
 enum EditorAlbumSubtype: String, CaseIterable, Hashable, Sendable {
+    case manual
     case smart
-    case user
-
-    var label: String {
-        switch self {
-        case .smart: return "smart"
-        case .user: return "user"
-        }
-    }
 }
 
-/// Focus target for tool gating and editor UI state.
+/// The single active focus target for the editor.
 ///
-/// Keep this enum in sync with switches in ContentView (debug overlay etc).
+/// This is intentionally plain data (no SwiftUI) so it can be stored in model state,
+/// fed into context evaluation, and unit-tested.
 enum EditorFocusTarget: Hashable, Sendable {
+    /// Widget-level focus (nothing selected).
     case widget
-    case clock
+
+    /// A generic element is selected (non-album).
     case element(id: String)
+
+    /// Album container focus.
     case albumContainer(id: String, subtype: EditorAlbumSubtype)
+
+    /// A photo item inside an album is selected.
     case albumPhoto(albumID: String, itemID: String, subtype: EditorAlbumSubtype)
+
+    /// Smart rule editor is open (exclusive).
     case smartRuleEditor(albumID: String)
+
+    /// Clock editor focus (separate from image/album tools).
+    case clock
 }
 
-extension EditorFocusTarget {
-    var albumSubtype: EditorAlbumSubtype? {
-        switch self {
-        case .albumContainer(_, let subtype): return subtype
-        case .albumPhoto(_, _, let subtype): return subtype
-        default: return nil
-        }
-    }
-
-    var elementID: String? {
-        switch self {
-        case .element(let id): return id
-        default: return nil
-        }
-    }
-
-    var debugLabel: String {
-        switch self {
-        case .widget:
-            return "widget"
-        case .clock:
-            return "clock"
-        case .element(let id):
-            return "element(\(id))"
-        case .albumContainer(let id, let subtype):
-            return "albumContainer(\(id), \(subtype.label))"
-        case .albumPhoto(let albumID, let itemID, let subtype):
-            return "albumPhoto(\(albumID), \(itemID), \(subtype.label))"
-        case .smartRuleEditor(let albumID):
-            return "smartRuleEditor(\(albumID))"
-        }
-    }
-}
-
+/// A compact snapshot of focus + selection state.
 struct EditorFocusSnapshot: Hashable, Sendable {
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget

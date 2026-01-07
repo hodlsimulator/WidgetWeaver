@@ -18,36 +18,92 @@ extension ContentView {
 
         let legacyFamilies: [EditingFamily] = {
             guard matchedSetEnabled else { return [] }
-            return EditingFamily.allCases.filter { $0 != selectedFamily }
+
+            var out: [EditingFamily] = []
+
+            let small = matchedDrafts.small
+            let medium = matchedDrafts.medium
+            let large = matchedDrafts.large
+
+            if !small.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, small.imageSmartPhoto == nil {
+                out.append(.small)
+            }
+            if !medium.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, medium.imageSmartPhoto == nil {
+                out.append(.medium)
+            }
+            if !large.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, large.imageSmartPhoto == nil {
+                out.append(.large)
+            }
+
+            return out
         }()
+
+        let legacyFamiliesLabel = legacyFamilies.map { $0.label }.joined(separator: ", ")
 
         return Section {
             if !hasImage {
-                Text("Add an image first to enable Smart Photos.")
+                Text("Choose a photo in Image first to enable Smart Photo.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if hasSmartPhoto, let smart = d.imageSmartPhoto {
+                Button {
+                    Task { await regenerateSmartPhotoRenders() }
+                } label: {
+                    Label("Regenerate smart renders", systemImage: "arrow.clockwise")
+                }
+                .disabled(importInProgress)
+
+                Text("Smart Photo: v\(smart.algorithmVersion) • prepared \(smart.preparedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button {
+                    Task { await regenerateSmartPhotoRenders() }
+                } label: {
+                    Label("Make Smart Photo (per-size renders)", systemImage: "sparkles")
+                }
+                .disabled(importInProgress)
+
+                Text("Generates per-size crops for Small/Medium/Large.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text("After Smart Photo is created, Smart Photo Framing, Smart Rules, and Album Shuffle will appear.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            if hasSmartPhoto, let unavailable = EditorUnavailableState.albumShufflePhotosAccess(access: photoAccess) {
-                EditorUnavailableStateView(
-                    state: unavailable,
-                    importInProgress: $importInProgress,
-                    saveStatusMessage: $saveStatusMessage,
-                    onRequestPhotoLibraryAccess: {
-                        await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+            if hasSmartPhoto, !photoAccess.allowsReadWrite {
+                Text("Album Shuffle uses the Photo Library and is hidden until Photos access is granted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if photoAccess.isRequestable {
+                    Button {
+                        Task { @MainActor in
+                            guard !importInProgress else { return }
+                            importInProgress = true
+                            defer { importInProgress = false }
+
+                            let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+                            saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
+                        }
+                    } label: {
+                        Label("Enable Photos access", systemImage: "photo.on.rectangle.angled")
                     }
-                )
+                } else if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                    Link(destination: settingsURL) {
+                        Label("Open Photos Settings", systemImage: "gear")
+                    }
+                }
             }
 
-            if hasImage {
-                SmartPhotoImportButton(
-                    currentFamily: selectedFamily,
-                    currentDraft: d,
-                    setDraft: setFamilyDraft(_:),
-                    legacyFamiliesToUpgrade: legacyFamilies,
-                    importInProgress: $importInProgress,
-                    saveStatusMessage: $saveStatusMessage
-                )
+            if matchedSetEnabled, !legacyFamilies.isEmpty {
+                Button {
+                    Task { await upgradeLegacyPhotosInCurrentDesign(maxUpgrades: 3) }
+                } label: {
+                    Label("Upgrade legacy photos to Smart Photo (\(legacyFamiliesLabel))", systemImage: "sparkles")
+                }
                 .disabled(importInProgress)
 
                 Text("Upgrades up to 3 legacy image files per tap.")
@@ -56,115 +112,6 @@ extension ContentView {
             }
         } header: {
             sectionHeader("Smart Photo")
-        }
-    }
-}
-
-
-// MARK: - Unavailable state (Photos first)
-
-/// A small, reusable model for “why unavailable” guidance and CTAs.
-///
-/// This is intentionally minimal (Photos first) so more permission/availability patterns can be
-/// centralised without duplicating conditional UI logic across sections.
-struct EditorUnavailableState: Hashable, Sendable {
-    var message: String
-    var actions: [EditorUnavailableAction]
-
-    init(message: String, actions: [EditorUnavailableAction] = []) {
-        self.message = message
-        self.actions = actions
-    }
-
-    static func albumShufflePhotosAccess(access: EditorPhotoLibraryAccess) -> EditorUnavailableState? {
-        guard !access.allowsReadWrite else { return nil }
-
-        var actions: [EditorUnavailableAction] = []
-
-        if access.isRequestable {
-            actions.append(
-                EditorUnavailableAction(
-                    kind: .requestPhotoLibraryAccess,
-                    title: "Enable Photos access",
-                    systemImage: "photo.on.rectangle.angled"
-                )
-            )
-        } else if access.isBlockedInSettings {
-            actions.append(
-                EditorUnavailableAction(
-                    kind: .openAppSettings,
-                    title: "Open Photos Settings",
-                    systemImage: "gear"
-                )
-            )
-        } else {
-            actions.append(
-                EditorUnavailableAction(
-                    kind: .openAppSettings,
-                    title: "Open App Settings",
-                    systemImage: "gear"
-                )
-            )
-        }
-
-        return EditorUnavailableState(
-            message: "Album Shuffle uses the Photo Library and is hidden until Photos access is granted.",
-            actions: actions
-        )
-    }
-}
-
-struct EditorUnavailableAction: Hashable, Sendable {
-    enum Kind: Hashable, Sendable {
-        case requestPhotoLibraryAccess
-        case openAppSettings
-    }
-
-    var kind: Kind
-    var title: String
-    var systemImage: String
-}
-
-struct EditorUnavailableStateView: View {
-    var state: EditorUnavailableState
-    var importInProgress: Binding<Bool>
-    var saveStatusMessage: Binding<String>
-    var onRequestPhotoLibraryAccess: (() async -> Bool)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(state.message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ForEach(state.actions, id: \.self) { action in
-                switch action.kind {
-                case .requestPhotoLibraryAccess:
-                    Button {
-                        Task { @MainActor in
-                            guard let onRequestPhotoLibraryAccess else { return }
-                            guard !importInProgress.wrappedValue else { return }
-
-                            importInProgress.wrappedValue = true
-                            defer { importInProgress.wrappedValue = false }
-
-                            let granted = await onRequestPhotoLibraryAccess()
-                            saveStatusMessage.wrappedValue = granted ? "Photos access enabled." : "Photos access not granted."
-                        }
-                    } label: {
-                        Label(action.title, systemImage: action.systemImage)
-                    }
-                    .disabled(importInProgress.wrappedValue || onRequestPhotoLibraryAccess == nil)
-
-                case .openAppSettings:
-                    if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                        Link(destination: settingsURL) {
-                            Label(action.title, systemImage: action.systemImage)
-                        }
-                    }
-                }
-            }
         }
     }
 }

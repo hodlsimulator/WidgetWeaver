@@ -13,7 +13,7 @@ extension WidgetWeaverRemixEngine {
 
     static func makeSubtleLooks(context _: RemixContext) -> [Look] {
         var looks: [Look] = []
- 
+
         looks.append(
             Look(
                 kind: .subtle,

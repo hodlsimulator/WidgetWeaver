@@ -10,159 +10,122 @@ import SwiftUI
 import WidgetKit
 
 extension ContentView {
-
-    // MARK: - Family selection
-
     var editingFamily: EditingFamily {
         EditingFamily(widgetFamily: previewFamily) ?? .small
-    }
-
-    var selectedFamily: EditingFamily {
-        editingFamily
     }
 
     var editingFamilyLabel: String {
         editingFamily.label
     }
 
-    // MARK: - Draft access
-
     func currentFamilyDraft() -> FamilyDraft {
-        matchedSetEnabled ? matchedDrafts.forFamily(editingFamily) : baseDraft
+        matchedSetEnabled ? matchedDrafts[editingFamily] : baseDraft
     }
 
-    func setCurrentFamilyDraft(_ draft: FamilyDraft) {
-        if matchedSetEnabled {
-            matchedDrafts = matchedDrafts.set(draft, forFamily: editingFamily)
-        } else {
-            baseDraft = draft
-            matchedDrafts = MatchedDrafts(
-                small: draft,
-                medium: draft,
-                large: draft,
-                accessoryRectangular: draft,
-                accessoryInline: draft
-            )
-        }
-    }
-
-    func setFamilyDraft(_ draft: FamilyDraft, for family: EditingFamily) {
-        if matchedSetEnabled {
-            matchedDrafts = matchedDrafts.set(draft, forFamily: family)
-        } else {
-            baseDraft = draft
-            matchedDrafts = MatchedDrafts(
-                small: draft,
-                medium: draft,
-                large: draft,
-                accessoryRectangular: draft,
-                accessoryInline: draft
-            )
-        }
-    }
-
-    func copyCurrentSizeToAllSizes() {
-        let draft = currentFamilyDraft()
-        matchedDrafts = MatchedDrafts(
-            small: draft,
-            medium: draft,
-            large: draft,
-            accessoryRectangular: draft,
-            accessoryInline: draft
+    /// Single source of truth for the editor’s current tool context.
+    ///
+    /// The context is derived from draft state + entitlements. Views should not attempt
+    /// to re-derive these conditions independently.
+    var editorToolContext: EditorToolContext {
+        EditorContextEvaluator.evaluate(
+            draft: currentFamilyDraft(),
+            isProUnlocked: proManager.isProUnlocked,
+            matchedSetEnabled: matchedSetEnabled,
+            focus: editorFocusSnapshot,
+            photoLibraryAccess: EditorPhotoLibraryAccess.current()
         )
-        matchedSetEnabled = true
     }
 
-    // MARK: - Presets
-
-    func applyStepsStarterPreset(copyToAllSizes: Bool) {
-        var draft = currentFamilyDraft()
-
-        draft.template = .classic
-
-        if draft.textPrimary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            draft.textPrimary = "Steps"
+    /// Ordered tool identifiers that should be visible for the current context.
+    var editorVisibleToolIDs: [EditorToolID] {
+        if FeatureFlags.contextAwareEditorToolSuiteEnabled {
+            return EditorToolRegistry.visibleTools(for: editorToolContext)
         }
-        if draft.statusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            draft.statusText = "Today"
+        return EditorToolRegistry.legacyVisibleTools(for: editorToolContext)
+    }
+
+    func setCurrentFamilyDraft(_ newValue: FamilyDraft) {
+        var v = newValue
+
+        // If the image has been cleared, also clear any Smart Photo metadata.
+        // This keeps the draft state tidy and avoids holding onto file references
+        // that are no longer reachable from the spec.
+        if v.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            v.imageSmartPhoto = nil
         }
 
-        setCurrentFamilyDraft(draft)
-
-        if copyToAllSizes {
-            copyCurrentSizeToAllSizes()
+        if matchedSetEnabled {
+            matchedDrafts[editingFamily] = v
+        } else {
+            baseDraft = v
         }
     }
 
-    // MARK: - Matched set toggle
+    func binding<T>(_ keyPath: WritableKeyPath<FamilyDraft, T>) -> Binding<T> {
+        Binding(
+            get: { currentFamilyDraft()[keyPath: keyPath] },
+            set: { newValue in
+                var d = currentFamilyDraft()
+                d[keyPath: keyPath] = newValue
+                setCurrentFamilyDraft(d)
+            }
+        )
+    }
 
     var matchedSetBinding: Binding<Bool> {
         Binding(
             get: { matchedSetEnabled },
-            set: { newValue in
-                guard newValue != matchedSetEnabled else { return }
-
-                if newValue {
-                    matchedDrafts = MatchedDrafts(
-                        small: baseDraft,
-                        medium: baseDraft,
-                        large: baseDraft,
-                        accessoryRectangular: baseDraft,
-                        accessoryInline: baseDraft
-                    )
-                    matchedSetEnabled = true
-                } else {
-                    baseDraft = matchedDrafts.medium
-                    matchedSetEnabled = false
-                }
-            }
+            set: { setMatchedSetEnabled($0) }
         )
     }
 
-    // MARK: - KeyPath bindings into the current draft
+    func setMatchedSetEnabled(_ enabled: Bool) {
+        guard enabled != matchedSetEnabled else { return }
 
-    func binding<Value>(_ keyPath: WritableKeyPath<FamilyDraft, Value>) -> Binding<Value> {
-        Binding(
-            get: { currentFamilyDraft()[keyPath: keyPath] },
-            set: { newValue in
-                var draft = currentFamilyDraft()
-                draft[keyPath: keyPath] = newValue
-                setCurrentFamilyDraft(draft)
-            }
-        )
+        if enabled && !proManager.isProUnlocked {
+            saveStatusMessage = "Matched sets require WidgetWeaver Pro."
+            activeSheet = .pro
+            return
+        }
+
+        if enabled {
+            matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+            matchedSetEnabled = true
+        } else {
+            baseDraft = matchedDrafts.medium
+            matchedSetEnabled = false
+        }
     }
 
-    // MARK: - Editor tooling integration
-
-    var editorToolContext: EditorToolContext {
-        let draft = currentFamilyDraft()
-
-        let hasSymbolConfigured = !draft.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasImageConfigured = !draft.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSmartPhotoConfigured = (draft.imageSmartPhoto != nil)
-
-        return EditorToolContext(
-            template: draft.template,
-            isProUnlocked: proManager.isProUnlocked,
-            matchedSetEnabled: matchedSetEnabled,
-            selection: editorFocusSnapshot.selection,
-            focus: editorFocusSnapshot.focus,
-            photoLibraryAccess: EditorPhotoLibraryAccess.current(),
-            hasSymbolConfigured: hasSymbolConfigured,
-            hasImageConfigured: hasImageConfigured,
-            hasSmartPhotoConfigured: hasSmartPhotoConfigured,
-            albumSubtype: editorFocusSnapshot.focus.albumSubtype
-        )
+    func copyCurrentSizeToAllSizes() {
+        guard matchedSetEnabled else { return }
+        let d = matchedDrafts[editingFamily]
+        matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
+        saveStatusMessage = "Copied \(editingFamilyLabel) settings to Small/Medium/Large (draft only)."
     }
+    
+    func applyStepsStarterPreset(copyToAllSizes: Bool) {
+        var d = currentFamilyDraft()
 
-    var editorVisibleToolIDs: [EditorToolID] {
-        let selectionDescriptor = EditorSelectionDescriptor.describe(
-            selection: editorToolContext.selection,
-            focus: editorToolContext.focus
-        )
-        return EditorToolRegistry.visibleToolIDs(
-            context: editorToolContext,
-            selectionDescriptor: selectionDescriptor
-        )
+        d.primaryText = "{{__steps_today|--|number:0}}"
+        d.secondaryText = "Goal {{__steps_goal_today|--|number:0}} • {{__steps_today_fraction|0|percent:0}}"
+
+        d.template = .hero
+        d.showsAccentBar = true
+
+        d.symbolName = "figure.walk"
+        d.symbolPlacement = .beforeName
+        d.symbolSize = 18
+        d.symbolWeight = .semibold
+        d.symbolRenderingMode = .hierarchical
+        d.symbolTint = .accent
+
+        setCurrentFamilyDraft(d)
+
+        if matchedSetEnabled, copyToAllSizes {
+            copyCurrentSizeToAllSizes()
+        }
+
+        saveStatusMessage = "Applied Steps starter preset."
     }
 }
