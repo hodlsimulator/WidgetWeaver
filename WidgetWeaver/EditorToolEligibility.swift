@@ -7,103 +7,11 @@
 
 import Foundation
 
-// MARK: - Selection constraint
-
-struct EditorToolSelectionConstraint: Hashable, Sendable {
-    var allowedKinds: Set<EditorSelectionKind>
-
-    init(allowedKinds: Set<EditorSelectionKind> = [.none, .single, .multi]) {
-        self.allowedKinds = allowedKinds
-    }
-
-    func allows(_ selection: EditorSelectionKind) -> Bool {
-        allowedKinds.contains(selection)
-    }
-
-    static let any = EditorToolSelectionConstraint()
-
-    static let allowsNoneOrSingle = EditorToolSelectionConstraint(allowedKinds: [.none, .single])
-    static let allowsNone = EditorToolSelectionConstraint(allowedKinds: [.none])
-}
-
-// MARK: - Focus constraint
-
-struct EditorToolFocusConstraint: Hashable, Sendable {
-    var allowWidget: Bool
-    var allowClock: Bool
-
-    var allowAnyElement: Bool
-    var allowedElementIDPrefixes: Set<String>
-
-    var allowSmartRuleEditor: Bool
-
-    var allowedAlbumContainerSubtypes: Set<EditorAlbumSubtype>
-    var allowedAlbumPhotoSubtypes: Set<EditorAlbumSubtype>
-
-    init(
-        allowWidget: Bool = true,
-        allowClock: Bool = true,
-        allowAnyElement: Bool = true,
-        allowedElementIDPrefixes: Set<String> = Set<String>(),
-        allowSmartRuleEditor: Bool = true,
-        allowedAlbumContainerSubtypes: Set<EditorAlbumSubtype> = Set<EditorAlbumSubtype>(),
-        allowedAlbumPhotoSubtypes: Set<EditorAlbumSubtype> = Set<EditorAlbumSubtype>()
-    ) {
-        self.allowWidget = allowWidget
-        self.allowClock = allowClock
-        self.allowAnyElement = allowAnyElement
-        self.allowedElementIDPrefixes = allowedElementIDPrefixes
-        self.allowSmartRuleEditor = allowSmartRuleEditor
-        self.allowedAlbumContainerSubtypes = allowedAlbumContainerSubtypes
-        self.allowedAlbumPhotoSubtypes = allowedAlbumPhotoSubtypes
-    }
-
-    func allows(_ focus: EditorFocusTarget) -> Bool {
-        switch focus {
-        case .widget:
-            return allowWidget
-
-        case .clock:
-            return allowClock
-
-        case .element(let id):
-            if allowAnyElement { return true }
-            for prefix in allowedElementIDPrefixes where id.hasPrefix(prefix) {
-                return true
-            }
-            return false
-
-        case .smartRuleEditor:
-            return allowSmartRuleEditor
-
-        case .albumContainer(_, let subtype):
-            // If the set is empty, treat it as “any subtype”.
-            if allowedAlbumContainerSubtypes.isEmpty { return true }
-            return allowedAlbumContainerSubtypes.contains(subtype)
-
-        case .albumPhoto(_, _, let subtype):
-            if allowedAlbumPhotoSubtypes.isEmpty { return true }
-            return allowedAlbumPhotoSubtypes.contains(subtype)
-        }
-    }
-
-    static let any = EditorToolFocusConstraint()
-}
-
-// MARK: - Multi-selection policy
-
-enum EditorMultiSelectionPolicy: String, CaseIterable, Hashable, Sendable {
-    case intersection
-}
-
-// MARK: - Eligibility
-
+/// Eligibility rules for a single editor tool.
 struct EditorToolEligibility: Hashable, Sendable {
     var focus: EditorToolFocusConstraint
     var selection: EditorToolSelectionConstraint
     var selectionDescriptor: EditorToolSelectionDescriptorConstraint
-
-    /// Whether the tool remains visible when selection is `.multi` (subject to policy).
     var supportsMultiSelection: Bool
 
     init(
@@ -119,117 +27,208 @@ struct EditorToolEligibility: Hashable, Sendable {
     }
 }
 
-enum EditorToolEligibilityEvaluator {
-    static func isEligible(
-        eligibility: EditorToolEligibility,
-        selection: EditorSelectionKind,
-        selectionDescriptor: EditorSelectionDescriptor,
-        focus: EditorFocusTarget,
-        multiSelectionPolicy: EditorMultiSelectionPolicy
-    ) -> Bool {
-        guard eligibility.focus.allows(focus) else { return false }
-        guard eligibility.selection.allows(selection) else { return false }
-        guard eligibility.selectionDescriptor.allows(selectionDescriptor) else { return false }
+struct EditorToolFocusConstraint: Hashable, Sendable {
+    var allowWidget: Bool
+    var allowClock: Bool
+    var allowElement: Bool
+    var allowSmartRuleEditor: Bool
+    var allowAlbumContainer: Bool
+    var allowAlbumPhoto: Bool
 
-        // Multi-selection policy: tools must explicitly opt in.
-        if selection == .multi {
-            switch multiSelectionPolicy {
-            case .intersection:
-                if !eligibility.supportsMultiSelection { return false }
+    /// If set, `.element(id:)` is only allowed when the id begins with one of these prefixes.
+    var allowedElementIDPrefixes: Set<String>?
+
+    /// If set, `.albumContainer` is only allowed for the specified subtypes.
+    var allowedAlbumContainerSubtypes: Set<EditorAlbumSubtype>?
+
+    /// If set, `.albumPhoto` is only allowed for the specified subtypes.
+    var allowedAlbumPhotoSubtypes: Set<EditorAlbumSubtype>?
+
+    init(
+        allowWidget: Bool = true,
+        allowClock: Bool = true,
+        allowElement: Bool = true,
+        allowSmartRuleEditor: Bool = true,
+        allowAlbumContainer: Bool = true,
+        allowAlbumPhoto: Bool = true,
+        allowedElementIDPrefixes: Set<String>? = nil,
+        allowedAlbumContainerSubtypes: Set<EditorAlbumSubtype>? = nil,
+        allowedAlbumPhotoSubtypes: Set<EditorAlbumSubtype>? = nil
+    ) {
+        self.allowWidget = allowWidget
+        self.allowClock = allowClock
+        self.allowElement = allowElement
+        self.allowSmartRuleEditor = allowSmartRuleEditor
+        self.allowAlbumContainer = allowAlbumContainer
+        self.allowAlbumPhoto = allowAlbumPhoto
+        self.allowedElementIDPrefixes = allowedElementIDPrefixes
+        self.allowedAlbumContainerSubtypes = allowedAlbumContainerSubtypes
+        self.allowedAlbumPhotoSubtypes = allowedAlbumPhotoSubtypes
+    }
+
+    func allows(focus: EditorFocusTarget) -> Bool {
+        switch focus {
+        case .widget:
+            return allowWidget
+
+        case .clock:
+            return allowClock
+
+        case .smartRuleEditor:
+            return allowSmartRuleEditor
+
+        case .element(let id):
+            guard allowElement else { return false }
+            if let prefixes = allowedElementIDPrefixes {
+                return prefixes.contains(where: { id.hasPrefix($0) })
             }
-        }
+            return true
 
-        return true
+        case .albumContainer(_, let subtype):
+            guard allowAlbumContainer else { return false }
+            if let allowed = allowedAlbumContainerSubtypes {
+                return allowed.contains(subtype)
+            }
+            return true
+
+        case .albumPhoto(_, _, let subtype):
+            guard allowAlbumPhoto else { return false }
+            if let allowed = allowedAlbumPhotoSubtypes {
+                return allowed.contains(subtype)
+            }
+            return true
+        }
     }
 }
 
-// MARK: - Selection descriptor constraints
+extension EditorToolFocusConstraint {
+    static let any = EditorToolFocusConstraint()
+
+    static let widgetOnly = EditorToolFocusConstraint(
+        allowWidget: true,
+        allowClock: false,
+        allowElement: false,
+        allowSmartRuleEditor: false,
+        allowAlbumContainer: false,
+        allowAlbumPhoto: false
+    )
+
+    static let smartPhotoTarget = EditorToolFocusConstraint(
+        allowWidget: false,
+        allowClock: false,
+        allowElement: true,
+        allowSmartRuleEditor: false,
+        allowAlbumContainer: true,
+        allowAlbumPhoto: true,
+        allowedElementIDPrefixes: ["smartPhoto"]
+    )
+
+    static let smartRules = EditorToolFocusConstraint(
+        allowWidget: false,
+        allowClock: false,
+        allowElement: true,
+        allowSmartRuleEditor: true,
+        allowAlbumContainer: true,
+        allowAlbumPhoto: true,
+        allowedElementIDPrefixes: ["smartRules"]
+    )
+
+    static let albumShuffle = EditorToolFocusConstraint(
+        allowWidget: false,
+        allowClock: false,
+        allowElement: true,
+        allowSmartRuleEditor: false,
+        allowAlbumContainer: true,
+        allowAlbumPhoto: true,
+        allowedElementIDPrefixes: ["albumShuffle"]
+    )
+
+    static let importReview = EditorToolFocusConstraint(
+        allowWidget: false,
+        allowClock: false,
+        allowElement: true,
+        allowSmartRuleEditor: false,
+        allowAlbumContainer: false,
+        allowAlbumPhoto: false,
+        allowedElementIDPrefixes: ["importReview"]
+    )
+}
+
+struct EditorToolSelectionConstraint: Hashable, Sendable {
+    var allowedKinds: Set<EditorSelectionKind>
+
+    init(allowedKinds: Set<EditorSelectionKind> = Set(EditorSelectionKind.allCases)) {
+        self.allowedKinds = allowedKinds
+    }
+
+    func allows(selection: EditorSelectionKind) -> Bool {
+        allowedKinds.contains(selection)
+    }
+}
+
+extension EditorToolSelectionConstraint {
+    static let any = EditorToolSelectionConstraint()
+    static let allowsNoneOrSingle = EditorToolSelectionConstraint(allowedKinds: [.none, .single])
+    static let singleOnly = EditorToolSelectionConstraint(allowedKinds: [.single])
+}
 
 struct EditorToolSelectionDescriptorConstraint: Hashable, Sendable {
     var allowedHomogeneity: Set<EditorSelectionHomogeneity>
     var allowedAlbumSpecificity: Set<EditorAlbumSelectionSpecificity>
 
     init(
-        allowedHomogeneity: Set<EditorSelectionHomogeneity> = [.homogeneous, .mixed],
-        allowedAlbumSpecificity: Set<EditorAlbumSelectionSpecificity> = [.nonAlbum, .albumContainer, .albumPhotoItem, .mixed]
+        allowedHomogeneity: Set<EditorSelectionHomogeneity> = Set(EditorSelectionHomogeneity.allCases),
+        allowedAlbumSpecificity: Set<EditorAlbumSelectionSpecificity> = Set(EditorAlbumSelectionSpecificity.allCases)
     ) {
         self.allowedHomogeneity = allowedHomogeneity
         self.allowedAlbumSpecificity = allowedAlbumSpecificity
     }
 
-    func allows(_ descriptor: EditorSelectionDescriptor) -> Bool {
-        allowedHomogeneity.contains(descriptor.homogeneity) &&
-        allowedAlbumSpecificity.contains(descriptor.albumSpecificity)
+    func allows(selectionDescriptor: EditorSelectionDescriptor) -> Bool {
+        allowedHomogeneity.contains(selectionDescriptor.homogeneity) &&
+        allowedAlbumSpecificity.contains(selectionDescriptor.albumSpecificity)
     }
+}
 
+extension EditorToolSelectionDescriptorConstraint {
     static let any = EditorToolSelectionDescriptorConstraint()
 
-    static let allowsHomogeneousOrNoneSelection = EditorToolSelectionDescriptorConstraint(
-        allowedHomogeneity: [.homogeneous],
-        allowedAlbumSpecificity: [.nonAlbum, .albumContainer, .albumPhotoItem]
+    static let allowsNonAlbumOnly = EditorToolSelectionDescriptorConstraint(
+        allowedHomogeneity: Set(EditorSelectionHomogeneity.allCases),
+        allowedAlbumSpecificity: [.none]
+    )
+
+    static let allowsAlbumContainerOrNone = EditorToolSelectionDescriptorConstraint(
+        allowedHomogeneity: Set(EditorSelectionHomogeneity.allCases),
+        allowedAlbumSpecificity: [.none, .albumContainer]
     )
 
     static let allowsAlbumContainerOrNonAlbumHomogeneousOrNone = EditorToolSelectionDescriptorConstraint(
-        allowedHomogeneity: [.homogeneous],
-        allowedAlbumSpecificity: [.nonAlbum, .albumContainer]
+        allowedHomogeneity: Set(EditorSelectionHomogeneity.allCases),
+        allowedAlbumSpecificity: [.none, .albumContainer]
     )
 }
 
-// MARK: - Convenience presets
-
-extension EditorToolEligibility {
-    static func singleTarget(
-        focus: EditorToolFocusConstraint = .any,
-        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any
-    ) -> EditorToolEligibility {
-        EditorToolEligibility(
-            focus: focus,
-            selection: .allowsNoneOrSingle,
-            selectionDescriptor: selectionDescriptor,
-            supportsMultiSelection: false
-        )
-    }
-}
-
-extension EditorToolFocusConstraint {
-    /// Widget + Smart Photo container-level subflows.
-    static var smartPhotoContainerSuite: EditorToolFocusConstraint {
-        EditorToolFocusConstraint(
-            allowWidget: true,
-            allowClock: false,
-            allowAnyElement: false,
-            allowedElementIDPrefixes: ["smartPhoto"],
-            allowSmartRuleEditor: true,
-            allowedAlbumContainerSubtypes: [.smart],
-            allowedAlbumPhotoSubtypes: Set<EditorAlbumSubtype>()
-        )
-    }
-
-    /// Widget + Smart Photo subflows + any Smart album photo-item focus.
-    static var smartPhotoPhotoItemSuite: EditorToolFocusConstraint {
-        EditorToolFocusConstraint(
-            allowWidget: true,
-            allowClock: false,
-            allowAnyElement: false,
-            allowedElementIDPrefixes: ["smartPhoto"],
-            allowSmartRuleEditor: true,
-            allowedAlbumContainerSubtypes: [.smart],
-            allowedAlbumPhotoSubtypes: [.smart]
-        )
-    }
-}
-
-extension EditorToolEligibility {
-    static func multiSafe(
-        focus: EditorToolFocusConstraint = .any,
-        selection: EditorToolSelectionConstraint = .any,
-        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any
-    ) -> EditorToolEligibility {
-        EditorToolEligibility(
-            focus: focus,
-            selection: selection,
-            selectionDescriptor: selectionDescriptor,
-            supportsMultiSelection: true
-        )
+/// Central evaluator used by the tool registry.
+enum EditorToolEligibilityEvaluator {
+    static func isEligible(
+        eligibility: EditorToolEligibility,
+        selection: EditorSelectionKind,
+        selectionDescriptor: EditorSelectionDescriptor,
+        focus: EditorFocusTarget
+    ) -> Bool {
+        if selection == .multi, eligibility.supportsMultiSelection == false {
+            return false
+        }
+        if eligibility.selection.allows(selection: selection) == false {
+            return false
+        }
+        if eligibility.selectionDescriptor.allows(selectionDescriptor: selectionDescriptor) == false {
+            return false
+        }
+        if eligibility.focus.allows(focus: focus) == false {
+            return false
+        }
+        return true
     }
 }
