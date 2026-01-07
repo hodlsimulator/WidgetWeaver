@@ -36,19 +36,21 @@ extension ContentView {
 
     var editorForm: some View {
         Form {
-            if editorToolContext.selection == .multi {
-                Section {
-                    Text("Multiple items selected. Most tools apply to a single item, so the tool list is reduced. Select one item to see more tools.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            if FeatureFlags.contextAwareEditorToolSuiteEnabled {
+                if editorToolContext.selection == .multi {
+                    Section {
+                        Text("Multiple items selected. Most tools apply to a single item, so the tool list is reduced. Select one item to see more tools.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
 
-            if editorVisibleToolIDs.isEmpty {
-                Section {
-                    Text("No tools are available for this selection. Select a single item, or clear selection to return to widget editing.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if editorVisibleToolIDs.isEmpty {
+                    Section {
+                        Text("No tools are available for this selection. Select a single item, or clear selection to return to widget editing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 

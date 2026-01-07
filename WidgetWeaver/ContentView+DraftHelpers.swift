@@ -38,7 +38,10 @@ extension ContentView {
 
     /// Ordered tool identifiers that should be visible for the current context.
     var editorVisibleToolIDs: [EditorToolID] {
-        EditorToolRegistry.visibleTools(for: editorToolContext)
+        if FeatureFlags.contextAwareEditorToolSuiteEnabled {
+            return EditorToolRegistry.visibleTools(for: editorToolContext)
+        }
+        return EditorToolRegistry.legacyVisibleTools(for: editorToolContext)
     }
 
     func setCurrentFamilyDraft(_ newValue: FamilyDraft) {
@@ -119,15 +122,10 @@ extension ContentView {
 
         setCurrentFamilyDraft(d)
 
-        if matchedSetEnabled && copyToAllSizes {
-            matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
+        if matchedSetEnabled, copyToAllSizes {
+            copyCurrentSizeToAllSizes()
         }
 
-        styleDraft.accent = .green
-        styleDraft.background = .radialGlow
-
-        saveStatusMessage = (matchedSetEnabled && copyToAllSizes)
-            ? "Applied Steps preset to Small/Medium/Large (draft only)."
-            : "Applied Steps preset (draft only)."
+        saveStatusMessage = "Applied Steps starter preset."
     }
 }

@@ -9,8 +9,8 @@ import Foundation
 
 /// Coarse focus buckets used to gate tool visibility.
 ///
-/// Only `.smartPhotos` is currently used for gating; other cases exist so future
-/// expansion stays local to this file.
+/// Gating is a last-mile filter applied after capabilities + eligibility constraints.
+/// It is used to keep “sub-flow” editing predictable (e.g. Smart Photos, Clock adjustments).
 enum EditorToolFocusGroup: String, CaseIterable, Hashable, Sendable {
     case widget
     case smartPhotos
@@ -54,35 +54,77 @@ func editorToolIDsApplyingFocusGate(
     eligible: [EditorToolID],
     focusGroup: EditorToolFocusGroup
 ) -> [EditorToolID] {
-    guard focusGroup == .smartPhotos else {
+    switch focusGroup {
+    case .smartPhotos:
+        // Curated allowlist: keep this tight to avoid unexpected UI changes.
+        let allowlist: [EditorToolID] = [
+            .albumShuffle,
+            .smartPhotoCrop,
+            .smartRules,
+            .smartPhoto,
+            .image,
+            .style,
+        ]
+
+        let filtered = eligible.filter { allowlist.contains($0) }
+
+        // Safety: avoid showing an empty tool list if IDs drift.
+        if filtered.isEmpty {
+            return eligible
+        }
+
+        // Safety: if none of the primary Smart Photo tools are present, do not gate.
+        // This prevents an odd state (e.g. template switch) from collapsing the UI down
+        // to only generic tools such as Style.
+        let primarySmartPhotoTools: Set<EditorToolID> = [
+            .albumShuffle,
+            .smartPhotoCrop,
+            .smartRules,
+            .smartPhoto,
+            .image,
+        ]
+        let containsPrimary = filtered.contains(where: { primarySmartPhotoTools.contains($0) })
+        if !containsPrimary {
+            return eligible
+        }
+
+        return filtered
+
+    case .clock:
+        // Clock edits should not surface unrelated media tools (Smart Photos, Albums, etc).
+        //
+        // This is intentionally broader than the Smart Photos allowlist: clock adjustments can be
+        // made while still needing access to general widget controls.
+        let allowlist: [EditorToolID] = [
+            .status,
+            .designs,
+            .widgets,
+            .layout,
+            .style,
+            .matchedSet,
+            .variables,
+            .sharing,
+            .ai,
+            .pro,
+        ]
+
+        let filtered = eligible.filter { allowlist.contains($0) }
+
+        // Safety: avoid showing an empty tool list if IDs drift.
+        if filtered.isEmpty {
+            return eligible
+        }
+
+        // Safety: keep at least one primary tool for a usable editing surface.
+        let primaryClockTools: Set<EditorToolID> = [.widgets, .layout, .style]
+        let containsPrimary = filtered.contains(where: { primaryClockTools.contains($0) })
+        if !containsPrimary {
+            return eligible
+        }
+
+        return filtered
+
+    case .widget, .other:
         return eligible
     }
-
-    // Curated allowlist: keep this tight in the first slice to avoid unexpected UI changes.
-    let allowlist: [EditorToolID] = [
-        .albumShuffle,
-        .smartPhotoCrop,
-        .smartRules,
-        .smartPhoto,
-        .image,
-        .style,
-    ]
-
-    let filtered = eligible.filter { allowlist.contains($0) }
-
-    // Safety: avoid showing an empty tool list if IDs drift.
-    if filtered.isEmpty {
-        return eligible
-    }
-
-    // Safety: if none of the primary Smart Photo tools are present, do not gate.
-    // This prevents an odd state (e.g. template switch) from collapsing the UI down
-    // to only generic tools such as Style.
-    let primarySmartPhotoTools: Set<EditorToolID> = [.albumShuffle, .smartPhotoCrop, .smartRules, .smartPhoto, .image]
-    let containsPrimary = filtered.contains(where: { primarySmartPhotoTools.contains($0) })
-    if !containsPrimary {
-        return eligible
-    }
-
-    return filtered
 }
