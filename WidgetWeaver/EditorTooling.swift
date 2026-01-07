@@ -101,41 +101,112 @@ struct EditorToolDefinition: Hashable {
     var order: Int
     var requiredCapabilities: EditorCapabilities
 
-    init(id: EditorToolID, order: Int, requiredCapabilities: EditorCapabilities = []) {
+    /// Eligibility constraints beyond capabilities (selection/focus/selection count).
+    ///
+    /// This keeps complex UI conditions out of SwiftUI code and centralises them in one place.
+    var eligibility: EditorToolEligibility
+
+    init(
+        id: EditorToolID,
+        order: Int,
+        requiredCapabilities: EditorCapabilities = [],
+        eligibility: EditorToolEligibility = .unconstrained
+    ) {
         self.id = id
         self.order = order
         self.requiredCapabilities = requiredCapabilities
+        self.eligibility = eligibility
     }
 
-    func isEligible(capabilities: EditorCapabilities) -> Bool {
-        capabilities.isSuperset(of: requiredCapabilities)
+    func isEligible(
+        context: EditorToolContext,
+        capabilities: EditorCapabilities,
+        multiSelectionPolicy: EditorToolMultiSelectionPolicy
+    ) -> Bool {
+        guard capabilities.isSuperset(of: requiredCapabilities) else { return false }
+        return eligibility.isEligible(context: context, multiSelectionPolicy: multiSelectionPolicy)
     }
 }
 
 enum EditorToolRegistry {
+    /// Global multi-selection behaviour.
+    ///
+    /// Policy choice:
+    /// - `.intersection`: only tools that explicitly declare they are multi-selection-safe will be shown
+    ///   when selection cardinality is `.multi`.
+    static let multiSelectionPolicy: EditorToolMultiSelectionPolicy = .intersection
+
     /// The tool manifest. This is the sole source of truth for what tools exist and their ordering.
     static let tools: [EditorToolDefinition] = [
-        EditorToolDefinition(id: .status, order: 0),
-        EditorToolDefinition(id: .designs, order: 10),
-        EditorToolDefinition(id: .widgets, order: 20),
+        EditorToolDefinition(id: .status, order: 0, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .designs, order: 10, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .widgets, order: 20, eligibility: .multiSafe()),
 
-        EditorToolDefinition(id: .layout, order: 30, requiredCapabilities: [.canEditLayout]),
+        EditorToolDefinition(id: .layout, order: 30, requiredCapabilities: [.canEditLayout], eligibility: .multiSafe()),
         EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
         EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
-        EditorToolDefinition(id: .image, order: 60, requiredCapabilities: [.canEditImage]),
-        EditorToolDefinition(id: .smartPhoto, order: 62, requiredCapabilities: [.canEditSmartPhoto]),
-        EditorToolDefinition(id: .smartPhotoCrop, order: 63, requiredCapabilities: [.canEditSmartPhoto]),
-        EditorToolDefinition(id: .smartRules, order: 64, requiredCapabilities: [.canEditSmartPhoto]),
-        EditorToolDefinition(id: .albumShuffle, order: 65, requiredCapabilities: [.canEditAlbumShuffle]),
-        EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle]),
-        EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography]),
-        EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions]),
 
-        EditorToolDefinition(id: .matchedSet, order: 100),
-        EditorToolDefinition(id: .variables, order: 110),
-        EditorToolDefinition(id: .sharing, order: 120),
-        EditorToolDefinition(id: .ai, order: 130),
-        EditorToolDefinition(id: .pro, order: 140),
+        // Media / Smart Photos
+        EditorToolDefinition(
+            id: .image,
+            order: 60,
+            requiredCapabilities: [.canEditImage],
+            eligibility: EditorToolEligibility(
+                focus: .smartPhotoPhotoItemSuite,
+                selection: .any,
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .smartPhoto,
+            order: 62,
+            requiredCapabilities: [.canEditSmartPhoto],
+            eligibility: EditorToolEligibility(
+                focus: .smartPhotoContainerSuite,
+                selection: .any,
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .smartPhotoCrop,
+            order: 63,
+            requiredCapabilities: [.canEditSmartPhoto],
+            eligibility: EditorToolEligibility(
+                focus: .smartPhotoContainerSuite,
+                selection: .any,
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .smartRules,
+            order: 64,
+            requiredCapabilities: [.canEditSmartPhoto],
+            eligibility: EditorToolEligibility(
+                focus: .smartPhotoContainerSuite,
+                selection: .any,
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .albumShuffle,
+            order: 65,
+            requiredCapabilities: [.canEditAlbumShuffle],
+            eligibility: EditorToolEligibility(
+                focus: .smartPhotoContainerSuite,
+                selection: .any,
+                supportsMultiSelection: false
+            )
+        ),
+
+        EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle], eligibility: .multiSafe()),
+        EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography], eligibility: .multiSafe()),
+        EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions], eligibility: .multiSafe()),
+
+        EditorToolDefinition(id: .matchedSet, order: 100, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .variables, order: 110, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .sharing, order: 120, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .ai, order: 130, eligibility: .multiSafe()),
+        EditorToolDefinition(id: .pro, order: 140, eligibility: .multiSafe()),
     ]
 
     /// Derives capabilities from the current editing context.
@@ -173,7 +244,7 @@ enum EditorToolRegistry {
         let caps = capabilities(for: context)
 
         let eligible = tools
-            .filter { $0.isEligible(capabilities: caps) }
+            .filter { $0.isEligible(context: context, capabilities: caps, multiSelectionPolicy: multiSelectionPolicy) }
             .sorted { $0.order < $1.order }
             .map { $0.id }
 
