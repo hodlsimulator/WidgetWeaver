@@ -161,8 +161,26 @@ enum EditorToolRegistry {
         EditorToolDefinition(id: .widgets, order: 20, eligibility: .multiSafe()),
 
         EditorToolDefinition(id: .layout, order: 30, requiredCapabilities: [.canEditLayout], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .text, order: 40, requiredCapabilities: [.canEditTextContent]),
-        EditorToolDefinition(id: .symbol, order: 50, requiredCapabilities: [.canEditSymbol]),
+
+        // Single-target tools.
+        EditorToolDefinition(
+            id: .text,
+            order: 40,
+            requiredCapabilities: [.canEditTextContent],
+            eligibility: EditorToolEligibility(
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .symbol,
+            order: 50,
+            requiredCapabilities: [.canEditSymbol],
+            eligibility: EditorToolEligibility(
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
+                supportsMultiSelection: false
+            )
+        ),
 
         // Media / Smart Photos
         EditorToolDefinition(
@@ -171,7 +189,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditImage],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoPhotoItemSuite,
-                selection: .any,
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
                 supportsMultiSelection: false
             )
         ),
@@ -181,7 +199,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSmartPhoto],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
-                selection: .any,
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
                 supportsMultiSelection: false
             )
         ),
@@ -191,7 +209,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
-                selection: .any,
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
                 supportsMultiSelection: false
             )
         ),
@@ -201,7 +219,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
-                selection: .any,
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
                 supportsMultiSelection: false
             )
         ),
@@ -211,14 +229,31 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
-                selection: .any,
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
                 supportsMultiSelection: false
             )
         ),
 
         EditorToolDefinition(id: .style, order: 70, requiredCapabilities: [.canEditStyle], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .typography, order: 80, requiredCapabilities: [.canEditTypography], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .actions, order: 90, requiredCapabilities: [.canEditActions], eligibility: .multiSafe()),
+
+        EditorToolDefinition(
+            id: .typography,
+            order: 80,
+            requiredCapabilities: [.canEditTypography],
+            eligibility: EditorToolEligibility(
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
+                supportsMultiSelection: false
+            )
+        ),
+        EditorToolDefinition(
+            id: .actions,
+            order: 90,
+            requiredCapabilities: [.canEditActions],
+            eligibility: EditorToolEligibility(
+                selection: EditorToolSelectionConstraint(allowedKinds: Set([.none, .single])),
+                supportsMultiSelection: false
+            )
+        ),
 
         EditorToolDefinition(id: .matchedSet, order: 100, eligibility: .multiSafe()),
         EditorToolDefinition(id: .variables, order: 110, eligibility: .multiSafe()),
@@ -281,11 +316,25 @@ enum EditorToolRegistry {
         let focusGroup = editorToolFocusGroup(for: context.focus)
         let gated = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
 
-        if focusGroup == .smartPhotos {
-            return prioritiseToolsForSmartPhotos(gated, focus: context.focus)
-        }
+        let out: [EditorToolID] = {
+            if focusGroup == .smartPhotos {
+                return prioritiseToolsForSmartPhotos(gated, focus: context.focus)
+            }
+            return gated
+        }()
 
-        return gated
+#if DEBUG
+        debugLogUnexpectedToolListIfNeeded(
+            context: context,
+            capabilities: caps,
+            eligibleTools: eligible,
+            gatedTools: gated,
+            visibleTools: out,
+            focusGroup: focusGroup
+        )
+#endif
+
+        return out
     }
 
     private static func prioritiseToolsForSmartPhotos(_ toolIDs: [EditorToolID], focus: EditorFocusTarget) -> [EditorToolID] {
@@ -330,4 +379,58 @@ enum EditorToolRegistry {
 
         return out
     }
+
+#if DEBUG
+    private static func debugLogUnexpectedToolListIfNeeded(
+        context: EditorToolContext,
+        capabilities: EditorCapabilities,
+        eligibleTools: [EditorToolID],
+        gatedTools: [EditorToolID],
+        visibleTools: [EditorToolID],
+        focusGroup: EditorToolFocusGroup
+    ) {
+        if eligibleTools.isEmpty {
+            // Always log: the manifest should normally produce at least a few generic tools.
+        } else if visibleTools.isEmpty {
+            // Always log.
+        } else if focusGroup != .smartPhotos && visibleTools.count <= 2 {
+            // Outside Smart Photo focus gating, a tool list this small is usually a modelling gap.
+        } else if focusGroup == .smartPhotos && visibleTools.count == 1 && visibleTools.first == .style {
+            // Style-only inside Smart Photos often indicates a missing/blocked primary tool.
+        } else {
+            return
+        }
+
+        let descriptor = EditorSelectionDescriptor.describe(selection: context.selection, focus: context.focus)
+
+        func focusLabel(_ focus: EditorFocusTarget) -> String {
+            switch focus {
+            case .widget:
+                return "widget"
+            case .clock:
+                return "clock"
+            case .element(let id):
+                return "element(\(id))"
+            case .albumContainer(let id, let subtype):
+                return "albumContainer(\(id), \(subtype.rawValue))"
+            case .albumPhoto(let albumID, let itemID, let subtype):
+                return "albumPhoto(\(albumID), \(itemID), \(subtype.rawValue))"
+            case .smartRuleEditor(let albumID):
+                return "smartRuleEditor(\(albumID))"
+            }
+        }
+
+        let eligible = eligibleTools.map(\.rawValue).joined(separator: ", ")
+        let gated = gatedTools.map(\.rawValue).joined(separator: ", ")
+        let visible = visibleTools.map(\.rawValue).joined(separator: ", ")
+
+        print("⚠️ [EditorToolRegistry] Unexpected tool list")
+        print("  template=\(context.template.displayName) focusGroup=\(focusGroup.rawValue) focus=\(focusLabel(context.focus))")
+        print("  selection=\(context.selection.rawValue) derivedSelection=\(descriptor.kind.rawValue) homogeneity=\(descriptor.homogeneity.rawValue) album=\(descriptor.albumSpecificity.rawValue)")
+        print("  caps=\(capabilities.rawValue)")
+        print("  eligible=[\(eligible)]")
+        print("  gated=[\(gated)]")
+        print("  visible=[\(visible)]")
+    }
+#endif
 }

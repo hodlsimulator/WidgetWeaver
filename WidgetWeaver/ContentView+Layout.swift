@@ -44,6 +44,14 @@ extension ContentView {
                 }
             }
 
+            if editorVisibleToolIDs.isEmpty {
+                Section {
+                    Text("No tools are available for this selection. Select a single item, or clear selection to return to widget editing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             ForEach(editorVisibleToolIDs, id: \.self) { toolID in
                 editorSection(for: toolID)
             }

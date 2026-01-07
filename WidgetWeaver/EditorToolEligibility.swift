@@ -27,6 +27,9 @@ struct EditorToolEligibility: Hashable, Sendable {
     var focus: EditorToolFocusConstraint
     var selection: EditorToolSelectionConstraint
 
+    /// Constraints derived from `selection` + `focus` (mixed selection, album specificity, etc).
+    var selectionDescriptor: EditorToolSelectionDescriptorConstraint
+
     /// Whether this tool can appear when the current selection is `.multi`.
     ///
     /// Under the `.intersection` policy, tools that do not opt in are hidden.
@@ -35,10 +38,12 @@ struct EditorToolEligibility: Hashable, Sendable {
     init(
         focus: EditorToolFocusConstraint = .any,
         selection: EditorToolSelectionConstraint = .any,
+        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any,
         supportsMultiSelection: Bool = false
     ) {
         self.focus = focus
         self.selection = selection
+        self.selectionDescriptor = selectionDescriptor
         self.supportsMultiSelection = supportsMultiSelection
     }
 
@@ -48,10 +53,8 @@ struct EditorToolEligibility: Hashable, Sendable {
         context: EditorToolContext,
         multiSelectionPolicy: EditorToolMultiSelectionPolicy
     ) -> Bool {
-        let effectiveSelection = EditorToolEligibilityEngine.effectiveSelection(
-            selection: context.selection,
-            focus: context.focus
-        )
+        let descriptor = EditorSelectionDescriptor.describe(selection: context.selection, focus: context.focus)
+        let effectiveSelection = EditorToolEligibilityEngine.EffectiveSelection(kind: descriptor.kind, count: descriptor.count)
 
         if effectiveSelection.kind == .multi {
             switch multiSelectionPolicy {
@@ -61,6 +64,7 @@ struct EditorToolEligibility: Hashable, Sendable {
         }
 
         guard focus.allows(context.focus) else { return false }
+        guard selectionDescriptor.allows(descriptor) else { return false }
         guard selection.allows(effectiveSelection) else { return false }
         return true
     }
@@ -68,7 +72,7 @@ struct EditorToolEligibility: Hashable, Sendable {
 
 /// Selection-count constraints.
 ///
-/// This is intentionally coarse: the editor currently stores selection as `.none/.single/.multi`.
+/// This remains intentionally coarse: the editor currently stores selection as `.none/.single/.multi`.
 struct EditorToolSelectionConstraint: Hashable, Sendable {
     var allowedKinds: Set<EditorSelectionKind>?
     var minCount: Int?
@@ -96,6 +100,37 @@ struct EditorToolSelectionConstraint: Hashable, Sendable {
         }
 
         if let maxCount, selection.count > maxCount {
+            return false
+        }
+
+        return true
+    }
+}
+
+/// Selection descriptor constraints (mixed selection, album specificity).
+///
+/// This is evaluated independently of selection count constraints. It exists to keep
+/// selection modelling explicit and centralised.
+struct EditorToolSelectionDescriptorConstraint: Hashable, Sendable {
+    var allowedHomogeneity: Set<EditorSelectionHomogeneity>?
+    var allowedAlbumSpecificity: Set<EditorAlbumSelectionSpecificity>?
+
+    init(
+        allowedHomogeneity: Set<EditorSelectionHomogeneity>? = nil,
+        allowedAlbumSpecificity: Set<EditorAlbumSelectionSpecificity>? = nil
+    ) {
+        self.allowedHomogeneity = allowedHomogeneity
+        self.allowedAlbumSpecificity = allowedAlbumSpecificity
+    }
+
+    static let any = EditorToolSelectionDescriptorConstraint()
+
+    func allows(_ descriptor: EditorSelectionDescriptor) -> Bool {
+        if let allowedHomogeneity, !allowedHomogeneity.contains(descriptor.homogeneity) {
+            return false
+        }
+
+        if let allowedAlbumSpecificity, !allowedAlbumSpecificity.contains(descriptor.albumSpecificity) {
             return false
         }
 
@@ -179,42 +214,17 @@ enum EditorToolEligibilityEngine {
     /// Converts the editor’s coarse selection state into a deterministic selection count.
     ///
     /// Policy:
-    /// - If focus is `.widget` or `.clock`, selection is treated as 0.
-    /// - If focus targets a specific thing (element/album), and selection is `.none`,
-    ///   treat it as a single-target selection. This is defensive: focus is considered
-    ///   the stronger signal.
+    /// - If focus targets a specific thing (element/album/clock/smartRuleEditor) and selection is `.none`,
+    ///   treat it as a single-target selection. Focus is considered the stronger signal.
     /// - `.multi` is treated as 2 (minimally) because the exact count is not currently stored.
+    /// - `.widget` focus does *not* override selection. This enables an explicit "mixed selection" mode
+    ///   where selection is `.multi` but there is no single focused target.
     static func effectiveSelection(
         selection: EditorSelectionKind,
         focus: EditorFocusTarget
     ) -> EffectiveSelection {
-        func selectionForFocusedTarget(_ selection: EditorSelectionKind) -> EffectiveSelection {
-            switch selection {
-            case .none:
-                return EffectiveSelection(kind: .single, count: 1)
-            case .single:
-                return EffectiveSelection(kind: .single, count: 1)
-            case .multi:
-                return EffectiveSelection(kind: .multi, count: 2)
-            }
-        }
-
-        switch focus {
-        case .widget, .clock:
-            return EffectiveSelection(kind: .none, count: 0)
-
-        case .element:
-            return selectionForFocusedTarget(selection)
-
-        case .albumContainer:
-            return selectionForFocusedTarget(selection)
-
-        case .albumPhoto:
-            return selectionForFocusedTarget(selection)
-
-        case .smartRuleEditor:
-            return selectionForFocusedTarget(selection)
-        }
+        let descriptor = EditorSelectionDescriptor.describe(selection: selection, focus: focus)
+        return EffectiveSelection(kind: descriptor.kind, count: descriptor.count)
     }
 }
 
@@ -252,11 +262,13 @@ extension EditorToolFocusConstraint {
 extension EditorToolEligibility {
     static func multiSafe(
         focus: EditorToolFocusConstraint = .any,
-        selection: EditorToolSelectionConstraint = .any
+        selection: EditorToolSelectionConstraint = .any,
+        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any
     ) -> EditorToolEligibility {
         EditorToolEligibility(
             focus: focus,
             selection: selection,
+            selectionDescriptor: selectionDescriptor,
             supportsMultiSelection: true
         )
     }
