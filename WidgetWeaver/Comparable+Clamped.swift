@@ -7,9 +7,6 @@
 
 import Foundation
 
-extension Comparable {
-    @inlinable
-    func clamped(to limits: ClosedRange<Self>) -> Self {
-        min(max(self, limits.lowerBound), limits.upperBound)
-    }
-}
+// Comparable.clamped(to:) already exists in Shared/WidgetSpec+Utilities.swift.
+// Keeping another copy in the app target causes an invalid redeclaration and ambiguous lookups.
+// This file intentionally contains no additional declarations.

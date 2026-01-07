@@ -7,72 +7,86 @@
 
 import Foundation
 
-/// Whether the current selection is homogeneous (same kind of thing) or mixed.
-enum EditorSelectionHomogeneity: String, CaseIterable, Hashable, Sendable {
-    case homogeneous
-    case mixed
-
-    var label: String {
-        switch self {
-        case .homogeneous: return "homogeneous"
-        case .mixed: return "mixed"
-        }
-    }
+enum EditorSelectionCardinality: String, Codable, Hashable {
+    case none
+    case single
+    case multi
 }
 
-/// Whether the selection is related to albums/photos.
-enum EditorAlbumSelectionSpecificity: String, CaseIterable, Hashable, Sendable {
+enum EditorSelectionHomogeneity: String, Codable, Hashable {
+    case homogeneous
+    case heterogeneous
+}
+
+enum EditorAlbumSelectionSpecificity: String, Codable, Hashable {
     case none
     case albumContainer
     case albumPhotoItem
     case mixed
-
-    var label: String {
-        switch self {
-        case .none: return "none"
-        case .albumContainer: return "albumContainer"
-        case .albumPhotoItem: return "albumPhotoItem"
-        case .mixed: return "mixed"
-        }
-    }
 }
 
-/// Derived descriptor used for tool eligibility decisions.
-struct EditorSelectionDescriptor: Hashable, Sendable {
-    var kind: EditorSelectionKind
-    var homogeneity: EditorSelectionHomogeneity
-    var albumSpecificity: EditorAlbumSelectionSpecificity
+struct EditorSelectionDescriptor: Codable, Hashable {
 
-    var cardinalityLabel: String { kind.cardinalityLabel }
-    var homogeneityLabel: String { homogeneity.label }
-    var albumSpecificityLabel: String { albumSpecificity.label }
+    let cardinality: EditorSelectionCardinality
+    let homogeneity: EditorSelectionHomogeneity
+    let albumSpecificity: EditorAlbumSelectionSpecificity
 
     static func describe(selection: EditorSelectionKind, focus: EditorFocusTarget) -> EditorSelectionDescriptor {
-        let derivedKind: EditorSelectionKind = {
+
+        let derivedKind: EditorSelectionCardinality = {
             switch selection {
             case .none:
                 switch focus {
-                case .widget: return .none
-                default: return .single
+                case .widget:
+                    return .none
+                default:
+                    return .single
                 }
-            default:
-                return selection
+            case .single:
+                return .single
+            case .multi:
+                return .multi
             }
         }()
 
-        let homogeneity: EditorSelectionHomogeneity = (derivedKind == .multi) ? .mixed : .homogeneous
+        let derivedHomogeneity: EditorSelectionHomogeneity = .homogeneous
 
-        let albumSpecificity: EditorAlbumSelectionSpecificity = {
+        let derivedSpecificity: EditorAlbumSelectionSpecificity = {
             switch focus {
-            case .albumContainer:
+            case .albumContainer(_, _):
                 return .albumContainer
-            case .albumPhoto:
+            case .albumPhoto(_, _, _):
                 return .albumPhotoItem
+            case .smartRuleEditor(_):
+                return .albumContainer
             default:
                 return .none
             }
         }()
 
-        return EditorSelectionDescriptor(kind: derivedKind, homogeneity: homogeneity, albumSpecificity: albumSpecificity)
+        return EditorSelectionDescriptor(
+            cardinality: derivedKind,
+            homogeneity: derivedHomogeneity,
+            albumSpecificity: derivedSpecificity
+        )
+    }
+}
+
+extension EditorSelectionDescriptor {
+    var cardinalityLabel: String {
+        switch cardinality {
+        case .none: return "None"
+        case .single: return "Single"
+        case .multi: return "Multi"
+        }
+    }
+
+    var albumSpecificityLabel: String {
+        switch albumSpecificity {
+        case .none: return "None"
+        case .albumContainer: return "Album"
+        case .albumPhotoItem: return "Photo"
+        case .mixed: return "Mixed"
+        }
     }
 }

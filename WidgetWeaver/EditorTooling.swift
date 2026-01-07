@@ -7,162 +7,245 @@
 
 import Foundation
 
-/// Current editor context used to determine tool availability.
-struct EditorToolContext: Hashable, Sendable {
-    var template: LayoutTemplateToken
-    var isProUnlocked: Bool
-    var matchedSetEnabled: Bool
-    var selection: EditorSelectionKind
-    var focus: EditorFocusTarget
+struct EditorToolContext: Equatable, Hashable {
+    let template: LayoutTemplateToken
+    let isProUnlocked: Bool
+    let matchedSetEnabled: Bool
 
-    var hasSymbolConfigured: Bool
-    var hasImageConfigured: Bool
-    var hasSmartPhotoConfigured: Bool
+    let selection: EditorSelectionKind
+    let focus: EditorFocusTarget
 
-    var photoLibraryAccess: EditorPhotoLibraryAccess
-    var albumSubtype: EditorAlbumSubtype?
+    let hasSymbolConfigured: Bool
+    let hasImageConfigured: Bool
+    let hasSmartPhotoConfigured: Bool
+
+    let photoLibraryAccess: EditorPhotoLibraryAccess
+    let albumSubtype: EditorAlbumSubtype?
+
+    init(
+        template: LayoutTemplateToken,
+        isProUnlocked: Bool,
+        matchedSetEnabled: Bool,
+        selection: EditorSelectionKind,
+        focus: EditorFocusTarget,
+        photoLibraryAccess: EditorPhotoLibraryAccess,
+        hasSymbolConfigured: Bool,
+        hasImageConfigured: Bool,
+        hasSmartPhotoConfigured: Bool,
+        albumSubtype: EditorAlbumSubtype? = nil
+    ) {
+        self.template = template
+        self.isProUnlocked = isProUnlocked
+        self.matchedSetEnabled = matchedSetEnabled
+        self.selection = selection
+        self.focus = focus
+        self.photoLibraryAccess = photoLibraryAccess
+        self.hasSymbolConfigured = hasSymbolConfigured
+        self.hasImageConfigured = hasImageConfigured
+        self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
+        self.albumSubtype = albumSubtype
+    }
 }
 
-enum EditorToolID: String, CaseIterable, Hashable, Sendable {
+enum EditorToolID: String, CaseIterable, Codable, Hashable {
     case status
+    case designs
     case widgets
+
     case layout
     case text
     case symbol
+
     case image
     case smartPhoto
     case smartPhotoCrop
+
     case smartRules
     case albumShuffle
+
     case style
-    case designs
     case typography
     case actions
+
     case matchedSet
     case variables
     case sharing
+
     case ai
     case pro
 }
 
-struct EditorToolCapabilities: OptionSet, Hashable, Sendable {
-    let rawValue: Int
+struct EditorToolCapabilities: Equatable, Hashable {
+    let canEditLayout: Bool
+    let canEditTextContent: Bool
+    let canEditSymbol: Bool
+    let canEditImage: Bool
+    let canEditSmartPhoto: Bool
+    let canEditStyle: Bool
+    let canEditTypography: Bool
+    let canEditActions: Bool
 
-    static let canEditLayout       = EditorToolCapabilities(rawValue: 1 << 0)
-    static let canEditTextContent  = EditorToolCapabilities(rawValue: 1 << 1)
-    static let canEditSymbol       = EditorToolCapabilities(rawValue: 1 << 2)
-    static let canEditImage        = EditorToolCapabilities(rawValue: 1 << 3)
-    static let canEditSmartPhoto   = EditorToolCapabilities(rawValue: 1 << 4)
-    static let canEditStyle        = EditorToolCapabilities(rawValue: 1 << 5)
-    static let canEditTypography   = EditorToolCapabilities(rawValue: 1 << 6)
-    static let canEditActions      = EditorToolCapabilities(rawValue: 1 << 7)
+    let canAccessPro: Bool
+    let canAccessAI: Bool
 }
 
 enum EditorToolRegistry {
 
-    private static let toolOrder: [EditorToolID] = [
-        .status,
-        .widgets,
-        .layout,
-        .designs,
-        .text,
-        .symbol,
-        .image,
-        .smartPhoto,
-        .smartPhotoCrop,
-        .smartRules,
-        .albumShuffle,
-        .style,
-        .typography,
-        .actions,
-        .matchedSet,
-        .variables,
-        .sharing,
-        .ai,
-        .pro
-    ]
+    static func visibleToolIDs(context: EditorToolContext, selectionDescriptor: EditorSelectionDescriptor) -> [EditorToolID] {
 
-    private static let eligibilityByToolID: [EditorToolID: EditorToolEligibility] = [
-        .status: .init(),
-        .widgets: .init(),
-        .layout: .init(),
-        .designs: .init(),
-        .text: .init(),
-        .symbol: .init(selectionDescriptor: .allowsNonAlbumOnly),
-        .image: .init(),
-        .smartPhoto: .init(),
-        .smartPhotoCrop: .init(focus: .smartPhotoTarget),
-        .smartRules: .init(focus: .smartRules),
-        .albumShuffle: .init(focus: .albumShuffle),
-        .style: .init(),
-        .typography: .init(),
-        .actions: .init(),
-        .matchedSet: .init(),
-        .variables: .init(),
-        .sharing: .init(),
-        .ai: .init(),
-        .pro: .init()
-    ]
+        let base: [EditorToolID] = [
+            .status,
+            .designs,
+            .widgets,
 
-    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let selectionDescriptor = EditorSelectionDescriptor.describe(selection: context.selection, focus: context.focus)
+            .layout,
+            .text,
+            .symbol,
 
-        var eligible = toolOrder.filter { toolID in
-            let eligibility = eligibilityByToolID[toolID] ?? .init()
+            .image,
+            .smartPhoto,
+            .smartPhotoCrop,
+
+            .smartRules,
+            .albumShuffle,
+
+            .style,
+            .typography,
+            .actions,
+
+            .matchedSet,
+            .variables,
+            .sharing,
+
+            .ai,
+            .pro
+        ]
+
+        let eligible = base.filter { toolID in
+            guard let eligibility = eligibilityByToolID[toolID] else { return true }
             return EditorToolEligibilityEvaluator.isEligible(
-                eligibility: eligibility,
-                selection: context.selection,
-                selectionDescriptor: selectionDescriptor,
-                focus: context.focus
+                toolID: toolID,
+                rules: eligibility,
+                context: context,
+                selection: selectionDescriptor
             )
         }
 
-        if context.hasSmartPhotoConfigured == false {
-            eligible.removeAll(where: { $0 == .smartPhotoCrop || $0 == .smartRules || $0 == .albumShuffle })
-        }
+        let focusGroup = editorToolFocusGroup(for: context.focus)
+        let eligibleAfterFocusGate = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
 
-        let focusGroup = EditorToolFocusGroup.from(focus: context.focus)
-        let gated = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
+        return prioritised(eligibleAfterFocusGate, focusGroup: focusGroup)
+    }
 
-        return prioritised(toolIDs: gated, focusGroup: focusGroup)
+    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
+        let selectionDescriptor = EditorSelectionDescriptor.describe(selection: context.selection, focus: context.focus)
+        return visibleToolIDs(context: context, selectionDescriptor: selectionDescriptor)
     }
 
     static func capabilities(for context: EditorToolContext) -> EditorToolCapabilities {
-        let toolIDs = visibleTools(for: context)
+        let toolIDs = Set(visibleTools(for: context))
 
-        var caps: EditorToolCapabilities = []
-
-        if toolIDs.contains(.layout) { caps.insert(.canEditLayout) }
-        if toolIDs.contains(.text) { caps.insert(.canEditTextContent) }
-        if toolIDs.contains(.symbol) { caps.insert(.canEditSymbol) }
-        if toolIDs.contains(.image) { caps.insert(.canEditImage) }
-        if toolIDs.contains(where: { [.smartPhoto, .smartPhotoCrop, .smartRules, .albumShuffle].contains($0) }) {
-            caps.insert(.canEditSmartPhoto)
-        }
-        if toolIDs.contains(.style) { caps.insert(.canEditStyle) }
-        if toolIDs.contains(.typography) { caps.insert(.canEditTypography) }
-        if toolIDs.contains(.actions) { caps.insert(.canEditActions) }
-
-        return caps
+        return EditorToolCapabilities(
+            canEditLayout: toolIDs.contains(.layout),
+            canEditTextContent: toolIDs.contains(.text),
+            canEditSymbol: toolIDs.contains(.symbol),
+            canEditImage: toolIDs.contains(.image),
+            canEditSmartPhoto: toolIDs.contains(.smartPhoto),
+            canEditStyle: toolIDs.contains(.style),
+            canEditTypography: toolIDs.contains(.typography),
+            canEditActions: toolIDs.contains(.actions),
+            canAccessPro: toolIDs.contains(.pro),
+            canAccessAI: toolIDs.contains(.ai)
+        )
     }
 
-    private static func prioritised(toolIDs: [EditorToolID], focusGroup: EditorToolFocusGroup) -> [EditorToolID] {
-        guard focusGroup == .smartPhotos else { return toolIDs }
-
-        let preferred: [EditorToolID] = [
-            .smartPhoto,
-            .smartPhotoCrop,
-            .smartRules,
-            .albumShuffle,
-            .image,
-            .style
-        ]
-
-        return toolIDs.sorted { a, b in
-            let ia = preferred.firstIndex(of: a) ?? Int.max
-            let ib = preferred.firstIndex(of: b) ?? Int.max
-            if ia != ib { return ia < ib }
-            return a.rawValue < b.rawValue
+    private static func prioritised(_ toolIDs: [EditorToolID], focusGroup: EditorToolFocusGroup) -> [EditorToolID] {
+        switch focusGroup {
+        case .smartPhotos:
+            let first: [EditorToolID] = [.smartPhoto, .smartPhotoCrop, .image, .albumShuffle]
+            return stableBucket(toolIDs, first: first)
+        case .smartRules:
+            let first: [EditorToolID] = [.smartRules, .albumShuffle]
+            return stableBucket(toolIDs, first: first)
+        case .albumShuffle:
+            let first: [EditorToolID] = [.albumShuffle]
+            return stableBucket(toolIDs, first: first)
+        case .element:
+            let first: [EditorToolID] = [.layout, .text, .symbol, .image, .style, .typography, .actions]
+            return stableBucket(toolIDs, first: first)
+        case .widget:
+            let first: [EditorToolID] = [.status, .layout, .text, .style]
+            return stableBucket(toolIDs, first: first)
+        case .clock:
+            let first: [EditorToolID] = [.status, .layout, .style]
+            return stableBucket(toolIDs, first: first)
+        case .other:
+            return toolIDs
         }
     }
+
+    private static func stableBucket(_ toolIDs: [EditorToolID], first: [EditorToolID]) -> [EditorToolID] {
+        let firstSet = Set(first)
+        let a = toolIDs.filter { firstSet.contains($0) }
+        let b = toolIDs.filter { !firstSet.contains($0) }
+        return a + b
+    }
+
+    private static let eligibilityByToolID: [EditorToolID: EditorToolEligibilityRules] = [
+        .status: .init(),
+        .designs: .init(),
+        .widgets: .init(),
+
+        .layout: .init(
+            selectionDescriptor: .allowsNonAlbumOnly
+        ),
+
+        .text: .init(
+            selectionDescriptor: .allowsNonAlbumOnly
+        ),
+
+        .symbol: .init(
+            selectionDescriptor: .allowsNonAlbumOnly
+        ),
+
+        .image: .init(
+            selectionDescriptor: .allowsNonAlbumOnly
+        ),
+
+        .smartPhoto: .init(
+            focus: .smartPhotoTarget
+        ),
+
+        .smartPhotoCrop: .init(
+            focus: .smartPhotoTarget,
+            requires: .requiresAny([
+                .hasSmartPhotoConfigured,
+                .hasImageConfigured
+            ])
+        ),
+
+        .smartRules: .init(
+            focus: .smartRules,
+            selectionDescriptor: .allowsAlbumContainerOrNone
+        ),
+
+        .albumShuffle: .init(
+            focus: .albumShuffle,
+            selectionDescriptor: .allowsAlbumContainerOrNone
+        ),
+
+        .style: .init(),
+        .typography: .init(),
+        .actions: .init(),
+
+        .matchedSet: .init(),
+        .variables: .init(),
+        .sharing: .init(),
+
+        .ai: .init(
+            requires: .requiresAny([.isProUnlocked])
+        ),
+
+        .pro: .init()
+    ]
 }

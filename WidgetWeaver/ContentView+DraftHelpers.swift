@@ -11,126 +11,158 @@ import WidgetKit
 
 extension ContentView {
 
+    // MARK: - Family selection
+
+    var editingFamily: EditingFamily {
+        EditingFamily(widgetFamily: previewFamily) ?? .small
+    }
+
+    var selectedFamily: EditingFamily {
+        editingFamily
+    }
+
+    var editingFamilyLabel: String {
+        editingFamily.label
+    }
+
     // MARK: - Draft access
 
     func currentFamilyDraft() -> FamilyDraft {
-        if matchedSetEnabled {
-            return matchedDrafts.forFamily(editingFamily)
-        } else {
-            return baseDraft
-        }
+        matchedSetEnabled ? matchedDrafts.forFamily(editingFamily) : baseDraft
     }
 
     func setCurrentFamilyDraft(_ draft: FamilyDraft) {
         if matchedSetEnabled {
-            matchedDrafts.set(draft, forFamily: editingFamily)
+            matchedDrafts = matchedDrafts.set(draft, forFamily: editingFamily)
         } else {
             baseDraft = draft
+            matchedDrafts = MatchedDrafts(
+                small: draft,
+                medium: draft,
+                large: draft,
+                accessoryRectangular: draft,
+                accessoryInline: draft
+            )
         }
     }
 
-    func setFamilyDraft(_ family: WidgetFamily, _ draft: FamilyDraft) {
+    func setFamilyDraft(_ draft: FamilyDraft, for family: EditingFamily) {
         if matchedSetEnabled {
-            matchedDrafts.set(draft, forFamily: EditingFamily(family))
+            matchedDrafts = matchedDrafts.set(draft, forFamily: family)
         } else {
             baseDraft = draft
+            matchedDrafts = MatchedDrafts(
+                small: draft,
+                medium: draft,
+                large: draft,
+                accessoryRectangular: draft,
+                accessoryInline: draft
+            )
         }
     }
 
-    func setFamilyDraft(_ pair: (WidgetFamily, FamilyDraft)) {
-        setFamilyDraft(pair.0, pair.1)
-    }
-
-    // MARK: - Bindings
-
-    func binding<T>(_ keyPath: WritableKeyPath<FamilyDraft, T>) -> Binding<T> {
-        Binding(
-            get: { currentFamilyDraft()[keyPath: keyPath] },
-            set: { newValue in
-                var d = currentFamilyDraft()
-                d[keyPath: keyPath] = newValue
-                setCurrentFamilyDraft(d)
-            }
+    func copyCurrentSizeToAllSizes() {
+        let draft = currentFamilyDraft()
+        matchedDrafts = MatchedDrafts(
+            small: draft,
+            medium: draft,
+            large: draft,
+            accessoryRectangular: draft,
+            accessoryInline: draft
         )
+        matchedSetEnabled = true
     }
 
-    // MARK: - Matched set helpers
+    // MARK: - Presets
+
+    func applyStepsStarterPreset(copyToAllSizes: Bool) {
+        var draft = currentFamilyDraft()
+
+        draft.template = .classic
+
+        if draft.textPrimary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft.textPrimary = "Steps"
+        }
+        if draft.statusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft.statusText = "Today"
+        }
+
+        setCurrentFamilyDraft(draft)
+
+        if copyToAllSizes {
+            copyCurrentSizeToAllSizes()
+        }
+    }
+
+    // MARK: - Matched set toggle
 
     var matchedSetBinding: Binding<Bool> {
         Binding(
             get: { matchedSetEnabled },
             set: { newValue in
-                if newValue == matchedSetEnabled { return }
+                guard newValue != matchedSetEnabled else { return }
 
                 if newValue {
-                    let seed = baseDraft
-                    matchedDrafts = MatchedDrafts(small: seed, medium: seed, large: seed)
-                    matchedSetGeneratedAt = Date()
+                    matchedDrafts = MatchedDrafts(
+                        small: baseDraft,
+                        medium: baseDraft,
+                        large: baseDraft,
+                        accessoryRectangular: baseDraft,
+                        accessoryInline: baseDraft
+                    )
                     matchedSetEnabled = true
                 } else {
                     baseDraft = matchedDrafts.medium
                     matchedSetEnabled = false
-                    selectedFamily = .systemMedium
                 }
             }
         )
     }
 
-    func copyCurrentSizeToAllSizes() {
-        guard matchedSetEnabled else { return }
-        let source = currentFamilyDraft()
-        matchedDrafts = MatchedDrafts(small: source, medium: source, large: source)
-        matchedSetGeneratedAt = Date()
+    // MARK: - KeyPath bindings into the current draft
+
+    func binding<Value>(_ keyPath: WritableKeyPath<FamilyDraft, Value>) -> Binding<Value> {
+        Binding(
+            get: { currentFamilyDraft()[keyPath: keyPath] },
+            set: { newValue in
+                var draft = currentFamilyDraft()
+                draft[keyPath: keyPath] = newValue
+                setCurrentFamilyDraft(draft)
+            }
+        )
     }
 
-    // MARK: - Labels / presets
-
-    var editingFamilyLabel: String {
-        switch editingFamily {
-        case .small: return "Small"
-        case .medium: return "Medium"
-        case .large: return "Large"
-        }
-    }
-
-    func applyStepsStarterPreset() {
-        var d = currentFamilyDraft()
-        d.template = .standard
-        d.primaryText = "__steps"
-        if d.secondaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            d.secondaryText = "Today"
-        }
-        setCurrentFamilyDraft(d)
-    }
-
-    // MARK: - Tool context
+    // MARK: - Editor tooling integration
 
     var editorToolContext: EditorToolContext {
         let draft = currentFamilyDraft()
-        let focus = editorFocusSnapshot.focus
-        let selection = editorFocusSnapshot.selection
 
-        let hasSymbolConfigured = draft.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        let hasSymbolConfigured = !draft.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasImageConfigured = !draft.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasSmartPhotoConfigured = (draft.imageSmartPhoto != nil)
-        let hasImageConfigured = hasSmartPhotoConfigured || draft.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-
-        let photoAccess = EditorPhotoLibraryAccess.current()
 
         return EditorToolContext(
             template: draft.template,
-            isProUnlocked: isProUnlocked,
+            isProUnlocked: proManager.isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            selection: selection,
-            focus: focus,
+            selection: editorFocusSnapshot.selection,
+            focus: editorFocusSnapshot.focus,
+            photoLibraryAccess: EditorPhotoLibraryAccess.current(),
             hasSymbolConfigured: hasSymbolConfigured,
             hasImageConfigured: hasImageConfigured,
             hasSmartPhotoConfigured: hasSmartPhotoConfigured,
-            photoLibraryAccess: photoAccess,
-            albumSubtype: focus.albumSubtype
+            albumSubtype: editorFocusSnapshot.focus.albumSubtype
         )
     }
 
     var editorVisibleToolIDs: [EditorToolID] {
-        EditorToolRegistry.visibleTools(for: editorToolContext)
+        let selectionDescriptor = EditorSelectionDescriptor.describe(
+            selection: editorToolContext.selection,
+            focus: editorToolContext.focus
+        )
+        return EditorToolRegistry.visibleToolIDs(
+            context: editorToolContext,
+            selectionDescriptor: selectionDescriptor
+        )
     }
 }
