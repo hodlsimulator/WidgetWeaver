@@ -121,14 +121,23 @@ enum EditorToolRegistry {
             .pro
         ]
 
-        let eligible = base.filter { toolID in
-            guard let eligibility = eligibilityByToolID[toolID] else { return true }
-            return EditorToolEligibilityEvaluator.isEligible(
+        var eligible: [EditorToolID] = []
+        eligible.reserveCapacity(base.count)
+
+        for toolID in base {
+            guard let eligibility = eligibilityByToolID[toolID] else {
+                eligible.append(toolID)
+                continue
+            }
+
+            if EditorToolEligibilityEvaluator.isEligible(
                 toolID: toolID,
                 rules: eligibility,
                 context: context,
                 selection: selectionDescriptor
-            )
+            ) {
+                eligible.append(toolID)
+            }
         }
 
         let focusGroup = editorToolFocusGroup(for: context.focus)
@@ -162,24 +171,18 @@ enum EditorToolRegistry {
     private static func prioritised(_ toolIDs: [EditorToolID], focusGroup: EditorToolFocusGroup) -> [EditorToolID] {
         switch focusGroup {
         case .smartPhotos:
-            let first: [EditorToolID] = [.smartPhoto, .smartPhotoCrop, .image, .albumShuffle]
+            let first: [EditorToolID] = [.smartRules, .albumShuffle, .smartPhoto, .smartPhotoCrop, .image]
             return stableBucket(toolIDs, first: first)
-        case .smartRules:
-            let first: [EditorToolID] = [.smartRules, .albumShuffle]
-            return stableBucket(toolIDs, first: first)
-        case .albumShuffle:
-            let first: [EditorToolID] = [.albumShuffle]
-            return stableBucket(toolIDs, first: first)
-        case .element:
-            let first: [EditorToolID] = [.layout, .text, .symbol, .image, .style, .typography, .actions]
-            return stableBucket(toolIDs, first: first)
+
         case .widget:
             let first: [EditorToolID] = [.status, .layout, .text, .style]
             return stableBucket(toolIDs, first: first)
+
         case .clock:
             let first: [EditorToolID] = [.status, .layout, .style]
             return stableBucket(toolIDs, first: first)
-        case .other:
+
+        default:
             return toolIDs
         }
     }
@@ -191,7 +194,7 @@ enum EditorToolRegistry {
         return a + b
     }
 
-    private static let eligibilityByToolID: [EditorToolID: EditorToolEligibilityRules] = [
+    private static let eligibilityByToolID: [EditorToolID: EditorToolEligibility] = [
         .status: .init(),
         .designs: .init(),
         .widgets: .init(),
