@@ -17,7 +17,13 @@ struct EditorToolContext: Hashable, Sendable {
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget
 
-    var photoLibraryAccess: EditorPhotoLibraryAccessSnapshot
+    var photoLibraryAccess: EditorPhotoLibraryAccess
+
+    /// Whether the draft has a symbol configured.
+    ///
+    /// This is not currently a capability, but it is part of the central context model so
+    /// future tools can avoid re-deriving it.
+    var hasSymbolConfigured: Bool
 
     /// Whether the draft has any image configured (regardless of whether Smart Photo has been prepared).
     var hasImageConfigured: Bool
@@ -31,7 +37,8 @@ struct EditorToolContext: Hashable, Sendable {
         matchedSetEnabled: Bool,
         selection: EditorSelectionKind,
         focus: EditorFocusTarget,
-        photoLibraryAccess: EditorPhotoLibraryAccessSnapshot,
+        photoLibraryAccess: EditorPhotoLibraryAccess,
+        hasSymbolConfigured: Bool,
         hasImageConfigured: Bool,
         hasSmartPhotoConfigured: Bool
     ) {
@@ -41,6 +48,7 @@ struct EditorToolContext: Hashable, Sendable {
         self.selection = selection
         self.focus = focus
         self.photoLibraryAccess = photoLibraryAccess
+        self.hasSymbolConfigured = hasSymbolConfigured
         self.hasImageConfigured = hasImageConfigured
         self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
     }
@@ -422,7 +430,6 @@ enum EditorToolRegistry {
         return out
     }
 
-
     /// Legacy / fallback tool surface.
     ///
     /// This intentionally ignores:
@@ -577,6 +584,31 @@ extension EditorCapabilities {
         case .hasImageConfigured: return "hasImageConfigured"
         case .hasSmartPhotoConfigured: return "hasSmartPhotoConfigured"
         default: return "unknown(\(rawValue))"
+        }
+    }
+}
+
+extension EditorSelectionKind {
+    var debugLabel: String {
+        rawValue
+    }
+}
+
+extension EditorFocusTarget {
+    var debugLabel: String {
+        switch self {
+        case .widget:
+            return "widget"
+        case .clock:
+            return "clock"
+        case .element(let id):
+            return "element(\(id))"
+        case .albumContainer(let id, let subtype):
+            return "albumContainer(\(subtype.rawValue):\(id))"
+        case .albumPhoto(let albumID, let itemID, let subtype):
+            return "albumPhoto(\(subtype.rawValue):\(albumID)/\(itemID))"
+        case .smartRuleEditor(let albumID):
+            return "smartRuleEditor(\(albumID))"
         }
     }
 }
