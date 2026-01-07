@@ -14,34 +14,43 @@ enum EditorSelectionKind: String, CaseIterable, Hashable, Sendable {
     case multi
 }
 
-/// Album subtype for album editing focus.
-enum EditorAlbumSubtype: String, CaseIterable, Hashable, Sendable {
-    case manual
-    case smart
+extension EditorSelectionKind {
+    var cardinalityLabel: String {
+        switch self {
+        case .none: return "none"
+        case .single: return "single"
+        case .multi: return "multi"
+        }
+    }
 }
 
-/// The single active focus target for the editor.
-///
-/// This is intentionally plain data (no SwiftUI) so it can be stored in model state,
-/// fed into context evaluation, and unit-tested.
-enum EditorFocusTarget: Hashable, Sendable {
-    /// Widget-level focus (nothing selected).
+enum EditorFocusTarget: String, CaseIterable, Hashable, Sendable {
     case widget
+    case element
+    case background
+    case smartPhotoTarget
+    case smartPhotoContainerSuite
+    case smartRules
+    case albumShuffle
+    case importReview
+}
 
-    /// A generic element is selected (non-album).
-    case element(id: String)
+/// The permission state relevant to editor features that need Photos access.
+enum EditorPhotoLibraryAccess: String, CaseIterable, Hashable, Sendable {
+    case unknown
+    case denied
+    case authorised
+}
 
-    /// Album container focus.
-    case albumContainer(id: String, subtype: EditorAlbumSubtype)
-
-    /// A photo item inside an album is selected.
-    case albumPhoto(albumID: String, itemID: String, subtype: EditorAlbumSubtype)
-
-    /// Smart rule editor is open (exclusive).
-    case smartRuleEditor(albumID: String)
-
-    /// Clock editor focus (separate from image/album tools).
-    case clock
+extension EditorPhotoLibraryAccess {
+    var allowsReading: Bool {
+        switch self {
+        case .authorised:
+            return true
+        case .unknown, .denied:
+            return false
+        }
+    }
 }
 
 /// A compact snapshot of focus + selection state.
@@ -50,4 +59,10 @@ struct EditorFocusSnapshot: Hashable, Sendable {
     var focus: EditorFocusTarget
 
     static let widgetDefault = EditorFocusSnapshot(selection: .none, focus: .widget)
+}
+
+extension EditorFocusTarget {
+    var debugLabel: String {
+        rawValue
+    }
 }

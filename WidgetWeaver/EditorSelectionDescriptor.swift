@@ -7,32 +7,22 @@
 
 import Foundation
 
-// MARK: - Selection descriptor
+// MARK: - Selection modelling helpers
 
-/// Whether the current selection is homogeneous (all targets are the same content kind) or mixed.
-///
-/// Mixed selection is represented explicitly so tool filtering stays deterministic even when the
-/// editor cannot safely assume a single target type.
+/// Whether the current selection is homogeneous (all of one type) vs mixed.
 enum EditorSelectionHomogeneity: String, CaseIterable, Hashable, Sendable {
     case homogeneous
     case mixed
 }
 
-/// Album specificity for the current selection.
-///
-/// This provides a stable vocabulary for tools that must distinguish between:
-/// - album container editing
-/// - album photo-item editing
-/// - non-album editing
-/// - mixed/ambiguous selection
+/// Rough classification of whether the selection refers to an album container, an item in an album, or not album-related.
 enum EditorAlbumSelectionSpecificity: String, CaseIterable, Hashable, Sendable {
     case nonAlbum
     case albumContainer
-    case albumPhotoItem
-    case mixed
+    case albumItem
 }
 
-/// A compact, deterministic description of the current selection derived from `selection` + `focus`.
+/// A richer description of selection state.
 ///
 /// This exists to make selection modelling explicit (including mixed selection) without requiring
 /// scattered conditional UI logic.
@@ -44,85 +34,84 @@ struct EditorSelectionDescriptor: Hashable, Sendable {
 
     /// A deterministic minimum count for the current selection.
     ///
-    /// The editor does not currently store exact multi-selection counts, so `.multi` is treated as 2.
-    var count: Int
+    /// For example: `.none` => 0ï¿½ 0, `.single` => 1, `.multi` => 2.
+    var minCount: Int
 
-    /// Whether the selection is mixed or homogeneous.
-    var homogeneity: EditorSelectionHomogeneity
+    /// Whether selection is homogeneous (all same type) or mixed.
+    var isHomogeneous: Bool
 
-    /// Album specificity for the selection.
+    /// How album-specific the selection is (if applicable).
     var albumSpecificity: EditorAlbumSelectionSpecificity
 
     static func describe(selection: EditorSelectionKind, focus: EditorFocusTarget) -> EditorSelectionDescriptor {
         // 1) Determine cardinality.
         //
-        // Policy:
-        // - If a concrete focus target exists (element/album/clock/smartRuleEditor) and selection is `.none`,
+        // - If focus is a concrete, item-like target and selection is `.none`,
         //   treat it as a single-target selection. Focus is considered the stronger signal.
         // - Otherwise, use selection as-is.
         let derivedKind: EditorSelectionKind = {
             switch selection {
             case .none:
                 switch focus {
-                case .widget:
-                    return .none
-                case .clock, .element, .albumContainer, .albumPhoto, .smartRuleEditor:
+                case .element, .background, .smartPhotoTarget:
                     return .single
+                default:
+                    return .none
                 }
-            case .single:
-                return .single
-            case .multi:
-                return .multi
+            case .single, .multi:
+                return selection
             }
         }()
 
-        let derivedCount: Int = {
+        let minCount: Int = {
             switch derivedKind {
-            case .none:
-                return 0
-            case .single:
-                return 1
-            case .multi:
-                // The editor does not yet store exact multi-selection counts.
-                return 2
+            case .none: return 0
+            case .single: return 1
+            case .multi: return 2
             }
         }()
 
-        // 2) Determine homogeneity.
+        // 2) Homogeneity + album specificity.
         //
-        // Contract:
-        // - When selection is `.multi` and focus is `.widget`, the selection is considered mixed/ambiguous.
-        // - When selection is `.multi` and a concrete focus target exists, treat as homogeneous for now.
-        //   This assumes future multi-selection UX will clear focus to `.widget` when the selection spans
-        //   multiple content kinds.
-        let derivedHomogeneity: EditorSelectionHomogeneity = {
-            guard derivedKind == .multi else { return .homogeneous }
-            if case .widget = focus { return .mixed }
-            return .homogeneous
-        }()
+        // The real app can refine this based on concrete selection models.
+        // For now, model focus-driven cases:
+        let isHomogeneous: Bool = true
 
-        // 3) Determine album specificity.
-        let derivedAlbumSpecificity: EditorAlbumSelectionSpecificity = {
-            if derivedHomogeneity == .mixed { return .mixed }
-
+        let albumSpecificity: EditorAlbumSelectionSpecificity = {
             switch focus {
-            case .albumContainer:
+            case .albumShuffle:
                 return .albumContainer
-            case .albumPhoto:
-                return .albumPhotoItem
-            case .smartRuleEditor:
-                // Rules are a container-level album edit.
+            case .smartPhotoContainerSuite:
                 return .albumContainer
-            case .widget, .clock, .element:
+            case .smartPhotoTarget:
+                // Smart Photo target may refer to an album item or non-album photo, but keep conservative.
+                return .nonAlbum
+            default:
                 return .nonAlbum
             }
         }()
 
         return EditorSelectionDescriptor(
             kind: derivedKind,
-            count: derivedCount,
-            homogeneity: derivedHomogeneity,
-            albumSpecificity: derivedAlbumSpecificity
+            minCount: minCount,
+            isHomogeneous: isHomogeneous,
+            albumSpecificity: albumSpecificity
         )
+    }
+}
+
+extension EditorSelectionDescriptor {
+    var cardinalityLabel: String { kind.cardinalityLabel }
+
+    var homogeneityLabel: String {
+        isHomogeneous ? "homogeneous" : "mixed"
+    }
+
+    var albumSpecificityLabel: String {
+        switch albumSpecificity {
+        case .nonAlbum: return "nonAlbum"
+        case .albumContainer: return "albumContainer"
+        case .albumItem: return "albumItem"
+        }
     }
 }

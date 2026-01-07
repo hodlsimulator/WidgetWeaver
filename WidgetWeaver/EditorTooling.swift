@@ -7,32 +7,13 @@
 
 import Foundation
 
-enum EditorSelectionKind: Hashable, Sendable {
-    case none
-    case single
-    case multi
-
-    var cardinalityLabel: String {
-        switch self {
-        case .none: return "none"
-        case .single: return "single"
-        case .multi: return "multi"
-        }
-    }
-}
-
 struct EditorToolContext: Hashable, Sendable {
     var template: LayoutTemplateToken
     var isProUnlocked: Bool
     var matchedSetEnabled: Bool
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget
-
     var photoLibraryAccess: EditorPhotoLibraryAccess
-
-    var hasSymbolConfigured: Bool
-    var hasImageConfigured: Bool
-    var hasSmartPhotoConfigured: Bool
 
     init(
         template: LayoutTemplateToken,
@@ -40,10 +21,7 @@ struct EditorToolContext: Hashable, Sendable {
         matchedSetEnabled: Bool,
         selection: EditorSelectionKind,
         focus: EditorFocusTarget,
-        photoLibraryAccess: EditorPhotoLibraryAccess,
-        hasSymbolConfigured: Bool,
-        hasImageConfigured: Bool,
-        hasSmartPhotoConfigured: Bool
+        photoLibraryAccess: EditorPhotoLibraryAccess
     ) {
         self.template = template
         self.isProUnlocked = isProUnlocked
@@ -51,332 +29,78 @@ struct EditorToolContext: Hashable, Sendable {
         self.selection = selection
         self.focus = focus
         self.photoLibraryAccess = photoLibraryAccess
-        self.hasSymbolConfigured = hasSymbolConfigured
-        self.hasImageConfigured = hasImageConfigured
-        self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
     }
 }
 
 enum EditorToolID: String, CaseIterable, Hashable, Sendable {
-    // Workflow.
-    case status
-    case designs
-    case widgets
-
-    // Core edit.
     case layout
-    case text
-    case symbol
-    case image
-
-    // Smart Photos / Albums.
+    case imageTheme
+    case weather
+    case calendar
+    case steps
+    case noiseMachine
     case smartPhoto
     case smartPhotoCrop
     case smartRules
     case albumShuffle
-
-    // Styling.
-    case style
-    case typography
-
-    // Behaviour / actions.
-    case actions
-
-    // Matched set + globals.
-    case matchedSet
-    case variables
-
-    // Sharing / growth.
-    case sharing
-    case ai
-    case pro
+    case remix
+    case importReview
 }
 
-/// Capability vocabulary.
-/// Keep this additive and stable; tools declare requirements by capability.
-struct EditorCapabilities: OptionSet, Hashable, Sendable {
-    let rawValue: Int
-
-    init(rawValue: Int) { self.rawValue = rawValue }
-
-    static let canEditLayout = EditorCapabilities(rawValue: 1 << 0)
-    static let canEditTextContent = EditorCapabilities(rawValue: 1 << 1)
-    static let canEditSymbol = EditorCapabilities(rawValue: 1 << 2)
-    static let canEditImage = EditorCapabilities(rawValue: 1 << 3)
-    static let canEditSmartPhoto = EditorCapabilities(rawValue: 1 << 4)
-    static let canEditAlbumShuffle = EditorCapabilities(rawValue: 1 << 5)
-    static let canEditStyle = EditorCapabilities(rawValue: 1 << 6)
-    static let canEditTypography = EditorCapabilities(rawValue: 1 << 7)
-    static let canEditActions = EditorCapabilities(rawValue: 1 << 8)
-    static let canEditMatchedSet = EditorCapabilities(rawValue: 1 << 9)
-    static let canEditVariables = EditorCapabilities(rawValue: 1 << 10)
-    static let canShare = EditorCapabilities(rawValue: 1 << 11)
-    static let canUseAI = EditorCapabilities(rawValue: 1 << 12)
-    static let canPurchasePro = EditorCapabilities(rawValue: 1 << 13)
-
-    // Permission/availability.
-    static let canAccessPhotoLibrary = EditorCapabilities(rawValue: 1 << 14)
-    static let hasSymbolConfigured = EditorCapabilities(rawValue: 1 << 15)
-    static let hasImageConfigured = EditorCapabilities(rawValue: 1 << 16)
-    static let hasSmartPhotoConfigured = EditorCapabilities(rawValue: 1 << 17)
-}
-
-struct EditorToolDefinition: Hashable, Sendable {
+struct EditorTool: Hashable, Sendable {
     var id: EditorToolID
-    var order: Int
-    var requiredCapabilities: EditorCapabilities
+    var title: String
+    var isPro: Bool
     var eligibility: EditorToolEligibility
 
-    init(id: EditorToolID, order: Int, requiredCapabilities: EditorCapabilities, eligibility: EditorToolEligibility) {
+    init(
+        id: EditorToolID,
+        title: String,
+        isPro: Bool,
+        eligibility: EditorToolEligibility
+    ) {
         self.id = id
-        self.order = order
-        self.requiredCapabilities = requiredCapabilities
+        self.title = title
+        self.isPro = isPro
         self.eligibility = eligibility
     }
 }
 
 enum EditorToolRegistry {
-    static let tools: [EditorToolDefinition] = [
-        // Workflow.
-        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe()),
 
-        // Core editing.
-        EditorToolDefinition(
-            id: .layout,
-            order: 40,
-            requiredCapabilities: [.canEditLayout],
-            eligibility: .multiSafe(
-                focus: .any,
-                selection: .any,
-                selectionDescriptor: .any
-            )
-        ),
-        EditorToolDefinition(
-            id: .text,
-            order: 50,
-            requiredCapabilities: [.canEditTextContent],
-            eligibility: .singleTarget(
-                focus: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
-            )
-        ),
-        EditorToolDefinition(
-            id: .symbol,
-            order: 60,
-            requiredCapabilities: [.canEditSymbol],
-            eligibility: .singleTarget(
-                focus: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
-            )
-        ),
-        EditorToolDefinition(
-            id: .image,
-            order: 70,
-            requiredCapabilities: [.canEditImage],
-            eligibility: .singleTarget(
-                focus: .smartPhotoPhotoItemSuite,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
-            )
-        ),
+    static func visibleTools(for context: EditorToolContext) -> [EditorTool] {
 
-        // Smart Photos / Albums.
-        EditorToolDefinition(
-            id: .smartPhoto,
-            order: 80,
-            requiredCapabilities: [.canEditSmartPhoto],
-            eligibility: .init(
-                focus: .smartPhotoContainerSuite,
-                selection: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: true
+        let selectionDescriptor = EditorSelectionDescriptor.describe(
+            selection: context.selection,
+            focus: context.focus
+        )
+
+        // 1) Start from all tools.
+        var tools = Self.allTools()
+
+        // 2) Apply eligibility engine.
+        tools = tools.filter {
+            EditorToolEligibilityEngine.isEligible(
+                eligibility: $0.eligibility,
+                selection: context.selection,
+                selectionDescriptor: selectionDescriptor,
+                focus: context.focus,
+                isProUnlocked: context.isProUnlocked,
+                photoLibraryAccess: context.photoLibraryAccess,
+                matchedSetEnabled: context.matchedSetEnabled
             )
-        ),
-        EditorToolDefinition(
-            id: .smartPhotoCrop,
-            order: 81,
-            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
-            eligibility: .init(
-                focus: .smartPhotoPhotoItemSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
-            )
-        ),
-        EditorToolDefinition(
-            id: .smartRules,
-            order: 82,
-            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
-            eligibility: .init(
-                focus: .smartPhotoContainerSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
-            )
-        ),
-        EditorToolDefinition(
-            id: .albumShuffle,
-            order: 83,
-            requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
-            eligibility: .init(
-                focus: .smartPhotoContainerSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsAlbumContainerOrNone,
-                supportsMultiSelection: false
-            )
-        ),
-
-        // Styling.
-        EditorToolDefinition(
-            id: .style,
-            order: 90,
-            requiredCapabilities: [.canEditStyle],
-            eligibility: .multiSafe(
-                focus: .any,
-                selection: .any,
-                selectionDescriptor: .any
-            )
-        ),
-        EditorToolDefinition(
-            id: .typography,
-            order: 100,
-            requiredCapabilities: [.canEditTypography],
-            eligibility: .singleTarget(selectionDescriptor: .allowsHomogeneousOrNoneSelection)
-        ),
-
-        // Actions.
-        EditorToolDefinition(
-            id: .actions,
-            order: 110,
-            requiredCapabilities: [.canEditActions],
-            eligibility: .singleTarget(selectionDescriptor: .allowsHomogeneousOrNoneSelection)
-        ),
-
-        // Matched set / globals.
-        EditorToolDefinition(
-            id: .matchedSet,
-            order: 120,
-            requiredCapabilities: [.canEditMatchedSet],
-            eligibility: .multiSafe()
-        ),
-        EditorToolDefinition(
-            id: .variables,
-            order: 130,
-            requiredCapabilities: [.canEditVariables],
-            eligibility: .multiSafe()
-        ),
-
-        // Sharing / growth.
-        EditorToolDefinition(
-            id: .sharing,
-            order: 140,
-            requiredCapabilities: [.canShare],
-            eligibility: .multiSafe()
-        ),
-        EditorToolDefinition(
-            id: .ai,
-            order: 150,
-            requiredCapabilities: [.canUseAI],
-            eligibility: .multiSafe()
-        ),
-        EditorToolDefinition(
-            id: .pro,
-            order: 160,
-            requiredCapabilities: [.canPurchasePro],
-            eligibility: .multiSafe()
-        ),
-    ]
-
-    static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
-        var caps: EditorCapabilities = [
-            .canEditLayout,
-            .canEditTextContent,
-            .canEditStyle,
-            .canEditMatchedSet,
-            .canEditVariables,
-            .canShare,
-            .canPurchasePro,
-        ]
-
-        if context.isProUnlocked {
-            caps.insert(.canUseAI)
         }
 
-        if context.matchedSetEnabled {
-            caps.insert(.canEditMatchedSet)
-        }
-
-        if context.photoLibraryAccess.allowsReadWrite {
-            caps.insert(.canAccessPhotoLibrary)
-        }
-
-        if context.hasSymbolConfigured {
-            caps.insert(.hasSymbolConfigured)
-        }
-
-        if context.hasImageConfigured {
-            caps.insert(.hasImageConfigured)
-        }
-
-        if context.hasSmartPhotoConfigured {
-            caps.insert(.hasSmartPhotoConfigured)
-        }
-
-        switch context.template {
-        case .classic:
-            caps.insert(.canEditSymbol)
-            caps.insert(.canEditTypography)
-            caps.insert(.canEditActions)
-
-        case .hero:
-            caps.insert(.canEditSymbol)
-            caps.insert(.canEditTypography)
-            caps.insert(.canEditActions)
-
-        case .poster:
-            caps.insert(.canEditSymbol)
-            caps.insert(.canEditImage)
-            caps.insert(.canEditSmartPhoto)
-            caps.insert(.canEditAlbumShuffle)
-            caps.insert(.canEditTypography)
-
-        case .weather:
-            break
-
-        case .nextUpCalendar:
-            break
-        }
-
-        return caps
-    }
-
-    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let caps = capabilities(for: context)
-        let descriptor = EditorSelectionDescriptor.describe(selection: context.selection, focus: context.focus)
-
-        var eligible = tools
-            .filter { def in
-                caps.contains(def.requiredCapabilities)
-            }
-            .filter { def in
-                EditorToolEligibilityEvaluator.isEligible(
-                    tool: def.id,
-                    eligibility: def.eligibility,
-                    selection: context.selection,
-                    focus: context.focus,
-                    selectionDescriptor: descriptor
-                )
-            }
-            .sorted { $0.order < $1.order }
-            .map(\.id)
+        // 3) Apply focus gate (hard filter by focus group).
+        var eligible = tools.map(\.id)
 
         let focusGroup = editorToolFocusGroup(for: context.focus)
         eligible = editorToolIDsApplyingFocusGate(
-            eligibleToolIDs: eligible,
+            eligible: eligible,
             focusGroup: focusGroup
         )
 
+        // 4) Apply Smart Photos prioritisation (soft order tweak).
         if focusGroup == .smartPhotos {
             eligible = prioritiseToolsForSmartPhotos(
                 eligibleToolIDs: eligible,
@@ -384,51 +108,217 @@ enum EditorToolRegistry {
             )
         }
 
+        // 5) Rebuild tool list in the final order.
+        let byID = Dictionary(uniqueKeysWithValues: tools.map { ($0.id, $0) })
+        let ordered = eligible.compactMap { byID[$0] }
+
+        // 6) Debug safety checks.
         #if DEBUG
-        logUnexpectedToolStatesIfNeeded(
-            eligibleToolIDs: eligible,
-            context: context,
-            selectionDescriptor: descriptor
-        )
+        if ordered.isEmpty {
+            print(
+                "[EditorToolRegistry] ⚠️ Visible tools empty | template=\(context.template) selection=\(context.selection.cardinalityLabel) focus=\(context.focus.debugLabel) " +
+                    "descriptor=(\(selectionDescriptor.cardinalityLabel), \(selectionDescriptor.homogeneityLabel), \(selectionDescriptor.albumSpecificityLabel))"
+            )
+        } else if ordered.count <= 2 {
+            let eligibleToolIDs = ordered.map(\.id)
+            print(
+                "[EditorToolRegistry] ⚠️ Visible tools suspiciously small (\(eligibleToolIDs.count)) | template=\(context.template) selection=\(context.selection.cardinalityLabel) focus=\(context.focus.debugLabel) " +
+                    "tools=\(eligibleToolIDs.map(\.rawValue).joined(separator: ",")) " +
+                    "descriptor=(\(selectionDescriptor.cardinalityLabel), \(selectionDescriptor.homogeneityLabel), \(selectionDescriptor.albumSpecificityLabel))"
+            )
+        }
         #endif
 
-        return eligible
+        return ordered
     }
 
-    static func legacyVisibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let caps = capabilities(for: context)
-
-        let eligible = tools
-            .filter { def in
-                caps.contains(def.requiredCapabilities)
+    private static func prioritiseToolsForSmartPhotos(
+        eligibleToolIDs: [EditorToolID],
+        focus: EditorFocusTarget
+    ) -> [EditorToolID] {
+        let preferredOrder: [EditorToolID] = {
+            switch focus {
+            case .smartRules:
+                return [.smartRules, .smartPhoto, .smartPhotoCrop, .albumShuffle]
+            case .albumShuffle:
+                return [.albumShuffle, .smartPhoto, .smartPhotoCrop, .smartRules]
+            case .smartPhotoTarget, .smartPhotoContainerSuite:
+                return [.smartPhoto, .smartPhotoCrop, .smartRules, .albumShuffle]
+            default:
+                return []
             }
-            .sorted { $0.order < $1.order }
-            .map(\.id)
+        }()
 
-        return eligible
+        guard !preferredOrder.isEmpty else { return eligibleToolIDs }
+
+        var remaining = eligibleToolIDs
+        var prioritised: [EditorToolID] = []
+
+        for id in preferredOrder {
+            if let index = remaining.firstIndex(of: id) {
+                prioritised.append(id)
+                remaining.remove(at: index)
+            }
+        }
+
+        prioritised.append(contentsOf: remaining)
+        return prioritised
+    }
+
+    static func legacyVisibleTools(for context: EditorToolContext) -> [EditorTool] {
+        Self.allTools()
+    }
+
+    private static func allTools() -> [EditorTool] {
+        [
+            EditorTool(
+                id: .layout,
+                title: "Layout",
+                isPro: false,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .imageTheme,
+                title: "Image Theme",
+                isPro: false,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .allowsNoneOrSingle,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: false,
+                    photoLibraryAccess: .requiresAny
+                )
+            ),
+            EditorTool(
+                id: .weather,
+                title: "Weather",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .calendar,
+                title: "Calendar",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .steps,
+                title: "Steps",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .noiseMachine,
+                title: "Noise Machine",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .smartPhoto,
+                title: "Smart Photo",
+                isPro: false,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .smartPhotoTarget,
+                    selection: .allowsNoneOrSingle,
+                    selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone,
+                    supportsMultiSelection: false,
+                    photoLibraryAccess: .requiresAny
+                )
+            ),
+            EditorTool(
+                id: .smartPhotoCrop,
+                title: "Smart Photo Crop",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .smartPhotoTarget,
+                    selection: .allowsNoneOrSingle,
+                    selectionDescriptor: .allowsNonAlbumOnly,
+                    supportsMultiSelection: false,
+                    photoLibraryAccess: .requiresAny
+                )
+            ),
+            EditorTool(
+                id: .smartRules,
+                title: "Smart Rules",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .smartRules,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .albumShuffle,
+                title: "Album Shuffle",
+                isPro: true,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .albumShuffle,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true,
+                    photoLibraryAccess: .requiresAny
+                )
+            ),
+            EditorTool(
+                id: .remix,
+                title: "Remix",
+                isPro: false,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .any,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+            EditorTool(
+                id: .importReview,
+                title: "Import Review",
+                isPro: false,
+                eligibility: EditorToolEligibility(
+                    template: .any,
+                    focus: .importReview,
+                    selection: .any,
+                    selectionDescriptor: .any,
+                    supportsMultiSelection: true
+                )
+            ),
+        ]
     }
 }
-
-#if DEBUG
-private func logUnexpectedToolStatesIfNeeded(
-    eligibleToolIDs: [EditorToolID],
-    context: EditorToolContext,
-    selectionDescriptor: EditorSelectionDescriptor
-) {
-    guard !eligibleToolIDs.isEmpty else {
-        print(
-            "[EditorToolRegistry] ⚠️ Visible tools empty | template=\(context.template) selection=\(context.selection.cardinalityLabel) focus=\(context.focus.debugLabel) " +
-                "descriptor=(\(selectionDescriptor.cardinalityLabel), \(selectionDescriptor.homogeneityLabel), \(selectionDescriptor.albumSpecificityLabel))"
-        )
-        return
-    }
-
-    if eligibleToolIDs.count <= 3 {
-        print(
-            "[EditorToolRegistry] ⚠️ Visible tools suspiciously small (\(eligibleToolIDs.count)) | template=\(context.template) selection=\(context.selection.cardinalityLabel) focus=\(context.focus.debugLabel) " +
-                "tools=\(eligibleToolIDs.map(\.rawValue).joined(separator: \",\")) " +
-                "descriptor=(\(selectionDescriptor.cardinalityLabel), \(selectionDescriptor.homogeneityLabel), \(selectionDescriptor.albumSpecificityLabel))"
-        )
-    }
-}
-#endif
