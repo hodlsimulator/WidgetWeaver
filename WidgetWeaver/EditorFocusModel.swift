@@ -12,9 +12,7 @@ enum EditorSelectionKind: String, CaseIterable, Hashable, Sendable {
     case none
     case single
     case multi
-}
 
-extension EditorSelectionKind {
     var cardinalityLabel: String {
         switch self {
         case .none: return "none"
@@ -24,33 +22,25 @@ extension EditorSelectionKind {
     }
 }
 
+/// The editor "focus" target (what the user is currently editing).
 enum EditorFocusTarget: String, CaseIterable, Hashable, Sendable {
     case widget
-    case element
-    case background
-    case smartPhotoTarget
+    case smartPhotoRoot
     case smartPhotoContainerSuite
-    case smartRules
-    case albumShuffle
-    case importReview
-}
+    case smartPhotoAlbum
+    case smartPhotoPreviewStrip
+    case smartPhotoCropEditor
 
-/// The permission state relevant to editor features that need Photos access.
-enum EditorPhotoLibraryAccess: String, CaseIterable, Hashable, Sendable {
-    case unknown
-    case denied
-    case authorised
-}
-
-extension EditorPhotoLibraryAccess {
-    var allowsReading: Bool {
+    var isSmartPhotoRelated: Bool {
         switch self {
-        case .authorised:
+        case .smartPhotoRoot, .smartPhotoContainerSuite, .smartPhotoAlbum, .smartPhotoPreviewStrip, .smartPhotoCropEditor:
             return true
-        case .unknown, .denied:
+        default:
             return false
         }
     }
+
+    var debugLabel: String { rawValue }
 }
 
 /// A compact snapshot of focus + selection state.
@@ -59,10 +49,4 @@ struct EditorFocusSnapshot: Hashable, Sendable {
     var focus: EditorFocusTarget
 
     static let widgetDefault = EditorFocusSnapshot(selection: .none, focus: .widget)
-}
-
-extension EditorFocusTarget {
-    var debugLabel: String {
-        rawValue
-    }
 }
