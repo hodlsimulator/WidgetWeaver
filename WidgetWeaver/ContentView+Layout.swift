@@ -36,6 +36,14 @@ extension ContentView {
 
     var editorForm: some View {
         Form {
+            if editorToolContext.selection == .multi {
+                Section {
+                    Text("Multiple items selected. Most tools apply to a single item, so the tool list is reduced. Select one item to see more tools.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             ForEach(editorVisibleToolIDs, id: \.self) { toolID in
                 editorSection(for: toolID)
             }

@@ -6,12 +6,15 @@
 //
 
 import SwiftUI
+import UIKit
 
 extension ContentView {
     func smartPhotoSection(focus _: Binding<EditorFocusSnapshot>) -> some View {
         let d = currentFamilyDraft()
         let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasSmartPhoto = d.imageSmartPhoto != nil
+
+        let photoAccess = editorToolContext.photoLibraryAccess
 
         let legacyFamilies: [EditingFamily] = {
             guard matchedSetEnabled else { return [] }
@@ -64,6 +67,35 @@ extension ContentView {
                 Text("Generates per-size crops for Small/Medium/Large.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Text("After Smart Photo is created, Smart Photo Framing, Smart Rules, and Album Shuffle will appear.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if hasSmartPhoto, !photoAccess.allowsReadWrite {
+                Text("Album Shuffle uses the Photo Library and is hidden until Photos access is granted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if photoAccess.isRequestable {
+                    Button {
+                        Task { @MainActor in
+                            guard !importInProgress else { return }
+                            importInProgress = true
+                            defer { importInProgress = false }
+
+                            let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+                            saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
+                        }
+                    } label: {
+                        Label("Enable Photos access", systemImage: "photo.on.rectangle.angled")
+                    }
+                } else if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                    Link(destination: settingsURL) {
+                        Label("Open Photos Settings", systemImage: "gear")
+                    }
+                }
             }
 
             if matchedSetEnabled, !legacyFamilies.isEmpty {

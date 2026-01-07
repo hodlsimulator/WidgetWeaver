@@ -21,7 +21,8 @@ enum EditorContextEvaluator {
         draft: FamilyDraft,
         isProUnlocked: Bool,
         matchedSetEnabled: Bool,
-        focus: EditorFocusSnapshot
+        focus: EditorFocusSnapshot,
+        photoLibraryAccess: EditorPhotoLibraryAccess
     ) -> EditorToolContext {
         let symbolConfigured = !draft.symbolName
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -39,6 +40,7 @@ enum EditorContextEvaluator {
             matchedSetEnabled: matchedSetEnabled,
             selection: focus.selection,
             focus: focus.focus,
+            photoLibraryAccess: photoLibraryAccess,
             hasSymbolConfigured: symbolConfigured,
             hasImageConfigured: imageConfigured,
             hasSmartPhotoConfigured: smartPhotoConfigured

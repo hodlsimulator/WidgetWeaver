@@ -21,6 +21,11 @@ struct EditorToolContext: Hashable {
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget
 
+    /// Photo library access state (authorisation + availability).
+    ///
+    /// This is passed into context evaluation so capability derivation stays pure and testable.
+    var photoLibraryAccess: EditorPhotoLibraryAccess
+
     var hasSymbolConfigured: Bool
     var hasImageConfigured: Bool
     var hasSmartPhotoConfigured: Bool
@@ -31,6 +36,7 @@ struct EditorToolContext: Hashable {
         matchedSetEnabled: Bool,
         selection: EditorSelectionKind,
         focus: EditorFocusTarget,
+        photoLibraryAccess: EditorPhotoLibraryAccess,
         hasSymbolConfigured: Bool,
         hasImageConfigured: Bool,
         hasSmartPhotoConfigured: Bool
@@ -40,6 +46,7 @@ struct EditorToolContext: Hashable {
         self.matchedSetEnabled = matchedSetEnabled
         self.selection = selection
         self.focus = focus
+        self.photoLibraryAccess = photoLibraryAccess
         self.hasSymbolConfigured = hasSymbolConfigured
         self.hasImageConfigured = hasImageConfigured
         self.hasSmartPhotoConfigured = hasSmartPhotoConfigured
@@ -65,6 +72,17 @@ struct EditorCapabilities: OptionSet, Hashable {
     static let canEditTypography = EditorCapabilities(rawValue: 1 << 6)
     static let canEditActions = EditorCapabilities(rawValue: 1 << 7)
     static let canEditAlbumShuffle = EditorCapabilities(rawValue: 1 << 8)
+
+    /// Read/write access to the user’s Photo Library (authorised or limited).
+    ///
+    /// This is treated as a capability so tools can declare it as a requirement.
+    static let canAccessPhotoLibrary = EditorCapabilities(rawValue: 1 << 9)
+
+    /// Data availability flags.
+    ///
+    /// These keep non-actionable tools from surfacing when their prerequisites are missing.
+    static let hasImageConfigured = EditorCapabilities(rawValue: 1 << 10)
+    static let hasSmartPhotoConfigured = EditorCapabilities(rawValue: 1 << 11)
 }
 
 /// Stable identifiers for the editor’s primary tool surface.
@@ -170,7 +188,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(
             id: .smartPhotoCrop,
             order: 63,
-            requiredCapabilities: [.canEditSmartPhoto],
+            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
                 selection: .any,
@@ -180,7 +198,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(
             id: .smartRules,
             order: 64,
-            requiredCapabilities: [.canEditSmartPhoto],
+            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
                 selection: .any,
@@ -190,7 +208,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(
             id: .albumShuffle,
             order: 65,
-            requiredCapabilities: [.canEditAlbumShuffle],
+            requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
             eligibility: EditorToolEligibility(
                 focus: .smartPhotoContainerSuite,
                 selection: .any,
@@ -211,7 +229,7 @@ enum EditorToolRegistry {
 
     /// Derives capabilities from the current editing context.
     ///
-    /// This should be cheap (no I/O, no image work) so it can run synchronously on every relevant state change.
+    /// This should be cheap (no image work). Permission/data availability is passed in via `EditorToolContext`.
     static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
         var c: EditorCapabilities = [.canEditLayout, .canEditTextContent, .canEditStyle]
 
@@ -234,6 +252,18 @@ enum EditorToolRegistry {
         case .nextUpCalendar:
             // Calendar is data-driven; symbol/image/actions/typography are not applied.
             break
+        }
+
+        if context.photoLibraryAccess.allowsReadWrite {
+            c.insert(.canAccessPhotoLibrary)
+        }
+
+        if context.hasImageConfigured {
+            c.insert(.hasImageConfigured)
+        }
+
+        if context.hasSmartPhotoConfigured {
+            c.insert(.hasSmartPhotoConfigured)
         }
 
         return c

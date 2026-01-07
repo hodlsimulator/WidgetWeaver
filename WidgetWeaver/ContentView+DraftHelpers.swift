@@ -31,7 +31,8 @@ extension ContentView {
             draft: currentFamilyDraft(),
             isProUnlocked: proManager.isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            focus: editorFocusSnapshot
+            focus: editorFocusSnapshot,
+            photoLibraryAccess: EditorPhotoLibraryAccess.current()
         )
     }
 

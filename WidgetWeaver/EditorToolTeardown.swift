@@ -40,5 +40,11 @@ func editorToolTeardownActions(
         }
     }
 
+    if removedTools.contains(.smartPhotoCrop) {
+        if currentFocus == .element(id: "smartPhotoCrop") {
+            actions.append(.resetEditorFocusToWidgetDefault)
+        }
+    }
+
     return actions
 }
