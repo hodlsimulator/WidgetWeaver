@@ -166,32 +166,40 @@ extension ContentView {
                 .accessibilityIdentifier("EditorUITestHook.focusWidget")
 
                 Button("UI Test: Focus Smart Photo Crop") {
-                    editorFocusSnapshot = EditorFocusSnapshot(
-                        selection: .single,
-                        focus: .element(id: "smartPhotoCrop"),
-                        selectionCount: 1,
-                        selectionComposition: .known([.nonAlbum])
-                    )
+                    editorFocusSnapshot = .singleNonAlbumElement(id: "smartPhotoCrop")
                 }
                 .accessibilityIdentifier("EditorUITestHook.focusSmartPhotoCrop")
 
                 Button("UI Test: Focus Smart Rules") {
-                    editorFocusSnapshot = EditorFocusSnapshot(
-                        selection: .none,
-                        focus: .smartRuleEditor(albumID: "uiTest.smartPhotoRules"),
-                        selectionCount: 1,
-                        selectionComposition: .known([.albumContainer])
-                    )
+                    editorFocusSnapshot = .smartRuleEditor(albumID: "uiTest.smartPhotoRules")
                 }
                 .accessibilityIdentifier("EditorUITestHook.focusSmartRules")
 
-                Button("UI Test: Focus Clock") {
-                    editorFocusSnapshot = EditorFocusSnapshot(
-                        selection: .single,
-                        focus: .clock,
-                        selectionCount: 1,
-                        selectionComposition: .known([.nonAlbum])
+                Button("UI Test: Focus Album Container") {
+                    editorFocusSnapshot = .smartAlbumContainer(id: "uiTest.albumContainer")
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusAlbumContainer")
+
+                Button("UI Test: Focus Album Photo Item") {
+                    editorFocusSnapshot = .smartAlbumPhotoItem(
+                        albumID: "uiTest.album",
+                        itemID: "uiTest.photo"
                     )
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusAlbumPhotoItem")
+
+                Button("UI Test: Multi-select Widgets") {
+                    editorFocusSnapshot = .widgetNonAlbumMultiSelection(count: 2)
+                }
+                .accessibilityIdentifier("EditorUITestHook.multiSelectWidgets")
+
+                Button("UI Test: Multi-select Mixed") {
+                    editorFocusSnapshot = .widgetMixedMultiSelection(count: 3)
+                }
+                .accessibilityIdentifier("EditorUITestHook.multiSelectMixed")
+
+                Button("UI Test: Focus Clock") {
+                    editorFocusSnapshot = .clockFocus()
                 }
                 .accessibilityIdentifier("EditorUITestHook.focusClock")
             }

@@ -7,16 +7,7 @@
 
 import Foundation
 
-/// Pure logic helpers used to derive context/capabilities from editor state.
-///
-/// This file deliberately avoids SwiftUI and any I/O to keep evaluation cheap and testable.
 enum EditorContextEvaluator {
-    static func selectionKind(selectionCount: Int) -> EditorSelectionKind {
-        if selectionCount <= 0 { return .none }
-        if selectionCount == 1 { return .single }
-        return .multi
-    }
-
     static func evaluate(
         draft: FamilyDraft,
         isProUnlocked: Bool,
@@ -26,12 +17,15 @@ enum EditorContextEvaluator {
     ) -> EditorToolContext {
         let selectionCountHint: Int? = {
             if let explicit = focus.selectionCount {
-                return explicit
+                return max(0, explicit)
             }
 
             switch focus.selection {
             case .none:
-                return focus.focus == .widget ? 0 : 1
+                if focus.focus != .widget {
+                    return 1
+                }
+                return 0
             case .single:
                 return 1
             case .multi:
@@ -39,47 +33,89 @@ enum EditorContextEvaluator {
             }
         }()
 
+        let resolvedSelection: EditorSelectionKind = {
+            if let count = selectionCountHint {
+                return selectionKind(selectionCount: count)
+            }
+
+            // If selection says "none" but a non-widget focus exists, treat as single.
+            if focus.selection == .none, focus.focus != .widget {
+                return .single
+            }
+
+            return focus.selection
+        }()
+
         let selectionCompositionHint: EditorSelectionComposition = {
             if focus.selectionComposition != .unknown {
                 return focus.selectionComposition
             }
 
-            switch selectionCountHint {
-            case .some(0):
+            switch resolvedSelection {
+            case .none:
                 return .none
-            case .some(1):
-                // Coarse typing for single selection when focus provides enough information.
-                if let category = focus.focus.impliedSelectionCategory {
-                    return .known([category])
+            case .single:
+                if let implied = impliedCategory(from: focus.focus) {
+                    return .known([implied])
                 }
                 return .unknown
-            default:
+            case .multi:
                 return .unknown
             }
         }()
 
-        let symbolConfigured = !draft.symbolName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
+#if DEBUG
+        if resolvedSelection == .multi,
+           selectionCountHint != nil,
+           selectionCompositionHint == .unknown {
+            print("⚠️ [EditorContextEvaluator] multi-selection has explicit count but unknown composition; supply composition at the selection origin if possible.")
+        }
+#endif
 
-        let imageConfigured = !draft.imageFileName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
-
-        let smartPhotoConfigured = (draft.imageSmartPhoto != nil)
+        let hasSymbolConfigured = !draft.symbolFileName.isEmpty
+        let hasImageConfigured = !draft.imageFileName.isEmpty
+        let hasSmartPhotoConfigured = draft.imageSmartPhoto != nil
 
         return EditorToolContext(
             template: draft.template,
             isProUnlocked: isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            selection: focus.selection,
+            selection: resolvedSelection,
             focus: focus.focus,
             selectionCount: selectionCountHint,
             selectionComposition: selectionCompositionHint,
             photoLibraryAccess: photoLibraryAccess,
-            hasSymbolConfigured: symbolConfigured,
-            hasImageConfigured: imageConfigured,
-            hasSmartPhotoConfigured: smartPhotoConfigured
+            hasSymbolConfigured: hasSymbolConfigured,
+            hasImageConfigured: hasImageConfigured,
+            hasSmartPhotoConfigured: hasSmartPhotoConfigured
         )
+    }
+
+    static func selectionKind(selectionCount: Int) -> EditorSelectionKind {
+        switch selectionCount {
+        case ...0:
+            return .none
+        case 1:
+            return .single
+        default:
+            return .multi
+        }
+    }
+
+    static func impliedCategory(from focus: EditorFocusTarget) -> EditorSelectionCategory? {
+        switch focus {
+        case .widget:
+            return nil
+        case .clock:
+            return .nonAlbum
+        case .element:
+            return .nonAlbum
+        case .albumContainer:
+            return .albumContainer
+        case .albumPhoto:
+            return .albumPhotoItem
+        case .smartRuleEditor:
+            return .albumContainer
+        }
     }
 }

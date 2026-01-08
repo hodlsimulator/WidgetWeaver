@@ -5,6 +5,7 @@
 //  Created by . . on 1/8/26.
 //
 
+import Foundation
 import XCTest
 @testable import WidgetWeaver
 
@@ -351,6 +352,139 @@ final class EditorToolingTests: XCTestCase {
 
         XCTAssertFalse(contextAware.contains(.albumShuffle))
         XCTAssertTrue(legacy.contains(.albumShuffle))
+    }
+
+    // MARK: - Selection origin coverage
+
+    func testSmartAlbumContainerFocusUsesSmartPhotoAllowlist() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .albumContainer(id: "uiTest.albumContainer", subtype: .smart),
+            selectionCount: 1,
+            selectionComposition: .known([.albumContainer]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+
+        XCTAssertEqual(
+            tools,
+            [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .smartRules, .style]
+        )
+    }
+
+    func testSmartAlbumPhotoItemFocusHidesAlbumLevelTools() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .albumPhoto(albumID: "uiTest.album", itemID: "uiTest.photo", subtype: .smart),
+            selectionCount: 1,
+            selectionComposition: .known([.albumPhotoItem]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+
+        XCTAssertEqual(
+            tools,
+            [.smartPhotoCrop, .smartPhoto, .image, .style]
+        )
+    }
+
+    func testMultiSelectionWithExplicitCompositionUsesMultiSafeToolList() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.albumContainer, .nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+
+        XCTAssertEqual(
+            tools,
+            [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .pro]
+        )
+    }
+
+    func testContextEvaluatorResolvesSelectionKindFromSelectionCount() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let focus = EditorFocusSnapshot(
+            selection: .none,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .unknown
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            focus: focus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 3)
+    }
+
+    // MARK: - Performance guard
+
+    func testContextEvaluationAndToolFilteringPerformanceGuard() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+        draft.imageFileName = "unitTest.png"
+        draft.imageSmartPhoto = SmartPhotoSpec(
+            masterFileName: "unitTest-master.png",
+            small: nil,
+            medium: nil,
+            large: nil,
+            algorithmVersion: 1,
+            preparedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let focus = EditorFocusSnapshot.singleNonAlbumElement(id: "smartPhotoCrop")
+        let photoAccess = EditorPhotoLibraryAccess(status: .authorised)
+
+        let iterations = 10_000
+        let start = CFAbsoluteTimeGetCurrent()
+        var lastTools: [EditorToolID] = []
+
+        for _ in 0..<iterations {
+            let ctx = EditorContextEvaluator.evaluate(
+                draft: draft,
+                isProUnlocked: false,
+                matchedSetEnabled: false,
+                focus: focus,
+                photoLibraryAccess: photoAccess
+            )
+            lastTools = EditorToolRegistry.visibleTools(for: ctx)
+        }
+
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        XCTAssertFalse(lastTools.isEmpty)
+        XCTAssertLessThan(elapsed, 2.0, "Context evaluation + tool filtering took too long: \(elapsed)s for \(iterations) iterations")
     }
 
     // MARK: - Teardown

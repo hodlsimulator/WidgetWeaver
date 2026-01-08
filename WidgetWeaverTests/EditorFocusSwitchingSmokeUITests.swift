@@ -18,6 +18,10 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         static let focusWidget = "EditorUITestHook.focusWidget"
         static let focusSmartPhotoCrop = "EditorUITestHook.focusSmartPhotoCrop"
         static let focusSmartRules = "EditorUITestHook.focusSmartRules"
+        static let focusAlbumContainer = "EditorUITestHook.focusAlbumContainer"
+        static let focusAlbumPhotoItem = "EditorUITestHook.focusAlbumPhotoItem"
+        static let multiSelectWidgets = "EditorUITestHook.multiSelectWidgets"
+        static let multiSelectMixed = "EditorUITestHook.multiSelectMixed"
         static let focusClock = "EditorUITestHook.focusClock"
     }
 
@@ -134,5 +138,79 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         // Restore to widget focus: Smart Photo should re-appear.
         waitAndTap(focusWidget)
         XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].waitForExistence(timeout: 2.0), "Expected Smart Photo to be restored after leaving clock focus")
+    }
+
+    func testAlbumFocusHidesTextAndLayoutTooling() {
+        let app = launchApp(contextAwareEnabled: true)
+
+        let templatePoster = app.buttons[UITestHooks.templatePoster]
+        let focusAlbumContainer = app.buttons[UITestHooks.focusAlbumContainer]
+        let focusAlbumPhotoItem = app.buttons[UITestHooks.focusAlbumPhotoItem]
+
+        waitAndTap(templatePoster)
+
+        // Album container focus.
+        waitAndTap(focusAlbumContainer)
+        XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].waitForExistence(timeout: 2.0), "Expected Smart Photo tooling in album container focus")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Album focus should hide Text tooling")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.layout].exists, "Album focus should hide Layout tooling")
+
+        // Album photo item focus.
+        waitAndTap(focusAlbumPhotoItem)
+        XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].waitForExistence(timeout: 2.0), "Expected Smart Photo tooling in album photo-item focus")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Album focus should hide Text tooling")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.layout].exists, "Album focus should hide Layout tooling")
+    }
+
+    func testMultiSelectionHidesSmartPhotoAndTextTooling() {
+        let app = launchApp(contextAwareEnabled: true)
+
+        let templatePoster = app.buttons[UITestHooks.templatePoster]
+        let multiSelectWidgets = app.buttons[UITestHooks.multiSelectWidgets]
+        let multiSelectMixed = app.buttons[UITestHooks.multiSelectMixed]
+
+        waitAndTap(templatePoster)
+
+        // Non-album multi-selection.
+        waitAndTap(multiSelectWidgets)
+        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].waitForExistence(timeout: 2.0), "Expected Layout tooling for multi-selection")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Multi-selection should hide Text tooling")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists, "Multi-selection should hide Smart Photo tooling")
+
+        // Mixed multi-selection (album + non-album).
+        waitAndTap(multiSelectMixed)
+        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].waitForExistence(timeout: 2.0), "Expected Layout tooling for mixed multi-selection")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Mixed multi-selection should hide Text tooling")
+        XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists, "Mixed multi-selection should hide Smart Photo tooling")
+    }
+
+    func testTextEntrySurvivesToolSuiteChanges() {
+        let app = launchApp(contextAwareEnabled: true)
+
+        let templatePoster = app.buttons[UITestHooks.templatePoster]
+        let focusWidget = app.buttons[UITestHooks.focusWidget]
+        let focusCrop = app.buttons[UITestHooks.focusSmartPhotoCrop]
+
+        waitAndTap(templatePoster)
+        waitAndTap(focusWidget)
+
+        let scrollView = editorScrollView(in: app)
+        let primaryTextField = app.textFields["Primary text"]
+        scrollToElement(primaryTextField, in: scrollView)
+        waitAndTap(primaryTextField)
+
+        let sentinel = " WWUITestSentinel"
+        primaryTextField.typeText(sentinel)
+
+        // Switching to Smart Photo focus removes Text tooling; ensure the app remains stable.
+        waitAndTap(focusCrop)
+        XCTAssertFalse(app.textFields["Primary text"].exists, "Text field should be removed from the accessibility tree in Smart Photo focus")
+
+        // Restoring should keep the entered text.
+        waitAndTap(focusWidget)
+        scrollToElement(primaryTextField, in: scrollView)
+        XCTAssertTrue(primaryTextField.waitForExistence(timeout: 2.0), "Expected Primary text field after restoring widget focus")
+        let value = String(describing: primaryTextField.value ?? "")
+        XCTAssertTrue(value.contains("WWUITestSentinel"), "Expected text field to preserve user input across tool suite changes")
     }
 }
