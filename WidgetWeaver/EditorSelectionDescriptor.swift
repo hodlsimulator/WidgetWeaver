@@ -180,17 +180,25 @@ struct EditorSelectionDescriptor: Hashable, Sendable {
 
         case .unknown:
             // Conservative heuristics when composition is unknown.
-            derivedHomogeneity = (resolvedKind == .multi && focus == .widget) ? .mixed : .homogeneous
+            //
+            // Mixed selection policy:
+            // If the selection is multi and the composition is unavailable, treat it as mixed.
+            // This prevents specialised tools from surfacing in ambiguous multi-selection states.
+            derivedHomogeneity = (resolvedKind == .multi) ? .mixed : .homogeneous
 
-            switch focus {
-            case .albumContainer, .smartRuleEditor:
-                derivedAlbumSpecificity = .albumContainer
-            case .albumPhoto:
-                derivedAlbumSpecificity = .albumPhotoItem
-            case .widget:
-                derivedAlbumSpecificity = (resolvedKind == .multi) ? .mixed : .nonAlbum
-            case .element, .clock:
-                derivedAlbumSpecificity = .nonAlbum
+            if resolvedKind == .multi {
+                derivedAlbumSpecificity = .mixed
+            } else {
+                switch focus {
+                case .albumContainer, .smartRuleEditor:
+                    derivedAlbumSpecificity = .albumContainer
+                case .albumPhoto:
+                    derivedAlbumSpecificity = .albumPhotoItem
+                case .widget:
+                    derivedAlbumSpecificity = .nonAlbum
+                case .element, .clock:
+                    derivedAlbumSpecificity = .nonAlbum
+                }
             }
         }
 

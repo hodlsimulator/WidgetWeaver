@@ -324,10 +324,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                 previousFocusSnapshot = focus.wrappedValue
             }
 
-            focus.wrappedValue = EditorFocusSnapshot(
-                selection: .none,
-                focus: pickerTarget
-            )
+            focus.wrappedValue = .smartAlbumContainer(id: "smartPhotoAlbumPicker")
         } else {
             guard let previous = previousFocusSnapshot else { return }
             defer { previousFocusSnapshot = nil }

@@ -192,10 +192,7 @@ private struct SmartPhotoSmartRulesEditorView: View {
                 focusAlbumID = "smartRules"
             }
 
-            focus.wrappedValue = EditorFocusSnapshot(
-                selection: .none,
-                focus: .smartRuleEditor(albumID: focusAlbumID)
-            )
+            focus.wrappedValue = .smartRuleEditor(albumID: focusAlbumID)
         } else {
             guard let previous = previousFocusSnapshot else { return }
             defer { previousFocusSnapshot = nil }

@@ -393,9 +393,12 @@ extension ContentView {
         Section {
             TextField("Design name", text: $designName)
                 .textInputAutocapitalization(.words)
+                .accessibilityIdentifier("EditorTextField.DesignName")
 
             TextField("Primary text", text: binding(\.primaryText))
+                .accessibilityIdentifier("EditorTextField.PrimaryText")
             TextField("Secondary text (optional)", text: binding(\.secondaryText))
+                .accessibilityIdentifier("EditorTextField.SecondaryText")
 
             if matchedSetEnabled {
                 Text("Text fields are currently editing: \(editingFamilyLabel)")

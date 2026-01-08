@@ -31,6 +31,12 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         static let layout = "EditorSectionHeader.Layout"
     }
 
+    private enum AccessibilityIDs {
+        static let designNameTextField = "EditorTextField.DesignName"
+        static let primaryTextField = "EditorTextField.PrimaryText"
+        static let secondaryTextField = "EditorTextField.SecondaryText"
+    }
+
     private func launchApp(contextAwareEnabled: Bool) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
@@ -43,8 +49,12 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         return app
     }
 
-    private func editorScrollView(in app: XCUIApplication) -> XCUIElement {
-        app.scrollViews.firstMatch
+    private func editorScrollable(in app: XCUIApplication) -> XCUIElement {
+        let table = app.tables.firstMatch
+        if table.exists {
+            return table
+        }
+        return app.scrollViews.firstMatch
     }
 
     private func waitAndTap(_ element: XCUIElement, timeout: TimeInterval = 2.0, file: StaticString = #filePath, line: UInt = #line) {
@@ -58,7 +68,7 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         maxScrolls: Int = 18
     ) {
         var remaining = maxScrolls
-        while !element.exists && remaining > 0 {
+        while (!element.exists || !element.isHittable) && remaining > 0 {
             scrollView.swipeUp()
             remaining -= 1
         }
@@ -91,7 +101,7 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         waitAndTap(templatePoster)
         waitAndTap(focusCrop)
 
-        let scrollView = editorScrollView(in: app)
+        let scrollView = editorScrollable(in: app)
         let textHeader = app.staticTexts[SectionHeaders.text]
         scrollToElement(textHeader, in: scrollView)
 
@@ -194,23 +204,48 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         waitAndTap(templatePoster)
         waitAndTap(focusWidget)
 
-        let scrollView = editorScrollView(in: app)
-        let primaryTextField = app.textFields["Primary text"]
-        scrollToElement(primaryTextField, in: scrollView)
-        waitAndTap(primaryTextField)
+        let scrollView = editorScrollable(in: app)
 
         let sentinel = " WWUITestSentinel"
+
+        let designNameField = app.textFields[AccessibilityIDs.designNameTextField]
+        scrollToElement(designNameField, in: scrollView)
+        waitAndTap(designNameField)
+        designNameField.typeText(sentinel)
+
+        let primaryTextField = app.textFields[AccessibilityIDs.primaryTextField]
+        scrollToElement(primaryTextField, in: scrollView)
+        waitAndTap(primaryTextField)
         primaryTextField.typeText(sentinel)
+
+        let secondaryTextField = app.textFields[AccessibilityIDs.secondaryTextField]
+        scrollToElement(secondaryTextField, in: scrollView)
+        waitAndTap(secondaryTextField)
+        secondaryTextField.typeText(sentinel)
 
         // Switching to Smart Photo focus removes Text tooling; ensure the app remains stable.
         waitAndTap(focusCrop)
-        XCTAssertFalse(app.textFields["Primary text"].exists, "Text field should be removed from the accessibility tree in Smart Photo focus")
+        XCTAssertFalse(app.textFields[AccessibilityIDs.primaryTextField].exists, "Text fields should be removed from the accessibility tree in Smart Photo focus")
 
         // Restoring should keep the entered text.
         waitAndTap(focusWidget)
-        scrollToElement(primaryTextField, in: scrollView)
-        XCTAssertTrue(primaryTextField.waitForExistence(timeout: 2.0), "Expected Primary text field after restoring widget focus")
-        let value = String(describing: primaryTextField.value ?? "")
-        XCTAssertTrue(value.contains("WWUITestSentinel"), "Expected text field to preserve user input across tool suite changes")
+
+        let restoredDesignName = app.textFields[AccessibilityIDs.designNameTextField]
+        scrollToElement(restoredDesignName, in: scrollView)
+        XCTAssertTrue(restoredDesignName.waitForExistence(timeout: 2.0), "Expected Design name field after restoring widget focus")
+        let designNameValue = String(describing: restoredDesignName.value ?? "")
+        XCTAssertTrue(designNameValue.contains("WWUITestSentinel"), "Expected Design name to preserve user input across tool suite changes")
+
+        let restoredPrimary = app.textFields[AccessibilityIDs.primaryTextField]
+        scrollToElement(restoredPrimary, in: scrollView)
+        XCTAssertTrue(restoredPrimary.waitForExistence(timeout: 2.0), "Expected Primary text field after restoring widget focus")
+        let primaryValue = String(describing: restoredPrimary.value ?? "")
+        XCTAssertTrue(primaryValue.contains("WWUITestSentinel"), "Expected Primary text to preserve user input across tool suite changes")
+
+        let restoredSecondary = app.textFields[AccessibilityIDs.secondaryTextField]
+        scrollToElement(restoredSecondary, in: scrollView)
+        XCTAssertTrue(restoredSecondary.waitForExistence(timeout: 2.0), "Expected Secondary text field after restoring widget focus")
+        let secondaryValue = String(describing: restoredSecondary.value ?? "")
+        XCTAssertTrue(secondaryValue.contains("WWUITestSentinel"), "Expected Secondary text to preserve user input across tool suite changes")
     }
 }

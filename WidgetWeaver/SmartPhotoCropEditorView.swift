@@ -190,10 +190,7 @@ struct SmartPhotoCropEditorView: View {
             previousFocusSnapshot = focus.wrappedValue
         }
 
-        focus.wrappedValue = EditorFocusSnapshot(
-            selection: .single,
-            focus: .element(id: "smartPhotoCrop")
-        )
+        focus.wrappedValue = .singleNonAlbumElement(id: "smartPhotoCrop")
     }
 
     private func restoreFocusIfNeeded() {
