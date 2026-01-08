@@ -27,11 +27,11 @@ extension ContentView {
     /// The context is derived from draft state + entitlements. Views should not attempt
     /// to re-derive these conditions independently.
     var editorToolContext: EditorToolContext {
-        EditorContextEvaluator.evaluate(
+        EditorDefaultContextProvider().makeContext(
             draft: currentFamilyDraft(),
             isProUnlocked: proManager.isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            focus: editorFocusSnapshot,
+            focusSnapshot: editorFocusSnapshot,
             photoLibraryAccess: EditorPhotoLibraryAccess.current()
         )
     }
