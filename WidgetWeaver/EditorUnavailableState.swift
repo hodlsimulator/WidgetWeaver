@@ -10,6 +10,8 @@ import Foundation
 enum EditorUnavailableCTAKind: String, CaseIterable, Hashable, Sendable {
     case requestPhotosAccess
     case openAppSettings
+
+    case showPro
 }
 
 struct EditorUnavailableCTA: Hashable, Sendable {
@@ -36,6 +38,17 @@ struct EditorUnavailableCTA: Hashable, Sendable {
             title: title,
             systemImage: systemImage,
             kind: .openAppSettings
+        )
+    }
+
+    static func showPro(
+        title: String = "Unlock Pro",
+        systemImage: String = "crown.fill"
+    ) -> EditorUnavailableCTA {
+        EditorUnavailableCTA(
+            title: title,
+            systemImage: systemImage,
+            kind: .showPro
         )
     }
 }
@@ -80,6 +93,15 @@ struct EditorUnavailableState: Hashable, Sendable {
         EditorUnavailableState(
             message: "Album Shuffle requires Smart Photo. In Smart Photo, tap ‘Make Smart Photo (per-size renders)’.",
             cta: nil
+        )
+    }
+
+    // MARK: - Monetisation
+
+    static func proRequiredForVariables() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Variables require WidgetWeaver Pro.",
+            cta: .showPro()
         )
     }
 

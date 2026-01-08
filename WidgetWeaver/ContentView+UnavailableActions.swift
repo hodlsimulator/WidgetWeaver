@@ -9,7 +9,22 @@ import Foundation
 
 extension ContentView {
     @MainActor
-    func requestPhotosAccessForAlbumShuffle() async {
+    func performEditorUnavailableCTA(_ kind: EditorUnavailableCTAKind) async {
+        switch kind {
+        case .requestPhotosAccess:
+            await requestPhotosAccessForAlbumShuffle()
+
+        case .showPro:
+            activeSheet = .pro
+
+        case .openAppSettings:
+            // Handled via Link in `EditorUnavailableStateView`.
+            break
+        }
+    }
+
+    @MainActor
+    private func requestPhotosAccessForAlbumShuffle() async {
         guard !importInProgress else { return }
         importInProgress = true
         defer { importInProgress = false }

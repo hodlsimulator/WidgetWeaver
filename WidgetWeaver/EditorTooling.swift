@@ -19,16 +19,8 @@ struct EditorToolContext: Hashable, Sendable {
 
     var photoLibraryAccess: EditorPhotoLibraryAccess
 
-    /// Whether the draft has a symbol configured.
-    ///
-    /// This is not currently a capability, but it is part of the central context model so
-    /// future tools can avoid re-deriving it.
     var hasSymbolConfigured: Bool
-
-    /// Whether the draft has any image configured (regardless of whether Smart Photo has been prepared).
     var hasImageConfigured: Bool
-
-    /// Whether the draft has a prepared Smart Photo configured and reachable from the current image spec.
     var hasSmartPhotoConfigured: Bool
 
     init(
@@ -56,68 +48,67 @@ struct EditorToolContext: Hashable, Sendable {
 
 // MARK: - Capability vocabulary
 
-struct EditorCapabilities: OptionSet, Hashable, Sendable {
-    let rawValue: Int
+struct EditorCapability: Hashable, Sendable, RawRepresentable {
+    var rawValue: String
 
-    static let canEditLayout = EditorCapabilities(rawValue: 1 << 0)
-    static let canEditTextContent = EditorCapabilities(rawValue: 1 << 1)
-    static let canEditSymbol = EditorCapabilities(rawValue: 1 << 2)
-    static let canEditImage = EditorCapabilities(rawValue: 1 << 3)
-    static let canEditSmartPhoto = EditorCapabilities(rawValue: 1 << 4)
-    static let canEditStyle = EditorCapabilities(rawValue: 1 << 5)
-    static let canEditTypography = EditorCapabilities(rawValue: 1 << 6)
-    static let canEditActions = EditorCapabilities(rawValue: 1 << 7)
-    static let canEditMatchedSet = EditorCapabilities(rawValue: 1 << 8)
-    static let canEditVariables = EditorCapabilities(rawValue: 1 << 9)
-    static let canShare = EditorCapabilities(rawValue: 1 << 10)
-    static let canUseAI = EditorCapabilities(rawValue: 1 << 11)
-    static let canPurchasePro = EditorCapabilities(rawValue: 1 << 12)
-
-    static let canEditAlbumShuffle = EditorCapabilities(rawValue: 1 << 13)
-
-    // Permissions + availability
-    static let canAccessPhotoLibrary = EditorCapabilities(rawValue: 1 << 14)
-    static let hasImageConfigured = EditorCapabilities(rawValue: 1 << 15)
-    static let hasSmartPhotoConfigured = EditorCapabilities(rawValue: 1 << 16)
-
-    init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
+    init(rawValue: String) { self.rawValue = rawValue }
 }
 
-// MARK: - Tool definition
+typealias EditorCapabilities = Set<EditorCapability>
 
-enum EditorToolID: String, CaseIterable, Hashable, Sendable {
-    // Workflow / top-of-editor.
+extension EditorCapability {
+    // Template / tool availability.
+    static let canEditLayout = EditorCapability(rawValue: "layout")
+    static let canEditTextContent = EditorCapability(rawValue: "text")
+    static let canEditSymbol = EditorCapability(rawValue: "symbol")
+    static let canEditImage = EditorCapability(rawValue: "image")
+    static let canEditSmartPhoto = EditorCapability(rawValue: "smartPhoto")
+    static let canEditTypography = EditorCapability(rawValue: "typography")
+    static let canEditStyle = EditorCapability(rawValue: "style")
+    static let canEditActions = EditorCapability(rawValue: "actions")
+    static let canEditMatchedSet = EditorCapability(rawValue: "matchedSet")
+
+    // Editor-level features.
+    static let canEditVariables = EditorCapability(rawValue: "variables")
+    static let canShare = EditorCapability(rawValue: "share")
+    static let canUseAI = EditorCapability(rawValue: "ai")
+    static let canPurchasePro = EditorCapability(rawValue: "pro")
+
+    // Albums.
+    static let canEditAlbumShuffle = EditorCapability(rawValue: "albumShuffle")
+
+    // Permissions and derived availability.
+    static let canAccessPhotoLibrary = EditorCapability(rawValue: "photosAccess")
+    static let hasImageConfigured = EditorCapability(rawValue: "hasImage")
+    static let hasSmartPhotoConfigured = EditorCapability(rawValue: "hasSmartPhoto")
+}
+
+// MARK: - Tool IDs
+
+enum EditorToolID: String, CaseIterable, Hashable, Identifiable, Sendable {
     case status
     case designs
     case widgets
 
-    // Core editing.
     case layout
     case text
     case symbol
     case image
-
-    // Smart Photos / Albums.
     case smartPhoto
     case smartPhotoCrop
-    case smartRules
     case albumShuffle
-
-    // Styling.
-    case style
+    case smartRules
     case typography
+    case style
 
-    // Automation.
     case actions
-
-    // Power features.
     case matchedSet
     case variables
     case sharing
     case ai
     case pro
+
+    var id: String { rawValue }
 }
 
 struct EditorToolDefinition: Hashable, Sendable {
@@ -235,35 +226,42 @@ enum EditorToolRegistry {
             )
         ),
         EditorToolDefinition(
-            id: .smartRules,
+            id: .albumShuffle,
             order: 82,
-            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
+            requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured],
             eligibility: .singleTarget(
-                focus: .smartPhotoContainerSuite,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
+                focus: EditorToolFocusConstraint(
+                    allowClock: false,
+                    allowSmartRuleEditor: true,
+                    allowAnyElement: false,
+                    allowedElementIDPrefixes: ["smartPhoto"],
+                    allowAnyAlbumContainer: false,
+                    allowedAlbumContainerSubtypes: [.smart],
+                    allowAnyAlbumPhotoItem: false,
+                    allowedAlbumPhotoItemSubtypes: [.smart]
+                ),
+                selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone
             )
         ),
         EditorToolDefinition(
-            id: .albumShuffle,
+            id: .smartRules,
             order: 83,
-            requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
+            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
                 selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone
             )
         ),
 
-        // Styling.
+        // Style group.
         EditorToolDefinition(
             id: .style,
             order: 90,
             requiredCapabilities: [.canEditStyle],
-            eligibility: .multiSafe(
-                focus: .any,
-                selection: .any,
-                selectionDescriptor: .any
-            )
+            eligibility: .multiSafe()
         ),
+
+        // Typography group.
         EditorToolDefinition(
             id: .typography,
             order: 100,
@@ -337,42 +335,32 @@ enum EditorToolRegistry {
             c.insert(.canEditMatchedSet)
         }
 
-        // Template-specific editing capabilities.
         switch context.template {
         case .classic:
             c.insert(.canEditSymbol)
             c.insert(.canEditTypography)
             c.insert(.canEditActions)
 
-        case .hero:
-            c.insert(.canEditSymbol)
-            c.insert(.canEditTypography)
-            c.insert(.canEditActions)
-
         case .poster:
-            c.insert(.canEditSymbol)
             c.insert(.canEditImage)
             c.insert(.canEditSmartPhoto)
             c.insert(.canEditAlbumShuffle)
             c.insert(.canEditTypography)
 
         case .weather:
-            // Weather is data-driven; symbol/image/actions/typography are not applied.
-            break
+            c.insert(.canEditTypography)
 
         case .nextUpCalendar:
-            // Calendar is data-driven; symbol/image/actions/typography are not applied.
-            break
+            c.insert(.canEditTypography)
         }
 
+        // Permissions and derived availability.
         if context.photoLibraryAccess.allowsReadWrite {
             c.insert(.canAccessPhotoLibrary)
         }
-
         if context.hasImageConfigured {
             c.insert(.hasImageConfigured)
         }
-
         if context.hasSmartPhotoConfigured {
             c.insert(.hasSmartPhotoConfigured)
         }
@@ -380,164 +368,91 @@ enum EditorToolRegistry {
         return c
     }
 
-    /// Returns the ordered tool identifiers that should be visible for the given context.
+    static func legacyVisibleTools(for context: EditorToolContext) -> [EditorToolID] {
+        // Old behaviour: capabilities-only ordering (no eligibility/focus gating).
+        let caps = capabilities(for: context)
+
+        return tools
+            .filter { $0.requiredCapabilities.isSubset(of: caps) }
+            .sorted { $0.order < $1.order }
+            .map(\.id)
+    }
+
     static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
         let caps = capabilities(for: context)
 
         let eligible = tools
             .filter { $0.isEligible(context: context, capabilities: caps, multiSelectionPolicy: multiSelectionPolicy) }
             .sorted { $0.order < $1.order }
-            .map { $0.id }
+            .map(\.id)
 
+        // Apply focus gating as last-mile filter.
         let focusGroup = editorToolFocusGroup(for: context.focus)
-        let gated = editorToolIDsApplyingFocusGate(eligible: eligible, focusGroup: focusGroup)
-
-        let out: [EditorToolID] = {
-            if focusGroup == .smartPhotos {
-                return prioritiseToolsForSmartPhotos(gated, focus: context.focus)
-            }
-            return gated
-        }()
-
-#if DEBUG
-        debugLogUnexpectedToolListIfNeeded(
-            context: context,
-            capabilities: caps,
-            eligibleTools: eligible,
-            gatedTools: gated,
-            visibleTools: out,
+        let focusGated = editorToolIDsApplyingFocusGate(
+            eligible: eligible,
             focusGroup: focusGroup
         )
-#endif
 
-        return out
-    }
-
-    /// Legacy / fallback tool surface.
-    ///
-    /// This intentionally ignores:
-    /// - selection intersection policy
-    /// - focus gating
-    /// - availability gating (Smart Photo presence / Photos permission)
-    ///
-    /// It is useful as a safety hatch while context-aware tooling is being rolled out.
-    static func legacyVisibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let caps = capabilities(for: context)
-
-        // Availability + permissions are treated as “soft requirements” in legacy mode so the user
-        // can still discover the section and see inline guidance / CTAs.
-        let ignored: EditorCapabilities = [
-            .canAccessPhotoLibrary,
-            .hasImageConfigured,
-            .hasSmartPhotoConfigured,
-        ]
-
-        return tools
-            .sorted { $0.order < $1.order }
-            .filter { tool in
-                let required = tool.requiredCapabilities.subtracting(ignored)
-                return required.isSubset(of: caps)
+        // Prioritise Smart Rules when editing them.
+        if case .smartRuleEditor = context.focus {
+            if let idx = focusGated.firstIndex(of: .smartRules), idx != 0 {
+                var moved = focusGated
+                moved.remove(at: idx)
+                moved.insert(.smartRules, at: 0)
+                return moved
             }
-            .map { $0.id }
-    }
-
-    private static func prioritiseToolsForSmartPhotos(_ toolIDs: [EditorToolID], focus: EditorFocusTarget) -> [EditorToolID] {
-        var out: [EditorToolID] = []
-
-        // If the user is actively editing Smart Rules, keep that tool first.
-        if case .smartRuleEditor = focus, toolIDs.contains(.smartRules) {
-            out.append(.smartRules)
         }
 
-        // 1) Album tools first.
-        if toolIDs.contains(.albumShuffle), !out.contains(.albumShuffle) {
-            out.append(.albumShuffle)
-        }
-
-        // 2) Smart Photo editing tools.
-        if toolIDs.contains(.smartPhotoCrop), !out.contains(.smartPhotoCrop) {
-            out.append(.smartPhotoCrop)
-        }
-
-        if toolIDs.contains(.smartPhoto), !out.contains(.smartPhoto) {
-            out.append(.smartPhoto)
-        }
-
-        if toolIDs.contains(.image), !out.contains(.image) {
-            out.append(.image)
-        }
-
-        // 3) Smart Rules, unless already pinned first.
-        if toolIDs.contains(.smartRules), !out.contains(.smartRules) {
-            out.append(.smartRules)
-        }
-
-        // 4) Keep Style last so it’s still reachable, but not dominant.
-        if toolIDs.contains(.style), !out.contains(.style) {
-            out.append(.style)
-        }
-
-        // Append any remaining tools not explicitly prioritised (defensive).
-        for t in toolIDs where !out.contains(t) {
-            out.append(t)
-        }
-
-        return out
+        return focusGated
     }
 }
 
-// MARK: - Debug diagnostics
+// MARK: - Debug / diagnostics
 
-#if DEBUG
-private func debugLogUnexpectedToolListIfNeeded(
-    context: EditorToolContext,
-    capabilities: EditorCapabilities,
-    eligibleTools: [EditorToolID],
-    gatedTools: [EditorToolID],
-    visibleTools: [EditorToolID],
-    focusGroup: EditorToolFocusGroup
-) {
-    // Log when the list becomes empty or suspiciously small, to catch modelling gaps.
-    let suspiciouslySmallThreshold = 2
-
-    if visibleTools.isEmpty || visibleTools.count <= suspiciouslySmallThreshold {
-        let capsSorted = EditorCapabilities.allKnown
-            .filter { capabilities.contains($0) }
-            .map { $0.debugLabel }
-            .joined(separator: ", ")
-
-        let eligibleJoined = eligibleTools.map(\.rawValue).joined(separator: ", ")
-        let gatedJoined = gatedTools.map(\.rawValue).joined(separator: ", ")
-        let visibleJoined = visibleTools.map(\.rawValue).joined(separator: ", ")
-
-        print(
-            """
-            [EditorTooling] Suspicious tool list
-            - template: \(context.template.rawValue)
-            - selection: \(context.selection.debugLabel)
-            - focus: \(context.focus.debugLabel)
-            - focusGroup: \(focusGroup.rawValue)
-            - capabilities: [\(capsSorted)]
-            - eligible: [\(eligibleJoined)]
-            - gated: [\(gatedJoined)]
-            - visible: [\(visibleJoined)]
-            """
-        )
+extension EditorToolContext {
+    var debugSummary: String {
+        """
+        template=\(template.rawValue)
+        pro=\(isProUnlocked)
+        matchedSet=\(matchedSetEnabled)
+        selection=\(selection.rawValue)
+        focus=\(focus.debugLabel)
+        photos=\(photoLibraryAccess.status.rawValue)
+        hasSymbol=\(hasSymbolConfigured)
+        hasImage=\(hasImageConfigured)
+        hasSmartPhoto=\(hasSmartPhotoConfigured)
+        """
     }
 }
-#endif
 
-// MARK: - Capability debugging helpers
+extension EditorFocusTarget {
+    var debugLabel: String {
+        switch self {
+        case .widget:
+            return "widget"
+        case .clock:
+            return "clock"
+        case .smartRuleEditor(let albumID):
+            return "smartRuleEditor(\(albumID))"
+        case .element(let id):
+            return "element(\(id))"
+        case .albumContainer(let id, let subtype):
+            return "albumContainer(\(id), \(subtype.rawValue))"
+        case .albumPhoto(let albumID, let itemID, let subtype):
+            return "albumPhoto(\(albumID), \(itemID), \(subtype.rawValue))"
+        }
+    }
+}
 
 extension EditorCapabilities {
-    static let allKnown: [EditorCapabilities] = [
+    static var allKnown: [EditorCapability] = [
         .canEditLayout,
         .canEditTextContent,
         .canEditSymbol,
         .canEditImage,
         .canEditSmartPhoto,
-        .canEditStyle,
         .canEditTypography,
+        .canEditStyle,
         .canEditActions,
         .canEditMatchedSet,
         .canEditVariables,
@@ -549,7 +464,9 @@ extension EditorCapabilities {
         .hasImageConfigured,
         .hasSmartPhotoConfigured,
     ]
+}
 
+extension EditorCapability {
     var debugLabel: String {
         switch self {
         case .canEditLayout: return "layout"

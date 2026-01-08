@@ -12,10 +12,10 @@ struct EditorUnavailableStateView: View {
     var state: EditorUnavailableState
     var isBusy: Bool
 
-    /// Handler for requestable Photos permission prompts.
+    /// Handler for non-Link CTAs (requestable permissions, upsells, etc).
     ///
-    /// When nil, the request-style CTA is hidden (the message remains visible).
-    var onRequestPhotosAccess: (() async -> Void)? = nil
+    /// When nil, action-style CTAs are hidden (the message remains visible).
+    var onPerformCTA: (@MainActor (EditorUnavailableCTAKind) async -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -25,21 +25,23 @@ struct EditorUnavailableStateView: View {
 
             if let cta = state.cta {
                 switch cta.kind {
-                case .requestPhotosAccess:
-                    if let onRequestPhotosAccess {
-                        Button {
-                            Task { await onRequestPhotosAccess() }
-                        } label: {
-                            Label(cta.title, systemImage: cta.systemImage)
-                        }
-                        .disabled(isBusy)
-                    }
-
                 case .openAppSettings:
                     if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                         Link(destination: settingsURL) {
                             Label(cta.title, systemImage: cta.systemImage)
                         }
+                    }
+
+                case .requestPhotosAccess, .showPro:
+                    if let onPerformCTA {
+                        Button {
+                            Task { @MainActor in
+                                await onPerformCTA(cta.kind)
+                            }
+                        } label: {
+                            Label(cta.title, systemImage: cta.systemImage)
+                        }
+                        .disabled(isBusy)
                     }
                 }
             }
