@@ -72,7 +72,7 @@ enum EditorContextEvaluator {
         }
 #endif
 
-        let hasSymbolConfigured = !draft.symbolFileName.isEmpty
+        let hasSymbolConfigured = !draft.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasImageConfigured = !draft.imageFileName.isEmpty
         let hasSmartPhotoConfigured = draft.imageSmartPhoto != nil
 
