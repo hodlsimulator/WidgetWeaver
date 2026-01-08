@@ -11,6 +11,8 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     private enum LaunchKeys {
         static let contextAwareToolSuiteEnabled = "-widgetweaver.feature.editor.contextAwareToolSuite.enabled"
         static let uiTestHooksEnabled = "-widgetweaver.uiTestHooks.enabled"
+        static let dynamicType = "-widgetweaver.uiTest.dynamicType"
+        static let reduceMotion = "-widgetweaver.uiTest.reduceMotion"
     }
 
     private enum UITestHooks {
@@ -37,7 +39,11 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         static let secondaryTextField = "EditorTextField.SecondaryText"
     }
 
-    private func launchApp(contextAwareEnabled: Bool) -> XCUIApplication {
+    private func launchApp(
+        contextAwareEnabled: Bool,
+        dynamicType: String? = nil,
+        reduceMotion: Bool? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
             LaunchKeys.uiTestHooksEnabled,
@@ -45,6 +51,15 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
             LaunchKeys.contextAwareToolSuiteEnabled,
             contextAwareEnabled ? "1" : "0",
         ]
+
+        if let dynamicType {
+            app.launchArguments += [LaunchKeys.dynamicType, dynamicType]
+        }
+
+        if let reduceMotion {
+            app.launchArguments += [LaunchKeys.reduceMotion, reduceMotion ? "1" : "0"]
+        }
+
         app.launch()
         return app
     }
@@ -90,6 +105,27 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
             waitAndTap(focusRules)
             waitAndTap(focusWidget)
         }
+    }
+
+    func testContextAwareFocusSwitchingSmokeUnderLargeDynamicTypeAndReduceMotion() {
+        let app = launchApp(
+            contextAwareEnabled: true,
+            dynamicType: "accessibility3",
+            reduceMotion: true
+        )
+
+        let templatePoster = app.buttons[UITestHooks.templatePoster]
+        let focusWidget = app.buttons[UITestHooks.focusWidget]
+        let focusCrop = app.buttons[UITestHooks.focusSmartPhotoCrop]
+
+        waitAndTap(templatePoster)
+
+        // Minimal smoke: ensure tool switches do not destabilise under test overrides.
+        waitAndTap(focusWidget)
+        waitAndTap(focusCrop)
+        waitAndTap(focusWidget)
+
+        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].waitForExistence(timeout: 2.0), "Expected Layout to remain discoverable")
     }
 
     func testContextAwareFlagOffShowsLegacyToolsInSmartPhotoFocus() {
@@ -200,6 +236,8 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         let templatePoster = app.buttons[UITestHooks.templatePoster]
         let focusWidget = app.buttons[UITestHooks.focusWidget]
         let focusCrop = app.buttons[UITestHooks.focusSmartPhotoCrop]
+        let focusClock = app.buttons[UITestHooks.focusClock]
+        let focusAlbumContainer = app.buttons[UITestHooks.focusAlbumContainer]
 
         waitAndTap(templatePoster)
         waitAndTap(focusWidget)
@@ -247,5 +285,22 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         XCTAssertTrue(restoredSecondary.waitForExistence(timeout: 2.0), "Expected Secondary text field after restoring widget focus")
         let secondaryValue = String(describing: restoredSecondary.value ?? "")
         XCTAssertTrue(secondaryValue.contains("WWUITestSentinel"), "Expected Secondary text to preserve user input across tool suite changes")
+
+        // Additional continuity checks across other focus groups.
+        waitAndTap(focusClock)
+        XCTAssertFalse(app.textFields[AccessibilityIDs.primaryTextField].exists, "Clock focus should remove Text fields")
+
+        waitAndTap(focusWidget)
+        XCTAssertTrue(app.textFields[AccessibilityIDs.primaryTextField].waitForExistence(timeout: 2.0), "Expected Primary text field after leaving clock focus")
+
+        waitAndTap(focusAlbumContainer)
+        XCTAssertFalse(app.textFields[AccessibilityIDs.primaryTextField].exists, "Album focus should remove Text fields")
+
+        waitAndTap(focusWidget)
+        let restoredPrimaryAfterAlbum = app.textFields[AccessibilityIDs.primaryTextField]
+        scrollToElement(restoredPrimaryAfterAlbum, in: scrollView)
+        XCTAssertTrue(restoredPrimaryAfterAlbum.waitForExistence(timeout: 2.0), "Expected Primary text field after leaving album focus")
+        let primaryAfterAlbumValue = String(describing: restoredPrimaryAfterAlbum.value ?? "")
+        XCTAssertTrue(primaryAfterAlbumValue.contains("WWUITestSentinel"), "Expected Primary text to remain after leaving album focus")
     }
 }

@@ -33,6 +33,7 @@ struct SmartPhotoAlbumShuffleControls: View {
 
     @State private var progress: ProgressSummary?
     @State private var rankingRows: [RankingRow] = []
+    @State private var rankingAlbumID: String? = nil
 
     @State private var rotationIntervalMinutes: Int = 60
     @State private var nextChangeDate: Date?
@@ -282,22 +283,33 @@ struct SmartPhotoAlbumShuffleControls: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(rankingRows) { row in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(row.isCurrent ? "▶︎" : " ")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                    ForEach(Array(rankingRows.enumerated()), id: \.element.id) { idx, row in
+                        NavigationLink {
+                            SmartPhotoAlbumShufflePhotoDetailView(
+                                manifestFileName: manifestFileName,
+                                albumID: rankingAlbumID,
+                                itemID: row.id,
+                                focus: focus
+                            )
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(row.isCurrent ? "▶︎" : " ")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
 
-                            Text(row.scoreText)
-                                .font(.caption)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
+                                Text(row.scoreText)
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
 
-                            Text(row.flagsText)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                                Text(row.flagsText)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("AlbumShuffle.RankingRow.\(idx)")
                     }
                 }
                 .padding(.top, 4)
@@ -664,6 +676,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             await MainActor.run {
                 progress = nil
                 rankingRows = []
+                rankingAlbumID = nil
                 nextChangeDate = nil
                 rotationIntervalMinutes = 60
             }
@@ -674,6 +687,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             await MainActor.run {
                 progress = nil
                 rankingRows = []
+                rankingAlbumID = nil
                 nextChangeDate = nil
             }
             return
@@ -694,8 +708,79 @@ struct SmartPhotoAlbumShuffleControls: View {
         await MainActor.run {
             progress = p
             rankingRows = rows
+            rankingAlbumID = manifest.sourceID
             rotationIntervalMinutes = manifest.rotationIntervalMinutes
             nextChangeDate = next
+        }
+    }
+}
+
+// MARK: - Album photo-item detail (selection origin)
+
+private struct SmartPhotoAlbumShufflePhotoDetailView: View {
+    let manifestFileName: String
+    let albumID: String?
+    let itemID: String
+
+    var focus: Binding<EditorFocusSnapshot>? = nil
+
+    @State private var previousFocusSnapshot: EditorFocusSnapshot? = nil
+
+    private var resolvedAlbumID: String {
+        let id = (albumID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? "smartPhotoAlbum" : id
+    }
+
+    private var targetFocus: EditorFocusTarget {
+        .albumPhoto(albumID: resolvedAlbumID, itemID: itemID, subtype: .smart)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Album", value: resolvedAlbumID)
+                    .textSelection(.enabled)
+
+                LabeledContent("Photo", value: itemID)
+                    .textSelection(.enabled)
+
+                let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !mf.isEmpty {
+                    LabeledContent("Manifest", value: mf)
+                        .textSelection(.enabled)
+                }
+            } header: {
+                Text("Selection")
+            } footer: {
+                Text("Viewing a shuffle photo is treated as an explicit selection origin. The editor’s tool suite can react to this focus without relying on heuristics.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Shuffle Photo")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { pushFocusIfNeeded() }
+        .onDisappear { restoreFocusIfNeeded() }
+        .accessibilityIdentifier("AlbumShuffle.PhotoDetail")
+    }
+
+    private func pushFocusIfNeeded() {
+        guard let focus else { return }
+
+        if previousFocusSnapshot == nil {
+            previousFocusSnapshot = focus.wrappedValue
+        }
+
+        focus.wrappedValue = .smartAlbumPhotoItem(albumID: resolvedAlbumID, itemID: itemID)
+    }
+
+    private func restoreFocusIfNeeded() {
+        guard let focus else { return }
+        guard let previous = previousFocusSnapshot else { return }
+        defer { previousFocusSnapshot = nil }
+
+        if focus.wrappedValue.focus == targetFocus {
+            focus.wrappedValue = previous
         }
     }
 }

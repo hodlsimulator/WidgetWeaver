@@ -137,6 +137,15 @@ struct EditorToolSelectionDescriptorConstraint: Hashable, Sendable {
 
     static let any = EditorToolSelectionDescriptorConstraint()
 
+    /// Explicitly allows mixed selections.
+    ///
+    /// This is semantically the same as `.any`, but is used in the tool manifest
+    /// to make mixed-selection policy explicit tool-by-tool.
+    static let allowsAnyIncludingMixedSelection = EditorToolSelectionDescriptorConstraint(
+        allowedHomogeneity: Set(EditorSelectionHomogeneity.allCases),
+        allowedAlbumSpecificity: Set(EditorAlbumSelectionSpecificity.allCases)
+    )
+
     static let allowsHomogeneousOrNoneSelection = EditorToolSelectionDescriptorConstraint(
         allowedHomogeneity: [.homogeneous],
         allowedAlbumSpecificity: [.nonAlbum, .albumContainer, .albumPhotoItem]
@@ -158,7 +167,7 @@ struct EditorToolSelectionDescriptorConstraint: Hashable, Sendable {
 extension EditorToolEligibility {
     static func singleTarget(
         focus: EditorToolFocusConstraint = .any,
-        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any
+        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .allowsHomogeneousOrNoneSelection
     ) -> EditorToolEligibility {
         EditorToolEligibility(
             focus: focus,
@@ -171,7 +180,7 @@ extension EditorToolEligibility {
     static func multiSafe(
         focus: EditorToolFocusConstraint = .any,
         selection: EditorToolSelectionConstraint = .any,
-        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .any
+        selectionDescriptor: EditorToolSelectionDescriptorConstraint = .allowsHomogeneousOrNoneSelection
     ) -> EditorToolEligibility {
         EditorToolEligibility(
             focus: focus,

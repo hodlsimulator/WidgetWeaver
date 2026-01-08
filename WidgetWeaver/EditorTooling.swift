@@ -180,9 +180,9 @@ enum EditorToolRegistry {
     /// Canonical tool manifest.
     static let tools: [EditorToolDefinition] = [
         // Workflow.
-        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe()),
-        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe()),
+        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
+        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
+        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
 
         // Core editing.
         EditorToolDefinition(
@@ -192,7 +192,7 @@ enum EditorToolRegistry {
             eligibility: .multiSafe(
                 focus: .any,
                 selection: .any,
-                selectionDescriptor: .any
+                selectionDescriptor: .allowsAnyIncludingMixedSelection
             )
         ),
         EditorToolDefinition(
@@ -275,7 +275,7 @@ enum EditorToolRegistry {
             id: .style,
             order: 90,
             requiredCapabilities: [.canEditStyle],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
 
         // Typography group.
@@ -305,31 +305,31 @@ enum EditorToolRegistry {
             id: .matchedSet,
             order: 120,
             requiredCapabilities: [.canEditMatchedSet],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
         EditorToolDefinition(
             id: .variables,
             order: 130,
             requiredCapabilities: [.canEditVariables],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
         EditorToolDefinition(
             id: .sharing,
             order: 140,
             requiredCapabilities: [.canShare],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
         EditorToolDefinition(
             id: .ai,
             order: 150,
             requiredCapabilities: [.canUseAI],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
         EditorToolDefinition(
             id: .pro,
             order: 160,
             requiredCapabilities: [.canPurchasePro],
-            eligibility: .multiSafe()
+            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
         ),
     ]
 

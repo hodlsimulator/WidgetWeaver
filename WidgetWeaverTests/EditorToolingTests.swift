@@ -98,6 +98,17 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(descriptor.albumSpecificity, .mixed)
     }
 
+    func testMultiSafeDefaultDisallowsMixedSelectionDescriptor() {
+        let eligibility = EditorToolEligibility.multiSafe()
+
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
+        XCTAssertFalse(eligibility.selectionDescriptor.allows(descriptor))
+    }
+
     func testSelectionDescriptorUsesExplicitCompositionAndCountWhenProvided() {
         let descriptor = EditorSelectionDescriptor.describe(
             selection: .multi,
