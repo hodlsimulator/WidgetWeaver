@@ -73,27 +73,34 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
-            if hasSmartPhoto, !photoAccess.allowsReadWrite {
-                Text("Album Shuffle uses the Photo Library and is hidden until Photos access is granted.")
+            if hasSmartPhoto,
+               let unavailable = EditorUnavailableState.photosAccessRequiredForAlbumShuffle(photoAccess: photoAccess) {
+                Text(unavailable.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if photoAccess.isRequestable {
-                    Button {
-                        Task { @MainActor in
-                            guard !importInProgress else { return }
-                            importInProgress = true
-                            defer { importInProgress = false }
+                if let cta = unavailable.cta {
+                    switch cta.kind {
+                    case .requestPhotosAccess:
+                        Button {
+                            Task { @MainActor in
+                                guard !importInProgress else { return }
+                                importInProgress = true
+                                defer { importInProgress = false }
 
-                            let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
-                            saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
+                                let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+                                saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
+                            }
+                        } label: {
+                            Label(cta.title, systemImage: cta.systemImage)
                         }
-                    } label: {
-                        Label("Enable Photos access", systemImage: "photo.on.rectangle.angled")
-                    }
-                } else if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                    Link(destination: settingsURL) {
-                        Label("Open Photos Settings", systemImage: "gear")
+
+                    case .openAppSettings:
+                        if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                            Link(destination: settingsURL) {
+                                Label(cta.title, systemImage: cta.systemImage)
+                            }
+                        }
                     }
                 }
             }

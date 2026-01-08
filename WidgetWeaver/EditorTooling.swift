@@ -191,9 +191,8 @@ enum EditorToolRegistry {
             id: .text,
             order: 50,
             requiredCapabilities: [.canEditTextContent],
-            eligibility: .multiSafe(
+            eligibility: .singleTarget(
                 focus: .any,
-                selection: .any,
                 selectionDescriptor: .any
             )
         ),
@@ -201,22 +200,18 @@ enum EditorToolRegistry {
             id: .symbol,
             order: 60,
             requiredCapabilities: [.canEditSymbol],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .any,
-                selection: .any,
-                selectionDescriptor: .any,
-                supportsMultiSelection: true
+                selectionDescriptor: .any
             )
         ),
         EditorToolDefinition(
             id: .image,
             order: 70,
             requiredCapabilities: [.canEditImage],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
-                selection: .any,
-                selectionDescriptor: .any,
-                supportsMultiSelection: true
+                selectionDescriptor: .any
             )
         ),
 
@@ -225,44 +220,36 @@ enum EditorToolRegistry {
             id: .smartPhoto,
             order: 80,
             requiredCapabilities: [.canEditSmartPhoto],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
-                selection: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: true
+                selectionDescriptor: .allowsHomogeneousOrNoneSelection
             )
         ),
         EditorToolDefinition(
             id: .smartPhotoCrop,
             order: 81,
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
+                selectionDescriptor: .allowsHomogeneousOrNoneSelection
             )
         ),
         EditorToolDefinition(
             id: .smartRules,
             order: 82,
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
+                selectionDescriptor: .allowsHomogeneousOrNoneSelection
             )
         ),
         EditorToolDefinition(
             id: .albumShuffle,
             order: 83,
             requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone,
-                supportsMultiSelection: false
+                selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone
             )
         ),
 
@@ -281,11 +268,9 @@ enum EditorToolRegistry {
             id: .typography,
             order: 100,
             requiredCapabilities: [.canEditTypography],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .any,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
+                selectionDescriptor: .allowsHomogeneousOrNoneSelection
             )
         ),
 
@@ -294,11 +279,9 @@ enum EditorToolRegistry {
             id: .actions,
             order: 110,
             requiredCapabilities: [.canEditActions],
-            eligibility: .init(
+            eligibility: .singleTarget(
                 focus: .any,
-                selection: .allowsNoneOrSingle,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection,
-                supportsMultiSelection: false
+                selectionDescriptor: .allowsHomogeneousOrNoneSelection
             )
         ),
 
@@ -542,6 +525,9 @@ private func debugLogUnexpectedToolListIfNeeded(
         )
     }
 }
+#endif
+
+// MARK: - Capability debugging helpers
 
 extension EditorCapabilities {
     static let allKnown: [EditorCapabilities] = [
@@ -566,50 +552,32 @@ extension EditorCapabilities {
 
     var debugLabel: String {
         switch self {
-        case .canEditLayout: return "canEditLayout"
-        case .canEditTextContent: return "canEditTextContent"
-        case .canEditSymbol: return "canEditSymbol"
-        case .canEditImage: return "canEditImage"
-        case .canEditSmartPhoto: return "canEditSmartPhoto"
-        case .canEditStyle: return "canEditStyle"
-        case .canEditTypography: return "canEditTypography"
-        case .canEditActions: return "canEditActions"
-        case .canEditMatchedSet: return "canEditMatchedSet"
-        case .canEditVariables: return "canEditVariables"
-        case .canShare: return "canShare"
-        case .canUseAI: return "canUseAI"
-        case .canPurchasePro: return "canPurchasePro"
-        case .canEditAlbumShuffle: return "canEditAlbumShuffle"
-        case .canAccessPhotoLibrary: return "canAccessPhotoLibrary"
-        case .hasImageConfigured: return "hasImageConfigured"
-        case .hasSmartPhotoConfigured: return "hasSmartPhotoConfigured"
+        case .canEditLayout: return "layout"
+        case .canEditTextContent: return "text"
+        case .canEditSymbol: return "symbol"
+        case .canEditImage: return "image"
+        case .canEditSmartPhoto: return "smartPhoto"
+        case .canEditStyle: return "style"
+        case .canEditTypography: return "typography"
+        case .canEditActions: return "actions"
+        case .canEditMatchedSet: return "matchedSet"
+        case .canEditVariables: return "variables"
+        case .canShare: return "share"
+        case .canUseAI: return "ai"
+        case .canPurchasePro: return "pro"
+        case .canEditAlbumShuffle: return "albumShuffle"
+        case .canAccessPhotoLibrary: return "photosAccess"
+        case .hasImageConfigured: return "hasImage"
+        case .hasSmartPhotoConfigured: return "hasSmartPhoto"
         default: return "unknown(\(rawValue))"
         }
     }
 }
+
+// MARK: - Ordering helpers
 
 extension EditorSelectionKind {
     var debugLabel: String {
         rawValue
     }
 }
-
-extension EditorFocusTarget {
-    var debugLabel: String {
-        switch self {
-        case .widget:
-            return "widget"
-        case .clock:
-            return "clock"
-        case .element(let id):
-            return "element(\(id))"
-        case .albumContainer(let id, let subtype):
-            return "albumContainer(\(subtype.rawValue):\(id))"
-        case .albumPhoto(let albumID, let itemID, let subtype):
-            return "albumPhoto(\(subtype.rawValue):\(albumID)/\(itemID))"
-        case .smartRuleEditor(let albumID):
-            return "smartRuleEditor(\(albumID))"
-        }
-    }
-}
-#endif

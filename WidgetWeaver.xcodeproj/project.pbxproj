@@ -108,6 +108,13 @@
 			remoteGlobalIDString = E186768D2EF232180098B095;
 			remoteInfo = WidgetWeaverWidgetExtension;
 		};
+		E1A9B4142F0F31720096765D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E18676702EF227C20098B095 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E18676772EF227C30098B095;
+			remoteInfo = WidgetWeaver;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -151,6 +158,7 @@
 		E18676AD2EF240EE0098B095 /* WidgetSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpec.swift; sourceTree = "<group>"; };
 		E18676B02EF241130098B095 /* WidgetSpecStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecStore.swift; sourceTree = "<group>"; };
 		E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainSurfaceSeamlessNoiseTile.swift; sourceTree = "<group>"; };
+		E1A9B4102F0F31720096765D /* WidgetWeaverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WidgetWeaverTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherStore.swift; sourceTree = "<group>"; };
 		E1C834CA2EFA5D1800E3AA98 /* WidgetWeaverWeatherEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeatherEngine.swift; sourceTree = "<group>"; };
 		E1C834CD2EFAAF3600E3AA98 /* RainForecastSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RainForecastSurfaceView.swift; sourceTree = "<group>"; };
@@ -180,6 +188,7 @@
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				EditorToolingTests.swift,
 				Info.plist,
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
@@ -198,6 +207,13 @@
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
 		};
+		E1A9B41A2F0F31900096765D /* Exceptions for "WidgetWeaver" folder in "WidgetWeaverTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				EditorToolingTests.swift,
+			);
+			target = E1A9B40F2F0F31720096765D /* WidgetWeaverTests */;
+		};
 		E1E878352F082A5700C9AA14 /* Exceptions for "NoiseMachine" folder in "WidgetWeaverWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -212,6 +228,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */,
+				E1A9B41A2F0F31900096765D /* Exceptions for "WidgetWeaver" folder in "WidgetWeaverTests" target */,
 			);
 			path = WidgetWeaver;
 			sourceTree = "<group>";
@@ -223,6 +240,11 @@
 				E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
 			);
 			path = WidgetWeaverWidget;
+			sourceTree = "<group>";
+		};
+		E1A9B4112F0F31720096765D /* WidgetWeaverTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WidgetWeaverTests;
 			sourceTree = "<group>";
 		};
 		E1E878082F0787DD00C9AA14 /* Tools */ = {
@@ -257,6 +279,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E1A9B40D2F0F31720096765D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -266,6 +295,7 @@
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
 				E18676A62EF240690098B095 /* Shared */,
+				E1A9B4112F0F31720096765D /* WidgetWeaverTests */,
 				E18676792EF227C30098B095 /* Products */,
 				E186768F2EF232180098B095 /* Frameworks */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
@@ -278,6 +308,7 @@
 			children = (
 				E18676782EF227C30098B095 /* WidgetWeaver.app */,
 				E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */,
+				E1A9B4102F0F31720096765D /* WidgetWeaverTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -391,6 +422,29 @@
 			productReference = E186768E2EF232180098B095 /* WidgetWeaverWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		E1A9B40F2F0F31720096765D /* WidgetWeaverTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E1A9B4162F0F31720096765D /* Build configuration list for PBXNativeTarget "WidgetWeaverTests" */;
+			buildPhases = (
+				E1A9B40C2F0F31720096765D /* Sources */,
+				E1A9B40D2F0F31720096765D /* Frameworks */,
+				E1A9B40E2F0F31720096765D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E1A9B4152F0F31720096765D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E1A9B4112F0F31720096765D /* WidgetWeaverTests */,
+			);
+			name = WidgetWeaverTests;
+			packageProductDependencies = (
+			);
+			productName = WidgetWeaverTests;
+			productReference = E1A9B4102F0F31720096765D /* WidgetWeaverTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -398,7 +452,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastSwiftUpdateCheck = 1620;
+				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					E18676772EF227C30098B095 = {
@@ -406,6 +460,10 @@
 					};
 					E186768D2EF232180098B095 = {
 						CreatedOnToolsVersion = 16.2;
+					};
+					E1A9B40F2F0F31720096765D = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = E18676772EF227C30098B095;
 					};
 				};
 			};
@@ -424,6 +482,7 @@
 			targets = (
 				E18676772EF227C30098B095 /* WidgetWeaver */,
 				E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */,
+				E1A9B40F2F0F31720096765D /* WidgetWeaverTests */,
 			);
 		};
 /* End PBXProject section */
@@ -437,6 +496,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E186768C2EF232180098B095 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E1A9B40E2F0F31720096765D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -548,6 +614,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E1A9B40C2F0F31720096765D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -555,6 +628,11 @@
 			isa = PBXTargetDependency;
 			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
 			targetProxy = E186769C2EF2321A0098B095 /* PBXContainerItemProxy */;
+		};
+		E1A9B4152F0F31720096765D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E18676772EF227C30098B095 /* WidgetWeaver */;
+			targetProxy = E1A9B4142F0F31720096765D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -770,6 +848,55 @@
 			};
 			name = Release;
 		};
+		E1A9B4172F0F31720096765D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92HEPEJ42Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaverTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WidgetWeaver.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WidgetWeaver";
+			};
+			name = Debug;
+		};
+		E1A9B4182F0F31720096765D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92HEPEJ42Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.conornolan.WidgetWeaverTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WidgetWeaver.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WidgetWeaver";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -796,6 +923,15 @@
 			buildConfigurations = (
 				E1785D0E2EF341EF00F7D707 /* Debug */,
 				E1785D0F2EF341EF00F7D707 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E1A9B4162F0F31720096765D /* Build configuration list for PBXNativeTarget "WidgetWeaverTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E1A9B4172F0F31720096765D /* Debug */,
+				E1A9B4182F0F31720096765D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
