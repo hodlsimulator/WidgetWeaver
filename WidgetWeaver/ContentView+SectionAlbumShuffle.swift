@@ -9,19 +9,27 @@ import SwiftUI
 
 extension ContentView {
     var albumShuffleSection: some View {
-        let d = currentFamilyDraft()
-        let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSmartPhoto = d.imageSmartPhoto != nil
+        let hasImage = editorToolContext.hasImageConfigured
+        let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
+        let photoAccess = editorToolContext.photoLibraryAccess
 
         return Section {
             if !hasImage {
-                Text("Choose a photo in Image first.\nThen make Smart Photo renders in Smart Photo to enable Album Shuffle.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.imageRequiredForAlbumShuffle(),
+                    isBusy: false
+                )
             } else if !hasSmartPhoto {
-                Text("Album Shuffle requires Smart Photo.\nIn Smart Photo, tap ‘Make Smart Photo (per-size renders)’.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.smartPhotoRequiredForAlbumShuffle(),
+                    isBusy: false
+                )
+            } else if let unavailable = EditorUnavailableState.photosAccessRequiredForAlbumShuffle(photoAccess: photoAccess) {
+                EditorUnavailableStateView(
+                    state: unavailable,
+                    isBusy: importInProgress,
+                    onRequestPhotosAccess: { await requestPhotosAccessForAlbumShuffle() }
+                )
             } else {
                 SmartPhotoAlbumShuffleControls(
                     smartPhoto: binding(\.imageSmartPhoto),

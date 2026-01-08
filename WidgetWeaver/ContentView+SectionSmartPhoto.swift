@@ -6,14 +6,13 @@
 //
 
 import SwiftUI
-import UIKit
 
 extension ContentView {
     func smartPhotoSection(focus _: Binding<EditorFocusSnapshot>) -> some View {
         let d = currentFamilyDraft()
-        let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSmartPhoto = d.imageSmartPhoto != nil
 
+        let hasImage = editorToolContext.hasImageConfigured
+        let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
         let photoAccess = editorToolContext.photoLibraryAccess
 
         let legacyFamilies: [EditingFamily] = {
@@ -42,9 +41,10 @@ extension ContentView {
 
         return Section {
             if !hasImage {
-                Text("Choose a photo in Image first to enable Smart Photo.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.imageRequiredForSmartPhoto(),
+                    isBusy: false
+                )
             } else if hasSmartPhoto, let smart = d.imageSmartPhoto {
                 Button {
                     Task { await regenerateSmartPhotoRenders() }
@@ -75,34 +75,11 @@ extension ContentView {
 
             if hasSmartPhoto,
                let unavailable = EditorUnavailableState.photosAccessRequiredForAlbumShuffle(photoAccess: photoAccess) {
-                Text(unavailable.message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let cta = unavailable.cta {
-                    switch cta.kind {
-                    case .requestPhotosAccess:
-                        Button {
-                            Task { @MainActor in
-                                guard !importInProgress else { return }
-                                importInProgress = true
-                                defer { importInProgress = false }
-
-                                let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
-                                saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
-                            }
-                        } label: {
-                            Label(cta.title, systemImage: cta.systemImage)
-                        }
-
-                    case .openAppSettings:
-                        if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                            Link(destination: settingsURL) {
-                                Label(cta.title, systemImage: cta.systemImage)
-                            }
-                        }
-                    }
-                }
+                EditorUnavailableStateView(
+                    state: unavailable,
+                    isBusy: importInProgress,
+                    onRequestPhotosAccess: { await requestPhotosAccessForAlbumShuffle() }
+                )
             }
 
             if matchedSetEnabled, !legacyFamilies.isEmpty {

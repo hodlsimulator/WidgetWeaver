@@ -71,9 +71,46 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(caps.contains(.hasSmartPhotoConfigured))
     }
 
+    // MARK: - Selection descriptor
+
+    func testSelectionDescriptorDerivesSingleFromFocusWhenSelectionIsNone() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .none,
+            focus: .clock
+        )
+
+        XCTAssertEqual(descriptor.kind, .single)
+        XCTAssertEqual(descriptor.count, 1)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .nonAlbum)
+    }
+
+    func testSelectionDescriptorMarksMultiWidgetSelectionAsMixed() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 2)
+        XCTAssertEqual(descriptor.homogeneity, .mixed)
+        XCTAssertEqual(descriptor.albumSpecificity, .mixed)
+    }
+
+    func testSelectionDescriptorAlbumContainerFocusIsAlbumSpecific() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .none,
+            focus: .albumContainer(id: "smartPhotoAlbumPicker", subtype: .smart)
+        )
+
+        XCTAssertEqual(descriptor.kind, .single)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .albumContainer)
+    }
+
     // MARK: - Visible tool derivation
 
-    func testVisibleToolsSmartPhotoCropFocusIsGatedToSmartPhotoSuite() {
+    func testVisibleToolsSmartPhotoCropFocusIsPrioritisedSmartPhotoSuite() {
         let ctx = EditorToolContext(
             template: .poster,
             isProUnlocked: false,
@@ -90,12 +127,36 @@ final class EditorToolingTests: XCTestCase {
 
         XCTAssertEqual(
             tools,
-            [.smartPhotoCrop, .smartPhoto, .smartRules, .albumShuffle, .image, .style]
+            [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .smartRules, .style]
         )
 
         XCTAssertFalse(tools.contains(.layout))
         XCTAssertFalse(tools.contains(.text))
         XCTAssertFalse(tools.contains(.typography))
+    }
+
+    func testVisibleToolsSmartRuleEditorPinsSmartRulesFirst() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .smartRuleEditor(albumID: "album"),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+
+        XCTAssertEqual(
+            tools,
+            [.smartRules, .albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .style]
+        )
+
+        XCTAssertFalse(tools.contains(.layout))
+        XCTAssertFalse(tools.contains(.actions))
     }
 
     func testVisibleToolsClockFocusDoesNotSurfaceSmartPhotoTools() {
@@ -153,5 +214,78 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(tools.contains(.albumShuffle))
         XCTAssertFalse(tools.contains(.typography))
         XCTAssertFalse(tools.contains(.actions))
+    }
+
+    func testLegacyVisibleToolsIgnoreAvailabilityRequirements() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .notDetermined),
+            hasSymbolConfigured: false,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let contextAware = EditorToolRegistry.visibleTools(for: ctx)
+        let legacy = EditorToolRegistry.legacyVisibleTools(for: ctx)
+
+        XCTAssertFalse(contextAware.contains(.smartPhotoCrop))
+        XCTAssertFalse(contextAware.contains(.smartRules))
+        XCTAssertFalse(contextAware.contains(.albumShuffle))
+
+        XCTAssertTrue(legacy.contains(.smartPhotoCrop))
+        XCTAssertTrue(legacy.contains(.smartRules))
+        XCTAssertTrue(legacy.contains(.albumShuffle))
+    }
+
+    func testLegacyVisibleToolsIgnorePhotosPermissionRequirements() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .denied),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let contextAware = EditorToolRegistry.visibleTools(for: ctx)
+        let legacy = EditorToolRegistry.legacyVisibleTools(for: ctx)
+
+        XCTAssertFalse(contextAware.contains(.albumShuffle))
+        XCTAssertTrue(legacy.contains(.albumShuffle))
+    }
+
+    // MARK: - Teardown
+
+    func testTeardownActionsFireWhenRequiredToolDisappearsForAlbumPickerFocus() {
+        let actions = editorToolTeardownActions(
+            old: [.albumShuffle, .style],
+            new: [.style],
+            currentFocus: .albumContainer(id: "smartPhotoAlbumPicker", subtype: .smart)
+        )
+
+        XCTAssertEqual(
+            Set(actions),
+            Set([.dismissAlbumShufflePicker, .resetEditorFocusToWidgetDefault])
+        )
+    }
+
+    func testTeardownActionsResetClockFocusIfWidgetsToolDisappears() {
+        let actions = editorToolTeardownActions(
+            old: [.widgets, .layout, .style],
+            new: [.layout, .style],
+            currentFocus: .clock
+        )
+
+        XCTAssertEqual(
+            Set(actions),
+            Set([.resetEditorFocusToWidgetDefault])
+        )
     }
 }

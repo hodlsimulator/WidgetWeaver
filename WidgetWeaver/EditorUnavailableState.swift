@@ -44,6 +44,47 @@ struct EditorUnavailableState: Hashable, Sendable {
     var message: String
     var cta: EditorUnavailableCTA?
 
+    // MARK: - Editor-level selection / context messaging
+
+    static func multiSelectionToolListReduced() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Multiple items selected. Most tools apply to a single item, so the tool list is reduced. Select one item to see more tools.",
+            cta: nil
+        )
+    }
+
+    static func noToolsAvailableForSelection() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "No tools are available for this selection. Select a single item, or clear selection to return to widget editing.",
+            cta: nil
+        )
+    }
+
+    // MARK: - Missing data / setup guidance
+
+    static func imageRequiredForSmartPhoto() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Choose a photo in Image first to enable Smart Photo.",
+            cta: nil
+        )
+    }
+
+    static func imageRequiredForAlbumShuffle() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Choose a photo in Image first. Then make Smart Photo renders in Smart Photo to enable Album Shuffle.",
+            cta: nil
+        )
+    }
+
+    static func smartPhotoRequiredForAlbumShuffle() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Album Shuffle requires Smart Photo. In Smart Photo, tap ‘Make Smart Photo (per-size renders)’.",
+            cta: nil
+        )
+    }
+
+    // MARK: - Permissions (Photos)
+
     static func photosAccessRequiredForAlbumShuffle(
         photoAccess: EditorPhotoLibraryAccess
     ) -> EditorUnavailableState? {

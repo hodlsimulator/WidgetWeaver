@@ -188,7 +188,6 @@
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				EditorToolingTests.swift,
 				Info.plist,
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
@@ -207,13 +206,6 @@
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
 		};
-		E1A9B41A2F0F31900096765D /* Exceptions for "WidgetWeaver" folder in "WidgetWeaverTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				EditorToolingTests.swift,
-			);
-			target = E1A9B40F2F0F31720096765D /* WidgetWeaverTests */;
-		};
 		E1E878352F082A5700C9AA14 /* Exceptions for "NoiseMachine" folder in "WidgetWeaverWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -228,7 +220,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */,
-				E1A9B41A2F0F31900096765D /* Exceptions for "WidgetWeaver" folder in "WidgetWeaverTests" target */,
 			);
 			path = WidgetWeaver;
 			sourceTree = "<group>";
