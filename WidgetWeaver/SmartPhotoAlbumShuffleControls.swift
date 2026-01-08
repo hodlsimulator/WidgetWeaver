@@ -46,7 +46,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         !manifestFileName.isEmpty
     }
 
-
     private var albumPickerPresentedBinding: Binding<Bool> {
         albumPickerPresented ?? $internalAlbumPickerPresented
     }
@@ -199,12 +198,54 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
     }
 
+    private struct ActionTileLabel: View {
+        let title: String
+        let systemImage: String
+
+        var body: some View {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(height: 20)
+
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .padding(.vertical, 4)
+        }
+    }
+
     private var actionRow: some View {
-        HStack(spacing: 12) {
+        Group {
+            if shuffleEnabled {
+                ViewThatFits(in: .horizontal) {
+                    actionGrid(columns: 4)
+                    actionGrid(columns: 2)
+                }
+            } else {
+                actionGrid(columns: 1)
+            }
+        }
+        .controlSize(.small)
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private func actionGrid(columns: Int) -> some View {
+        let minTileWidth: CGFloat = 120
+        let cols = Array(repeating: GridItem(.flexible(minimum: minTileWidth), spacing: 12), count: columns)
+
+        LazyVGrid(columns: cols, spacing: 12) {
             Button {
                 albumPickerPresentedBinding.wrappedValue = true
             } label: {
-                Label("Choose album…", systemImage: "rectangle.stack.badge.plus")
+                ActionTileLabel(title: "Choose\nalbum…", systemImage: "rectangle.stack.badge.plus")
             }
             .disabled(importInProgress || smartPhoto == nil)
 
@@ -212,27 +253,25 @@ struct SmartPhotoAlbumShuffleControls: View {
                 Button {
                     Task { await prepareNextBatch(alreadyBusy: false) }
                 } label: {
-                    Label("Prepare next \(batchSize)", systemImage: "gearshape.2")
+                    ActionTileLabel(title: "Prepare\nnext \(batchSize)", systemImage: "gearshape.2")
                 }
                 .disabled(importInProgress)
 
                 Button {
                     Task { await advanceToNextPrepared() }
                 } label: {
-                    Label("Next photo", systemImage: "arrow.right.circle")
+                    ActionTileLabel(title: "Next\nphoto", systemImage: "arrow.right.circle")
                 }
                 .disabled(importInProgress)
 
                 Button(role: .destructive) {
                     disableShuffle()
                 } label: {
-                    Label("Disable", systemImage: "xmark.circle")
+                    ActionTileLabel(title: "Disable", systemImage: "xmark.circle")
                 }
                 .disabled(importInProgress)
             }
         }
-        .controlSize(.small)
-        .buttonStyle(BorderlessButtonStyle())
     }
 
     private var rankingDebug: some View {
