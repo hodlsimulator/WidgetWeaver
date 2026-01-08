@@ -28,7 +28,7 @@ extension ContentView {
                 EditorUnavailableStateView(
                     state: unavailable,
                     isBusy: importInProgress,
-                    onRequestPhotosAccess: { await requestPhotosAccessForAlbumShuffle() }
+                    onPerformCTA: performEditorUnavailableCTA
                 )
             } else {
                 SmartPhotoAlbumShuffleControls(

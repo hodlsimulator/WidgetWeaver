@@ -336,7 +336,7 @@ enum EditorToolRegistry {
         }
 
         switch context.template {
-        case .classic:
+        case .classic, .hero:
             c.insert(.canEditSymbol)
             c.insert(.canEditTypography)
             c.insert(.canEditActions)
@@ -395,10 +395,10 @@ enum EditorToolRegistry {
 
         // Prioritise Smart Rules when editing them.
         if case .smartRuleEditor = context.focus {
-            if let idx = focusGated.firstIndex(of: .smartRules), idx != 0 {
+            if let idx = focusGated.firstIndex(of: EditorToolID.smartRules), idx != 0 {
                 var moved = focusGated
                 moved.remove(at: idx)
-                moved.insert(.smartRules, at: 0)
+                moved.insert(EditorToolID.smartRules, at: 0)
                 return moved
             }
         }
@@ -445,7 +445,7 @@ extension EditorFocusTarget {
 }
 
 extension EditorCapabilities {
-    static var allKnown: [EditorCapability] = [
+    static let allKnown: [EditorCapability] = [
         .canEditLayout,
         .canEditTextContent,
         .canEditSymbol,
