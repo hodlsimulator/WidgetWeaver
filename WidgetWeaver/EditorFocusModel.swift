@@ -45,9 +45,40 @@ enum EditorFocusTarget: Hashable, Sendable {
 }
 
 /// A compact snapshot of focus + selection state.
+///
+/// This acts as the editor's focus/selection source-of-truth. When a selection model
+/// can supply exact counts or coarse composition, they can be stored here so eligibility
+/// logic remains data-driven.
 struct EditorFocusSnapshot: Hashable, Sendable {
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget
 
-    static let widgetDefault = EditorFocusSnapshot(selection: .none, focus: .widget)
+    /// Exact selection count when known.
+    ///
+    /// Nil indicates that a multi-selection exists but the exact count is not available.
+    var selectionCount: Int?
+
+    /// Explicit coarse selection composition when known.
+    ///
+    /// When `.unknown`, selection modelling falls back to conservative heuristics.
+    var selectionComposition: EditorSelectionComposition
+
+    init(
+        selection: EditorSelectionKind,
+        focus: EditorFocusTarget,
+        selectionCount: Int? = nil,
+        selectionComposition: EditorSelectionComposition = .unknown
+    ) {
+        self.selection = selection
+        self.focus = focus
+        self.selectionCount = selectionCount
+        self.selectionComposition = selectionComposition
+    }
+
+    static let widgetDefault = EditorFocusSnapshot(
+        selection: .none,
+        focus: .widget,
+        selectionCount: 0,
+        selectionComposition: .none
+    )
 }

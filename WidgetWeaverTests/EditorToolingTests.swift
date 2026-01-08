@@ -97,6 +97,34 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(descriptor.albumSpecificity, .mixed)
     }
 
+    func testSelectionDescriptorUsesExplicitCompositionAndCountWhenProvided() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 4,
+            composition: .known([.albumContainer])
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 4)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .albumContainer)
+    }
+
+    func testSelectionDescriptorExplicitMixedCompositionWinsOverWidgetHeuristic() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 4,
+            composition: .known([.albumContainer, .nonAlbum])
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 4)
+        XCTAssertEqual(descriptor.homogeneity, .mixed)
+        XCTAssertEqual(descriptor.albumSpecificity, .mixed)
+    }
+
     func testSelectionDescriptorAlbumContainerFocusIsAlbumSpecific() {
         let descriptor = EditorSelectionDescriptor.describe(
             selection: .none,
@@ -159,6 +187,39 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(tools.contains(.actions))
     }
 
+    func testToolOrderRemainsStableAcrossSmartPhotoFocusSwitches() {
+        let cropCtx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .element(id: "smartPhotoCrop"),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let rulesCtx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .smartRuleEditor(albumID: "album"),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let cropTools = EditorToolRegistry.visibleTools(for: cropCtx)
+            .filter { $0 != .smartRules }
+        let rulesTools = EditorToolRegistry.visibleTools(for: rulesCtx)
+            .filter { $0 != .smartRules }
+
+        assertRelativeOrderStable(cropTools, rulesTools)
+    }
+
     func testVisibleToolsClockFocusDoesNotSurfaceSmartPhotoTools() {
         let ctx = EditorToolContext(
             template: .classic,
@@ -184,6 +245,37 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(tools.contains(.albumShuffle))
 
         XCTAssertFalse(tools.contains(.actions))
+    }
+
+    func testToolOrderRemainsStableBetweenWidgetAndClockFocus() {
+        let widgetCtx = EditorToolContext(
+            template: .hero,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: true,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let clockCtx = EditorToolContext(
+            template: .hero,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .clock,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: true,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let widgetTools = EditorToolRegistry.visibleTools(for: widgetCtx)
+        let clockTools = EditorToolRegistry.visibleTools(for: clockCtx)
+
+        assertRelativeOrderStable(widgetTools, clockTools)
     }
 
     func testMultiSelectionIntersectionShrinksToolList() {
@@ -287,5 +379,16 @@ final class EditorToolingTests: XCTestCase {
             Set(actions),
             Set([.resetEditorFocusToWidgetDefault])
         )
+    }
+
+    private func assertRelativeOrderStable(
+        _ a: [EditorToolID],
+        _ b: [EditorToolID],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let common = a.filter { b.contains($0) }
+        let commonInB = b.filter { common.contains($0) }
+        XCTAssertEqual(common, commonInB, file: file, line: line)
     }
 }

@@ -60,13 +60,14 @@ func editorToolIDsApplyingFocusGate(
         let allowlist: [EditorToolID] = [
             .albumShuffle,
             .smartPhotoCrop,
-            .smartRules,
             .smartPhoto,
             .image,
+            .smartRules,
             .style,
         ]
 
-        let filtered = eligible.filter { allowlist.contains($0) }
+        // Preserve curated ordering rather than recomputing from global tool order.
+        let filtered = allowlist.filter { eligible.contains($0) }
 
         // Safety: avoid showing an empty tool list if IDs drift.
         if filtered.isEmpty {
@@ -108,7 +109,8 @@ func editorToolIDsApplyingFocusGate(
             .pro,
         ]
 
-        let filtered = eligible.filter { allowlist.contains($0) }
+        // Preserve curated ordering rather than recomputing from global tool order.
+        let filtered = allowlist.filter { eligible.contains($0) }
 
         // Safety: avoid showing an empty tool list if IDs drift.
         if filtered.isEmpty {

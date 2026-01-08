@@ -7,24 +7,19 @@
 
 import Foundation
 
-// MARK: - Selection descriptor
-
-/// Whether the current selection is homogeneous (all targets are the same content kind) or mixed.
-///
-/// Mixed selection is represented explicitly so tool filtering stays deterministic even when the
-/// editor cannot safely assume a single target type.
 enum EditorSelectionHomogeneity: String, CaseIterable, Hashable, Sendable {
     case homogeneous
     case mixed
 }
 
-/// Album specificity for the current selection.
+/// Coarse selection specificity for album-related operations.
 ///
-/// This provides a stable vocabulary for tools that must distinguish between:
-/// - album container editing
-/// - album photo-item editing
-/// - non-album editing
-/// - mixed/ambiguous selection
+/// This is intentionally small: tools only need to distinguish between
+/// operations that apply to:
+/// - non-album content
+/// - an album container (album-level operations)
+/// - album photo items (per-photo operations)
+/// - a mixed selection that crosses these boundaries
 enum EditorAlbumSelectionSpecificity: String, CaseIterable, Hashable, Sendable {
     case nonAlbum
     case albumContainer
@@ -32,95 +27,176 @@ enum EditorAlbumSelectionSpecificity: String, CaseIterable, Hashable, Sendable {
     case mixed
 }
 
-/// A compact, deterministic description of the current selection derived from `selection` + `focus`.
+/// Broad categories used to describe what is currently selected.
 ///
-/// This exists to make selection modelling explicit (including mixed selection) without requiring
-/// scattered conditional UI logic.
-struct EditorSelectionDescriptor: Hashable, Sendable {
-    /// Cardinality of the current selection.
+/// This intentionally ignores fine-grained element types (text vs image vs symbol).
+/// The purpose is to keep album-related tools from surfacing in non-album contexts
+/// and to model mixed selections explicitly.
+enum EditorSelectionCategory: String, CaseIterable, Hashable, Sendable {
+    case nonAlbum
+    case albumContainer
+    case albumPhotoItem
+}
+
+/// Composition of the current selection.
+///
+/// The selection model can explicitly supply this when the selection is known
+/// (e.g. multi-selection in a list). When unknown, eligibility falls back to
+/// conservative heuristics based on focus.
+enum EditorSelectionComposition: Hashable, Sendable {
+    /// No explicit composition information is available.
+    case unknown
+
+    /// Composition is known at least at the coarse category level.
+    case known(Set<EditorSelectionCategory>)
+
+    static var none: EditorSelectionComposition { .known([]) }
+}
+
+extension EditorFocusTarget {
+    /// Coarse selection category implied by the focus target.
     ///
-    /// Note: this may be upgraded from `.none` to `.single` when a concrete focus target exists.
+    /// This should only be used as a fallback when an explicit selection model
+    /// is unavailable.
+    var impliedSelectionCategory: EditorSelectionCategory? {
+        switch self {
+        case .widget:
+            return nil
+        case .clock:
+            return .nonAlbum
+        case .element:
+            return .nonAlbum
+        case .albumContainer:
+            return .albumContainer
+        case .albumPhoto:
+            return .albumPhotoItem
+        case .smartRuleEditor:
+            return .albumContainer
+        }
+    }
+}
+
+struct EditorSelectionDescriptor: Hashable, Sendable {
+    /// The selection kind, based on the resolved selection count.
     var kind: EditorSelectionKind
 
-    /// A deterministic minimum count for the current selection.
+    /// Exact selection count when known.
     ///
-    /// The editor does not currently store exact multi-selection counts, so `.multi` is treated as 2.
+    /// When no count is supplied for a multi-selection, this falls back to a
+    /// conservative default of `2` to ensure “multi” logic is exercised.
     var count: Int
 
-    /// Whether the selection is mixed or homogeneous.
     var homogeneity: EditorSelectionHomogeneity
-
-    /// Album specificity for the selection.
     var albumSpecificity: EditorAlbumSelectionSpecificity
 
-    static func describe(selection: EditorSelectionKind, focus: EditorFocusTarget) -> EditorSelectionDescriptor {
-        // 1) Determine cardinality.
-        //
-        // Policy:
-        // - If a concrete focus target exists (element/album/clock/smartRuleEditor) and selection is `.none`,
-        //   treat it as a single-target selection. Focus is considered the stronger signal.
-        // - Otherwise, use selection as-is.
-        let derivedKind: EditorSelectionKind = {
+    static func describe(
+        selection: EditorSelectionKind,
+        focus: EditorFocusTarget,
+        selectionCount: Int? = nil,
+        composition: EditorSelectionComposition = .unknown
+    ) -> EditorSelectionDescriptor {
+        // MARK: Resolve kind + count
+
+        let resolvedCount: Int = {
+            if let selectionCount {
+                return max(0, selectionCount)
+            }
+
             switch selection {
             case .none:
-                switch focus {
-                case .widget:
-                    return .none
-                case .clock, .element, .albumContainer, .albumPhoto, .smartRuleEditor:
-                    return .single
-                }
-            case .single:
-                return .single
-            case .multi:
-                return .multi
-            }
-        }()
-
-        let derivedCount: Int = {
-            switch derivedKind {
-            case .none:
-                return 0
+                return focus == .widget ? 0 : 1
             case .single:
                 return 1
             case .multi:
-                // The editor does not yet store exact multi-selection counts.
+                // Conservative default when no exact multi count is available.
                 return 2
             }
         }()
 
-        // 2) Determine homogeneity.
-        //
-        // Contract:
-        // - When selection is `.multi` and focus is `.widget`, the selection is considered mixed/ambiguous.
-        // - When selection is `.multi` and a concrete focus target exists, treat as homogeneous for now.
-        //   This assumes future multi-selection UX will clear focus to `.widget` when the selection spans
-        //   multiple content kinds.
-        let derivedHomogeneity: EditorSelectionHomogeneity = {
-            guard derivedKind == .multi else { return .homogeneous }
-            if case .widget = focus { return .mixed }
-            return .homogeneous
+        let resolvedKind: EditorSelectionKind = {
+            if selectionCount != nil {
+                switch resolvedCount {
+                case 0:
+                    return .none
+                case 1:
+                    return .single
+                default:
+                    return .multi
+                }
+            }
+
+            // Focus is treated as a stronger signal than “none selection”.
+            if selection == .none, focus != .widget {
+                return .single
+            }
+
+            return selection
         }()
 
-        // 3) Determine album specificity.
-        let derivedAlbumSpecificity: EditorAlbumSelectionSpecificity = {
-            if derivedHomogeneity == .mixed { return .mixed }
+        // MARK: Resolve composition
 
-            switch focus {
-            case .albumContainer:
-                return .albumContainer
-            case .albumPhoto:
-                return .albumPhotoItem
-            case .smartRuleEditor:
-                // Rules are a container-level album edit.
-                return .albumContainer
-            case .widget, .clock, .element:
-                return .nonAlbum
+        let resolvedComposition: EditorSelectionComposition = {
+            if composition != .unknown {
+                return composition
+            }
+
+            switch resolvedKind {
+            case .none:
+                return .none
+
+            case .single:
+                if let category = focus.impliedSelectionCategory {
+                    return .known([category])
+                }
+                return .unknown
+
+            case .multi:
+                return .unknown
             }
         }()
 
+        // MARK: Resolve homogeneity + album specificity
+
+        let derivedHomogeneity: EditorSelectionHomogeneity
+        let derivedAlbumSpecificity: EditorAlbumSelectionSpecificity
+
+        switch resolvedComposition {
+        case .known(let categories):
+            if categories.count > 1 {
+                derivedHomogeneity = .mixed
+                derivedAlbumSpecificity = .mixed
+            } else {
+                derivedHomogeneity = .homogeneous
+
+                if categories.contains(.albumContainer) {
+                    derivedAlbumSpecificity = .albumContainer
+                } else if categories.contains(.albumPhotoItem) {
+                    derivedAlbumSpecificity = .albumPhotoItem
+                } else {
+                    // Empty or non-album-only selection composition.
+                    derivedAlbumSpecificity = .nonAlbum
+                }
+            }
+
+        case .unknown:
+            // Conservative heuristics when composition is unknown.
+            derivedHomogeneity = (resolvedKind == .multi && focus == .widget) ? .mixed : .homogeneous
+
+            switch focus {
+            case .albumContainer, .smartRuleEditor:
+                derivedAlbumSpecificity = .albumContainer
+            case .albumPhoto:
+                derivedAlbumSpecificity = .albumPhotoItem
+            case .widget:
+                derivedAlbumSpecificity = (resolvedKind == .multi) ? .mixed : .nonAlbum
+            case .element, .clock:
+                derivedAlbumSpecificity = .nonAlbum
+            }
+        }
+
         return EditorSelectionDescriptor(
-            kind: derivedKind,
-            count: derivedCount,
+            kind: resolvedKind,
+            count: resolvedCount,
             homogeneity: derivedHomogeneity,
             albumSpecificity: derivedAlbumSpecificity
         )

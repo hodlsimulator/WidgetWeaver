@@ -9,10 +9,13 @@ import SwiftUI
 
 extension ContentView {
     func sectionHeader(_ title: String) -> some View {
-        Text(title)
+        let headerID = "EditorSectionHeader." + title.replacingOccurrences(of: " ", with: "_")
+
+        return Text(title)
             .font(.caption)
             .foregroundStyle(.secondary)
             .textCase(.uppercase)
+            .accessibilityIdentifier(headerID)
     }
 
     // MARK: - New: Content (template + data sources)

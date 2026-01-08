@@ -5,6 +5,7 @@
 //  Created by . . on 12/18/25.
 //
 
+import Foundation
 import SwiftUI
 import WidgetKit
 
@@ -66,6 +67,11 @@ extension ContentView {
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .animation(.easeInOut(duration: 0.15), value: editorVisibleToolIDs)
+#if DEBUG
+        .overlay(alignment: .topTrailing) {
+            editorUITestHooksOverlay
+        }
+#endif
     }
 
     @ViewBuilder
@@ -137,4 +143,65 @@ extension ContentView {
             presentation: presentation
         )
     }
+
+#if DEBUG
+    private var uiTestHooksEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "widgetweaver.uiTestHooks.enabled")
+    }
+
+    @ViewBuilder
+    private var editorUITestHooksOverlay: some View {
+        if uiTestHooksEnabled {
+            VStack(alignment: .trailing, spacing: 8) {
+                Button("UI Test: Template Poster") {
+                    var draft = currentFamilyDraft()
+                    draft.template = .poster
+                    setCurrentFamilyDraft(draft)
+                }
+                .accessibilityIdentifier("EditorUITestHook.templatePoster")
+
+                Button("UI Test: Focus Widget") {
+                    editorFocusSnapshot = .widgetDefault
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusWidget")
+
+                Button("UI Test: Focus Smart Photo Crop") {
+                    editorFocusSnapshot = EditorFocusSnapshot(
+                        selection: .single,
+                        focus: .element(id: "smartPhotoCrop"),
+                        selectionCount: 1,
+                        selectionComposition: .known([.nonAlbum])
+                    )
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusSmartPhotoCrop")
+
+                Button("UI Test: Focus Smart Rules") {
+                    editorFocusSnapshot = EditorFocusSnapshot(
+                        selection: .none,
+                        focus: .smartRuleEditor(albumID: "uiTest.smartPhotoRules"),
+                        selectionCount: 1,
+                        selectionComposition: .known([.albumContainer])
+                    )
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusSmartRules")
+
+                Button("UI Test: Focus Clock") {
+                    editorFocusSnapshot = EditorFocusSnapshot(
+                        selection: .single,
+                        focus: .clock,
+                        selectionCount: 1,
+                        selectionComposition: .known([.nonAlbum])
+                    )
+                }
+                .accessibilityIdentifier("EditorUITestHook.focusClock")
+            }
+            .font(.caption2)
+            .padding(8)
+            .opacity(0.02)
+            .accessibilityElement(children: .contain)
+            .padding(.top, 6)
+            .padding(.trailing, 6)
+        }
+    }
+#endif
 }

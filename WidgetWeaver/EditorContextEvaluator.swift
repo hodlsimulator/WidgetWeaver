@@ -24,6 +24,40 @@ enum EditorContextEvaluator {
         focus: EditorFocusSnapshot,
         photoLibraryAccess: EditorPhotoLibraryAccess
     ) -> EditorToolContext {
+        let selectionCountHint: Int? = {
+            if let explicit = focus.selectionCount {
+                return explicit
+            }
+
+            switch focus.selection {
+            case .none:
+                return focus.focus == .widget ? 0 : 1
+            case .single:
+                return 1
+            case .multi:
+                return nil
+            }
+        }()
+
+        let selectionCompositionHint: EditorSelectionComposition = {
+            if focus.selectionComposition != .unknown {
+                return focus.selectionComposition
+            }
+
+            switch selectionCountHint {
+            case .some(0):
+                return .none
+            case .some(1):
+                // Coarse typing for single selection when focus provides enough information.
+                if let category = focus.focus.impliedSelectionCategory {
+                    return .known([category])
+                }
+                return .unknown
+            default:
+                return .unknown
+            }
+        }()
+
         let symbolConfigured = !draft.symbolName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty
@@ -40,6 +74,8 @@ enum EditorContextEvaluator {
             matchedSetEnabled: matchedSetEnabled,
             selection: focus.selection,
             focus: focus.focus,
+            selectionCount: selectionCountHint,
+            selectionComposition: selectionCompositionHint,
             photoLibraryAccess: photoLibraryAccess,
             hasSymbolConfigured: symbolConfigured,
             hasImageConfigured: imageConfigured,

@@ -17,6 +17,17 @@ struct EditorToolContext: Hashable, Sendable {
     var selection: EditorSelectionKind
     var focus: EditorFocusTarget
 
+    /// Exact selection count when known.
+    ///
+    /// Nil means the selection is known to be multi-select but an exact count
+    /// is unavailable.
+    var selectionCount: Int?
+
+    /// Coarse selection composition when known.
+    ///
+    /// When `.unknown`, selection modelling falls back to conservative heuristics.
+    var selectionComposition: EditorSelectionComposition
+
     var photoLibraryAccess: EditorPhotoLibraryAccess
 
     var hasSymbolConfigured: Bool
@@ -29,6 +40,8 @@ struct EditorToolContext: Hashable, Sendable {
         matchedSetEnabled: Bool,
         selection: EditorSelectionKind,
         focus: EditorFocusTarget,
+        selectionCount: Int? = nil,
+        selectionComposition: EditorSelectionComposition = .unknown,
         photoLibraryAccess: EditorPhotoLibraryAccess,
         hasSymbolConfigured: Bool,
         hasImageConfigured: Bool,
@@ -39,6 +52,8 @@ struct EditorToolContext: Hashable, Sendable {
         self.matchedSetEnabled = matchedSetEnabled
         self.selection = selection
         self.focus = focus
+        self.selectionCount = selectionCount
+        self.selectionComposition = selectionComposition
         self.photoLibraryAccess = photoLibraryAccess
         self.hasSymbolConfigured = hasSymbolConfigured
         self.hasImageConfigured = hasImageConfigured
@@ -139,7 +154,9 @@ struct EditorToolDefinition: Hashable, Sendable {
 
         let selectionDescriptor = EditorSelectionDescriptor.describe(
             selection: context.selection,
-            focus: context.focus
+            focus: context.focus,
+            selectionCount: context.selectionCount,
+            composition: context.selectionComposition
         )
 
         let eligibilityResult = EditorToolEligibilityEvaluator.isEligible(
