@@ -70,6 +70,7 @@ extension ContentView {
                 editorSection(for: toolID)
             }
         }
+        .accessibilityIdentifier("Editor.Form")
         .font(.subheadline)
         .controlSize(.small)
         .environment(\.defaultMinListRowHeight, 36)

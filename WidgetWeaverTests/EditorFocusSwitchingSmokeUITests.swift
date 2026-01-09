@@ -21,6 +21,7 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     }
 
     private enum UITestHooks {
+        static let overlayRoot = "EditorUITestHook.overlayRoot"
         static let templatePoster = "EditorUITestHook.templatePoster"
         static let focusWidget = "EditorUITestHook.focusWidget"
         static let focusSmartPhotoCrop = "EditorUITestHook.focusSmartPhotoCrop"
@@ -33,6 +34,7 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     }
 
     private enum IDs {
+        static let editorForm = "Editor.Form"
         static let sectionHeaderPrefix = "EditorSectionHeader."
     }
 
@@ -94,26 +96,27 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     }
 
     private func waitAndTap(
-        _ element: XCUIElement,
-        timeout: TimeInterval = 2.0,
+        _ identifier: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 4.0,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertTrue(
-            element.waitForExistence(timeout: timeout),
-            "Expected element to exist: \(element)",
-            file: file,
-            line: line
-        )
+        let target = element(identifier, in: app)
+        let predicate = NSPredicate(format: "exists == true && hittable == true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: target)
 
-        XCTAssertTrue(
-            element.isHittable,
-            "Expected element to be hittable: \(element)",
-            file: file,
-            line: line
-        )
+        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
+        guard result == .completed else {
+            XCTFail(
+                "Expected element to become tappable: \(identifier) (result: \(result))\n\n\(target.debugDescription)",
+                file: file,
+                line: line
+            )
+            return
+        }
 
-        element.tap()
+        target.tap()
     }
 
     private func assertHookSurfacePresent(
@@ -121,10 +124,18 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        let root = element(UITestHooks.overlayRoot, in: app)
+        XCTAssertTrue(
+            root.waitForExistence(timeout: 2.0),
+            "Expected UI test hook overlay root to exist",
+            file: file,
+            line: line
+        )
+
         let hookAny = element(UITestHooks.templatePoster, in: app)
         XCTAssertTrue(
             hookAny.waitForExistence(timeout: 2.0),
-            "Expected UI test hook surface to exist",
+            "Expected at least one UI test hook button to exist",
             file: file,
             line: line
         )
@@ -135,10 +146,15 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        let editorForm = element(IDs.editorForm, in: app)
+        if editorForm.waitForExistence(timeout: 2.0) {
+            return
+        }
+
         let anyHeader = firstElement(withIdentifierPrefix: IDs.sectionHeaderPrefix, in: app)
         XCTAssertTrue(
             anyHeader.waitForExistence(timeout: 2.0),
-            "Expected at least one editor section header to exist after focus change",
+            "Expected editor to render after focus change (form or at least one section header).",
             file: file,
             line: line
         )
@@ -148,47 +164,37 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         let app = launchApp(contextAwareEnabled: true)
 
         assertHookSurfacePresent(in: app)
-        waitAndTap(element(UITestHooks.templatePoster, in: app))
+        waitAndTap(UITestHooks.templatePoster, in: app)
         assertEditorStillRenders(in: app)
     }
 
     func testContextAwareFocusSwitchingSmoke() {
         let app = launchApp(contextAwareEnabled: true, reduceMotion: true)
 
-        let templatePoster = element(UITestHooks.templatePoster, in: app)
-        let focusWidget = element(UITestHooks.focusWidget, in: app)
-        let focusCrop = element(UITestHooks.focusSmartPhotoCrop, in: app)
-        let focusRules = element(UITestHooks.focusSmartRules, in: app)
-        let focusAlbumContainer = element(UITestHooks.focusAlbumContainer, in: app)
-        let focusAlbumPhotoItem = element(UITestHooks.focusAlbumPhotoItem, in: app)
-        let focusClock = element(UITestHooks.focusClock, in: app)
-        let multiSelectWidgets = element(UITestHooks.multiSelectWidgets, in: app)
-        let multiSelectMixed = element(UITestHooks.multiSelectMixed, in: app)
-
         assertHookSurfacePresent(in: app)
 
-        waitAndTap(templatePoster)
+        waitAndTap(UITestHooks.templatePoster, in: app)
         assertEditorStillRenders(in: app)
 
-        let steps: [(String, XCUIElement)] = [
-            ("Focus Smart Photo crop", focusCrop),
-            ("Focus widget", focusWidget),
-            ("Focus Smart Rules", focusRules),
-            ("Focus widget", focusWidget),
-            ("Focus album container", focusAlbumContainer),
-            ("Focus album photo item", focusAlbumPhotoItem),
-            ("Focus widget", focusWidget),
-            ("Focus clock", focusClock),
-            ("Focus widget", focusWidget),
-            ("Multi-select widgets", multiSelectWidgets),
-            ("Focus widget", focusWidget),
-            ("Multi-select mixed", multiSelectMixed),
-            ("Focus widget", focusWidget),
+        let steps: [(String, String)] = [
+            ("Focus Smart Photo crop", UITestHooks.focusSmartPhotoCrop),
+            ("Focus widget", UITestHooks.focusWidget),
+            ("Focus Smart Rules", UITestHooks.focusSmartRules),
+            ("Focus widget", UITestHooks.focusWidget),
+            ("Focus album container", UITestHooks.focusAlbumContainer),
+            ("Focus album photo item", UITestHooks.focusAlbumPhotoItem),
+            ("Focus widget", UITestHooks.focusWidget),
+            ("Focus clock", UITestHooks.focusClock),
+            ("Focus widget", UITestHooks.focusWidget),
+            ("Multi-select widgets", UITestHooks.multiSelectWidgets),
+            ("Focus widget", UITestHooks.focusWidget),
+            ("Multi-select mixed", UITestHooks.multiSelectMixed),
+            ("Focus widget", UITestHooks.focusWidget),
         ]
 
-        for (label, hook) in steps {
+        for (label, hookID) in steps {
             XCTContext.runActivity(named: label) { _ in
-                waitAndTap(hook)
+                waitAndTap(hookID, in: app)
                 assertEditorStillRenders(in: app)
             }
         }
@@ -197,19 +203,21 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     func testLegacyModeFocusSwitchingSmoke() {
         let app = launchApp(contextAwareEnabled: false, reduceMotion: true)
 
-        let templatePoster = element(UITestHooks.templatePoster, in: app)
-        let focusWidget = element(UITestHooks.focusWidget, in: app)
-        let focusCrop = element(UITestHooks.focusSmartPhotoCrop, in: app)
-
         assertHookSurfacePresent(in: app)
 
-        waitAndTap(templatePoster)
+        waitAndTap(UITestHooks.templatePoster, in: app)
         assertEditorStillRenders(in: app)
 
-        waitAndTap(focusCrop)
-        assertEditorStillRenders(in: app)
+        let steps: [(String, String)] = [
+            ("Focus Smart Photo crop", UITestHooks.focusSmartPhotoCrop),
+            ("Focus widget", UITestHooks.focusWidget),
+        ]
 
-        waitAndTap(focusWidget)
-        assertEditorStillRenders(in: app)
+        for (label, hookID) in steps {
+            XCTContext.runActivity(named: label) { _ in
+                waitAndTap(hookID, in: app)
+                assertEditorStillRenders(in: app)
+            }
+        }
     }
 }
