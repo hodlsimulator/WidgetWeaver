@@ -32,17 +32,28 @@ struct EditorDefaultContextProvider: EditorContextProviding {
         focusSnapshot: EditorFocusSnapshot,
         photoLibraryAccess: EditorPhotoLibraryAccess
     ) -> EditorToolContext {
+#if DEBUG
+        let (normalisedFocus, normalisationDiagnostics) = EditorFocusSnapshotNormaliser.normaliseWithDiagnostics(focusSnapshot)
+#else
         let normalisedFocus = EditorFocusSnapshotNormaliser.normalise(focusSnapshot)
+#endif
 
         let context = EditorContextEvaluator.evaluate(
             draft: draft,
             isProUnlocked: isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
-            focus: normalisedFocus,
+            originFocus: focusSnapshot,
+            fallbackFocus: normalisedFocus,
             photoLibraryAccess: photoLibraryAccess
         )
 
 #if DEBUG
+        EditorFocusSnapshotNormaliserDiagnostics.maybeLogOriginBackedInference(
+            originSnapshot: focusSnapshot,
+            normalisedSnapshot: normalisedFocus,
+            diagnostics: normalisationDiagnostics
+        )
+
         EditorContextProviderDiagnostics.maybeLogUnknownSelectionComposition(
             context: context,
             focusSnapshot: normalisedFocus
@@ -60,12 +71,45 @@ struct EditorDefaultContextProvider: EditorContextProviding {
 /// - ensure `.none` selections are treated as `.single` when a non-widget focus target exists
 /// - reduce `.unknown` selection composition for single selection states where the focus implies it
 enum EditorFocusSnapshotNormaliser {
+    struct Diagnostics: Hashable, Sendable {
+        var didClampSelectionCount: Bool
+        var didInferSelectionCount: Bool
+        var didAdjustSelectionKindToMatchCount: Bool
+        var didInferSelectionComposition: Bool
+
+        init(
+            didClampSelectionCount: Bool = false,
+            didInferSelectionCount: Bool = false,
+            didAdjustSelectionKindToMatchCount: Bool = false,
+            didInferSelectionComposition: Bool = false
+        ) {
+            self.didClampSelectionCount = didClampSelectionCount
+            self.didInferSelectionCount = didInferSelectionCount
+            self.didAdjustSelectionKindToMatchCount = didAdjustSelectionKindToMatchCount
+            self.didInferSelectionComposition = didInferSelectionComposition
+        }
+
+        var didInferAnySelectionMetadata: Bool {
+            didInferSelectionCount || didInferSelectionComposition
+        }
+    }
+
     static func normalise(_ snapshot: EditorFocusSnapshot) -> EditorFocusSnapshot {
+        normaliseWithDiagnostics(snapshot).snapshot
+    }
+
+    static func normaliseWithDiagnostics(_ snapshot: EditorFocusSnapshot) -> (snapshot: EditorFocusSnapshot, diagnostics: Diagnostics) {
+        let original = snapshot
         var s = snapshot
+        var d = Diagnostics()
 
         // Clamp explicit counts.
         if let count = s.selectionCount {
-            s.selectionCount = max(0, count)
+            let clamped = max(0, count)
+            if clamped != count {
+                d.didClampSelectionCount = true
+            }
+            s.selectionCount = clamped
         }
 
         // Derive missing count hints for stable states.
@@ -79,16 +123,26 @@ enum EditorFocusSnapshotNormaliser {
                 // Multi-selection exists, count is unknown.
                 s.selectionCount = nil
             }
+
+            if original.selectionCount == nil, s.selectionCount != nil {
+                d.didInferSelectionCount = true
+            }
         }
 
         // Ensure selection kind and count agree when the count is known.
         if let count = s.selectionCount {
+            let before = s.selection
+
             if count <= 0 {
                 s.selection = .none
             } else if count == 1 {
                 s.selection = .single
             } else {
                 s.selection = .multi
+            }
+
+            if before != s.selection {
+                d.didAdjustSelectionKindToMatchCount = true
             }
         } else {
             // Focus is treated as a stronger signal than an empty selection.
@@ -108,13 +162,67 @@ enum EditorFocusSnapshotNormaliser {
             } else if s.selection == .single, let category = s.focus.impliedSelectionCategory {
                 s.selectionComposition = .known([category])
             }
+
+            if original.selectionComposition == .unknown, s.selectionComposition != .unknown {
+                d.didInferSelectionComposition = true
+            }
         }
 
-        return s
+        return (s, d)
     }
 }
 
 #if DEBUG
+private enum EditorFocusSnapshotNormaliserDiagnostics {
+    static func maybeLogOriginBackedInference(
+        originSnapshot: EditorFocusSnapshot,
+        normalisedSnapshot: EditorFocusSnapshot,
+        diagnostics: EditorFocusSnapshotNormaliser.Diagnostics
+    ) {
+        guard FeatureFlags.contextAwareEditorToolSuiteEnabled else { return }
+        guard diagnostics.didInferAnySelectionMetadata else { return }
+        guard expectsOriginBackedSelectionMetadata(for: originSnapshot.focus) else { return }
+
+        print(
+            """
+            ⚠️ [EditorFocusSnapshotNormaliser] inferred selection metadata for a focus that should be origin-backed.
+            focus=\(originSnapshot.focus.debugLabel)
+            inferredCount=\(diagnostics.didInferSelectionCount) inferredComposition=\(diagnostics.didInferSelectionComposition)
+            origin.selection=\(originSnapshot.selection.rawValue) origin.count=\(originSnapshot.selectionCount.map(String.init) ?? "nil") origin.composition=\(debugLabel(for: originSnapshot.selectionComposition))
+            normalised.selection=\(normalisedSnapshot.selection.rawValue) normalised.count=\(normalisedSnapshot.selectionCount.map(String.init) ?? "nil") normalised.composition=\(debugLabel(for: normalisedSnapshot.selectionComposition))
+            """
+        )
+    }
+
+    private static func expectsOriginBackedSelectionMetadata(for focus: EditorFocusTarget) -> Bool {
+        switch focus {
+        case .smartRuleEditor:
+            return true
+        case .albumContainer(_, let subtype) where subtype == .smart:
+            return true
+        case .albumPhoto(_, _, let subtype) where subtype == .smart:
+            return true
+        case .element(let id) where id.hasPrefix("smartPhoto"):
+            return true
+        case .clock:
+            return true
+        case .widget, .element, .albumContainer, .albumPhoto:
+            return false
+        }
+    }
+
+    private static func debugLabel(for composition: EditorSelectionComposition) -> String {
+        switch composition {
+        case .unknown:
+            return "unknown"
+        case .known(let categories):
+            if categories.isEmpty { return "none" }
+            let parts = categories.map(\.rawValue).sorted().joined(separator: ",")
+            return "known(\(parts))"
+        }
+    }
+}
+
 enum EditorContextProviderDiagnostics {
     static func maybeLogUnknownSelectionComposition(
         context: EditorToolContext,

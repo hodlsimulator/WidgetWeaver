@@ -180,9 +180,9 @@ enum EditorToolRegistry {
     /// Canonical tool manifest.
     static let tools: [EditorToolDefinition] = [
         // Workflow.
-        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
-        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
-        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)),
+        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
+        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
+        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
 
         // Core editing.
         EditorToolDefinition(
@@ -192,7 +192,7 @@ enum EditorToolRegistry {
             eligibility: .multiSafe(
                 focus: .any,
                 selection: .any,
-                selectionDescriptor: .allowsAnyIncludingMixedSelection
+                selectionDescriptor: .mixedAllowed
             )
         ),
         EditorToolDefinition(
@@ -201,7 +201,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditTextContent],
             eligibility: .singleTarget(
                 focus: .any,
-                selectionDescriptor: .any
+                selectionDescriptor: .mixedDisallowed
             )
         ),
         EditorToolDefinition(
@@ -210,7 +210,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSymbol],
             eligibility: .singleTarget(
                 focus: .any,
-                selectionDescriptor: .any
+                selectionDescriptor: .mixedDisallowed
             )
         ),
         EditorToolDefinition(
@@ -219,7 +219,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditImage],
             eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
-                selectionDescriptor: .any
+                selectionDescriptor: .mixedDisallowed
             )
         ),
 
@@ -230,7 +230,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSmartPhoto],
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
+                selectionDescriptor: .mixedDisallowed
             )
         ),
         EditorToolDefinition(
@@ -239,7 +239,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
             eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
+                selectionDescriptor: .mixedDisallowed
             )
         ),
         EditorToolDefinition(
@@ -275,7 +275,7 @@ enum EditorToolRegistry {
             id: .style,
             order: 90,
             requiredCapabilities: [.canEditStyle],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
 
         // Typography group.
@@ -285,7 +285,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditTypography],
             eligibility: .singleTarget(
                 focus: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
+                selectionDescriptor: .mixedDisallowed
             )
         ),
 
@@ -296,7 +296,7 @@ enum EditorToolRegistry {
             requiredCapabilities: [.canEditActions],
             eligibility: .singleTarget(
                 focus: .any,
-                selectionDescriptor: .allowsHomogeneousOrNoneSelection
+                selectionDescriptor: .mixedDisallowed
             )
         ),
 
@@ -305,31 +305,31 @@ enum EditorToolRegistry {
             id: .matchedSet,
             order: 120,
             requiredCapabilities: [.canEditMatchedSet],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
             id: .variables,
             order: 130,
             requiredCapabilities: [.canEditVariables],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
             id: .sharing,
             order: 140,
             requiredCapabilities: [.canShare],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
             id: .ai,
             order: 150,
             requiredCapabilities: [.canUseAI],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
             id: .pro,
             order: 160,
             requiredCapabilities: [.canPurchasePro],
-            eligibility: .multiSafe(selectionDescriptor: .allowsAnyIncludingMixedSelection)
+            eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
     ]
 

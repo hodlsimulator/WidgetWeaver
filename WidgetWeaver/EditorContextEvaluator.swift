@@ -15,14 +15,44 @@ enum EditorContextEvaluator {
         focus: EditorFocusSnapshot,
         photoLibraryAccess: EditorPhotoLibraryAccess
     ) -> EditorToolContext {
+        evaluate(
+            draft: draft,
+            isProUnlocked: isProUnlocked,
+            matchedSetEnabled: matchedSetEnabled,
+            originFocus: focus,
+            fallbackFocus: focus,
+            photoLibraryAccess: photoLibraryAccess
+        )
+    }
+
+    /// Derives editor tool context from focus snapshots.
+    ///
+    /// `originFocus` represents the selection origin's explicit data (when available).
+    /// `fallbackFocus` is a defensive normalised snapshot used only when origin metadata
+    /// is unavailable.
+    static func evaluate(
+        draft: FamilyDraft,
+        isProUnlocked: Bool,
+        matchedSetEnabled: Bool,
+        originFocus: EditorFocusSnapshot,
+        fallbackFocus: EditorFocusSnapshot,
+        photoLibraryAccess: EditorPhotoLibraryAccess
+    ) -> EditorToolContext {
+        let explicitSelectionCount = originFocus.selectionCount.map { max(0, $0) }
+        let fallbackSelectionCount = fallbackFocus.selectionCount.map { max(0, $0) }
+
         let selectionCountHint: Int? = {
-            if let explicit = focus.selectionCount {
-                return max(0, explicit)
+            if let explicitSelectionCount {
+                return explicitSelectionCount
             }
 
-            switch focus.selection {
+            if let fallbackSelectionCount {
+                return fallbackSelectionCount
+            }
+
+            switch originFocus.selection {
             case .none:
-                if focus.focus != .widget {
+                if originFocus.focus != .widget {
                     return 1
                 }
                 return 0
@@ -39,23 +69,29 @@ enum EditorContextEvaluator {
             }
 
             // If selection says "none" but a non-widget focus exists, treat as single.
-            if focus.selection == .none, focus.focus != .widget {
+            if originFocus.selection == .none, originFocus.focus != .widget {
                 return .single
             }
 
-            return focus.selection
+            return originFocus.selection
         }()
 
+        let explicitComposition = originFocus.selectionComposition
+
         let selectionCompositionHint: EditorSelectionComposition = {
-            if focus.selectionComposition != .unknown {
-                return focus.selectionComposition
+            if explicitComposition != .unknown {
+                return explicitComposition
+            }
+
+            if fallbackFocus.selectionComposition != .unknown {
+                return fallbackFocus.selectionComposition
             }
 
             switch resolvedSelection {
             case .none:
                 return .none
             case .single:
-                if let implied = impliedCategory(from: focus.focus) {
+                if let implied = impliedCategory(from: originFocus.focus) {
                     return .known([implied])
                 }
                 return .unknown
@@ -66,7 +102,8 @@ enum EditorContextEvaluator {
 
 #if DEBUG
         if resolvedSelection == .multi,
-           selectionCountHint != nil,
+           explicitSelectionCount != nil,
+           explicitComposition == .unknown,
            selectionCompositionHint == .unknown {
             print("⚠️ [EditorContextEvaluator] multi-selection has explicit count but unknown composition; supply composition at the selection origin if possible.")
         }
@@ -81,7 +118,7 @@ enum EditorContextEvaluator {
             isProUnlocked: isProUnlocked,
             matchedSetEnabled: matchedSetEnabled,
             selection: resolvedSelection,
-            focus: focus.focus,
+            focus: originFocus.focus,
             selectionCount: selectionCountHint,
             selectionComposition: selectionCompositionHint,
             photoLibraryAccess: photoLibraryAccess,

@@ -98,8 +98,8 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(descriptor.albumSpecificity, .mixed)
     }
 
-    func testMultiSafeDefaultDisallowsMixedSelectionDescriptor() {
-        let eligibility = EditorToolEligibility.multiSafe()
+    func testMixedDisallowedPresetDisallowsMixedSelectionDescriptor() {
+        let eligibility = EditorToolEligibility.multiSafe(selectionDescriptor: .mixedDisallowed)
 
         let descriptor = EditorSelectionDescriptor.describe(
             selection: .multi,
@@ -107,6 +107,46 @@ final class EditorToolingTests: XCTestCase {
         )
 
         XCTAssertFalse(eligibility.selectionDescriptor.allows(descriptor))
+    }
+
+    func testMixedAllowedPresetAllowsMixedSelectionDescriptor() {
+        let eligibility = EditorToolEligibility.multiSafe(selectionDescriptor: .mixedAllowed)
+
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
+        XCTAssertTrue(eligibility.selectionDescriptor.allows(descriptor))
+    }
+
+
+    func testToolManifestMixedSelectionPolicyIsExplicit() {
+        let mixedDescriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
+        let expectedMixedAllowed: Set<EditorToolID> = [
+            .status,
+            .designs,
+            .widgets,
+            .layout,
+            .style,
+            .matchedSet,
+            .variables,
+            .sharing,
+            .ai,
+            .pro,
+        ]
+
+        let actualMixedAllowed = Set(
+            EditorToolRegistry.tools
+                .filter { $0.eligibility.selectionDescriptor.allows(mixedDescriptor) }
+                .map(\.id)
+        )
+
+        XCTAssertEqual(actualMixedAllowed, expectedMixedAllowed)
     }
 
     func testSelectionDescriptorUsesExplicitCompositionAndCountWhenProvided() {
@@ -457,6 +497,129 @@ final class EditorToolingTests: XCTestCase {
 
         XCTAssertEqual(ctx.selection, .multi)
         XCTAssertEqual(ctx.selectionCount, 3)
+    }
+
+
+    func testContextEvaluatorPrefersExplicitOriginSelectionCountOverFallback() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .none,
+            focus: .widget,
+            selectionCount: 5,
+            selectionComposition: .unknown
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .none,
+            focus: .widget,
+            selectionCount: 1,
+            selectionComposition: .unknown
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 5)
+    }
+
+    func testContextEvaluatorUsesFallbackSelectionCountWhenOriginSelectionCountIsMissing() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: nil,
+            selectionComposition: .unknown
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 4,
+            selectionComposition: .unknown
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 4)
+    }
+
+    func testContextEvaluatorPrefersExplicitOriginCompositionOverFallback() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.albumContainer, .nonAlbum])
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.nonAlbum])
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selectionComposition, originFocus.selectionComposition)
+    }
+
+    func testContextEvaluatorUsesFallbackCompositionWhenOriginCompositionIsUnknown() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .unknown
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.nonAlbum])
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selectionComposition, .known([.nonAlbum]))
     }
 
     // MARK: - Performance guard
