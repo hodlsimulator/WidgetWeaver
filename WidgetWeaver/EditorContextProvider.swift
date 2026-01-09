@@ -181,7 +181,7 @@ private enum EditorFocusSnapshotNormaliserDiagnostics {
     ) {
         guard FeatureFlags.contextAwareEditorToolSuiteEnabled else { return }
         guard diagnostics.didInferAnySelectionMetadata else { return }
-        guard expectsOriginBackedSelectionMetadata(for: originSnapshot.focus) else { return }
+        guard expectsOriginBackedSelectionMetadata(originSnapshot: originSnapshot) else { return }
 
         print(
             """
@@ -194,8 +194,8 @@ private enum EditorFocusSnapshotNormaliserDiagnostics {
         )
     }
 
-    private static func expectsOriginBackedSelectionMetadata(for focus: EditorFocusTarget) -> Bool {
-        switch focus {
+    private static func expectsOriginBackedSelectionMetadata(originSnapshot: EditorFocusSnapshot) -> Bool {
+        switch originSnapshot.focus {
         case .smartRuleEditor:
             return true
         case .albumContainer(_, let subtype) where subtype == .smart:
@@ -206,7 +206,10 @@ private enum EditorFocusSnapshotNormaliserDiagnostics {
             return true
         case .clock:
             return true
-        case .widget, .element, .albumContainer, .albumPhoto:
+        case .widget:
+            // Multi-selection should be written from selection set origins with explicit count + composition.
+            return originSnapshot.selection == .multi
+        case .element, .albumContainer, .albumPhoto:
             return false
         }
     }

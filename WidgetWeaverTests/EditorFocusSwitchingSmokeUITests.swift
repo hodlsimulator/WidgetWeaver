@@ -297,12 +297,20 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
 
         // Non-album multi-selection.
         waitAndTap(multiSelectWidgets)
+        XCTAssertTrue(
+            app.staticTexts[AccessibilityIDs.unavailableMessage].waitForExistence(timeout: 2.0),
+            "Expected multi-selection reduced tool list message to be present"
+        )
         XCTAssertTrue(app.staticTexts[SectionHeaders.layout].waitForExistence(timeout: 2.0), "Expected Layout tooling for multi-selection")
         XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Multi-selection should hide Text tooling")
         XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists, "Multi-selection should hide Smart Photo tooling")
 
         // Mixed multi-selection (album + non-album).
         waitAndTap(multiSelectMixed)
+        XCTAssertTrue(
+            app.staticTexts[AccessibilityIDs.unavailableMessage].waitForExistence(timeout: 2.0),
+            "Expected mixed multi-selection reduced tool list message to be present"
+        )
         XCTAssertTrue(app.staticTexts[SectionHeaders.layout].waitForExistence(timeout: 2.0), "Expected Layout tooling for mixed multi-selection")
         XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists, "Mixed multi-selection should hide Text tooling")
         XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists, "Mixed multi-selection should hide Smart Photo tooling")
