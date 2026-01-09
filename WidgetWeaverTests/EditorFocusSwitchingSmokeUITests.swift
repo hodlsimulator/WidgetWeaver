@@ -28,15 +28,23 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     }
 
     private enum SectionHeaders {
+        static let status = "EditorSectionHeader.Status"
+        static let designs = "EditorSectionHeader.Designs"
+        static let widgets = "EditorSectionHeader.Widgets"
         static let text = "EditorSectionHeader.Text"
+        static let image = "EditorSectionHeader.Image"
         static let smartPhoto = "EditorSectionHeader.Smart_Photo"
         static let layout = "EditorSectionHeader.Layout"
+        static let style = "EditorSectionHeader.Style"
+        static let albumShuffle = "EditorSectionHeader.Album_Shuffle"
     }
 
     private enum AccessibilityIDs {
         static let designNameTextField = "EditorTextField.DesignName"
         static let primaryTextField = "EditorTextField.PrimaryText"
         static let secondaryTextField = "EditorTextField.SecondaryText"
+
+        static let unavailableMessage = "EditorUnavailableStateView.Message"
     }
 
     private func launchApp(
@@ -77,6 +85,36 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         element.tap()
     }
 
+    private func assertEditorHasDiscoverableToolAnchor(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let scrollable = editorScrollable(in: app)
+        XCTAssertTrue(scrollable.waitForExistence(timeout: 2.0), "Expected editor tool surface to exist", file: file, line: line)
+
+        let anchors: [XCUIElement] = [
+            app.staticTexts[SectionHeaders.status],
+            app.staticTexts[SectionHeaders.designs],
+            app.staticTexts[SectionHeaders.widgets],
+            app.staticTexts[SectionHeaders.layout],
+            app.staticTexts[SectionHeaders.style],
+            app.staticTexts[SectionHeaders.text],
+            app.staticTexts[SectionHeaders.image],
+            app.staticTexts[SectionHeaders.smartPhoto],
+            app.staticTexts[SectionHeaders.albumShuffle],
+            app.staticTexts[AccessibilityIDs.unavailableMessage],
+        ]
+
+        let anyAnchorExists = anchors.contains(where: { $0.exists })
+        XCTAssertTrue(anyAnchorExists, "Expected at least one discoverable editor header or unavailable message", file: file, line: line)
+
+        let table = app.tables.firstMatch
+        if table.exists {
+            XCTAssertGreaterThan(table.cells.count, 0, "Expected editor tool list to contain focusable cells", file: file, line: line)
+        }
+    }
+
     private func scrollToElement(
         _ element: XCUIElement,
         in scrollView: XCUIElement,
@@ -99,11 +137,51 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
 
         waitAndTap(templatePoster)
 
+        assertEditorHasDiscoverableToolAnchor(in: app)
+
         for _ in 0..<3 {
             waitAndTap(focusCrop)
+            assertEditorHasDiscoverableToolAnchor(in: app)
             waitAndTap(focusWidget)
+            assertEditorHasDiscoverableToolAnchor(in: app)
             waitAndTap(focusRules)
+            assertEditorHasDiscoverableToolAnchor(in: app)
             waitAndTap(focusWidget)
+            assertEditorHasDiscoverableToolAnchor(in: app)
+        }
+    }
+
+    func testContextAwareAlbumAndClockFocusChangesKeepDiscoverableAnchors() {
+        let app = launchApp(contextAwareEnabled: true, dynamicType: "accessibility5", reduceMotion: true)
+
+        let templatePoster = app.buttons[UITestHooks.templatePoster]
+        let focusWidget = app.buttons[UITestHooks.focusWidget]
+        let focusCrop = app.buttons[UITestHooks.focusSmartPhotoCrop]
+        let focusRules = app.buttons[UITestHooks.focusSmartRules]
+        let focusAlbumContainer = app.buttons[UITestHooks.focusAlbumContainer]
+        let focusAlbumPhotoItem = app.buttons[UITestHooks.focusAlbumPhotoItem]
+        let focusClock = app.buttons[UITestHooks.focusClock]
+
+        waitAndTap(templatePoster)
+
+        // A longer cross-surface sequence. The goal is to ensure the tool suite swaps never leave the
+        // editor in a state where VoiceOver would have no discoverable headers/controls.
+        let sequence: [XCUIElement] = [
+            focusWidget,
+            focusCrop,
+            focusWidget,
+            focusRules,
+            focusWidget,
+            focusAlbumContainer,
+            focusAlbumPhotoItem,
+            focusAlbumContainer,
+            focusClock,
+            focusWidget,
+        ]
+
+        for element in sequence {
+            waitAndTap(element)
+            assertEditorHasDiscoverableToolAnchor(in: app)
         }
     }
 

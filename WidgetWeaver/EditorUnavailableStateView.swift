@@ -6,45 +6,44 @@
 //
 
 import SwiftUI
-import UIKit
 
 struct EditorUnavailableStateView: View {
-    var state: EditorUnavailableState
-    var isBusy: Bool
-
-    /// Handler for non-Link CTAs (requestable permissions, upsells, etc).
-    ///
-    /// When nil, action-style CTAs are hidden (the message remains visible).
-    var onPerformCTA: (@MainActor (EditorUnavailableCTAKind) async -> Void)? = nil
+    let state: EditorUnavailableState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(state.message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("EditorUnavailableStateView.Message")
 
-            if let cta = state.cta {
-                switch cta.kind {
+            if let action = state.action {
+                switch action {
+                case .requestPro:
+                    Text("Pro required.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                case .openURL(let url, let title):
+                    Link(title, destination: url)
+                        .font(.caption)
+
                 case .openAppSettings:
                     if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                        Link(destination: settingsURL) {
-                            Label(cta.title, systemImage: cta.systemImage)
-                        }
+                        Link("Open Settings", destination: settingsURL)
+                            .font(.caption)
+                            .accessibilityIdentifier("EditorUnavailableStateView.CTA")
                     }
-
-                case .requestPhotosAccess, .showPro:
-                    if let onPerformCTA {
-                        Button {
-                            Task { @MainActor in
-                                await onPerformCTA(cta.kind)
-                            }
-                        } label: {
-                            Label(cta.title, systemImage: cta.systemImage)
-                        }
-                        .disabled(isBusy)
+                case .custom(let title, let handler):
+                    Button(title) {
+                        handler()
                     }
+                    .font(.caption)
+                    .accessibilityIdentifier("EditorUnavailableStateView.CTA")
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 }

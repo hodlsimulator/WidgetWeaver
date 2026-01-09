@@ -72,6 +72,19 @@ struct SmartPhotoAlbumShuffleControls: View {
             actionRow
 
             if shuffleEnabled {
+                NavigationLink {
+                    SmartPhotoAlbumShuffleAlbumBrowserView(
+                        manifestFileName: manifestFileName,
+                        focus: focus
+                    )
+                } label: {
+                    Label("Browse album photos", systemImage: "photo.on.rectangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("AlbumShuffle.BrowseAlbum")
+
                 rankingDebug
             }
         }
@@ -711,76 +724,6 @@ struct SmartPhotoAlbumShuffleControls: View {
             rankingAlbumID = manifest.sourceID
             rotationIntervalMinutes = manifest.rotationIntervalMinutes
             nextChangeDate = next
-        }
-    }
-}
-
-// MARK: - Album photo-item detail (selection origin)
-
-private struct SmartPhotoAlbumShufflePhotoDetailView: View {
-    let manifestFileName: String
-    let albumID: String?
-    let itemID: String
-
-    var focus: Binding<EditorFocusSnapshot>? = nil
-
-    @State private var previousFocusSnapshot: EditorFocusSnapshot? = nil
-
-    private var resolvedAlbumID: String {
-        let id = (albumID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return id.isEmpty ? "smartPhotoAlbum" : id
-    }
-
-    private var targetFocus: EditorFocusTarget {
-        .albumPhoto(albumID: resolvedAlbumID, itemID: itemID, subtype: .smart)
-    }
-
-    var body: some View {
-        Form {
-            Section {
-                LabeledContent("Album", value: resolvedAlbumID)
-                    .textSelection(.enabled)
-
-                LabeledContent("Photo", value: itemID)
-                    .textSelection(.enabled)
-
-                let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !mf.isEmpty {
-                    LabeledContent("Manifest", value: mf)
-                        .textSelection(.enabled)
-                }
-            } header: {
-                Text("Selection")
-            } footer: {
-                Text("Viewing a shuffle photo is treated as an explicit selection origin. The editor’s tool suite can react to this focus without relying on heuristics.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle("Shuffle Photo")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear { pushFocusIfNeeded() }
-        .onDisappear { restoreFocusIfNeeded() }
-        .accessibilityIdentifier("AlbumShuffle.PhotoDetail")
-    }
-
-    private func pushFocusIfNeeded() {
-        guard let focus else { return }
-
-        if previousFocusSnapshot == nil {
-            previousFocusSnapshot = focus.wrappedValue
-        }
-
-        focus.wrappedValue = .smartAlbumPhotoItem(albumID: resolvedAlbumID, itemID: itemID)
-    }
-
-    private func restoreFocusIfNeeded() {
-        guard let focus else { return }
-        guard let previous = previousFocusSnapshot else { return }
-        defer { previousFocusSnapshot = nil }
-
-        if focus.wrappedValue.focus == targetFocus {
-            focus.wrappedValue = previous
         }
     }
 }

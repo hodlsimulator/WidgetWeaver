@@ -562,6 +562,68 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(ctx.selectionCount, 4)
     }
 
+    func testContextEvaluatorPrefersExplicitOriginSelectionCountOverFallbackForSmartAlbumContainerFocus() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .albumContainer(id: "uiTest.album", subtype: .smart),
+            selectionCount: 6,
+            selectionComposition: .known([.albumContainer])
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .albumContainer(id: "uiTest.album", subtype: .smart),
+            selectionCount: 2,
+            selectionComposition: .known([.albumContainer])
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 6)
+    }
+
+    func testContextEvaluatorUsesFallbackSelectionCountWhenOriginSelectionCountIsMissingForSmartAlbumContainerFocus() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let originFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .albumContainer(id: "uiTest.album", subtype: .smart),
+            selectionCount: nil,
+            selectionComposition: .known([.albumContainer])
+        )
+
+        let fallbackFocus = EditorFocusSnapshot(
+            selection: .multi,
+            focus: .albumContainer(id: "uiTest.album", subtype: .smart),
+            selectionCount: 4,
+            selectionComposition: .known([.albumContainer])
+        )
+
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            originFocus: originFocus,
+            fallbackFocus: fallbackFocus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
+        )
+
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 4)
+    }
+
     func testContextEvaluatorPrefersExplicitOriginCompositionOverFallback() {
         var draft = FamilyDraft.defaultDraft
         draft.template = .poster
@@ -620,6 +682,22 @@ final class EditorToolingTests: XCTestCase {
         )
 
         XCTAssertEqual(ctx.selectionComposition, .known([.nonAlbum]))
+    }
+
+    func testNormaliserDoesNotInferSelectionMetadataForSmartAlbumOriginSnapshots() {
+        let albumFocus = EditorFocusSnapshot.smartAlbumContainer(id: "uiTest.album")
+        let (normalisedAlbum, diagnosticsAlbum) = EditorFocusSnapshotNormaliser.normaliseWithDiagnostics(albumFocus)
+
+        XCTAssertEqual(normalisedAlbum.selectionCount, 1)
+        XCTAssertEqual(normalisedAlbum.selectionComposition, .known([.albumContainer]))
+        XCTAssertFalse(diagnosticsAlbum.didInferAnySelectionMetadata)
+
+        let itemFocus = EditorFocusSnapshot.smartAlbumPhotoItem(albumID: "uiTest.album", itemID: "uiTest.item")
+        let (normalisedItem, diagnosticsItem) = EditorFocusSnapshotNormaliser.normaliseWithDiagnostics(itemFocus)
+
+        XCTAssertEqual(normalisedItem.selectionCount, 1)
+        XCTAssertEqual(normalisedItem.selectionComposition, .known([.albumPhotoItem]))
+        XCTAssertFalse(diagnosticsItem.didInferAnySelectionMetadata)
     }
 
     // MARK: - Performance guard
