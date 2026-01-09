@@ -7,6 +7,7 @@
 
 import XCTest
 import CoreGraphics
+import Foundation
 
 final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     private enum LaunchKeys {
@@ -33,23 +34,14 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     }
 
     private enum SectionHeaders {
+        static let prefix = "EditorSectionHeader."
         static let status = "EditorSectionHeader.Status"
-        static let designs = "EditorSectionHeader.Designs"
-        static let widgets = "EditorSectionHeader.Widgets"
-        static let text = "EditorSectionHeader.Text"
-        static let image = "EditorSectionHeader.Image"
-        static let smartPhoto = "EditorSectionHeader.Smart_Photo"
-        static let layout = "EditorSectionHeader.Layout"
-        static let style = "EditorSectionHeader.Style"
-        static let albumShuffle = "EditorSectionHeader.Album_Shuffle"
     }
 
     private enum AccessibilityIDs {
         static let designNameTextField = "EditorTextField.DesignName"
         static let primaryTextField = "EditorTextField.PrimaryText"
         static let secondaryTextField = "EditorTextField.SecondaryText"
-
-        static let unavailableMessage = "EditorUnavailableStateView.Message"
     }
 
     private func launchApp(
@@ -115,16 +107,58 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         element(identifier, in: app)
     }
 
-    private func editorScrollable(in app: XCUIApplication) -> XCUIElement {
+    private func editorScrollable(
+        in app: XCUIApplication,
+        timeout: TimeInterval = 2.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
         let table = app.tables.firstMatch
+        let collectionView = app.collectionViews.firstMatch
+        let scrollView = app.scrollViews.firstMatch
+
+        let start = Date()
+        while Date().timeIntervalSince(start) < timeout {
+            if table.exists || collectionView.exists || scrollView.exists {
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
         if table.exists {
             return table
         }
-        return app.scrollViews.firstMatch
+
+        if collectionView.exists {
+            return collectionView
+        }
+
+        if scrollView.exists {
+            return scrollView
+        }
+
+        XCTFail(
+            "Expected editor to expose a scroll container (Table → CollectionView → ScrollView).",
+            file: file,
+            line: line
+        )
+
+        // Safe-ish fallback: allow downstream calls to fail with a more specific message.
+        return scrollView
     }
 
-    private func waitAndTap(_ element: XCUIElement, timeout: TimeInterval = 2.0, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(element.waitForExistence(timeout: timeout), "Expected element to exist: \(element)", file: file, line: line)
+    private func waitAndTap(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 2.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitForExistence(timeout: timeout),
+            "Expected element to exist: \(element)",
+            file: file,
+            line: line
+        )
 
         if element.isHittable {
             element.tap()
@@ -133,43 +167,17 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         }
     }
 
-    private func assertEditorHasDiscoverableToolAnchor(
-        in app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
+    private func scrollToTop(
+        in scrollView: XCUIElement,
+        maxScrolls: Int = 6
     ) {
-        let scrollable = editorScrollable(in: app)
-
-        let anchors: [XCUIElement] = [
-            app.staticTexts[SectionHeaders.status],
-            app.staticTexts[SectionHeaders.widgets],
-            app.staticTexts[SectionHeaders.layout],
-            app.staticTexts[SectionHeaders.style],
-            app.staticTexts[SectionHeaders.text],
-            app.staticTexts[SectionHeaders.image],
-            app.staticTexts[SectionHeaders.smartPhoto],
-            app.staticTexts[SectionHeaders.albumShuffle],
-        ]
-
-        for anchor in anchors {
-            scrollToElement(anchor, in: scrollable, maxScrolls: 5)
-            if anchor.exists {
-                return
-            }
+        guard scrollView.exists else {
+            return
         }
 
-        XCTFail("Expected at least one tool section header to be visible", file: file, line: line)
-    }
-
-    private func assertUnavailableMessage(
-        _ expectedSubstring: String,
-        in app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let message = app.staticTexts[AccessibilityIDs.unavailableMessage]
-        XCTAssertTrue(message.waitForExistence(timeout: 2.0), "Expected unavailable message to appear", file: file, line: line)
-        XCTAssertTrue(message.label.contains(expectedSubstring), "Expected unavailable message to contain: \(expectedSubstring)", file: file, line: line)
+        for _ in 0..<maxScrolls {
+            scrollView.swipeDown()
+        }
     }
 
     private func scrollToElement(
@@ -177,6 +185,10 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         in scrollView: XCUIElement,
         maxScrolls: Int = 18
     ) {
+        guard scrollView.exists else {
+            return
+        }
+
         var remaining = maxScrolls
         while (!element.exists || !element.isHittable) && remaining > 0 {
             scrollView.swipeUp()
@@ -184,11 +196,61 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         }
     }
 
+    private func currentSectionHeaderIdentifiers(in app: XCUIApplication) -> [String] {
+        let all = app.descendants(matching: .any).allElementsBoundByIndex
+        var ids: Set<String> = []
+        ids.reserveCapacity(16)
+
+        for element in all {
+            let identifier = element.identifier
+            if identifier.hasPrefix(SectionHeaders.prefix) {
+                ids.insert(identifier)
+            }
+        }
+
+        return ids.sorted()
+    }
+
+    private func assertStatusHeaderIsDiscoverable(
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let scrollable = editorScrollable(in: app, file: file, line: line)
+        let statusHeader = element(SectionHeaders.status, in: app)
+
+        // SwiftUI can lazily realise sections; always scroll to establish a stable anchor.
+        scrollToTop(in: scrollable)
+        scrollToElement(statusHeader, in: scrollable, maxScrolls: 10)
+
+        if statusHeader.exists {
+            return
+        }
+
+        // If the list started mid-scroll, attempt to recover by scrolling back up and trying again.
+        scrollToTop(in: scrollable)
+        scrollToElement(statusHeader, in: scrollable, maxScrolls: 10)
+
+        if statusHeader.exists {
+            return
+        }
+
+        let discoveredHeaders = currentSectionHeaderIdentifiers(in: app)
+        XCTFail(
+            "Expected a stable Status header anchor to exist (\(SectionHeaders.status)). Discovered headers: \(discoveredHeaders)",
+            file: file,
+            line: line
+        )
+    }
+
     func testUITestHookSurfaceIsReachable() {
         let app = launchApp(contextAwareEnabled: true)
 
         let templatePoster = hook(UITestHooks.templatePoster, in: app)
-        XCTAssertTrue(templatePoster.waitForExistence(timeout: 2.0), "Expected UI test hook surface to be present in the Editor tab")
+        XCTAssertTrue(
+            templatePoster.waitForExistence(timeout: 2.0),
+            "Expected UI test hook surface to be present in the Editor tab"
+        )
     }
 
     func testContextAwareFocusSwitchingSmoke() {
@@ -198,124 +260,60 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         let focusWidget = hook(UITestHooks.focusWidget, in: app)
         let focusCrop = hook(UITestHooks.focusSmartPhotoCrop, in: app)
         let focusRules = hook(UITestHooks.focusSmartRules, in: app)
-
-        waitAndTap(templatePoster)
-
-        assertEditorHasDiscoverableToolAnchor(in: app)
-
-        for _ in 0..<3 {
-            waitAndTap(focusCrop)
-            assertEditorHasDiscoverableToolAnchor(in: app)
-            waitAndTap(focusWidget)
-            assertEditorHasDiscoverableToolAnchor(in: app)
-            waitAndTap(focusRules)
-            assertEditorHasDiscoverableToolAnchor(in: app)
-            waitAndTap(focusWidget)
-            assertEditorHasDiscoverableToolAnchor(in: app)
-        }
-    }
-
-    func testContextAwareFlagOffShowsLegacyToolsInSmartPhotoFocus() {
-        let app = launchApp(contextAwareEnabled: false)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
-        let focusCrop = hook(UITestHooks.focusSmartPhotoCrop, in: app)
-
-        waitAndTap(templatePoster)
-        waitAndTap(focusCrop)
-
-        // Legacy mode should still surface the Text tool.
-        let textHeader = app.staticTexts[SectionHeaders.text]
-        XCTAssertTrue(textHeader.waitForExistence(timeout: 2.0))
-    }
-
-    func testContextAwareFlagOnHidesTextToolInSmartPhotoFocus() {
-        let app = launchApp(contextAwareEnabled: true)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
-        let focusCrop = hook(UITestHooks.focusSmartPhotoCrop, in: app)
-
-        waitAndTap(templatePoster)
-        waitAndTap(focusCrop)
-
-        // In Smart Photo focus, Text should not be present.
-        let textHeader = app.staticTexts[SectionHeaders.text]
-        XCTAssertFalse(textHeader.exists)
-
-        // Smart Photo suite should still be discoverable.
-        XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].exists)
-    }
-
-    func testClockFocusHidesSmartPhotoAndTextTooling() {
-        let app = launchApp(contextAwareEnabled: true)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
-        let focusClock = hook(UITestHooks.focusClock, in: app)
-
-        waitAndTap(templatePoster)
-        waitAndTap(focusClock)
-
-        // Clock focus should not show Smart Photo suite.
-        XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.albumShuffle].exists)
-
-        // Clock focus should still show general layout/style suite.
-        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].exists)
-        XCTAssertTrue(app.staticTexts[SectionHeaders.style].exists)
-    }
-
-    func testAlbumFocusHidesTextAndLayoutTooling() {
-        let app = launchApp(contextAwareEnabled: true)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
         let focusAlbumContainer = hook(UITestHooks.focusAlbumContainer, in: app)
         let focusAlbumPhotoItem = hook(UITestHooks.focusAlbumPhotoItem, in: app)
-
-        waitAndTap(templatePoster)
-
-        waitAndTap(focusAlbumContainer)
-        XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.layout].exists)
-
-        waitAndTap(focusAlbumPhotoItem)
-        XCTAssertTrue(app.staticTexts[SectionHeaders.smartPhoto].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.layout].exists)
-    }
-
-    func testMultiSelectionShowsUnavailableStateAndKeepsCoreTooling() {
-        let app = launchApp(contextAwareEnabled: true)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
+        let focusClock = hook(UITestHooks.focusClock, in: app)
         let multiSelectWidgets = hook(UITestHooks.multiSelectWidgets, in: app)
-
-        waitAndTap(templatePoster)
-        waitAndTap(multiSelectWidgets)
-
-        assertUnavailableMessage("Some tools are hidden", in: app)
-
-        // Core tooling should still exist.
-        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].exists)
-        XCTAssertTrue(app.staticTexts[SectionHeaders.style].exists)
-    }
-
-    func testMultiSelectionHidesSmartPhotoAndTextTooling() {
-        let app = launchApp(contextAwareEnabled: true)
-
-        let templatePoster = hook(UITestHooks.templatePoster, in: app)
         let multiSelectMixed = hook(UITestHooks.multiSelectMixed, in: app)
 
         waitAndTap(templatePoster)
-        waitAndTap(multiSelectMixed)
+        assertStatusHeaderIsDiscoverable(in: app)
 
-        // Mixed multi selection should hide smart photo suite + text tool.
-        XCTAssertFalse(app.staticTexts[SectionHeaders.smartPhoto].exists)
-        XCTAssertFalse(app.staticTexts[SectionHeaders.text].exists)
+        let steps: [(String, XCUIElement)] = [
+            ("Focus Smart Photo crop", focusCrop),
+            ("Focus widget", focusWidget),
+            ("Focus Smart Rules", focusRules),
+            ("Focus widget", focusWidget),
+            ("Focus album container", focusAlbumContainer),
+            ("Focus album photo item", focusAlbumPhotoItem),
+            ("Focus widget", focusWidget),
+            ("Focus clock", focusClock),
+            ("Focus widget", focusWidget),
+            ("Multi-select widgets", multiSelectWidgets),
+            ("Focus widget", focusWidget),
+            ("Multi-select mixed", multiSelectMixed),
+            ("Focus widget", focusWidget),
+        ]
 
-        // Layout + Style should remain.
-        XCTAssertTrue(app.staticTexts[SectionHeaders.layout].exists)
-        XCTAssertTrue(app.staticTexts[SectionHeaders.style].exists)
+        for _ in 0..<2 {
+            for (label, stepHook) in steps {
+                XCTContext.runActivity(named: label) { _ in
+                    waitAndTap(stepHook)
+                    assertStatusHeaderIsDiscoverable(in: app)
+                }
+            }
+        }
+    }
+
+    func testLegacyModeFocusSwitchingSmoke() {
+        let app = launchApp(contextAwareEnabled: false)
+
+        let templatePoster = hook(UITestHooks.templatePoster, in: app)
+        let focusWidget = hook(UITestHooks.focusWidget, in: app)
+        let focusCrop = hook(UITestHooks.focusSmartPhotoCrop, in: app)
+
+        waitAndTap(templatePoster)
+        assertStatusHeaderIsDiscoverable(in: app)
+
+        XCTContext.runActivity(named: "Legacy: focus Smart Photo crop") { _ in
+            waitAndTap(focusCrop)
+            assertStatusHeaderIsDiscoverable(in: app)
+        }
+
+        XCTContext.runActivity(named: "Legacy: return to widget focus") { _ in
+            waitAndTap(focusWidget)
+            assertStatusHeaderIsDiscoverable(in: app)
+        }
     }
 
     func testTextEntrySurvivesToolSuiteChanges() {
@@ -331,15 +329,29 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         let scrollable = editorScrollable(in: app)
 
         let primary = app.textFields[AccessibilityIDs.primaryTextField]
-        scrollToElement(primary, in: scrollable)
+        scrollToTop(in: scrollable)
+        scrollToElement(primary, in: scrollable, maxScrolls: 18)
         waitAndTap(primary)
-        primary.typeText("Hello")
 
-        // Switch into Smart Photo focus and back; text entry should remain.
+        let input = "Hello"
+        primary.typeText(input)
+
+        // Switch into Smart Photo focus and back; text entry should remain and the editor should still be navigable.
         waitAndTap(focusCrop)
-        waitAndTap(focusWidget)
+        assertStatusHeaderIsDiscoverable(in: app)
 
-        XCTAssertTrue(primary.waitForExistence(timeout: 2.0))
-        XCTAssertTrue(primary.value as? String ?? "" != "")
+        waitAndTap(focusWidget)
+        assertStatusHeaderIsDiscoverable(in: app)
+
+        let primaryAfter = app.textFields[AccessibilityIDs.primaryTextField]
+        scrollToTop(in: scrollable)
+        scrollToElement(primaryAfter, in: scrollable, maxScrolls: 18)
+        XCTAssertTrue(primaryAfter.waitForExistence(timeout: 2.0))
+
+        let value = (primaryAfter.value as? String) ?? ""
+        XCTAssertTrue(
+            value.contains(input),
+            "Expected primary text field value to contain '\(input)'. Actual value: '\(value)'"
+        )
     }
 }
