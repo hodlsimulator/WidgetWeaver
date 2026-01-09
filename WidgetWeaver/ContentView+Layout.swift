@@ -12,27 +12,36 @@ import WidgetKit
 extension ContentView {
     @ViewBuilder
     var editorLayout: some View {
-        if horizontalSizeClass == .regular {
-            HStack(alignment: .top, spacing: 16) {
-                previewDock(presentation: .sidebar)
-                    .frame(width: 420)
-                    .padding(.top, 8)
+        Group {
+            if horizontalSizeClass == .regular {
+                HStack(alignment: .top, spacing: 16) {
+                    previewDock(presentation: .sidebar)
+                        .frame(width: 420)
+                        .padding(.top, 8)
 
+                    editorForm
+                }
+                .padding(.horizontal, 16)
+            } else {
                 editorForm
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Color.clear
+                            .frame(height: WidgetPreviewDock.reservedInsetHeight(verticalSizeClass: verticalSizeClass))
+                    }
+                    .overlay(alignment: .bottom) {
+                        previewDock(presentation: .dock)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 10)
+                    }
             }
-            .padding(.horizontal, 16)
-        } else {
-            editorForm
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear
-                        .frame(height: WidgetPreviewDock.reservedInsetHeight(verticalSizeClass: verticalSizeClass))
-                }
-                .overlay(alignment: .bottom) {
-                    previewDock(presentation: .dock)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
-                }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+#if DEBUG
+        .overlay(alignment: .topTrailing) {
+            editorUITestHooksOverlay
+                .zIndex(9_999)
+        }
+#endif
     }
 
     var editorForm: some View {
@@ -67,11 +76,6 @@ extension ContentView {
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .animation(.easeInOut(duration: 0.15), value: editorVisibleToolIDs)
-#if DEBUG
-        .overlay(alignment: .topTrailing) {
-            editorUITestHooksOverlay
-        }
-#endif
     }
 
     @ViewBuilder
@@ -214,10 +218,14 @@ extension ContentView {
             }
             .font(.caption2)
             .padding(8)
-            .opacity(0.02)
+            .opacity(0.08)
             .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("EditorUITestHook.overlayRoot")
             .padding(.top, 6)
             .padding(.trailing, 6)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
     }
 #endif
