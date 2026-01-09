@@ -87,58 +87,56 @@ struct SmartPhotoAlbumShuffleAlbumBrowserView: View {
 
     private var entriesSection: some View {
         Section("Photos") {
-            guard let manifest, let albumID = resolvedAlbumID else {
-                Text("No photos available.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                return
-            }
+            if let manifest, let albumID = resolvedAlbumID {
+                if manifest.entries.isEmpty {
+                    Text("No photos in this album.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    let maxRows = 200
+                    let entriesToShow = Array(manifest.entries.prefix(maxRows))
 
-            if manifest.entries.isEmpty {
-                Text("No photos in this album.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                return
-            }
+                    ForEach(Array(entriesToShow.enumerated()), id: \.element.id) { idx, entry in
+                        NavigationLink {
+                            SmartPhotoAlbumShufflePhotoDetailView(
+                                manifestFileName: trimmedManifestFileName,
+                                albumID: albumID,
+                                itemID: entry.id,
+                                focus: focus
+                            )
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(entry.isPrepared ? "✓" : "·")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14, alignment: .leading)
 
-            let maxRows = 200
-            let entriesToShow = Array(manifest.entries.prefix(maxRows))
+                                Text(entry.id)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
 
-            ForEach(Array(entriesToShow.enumerated()), id: \.element.id) { idx, entry in
-                NavigationLink {
-                    SmartPhotoAlbumShufflePhotoDetailView(
-                        manifestFileName: trimmedManifestFileName,
-                        albumID: albumID,
-                        itemID: entry.id,
-                        focus: focus
-                    )
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(entry.isPrepared ? "✓" : "·")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 14, alignment: .leading)
+                                Spacer(minLength: 0)
 
-                        Text(entry.id)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Spacer(minLength: 0)
-
-                        if entry.flags.contains("failed") {
-                            Text("failed")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                if entry.flags.contains("failed") {
+                                    Text("failed")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
+                        .accessibilityIdentifier("AlbumShuffle.AlbumBrowser.Row.\(idx)")
+                    }
+
+                    if manifest.entries.count > maxRows {
+                        Text("Showing first \(maxRows) photos.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .accessibilityIdentifier("AlbumShuffle.AlbumBrowser.Row.\(idx)")
-            }
-
-            if manifest.entries.count > maxRows {
-                Text("Showing first \(maxRows) photos.")
-                    .font(.caption2)
+            } else {
+                Text("No photos available.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
