@@ -106,7 +106,7 @@ struct EditorToolFocusConstraint: Hashable, Sendable {
 
     static let smartPhotoPhotoItemSuite = EditorToolFocusConstraint(
         allowClock: false,
-        allowSmartRuleEditor: false,
+        allowSmartRuleEditor: true,
         allowAnyElement: false,
         allowedElementIDPrefixes: ["smartPhoto"],
         allowAnyAlbumContainer: false,
@@ -222,8 +222,6 @@ struct EditorToolEligibility: Hashable, Sendable {
     }
 }
 
-// MARK: - Evaluator
-
 enum EditorToolEligibilityEvaluator {
     static func isEligible(
         eligibility: EditorToolEligibility,
@@ -232,12 +230,15 @@ enum EditorToolEligibilityEvaluator {
         focus: EditorFocusTarget,
         multiSelectionPolicy: EditorMultiSelectionPolicy
     ) -> Bool {
+        guard eligibility.focus.allows(focus) else { return false }
         guard eligibility.selection.allows(selection) else { return false }
         guard eligibility.selectionDescriptor.allows(selectionDescriptor) else { return false }
-        guard eligibility.focus.allows(focus) else { return false }
 
-        if selection == .multi, multiSelectionPolicy == .intersection {
-            return eligibility.supportsMultiSelection
+        if selection == .multi {
+            switch multiSelectionPolicy {
+            case .intersection:
+                return eligibility.supportsMultiSelection
+            }
         }
 
         return true

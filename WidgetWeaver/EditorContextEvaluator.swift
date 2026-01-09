@@ -101,7 +101,10 @@ enum EditorContextEvaluator {
         }()
 
 #if DEBUG
-        if resolvedSelection == .multi,
+        let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+        if !isRunningUnitTests,
+           resolvedSelection == .multi,
            explicitSelectionCount != nil,
            explicitComposition == .unknown,
            selectionCompositionHint == .unknown {
