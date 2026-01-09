@@ -154,72 +154,128 @@ extension ContentView {
         UserDefaults.standard.bool(forKey: "widgetweaver.uiTestHooks.enabled")
     }
 
+    private struct EditorUITestHookButton: View {
+        let title: String
+        let identifier: String
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                Text(title)
+                    .font(.caption2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+
     @ViewBuilder
     private var editorUITestHooksOverlay: some View {
         if uiTestHooksEnabled {
             VStack(alignment: .trailing, spacing: 8) {
-                Button("UI Test: Template Poster") {
-                    var draft = currentFamilyDraft()
-                    draft.template = .poster
-                    setCurrentFamilyDraft(draft)
-                }
-                .accessibilityIdentifier("EditorUITestHook.templatePoster")
+                EditorUITestHookButton(
+                    title: "UI Test: Template Poster",
+                    identifier: "EditorUITestHook.templatePoster",
+                    action: {
+                        var draft = currentFamilyDraft()
+                        draft.template = .poster
+                        setCurrentFamilyDraft(draft)
+                    }
+                )
 
-                Button("UI Test: Focus Widget") {
-                    editorFocusSnapshot = .widgetDefault
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusWidget")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Widget",
+                    identifier: "EditorUITestHook.focusWidget",
+                    action: {
+                        editorFocusSnapshot = .widgetDefault
+                    }
+                )
 
-                Button("UI Test: Focus Smart Photo Crop") {
-                    editorFocusSnapshot = .singleNonAlbumElement(id: "smartPhotoCrop")
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusSmartPhotoCrop")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Smart Photo Crop",
+                    identifier: "EditorUITestHook.focusSmartPhotoCrop",
+                    action: {
+                        editorFocusSnapshot = .singleNonAlbumElement(id: "smartPhotoCrop")
+                    }
+                )
 
-                Button("UI Test: Focus Smart Rules") {
-                    editorFocusSnapshot = .smartRuleEditor(albumID: "uiTest.smartPhotoRules")
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusSmartRules")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Smart Rules",
+                    identifier: "EditorUITestHook.focusSmartRules",
+                    action: {
+                        editorFocusSnapshot = .smartRuleEditor(albumID: "uiTest.smartPhotoRules")
+                    }
+                )
 
-                Button("UI Test: Focus Album Container") {
-                    editorFocusSnapshot = .smartAlbumContainer(id: "uiTest.albumContainer")
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusAlbumContainer")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Album Container",
+                    identifier: "EditorUITestHook.focusAlbumContainer",
+                    action: {
+                        editorFocusSnapshot = .smartAlbumContainer(id: "uiTest.albumContainer")
+                    }
+                )
 
-                Button("UI Test: Focus Album Photo Item") {
-                    editorFocusSnapshot = .smartAlbumPhotoItem(
-                        albumID: "uiTest.album",
-                        itemID: "uiTest.photo"
-                    )
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusAlbumPhotoItem")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Album Photo Item",
+                    identifier: "EditorUITestHook.focusAlbumPhotoItem",
+                    action: {
+                        editorFocusSnapshot = .smartAlbumPhotoItem(
+                            albumID: "uiTest.album",
+                            itemID: "uiTest.photo"
+                        )
+                    }
+                )
 
-                Button("UI Test: Multi-select Widgets") {
-                    let selection = EditorSelectionSet(items: [
-                        .nonAlbumElement(id: "uiTest.widgetA"),
-                        .nonAlbumElement(id: "uiTest.widgetB"),
-                    ])
-                    editorFocusSnapshot = selection.toFocusSnapshot()
-                }
-                .accessibilityIdentifier("EditorUITestHook.multiSelectWidgets")
+                EditorUITestHookButton(
+                    title: "UI Test: Multi-select Widgets",
+                    identifier: "EditorUITestHook.multiSelectWidgets",
+                    action: {
+                        let selection = EditorSelectionSet(items: [
+                            .nonAlbumElement(id: "uiTest.widgetA"),
+                            .nonAlbumElement(id: "uiTest.widgetB"),
+                        ])
+                        editorFocusSnapshot = selection.toFocusSnapshot()
+                    }
+                )
 
-                Button("UI Test: Multi-select Mixed") {
-                    let selection = EditorSelectionSet(items: [
-                        .albumContainer(id: "uiTest.albumContainer", subtype: .smart),
-                        .nonAlbumElement(id: "uiTest.widgetA"),
-                        .nonAlbumElement(id: "uiTest.widgetB"),
-                    ])
-                    editorFocusSnapshot = selection.toFocusSnapshot()
-                }
-                .accessibilityIdentifier("EditorUITestHook.multiSelectMixed")
+                EditorUITestHookButton(
+                    title: "UI Test: Multi-select Mixed",
+                    identifier: "EditorUITestHook.multiSelectMixed",
+                    action: {
+                        let selection = EditorSelectionSet(items: [
+                            .albumContainer(id: "uiTest.albumContainer", subtype: .smart),
+                            .nonAlbumElement(id: "uiTest.widgetA"),
+                            .nonAlbumElement(id: "uiTest.widgetB"),
+                        ])
+                        editorFocusSnapshot = selection.toFocusSnapshot()
+                    }
+                )
 
-                Button("UI Test: Focus Clock") {
-                    editorFocusSnapshot = .clockFocus()
-                }
-                .accessibilityIdentifier("EditorUITestHook.focusClock")
+                EditorUITestHookButton(
+                    title: "UI Test: Focus Clock",
+                    identifier: "EditorUITestHook.focusClock",
+                    action: {
+                        editorFocusSnapshot = .clockFocus()
+                    }
+                )
             }
-            .font(.caption2)
-            .padding(8)
-            .opacity(0.08)
+            .padding(10)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1)
+            )
+            .opacity(0.92)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("EditorUITestHook.overlayRoot")
             .padding(.top, 6)
