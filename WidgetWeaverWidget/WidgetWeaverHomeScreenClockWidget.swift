@@ -59,18 +59,13 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    /// Precompute minute-boundary entries far enough ahead that the widget can sit idle (e.g. in a
-    /// Smart Stack) for many hours without the timeline expiring and falling back to WidgetKit’s
-    /// placeholder redaction.
-    ///
-    /// 24 hours of minute-boundary entries plus the current minute anchor.
-    static let timelineMinutes: Int = 24 * 60
-    static let maxEntriesPerTimeline: Int = timelineMinutes + 1
+    /// 120 minute-boundary entries (plus the current minute anchor) ≈ 2 hours of reliable ticking.
+    /// Kept intentionally small to stay within WidgetKit’s timeline budget.
+    static let maxEntriesPerTimeline: Int = 121
 
-    /// Best-effort request for WidgetKit to rebuild the timeline periodically.
-    /// This is intentionally well inside the timeline span so the widget keeps ticking even if the
-    /// reload request is delayed.
-    static let requestedReloadInterval: TimeInterval = 6 * 60 * 60
+    /// Request a refresh *before* the current timeline runs out.
+    /// This prevents a gap (no future entries) that makes WidgetKit fall back to placeholder rendering.
+    static let reloadAfterMinutes: Int = 60
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -146,7 +141,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             next = next.addingTimeInterval(60.0)
         }
 
-        let reloadDate = minuteAnchorNow.addingTimeInterval(WWClockTimelineConfig.requestedReloadInterval)
+        let reloadDate = minuteAnchorNow.addingTimeInterval(
+            TimeInterval(WWClockTimelineConfig.reloadAfterMinutes * 60)
+        )
 
         WWClockDebugLog.appendLazy(
             category: "clock",
@@ -212,8 +209,8 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
             // Force per-entry refresh on the Home Screen.
-            // Without an entry-keyed identity, WidgetKit can keep an archived snapshot and the minute hand
-            // will lag (even if the provider is generating correct minute-boundary entries).
+            // Without an entry-keyed identity, WidgetKit can keep an archived snapshot and stop applying
+            // timeline advances to the rendered view.
             WidgetWeaverHomeScreenClockView(entry: entry)
                 .id(entry.date)
                 .transaction { transaction in
