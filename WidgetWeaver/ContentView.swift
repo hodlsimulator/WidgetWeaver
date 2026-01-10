@@ -119,95 +119,188 @@ struct ContentView: View {
     enum LibrarySort: String, CaseIterable, Identifiable {
         case updated
         case name
+        case template
+        case accent
 
         var id: String { rawValue }
 
-        var displayName: String {
+        var title: String {
             switch self {
             case .updated: return "Updated"
             case .name: return "Name"
+            case .template: return "Template"
+            case .accent: return "Accent"
             }
         }
+
+        static var ordered: [LibrarySort] { [.updated, .name, .template, .accent] }
     }
 
     enum LibraryFilter: String, CaseIterable, Identifiable {
         case all
-        case templates
-        case saved
+        case `default` = "default"
+        case weather
+        case nextUp = "nextUp"
+        case steps
+        case withImage = "withImage"
 
         var id: String { rawValue }
 
-        var displayName: String {
+        var title: String {
             switch self {
             case .all: return "All"
-            case .templates: return "Templates"
-            case .saved: return "Saved"
+            case .default: return "Default"
+            case .weather: return "Weather"
+            case .nextUp: return "Next Up"
+            case .steps: return "Steps"
+            case .withImage: return "With Image"
             }
         }
+
+        static var ordered: [LibraryFilter] { [.all, .default, .weather, .nextUp, .steps, .withImage] }
     }
 
-    var librarySort: LibrarySort {
-        get { LibrarySort(rawValue: librarySortRaw) ?? .updated }
-        set { librarySortRaw = newValue.rawValue }
-    }
+    private struct LibraryItem: Identifiable {
+        let index: Int
+        let spec: WidgetSpec
 
-    var libraryFilter: LibraryFilter {
-        get { LibraryFilter(rawValue: libraryFilterRaw) ?? .all }
-        set { libraryFilterRaw = newValue.rawValue }
-    }
+        let nameKey: String
+        let templateKey: String
+        let accentKey: String
+        let searchKey: String
+        let updatedAt: Date
 
-    var libraryFilterChips: [LibraryFilterChip] {
-        LibraryFilter.allCases.map { filter in
-            LibraryFilterChip(
-                id: filter.id,
-                label: filter.displayName,
-                selected: filter == libraryFilter,
-                onSelect: { libraryFilter = filter }
-            )
+        var id: UUID { spec.id }
+
+        init(index: Int, spec: WidgetSpec) {
+            self.index = index
+            self.spec = spec
+
+            self.nameKey = spec.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            self.templateKey = spec.layout.template.displayName.lowercased()
+            self.accentKey = spec.style.accent.displayName.lowercased()
+
+            let secondary = spec.secondaryText ?? ""
+            self.searchKey = (spec.name + "\n" + spec.primaryText + "\n" + secondary).lowercased()
+            self.updatedAt = spec.updatedAt
         }
     }
 
-    var libraryDisplayedSpecs: [WidgetSpec] {
-        let filtered = libraryFilteredSpecs
+    private var librarySort: LibrarySort { LibrarySort(rawValue: librarySortRaw) ?? .updated }
+    private var libraryFilter: LibraryFilter { LibraryFilter(rawValue: libraryFilterRaw) ?? .all }
 
-        if librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return librarySortedSpecs(filtered)
-        }
-
-        let needle = librarySearchText.lowercased()
-
-        let matches = filtered.filter { spec in
-            let name = specDisplayName(spec).lowercased()
-            return name.contains(needle)
-        }
-
-        return librarySortedSpecs(matches)
+    private var libraryIsFilteringOrSearching: Bool {
+        if libraryFilter != .all { return true }
+        return !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var libraryFilteredSpecs: [WidgetSpec] {
-        switch libraryFilter {
-        case .all:
-            return savedSpecs
-        case .templates:
-            return savedSpecs.filter { $0.isTemplate }
-        case .saved:
-            return savedSpecs.filter { !$0.isTemplate }
+    private var libraryDisplayedSpecs: [WidgetSpec] {
+        let q = librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var items = savedSpecs.enumerated().map { LibraryItem(index: $0.offset, spec: $0.element) }
+
+        items = items.filter { item in
+            switch libraryFilter {
+            case .all:
+                return true
+
+            case .default:
+                guard let defaultSpecID else { return false }
+                return item.spec.id == defaultSpecID
+
+            case .weather:
+                return item.spec.layout.template == .weather
+
+            case .nextUp:
+                return item.spec.layout.template == .nextUpCalendar
+
+            case .steps:
+                return item.spec.usesStepsRendering()
+
+            case .withImage:
+                return item.spec.image != nil
+            }
         }
-    }
 
-    var libraryIsFilteringOrSearching: Bool {
-        let searching = !librarySearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let filtering = libraryFilter != .all
-        return searching || filtering
-    }
+        if !q.isEmpty {
+            items = items.filter { $0.searchKey.contains(q) }
+        }
 
-    func librarySortedSpecs(_ specs: [WidgetSpec]) -> [WidgetSpec] {
         switch librarySort {
         case .updated:
-            return specs.sorted { $0.updatedAt > $1.updatedAt }
+            items.sort {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.index < $1.index
+            }
+
         case .name:
-            return specs.sorted { specDisplayName($0) < specDisplayName($1) }
+            items.sort {
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.index < $1.index
+            }
+
+        case .template:
+            items.sort {
+                if $0.templateKey != $1.templateKey { return $0.templateKey < $1.templateKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                return $0.index < $1.index
+            }
+
+        case .accent:
+            items.sort {
+                if $0.accentKey != $1.accentKey { return $0.accentKey < $1.accentKey }
+                if $0.nameKey != $1.nameKey { return $0.nameKey < $1.nameKey }
+                return $0.index < $1.index
+            }
         }
+
+        return items.map(\.spec)
+    }
+
+    private func clearLibrarySearchAndFilter() {
+        librarySearchText = ""
+        libraryFilterRaw = LibraryFilter.all.rawValue
+    }
+
+    private var libraryFilterChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LibraryFilter.ordered) { filter in
+                    libraryFilterChip(filter)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func libraryFilterChip(_ filter: LibraryFilter) -> some View {
+        let isSelected = filter == libraryFilter
+
+        return Button {
+            libraryFilterRaw = filter.rawValue
+        } label: {
+            Text(filter.title)
+                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(filter.title)
+    }
+
+    init() {
+        Self.applyAppearanceIfNeeded()
     }
 
     var body: some View {
@@ -380,81 +473,80 @@ struct ContentView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
-                            }
-                        }
-                        .onDelete { indexSet in
-                            if let index = indexSet.first {
-                                let spec = displayedSpecs[index]
-                                deleteDesignFromLibrary(spec)
+                                .disabled(savedSpecs.count <= 1)
                             }
                         }
                     }
+                } header: {
+                    Text("Designs")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tip: add a WidgetWeaver widget on your Home Screen, then long-press → Edit Widget to choose a Design.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !proManager.isProUnlocked {
+                            Text("Free tier designs: \(savedSpecs.count)/\(WidgetWeaverEntitlements.maxFreeDesigns)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        selectedTab = .explore
+                    } label: {
+                        Label("Browse templates (Explore)", systemImage: "sparkles")
+                    }
+
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New blank design", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Quick start")
                 }
             }
             .scrollContentBackground(.hidden)
-            .searchable(text: $librarySearchText)
-            .navigationTitle("Library")
-            .toolbar { libraryToolbar }
+            .listStyle(.insetGrouped)
         }
-    }
+        .navigationTitle("Library")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $librarySearchText, placement: .navigationBarDrawer(displayMode: .always))
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $librarySortRaw) {
+                        ForEach(LibrarySort.ordered) { sort in
+                            Text(sort.title).tag(sort.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort")
+            }
 
-    private var libraryFilterChipsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(libraryFilterChips) { chip in
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
                     Button {
-                        chip.onSelect()
+                        selectedTab = .explore
                     } label: {
-                        Text(chip.label)
-                            .font(.subheadline.weight(chip.selected ? .semibold : .regular))
-                            .foregroundStyle(chip.selected ? .primary : .secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(chip.selected ? Color.secondary.opacity(0.18) : Color.secondary.opacity(0.08))
-                            )
+                        Label("Explore templates", systemImage: "sparkles")
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
 
-    private var libraryToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Picker("Sort", selection: Binding(
-                    get: { librarySort },
-                    set: { librarySort = $0 }
-                )) {
-                    ForEach(LibrarySort.allCases) { sort in
-                        Text(sort.displayName).tag(sort)
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New design", systemImage: "plus")
                     }
-                }
-            } label: {
-                Image(systemName: "arrow.up.arrow.down")
-            }
-            .accessibilityLabel("Sort")
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button {
-                    selectedTab = .explore
                 } label: {
-                    Label("Explore templates", systemImage: "sparkles")
+                    Image(systemName: "plus.circle")
                 }
-
-                Button {
-                    createNewDesign()
-                    selectedTab = .editor
-                } label: {
-                    Label("New design", systemImage: "plus")
-                }
-            } label: {
-                Image(systemName: "plus.circle")
             }
         }
     }
@@ -634,134 +726,55 @@ struct ContentView: View {
 
         case .remix:
             return AnyView(
-                WidgetWeaverRemixView(
-                    prompt: $aiPrompt,
-                    makeGeneratedDefault: $aiMakeGeneratedDefault,
-                    patchInstruction: $aiPatchInstruction,
-                    statusMessage: $aiStatusMessage,
+                WidgetWeaverRemixSheet(
                     variants: remixVariants,
-                    onGenerate: generateRemix,
-                    onPatch: patchRemix,
-                    onApply: applyRemixVariant,
+                    family: previewFamily,
+                    onApply: { spec in applyRemixVariant(spec) },
+                    onAgain: { remixAgain() },
                     onClose: { activeSheet = nil }
                 )
             )
 
         case .weather:
-            return AnyView(WidgetWeaverWeatherSettingsView())
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverWeatherSettingsView(onClose: { activeSheet = nil })
+                }
+            )
 
         case .steps:
-            return AnyView(WidgetWeaverStepsSettingsView())
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverStepsSettingsView(onClose: { activeSheet = nil })
+                }
+            )
 
         case .activity:
-            return AnyView(WidgetWeaverActivitySettingsView())
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverActivitySettingsView(onClose: { activeSheet = nil })
+                }
+            )
 
         case .importReview:
-            return AnyView(
-                WidgetWeaverImportReviewView(
-                    model: importReviewModel,
-                    selection: $importReviewSelection,
-                    onImport: performImportFromReview,
-                    onCancel: cancelImportReview
-                )
-            )
+            return importReviewSheetAnyView()
         }
     }
 
-    private var remixToolbarButton: some View {
-        Button {
-            activeSheet = .remix
-        } label: {
-            Image(systemName: "wand.and.stars")
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task { await prepareImportReview(from: url) }
+
+        case .failure(let error):
+            if (error as NSError).code == NSUserCancelledError { return }
+            saveStatusMessage = "Import failed: \(error.localizedDescription)"
         }
-        .accessibilityLabel("Remix")
-        .disabled(selectedTab != .editor)
     }
 
-    private var toolbarMenu: some View {
-        Menu {
-            Button {
-                activeSheet = .widgetHelp
-            } label: {
-                Label("Widget help", systemImage: "questionmark.circle")
-            }
-
-            Button {
-                activeSheet = .variables
-            } label: {
-                Label("Variables", systemImage: "curlybraces")
-            }
-
-            Button {
-                activeSheet = .inspector
-            } label: {
-                Label("Inspector", systemImage: "info.circle")
-            }
-
-#if DEBUG
-            Divider()
-
-            Toggle("Editor diagnostics", isOn: $showEditorDiagnostics)
-#endif
-
-            Divider()
-
-            Button {
-                showImportPicker = true
-            } label: {
-                Label("Import design", systemImage: "square.and.arrow.down")
-            }
-
-            Button {
-                exportCurrentDesign()
-            } label: {
-                Label("Export design", systemImage: "square.and.arrow.up")
-            }
-
-            Divider()
-
-            Button {
-                cleanupUnusedImages()
-                showImageCleanupConfirmation = true
-            } label: {
-                Label("Clean up unused images", systemImage: "trash.slash")
-            }
-
-            Divider()
-
-            Button(role: .destructive) {
-                showRevertConfirmation = true
-            } label: {
-                Label("Revert changes", systemImage: "arrow.counterclockwise")
-            }
-
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
-                Label("Delete design", systemImage: "trash")
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-        }
-        .accessibilityLabel("Menu")
-    }
-}
-
-// MARK: - Library filter chip model
-
-struct LibraryFilterChip: Identifiable, Hashable {
-    var id: String
-    var label: String
-    var selected: Bool
-    var onSelect: () -> Void
-
-    static func == (lhs: LibraryFilterChip, rhs: LibraryFilterChip) -> Bool {
-        lhs.id == rhs.id && lhs.selected == rhs.selected && lhs.label == rhs.label
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-        hasher.combine(label)
-        hasher.combine(selected)
+    private func handlePickedPhotoChange(_ newItem: PhotosPickerItem?) {
+        guard let newItem else { return }
+        Task { await importPickedImage(newItem) }
     }
 }
