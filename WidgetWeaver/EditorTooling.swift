@@ -153,16 +153,13 @@ struct EditorToolDefinition: Hashable, Sendable {
     ) -> Bool {
         guard requiredCapabilities.isSubset(of: capabilities) else { return false }
 
-        let eligibilityResult = EditorToolEligibilityEvaluator.isEligible(
+        return EditorToolEligibilityEvaluator.isEligible(
             eligibility: eligibility,
             selection: context.selection,
             selectionDescriptor: selectionDescriptor,
             focus: context.focus,
             multiSelectionPolicy: multiSelectionPolicy
         )
-        guard eligibilityResult else { return false }
-
-        return true
     }
 }
 
@@ -442,10 +439,10 @@ enum EditorToolRegistry {
 
         // Prioritise Smart Rules when editing them.
         if case .smartRuleEditor = context.focus,
-           let idx = focusGated.firstIndex(of: .smartRules),
+           let idx = focusGated.firstIndex(of: EditorToolID.smartRules),
            idx != 0 {
             focusGated.remove(at: idx)
-            focusGated.insert(.smartRules, at: 0)
+            focusGated.insert(EditorToolID.smartRules, at: 0)
         }
 
         return focusGated
