@@ -147,3 +147,29 @@ final class EditorFocusRestorationStackTests: XCTestCase {
         XCTAssertTrue(stack.entries.isEmpty)
     }
 }
+
+final class EditorNonPhotosCapabilitySnapshotTests: XCTestCase {
+    func testNonPhotosCapabilitySnapshotIsDeterministicAndEmptyInB1() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let a = EditorToolRegistry.capabilitySnapshot(for: ctx)
+        let b = EditorToolRegistry.capabilitySnapshot(for: ctx)
+
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(a.toolCapabilities, EditorToolRegistry.capabilities(for: ctx))
+
+        XCTAssertTrue(a.nonPhotos.supported.isEmpty)
+        XCTAssertEqual(a.nonPhotos.sortedDebugLabels, [])
+        XCTAssertEqual(a.nonPhotos.debugSummary, "")
+    }
+}

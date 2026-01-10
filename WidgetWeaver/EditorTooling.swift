@@ -71,6 +71,55 @@ struct EditorCapability: Hashable, Sendable, RawRepresentable {
 
 typealias EditorCapabilities = Set<EditorCapability>
 
+
+// MARK: - Non-Photos capability scaffolding (10S-B1)
+
+/// Capability keys for non-Photos editor requirements.
+///
+/// These keys model availability that is not derived from Photos/Albums content (for example:
+/// feature flags, external permissions, service availability, subscription state, etc).
+///
+/// 10S-B1 intentionally introduces this vocabulary without changing behaviour. Tools will only
+/// be impacted once they explicitly declare requirements against these keys.
+struct EditorNonPhotosCapability: Hashable, Sendable, RawRepresentable {
+    var rawValue: String
+
+    init(rawValue: String) { self.rawValue = rawValue }
+}
+
+typealias EditorNonPhotosCapabilities = Set<EditorNonPhotosCapability>
+
+/// Deterministic snapshot of non-Photos capabilities at a point in time.
+struct EditorNonPhotosCapabilitySnapshot: Hashable, Sendable {
+    var supported: EditorNonPhotosCapabilities
+
+    init(supported: EditorNonPhotosCapabilities = []) {
+        self.supported = supported
+    }
+
+    /// Stable ordering for diagnostics/tests.
+    var sortedDebugLabels: [String] {
+        supported.map(\.rawValue).sorted()
+    }
+
+    var debugSummary: String {
+        sortedDebugLabels.joined(separator: ",")
+    }
+}
+
+/// Aggregated capability snapshot used by the manifest/eligibility pipeline.
+struct EditorToolCapabilitySnapshot: Hashable, Sendable {
+    var toolCapabilities: EditorCapabilities
+    var nonPhotos: EditorNonPhotosCapabilitySnapshot
+}
+
+enum EditorNonPhotosCapabilityDeriver {
+    static func derive(for _: EditorToolContext) -> EditorNonPhotosCapabilitySnapshot {
+        // 10S-B1: scaffolding only (no behaviour change).
+        return EditorNonPhotosCapabilitySnapshot()
+    }
+}
+
 extension EditorCapability {
     // Template / tool availability.
     static let canEditLayout = EditorCapability(rawValue: "layout")
@@ -131,27 +180,32 @@ struct EditorToolDefinition: Hashable, Sendable {
     var order: Int
 
     var requiredCapabilities: EditorCapabilities
+    var requiredNonPhotosCapabilities: EditorNonPhotosCapabilities
     var eligibility: EditorToolEligibility
 
     init(
         id: EditorToolID,
         order: Int,
         requiredCapabilities: EditorCapabilities = [],
+        requiredNonPhotosCapabilities: EditorNonPhotosCapabilities = [],
         eligibility: EditorToolEligibility = .init()
     ) {
         self.id = id
         self.order = order
         self.requiredCapabilities = requiredCapabilities
+        self.requiredNonPhotosCapabilities = requiredNonPhotosCapabilities
         self.eligibility = eligibility
     }
 
     func isEligible(
         context: EditorToolContext,
         capabilities: EditorCapabilities,
+        nonPhotosCapabilities: EditorNonPhotosCapabilitySnapshot,
         selectionDescriptor: EditorSelectionDescriptor,
         multiSelectionPolicy: EditorMultiSelectionPolicy
     ) -> Bool {
         guard requiredCapabilities.isSubset(of: capabilities) else { return false }
+        guard requiredNonPhotosCapabilities.isSubset(of: nonPhotosCapabilities.supported) else { return false }
 
         return EditorToolEligibilityEvaluator.isEligible(
             eligibility: eligibility,
@@ -326,6 +380,13 @@ enum EditorToolRegistry {
 
     static let toolsSortedByOrder: [EditorToolDefinition] = tools.sorted { $0.order < $1.order }
 
+    static func capabilitySnapshot(for context: EditorToolContext) -> EditorToolCapabilitySnapshot {
+        EditorToolCapabilitySnapshot(
+            toolCapabilities: capabilities(for: context),
+            nonPhotos: EditorNonPhotosCapabilityDeriver.derive(for: context)
+        )
+    }
+
     static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
         var c: EditorCapabilities = [
             .canEditLayout,
@@ -407,7 +468,9 @@ enum EditorToolRegistry {
     }
 
     static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        let caps = capabilities(for: context)
+        let snapshot = capabilitySnapshot(for: context)
+        let caps = snapshot.toolCapabilities
+        let nonPhotos = snapshot.nonPhotos
 
         let selectionDescriptor = EditorSelectionDescriptor.describe(
             selection: context.selection,
@@ -423,6 +486,7 @@ enum EditorToolRegistry {
             if tool.isEligible(
                 context: context,
                 capabilities: caps,
+                nonPhotosCapabilities: nonPhotos,
                 selectionDescriptor: selectionDescriptor,
                 multiSelectionPolicy: multiSelectionPolicy
             ) {
