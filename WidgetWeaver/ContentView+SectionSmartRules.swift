@@ -9,19 +9,20 @@ import SwiftUI
 
 extension ContentView {
     func smartRulesSection(focus: Binding<EditorFocusSnapshot>) -> some View {
-        let d = currentFamilyDraft()
-        let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSmartPhoto = (d.imageSmartPhoto != nil)
+        let hasImage = editorToolContext.hasImageConfigured
+        let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
 
         return Section {
             if !hasImage {
-                Text("Choose a photo in Image first to enable Smart Rules.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.imageRequiredForSmartRules(),
+                    isBusy: false
+                )
             } else if !hasSmartPhoto {
-                Text("Make Smart Photo in Smart Photo first.\nSmart Rules are applied when building an Album Shuffle list.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.smartPhotoRequiredForSmartRules(),
+                    isBusy: false
+                )
             } else {
                 SmartPhotoSmartRulesSummaryView()
 

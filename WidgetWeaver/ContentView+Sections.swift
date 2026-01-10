@@ -295,9 +295,11 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Variables require WidgetWeaver Pro.")
-                    .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.proRequiredForVariables(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
             }
         } header: {
             sectionHeader("Variables")
@@ -331,20 +333,28 @@ extension ContentView {
 
     var matchedSetSection: some View {
         Section {
-            Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
-
-            if matchedSetEnabled {
-                Text("Matched set is on.\nEdits apply to \(editingFamilyLabel).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button { copyCurrentSizeToAllSizes() } label: {
-                    Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
-                }
+            if !proManager.isProUnlocked && !matchedSetEnabled {
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.proRequiredForMatchedSet(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
             } else {
-                Text("Matched set off.\nThe design is a single spec (Medium default).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
+
+                if matchedSetEnabled {
+                    Text("Matched set is on.\nEdits apply to \(editingFamilyLabel).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button { copyCurrentSizeToAllSizes() } label: {
+                        Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
+                    }
+                } else {
+                    Text("Matched set off.\nThe design is a single spec (Medium default).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         } header: {
             sectionHeader("Matched Set")

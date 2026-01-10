@@ -76,14 +76,11 @@ extension ContentView {
     var actionsSection: some View {
         Section {
             if !proManager.isProUnlocked {
-                Toggle("Interactive buttons (Pro)", isOn: .constant(false))
-                    .disabled(true)
-
-                Text("Interactive widget buttons are a Pro feature.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.proRequiredForActions(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
             } else {
                 Toggle("Interactive buttons", isOn: $actionBarDraft.isEnabled)
 

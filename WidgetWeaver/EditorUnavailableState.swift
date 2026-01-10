@@ -82,6 +82,34 @@ struct EditorUnavailableState: Hashable, Sendable {
         )
     }
 
+    static func imageRequiredForSmartPhotoFraming() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Choose a photo in Image first to enable Smart Photo Framing.",
+            cta: nil
+        )
+    }
+
+    static func smartPhotoRequiredForSmartPhotoFraming() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Make Smart Photo in Smart Photo first to enable framing controls.",
+            cta: nil
+        )
+    }
+
+    static func imageRequiredForSmartRules() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Choose a photo in Image first to enable Smart Rules.",
+            cta: nil
+        )
+    }
+
+    static func smartPhotoRequiredForSmartRules() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Make Smart Photo in Smart Photo first.\nSmart Rules are applied when building an Album Shuffle list.",
+            cta: nil
+        )
+    }
+
     static func imageRequiredForAlbumShuffle() -> EditorUnavailableState {
         EditorUnavailableState(
             message: "Choose a photo in Image first. Then make Smart Photo renders in Smart Photo to enable Album Shuffle.",
@@ -101,6 +129,20 @@ struct EditorUnavailableState: Hashable, Sendable {
     static func proRequiredForVariables() -> EditorUnavailableState {
         EditorUnavailableState(
             message: "Variables require WidgetWeaver Pro.",
+            cta: .showPro()
+        )
+    }
+
+    static func proRequiredForMatchedSet() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Matched sets require WidgetWeaver Pro.",
+            cta: .showPro()
+        )
+    }
+
+    static func proRequiredForActions() -> EditorUnavailableState {
+        EditorUnavailableState(
+            message: "Interactive widget buttons are a Pro feature.",
             cta: .showPro()
         )
     }

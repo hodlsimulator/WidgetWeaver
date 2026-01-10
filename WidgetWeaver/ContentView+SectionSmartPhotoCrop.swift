@@ -11,18 +11,20 @@ import WidgetKit
 extension ContentView {
     func smartPhotoCropSection(focus: Binding<EditorFocusSnapshot>) -> some View {
         let d = currentFamilyDraft()
-        let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasSmartPhoto = d.imageSmartPhoto != nil
+        let hasImage = editorToolContext.hasImageConfigured
+        let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
 
         return Section {
             if !hasImage {
-                Text("Choose a photo in Image first to enable Smart Photo Framing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.imageRequiredForSmartPhotoFraming(),
+                    isBusy: false
+                )
             } else if !hasSmartPhoto {
-                Text("Make Smart Photo in Smart Photo first to enable framing controls.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.smartPhotoRequiredForSmartPhotoFraming(),
+                    isBusy: false
+                )
             } else if let smart = d.imageSmartPhoto {
                 SmartPhotoPreviewStripView(
                     smart: smart,
