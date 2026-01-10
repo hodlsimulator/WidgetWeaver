@@ -161,19 +161,26 @@ struct EditorFocusRestorationStack: Hashable, Sendable {
     /// Records a focus transition, updating the restoration stack if the transition enters or exits
     /// a tracked sub-flow.
     mutating func recordFocusChange(old: EditorFocusSnapshot, new: EditorFocusSnapshot) {
-        // 1) If leaving a tracked focus target, drop its entry (and any nested entries above it).
-        if let oldKind = kind(for: old.focus) {
-            if let idx = entries.lastIndex(where: { $0.kind == oldKind && $0.targetFocus == old.focus }) {
-                entries.removeSubrange(idx..<entries.count)
+        // Invariant: `entries` describes a stack of tracked “sub-flows” from outermost → innermost.
+        //
+        // When the editor enters a *new* tracked focus, it is typically nested on top of the current
+        // focus (e.g. Album Picker → Crop). In that case the existing entry must be kept and a new
+        // entry pushed.
+        //
+        // When the editor returns to a previously tracked focus (e.g. Crop → Album Picker), nested
+        // entries above the destination should be dropped.
+
+        // 1) Navigating back to an existing tracked focus: pop nested entries above it.
+        if let existingIdx = entries.lastIndex(where: { $0.targetFocus == new.focus }) {
+            let next = entries.index(after: existingIdx)
+            if next < entries.endIndex {
+                entries.removeSubrange(next..<entries.endIndex)
             }
+            return
         }
 
-        // 2) If entering a tracked focus target, push a new restoration entry.
+        // 2) Entering a new tracked focus: push, without dropping the previous tracked entry.
         if let newKind = kind(for: new.focus) {
-            if let last = entries.last, last.kind == newKind, last.targetFocus == new.focus {
-                return
-            }
-
             entries.append(
                 Entry(
                     kind: newKind,
@@ -181,6 +188,14 @@ struct EditorFocusRestorationStack: Hashable, Sendable {
                     previousSnapshot: old
                 )
             )
+            return
+        }
+
+        // 3) Leaving a tracked focus to an untracked focus: drop the old entry (and any nested above it).
+        if kind(for: old.focus) != nil {
+            if let oldIdx = entries.lastIndex(where: { $0.targetFocus == old.focus }) {
+                entries.removeSubrange(oldIdx..<entries.endIndex)
+            }
         }
     }
 
