@@ -47,6 +47,8 @@ extension ContentView {
     var editorForm: some View {
         Form {
             if FeatureFlags.contextAwareEditorToolSuiteEnabled {
+                widgetListSelectionSection
+
                 if editorToolContext.selection == .multi {
                     Section {
                         EditorUnavailableStateView(
@@ -77,6 +79,77 @@ extension ContentView {
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
         .animation(.easeInOut(duration: 0.15), value: editorVisibleToolIDs)
+    }
+
+    private var widgetListSelectionSection: some View {
+        Section {
+            EditorWidgetListSelectionSurface(
+                focus: $editorFocusSnapshot,
+                rows: widgetListSelectionRows
+            )
+        } header: {
+            sectionHeader("Widget list")
+        } footer: {
+            Text("Selection sets the editor context. Multi-select to enter a reduced tool mode that only shows set-safe tools.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var widgetListSelectionRows: [EditorWidgetListSelectionSurface.Row] {
+        let draft = currentFamilyDraft()
+
+        var out: [EditorWidgetListSelectionSurface.Row] = [
+            EditorWidgetListSelectionSurface.Row(
+                id: "text",
+                title: "Text element",
+                subtitle: "Non‑album selection",
+                item: .nonAlbumElement(id: "widgetweaver.element.text"),
+                accessibilityID: "EditorWidgetListSelection.Item.text"
+            ),
+            EditorWidgetListSelectionSurface.Row(
+                id: "layout",
+                title: "Layout element",
+                subtitle: "Non‑album selection",
+                item: .nonAlbumElement(id: "widgetweaver.element.layout"),
+                accessibilityID: "EditorWidgetListSelection.Item.layout"
+            ),
+        ]
+
+        if draft.template == .poster {
+            let (albumID, subtitle) = resolvedSmartAlbumContainerSelection(from: draft)
+
+            out.append(
+                EditorWidgetListSelectionSurface.Row(
+                    id: "smartAlbum",
+                    title: "Smart Photos (album container)",
+                    subtitle: subtitle,
+                    item: .albumContainer(id: albumID, subtype: .smart),
+                    accessibilityID: "EditorWidgetListSelection.Item.smartAlbumContainer"
+                )
+            )
+        }
+
+        return out
+    }
+
+    private func resolvedSmartAlbumContainerSelection(from draft: FamilyDraft) -> (albumID: String, subtitle: String) {
+        let fallbackAlbumID = "smartPhoto.album"
+
+        guard
+            let manifestFileName = draft.imageSmartPhoto?.shuffleManifestFileName?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !manifestFileName.isEmpty,
+            let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFileName)
+        else {
+            return (fallbackAlbumID, "Not configured")
+        }
+
+        let rawSourceID = manifest.sourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if rawSourceID.isEmpty {
+            return (fallbackAlbumID, "Not configured")
+        }
+
+        return (rawSourceID, "Album ID: \(rawSourceID)")
     }
 
     @ViewBuilder

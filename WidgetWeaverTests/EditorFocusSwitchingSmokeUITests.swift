@@ -5,8 +5,8 @@
 //  Created by . . on 1/8/26.
 //
 
-import XCTest
 import Foundation
+import XCTest
 
 final class EditorFocusSwitchingSmokeUITests: XCTestCase {
     private enum LaunchKeys {
@@ -29,8 +29,15 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         static let focusAlbumContainer = "EditorUITestHook.focusAlbumContainer"
         static let focusAlbumPhotoItem = "EditorUITestHook.focusAlbumPhotoItem"
         static let multiSelectWidgets = "EditorUITestHook.multiSelectWidgets"
-        static let multiSelectMixed = "EditorUITestHook.multiSelectMixed"
         static let focusClock = "EditorUITestHook.focusClock"
+    }
+
+    private enum WidgetListSelection {
+        static let root = "EditorWidgetListSelection.Root"
+        static let clear = "EditorWidgetListSelection.Clear"
+        static let itemText = "EditorWidgetListSelection.Item.text"
+        static let itemLayout = "EditorWidgetListSelection.Item.layout"
+        static let itemSmartAlbumContainer = "EditorWidgetListSelection.Item.smartAlbumContainer"
     }
 
     private enum IDs {
@@ -188,8 +195,6 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
             ("Focus widget", UITestHooks.focusWidget),
             ("Multi-select widgets", UITestHooks.multiSelectWidgets),
             ("Focus widget", UITestHooks.focusWidget),
-            ("Multi-select mixed", UITestHooks.multiSelectMixed),
-            ("Focus widget", UITestHooks.focusWidget),
         ]
 
         for (label, hookID) in steps {
@@ -197,6 +202,18 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
                 waitAndTap(hookID, in: app)
                 assertEditorStillRenders(in: app)
             }
+        }
+
+        XCTContext.runActivity(named: "Multi-select mixed via widget list") { _ in
+            waitAndTap(UITestHooks.focusWidget, in: app)
+
+            waitAndTap(WidgetListSelection.clear, in: app)
+            waitAndTap(WidgetListSelection.itemText, in: app)
+            waitAndTap(WidgetListSelection.itemSmartAlbumContainer, in: app)
+            assertEditorStillRenders(in: app)
+
+            waitAndTap(WidgetListSelection.clear, in: app)
+            assertEditorStillRenders(in: app)
         }
     }
 
