@@ -239,6 +239,25 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(tools.contains(.actions))
     }
 
+    func testVisibleToolsNonAlbumWidgetSelectionIncludesLayoutAndStyleInOrder() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .element(id: "widgetweaver.element.text"),
+            selectionCount: 1,
+            selectionComposition: .known([.nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+        XCTAssertEqual(tools, [.status, .designs, .widgets, .layout, .text, .style, .typography, .matchedSet, .variables, .sharing, .pro])
+    }
+
     func testToolOrderRemainsStableAcrossSmartPhotoFocusSwitches() {
         let cropCtx = EditorToolContext(
             template: .poster,
