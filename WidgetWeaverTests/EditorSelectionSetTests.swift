@@ -149,7 +149,7 @@ final class EditorFocusRestorationStackTests: XCTestCase {
 }
 
 final class EditorNonPhotosCapabilitySnapshotTests: XCTestCase {
-    func testNonPhotosCapabilitySnapshotIsDeterministicAndEmptyInB1() {
+    func testNonPhotosCapabilitySnapshotIsDeterministicAndEmptyWhenProIsLocked() {
         let ctx = EditorToolContext(
             template: .poster,
             isProUnlocked: false,
@@ -171,5 +171,29 @@ final class EditorNonPhotosCapabilitySnapshotTests: XCTestCase {
         XCTAssertTrue(a.nonPhotos.supported.isEmpty)
         XCTAssertEqual(a.nonPhotos.sortedDebugLabels, [])
         XCTAssertEqual(a.nonPhotos.debugSummary, "")
+    }
+
+    func testNonPhotosCapabilitySnapshotIncludesProUnlockedWhenProIsUnlocked() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let a = EditorToolRegistry.capabilitySnapshot(for: ctx)
+        let b = EditorToolRegistry.capabilitySnapshot(for: ctx)
+
+        XCTAssertEqual(a, b)
+        XCTAssertEqual(a.toolCapabilities, EditorToolRegistry.capabilities(for: ctx))
+
+        XCTAssertEqual(a.nonPhotos.supported, [.proUnlocked])
+        XCTAssertEqual(a.nonPhotos.sortedDebugLabels, ["proUnlocked"])
+        XCTAssertEqual(a.nonPhotos.debugSummary, "proUnlocked")
     }
 }

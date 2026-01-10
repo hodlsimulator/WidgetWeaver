@@ -89,6 +89,10 @@ struct EditorNonPhotosCapability: Hashable, Sendable, RawRepresentable {
 
 typealias EditorNonPhotosCapabilities = Set<EditorNonPhotosCapability>
 
+extension EditorNonPhotosCapability {
+    static let proUnlocked = EditorNonPhotosCapability(rawValue: "proUnlocked")
+}
+
 /// Deterministic snapshot of non-Photos capabilities at a point in time.
 struct EditorNonPhotosCapabilitySnapshot: Hashable, Sendable {
     var supported: EditorNonPhotosCapabilities
@@ -114,9 +118,14 @@ struct EditorToolCapabilitySnapshot: Hashable, Sendable {
 }
 
 enum EditorNonPhotosCapabilityDeriver {
-    static func derive(for _: EditorToolContext) -> EditorNonPhotosCapabilitySnapshot {
-        // 10S-B1: scaffolding only (no behaviour change).
-        return EditorNonPhotosCapabilitySnapshot()
+    static func derive(for context: EditorToolContext) -> EditorNonPhotosCapabilitySnapshot {
+        var supported: EditorNonPhotosCapabilities = []
+
+        if context.isProUnlocked {
+            supported.insert(.proUnlocked)
+        }
+
+        return EditorNonPhotosCapabilitySnapshot(supported: supported)
     }
 }
 
@@ -368,6 +377,7 @@ enum EditorToolRegistry {
             id: .ai,
             order: 150,
             requiredCapabilities: [.canUseAI],
+            requiredNonPhotosCapabilities: [.proUnlocked],
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
@@ -395,12 +405,9 @@ enum EditorToolRegistry {
             .canEditMatchedSet,
             .canEditVariables,
             .canShare,
+            .canUseAI,
             .canPurchasePro,
         ]
-
-        if context.isProUnlocked {
-            c.insert(.canUseAI)
-        }
 
         if context.matchedSetEnabled {
             c.insert(.canEditMatchedSet)
@@ -454,12 +461,14 @@ enum EditorToolRegistry {
     static func legacyVisibleTools(for context: EditorToolContext) -> [EditorToolID] {
         // Old behaviour: capabilities-only ordering (no eligibility/focus gating).
         let caps = legacyCapabilities(for: context)
+        let nonPhotos = EditorNonPhotosCapabilityDeriver.derive(for: context)
 
         var visible: [EditorToolID] = []
         visible.reserveCapacity(toolsSortedByOrder.count)
 
         for tool in toolsSortedByOrder {
-            if tool.requiredCapabilities.isSubset(of: caps) {
+            if tool.requiredCapabilities.isSubset(of: caps),
+               tool.requiredNonPhotosCapabilities.isSubset(of: nonPhotos.supported) {
                 visible.append(tool.id)
             }
         }

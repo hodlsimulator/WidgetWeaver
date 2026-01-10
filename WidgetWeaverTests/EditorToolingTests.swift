@@ -41,7 +41,7 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertTrue(caps.contains(.hasSmartPhotoConfigured))
 
         XCTAssertFalse(caps.contains(.canEditActions))
-        XCTAssertFalse(caps.contains(.canUseAI))
+        XCTAssertTrue(caps.contains(.canUseAI))
     }
 
     func testCapabilitiesClassicTemplateIncludesActionsButNoImage() {
@@ -517,6 +517,7 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(ctx.selection, .multi)
         XCTAssertEqual(ctx.selectionCount, 3)
     }
+
 
 
     func testContextEvaluatorPrefersExplicitOriginSelectionCountOverFallback() {
