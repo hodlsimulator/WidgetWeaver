@@ -148,16 +148,10 @@ struct EditorToolDefinition: Hashable, Sendable {
     func isEligible(
         context: EditorToolContext,
         capabilities: EditorCapabilities,
+        selectionDescriptor: EditorSelectionDescriptor,
         multiSelectionPolicy: EditorMultiSelectionPolicy
     ) -> Bool {
         guard requiredCapabilities.isSubset(of: capabilities) else { return false }
-
-        let selectionDescriptor = EditorSelectionDescriptor.describe(
-            selection: context.selection,
-            focus: context.focus,
-            selectionCount: context.selectionCount,
-            composition: context.selectionComposition
-        )
 
         let eligibilityResult = EditorToolEligibilityEvaluator.isEligible(
             eligibility: eligibility,
@@ -333,6 +327,8 @@ enum EditorToolRegistry {
         ),
     ]
 
+    static let toolsSortedByOrder: [EditorToolDefinition] = tools.sorted { $0.order < $1.order }
+
     static func capabilities(for context: EditorToolContext) -> EditorCapabilities {
         var c: EditorCapabilities = [
             .canEditLayout,
@@ -401,35 +397,55 @@ enum EditorToolRegistry {
         // Old behaviour: capabilities-only ordering (no eligibility/focus gating).
         let caps = legacyCapabilities(for: context)
 
-        return tools
-            .filter { $0.requiredCapabilities.isSubset(of: caps) }
-            .sorted { $0.order < $1.order }
-            .map(\.id)
+        var visible: [EditorToolID] = []
+        visible.reserveCapacity(toolsSortedByOrder.count)
+
+        for tool in toolsSortedByOrder {
+            if tool.requiredCapabilities.isSubset(of: caps) {
+                visible.append(tool.id)
+            }
+        }
+
+        return visible
     }
 
     static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
         let caps = capabilities(for: context)
 
-        let eligible = tools
-            .filter { $0.isEligible(context: context, capabilities: caps, multiSelectionPolicy: multiSelectionPolicy) }
-            .sorted { $0.order < $1.order }
-            .map(\.id)
+        let selectionDescriptor = EditorSelectionDescriptor.describe(
+            selection: context.selection,
+            focus: context.focus,
+            selectionCount: context.selectionCount,
+            composition: context.selectionComposition
+        )
+
+        var eligible: [EditorToolID] = []
+        eligible.reserveCapacity(toolsSortedByOrder.count)
+
+        for tool in toolsSortedByOrder {
+            if tool.isEligible(
+                context: context,
+                capabilities: caps,
+                selectionDescriptor: selectionDescriptor,
+                multiSelectionPolicy: multiSelectionPolicy
+            ) {
+                eligible.append(tool.id)
+            }
+        }
 
         // Apply focus gating as last-mile filter.
         let focusGroup = editorToolFocusGroup(for: context.focus)
-        let focusGated = editorToolIDsApplyingFocusGate(
+        var focusGated = editorToolIDsApplyingFocusGate(
             eligible: eligible,
             focusGroup: focusGroup
         )
 
         // Prioritise Smart Rules when editing them.
-        if case .smartRuleEditor = context.focus {
-            if let idx = focusGated.firstIndex(of: EditorToolID.smartRules), idx != 0 {
-                var moved = focusGated
-                moved.remove(at: idx)
-                moved.insert(EditorToolID.smartRules, at: 0)
-                return moved
-            }
+        if case .smartRuleEditor = context.focus,
+           let idx = focusGated.firstIndex(of: .smartRules),
+           idx != 0 {
+            focusGated.remove(at: idx)
+            focusGated.insert(.smartRules, at: 0)
         }
 
         return focusGated

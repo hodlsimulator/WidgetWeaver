@@ -8,6 +8,9 @@
 import Foundation
 
 enum EditorContextEvaluator {
+#if DEBUG
+    private static let isRunningUnitTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+#endif
     static func evaluate(
         draft: FamilyDraft,
         isProUnlocked: Bool,
@@ -101,9 +104,7 @@ enum EditorContextEvaluator {
         }()
 
 #if DEBUG
-        let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-
-        if !isRunningUnitTests,
+        if !Self.isRunningUnitTests,
            resolvedSelection == .multi,
            explicitSelectionCount != nil,
            explicitComposition == .unknown,
@@ -112,7 +113,14 @@ enum EditorContextEvaluator {
         }
 #endif
 
-        let hasSymbolConfigured = !draft.symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSymbolConfigured: Bool = {
+            for scalar in draft.symbolName.unicodeScalars {
+                if !scalar.properties.isWhitespace {
+                    return true
+                }
+            }
+            return false
+        }()
         let hasImageConfigured = !draft.imageFileName.isEmpty
         let hasSmartPhotoConfigured = draft.imageSmartPhoto != nil
 
