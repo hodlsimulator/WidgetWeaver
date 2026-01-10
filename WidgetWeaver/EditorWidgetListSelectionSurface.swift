@@ -43,16 +43,14 @@ struct EditorWidgetListSelectionSurface: View {
     @State private var lastWrittenSnapshot: EditorFocusSnapshot?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            headerRow
+        Group {
+            selectionSummaryRow
+            clearButtonRow
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(rows) { row in
-                    rowButton(row)
-                }
+            ForEach(rows) { row in
+                rowButton(row)
             }
         }
-        .accessibilityIdentifier("EditorWidgetListSelection.Root")
         .onAppear {
             selection = EditorSelectionSet()
             lastWrittenSnapshot = nil
@@ -62,24 +60,23 @@ struct EditorWidgetListSelectionSurface: View {
         }
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 8) {
-            Text(selectionSummaryText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var selectionSummaryRow: some View {
+        Text(selectionSummaryText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("EditorWidgetListSelection.Root")
+    }
 
-            Spacer(minLength: 0)
-
-            Button {
-                clearSelection()
-            } label: {
-                Label("Clear", systemImage: "xmark.circle")
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.mini)
-            .accessibilityIdentifier("EditorWidgetListSelection.Clear")
+    private var clearButtonRow: some View {
+        Button {
+            clearSelection()
+        } label: {
+            Label("Clear selection", systemImage: "xmark.circle")
+                .labelStyle(.titleAndIcon)
         }
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
+        .accessibilityIdentifier("EditorWidgetListSelection.Clear")
     }
 
     private var selectionSummaryText: String {
