@@ -30,6 +30,7 @@ extension ContentView {
         defer { importInProgress = false }
 
         let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+        EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
         saveStatusMessage = granted ? "Photos access enabled." : "Photos access not granted."
     }
 }
