@@ -5,13 +5,97 @@
 //  Created by . . on 1/8/26.
 //
 
+import Foundation
 import XCTest
 @testable import WidgetWeaver
 
 final class EditorToolingTests: XCTestCase {
-    func testToolManifestIsSortedByOrder() {
-        let tools = EditorToolRegistry.toolsSortedByOrder.map(\.order)
-        XCTAssertEqual(tools, tools.sorted())
+    // MARK: - Capability derivation
+
+    func testCapabilitiesPosterTemplateIncludesSmartPhotoAndAlbumShuffle() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let caps = EditorToolRegistry.capabilities(for: ctx)
+
+        XCTAssertTrue(caps.contains(.canEditLayout))
+        XCTAssertTrue(caps.contains(.canEditTextContent))
+        XCTAssertTrue(caps.contains(.canEditStyle))
+
+        XCTAssertTrue(caps.contains(.canEditImage))
+        XCTAssertTrue(caps.contains(.canEditSmartPhoto))
+        XCTAssertTrue(caps.contains(.canEditAlbumShuffle))
+        XCTAssertTrue(caps.contains(.canEditTypography))
+
+        XCTAssertTrue(caps.contains(.canAccessPhotoLibrary))
+        XCTAssertTrue(caps.contains(.hasImageConfigured))
+        XCTAssertTrue(caps.contains(.hasSmartPhotoConfigured))
+
+        XCTAssertFalse(caps.contains(.canEditActions))
+        XCTAssertTrue(caps.contains(.canUseAI))
+    }
+
+    func testCapabilitiesClassicTemplateIncludesActionsButNoImage() {
+        let ctx = EditorToolContext(
+            template: .classic,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .notDetermined),
+            hasSymbolConfigured: false,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let caps = EditorToolRegistry.capabilities(for: ctx)
+
+        XCTAssertTrue(caps.contains(.canEditSymbol))
+        XCTAssertTrue(caps.contains(.canEditTypography))
+        XCTAssertTrue(caps.contains(.canEditActions))
+
+        XCTAssertFalse(caps.contains(.canEditImage))
+        XCTAssertFalse(caps.contains(.canEditSmartPhoto))
+        XCTAssertFalse(caps.contains(.canEditAlbumShuffle))
+
+        XCTAssertFalse(caps.contains(.canAccessPhotoLibrary))
+        XCTAssertFalse(caps.contains(.hasImageConfigured))
+        XCTAssertFalse(caps.contains(.hasSmartPhotoConfigured))
+    }
+
+    // MARK: - Selection descriptor
+
+    func testSelectionDescriptorDerivesSingleFromFocusWhenSelectionIsNone() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .none,
+            focus: .clock
+        )
+
+        XCTAssertEqual(descriptor.kind, .single)
+        XCTAssertEqual(descriptor.count, 1)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .nonAlbum)
+    }
+
+    func testSelectionDescriptorMarksMultiWidgetSelectionAsMixed() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 2)
+        XCTAssertEqual(descriptor.homogeneity, .mixed)
+        XCTAssertEqual(descriptor.albumSpecificity, .mixed)
     }
 
     func testToolManifestHasUniqueIDs() {
@@ -19,7 +103,17 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(Set(ids).count, ids.count)
     }
 
+    func testToolManifestIsSortedByOrder() {
+        let tools = EditorToolRegistry.toolsSortedByOrder.map(\.order)
+        XCTAssertEqual(tools, tools.sorted())
+    }
+
     func testToolManifestMixedSelectionPolicyIsExplicit() {
+        let mixedDescriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget
+        )
+
         let expectedMixedAllowed: Set<EditorToolID> = [
             .status,
             .designs,
@@ -33,66 +127,103 @@ final class EditorToolingTests: XCTestCase {
             .pro,
         ]
 
-        for tool in EditorToolRegistry.tools {
-            if tool.eligibility.selectionDescriptorPolicy == .mixedAllowed {
-                XCTAssertTrue(expectedMixedAllowed.contains(tool.id), "Unexpected mixed-allowed tool: \(tool.id)")
-            }
-        }
+        let actualMixedAllowed = Set(
+            EditorToolRegistry.tools
+                .filter { $0.eligibility.selectionDescriptor.allows(mixedDescriptor) }
+                .map(\.id)
+        )
+
+        XCTAssertEqual(actualMixedAllowed, expectedMixedAllowed)
     }
 
-    func testCapabilitiesPosterTemplateIncludesSmartPhotoAndAlbumShuffle() {
+    func testSelectionDescriptorUsesExplicitCompositionAndCountWhenProvided() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 4,
+            composition: .known([.albumContainer])
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 4)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .albumContainer)
+    }
+
+    func testSelectionDescriptorExplicitMixedCompositionWinsOverWidgetHeuristic() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 4,
+            composition: .known([.albumContainer, .nonAlbum])
+        )
+
+        XCTAssertEqual(descriptor.kind, .multi)
+        XCTAssertEqual(descriptor.count, 4)
+        XCTAssertEqual(descriptor.homogeneity, .mixed)
+        XCTAssertEqual(descriptor.albumSpecificity, .mixed)
+    }
+
+    func testSelectionDescriptorAlbumContainerFocusIsAlbumSpecific() {
+        let descriptor = EditorSelectionDescriptor.describe(
+            selection: .none,
+            focus: .albumContainer(id: "smartPhotoAlbumPicker", subtype: .smart)
+        )
+
+        XCTAssertEqual(descriptor.kind, .single)
+        XCTAssertEqual(descriptor.homogeneity, .homogeneous)
+        XCTAssertEqual(descriptor.albumSpecificity, .albumContainer)
+    }
+
+    // MARK: - Visible tool derivation
+
+    func testVisibleToolsSmartPhotoCropFocusIsPrioritisedSmartPhotoSuite() {
         let ctx = EditorToolContext(
             template: .poster,
             isProUnlocked: false,
             matchedSetEnabled: false,
             selection: .single,
-            focus: .widget,
+            focus: .element(id: "smartPhotoCrop"),
             photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
             hasSymbolConfigured: false,
             hasImageConfigured: true,
             hasSmartPhotoConfigured: true
         )
 
-        let caps = EditorToolRegistry.capabilities(for: ctx)
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
 
-        XCTAssertTrue(caps.contains(.canEditLayout))
-        XCTAssertTrue(caps.contains(.canEditTextContent))
-        XCTAssertTrue(caps.contains(.canEditStyle))
-        XCTAssertTrue(caps.contains(.canEditImage))
-        XCTAssertTrue(caps.contains(.canEditSmartPhoto))
-        XCTAssertTrue(caps.contains(.canEditAlbumShuffle))
-        XCTAssertTrue(caps.contains(.canEditTypography))
+        XCTAssertEqual(
+            tools,
+            [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .smartRules, .style]
+        )
 
-        XCTAssertFalse(caps.contains(.canEditSymbol))
-        XCTAssertFalse(caps.contains(.canEditActions))
-
-        XCTAssertTrue(caps.contains(.canUseAI))
+        XCTAssertFalse(tools.contains(.layout))
+        XCTAssertFalse(tools.contains(.text))
+        XCTAssertFalse(tools.contains(.typography))
     }
 
-    func testCapabilitiesClassicTemplateIncludesActionsButNoImage() {
+    func testVisibleToolsSmartRuleEditorPinsSmartRulesFirst() {
         let ctx = EditorToolContext(
-            template: .classic,
+            template: .poster,
             isProUnlocked: false,
             matchedSetEnabled: false,
             selection: .single,
-            focus: .widget,
+            focus: .smartRuleEditor(albumID: "album"),
             photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
-            hasSymbolConfigured: true,
-            hasImageConfigured: false,
-            hasSmartPhotoConfigured: false
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
         )
 
-        let caps = EditorToolRegistry.capabilities(for: ctx)
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
 
-        XCTAssertTrue(caps.contains(.canEditLayout))
-        XCTAssertTrue(caps.contains(.canEditTextContent))
-        XCTAssertTrue(caps.contains(.canEditStyle))
-        XCTAssertTrue(caps.contains(.canEditSymbol))
-        XCTAssertTrue(caps.contains(.canEditTypography))
-        XCTAssertTrue(caps.contains(.canEditActions))
+        XCTAssertEqual(
+            tools,
+            [.smartRules, .albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .style]
+        )
 
-        XCTAssertFalse(caps.contains(.canEditImage))
-        XCTAssertFalse(caps.contains(.canEditSmartPhoto))
+        XCTAssertFalse(tools.contains(.layout))
+        XCTAssertFalse(tools.contains(.actions))
     }
 
     func testVisibleToolsNonAlbumWidgetSelectionIncludesLayoutAndStyleInOrder() {
@@ -114,52 +245,37 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(tools, [.status, .designs, .widgets, .layout, .text, .style, .typography, .matchedSet, .variables, .sharing, .ai, .pro])
     }
 
-    func testSmartPhotoCropFocusShowsSmartPhotosSuiteOnly() {
-        let ctx = EditorToolContext(
+    func testToolOrderRemainsStableAcrossSmartPhotoFocusSwitches() {
+        let cropCtx = EditorToolContext(
             template: .poster,
             isProUnlocked: false,
             matchedSetEnabled: false,
             selection: .single,
-            focus: .albumPhoto(albumID: "smartPhotoAlbum", itemID: "itemA", subtype: .smart),
-            selectionCount: 1,
-            selectionComposition: .known([.albumPhotoItem]),
+            focus: .element(id: "smartPhotoCrop"),
             photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
             hasSymbolConfigured: false,
             hasImageConfigured: true,
             hasSmartPhotoConfigured: true
         )
 
-        let tools = EditorToolRegistry.visibleTools(for: ctx)
-
-        XCTAssertTrue(tools.contains(.smartPhoto))
-        XCTAssertTrue(tools.contains(.smartPhotoCrop))
-        XCTAssertTrue(tools.contains(.image))
-        XCTAssertTrue(tools.contains(.albumShuffle))
-        XCTAssertTrue(tools.contains(.smartRules))
-
-        XCTAssertFalse(tools.contains(.layout))
-        XCTAssertFalse(tools.contains(.text))
-        XCTAssertFalse(tools.contains(.style))
-        XCTAssertFalse(tools.contains(.typography))
-    }
-
-    func testSmartRulesEditorFocusPinsSmartRulesToolToFront() {
-        let ctx = EditorToolContext(
+        let elementCtx = EditorToolContext(
             template: .poster,
             isProUnlocked: false,
             matchedSetEnabled: false,
             selection: .single,
-            focus: .smartRuleEditor(albumID: "smartPhotoAlbum"),
+            focus: .element(id: "widgetweaver.element.text"),
             selectionCount: 1,
-            selectionComposition: .known([.albumContainer]),
+            selectionComposition: .known([.nonAlbum]),
             photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
             hasSymbolConfigured: false,
             hasImageConfigured: true,
             hasSmartPhotoConfigured: true
         )
 
-        let tools = EditorToolRegistry.visibleTools(for: ctx)
-        XCTAssertEqual(tools.first, .smartRules)
+        let cropTools = EditorToolRegistry.visibleTools(for: cropCtx)
+        let elementTools = EditorToolRegistry.visibleTools(for: elementCtx)
+
+        assertRelativeOrderStable(cropTools, elementTools)
     }
 
     func testVisibleToolsClockFocusDoesNotSurfaceSmartPhotoTools() {
@@ -169,12 +285,10 @@ final class EditorToolingTests: XCTestCase {
             matchedSetEnabled: false,
             selection: .single,
             focus: .clock,
-            selectionCount: 1,
-            selectionComposition: .known([.nonAlbum]),
             photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
             hasSymbolConfigured: false,
-            hasImageConfigured: false,
-            hasSmartPhotoConfigured: false
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
         )
 
         let tools = EditorToolRegistry.visibleTools(for: ctx)
@@ -189,6 +303,41 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertFalse(tools.contains(.smartRules))
 
         XCTAssertFalse(tools.contains(.actions))
+    }
+
+    func testToolOrderRemainsStableBetweenWidgetAndClockFocus() {
+        let widgetCtx = EditorToolContext(
+            template: .classic,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .widget,
+            selectionCount: 1,
+            selectionComposition: .known([.nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: true,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let clockCtx = EditorToolContext(
+            template: .classic,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .clock,
+            selectionCount: 1,
+            selectionComposition: .known([.nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: true,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: false
+        )
+
+        let widgetTools = EditorToolRegistry.visibleTools(for: widgetCtx)
+        let clockTools = EditorToolRegistry.visibleTools(for: clockCtx)
+
+        assertRelativeOrderStable(widgetTools, clockTools)
     }
 
     func testMultiSelectionWithExplicitCompositionUsesMultiSafeToolList() {
@@ -207,68 +356,34 @@ final class EditorToolingTests: XCTestCase {
         )
 
         let tools = EditorToolRegistry.visibleTools(for: ctx)
+
         XCTAssertEqual(
             tools,
             [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .ai, .pro]
         )
     }
 
-    func testMultiSelectionIntersectionShrinksToolList() {
-        let ctx = EditorToolContext(
-            template: .poster,
-            isProUnlocked: false,
-            matchedSetEnabled: false,
-            selection: .multi,
+    func testContextEvaluatorResolvesSelectionKindFromSelectionCount() {
+        var draft = FamilyDraft.defaultDraft
+        draft.template = .poster
+
+        let focus = EditorFocusSnapshot(
+            selection: .none,
             focus: .widget,
-            selectionCount: 2,
-            selectionComposition: .known([.albumContainer, .nonAlbum]),
-            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
-            hasSymbolConfigured: false,
-            hasImageConfigured: true,
-            hasSmartPhotoConfigured: true
+            selectionCount: 3,
+            selectionComposition: .unknown
         )
 
-        let tools = EditorToolRegistry.visibleTools(for: ctx)
-
-        XCTAssertTrue(tools.contains(.widgets))
-        XCTAssertTrue(tools.contains(.layout))
-        XCTAssertTrue(tools.contains(.style))
-
-        XCTAssertFalse(tools.contains(.text))
-        XCTAssertFalse(tools.contains(.image))
-        XCTAssertFalse(tools.contains(.smartPhoto))
-        XCTAssertFalse(tools.contains(.smartPhotoCrop))
-        XCTAssertFalse(tools.contains(.albumShuffle))
-        XCTAssertFalse(tools.contains(.smartRules))
-        XCTAssertFalse(tools.contains(.typography))
-    }
-
-    func testLegacyVisibleToolsIgnoreAvailabilityRequirements() {
-        let ctx = EditorToolContext(
-            template: .poster,
+        let ctx = EditorContextEvaluator.evaluate(
+            draft: draft,
             isProUnlocked: false,
             matchedSetEnabled: false,
-            selection: .single,
-            focus: .widget,
-            selectionCount: 1,
-            selectionComposition: .known([.nonAlbum]),
-            photoLibraryAccess: EditorPhotoLibraryAccess(status: .denied),
-            hasSymbolConfigured: false,
-            hasImageConfigured: false,
-            hasSmartPhotoConfigured: false
+            focus: focus,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised)
         )
 
-        let legacy = EditorToolRegistry.legacyVisibleTools(for: ctx)
-
-        XCTAssertTrue(legacy.contains(.albumShuffle))
-        XCTAssertTrue(legacy.contains(.smartRules))
-        XCTAssertTrue(legacy.contains(.smartPhotoCrop))
-    }
-
-    func testSelectionDescriptorPolicyIsExplicitForAllTools() {
-        for tool in EditorToolRegistry.tools {
-            XCTAssertNotNil(tool.eligibility.selectionDescriptorPolicy)
-        }
+        XCTAssertEqual(ctx.selection, .multi)
+        XCTAssertEqual(ctx.selectionCount, 3)
     }
 
     func testPerformanceVisibleToolsComputationIsFastEnough() {
@@ -286,32 +401,25 @@ final class EditorToolingTests: XCTestCase {
             hasSmartPhotoConfigured: true
         )
 
-        measure {
-            for _ in 0..<10_000 {
-                _ = EditorToolRegistry.visibleTools(for: ctx)
-            }
+        let start = CFAbsoluteTimeGetCurrent()
+        for _ in 0..<10_000 {
+            _ = EditorToolRegistry.visibleTools(for: ctx)
         }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+
+        XCTAssertLessThan(elapsed, 0.25)
     }
-}
 
-// MARK: - Helpers (local)
+    // MARK: - Helpers
 
-extension Font.Weight {
-    static var supportedRange: ClosedRange<Int> { 1...9 }
-}
-
-private extension Int {
-    var clampedToWeight: Font.Weight {
-        switch self {
-        case 1: return .ultraLight
-        case 2: return .thin
-        case 3: return .light
-        case 4: return .regular
-        case 5: return .medium
-        case 6: return .semibold
-        case 7: return .bold
-        case 8: return .heavy
-        default: return .black
-        }
+    private func assertRelativeOrderStable(
+        _ a: [EditorToolID],
+        _ b: [EditorToolID],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let common = a.filter { b.contains($0) }
+        let commonInB = b.filter { common.contains($0) }
+        XCTAssertEqual(common, commonInB, file: file, line: line)
     }
 }

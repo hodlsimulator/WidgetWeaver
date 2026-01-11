@@ -9,92 +9,102 @@ import XCTest
 @testable import WidgetWeaver
 
 final class EditorToolingNonPhotosCapabilityB2Tests: XCTestCase {
-    func testAIToolIsHiddenWhenProIsLockedInNonAlbumElementFocus() {
+    func testAIToolIsVisibleButUnavailableWhenProIsLockedInNonAlbumElementFocus() {
         let ctx = makePosterNonAlbumElementFocusContext(isProUnlocked: false)
 
         let tools = EditorToolRegistry.visibleTools(for: ctx)
-
-        XCTAssertFalse(tools.contains(.ai))
-        XCTAssertEqual(
-            tools,
-            [.status, .designs, .widgets, .layout, .text, .style, .typography, .matchedSet, .variables, .sharing, .pro]
-        )
-    }
-
-    func testAIToolIsVisibleWhenProIsUnlockedInNonAlbumElementFocus() {
-        let ctx = makePosterNonAlbumElementFocusContext(isProUnlocked: true)
-
-        let tools = EditorToolRegistry.visibleTools(for: ctx)
-
         XCTAssertTrue(tools.contains(.ai))
+
         XCTAssertEqual(
             tools,
             [.status, .designs, .widgets, .layout, .text, .style, .typography, .matchedSet, .variables, .sharing, .ai, .pro]
         )
+
+        let unavailable = EditorToolRegistry.unavailableState(for: .ai, context: ctx)
+        XCTAssertEqual(unavailable, EditorUnavailableState.proRequiredForAI())
+        XCTAssertEqual(unavailable?.cta?.kind, .showPro)
     }
 
-    func testAIToolIsHiddenWhenProIsLockedInClockFocus() {
-        let ctx = makeHeroClockFocusContext(isProUnlocked: false)
+    func testAIToolIsVisibleAndAvailableWhenProIsUnlockedInNonAlbumElementFocus() {
+        let ctx = makePosterNonAlbumElementFocusContext(isProUnlocked: true)
 
         let tools = EditorToolRegistry.visibleTools(for: ctx)
+        XCTAssertTrue(tools.contains(.ai))
 
-        XCTAssertFalse(tools.contains(.ai))
         XCTAssertEqual(
             tools,
-            [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .pro]
+            [.status, .designs, .widgets, .layout, .text, .style, .typography, .matchedSet, .variables, .sharing, .ai, .pro]
         )
+
+        let unavailable = EditorToolRegistry.unavailableState(for: .ai, context: ctx)
+        XCTAssertNil(unavailable)
     }
 
-    func testAIToolIsVisibleWhenProIsUnlockedInClockFocus() {
-        let ctx = makeHeroClockFocusContext(isProUnlocked: true)
+    func testAIToolIsVisibleButUnavailableWhenProIsLockedInClockFocus() {
+        let ctx = makeClassicClockFocusContext(isProUnlocked: false)
 
         let tools = EditorToolRegistry.visibleTools(for: ctx)
-
         XCTAssertTrue(tools.contains(.ai))
+
         XCTAssertEqual(
             tools,
             [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .ai, .pro]
         )
+
+        let unavailable = EditorToolRegistry.unavailableState(for: .ai, context: ctx)
+        XCTAssertEqual(unavailable, EditorUnavailableState.proRequiredForAI())
+        XCTAssertEqual(unavailable?.cta?.kind, .showPro)
     }
 
-    func testToolOrderingIsStableWhenAIToolAppearsOrDisappears() {
+    func testAIToolIsVisibleAndAvailableWhenProIsUnlockedInClockFocus() {
+        let ctx = makeClassicClockFocusContext(isProUnlocked: true)
+
+        let tools = EditorToolRegistry.visibleTools(for: ctx)
+        XCTAssertTrue(tools.contains(.ai))
+
+        XCTAssertEqual(
+            tools,
+            [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .ai, .pro]
+        )
+
+        let unavailable = EditorToolRegistry.unavailableState(for: .ai, context: ctx)
+        XCTAssertNil(unavailable)
+    }
+
+    func testToolOrderingIsStableAcrossProUnlockInNonAlbumElementFocus() {
         let freeCtx = makePosterNonAlbumElementFocusContext(isProUnlocked: false)
         let proCtx = makePosterNonAlbumElementFocusContext(isProUnlocked: true)
 
         let freeTools = EditorToolRegistry.visibleTools(for: freeCtx)
         let proTools = EditorToolRegistry.visibleTools(for: proCtx)
 
-        XCTAssertFalse(freeTools.contains(.ai))
-        XCTAssertTrue(proTools.contains(.ai))
-
-        let proWithoutAI = proTools.filter { $0 != .ai }
-        XCTAssertEqual(proWithoutAI, freeTools)
+        XCTAssertEqual(freeTools, proTools)
     }
 
-    func testTeardownActionsDoNotFireWhenAIToolDisappears() {
-        let proCtx = makeHeroClockFocusContext(isProUnlocked: true)
-        let freeCtx = makeHeroClockFocusContext(isProUnlocked: false)
+    func testTeardownActionsDoNotFireWhenProUnlockFlips() {
+        let freeCtx = makeClassicClockFocusContext(isProUnlocked: false)
+        let proCtx = makeClassicClockFocusContext(isProUnlocked: true)
 
-        let oldTools = EditorToolRegistry.visibleTools(for: proCtx)
-        let newTools = EditorToolRegistry.visibleTools(for: freeCtx)
+        let oldTools = EditorToolRegistry.visibleTools(for: freeCtx)
+        let newTools = EditorToolRegistry.visibleTools(for: proCtx)
 
         let actions = editorToolTeardownActions(
             old: oldTools,
             new: newTools,
-            currentFocus: proCtx.focus
+            currentFocus: freeCtx.focus
         )
 
         XCTAssertTrue(actions.isEmpty)
     }
 
-    func testLegacyVisibleToolsRespectNonPhotosRequirementsForAITool() {
+    func testLegacyVisibleToolsIncludeAIToolEvenWhenProIsLocked() {
         let freeCtx = makePosterNonAlbumElementFocusContext(isProUnlocked: false)
         let proCtx = makePosterNonAlbumElementFocusContext(isProUnlocked: true)
 
         let freeTools = EditorToolRegistry.legacyVisibleTools(for: freeCtx)
         let proTools = EditorToolRegistry.legacyVisibleTools(for: proCtx)
 
-        XCTAssertFalse(freeTools.contains(.ai))
+        XCTAssertTrue(freeTools.contains(.ai))
         XCTAssertTrue(proTools.contains(.ai))
     }
 
@@ -116,9 +126,9 @@ final class EditorToolingNonPhotosCapabilityB2Tests: XCTestCase {
         )
     }
 
-    private func makeHeroClockFocusContext(isProUnlocked: Bool) -> EditorToolContext {
+    private func makeClassicClockFocusContext(isProUnlocked: Bool) -> EditorToolContext {
         EditorToolContext(
-            template: .hero,
+            template: .classic,
             isProUnlocked: isProUnlocked,
             matchedSetEnabled: false,
             selection: .single,
