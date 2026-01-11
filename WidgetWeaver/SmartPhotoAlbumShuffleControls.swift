@@ -38,294 +38,246 @@ struct SmartPhotoAlbumShuffleControls: View {
     @State private var rotationIntervalMinutes: Int = 60
     @State private var nextChangeDate: Date?
 
-    private var manifestFileName: String {
-        (smartPhoto?.shuffleManifestFileName ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private enum AlbumPickerState: Equatable {
+        case idle
+        case loading
+        case ready
+        case failed(String)
     }
 
-    private var shuffleEnabled: Bool {
-        !manifestFileName.isEmpty
+    struct AlbumOption: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let count: Int
+    }
+
+    struct ProgressSummary: Hashable {
+        let total: Int
+        let prepared: Int
+        let failed: Int
+        let currentIndex: Int
+        let currentIsPrepared: Bool
+    }
+
+    struct RankingRow: Identifiable, Hashable {
+        var id: String { localIdentifier }
+        let localIdentifier: String
+        let preparedAt: Date?
+        let score: Double?
+        let flags: [String]
+    }
+
+    private enum PrepError: Error {
+        case missingSmartPhoto
+        case missingVariants
     }
 
     private var albumPickerPresentedBinding: Binding<Bool> {
-        albumPickerPresented ?? $internalAlbumPickerPresented
+        if let albumPickerPresented {
+            return albumPickerPresented
+        }
+        return $internalAlbumPickerPresented
+    }
+
+    private var isShuffleEnabled: Bool {
+        !manifestFileName.isEmpty
+    }
+
+    private var manifestFileName: String {
+        smartPhoto?.shuffleManifestFileName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private var progressLabel: String {
+        guard let p = progress else { return "—" }
+        let preparedLabel = "\(p.prepared)/\(p.total)"
+        if p.failed > 0 {
+            return "\(preparedLabel) prepared • \(p.failed) failed"
+        }
+        return "\(preparedLabel) prepared"
+    }
+
+    private var rotationPickerSelection: Binding<Int> {
+        Binding(
+            get: { rotationIntervalMinutes },
+            set: { minutes in
+                Task { await setRotationInterval(minutes: minutes) }
+            }
+        )
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Divider()
-
-            HStack(spacing: 10) {
-                Label("Album shuffle (Smart Photos)", systemImage: "photo.stack")
-                Spacer(minLength: 0)
-                Text(shuffleEnabled ? "On" : "Off")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        Form {
+            Section {
+                Toggle("Enable Album Shuffle", isOn: Binding(
+                    get: { isShuffleEnabled },
+                    set: { enabled in
+                        if enabled {
+                            albumPickerPresentedBinding.wrappedValue = true
+                        } else {
+                            disableShuffle()
+                        }
+                    }
+                ))
+                .disabled(importInProgress)
+            } footer: {
+                Text("Album Shuffle cycles through photos from an album.\nThe widget uses prepared renders for performance.")
             }
 
-            statusText
+            if isShuffleEnabled {
+                Section {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text(progressLabel)
+                            .foregroundStyle(.secondary)
+                    }
 
-            if shuffleEnabled {
-                rotationControls
-            }
+                    if let nextChangeDate {
+                        HStack {
+                            Text("Next change")
+                            Spacer()
+                            Text(nextChangeDate.formatted(date: .omitted, time: .shortened))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
-            actionRow
+                    Picker("Rotation", selection: rotationPickerSelection) {
+                        ForEach(rotationOptionsMinutes, id: \.self) { minutes in
+                            Text(rotationLabel(minutes: minutes)).tag(minutes)
+                        }
+                    }
+                    .disabled(importInProgress)
 
-            if shuffleEnabled {
-                NavigationLink {
-                    SmartPhotoAlbumShuffleAlbumBrowserView(
-                        manifestFileName: manifestFileName,
-                        focus: focus
-                    )
-                } label: {
-                    Label("Browse album photos", systemImage: "photo.on.rectangle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Button {
+                        Task { await advanceToNextPrepared() }
+                    } label: {
+                        Label("Advance to next prepared", systemImage: "forward.end")
+                    }
+                    .disabled(importInProgress)
+
+                    Button {
+                        Task { await prepareNextBatch(alreadyBusy: false) }
+                    } label: {
+                        Label("Prepare next \(batchSize)", systemImage: "sparkles")
+                    }
+                    .disabled(importInProgress)
+
+                    Menu {
+                        Button {
+                            WidgetWeaverWidgetRefresh.forceKick()
+                            saveStatusMessage = "Forced widget refresh kick."
+                        } label: {
+                            Label("Force widget refresh kick", systemImage: "arrow.clockwise")
+                        }
+
+                        Button {
+                            Task { await refreshFromManifest() }
+                        } label: {
+                            Label("Refresh from manifest", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    } label: {
+                        Label("Advanced", systemImage: "gear")
+                    }
+                    .disabled(importInProgress)
+                } header: {
+                    Text("Progress")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("AlbumShuffle.BrowseAlbum")
 
-                rankingDebug
+                Section {
+                    rankingDebugMenu
+                } header: {
+                    Text("Ranking")
+                } footer: {
+                    Text("Prepared photos are sorted by score.\nHigher scores are more likely to appear.")
+                }
             }
         }
+        .navigationTitle("Album Shuffle")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: albumPickerPresentedBinding) {
             NavigationStack {
-                Group {
-                    switch albumPickerState {
-                    case .idle, .loading:
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading albums…")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    case .failed(let message):
-                        VStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(.secondary)
-
-                            Text(message)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(20)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    case .ready:
-                        List(albums) { album in
-                            Button {
-                                Task { await configureShuffle(album: album) }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(album.title)
-                                        .font(.headline)
-                                    Text("\(album.count) photos")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                albumPickerView
+                    .navigationTitle("Choose Album")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") {
+                                albumPickerPresentedBinding.wrappedValue = false
                             }
-                            .disabled(importInProgress)
                         }
                     }
-                }
-                .navigationTitle("Choose Album")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { albumPickerPresentedBinding.wrappedValue = false }
-                    }
-                }
             }
+            .presentationDetents([.medium, .large])
+            .onAppear { handleAlbumPickerPresentationChange(isPresented: true) }
+            .onDisappear { handleAlbumPickerPresentationChange(isPresented: false) }
             .task {
                 await loadAlbumsIfNeeded()
             }
         }
-        .onChange(of: albumPickerPresentedBinding.wrappedValue) { _, newValue in
-            handleAlbumPickerPresentationChange(isPresented: newValue)
-        }
-        .task(id: manifestFileName) {
+        .task {
             await refreshFromManifest()
         }
     }
 
-    @ViewBuilder
-    private var statusText: some View {
-        if smartPhoto == nil {
-            Text("Album shuffle requires Smart Photo.\nPick a photo and create Smart Photo renders first.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if !shuffleEnabled {
-            Text("Choose an album to start. While the app is open, it will pre-render the next \(batchSize) photos.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if let progress {
-            Text("Prepared \(progress.prepared)/\(progress.total) • failed \(progress.failed) • currentIndex \(progress.currentIndex)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else {
-            Text("Loading shuffle status…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var rotationControls: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Label("Rotate", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 0)
-
-                Menu {
-                    ForEach(rotationOptionsMinutes, id: \.self) { minutes in
-                        Button {
-                            Task { await setRotationInterval(minutes: minutes) }
-                        } label: {
-                            if minutes == rotationIntervalMinutes {
-                                Text("✓ \(rotationLabel(minutes: minutes))")
-                            } else {
-                                Text(rotationLabel(minutes: minutes))
-                            }
-                        }
-                    }
-                } label: {
-                    Text(rotationLabel(minutes: rotationIntervalMinutes))
-                        .font(.caption)
-                }
-                .disabled(importInProgress)
-            }
-
-            if rotationIntervalMinutes > 0, let nextChangeDate {
-                Text("Next change: \(nextChangeDate.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Rotation is off (manual only).")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private struct ActionTileLabel: View {
-        let title: String
-        let systemImage: String
-
-        var body: some View {
-            VStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(height: 20)
-
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity, minHeight: 58)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var actionRow: some View {
+    private var albumPickerView: some View {
         Group {
-            if shuffleEnabled {
-                ViewThatFits(in: .horizontal) {
-                    actionGrid(columns: 4)
-                    actionGrid(columns: 2)
+            switch albumPickerState {
+            case .idle, .loading:
+                ProgressView("Loading…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            case .failed(let message):
+                VStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text(message)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 24)
                 }
-            } else {
-                actionGrid(columns: 1)
-            }
-        }
-        .controlSize(.small)
-        .buttonStyle(.bordered)
-    }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-    @ViewBuilder
-    private func actionGrid(columns: Int) -> some View {
-        let minTileWidth: CGFloat = 120
-        let cols = Array(repeating: GridItem(.flexible(minimum: minTileWidth), spacing: 12), count: columns)
-
-        LazyVGrid(columns: cols, spacing: 12) {
-            Button {
-                albumPickerPresentedBinding.wrappedValue = true
-            } label: {
-                ActionTileLabel(title: "Choose\nalbum…", systemImage: "rectangle.stack.badge.plus")
-            }
-            .disabled(importInProgress || smartPhoto == nil)
-
-            if shuffleEnabled {
-                Button {
-                    Task { await prepareNextBatch(alreadyBusy: false) }
-                } label: {
-                    ActionTileLabel(title: "Prepare\nnext \(batchSize)", systemImage: "gearshape.2")
-                }
-                .disabled(importInProgress)
-
-                Button {
-                    Task { await advanceToNextPrepared() }
-                } label: {
-                    ActionTileLabel(title: "Next\nphoto", systemImage: "arrow.right.circle")
-                }
-                .disabled(importInProgress)
-
-                Button(role: .destructive) {
-                    disableShuffle()
-                } label: {
-                    ActionTileLabel(title: "Disable", systemImage: "xmark.circle")
-                }
-                .disabled(importInProgress)
-            }
-        }
-    }
-
-    private var rankingDebug: some View {
-        DisclosureGroup {
-            if rankingRows.isEmpty {
-                Text("No prepared photos yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(rankingRows.enumerated()), id: \.element.id) { idx, row in
-                        NavigationLink {
-                            SmartPhotoAlbumShufflePhotoDetailView(
-                                manifestFileName: manifestFileName,
-                                albumID: rankingAlbumID,
-                                itemID: row.id,
-                                focus: focus
-                            )
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(row.isCurrent ? "▶︎" : " ")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-
-                                Text(row.scoreText)
-                                    .font(.caption)
-                                    .monospacedDigit()
-                                    .foregroundStyle(.secondary)
-
-                                Text(row.flagsText)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
+            case .ready:
+                List(albums) { album in
+                    Button {
+                        Task { await configureShuffle(album: album) }
+                    } label: {
+                        HStack {
+                            Text(album.title)
+                            Spacer()
+                            Text("\(album.count)")
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("AlbumShuffle.RankingRow.\(idx)")
                     }
+                    .disabled(importInProgress)
                 }
-                .padding(.top, 4)
+            }
+        }
+    }
+
+    private var rankingDebugMenu: some View {
+        Menu {
+            if rankingRows.isEmpty {
+                Text("No ranking rows yet.")
+            } else {
+                ForEach(Array(rankingRows.enumerated()), id: \.offset) { idx, row in
+                    Button {
+                        UIPasteboard.general.string = row.localIdentifier
+                        saveStatusMessage = "Copied asset id."
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Score: \(row.score.map { String(format: "%.3f", $0) } ?? "—")")
+                                .font(.caption)
+                            Text(row.localIdentifier)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("AlbumShuffle.RankingRow.\(idx)")
+                }
             }
         } label: {
             Text("Ranking debug")
@@ -367,6 +319,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         albums = []
 
         let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+        EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
         guard ok else {
             albumPickerState = .failed("Photo library access is off.\nEnable access in Settings to use album shuffle.")
             return
@@ -392,6 +345,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         defer { importInProgress = false }
 
         let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+        EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
         guard ok else {
             saveStatusMessage = "Photo library access is off."
             return
@@ -586,6 +540,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
 
         let ok = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+        EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
         guard ok else {
             saveStatusMessage = "Photo library access is off."
             return
@@ -702,26 +657,52 @@ struct SmartPhotoAlbumShuffleControls: View {
                 rankingRows = []
                 rankingAlbumID = nil
                 nextChangeDate = nil
+                rotationIntervalMinutes = 60
             }
             return
         }
 
         let now = Date()
-        let didCatchUp = manifest.catchUpRotation(now: now)
-        if didCatchUp {
+        if manifest.catchUpRotation(now: now) {
             try? SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
-            WidgetWeaverWidgetRefresh.forceKick()
         }
 
-        let next = manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
+        let total = manifest.entries.count
+        let prepared = manifest.entries.filter { $0.isPrepared }.count
+        let failed = manifest.entries.filter { $0.flags.contains("failed") }.count
 
-        let p = ProgressSummary.from(manifest: manifest)
-        let rows = RankingRow.preview(from: manifest, maxRows: 6)
+        let currentIndex = max(0, min(manifest.currentIndex, max(0, total - 1)))
+        let currentIsPrepared: Bool = {
+            guard manifest.entries.indices.contains(currentIndex) else { return false }
+            return manifest.entries[currentIndex].isPrepared
+        }()
+
+        let next: Date? = {
+            if manifest.rotationIntervalMinutes <= 0 { return nil }
+            return manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
+        }()
+
+        let rows: [RankingRow] = manifest.entries.map { entry in
+            RankingRow(
+                localIdentifier: entry.id,
+                preparedAt: entry.preparedAt,
+                score: entry.score,
+                flags: entry.flags
+            )
+        }
 
         await MainActor.run {
-            progress = p
+            progress = ProgressSummary(
+                total: total,
+                prepared: prepared,
+                failed: failed,
+                currentIndex: currentIndex,
+                currentIsPrepared: currentIsPrepared
+            )
+
             rankingRows = rows
             rankingAlbumID = manifest.sourceID
+
             rotationIntervalMinutes = manifest.rotationIntervalMinutes
             nextChangeDate = next
         }

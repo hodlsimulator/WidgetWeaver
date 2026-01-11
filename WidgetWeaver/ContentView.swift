@@ -15,6 +15,7 @@ import UIKit
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
 
     @StateObject var proManager = WidgetWeaverProManager()
 
@@ -363,6 +364,17 @@ struct ContentView: View {
         .onAppear {
             bootstrap()
             previousVisibleToolIDs = editorVisibleToolIDs
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
+            }
+        }
+        .onChange(of: proManager.isProUnlocked) { _, _ in
+            EditorToolRegistry.capabilitiesDidChange(reason: .proStateChanged)
+        }
+        .onChange(of: matchedSetEnabled) { _, _ in
+            EditorToolRegistry.capabilitiesDidChange(reason: .matchedSetEnabledChanged)
         }
         .onChange(of: editorFocusSnapshot) { oldValue, newValue in
             editorFocusRestorationStack.recordFocusChange(old: oldValue, new: newValue)
