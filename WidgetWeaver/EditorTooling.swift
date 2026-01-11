@@ -265,6 +265,39 @@ struct EditorToolDefinition: Hashable, Sendable {
 enum EditorToolRegistry {
     static let multiSelectionPolicy: EditorMultiSelectionPolicy = .intersection
 
+    private final class ToolSuiteCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastContext: EditorToolContext?
+        private var lastSuite: [EditorVisibleTool] = []
+        private var lastToolIDs: [EditorToolID] = []
+
+        func cachedSuite(for context: EditorToolContext) -> [EditorVisibleTool]? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard lastContext == context else { return nil }
+            return lastSuite
+        }
+
+        func cachedToolIDs(for context: EditorToolContext) -> [EditorToolID]? {
+            lock.lock()
+            defer { lock.unlock() }
+
+            guard lastContext == context else { return nil }
+            return lastToolIDs
+        }
+
+        func store(context: EditorToolContext, suite: [EditorVisibleTool]) {
+            lock.lock()
+            lastContext = context
+            lastSuite = suite
+            lastToolIDs = suite.map(\.id)
+            lock.unlock()
+        }
+    }
+
+    private static let toolSuiteCache = ToolSuiteCache()
+
     /// Canonical tool manifest.
     static let tools: [EditorToolDefinition] = [
         // Workflow.
@@ -519,6 +552,10 @@ enum EditorToolRegistry {
     }
 
     static func visibleToolSuite(for context: EditorToolContext) -> [EditorVisibleTool] {
+        if let cached = toolSuiteCache.cachedSuite(for: context) {
+            return cached
+        }
+
         let snapshot = capabilitySnapshot(for: context)
         let caps = snapshot.toolCapabilities
         let nonPhotos = snapshot.nonPhotos
@@ -564,11 +601,16 @@ enum EditorToolRegistry {
             focusGated.insert(tool, at: 0)
         }
 
+        toolSuiteCache.store(context: context, suite: focusGated)
         return focusGated
     }
 
     static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
-        visibleToolSuite(for: context).map(\.id)
+        if let cached = toolSuiteCache.cachedToolIDs(for: context) {
+            return cached
+        }
+
+        return visibleToolSuite(for: context).map(\.id)
     }
 
     static func unavailableState(for toolID: EditorToolID, context: EditorToolContext) -> EditorUnavailableState? {
