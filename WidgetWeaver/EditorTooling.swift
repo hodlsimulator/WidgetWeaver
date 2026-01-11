@@ -270,6 +270,16 @@ struct EditorToolDefinition: Hashable, Sendable {
     }
 }
 
+
+// MARK: - Capability change handling (10S-B5 scaffolding)
+
+enum EditorToolCapabilityChangeReason: String, Hashable, Sendable {
+    case unknown
+    case proStateChanged
+    case matchedSetEnabledChanged
+    case photoLibraryAccessChanged
+}
+
 // MARK: - Registry
 
 enum EditorToolRegistry {
@@ -304,9 +314,35 @@ enum EditorToolRegistry {
             lastToolIDs = suite.map(\.id)
             lock.unlock()
         }
+
+        func invalidate() {
+            lock.lock()
+            lastContext = nil
+            lastSuite = []
+            lastToolIDs = []
+            lock.unlock()
+        }
     }
 
     private static let toolSuiteCache = ToolSuiteCache()
+
+    /// Explicitly busts the memoised visible tool suite cache.
+    ///
+    /// This is intended for scenarios where a capability input can change at runtime
+    /// and the UI needs the next tool-suite query to recompute deterministically.
+    static func invalidateVisibleToolSuiteCache() {
+        toolSuiteCache.invalidate()
+    }
+
+    /// Entry point for signalling that editor capabilities have changed at runtime.
+    ///
+    /// 10S-B5 stage 1 introduces this explicit pathway without wiring it into the UI.
+    /// Follow-on slices should call this when entitlement/permission/service state flips,
+    /// then apply the 10R teardown + focus restoration contracts.
+    static func capabilitiesDidChange(reason: EditorToolCapabilityChangeReason = .unknown) {
+        // No logging here; callers may log if desired.
+        invalidateVisibleToolSuiteCache()
+    }
 
     /// Canonical tool manifest.
     static let tools: [EditorToolDefinition] = [
