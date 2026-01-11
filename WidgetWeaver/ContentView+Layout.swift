@@ -37,7 +37,7 @@ extension ContentView {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 #if DEBUG
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .bottomTrailing) {
             editorUITestHooksOverlay
                 .zIndex(9_999)
         }
@@ -351,7 +351,7 @@ extension ContentView {
             .opacity(0.92)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("EditorUITestHook.overlayRoot")
-            .padding(.top, 6)
+            .padding(.bottom, 6)
             .padding(.trailing, 6)
             .transaction { transaction in
                 transaction.animation = nil
