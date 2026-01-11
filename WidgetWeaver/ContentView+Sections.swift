@@ -342,10 +342,12 @@ extension ContentView {
     }
 
     var matchedSetSection: some View {
-        Section {
-            if !proManager.isProUnlocked && !matchedSetEnabled {
+        let unavailable = EditorToolRegistry.unavailableState(for: .matchedSet, context: editorToolContext)
+
+        return Section {
+            if let unavailable {
                 EditorUnavailableStateView(
-                    state: EditorUnavailableState.proRequiredForMatchedSet(),
+                    state: unavailable,
                     isBusy: false,
                     onPerformCTA: performEditorUnavailableCTA
                 )

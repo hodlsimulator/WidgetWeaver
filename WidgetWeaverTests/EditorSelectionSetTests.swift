@@ -189,7 +189,30 @@ final class EditorNonPhotosCapabilitySnapshotTests: XCTestCase {
         let snapshot = EditorToolRegistry.capabilitySnapshot(for: ctx)
 
         XCTAssertTrue(snapshot.nonPhotos.supported.contains(.proUnlocked))
-        XCTAssertEqual(snapshot.nonPhotos.sortedDebugLabels, ["proUnlocked"])
-        XCTAssertEqual(snapshot.nonPhotos.debugSummary, "proUnlocked")
+        XCTAssertTrue(snapshot.nonPhotos.supported.contains(.matchedSetAvailable))
+        XCTAssertEqual(snapshot.nonPhotos.sortedDebugLabels, ["matchedSetAvailable", "proUnlocked"])
+        XCTAssertEqual(snapshot.nonPhotos.debugSummary, "matchedSetAvailable,proUnlocked")
     }
+
+    func testNonPhotosCapabilitySnapshotIncludesMatchedSetAvailableWhenMatchedSetIsEnabledEvenIfProIsLocked() {
+        let ctx = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: true,
+            selection: .none,
+            focus: .widget,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let snapshot = EditorToolRegistry.capabilitySnapshot(for: ctx)
+
+        XCTAssertFalse(snapshot.nonPhotos.supported.contains(.proUnlocked))
+        XCTAssertTrue(snapshot.nonPhotos.supported.contains(.matchedSetAvailable))
+        XCTAssertEqual(snapshot.nonPhotos.sortedDebugLabels, ["matchedSetAvailable"])
+        XCTAssertEqual(snapshot.nonPhotos.debugSummary, "matchedSetAvailable")
+    }
+
 }

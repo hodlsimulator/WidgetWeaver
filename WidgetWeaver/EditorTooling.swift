@@ -92,6 +92,12 @@ typealias EditorNonPhotosCapabilities = Set<EditorNonPhotosCapability>
 extension EditorNonPhotosCapability {
     /// Non-Photos capability indicating Pro is unlocked.
     static let proUnlocked = EditorNonPhotosCapability(rawValue: "proUnlocked")
+
+    /// Non-Photos capability indicating Matched Set can be edited.
+    ///
+    /// This is supported when Pro is unlocked, or when a matched set is already enabled (so the
+    /// user can always turn it off even if Pro later becomes unavailable).
+    static let matchedSetAvailable = EditorNonPhotosCapability(rawValue: "matchedSetAvailable")
 }
 
 
@@ -127,6 +133,10 @@ enum EditorNonPhotosCapabilityDeriver {
 
         if context.isProUnlocked {
             supported.insert(.proUnlocked)
+        }
+
+        if context.isProUnlocked || context.matchedSetEnabled {
+            supported.insert(.matchedSetAvailable)
         }
 
         return EditorNonPhotosCapabilitySnapshot(supported: supported)
@@ -424,6 +434,8 @@ enum EditorToolRegistry {
             id: .matchedSet,
             order: 120,
             requiredCapabilities: [.canEditMatchedSet],
+            requiredNonPhotosCapabilities: [.matchedSetAvailable],
+            missingNonPhotosCapabilityPolicy: .showAsUnavailable(EditorUnavailableState.proRequiredForMatchedSet()),
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
