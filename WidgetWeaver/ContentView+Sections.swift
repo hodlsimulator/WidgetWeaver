@@ -174,34 +174,42 @@ extension ContentView {
 
     var aiSection: some View {
         Section {
-            TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
-                .lineLimit(2...6)
+            if !proManager.isProUnlocked {
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.proRequiredForAI(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
+                TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
+                    .lineLimit(2...6)
 
-            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+                Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
 
-            Button {
-                Task { await generateNewDesignFromPrompt() }
-            } label: {
-                Label("Generate design", systemImage: "sparkles")
-            }
-            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    Task { await generateNewDesignFromPrompt() }
+                } label: {
+                    Label("Generate design", systemImage: "sparkles")
+                }
+                .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Divider()
+                Divider()
 
-            TextField("Patch instruction (edit this design)", text: $aiPatchInstruction, axis: .vertical)
-                .lineLimit(2...6)
+                TextField("Patch instruction (edit this design)", text: $aiPatchInstruction, axis: .vertical)
+                    .lineLimit(2...6)
 
-            Button {
-                Task { await applyPatchToCurrentDesign() }
-            } label: {
-                Label("Apply patch", systemImage: "wand.and.stars")
-            }
-            .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    Task { await applyPatchToCurrentDesign() }
+                } label: {
+                    Label("Apply patch", systemImage: "wand.and.stars")
+                }
+                .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            if !aiStatusMessage.isEmpty {
-                Text(aiStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !aiStatusMessage.isEmpty {
+                    Text(aiStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         } header: {
             sectionHeader("AI")
@@ -284,234 +292,36 @@ extension ContentView {
         }
     }
 
-    var variablesSection: some View {
+    var variablesManagerSection: some View {
         Section {
-            if !proManager.isProUnlocked {
+            if proManager.isProUnlocked {
+                let vars = WidgetWeaverVariableStore.shared.loadAll()
+                LabeledContent("Saved variables", value: "\(vars.count)")
+                Button { activeSheet = .variables } label: { Label("Open Variables", systemImage: "curlybraces.square") }
+
+                Text("Variables are stored on-device.\nUse them in text via {{__var_key|fallback}}.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
                 EditorUnavailableStateView(
                     state: EditorUnavailableState.proRequiredForVariables(),
                     isBusy: false,
                     onPerformCTA: performEditorUnavailableCTA
                 )
-            } else {
-                Button { activeSheet = .variables } label: {
-                    Label("Open Variables editor", systemImage: "slider.horizontal.3")
-                }
-
-                Text("Variables are shared across all designs.\nUse them for live-updating text like a daily intention, countdown date, or habit streak.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         } header: {
             sectionHeader("Variables")
         }
     }
 
-    var inspectorSection: some View {
-        Section {
-            Button { activeSheet = .inspector } label: { Label("Inspector", systemImage: "info.circle") }
-
-#if DEBUG
-            Toggle("Debug diagnostics", isOn: $showEditorDiagnostics)
-                .accessibilityIdentifier("Editor.Toggle.DebugDiagnostics")
-#endif
-        } header: {
-            sectionHeader("Inspector")
-        } footer: {
-            Text("Inspector shows computed fields and diagnostic state for debugging.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var clockSection: some View {
-        Section {
-            WidgetWeaverClockEditor(
-                model: clockEditorModel
-            )
-        } header: {
-            sectionHeader("Clock")
-        } footer: {
-            Text("Clock updates are handled by the widget and do not require saving.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    var actionsSection: some View {
-        Section {
-            if !proManager.isProUnlocked {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.proRequiredForActions(),
-                    isBusy: false,
-                    onPerformCTA: performEditorUnavailableCTA
-                )
-            } else {
-                ActionBarEditor(
-                    draft: $actionBarDraft
-                )
-
-                Text("Buttons show in widgets that support Actions.\nSome templates may hide actions when space is tight.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            sectionHeader("Actions")
-        }
-    }
-
-    var imageSection: some View {
-        Section {
-            PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
-                Label("Pick Photo", systemImage: "photo.on.rectangle")
-            }
-
-            if currentFamilyDraft().imageFileName.isEmpty {
-                Text("No photo selected.\nPick a photo to enable Image and Smart Photo tools.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Selected: \(currentFamilyDraft().imageFileName)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button(role: .destructive) {
-                    showImageCleanupConfirmation = true
-                } label: {
-                    Label("Remove image from design…", systemImage: "trash")
-                }
-            }
-
-            Toggle("Auto theme from image", isOn: $autoThemeFromImage)
-
-            if let lastImageThemeSuggestion {
-                Text("Theme suggestion: \(lastImageThemeSuggestion.debugSummary)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Image tool stores a photo and optional cropping.\nSmart Photo generates per-size renders from that photo.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            sectionHeader("Image")
-        }
-    }
-
-    var smartPhotoSection: some View {
-        Section {
-            if currentFamilyDraft().imageFileName.isEmpty {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.imageRequiredForSmartPhoto(),
-                    isBusy: false
-                )
-            } else {
-                SmartPhotoControls(
-                    smartPhoto: binding(\.imageSmartPhoto),
-                    lastSavedAt: $lastSavedAt,
-                    saveStatusMessage: $saveStatusMessage
-                )
-            }
-        } header: {
-            sectionHeader("Smart Photo")
-        }
-    }
-
-    var smartPhotoCropSection: some View {
-        Section {
-            if currentFamilyDraft().imageFileName.isEmpty {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.imageRequiredForSmartPhotoFraming(),
-                    isBusy: false
-                )
-            } else if currentFamilyDraft().imageSmartPhoto.mode == .off {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.smartPhotoRequiredForSmartPhotoFraming(),
-                    isBusy: false
-                )
-            } else {
-                SmartPhotoCropControls(
-                    smartPhoto: binding(\.imageSmartPhoto),
-                    focus: $editorFocusSnapshot
-                )
-            }
-        } header: {
-            sectionHeader("Smart Photo Framing")
-        }
-    }
-
-    var smartRulesSection: some View {
-        Section {
-            if currentFamilyDraft().imageFileName.isEmpty {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.imageRequiredForSmartRules(),
-                    isBusy: false
-                )
-            } else if currentFamilyDraft().imageSmartPhoto.mode == .off {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.smartPhotoRequiredForSmartRules(),
-                    isBusy: false
-                )
-            } else {
-                SmartRulesControls(
-                    rules: binding(\.imageSmartRules),
-                    focus: $editorFocusSnapshot
-                )
-            }
-        } header: {
-            sectionHeader("Smart Rules")
-        }
-    }
-
-    var albumShuffleSection: some View {
-        Section {
-            if currentFamilyDraft().imageFileName.isEmpty {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.imageRequiredForAlbumShuffle(),
-                    isBusy: false
-                )
-            } else if currentFamilyDraft().imageSmartPhoto.mode == .off {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.smartPhotoRequiredForAlbumShuffle(),
-                    isBusy: false
-                )
-            } else if let unavailable = EditorUnavailableState.photosAccessRequiredForAlbumShuffle(photoAccess: photoLibraryAccess) {
-                EditorUnavailableStateView(
-                    state: unavailable,
-                    isBusy: importInProgress,
-                    onPerformCTA: performEditorUnavailableCTA
-                )
-            } else {
-                SmartPhotoAlbumShuffleControls(
-                    smartPhoto: binding(\.imageSmartPhoto),
-                    importInProgress: $importInProgress,
-                    saveStatusMessage: $saveStatusMessage,
-                    focus: $editorFocusSnapshot,
-                    albumPickerPresented: $albumShufflePickerPresented
-                )
-            }
-        } header: {
-            sectionHeader("Album Shuffle")
-        }
-    }
-
     var sharingSection: some View {
         Section {
-            if let exportURL = exportCurrentDesignURL {
-                ShareLink(item: exportURL) {
-                    Label("Share current design", systemImage: "square.and.arrow.up")
-                }
-            } else {
-                Label("Share current design", systemImage: "square.and.arrow.up")
-                    .foregroundStyle(.secondary)
+            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("Design", icon: Image(systemName: "square.and.arrow.up"))) {
+                Label("Share this design", systemImage: "square.and.arrow.up")
             }
 
-            if let allURL = exportAllDesignsURL {
-                ShareLink(item: allURL) {
-                    Label("Share all designs", systemImage: "square.and.arrow.up")
-                }
-            } else {
+            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("Designs", icon: Image(systemName: "square.and.arrow.up"))) {
                 Label("Share all designs", systemImage: "square.and.arrow.up")
-                    .foregroundStyle(.secondary)
             }
 
             Button {
