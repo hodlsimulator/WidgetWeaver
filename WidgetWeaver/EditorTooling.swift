@@ -90,8 +90,10 @@ struct EditorNonPhotosCapability: Hashable, Sendable, RawRepresentable {
 typealias EditorNonPhotosCapabilities = Set<EditorNonPhotosCapability>
 
 extension EditorNonPhotosCapability {
+    /// Non-Photos capability indicating Pro is unlocked.
     static let proUnlocked = EditorNonPhotosCapability(rawValue: "proUnlocked")
 }
+
 
 /// Deterministic snapshot of non-Photos capabilities at a point in time.
 struct EditorNonPhotosCapabilitySnapshot: Hashable, Sendable {
@@ -117,6 +119,8 @@ struct EditorToolCapabilitySnapshot: Hashable, Sendable {
     var nonPhotos: EditorNonPhotosCapabilitySnapshot
 }
 
+/// Derivation entry point for non-Photos capabilities.
+/// 10S-B1: returns an empty snapshot (no behaviour change).
 enum EditorNonPhotosCapabilityDeriver {
     static func derive(for context: EditorToolContext) -> EditorNonPhotosCapabilitySnapshot {
         var supported: EditorNonPhotosCapabilities = []
@@ -136,14 +140,15 @@ extension EditorCapability {
     static let canEditSymbol = EditorCapability(rawValue: "symbol")
     static let canEditImage = EditorCapability(rawValue: "image")
     static let canEditSmartPhoto = EditorCapability(rawValue: "smartPhoto")
+    static let canEditSmartRules = EditorCapability(rawValue: "smartRules")
     static let canEditTypography = EditorCapability(rawValue: "typography")
     static let canEditStyle = EditorCapability(rawValue: "style")
-    static let canEditActions = EditorCapability(rawValue: "actions")
-    static let canEditMatchedSet = EditorCapability(rawValue: "matchedSet")
 
-    // Editor-level features.
+    // Non-Photos tools.
+    static let canEditMatchedSet = EditorCapability(rawValue: "matchedSet")
     static let canEditVariables = EditorCapability(rawValue: "variables")
-    static let canShare = EditorCapability(rawValue: "share")
+    static let canEditActions = EditorCapability(rawValue: "actions")
+    static let canShare = EditorCapability(rawValue: "sharing")
     static let canUseAI = EditorCapability(rawValue: "ai")
     static let canPurchasePro = EditorCapability(rawValue: "pro")
 
@@ -184,12 +189,28 @@ enum EditorToolID: String, CaseIterable, Hashable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+enum EditorToolMissingNonPhotosCapabilityPolicy: Hashable, Sendable {
+    case hide
+    case showAsUnavailable(EditorUnavailableState)
+}
+
+struct EditorVisibleTool: Hashable, Sendable {
+    var id: EditorToolID
+    var unavailableState: EditorUnavailableState?
+
+    init(id: EditorToolID, unavailableState: EditorUnavailableState? = nil) {
+        self.id = id
+        self.unavailableState = unavailableState
+    }
+}
+
 struct EditorToolDefinition: Hashable, Sendable {
     var id: EditorToolID
     var order: Int
 
     var requiredCapabilities: EditorCapabilities
     var requiredNonPhotosCapabilities: EditorNonPhotosCapabilities
+    var missingNonPhotosCapabilityPolicy: EditorToolMissingNonPhotosCapabilityPolicy
     var eligibility: EditorToolEligibility
 
     init(
@@ -197,32 +218,45 @@ struct EditorToolDefinition: Hashable, Sendable {
         order: Int,
         requiredCapabilities: EditorCapabilities = [],
         requiredNonPhotosCapabilities: EditorNonPhotosCapabilities = [],
+        missingNonPhotosCapabilityPolicy: EditorToolMissingNonPhotosCapabilityPolicy = .hide,
         eligibility: EditorToolEligibility = .init()
     ) {
         self.id = id
         self.order = order
         self.requiredCapabilities = requiredCapabilities
         self.requiredNonPhotosCapabilities = requiredNonPhotosCapabilities
+        self.missingNonPhotosCapabilityPolicy = missingNonPhotosCapabilityPolicy
         self.eligibility = eligibility
     }
 
-    func isEligible(
+    func resolveVisibleTool(
         context: EditorToolContext,
         capabilities: EditorCapabilities,
         nonPhotosCapabilities: EditorNonPhotosCapabilitySnapshot,
         selectionDescriptor: EditorSelectionDescriptor,
         multiSelectionPolicy: EditorMultiSelectionPolicy
-    ) -> Bool {
-        guard requiredCapabilities.isSubset(of: capabilities) else { return false }
-        guard requiredNonPhotosCapabilities.isSubset(of: nonPhotosCapabilities.supported) else { return false }
+    ) -> EditorVisibleTool? {
+        guard requiredCapabilities.isSubset(of: capabilities) else { return nil }
 
-        return EditorToolEligibilityEvaluator.isEligible(
+        let eligibleBySelectionAndFocus = EditorToolEligibilityEvaluator.isEligible(
             eligibility: eligibility,
             selection: context.selection,
             selectionDescriptor: selectionDescriptor,
             focus: context.focus,
             multiSelectionPolicy: multiSelectionPolicy
         )
+        guard eligibleBySelectionAndFocus else { return nil }
+
+        if requiredNonPhotosCapabilities.isSubset(of: nonPhotosCapabilities.supported) {
+            return EditorVisibleTool(id: id, unavailableState: nil)
+        }
+
+        switch missingNonPhotosCapabilityPolicy {
+        case .hide:
+            return nil
+        case .showAsUnavailable(let state):
+            return EditorVisibleTool(id: id, unavailableState: state)
+        }
     }
 }
 
@@ -307,20 +341,20 @@ enum EditorToolRegistry {
                     allowAnyElement: false,
                     allowedElementIDPrefixes: ["smartPhoto"],
                     allowAnyAlbumContainer: false,
-                    allowedAlbumContainerSubtypes: [.smart],
+                    allowedAlbumContainerSubtypes: [],
                     allowAnyAlbumPhotoItem: false,
-                    allowedAlbumPhotoItemSubtypes: [.smart]
+                    allowedAlbumPhotoItemSubtypes: []
                 ),
-                selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone
+                selectionDescriptor: .mixedDisallowed
             )
         ),
         EditorToolDefinition(
             id: .smartRules,
             order: 83,
-            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
+            requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured, .hasImageConfigured],
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
-                selectionDescriptor: .allowsAlbumContainerOrNonAlbumHomogeneousOrNone
+                selectionDescriptor: .mixedDisallowed
             )
         ),
 
@@ -343,18 +377,16 @@ enum EditorToolRegistry {
             )
         ),
 
-        // Automation.
+        // Non-Photos tools (Pro upsell / add-ons).
         EditorToolDefinition(
             id: .actions,
-            order: 110,
+            order: 115,
             requiredCapabilities: [.canEditActions],
             eligibility: .singleTarget(
                 focus: .any,
                 selectionDescriptor: .mixedDisallowed
             )
         ),
-
-        // Power features.
         EditorToolDefinition(
             id: .matchedSet,
             order: 120,
@@ -378,6 +410,7 @@ enum EditorToolRegistry {
             order: 150,
             requiredCapabilities: [.canUseAI],
             requiredNonPhotosCapabilities: [.proUnlocked],
+            missingNonPhotosCapabilityPolicy: .showAsUnavailable(EditorUnavailableState.proRequiredForAI()),
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
@@ -467,8 +500,17 @@ enum EditorToolRegistry {
         visible.reserveCapacity(toolsSortedByOrder.count)
 
         for tool in toolsSortedByOrder {
-            if tool.requiredCapabilities.isSubset(of: caps),
-               tool.requiredNonPhotosCapabilities.isSubset(of: nonPhotos.supported) {
+            guard tool.requiredCapabilities.isSubset(of: caps) else { continue }
+
+            if tool.requiredNonPhotosCapabilities.isSubset(of: nonPhotos.supported) {
+                visible.append(tool.id)
+                continue
+            }
+
+            switch tool.missingNonPhotosCapabilityPolicy {
+            case .hide:
+                continue
+            case .showAsUnavailable:
                 visible.append(tool.id)
             }
         }
@@ -476,7 +518,7 @@ enum EditorToolRegistry {
         return visible
     }
 
-    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
+    static func visibleToolSuite(for context: EditorToolContext) -> [EditorVisibleTool] {
         let snapshot = capabilitySnapshot(for: context)
         let caps = snapshot.toolCapabilities
         let nonPhotos = snapshot.nonPhotos
@@ -488,37 +530,49 @@ enum EditorToolRegistry {
             composition: context.selectionComposition
         )
 
-        var eligible: [EditorToolID] = []
-        eligible.reserveCapacity(toolsSortedByOrder.count)
+        var visible: [EditorVisibleTool] = []
+        visible.reserveCapacity(toolsSortedByOrder.count)
 
         for tool in toolsSortedByOrder {
-            if tool.isEligible(
+            if let resolved = tool.resolveVisibleTool(
                 context: context,
                 capabilities: caps,
                 nonPhotosCapabilities: nonPhotos,
                 selectionDescriptor: selectionDescriptor,
                 multiSelectionPolicy: multiSelectionPolicy
             ) {
-                eligible.append(tool.id)
+                visible.append(resolved)
             }
         }
 
         // Apply focus gating as last-mile filter.
         let focusGroup = editorToolFocusGroup(for: context.focus)
-        var focusGated = editorToolIDsApplyingFocusGate(
-            eligible: eligible,
+        let gatedIDs = editorToolIDsApplyingFocusGate(
+            eligible: visible.map(\.id),
             focusGroup: focusGroup
         )
 
+        var focusGated: [EditorVisibleTool] = gatedIDs.compactMap { id in
+            visible.first(where: { $0.id == id })
+        }
+
         // Prioritise Smart Rules when editing them.
         if case .smartRuleEditor = context.focus,
-           let idx = focusGated.firstIndex(of: EditorToolID.smartRules),
+           let idx = focusGated.firstIndex(where: { $0.id == EditorToolID.smartRules }),
            idx != 0 {
-            focusGated.remove(at: idx)
-            focusGated.insert(EditorToolID.smartRules, at: 0)
+            let tool = focusGated.remove(at: idx)
+            focusGated.insert(tool, at: 0)
         }
 
         return focusGated
+    }
+
+    static func visibleTools(for context: EditorToolContext) -> [EditorToolID] {
+        visibleToolSuite(for: context).map(\.id)
+    }
+
+    static func unavailableState(for toolID: EditorToolID, context: EditorToolContext) -> EditorUnavailableState? {
+        visibleToolSuite(for: context).first(where: { $0.id == toolID })?.unavailableState
     }
 }
 
@@ -566,6 +620,7 @@ extension EditorCapabilities {
         .canEditSymbol,
         .canEditImage,
         .canEditSmartPhoto,
+        .canEditSmartRules,
         .canEditTypography,
         .canEditStyle,
         .canEditActions,
@@ -579,37 +634,4 @@ extension EditorCapabilities {
         .hasImageConfigured,
         .hasSmartPhotoConfigured,
     ]
-}
-
-extension EditorCapability {
-    var debugLabel: String {
-        switch self {
-        case .canEditLayout: return "layout"
-        case .canEditTextContent: return "text"
-        case .canEditSymbol: return "symbol"
-        case .canEditImage: return "image"
-        case .canEditSmartPhoto: return "smartPhoto"
-        case .canEditStyle: return "style"
-        case .canEditTypography: return "typography"
-        case .canEditActions: return "actions"
-        case .canEditMatchedSet: return "matchedSet"
-        case .canEditVariables: return "variables"
-        case .canShare: return "share"
-        case .canUseAI: return "ai"
-        case .canPurchasePro: return "pro"
-        case .canEditAlbumShuffle: return "albumShuffle"
-        case .canAccessPhotoLibrary: return "photosAccess"
-        case .hasImageConfigured: return "hasImage"
-        case .hasSmartPhotoConfigured: return "hasSmartPhoto"
-        default: return "unknown(\(rawValue))"
-        }
-    }
-}
-
-// MARK: - Ordering helpers
-
-extension EditorSelectionKind {
-    var debugLabel: String {
-        rawValue
-    }
 }

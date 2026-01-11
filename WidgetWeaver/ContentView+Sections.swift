@@ -8,120 +8,15 @@
 import SwiftUI
 
 extension ContentView {
+    // MARK: - Section helpers
+
+    @ViewBuilder
     func sectionHeader(_ title: String) -> some View {
-        let headerID = "EditorSectionHeader." + title.replacingOccurrences(of: " ", with: "_")
-
-        return Text(title)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .accessibilityIdentifier(headerID)
-    }
-
-    // MARK: - New: Content (template + data sources)
-    var contentSection: some View {
-        let currentTemplate = currentFamilyDraft().template
-        let canReadCalendar = WidgetWeaverCalendarStore.shared.canReadEvents()
-
-        return Section {
-            Picker("Template", selection: binding(\.template)) {
-                ForEach(LayoutTemplateToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            ControlGroup {
-                Button {
-                    addTemplateDesign(WidgetWeaverAboutView.featuredWeatherTemplate.spec, makeDefault: false)
-                    selectedTab = .editor
-                } label: {
-                    Label("Weather", systemImage: "cloud.sun.fill")
-                }
-
-                Button {
-                    addTemplateDesign(WidgetWeaverAboutView.featuredCalendarTemplate.spec, makeDefault: false)
-                    selectedTab = .editor
-                } label: {
-                    Label("Next Up", systemImage: "calendar")
-                }
-
-                Menu {
-                    Button {
-                        applyStepsStarterPreset(copyToAllSizes: false)
-                    } label: {
-                        Label("Apply to this size (\(editingFamilyLabel))", systemImage: "figure.walk")
-                    }
-
-                    if matchedSetEnabled {
-                        Button {
-                            applyStepsStarterPreset(copyToAllSizes: true)
-                        } label: {
-                            Label("Apply to all sizes", systemImage: "square.on.square")
-                        }
-                    }
-
-                    Divider()
-
-                    Button {
-                        activeSheet = .steps
-                    } label: {
-                        Label("Open Steps settings", systemImage: "heart")
-                    }
-                } label: {
-                    Label("Steps", systemImage: "figure.walk")
-                }
-            }
-            .controlSize(.small)
-
-            if currentTemplate == .weather {
-                Button {
-                    activeSheet = .weather
-                } label: {
-                    Label("Weather settings", systemImage: "cloud.rain")
-                }
-
-                Text("Weather template renders from cached Weather snapshots.\nUse Weather settings to pick a location and force an update.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if currentTemplate == .nextUpCalendar {
-                Button {
-                    Task {
-                        let granted = await WidgetWeaverCalendarEngine.shared.requestAccessIfNeeded()
-                        if granted {
-                            _ = await WidgetWeaverCalendarEngine.shared.updateIfNeeded(force: true)
-                            await MainActor.run { saveStatusMessage = "Calendar refreshed.\nWidgets will update on next reload." }
-                        } else {
-                            await MainActor.run { saveStatusMessage = "Calendar access is off.\nEnable access to use Next Up." }
-                        }
-                    }
-                } label: {
-                    Label(
-                        canReadCalendar ? "Refresh Calendar cache" : "Enable Calendar access",
-                        systemImage: canReadCalendar ? "arrow.clockwise" : "checkmark.circle.fill"
-                    )
-                }
-
-                Text("Next Up reads events on-device via EventKit and caches a small snapshot for widgets.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button {
-                selectedTab = .explore
-            } label: {
-                Label("Browse templates (Explore)", systemImage: "sparkles")
-            }
-        } header: {
-            sectionHeader("Content")
-        } footer: {
-            Text("Template controls the overall renderer.\nUse Explore for curated starters (Weather / Next Up / Steps) and then customise here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        HStack {
+            Text(title)
+            Spacer()
         }
     }
-
 
     // MARK: - Status / Tools
 
@@ -174,34 +69,42 @@ extension ContentView {
 
     var aiSection: some View {
         Section {
-            TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
-                .lineLimit(2...6)
+            if let unavailable = EditorToolRegistry.unavailableState(for: .ai, context: editorToolContext) {
+                EditorUnavailableStateView(
+                    state: unavailable,
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
+                TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
+                    .lineLimit(2...6)
 
-            Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
+                Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
 
-            Button {
-                Task { await generateNewDesignFromPrompt() }
-            } label: {
-                Label("Generate design", systemImage: "sparkles")
-            }
-            .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    Task { await generateNewDesignFromPrompt() }
+                } label: {
+                    Label("Generate design", systemImage: "sparkles")
+                }
+                .disabled(aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            Divider()
+                Divider()
 
-            TextField("Patch instruction (edit this design)", text: $aiPatchInstruction, axis: .vertical)
-                .lineLimit(2...6)
+                TextField("Patch instruction (edit this design)", text: $aiPatchInstruction, axis: .vertical)
+                    .lineLimit(2...6)
 
-            Button {
-                Task { await applyPatchToCurrentDesign() }
-            } label: {
-                Label("Apply patch", systemImage: "wand.and.stars")
-            }
-            .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button {
+                    Task { await applyPatchToCurrentDesign() }
+                } label: {
+                    Label("Apply patch", systemImage: "wand.and.stars")
+                }
+                .disabled(aiPatchInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-            if !aiStatusMessage.isEmpty {
-                Text(aiStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !aiStatusMessage.isEmpty {
+                    Text(aiStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         } header: {
             sectionHeader("AI")
@@ -262,138 +165,58 @@ extension ContentView {
         }
     }
 
-    var proSection: some View {
+    var widgetsSection: some View {
         Section {
-            if proManager.isProUnlocked {
-                Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                Button { activeSheet = .pro } label: { Label("Manage Pro", systemImage: "crown.fill") }
-            } else {
-                Label("Free tier", systemImage: "sparkles")
-                Text("Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs.\nPro unlocks unlimited designs, matched sets, and variables.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button { activeSheet = .pro } label: { Label("Unlock Pro", systemImage: "crown.fill") }
-                if !proManager.statusMessage.isEmpty {
-                    Text(proManager.statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            sectionHeader("Pro")
-        }
-    }
-
-    var variablesManagerSection: some View {
-        Section {
-            if proManager.isProUnlocked {
-                let vars = WidgetWeaverVariableStore.shared.loadAll()
-                LabeledContent("Saved variables", value: "\(vars.count)")
-                Button { activeSheet = .variables } label: { Label("Open Variables", systemImage: "curlybraces.square") }
-
-                Text("Variables are stored on-device.\nUse them in text via {{__var_key|fallback}}.")
-                    .font(.caption)
+            if widgetIDs.isEmpty {
+                Text("No widgets.")
                     .foregroundStyle(.secondary)
             } else {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.proRequiredForVariables(),
-                    isBusy: false,
-                    onPerformCTA: performEditorUnavailableCTA
-                )
-            }
-        } header: {
-            sectionHeader("Variables")
-        }
-    }
-
-    var sharingSection: some View {
-        Section {
-            ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("Design", icon: Image(systemName: "square.and.arrow.up"))) {
-                Label("Share this design", systemImage: "square.and.arrow.up")
-            }
-
-            ShareLink(item: sharePackageForAllDesigns(), preview: SharePreview("Designs", icon: Image(systemName: "square.and.arrow.up"))) {
-                Label("Share all designs", systemImage: "square.and.arrow.up")
-            }
-
-            Button {
-                showImportPicker = true
-            } label: {
-                Label("Import designs…", systemImage: "square.and.arrow.down")
-            }
-            .disabled(importInProgress)
-
-            Text("Sharing exports a .wwdesign file.\nImports are reviewed before applying.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            sectionHeader("Sharing")
-        }
-    }
-
-    var matchedSetSection: some View {
-        Section {
-            if !proManager.isProUnlocked && !matchedSetEnabled {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.proRequiredForMatchedSet(),
-                    isBusy: false,
-                    onPerformCTA: performEditorUnavailableCTA
-                )
-            } else {
-                Toggle("Matched set (Small/Medium/Large)", isOn: matchedSetBinding)
-
-                if matchedSetEnabled {
-                    Text("Matched set is on.\nEdits apply to \(editingFamilyLabel).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button { copyCurrentSizeToAllSizes() } label: {
-                        Label("Copy \(editingFamilyLabel) to all sizes", systemImage: "square.on.square")
+                Picker("Widget", selection: $selectedWidgetID) {
+                    ForEach(widgetIDs, id: \.self) { id in
+                        Text(id.shortWidgetLabel).tag(id)
                     }
-                } else {
-                    Text("Matched set off.\nThe design is a single spec (Medium default).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-            }
-        } header: {
-            sectionHeader("Matched Set")
-        }
-    }
-
-    var widgetWorkflowSection: some View {
-        Section {
-            Button { saveSelected(makeDefault: true) } label: { Label("Save & Make Default", systemImage: "checkmark.circle.fill") }
-            Button { saveSelected(makeDefault: false) } label: { Label("Save (Keep Default)", systemImage: "tray.and.arrow.down") }
-
-            if selectedSpecID != defaultSpecID {
-                Button {
-                    store.setDefault(id: selectedSpecID)
-                    defaultSpecID = store.defaultSpecID()
-                    lastWidgetRefreshAt = Date()
-                    saveStatusMessage = "Made default.\nWidgets refreshed."
-                } label: {
-                    Label("Make This Design Default", systemImage: "star")
-                }
+                .pickerStyle(.menu)
             }
 
-            Button { refreshWidgets() } label: { Label("Refresh Widgets", systemImage: "arrow.clockwise") }
-
-            if !saveStatusMessage.isEmpty {
-                Text(saveStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            ControlGroup {
+                Button { focusWidget() } label: { Label("Focus widget", systemImage: "scope") }
+                Button { focusClock() } label: { Label("Focus clock", systemImage: "clock") }
             }
+            .controlSize(.small)
 
-            if let lastWidgetRefreshAt {
-                Text("Last refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .standard))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            ControlGroup {
+                Button { addNewWidget() } label: { Label("Add", systemImage: "plus") }
+                Button(role: .destructive) { deleteSelectedWidget(selectedWidgetID) } label: { Label("Delete", systemImage: "trash") }
             }
+            .controlSize(.small)
         } header: {
             sectionHeader("Widgets")
         } footer: {
-            Text("If a widget doesn’t change, check which Design it is using (Edit Widget).\nWidgets set to \"Default (App)\" always follow the app default design.")
+            Text("Widgets are generated from the current design.\nUse Focus to pick what you’re editing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var layoutSection: some View {
+        Section {
+            Picker("Layout", selection: $draftSpec.layout) {
+                ForEach(WidgetLayout.allCases) { layout in
+                    Text(layout.rawValue).tag(layout)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Toggle("Show grid", isOn: $draftSpec.style.showGrid)
+
+            Toggle("Show debug overlay", isOn: $draftSpec.style.showDebugOverlay)
+
+            Toggle("Show safe area", isOn: $draftSpec.style.showSafeArea)
+        } header: {
+            sectionHeader("Layout")
+        } footer: {
+            Text("Layout controls how content is arranged.\nDebug overlays are for development only.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -401,190 +224,290 @@ extension ContentView {
 
     var textSection: some View {
         Section {
-            TextField("Design name", text: $designName)
-                .textInputAutocapitalization(.words)
-                .accessibilityIdentifier("EditorTextField.DesignName")
+            TextField("Text", text: $draftSpec.text.content, axis: .vertical)
+                .lineLimit(1...6)
 
-            TextField("Primary text", text: binding(\.primaryText))
-                .accessibilityIdentifier("EditorTextField.PrimaryText")
-            TextField("Secondary text (optional)", text: binding(\.secondaryText))
-                .accessibilityIdentifier("EditorTextField.SecondaryText")
+            Toggle("All caps", isOn: $draftSpec.text.isAllCaps)
 
-            if matchedSetEnabled {
-                Text("Text fields are currently editing: \(editingFamilyLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Toggle("Monospace digits", isOn: $draftSpec.text.monospaceDigits)
+
+            Toggle("Use placeholder when empty", isOn: $draftSpec.text.usePlaceholderWhenEmpty)
+
+            TextField("Placeholder", text: $draftSpec.text.placeholder)
+                .disabled(!draftSpec.text.usePlaceholderWhenEmpty)
         } header: {
             sectionHeader("Text")
+        } footer: {
+            Text("Text is rendered in the widget.\nUse placeholders to preview empty states.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     var symbolSection: some View {
         Section {
-            TextField("SF Symbol name (optional)", text: binding(\.symbolName))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-
-            Picker("Placement", selection: binding(\.symbolPlacement)) {
-                ForEach(SymbolPlacementToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
+            Picker("Symbol", selection: $draftSpec.symbol.kind) {
+                ForEach(WidgetSymbolKind.allCases) { kind in
+                    Text(kind.rawValue).tag(kind)
                 }
             }
+            .pickerStyle(.menu)
 
-            HStack {
-                Text("Size")
-                Slider(value: binding(\.symbolSize), in: 8...96, step: 1)
-                Text("\(Int(currentFamilyDraft().symbolSize))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
+            Toggle("Tint symbol", isOn: $draftSpec.symbol.tintEnabled)
 
-            Picker("Weight", selection: binding(\.symbolWeight)) {
-                ForEach(SymbolWeightToken.allCases) { token in
-                    Text(token.rawValue).tag(token)
-                }
-            }
-
-            Picker("Rendering", selection: binding(\.symbolRenderingMode)) {
-                ForEach(SymbolRenderingModeToken.allCases) { token in
-                    Text(token.rawValue.capitalized).tag(token)
-                }
-            }
-
-            Picker("Tint", selection: binding(\.symbolTint)) {
-                ForEach(SymbolTintToken.allCases) { token in
-                    Text(token.rawValue.capitalized).tag(token)
-                }
-            }
-
-            if matchedSetEnabled {
-                Text("Symbol settings are currently editing: \(editingFamilyLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            ColorPicker("Symbol tint", selection: $draftSpec.symbol.tintColor)
+                .disabled(!draftSpec.symbol.tintEnabled)
         } header: {
             sectionHeader("Symbol")
-        }
-    }
-
-    var layoutSection: some View {
-        Section {
-            Picker("Layout template", selection: binding(\.template)) {
-                ForEach(LayoutTemplateToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            Toggle("Show accent bar", isOn: binding(\.showsAccentBar))
-
-            Stepper(
-                "Max primary lines: \(currentFamilyDraft().primaryLineLimit)",
-                value: binding(\.primaryLineLimit),
-                in: 1...6
-            )
-
-            Stepper(
-                "Max secondary lines: \(currentFamilyDraft().secondaryLineLimit)",
-                value: binding(\.secondaryLineLimit),
-                in: 0...6
-            )
-
-            if matchedSetEnabled {
-                Text("Layout is currently editing: \(editingFamilyLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            sectionHeader("Layout")
-        }
-    }
-
-    var styleSection: some View {
-        Section {
-            HStack {
-                Text("Padding")
-                Slider(value: $styleDraft.padding, in: 0...40, step: 1)
-                Text("\(Int(styleDraft.padding))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Text("Inner corner radius")
-                Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
-                Text("\(Int(styleDraft.cornerRadius))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
-                .font(.caption2)
+        } footer: {
+            Text("Symbols use SF Symbols.\nTinting uses the chosen colour.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
-            if currentFamilyDraft().template == .weather {
-                HStack {
-                    Text("Weather scale")
-                    Slider(value: $styleDraft.weatherScale, in: 0.75...1.25, step: 0.01)
-                    Text(String(format: "%.2f×", styleDraft.weatherScale))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Picker("Background", selection: $styleDraft.background) {
-                ForEach(BackgroundToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            Picker("Accent", selection: $styleDraft.accent) {
-                ForEach(AccentToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
-
-            Button { randomiseStyleDraft() } label: { Label("Randomise Style (Draft)", systemImage: "shuffle") }
-
-            if matchedSetEnabled {
-                Text("Style is shared across Small/Medium/Large.")
-                    .font(.caption)
+    var imageSection: some View {
+        Section {
+            if let imageID = specForSelectedWidget.image?.imageID {
+                LabeledContent("Image", value: imageID)
+            } else {
+                Text("No image selected.")
                     .foregroundStyle(.secondary)
             }
+
+            Button {
+                showImagePicker = true
+            } label: {
+                Label("Pick image…", systemImage: "photo")
+            }
         } header: {
-            sectionHeader("Style")
+            sectionHeader("Image")
+        } footer: {
+            Text("Images are stored in the app’s library.\nThe picker uses Photos access when available.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var smartPhotoSection: some View {
+        Section {
+            if specForSelectedWidget.image?.mode != .smartPhoto {
+                Text("Smart Photo is off.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Mode", selection: $draftSpec.image.mode) {
+                ForEach(SmartPhotoMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Toggle("Prefer face-aware crop", isOn: $draftSpec.image.preferFaceAwareCrop)
+                .disabled(draftSpec.image.mode != .smartPhoto)
+
+            Toggle("Prefer portrait crop", isOn: $draftSpec.image.preferPortraitCrop)
+                .disabled(draftSpec.image.mode != .smartPhoto)
+
+            Button {
+                focusSmartPhotoCrop()
+            } label: {
+                Label("Adjust crop…", systemImage: "crop")
+            }
+            .disabled(draftSpec.image.mode != .smartPhoto)
+        } header: {
+            sectionHeader("Smart Photo")
+        } footer: {
+            Text("Smart Photo automatically picks a crop.\nUse Adjust crop to fine-tune.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var albumShuffleSection: some View {
+        Section {
+            if draftSpec.image.mode != .smartPhoto {
+                Text("Album Shuffle requires Smart Photo.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle("Enable Album Shuffle", isOn: $draftSpec.image.albumShuffleEnabled)
+                .disabled(draftSpec.image.mode != .smartPhoto)
+
+            if draftSpec.image.albumShuffleEnabled {
+                Button {
+                    focusAlbumShuffle()
+                } label: {
+                    Label("Choose album…", systemImage: "photo.on.rectangle.angled")
+                }
+            }
+        } header: {
+            sectionHeader("Album Shuffle")
+        } footer: {
+            Text("Album Shuffle rotates images from an album.\nRequires Photos access.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var smartRulesSection: some View {
+        Section {
+            if specForSelectedWidget.image?.imageID == nil {
+                EditorUnavailableStateView(
+                    state: .missingImageForSmartRules(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else if specForSelectedWidget.image?.mode != .smartPhoto {
+                EditorUnavailableStateView(
+                    state: .missingSmartPhotoForSmartRules(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
+                Button {
+                    focusSmartRules()
+                } label: {
+                    Label("Edit Smart Rules…", systemImage: "slider.horizontal.3")
+                }
+            }
+        } header: {
+            sectionHeader("Smart Rules")
+        } footer: {
+            Text("Smart Rules can adjust cropping behaviour.\nRequires an image and Smart Photo.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     var typographySection: some View {
         Section {
-            Picker("Name text style", selection: $styleDraft.nameTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+            Picker("Font design", selection: $draftSpec.typography.fontDesign) {
+                ForEach(FontDesign.allCases) { design in
+                    Text(design.rawValue).tag(design)
                 }
             }
+            .pickerStyle(.menu)
 
-            Picker("Primary text style", selection: $styleDraft.primaryTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
+            Stepper("Size: \(draftSpec.typography.size)", value: $draftSpec.typography.size, in: 8...96)
 
-            Picker("Secondary text style", selection: $styleDraft.secondaryTextStyle) {
-                ForEach(TextStyleToken.allCases) { token in
-                    Text(token.displayName).tag(token)
-                }
-            }
+            Stepper("Weight: \(draftSpec.typography.weight.rawValue)", value: $draftSpec.typography.weight, in: Font.Weight.supportedRange)
 
-            if matchedSetEnabled {
-                Text("Typography is shared across Small/Medium/Large.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Toggle("Uppercase", isOn: $draftSpec.typography.uppercase)
+
+            Toggle("Small caps", isOn: $draftSpec.typography.smallCaps)
         } header: {
             sectionHeader("Typography")
+        } footer: {
+            Text("Typography controls how text is drawn.\nSome options are template-specific.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
+    var actionsSection: some View {
+        Section {
+            if !proManager.isProUnlocked {
+                EditorUnavailableStateView(
+                    state: .proRequiredForActions(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
+                Toggle("Enable actions", isOn: $draftSpec.actions.enabled)
+
+                if draftSpec.actions.enabled {
+                    Text("Actions are configured via Shortcuts/Intents.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            sectionHeader("Actions")
+        } footer: {
+            Text("Actions allow interactive widget buttons.\nRequires Pro.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var matchedSetSection: some View {
+        Section {
+            Toggle("Enable matched set", isOn: $draftSpec.matchedSet.enabled)
+
+            if draftSpec.matchedSet.enabled && !proManager.isProUnlocked {
+                EditorUnavailableStateView(
+                    state: .proRequiredForMatchedSet(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else if draftSpec.matchedSet.enabled {
+                TextField("Matched set key", text: $draftSpec.matchedSet.key)
+            }
+        } header: {
+            sectionHeader("Matched Set")
+        } footer: {
+            Text("Matched sets coordinate styling across widgets.\nRequires Pro to enable.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var variablesSection: some View {
+        Section {
+            if !proManager.isProUnlocked {
+                EditorUnavailableStateView(
+                    state: .proRequiredForVariables(),
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
+                Text("Variables are defined per-design.")
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            sectionHeader("Variables")
+        } footer: {
+            Text("Variables can be used in templates.\nRequires Pro.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var sharingSection: some View {
+        Section {
+            Button {
+                exportCurrentDesign()
+            } label: {
+                Label("Export…", systemImage: "square.and.arrow.up")
+            }
+        } header: {
+            sectionHeader("Sharing")
+        } footer: {
+            Text("Export a shareable representation of the current design.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var proSection: some View {
+        Section {
+            if proManager.isProUnlocked {
+                Text("Pro is unlocked.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Button {
+                    activeSheet = .pro
+                } label: {
+                    Label("Unlock Pro…", systemImage: "crown")
+                }
+            }
+        } header: {
+            sectionHeader("Pro")
+        } footer: {
+            Text("Pro unlocks additional tools and higher limits.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 }
