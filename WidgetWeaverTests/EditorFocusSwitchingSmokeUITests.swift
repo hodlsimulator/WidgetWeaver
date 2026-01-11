@@ -102,6 +102,68 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         return app.descendants(matching: .any).matching(predicate).firstMatch
     }
 
+    private func bestScrollContainer(in app: XCUIApplication) -> XCUIElement {
+        let table = app.tables.firstMatch
+        if table.exists { return table }
+
+        let scrollView = app.scrollViews.firstMatch
+        if scrollView.exists { return scrollView }
+
+        return app.windows.firstMatch
+    }
+
+    private func isFrameVisible(_ frame: CGRect, in app: XCUIApplication) -> Bool {
+        guard !frame.isEmpty else { return false }
+        let window = app.windows.firstMatch
+        guard window.exists else { return false }
+        return window.frame.intersects(frame)
+    }
+
+    private func scrollIntoViewIfNeeded(
+        _ target: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 10
+    ) {
+        let container = bestScrollContainer(in: app)
+
+        for _ in 0..<maxSwipes {
+            let frame = target.frame
+            if isFrameVisible(frame, in: app) { return }
+
+            if !frame.isEmpty {
+                let windowFrame = app.windows.firstMatch.frame
+
+                if frame.maxY < windowFrame.minY {
+                    container.swipeDown()
+                    continue
+                }
+
+                if frame.minY > windowFrame.maxY {
+                    container.swipeUp()
+                    continue
+                }
+            }
+
+            container.swipeDown()
+        }
+    }
+
+    private func waitForVisibleFrame(
+        of target: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            let frame = target.frame
+            if isFrameVisible(frame, in: app) { return true }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        return false
+    }
+
     private func waitAndTap(
         _ identifier: String,
         in app: XCUIApplication,
@@ -110,13 +172,23 @@ final class EditorFocusSwitchingSmokeUITests: XCTestCase {
         line: UInt = #line
     ) {
         let target = element(identifier, in: app)
-        let predicate = NSPredicate(format: "exists == true && hittable == true")
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: target)
-
-        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
-        guard result == .completed else {
+        guard target.waitForExistence(timeout: timeout) else {
             XCTFail(
-                "Expected element to become tappable: \(identifier) (result: \(result))\n\n\(target.debugDescription)",
+                "Expected element to exist: \(identifier)\n\n\(target.debugDescription)",
+                file: file,
+                line: line
+            )
+            return
+        }
+
+        // Avoid querying `hittable` during predicate evaluation.
+        // In some simulator runs, SwiftUI buttons can temporarily report an invalid activation point
+        // while off-screen, which crashes the `exists && hittable` wait.
+        scrollIntoViewIfNeeded(target, in: app)
+
+        guard waitForVisibleFrame(of: target, in: app, timeout: 2.0) else {
+            XCTFail(
+                "Expected element to be visible before tap: \(identifier)\n\n\(target.debugDescription)",
                 file: file,
                 line: line
             )
