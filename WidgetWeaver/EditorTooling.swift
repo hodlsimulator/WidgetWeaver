@@ -430,6 +430,8 @@ enum EditorToolRegistry {
             id: .variables,
             order: 130,
             requiredCapabilities: [.canEditVariables],
+            requiredNonPhotosCapabilities: [.proUnlocked],
+            missingNonPhotosCapabilityPolicy: .showAsUnavailable(EditorUnavailableState.proRequiredForVariables()),
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(

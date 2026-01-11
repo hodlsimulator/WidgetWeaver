@@ -293,8 +293,16 @@ extension ContentView {
     }
 
     var variablesManagerSection: some View {
-        Section {
-            if proManager.isProUnlocked {
+        let unavailable = EditorToolRegistry.unavailableState(for: .variables, context: editorToolContext)
+
+        return Section {
+            if let unavailable {
+                EditorUnavailableStateView(
+                    state: unavailable,
+                    isBusy: false,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else {
                 let vars = WidgetWeaverVariableStore.shared.loadAll()
                 LabeledContent("Saved variables", value: "\(vars.count)")
                 Button { activeSheet = .variables } label: { Label("Open Variables", systemImage: "curlybraces.square") }
@@ -302,12 +310,6 @@ extension ContentView {
                 Text("Variables are stored on-device.\nUse them in text via {{__var_key|fallback}}.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.proRequiredForVariables(),
-                    isBusy: false,
-                    onPerformCTA: performEditorUnavailableCTA
-                )
             }
         } header: {
             sectionHeader("Variables")
