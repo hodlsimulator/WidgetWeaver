@@ -226,10 +226,10 @@ struct EditorToolDefinition: Hashable, Sendable {
     init(
         id: EditorToolID,
         order: Int,
-        requiredCapabilities: EditorCapabilities = [],
-        requiredNonPhotosCapabilities: EditorNonPhotosCapabilities = [],
-        missingNonPhotosCapabilityPolicy: EditorToolMissingNonPhotosCapabilityPolicy = .hide,
-        eligibility: EditorToolEligibility = .init()
+        requiredCapabilities: EditorCapabilities,
+        requiredNonPhotosCapabilities: EditorNonPhotosCapabilities,
+        missingNonPhotosCapabilityPolicy: EditorToolMissingNonPhotosCapabilityPolicy,
+        eligibility: EditorToolEligibility
     ) {
         self.id = id
         self.order = order
@@ -362,15 +362,17 @@ enum EditorToolRegistry {
     /// Canonical tool manifest.
     static let tools: [EditorToolDefinition] = [
         // Workflow.
-        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
-        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
-        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
+        EditorToolDefinition(id: .status, order: 10, requiredCapabilities: [], requiredNonPhotosCapabilities: [], missingNonPhotosCapabilityPolicy: .hide, eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
+        EditorToolDefinition(id: .designs, order: 20, requiredCapabilities: [], requiredNonPhotosCapabilities: [], missingNonPhotosCapabilityPolicy: .hide, eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
+        EditorToolDefinition(id: .widgets, order: 30, requiredCapabilities: [], requiredNonPhotosCapabilities: [], missingNonPhotosCapabilityPolicy: .hide, eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)),
 
         // Core editing.
         EditorToolDefinition(
             id: .layout,
             order: 40,
             requiredCapabilities: [.canEditLayout],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .multiSafe(
                 focus: .any,
                 selection: .any,
@@ -381,6 +383,8 @@ enum EditorToolRegistry {
             id: .text,
             order: 50,
             requiredCapabilities: [.canEditTextContent],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .any,
                 selectionDescriptor: .mixedDisallowed
@@ -390,6 +394,8 @@ enum EditorToolRegistry {
             id: .symbol,
             order: 60,
             requiredCapabilities: [.canEditSymbol],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .any,
                 selectionDescriptor: .mixedDisallowed
@@ -399,6 +405,8 @@ enum EditorToolRegistry {
             id: .image,
             order: 70,
             requiredCapabilities: [.canEditImage],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
                 selectionDescriptor: .mixedDisallowed
@@ -410,6 +418,8 @@ enum EditorToolRegistry {
             id: .smartPhoto,
             order: 80,
             requiredCapabilities: [.canEditSmartPhoto],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
                 selectionDescriptor: .mixedDisallowed
@@ -419,6 +429,8 @@ enum EditorToolRegistry {
             id: .smartPhotoCrop,
             order: 81,
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .smartPhotoPhotoItemSuite,
                 selectionDescriptor: .mixedDisallowed
@@ -428,6 +440,8 @@ enum EditorToolRegistry {
             id: .albumShuffle,
             order: 82,
             requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
                 selectionDescriptor: .mixedDisallowed
@@ -437,6 +451,8 @@ enum EditorToolRegistry {
             id: .smartRules,
             order: 83,
             requiredCapabilities: [.canEditSmartPhoto, .hasSmartPhotoConfigured, .hasImageConfigured],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .smartPhotoContainerSuite,
                 selectionDescriptor: .mixedDisallowed
@@ -448,6 +464,8 @@ enum EditorToolRegistry {
             id: .style,
             order: 90,
             requiredCapabilities: [.canEditStyle],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
 
@@ -456,6 +474,8 @@ enum EditorToolRegistry {
             id: .typography,
             order: 100,
             requiredCapabilities: [.canEditTypography],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .any,
                 selectionDescriptor: .mixedDisallowed
@@ -467,6 +487,8 @@ enum EditorToolRegistry {
             id: .actions,
             order: 115,
             requiredCapabilities: [.canEditActions],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
                 focus: .any,
                 selectionDescriptor: .mixedDisallowed
@@ -492,6 +514,8 @@ enum EditorToolRegistry {
             id: .sharing,
             order: 140,
             requiredCapabilities: [.canShare],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
         EditorToolDefinition(
@@ -506,6 +530,8 @@ enum EditorToolRegistry {
             id: .pro,
             order: 160,
             requiredCapabilities: [.canPurchasePro],
+            requiredNonPhotosCapabilities: [],
+            missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .multiSafe(selectionDescriptor: .mixedAllowed)
         ),
     ]
