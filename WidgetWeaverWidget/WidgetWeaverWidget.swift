@@ -161,7 +161,14 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
            !usesSteps,
            !usesActivity
         {
-            let maxEntries: Int = 240
+            let maxEntries: Int = {
+                // Rotating photos means each entry usually decodes a different image.
+                // Very dense timelines can exceed WidgetKit's time/memory budget and result in a placeholder.
+                if shuffleSchedule.intervalSeconds < (15 * 60) {
+                    return 32
+                }
+                return 240
+            }()
             let desiredHorizon: TimeInterval = 60 * 60 * 6
             let horizon = max(desiredHorizon, shuffleSchedule.nextChangeDate.timeIntervalSince(now) + (shuffleSchedule.intervalSeconds * 4))
 
@@ -205,7 +212,12 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let base: Date = now
 
         // Buffer enough future entries so the widget doesn't "run out" if WidgetKit delays reloads.
-        let maxEntries: Int = 240
+        let maxEntries: Int = {
+            if let shuffleSchedule, shuffleSchedule.intervalSeconds < (15 * 60) {
+                return 32
+            }
+            return 240
+        }()
         let desiredHorizon: TimeInterval = 60 * 60 * 6
         let horizon: TimeInterval = min(desiredHorizon, refreshSeconds * Double(maxEntries - 1))
         let count = max(2, Int(horizon / refreshSeconds) + 1)
