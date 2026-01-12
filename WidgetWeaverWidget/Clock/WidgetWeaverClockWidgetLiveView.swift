@@ -20,165 +20,154 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     private static let timerStartBiasSeconds: TimeInterval = 0.25
 
-    /// Keeps the seconds hand moving even if the next WidgetKit minute entry arrives late.
+    /// Keeps the seconds hand moving even if the next minute-boundary refresh arrives late.
     /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
 
-    /// WidgetKit can deliver minute-boundary entries slightly late (often ~0.5–1.0s).
-    /// When hour/minute angles are derived from wall-clock time in those cases, the minute hand can
-    /// land fractionally past the tick, which reads as a “late” tick.
-    ///
-    /// Snap very small post-boundary lateness back to the minute mark so the hand lands exactly on the tick.
-    private static let minuteBoundarySnapMaxLatenessSeconds: TimeInterval = 2.0
-
     var body: some View {
+        // Timeline entries can be applied slightly late by WidgetKit.
+        // To keep the minute hand landing *on* the minute tick (in sync with the seconds hand),
+        // drive hour/minute hand updates using a minute-aligned TimelineView schedule.
+        let scheduleStart = Self.floorToMinute(entryDate)
+
         WidgetWeaverRenderClock.withNow(entryDate) {
-            let sysNow = Date()
-            let ctxNow = WidgetWeaverRenderClock.now
+            TimelineView(.periodic(from: scheduleStart, by: 60.0)) { timeline in
+                let sysNow = Date()
+                let ctxNow = WidgetWeaverRenderClock.now
+                let tlNow = timeline.date
 
-            // WidgetKit can render a timeline entry ahead-of-time.
-            //
-            // Two distinct pre-render cases must be handled:
-            // 1) Far-future pre-render: ctxNow is many seconds/minutes ahead of sysNow.
-            // 2) Near minute-boundary pre-render: ctxNow can be just past the next minute while sysNow is
-            //    still in the previous minute (skew can be ~100–200ms). In that case, using sysNow
-            //    produces a snapshot that is effectively “one minute behind” for the entry being rendered.
-            //
-            // When the entry is due (or slightly overdue), prefer wall-clock time so the minute hand
-            // does not appear “slow” if WidgetKit delivers the minute entry a few seconds late.
-            let sysMinuteAnchor = Self.floorToMinute(sysNow)
-            let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
-            let leadSeconds = ctxNow.timeIntervalSince(sysNow)
+                // WidgetKit can render a widget entry ahead-of-time.
+                // In those cases, `Date()` reflects wall-clock time, but the render pass should use
+                // the entry date. Keep pre-render deterministic by preferring `ctxNow`.
+                let sysMinuteAnchor = Self.floorToMinute(sysNow)
+                let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
+                let leadSeconds = ctxNow.timeIntervalSince(sysNow)
 
-            let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
+                // Two distinct pre-render cases must be handled:
+                // 1) Far-future pre-render: ctxNow is many seconds/minutes ahead of sysNow.
+                // 2) Near minute-boundary pre-render: ctxNow can be just past the next minute while sysNow is
+                //    still in the previous minute (skew can be ~100–200ms). In that case, using sysNow
+                //    produces a snapshot that is effectively “one minute behind” for the entry being rendered.
+                let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
 
-            // Minute-boundary tick:
-            // WidgetKit can deliver minute-boundary entries a hair late (often ~0.5–1.0s), and it can also
-            // rebuild the timeline just after :00. If hour/minute angles use wall-clock time in those cases,
-            // the minute hand lands fractionally past the tick, which reads as a “late” tick.
-            //
-            // Snap small post-boundary lateness back to the exact minute mark (budget-safe; does not affect the
-            // seconds hand, which is driven by `Text(timerInterval:)`).
-            let sysSecondsPastMinute = sysNow.timeIntervalSince(sysMinuteAnchor)
-            let snapSlightLatenessToMinuteMark = (!isPrerender)
-                && (sysSecondsPastMinute >= 0.0)
-                && (sysSecondsPastMinute <= Self.minuteBoundarySnapMaxLatenessSeconds)
+                // Use the schedule's current date when live (minute-aligned updates), but fall back to the
+                // entry date when pre-rendering.
+                let liveNow: Date = isPrerender ? ctxNow : tlNow
 
-            let renderNow: Date = {
-                if isPrerender { return ctxNow }
-                if snapSlightLatenessToMinuteMark { return sysMinuteAnchor }
-                return sysNow
-            }()
+                // Tick-style hour + minute hands: snap to the minute boundary so the hands do not drift
+                // between updates.
+                let handsNow = Self.floorToMinute(liveNow)
 
-            let isPrivacy = redactionReasons.contains(.privacy)
-            let isPlaceholder = redactionReasons.contains(.placeholder)
+                let isPrivacy = redactionReasons.contains(.privacy)
+                let isPlaceholder = redactionReasons.contains(.placeholder)
 
-            let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
-            let showSeconds = (tickMode == .secondsSweep)
+                let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
+                let showSeconds = (tickMode == .secondsSweep)
 
-            let baseAngles = WWClockBaseAngles(date: renderNow)
-            let hourAngle = Angle.degrees(baseAngles.hour)
-            let minuteAngle = Angle.degrees(baseAngles.minute)
+                let baseAngles = WWClockBaseAngles(date: handsNow)
+                let hourAngle = Angle.degrees(baseAngles.hour)
+                let minuteAngle = Angle.degrees(baseAngles.minute)
 
-            // Seconds anchor:
-            // - Use the render minute so WidgetKit pre-rendering stays deterministic.
-            // - Permit spillover so late minute delivery does not freeze the seconds hand.
-            let secondsMinuteAnchor = Self.floorToMinute(renderNow)
-            let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
-            let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
-            let timerRange = timerStart...timerEnd
+                // Seconds anchor:
+                // - Use the render minute so WidgetKit pre-rendering stays deterministic.
+                // - Permit spillover so a late refresh does not freeze the seconds hand.
+                let secondsMinuteAnchor = handsNow
+                let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
+                let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
+                let timerRange = timerStart...timerEnd
 
-            // Trigger font registration once per render pass (useful for logs).
-            let fontOK = showSeconds ? WWClockSecondHandFont.isAvailable() : true
+                // Trigger font registration once per render pass (useful for logs).
+                let fontOK = showSeconds ? WWClockSecondHandFont.isAvailable() : true
 
-            // Lightweight render log (throttled).
-            let _ = WWClockDebugLog.appendLazy(
-                category: "clock",
-                throttleID: "clockWidget.render",
-                minInterval: 30.0,
-                now: sysNow
-            ) {
-                let cal = Calendar.autoupdatingCurrent
+                // Lightweight render log (throttled).
+                let _ = WWClockDebugLog.appendLazy(
+                    category: "clock",
+                    throttleID: "clockWidget.render",
+                    minInterval: 30.0,
+                    now: sysNow
+                ) {
+                    let cal = Calendar.autoupdatingCurrent
 
-                let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
-                let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
-                let renderRef = Int(renderNow.timeIntervalSinceReferenceDate.rounded())
+                    let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
+                    let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
+                    let tlRef = Int(tlNow.timeIntervalSinceReferenceDate.rounded())
+                    let handsRef = Int(handsNow.timeIntervalSinceReferenceDate.rounded())
 
-                let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
-                let leadMs = Int((leadSeconds * 1000.0).rounded())
-                let wallMinusRender = Int((sysNow.timeIntervalSince(renderNow)).rounded())
+                    let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
+                    let tlMinusSysMs = Int(((tlNow.timeIntervalSince(sysNow)) * 1000.0).rounded())
+                    let leadMs = Int((leadSeconds * 1000.0).rounded())
 
-                let entryH = cal.component(.hour, from: renderNow)
-                let entryM = cal.component(.minute, from: renderNow)
-                let entryS = cal.component(.second, from: renderNow)
+                    let handsH = cal.component(.hour, from: handsNow)
+                    let handsM = cal.component(.minute, from: handsNow)
 
-                let minuteBoundary = abs(renderNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
+                    let liveS = cal.component(.second, from: liveNow)
 
-                let hDeg = Int(baseAngles.hour.rounded())
-                let mDeg = Int(baseAngles.minute.rounded())
+                    let liveOnMinute = abs(liveNow.timeIntervalSince(secondsMinuteAnchor)) < 0.001
 
-                let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
-                let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
-                let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
+                    let hDeg = Int(baseAngles.hour.rounded())
+                    let mDeg = Int(baseAngles.minute.rounded())
 
-                let sysMinRef = Int(sysMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
-                let ctxMinRef = Int(ctxMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                    let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
+                    let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
+                    let endRef = Int(timerEnd.timeIntervalSinceReferenceDate.rounded())
 
-                let expectedSeconds = cal.component(.second, from: sysNow)
-                let expectedString = String(format: "0:%02d", expectedSeconds)
+                    let expectedSeconds = cal.component(.second, from: sysNow)
+                    let expectedString = String(format: "0:%02d", expectedSeconds)
 
-                let redactLabel: String = {
-                    if isPlaceholder && isPrivacy { return "placeholder+privacy" }
-                    if isPlaceholder { return "placeholder" }
-                    if isPrivacy { return "privacy" }
-                    return "none"
-                }()
+                    let redactLabel: String = {
+                        if isPlaceholder && isPrivacy { return "placeholder+privacy" }
+                        if isPlaceholder { return "placeholder" }
+                        if isPrivacy { return "privacy" }
+                        return "none"
+                    }()
 
-                return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) snap=\(snapSlightLatenessToMinuteMark ? 1 : 0) sysMinRef=\(sysMinRef) ctxMinRef=\(ctxMinRef) entryRef=\(renderRef) wallRef=\(sysRef) wall-entry=\(wallMinusRender)s entryHMS=\(entryH):\(entryM):\(entryS) onMinute=\(minuteBoundary ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
-            }
-
-            ZStack {
-                // Hour + minute hands are snapshot-driven (timeline entries). Home Screen widgets
-                // do not reliably run continuous animations, so keep this view deterministic.
-                WidgetWeaverClockIconView(
-                    palette: palette,
-                    hourAngle: hourAngle,
-                    minuteAngle: minuteAngle,
-                    secondAngle: .degrees(0),
-                    showsSecondHand: false,
-                    showsHandShadows: false,
-                    showsGlows: false,
-                    showsCentreHub: false,
-                    handsOpacity: handsOpacity
-                )
-                .id(renderNow)
-                .transition(.identity)
-                .transaction { transaction in
-                    transaction.animation = nil
+                    return "render ctxRef=\(ctxRef) sysRef=\(sysRef) tlRef=\(tlRef) ctx-sys=\(ctxMinusSys)s tl-sysMs=\(tlMinusSysMs) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) onMinute=\(liveOnMinute ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
                 }
 
-                // Seconds hand glyph + hub overlay.
-                // Driven by `Text(timerInterval:)` and does not require frequent timeline reloads.
-                WWClockSecondsAndHubOverlay(
-                    palette: palette,
-                    showsSeconds: showSeconds,
-                    timerRange: timerRange,
-                    handsOpacity: handsOpacity
-                )
+                ZStack {
+                    // Hour + minute hands are driven by a minute-aligned TimelineView schedule.
+                    // This stays deterministic and budget-safe, while keeping the minute tick in sync with
+                    // the seconds hand overlay.
+                    WidgetWeaverClockIconView(
+                        palette: palette,
+                        hourAngle: hourAngle,
+                        minuteAngle: minuteAngle,
+                        secondAngle: .degrees(0),
+                        showsSecondHand: false,
+                        showsHandShadows: false,
+                        showsGlows: false,
+                        showsCentreHub: false,
+                        handsOpacity: handsOpacity
+                    )
+                    .id(handsNow)
+                    .transition(.identity)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
+
+                    // Seconds hand glyph + hub overlay.
+                    // Driven by `Text(timerInterval:)` and does not require frequent widget timeline reloads.
+                    WWClockSecondsAndHubOverlay(
+                        palette: palette,
+                        showsSeconds: showSeconds,
+                        timerRange: timerRange,
+                        handsOpacity: handsOpacity
+                    )
+                }
+                .widgetURL(URL(string: "widgetweaver://clock"))
+                #if DEBUG
+                .overlay(alignment: .bottomTrailing) {
+                    WWClockWidgetDebugBadge(
+                        entryDate: liveNow,
+                        minuteAnchor: secondsMinuteAnchor,
+                        timerRange: timerRange,
+                        showSeconds: showSeconds,
+                        tickModeLabel: showSeconds ? "secondsSweep" : "minuteOnly"
+                    )
+                    .padding(6)
+                }
+                #endif
             }
-            .widgetURL(URL(string: "widgetweaver://clock"))
-            #if DEBUG
-            .overlay(alignment: .bottomTrailing) {
-                WWClockWidgetDebugBadge(
-                    entryDate: renderNow,
-                    minuteAnchor: secondsMinuteAnchor,
-                    timerRange: timerRange,
-                    showSeconds: showSeconds,
-                    tickModeLabel: showSeconds ? "secondsSweep" : "minuteOnly"
-                )
-                .padding(6)
-            }
-            #endif
         }
     }
 
