@@ -26,7 +26,7 @@ struct SmartPhotoAlbumShuffleControls: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let batchSize: Int = 10
-    private let rotationOptionsMinutes: [Int] = [1, 15, 30, 60, 180, 360, 720, 1440] // Changed 0 to 1 for testing
+    private let rotationOptionsMinutes: [Int] = [2, 15, 30, 60, 180, 360, 720, 1440] // Changed 0 to 2 for testing
 
     @State private var internalAlbumPickerPresented: Bool = false
     @State private var previousFocusSnapshot: EditorFocusSnapshot?
