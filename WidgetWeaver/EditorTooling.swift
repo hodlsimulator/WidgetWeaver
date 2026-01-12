@@ -429,16 +429,7 @@ enum EditorToolRegistry {
             order: 82,
             requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
             eligibility: .singleTarget(
-                focus: EditorToolFocusConstraint(
-                    allowClock: false,
-                    allowSmartRuleEditor: true,
-                    allowAnyElement: false,
-                    allowedElementIDPrefixes: ["smartPhoto"],
-                    allowAnyAlbumContainer: false,
-                    allowedAlbumContainerSubtypes: [],
-                    allowAnyAlbumPhotoItem: false,
-                    allowedAlbumPhotoItemSubtypes: []
-                ),
+                focus: .smartPhotoContainerSuite,
                 selectionDescriptor: .mixedDisallowed
             )
         ),
