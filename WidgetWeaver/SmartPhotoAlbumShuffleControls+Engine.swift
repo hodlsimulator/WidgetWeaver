@@ -165,16 +165,25 @@ enum SmartPhotoAlbumShuffleControlsEngine {
 
     @MainActor
     static func ensurePhotoAccess() async -> Bool {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        switch status {
+        let initialStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+
+        let finalStatus: PHAuthorizationStatus
+        switch initialStatus {
         case .authorized, .limited:
-            return true
+            finalStatus = initialStatus
+
         case .notDetermined:
-            let updated = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-            return updated == .authorized || updated == .limited
+            finalStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+
         default:
-            return false
+            finalStatus = initialStatus
         }
+
+        if finalStatus != initialStatus {
+            EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
+        }
+
+        return finalStatus == .authorized || finalStatus == .limited
     }
 
     static func fetchAlbumOptions() -> [AlbumOption] {
