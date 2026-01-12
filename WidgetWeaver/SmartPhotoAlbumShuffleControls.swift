@@ -23,6 +23,8 @@ struct SmartPhotoAlbumShuffleControls: View {
 
     var albumPickerPresented: Binding<Bool>? = nil
 
+    @Environment(\.scenePhase) private var scenePhase
+
     private let batchSize: Int = 10
     private let rotationOptionsMinutes: [Int] = [0, 15, 30, 60, 180, 360, 720, 1440]
 
@@ -148,6 +150,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
         .task(id: manifestFileName) {
             await refreshFromManifest()
+            await autoPrepareWhilePossible()
         }
     }
 
@@ -158,7 +161,7 @@ struct SmartPhotoAlbumShuffleControls: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if !shuffleEnabled {
-            Text("Choose an album to start. While the app is open, it will pre-render the next \(batchSize) photos.")
+            Text("Choose an album to start. While the app is open, it will keep pre-rendering photos in batches of \(batchSize) until the album is prepared.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if let progress {
@@ -619,9 +622,11 @@ struct SmartPhotoAlbumShuffleControls: View {
             do {
                 let data = try await SmartPhotoAlbumShuffleControlsEngine.requestImageData(localIdentifier: entry.id)
 
-                let imageSpec = try autoreleasepool {
-                    try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
-                }
+                let imageSpec = try await Task.detached(priority: .userInitiated) {
+                    try autoreleasepool {
+                        try SmartPhotoPipeline.prepare(from: data, renderTargets: targets)
+                    }
+                }.value
 
                 guard let sp = imageSpec.smartPhoto else {
                     throw PrepError.missingSmartPhoto
@@ -672,6 +677,54 @@ struct SmartPhotoAlbumShuffleControls: View {
             saveStatusMessage = "Prepared \(preparedNow) photos for shuffle.\nSave to update widgets."
         } else {
             saveStatusMessage = "Prepared \(preparedNow) photos (\(failedNow) failed).\nSave to update widgets."
+        }
+    }
+
+    /// Automatically prepares additional batches while the editor is open so the widget
+    /// can rotate through the entire album (not just the first prepared batch).
+    ///
+    /// This work is intentionally app-only:
+    /// - pauses when the app isn't active
+    /// - pauses while other import work is running
+    /// - stops if the user disables shuffle or switches albums
+    private func autoPrepareWhilePossible() async {
+        let mf = manifestFileName
+        guard !mf.isEmpty else { return }
+
+        // Give the UI a moment to settle after an album is selected.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        while !Task.isCancelled {
+            // Stop if the manifest reference changed (album switched / shuffle disabled).
+            if manifestFileName != mf { return }
+
+            // Only do expensive work while the app is active.
+            if scenePhase != .active {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                continue
+            }
+
+            // Avoid competing with other editor actions.
+            if importInProgress {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                continue
+            }
+
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return }
+
+            // Continue until every entry is prepared or has permanently failed.
+            let hasRemainingWork = manifest.entries.contains { entry in
+                if entry.isPrepared { return false }
+                if entry.flags.contains("failed") { return false }
+                return true
+            }
+
+            if !hasRemainingWork { return }
+
+            await prepareNextBatch(alreadyBusy: false)
+
+            // Small breather to keep the UI responsive.
+            try? await Task.sleep(nanoseconds: 250_000_000)
         }
     }
 
