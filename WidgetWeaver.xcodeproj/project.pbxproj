@@ -53,6 +53,7 @@
 		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
 		E197A1012F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
 		E197A1022F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
+		E1A9B75F2F1568DB0096765D /* ScreenActionsCore in Frameworks */ = {isa = PBXBuildFile; productRef = E1A9B75E2F1568DB0096765D /* ScreenActionsCore */; };
 		E1C834C82EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834C92EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834CA2EFA5D1800E3AA98 /* WidgetWeaverWeatherEngine.swift */; };
@@ -289,6 +290,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E1A9B75F2F1568DB0096765D /* ScreenActionsCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -533,6 +535,9 @@
 				Base,
 			);
 			mainGroup = E186766E2EF227C20098B095;
+			packageReferences = (
+				E1A9B75D2F1568DB0096765D /* XCLocalSwiftPackageReference "../ScreenActions-clone/ScreenActionsCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E18676792EF227C30098B095 /* Products */;
 			projectDirPath = "";
@@ -1071,6 +1076,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		E1A9B75D2F1568DB0096765D /* XCLocalSwiftPackageReference "../ScreenActions-clone/ScreenActionsCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../ScreenActions-clone/ScreenActionsCore";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E1A9B75E2F1568DB0096765D /* ScreenActionsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ScreenActionsCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E18676702EF227C20098B095 /* Project object */;
 }
