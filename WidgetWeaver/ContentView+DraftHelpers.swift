@@ -38,6 +38,8 @@ extension ContentView {
 
     /// Ordered tool identifiers that should be visible for the current context.
     var editorVisibleToolIDs: [EditorToolID] {
+        _ = editorToolCapabilitiesDidChangeTick
+
         if FeatureFlags.contextAwareEditorToolSuiteEnabled {
             return EditorToolRegistry.visibleTools(for: editorToolContext)
         }

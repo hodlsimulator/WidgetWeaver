@@ -52,6 +52,9 @@ struct ContentView: View {
     @State var albumShufflePickerPresented: Bool = false
     @State private var previousVisibleToolIDs: [EditorToolID] = []
 
+    @State var editorToolCapabilitiesDidChangeTick: UInt = 0
+    @State var editorToolCapabilitiesDidChangeObserverToken: NSObjectProtocol?
+
     @State var pickedPhoto: PhotosPickerItem?
     @State var lastImageThemeFileName: String = ""
     @State var lastImageThemeSuggestion: WidgetWeaverImageThemeSuggestion?
@@ -363,7 +366,11 @@ struct ContentView: View {
         }
         .onAppear {
             bootstrap()
+            installEditorToolCapabilitiesDidChangeObserverIfNeeded()
             previousVisibleToolIDs = editorVisibleToolIDs
+        }
+        .onDisappear {
+            uninstallEditorToolCapabilitiesDidChangeObserverIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

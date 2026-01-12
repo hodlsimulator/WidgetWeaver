@@ -386,6 +386,232 @@ final class EditorToolingTests: XCTestCase {
         XCTAssertEqual(ctx.selectionCount, 3)
     }
 
+
+
+    // MARK: - Live capability flips (10S-B5 stage 4)
+
+    func testCapabilityFlipProUnlockDoesNotChangeVisibleToolIDsButClearsUnavailableStates() {
+        let lockedContext = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .element(id: "widgetweaver.element.text"),
+            selectionCount: 1,
+            selectionComposition: .known([.nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let unlockedContext = EditorToolContext(
+            template: .poster,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .single,
+            focus: .element(id: "widgetweaver.element.text"),
+            selectionCount: 1,
+            selectionComposition: .known([.nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let lockedToolIDs = EditorToolRegistry.visibleTools(for: lockedContext)
+        let unlockedToolIDs = EditorToolRegistry.visibleTools(for: unlockedContext)
+
+        // Pro unlock flips availability, not ordering/visibility.
+        XCTAssertEqual(lockedToolIDs, unlockedToolIDs)
+
+        XCTAssertNotNil(EditorToolRegistry.unavailableState(for: .matchedSet, context: lockedContext))
+        XCTAssertNotNil(EditorToolRegistry.unavailableState(for: .variables, context: lockedContext))
+        XCTAssertNotNil(EditorToolRegistry.unavailableState(for: .ai, context: lockedContext))
+
+        XCTAssertNil(EditorToolRegistry.unavailableState(for: .matchedSet, context: unlockedContext))
+        XCTAssertNil(EditorToolRegistry.unavailableState(for: .variables, context: unlockedContext))
+        XCTAssertNil(EditorToolRegistry.unavailableState(for: .ai, context: unlockedContext))
+    }
+
+    func testCapabilityFlipPhotoAccessWhileInAlbumShufflePickerTriggersTeardownAndRestoresFocus() {
+        let widgetDefault = EditorFocusSnapshot.widgetDefault
+        let albumPicker = EditorFocusSnapshot.smartAlbumContainer(id: "smartPhotoAlbumPicker")
+
+        var restorationStack = EditorFocusRestorationStack()
+        restorationStack.recordFocusChange(old: widgetDefault, new: albumPicker)
+
+        let before = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: albumPicker.selection,
+            focus: albumPicker.focus,
+            selectionCount: albumPicker.selectionCount,
+            selectionComposition: albumPicker.selectionComposition,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let after = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: albumPicker.selection,
+            focus: albumPicker.focus,
+            selectionCount: albumPicker.selectionCount,
+            selectionComposition: albumPicker.selectionComposition,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .denied),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let oldTools = EditorToolRegistry.visibleTools(for: before)
+        let newTools = EditorToolRegistry.visibleTools(for: after)
+
+        XCTAssertTrue(oldTools.contains(.albumShuffle))
+        XCTAssertFalse(newTools.contains(.albumShuffle))
+
+        let actions = editorToolTeardownActions(old: oldTools, new: newTools, currentFocus: albumPicker.focus)
+        XCTAssertEqual(actions, [.dismissAlbumShufflePicker, .resetEditorFocusToWidgetDefault])
+
+        var pickerPresented = true
+        var focusSnapshot = albumPicker
+
+        for action in actions {
+            switch action {
+            case .dismissAlbumShufflePicker:
+                pickerPresented = false
+
+            case .resetEditorFocusToWidgetDefault:
+                if let restored = restorationStack.restoreFocusAfterTeardown(currentFocusSnapshot: focusSnapshot) {
+                    focusSnapshot = restored
+                } else {
+                    focusSnapshot = .widgetDefault
+                }
+            }
+        }
+
+        XCTAssertFalse(pickerPresented)
+        XCTAssertEqual(focusSnapshot, widgetDefault)
+        XCTAssertEqual(restorationStack, EditorFocusRestorationStack())
+    }
+
+    func testCapabilityFlipInsideNestedSmartRulesFlowRestoresToOuterFlowDeterministically() {
+        let widgetDefault = EditorFocusSnapshot.widgetDefault
+        let albumPicker = EditorFocusSnapshot.smartAlbumContainer(id: "smartPhotoAlbumPicker")
+        let smartRules = EditorFocusSnapshot.smartRuleEditor(albumID: "album-1")
+
+        var restorationStack = EditorFocusRestorationStack()
+        restorationStack.recordFocusChange(old: widgetDefault, new: albumPicker)
+        restorationStack.recordFocusChange(old: albumPicker, new: smartRules)
+
+        let before = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: smartRules.selection,
+            focus: smartRules.focus,
+            selectionCount: smartRules.selectionCount,
+            selectionComposition: smartRules.selectionComposition,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let after = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: smartRules.selection,
+            focus: smartRules.focus,
+            selectionCount: smartRules.selectionCount,
+            selectionComposition: smartRules.selectionComposition,
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: false,
+            hasSmartPhotoConfigured: true
+        )
+
+        let oldTools = EditorToolRegistry.visibleTools(for: before)
+        let newTools = EditorToolRegistry.visibleTools(for: after)
+
+        XCTAssertTrue(oldTools.contains(.smartRules))
+        XCTAssertFalse(newTools.contains(.smartRules))
+
+        // Smart Photos focus gate: tool order is curated.
+        XCTAssertEqual(newTools, [.albumShuffle, .smartPhotoCrop, .smartPhoto, .image, .style])
+
+        let actions = editorToolTeardownActions(old: oldTools, new: newTools, currentFocus: smartRules.focus)
+        XCTAssertEqual(actions, [.resetEditorFocusToWidgetDefault])
+
+        var focusSnapshot = smartRules
+
+        for action in actions {
+            switch action {
+            case .dismissAlbumShufflePicker:
+                XCTFail("Unexpected dismissal for Smart Rules teardown")
+
+            case .resetEditorFocusToWidgetDefault:
+                if let restored = restorationStack.restoreFocusAfterTeardown(currentFocusSnapshot: focusSnapshot) {
+                    focusSnapshot = restored
+                } else {
+                    focusSnapshot = .widgetDefault
+                }
+            }
+        }
+
+        XCTAssertEqual(focusSnapshot, albumPicker)
+        XCTAssertEqual(restorationStack.entries.count, 1)
+        XCTAssertEqual(restorationStack.entries.first?.kind, .albumShufflePicker)
+        XCTAssertEqual(restorationStack.entries.first?.targetFocus, albumPicker.focus)
+    }
+
+    func testCapabilityFlipProUnlockInMixedSelectionKeepsToolListStable() {
+        let lockedContext = EditorToolContext(
+            template: .poster,
+            isProUnlocked: false,
+            matchedSetEnabled: false,
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.albumContainer, .nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let unlockedContext = EditorToolContext(
+            template: .poster,
+            isProUnlocked: true,
+            matchedSetEnabled: false,
+            selection: .multi,
+            focus: .widget,
+            selectionCount: 3,
+            selectionComposition: .known([.albumContainer, .nonAlbum]),
+            photoLibraryAccess: EditorPhotoLibraryAccess(status: .authorised),
+            hasSymbolConfigured: false,
+            hasImageConfigured: true,
+            hasSmartPhotoConfigured: true
+        )
+
+        let lockedToolIDs = EditorToolRegistry.visibleTools(for: lockedContext)
+        let unlockedToolIDs = EditorToolRegistry.visibleTools(for: unlockedContext)
+
+        XCTAssertEqual(
+            lockedToolIDs,
+            [.status, .designs, .widgets, .layout, .style, .matchedSet, .variables, .sharing, .ai, .pro]
+        )
+        XCTAssertEqual(lockedToolIDs, unlockedToolIDs)
+
+        XCTAssertNotNil(EditorToolRegistry.unavailableState(for: .variables, context: lockedContext))
+        XCTAssertNil(EditorToolRegistry.unavailableState(for: .variables, context: unlockedContext))
+    }
     func testPerformanceVisibleToolsComputationIsFastEnough() {
         let ctx = EditorToolContext(
             template: .poster,

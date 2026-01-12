@@ -280,6 +280,13 @@ enum EditorToolCapabilityChangeReason: String, Hashable, Sendable {
     case photoLibraryAccessChanged
 }
 
+extension Notification.Name {
+    /// Posted when editor tooling capabilities change at runtime.
+    ///
+    /// The notification object, when present, is an `EditorToolCapabilityChangeReason`.
+    static let editorToolCapabilitiesDidChange = Notification.Name("widgetweaver.editorToolCapabilitiesDidChange")
+}
+
 // MARK: - Registry
 
 enum EditorToolRegistry {
@@ -340,8 +347,16 @@ enum EditorToolRegistry {
     /// Follow-on slices should call this when entitlement/permission/service state flips,
     /// then apply the 10R teardown + focus restoration contracts.
     static func capabilitiesDidChange(reason: EditorToolCapabilityChangeReason = .unknown) {
-        // No logging here; callers may log if desired.
         invalidateVisibleToolSuiteCache()
+
+        // Post on the main actor so SwiftUI observers can safely update state.
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: .editorToolCapabilitiesDidChange, object: reason)
+        } else {
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .editorToolCapabilitiesDidChange, object: reason)
+            }
+        }
     }
 
     /// Canonical tool manifest.
