@@ -422,6 +422,22 @@ Pro features require a Pro unlock; Variables and Actions become available in the
 
 ## Editor features
 
+### Context-aware Editor
+
+The Editor tool panel is context-aware: the visible tool suite is derived from what is currently being edited (selection + focus), rather than being a fixed list.
+
+- **Selection + focus driven:** tools appear/disappear based on whether you’re editing the whole widget or a specific element, and based on the active sub-flow (e.g. Smart Photo crop, album shuffle, smart rules).
+- **Capability driven:** each tool declares required capabilities (template + configuration + permissions) and non-Photos requirements (e.g. Pro unlock state). Irrelevant tools are hidden.
+- **Standard unavailable UX:** some tools stay visible but render an **Unavailable** state with a consistent explanation when gated (e.g. Variables / Matched Sets / AI), rather than silently disappearing.
+- **Mixed selection behaviour is explicit:** tools declare whether they support multi-selection; single-target tools are removed when a mixed selection is active.
+- **Live changes are deterministic:** when capabilities flip at runtime (e.g. Pro purchase, Photos permission change, toggling matched sets), the tool suite recomputes predictably, any active sub-flow is torn down safely, and focus is restored so edits aren’t lost.
+- **Performance is guarded:** visible tool computation is memoised and protected by a performance test; live-flip recomputes explicitly invalidate caches so stale suites cannot be shown.
+
+Implementation orientation:
+
+- Tool IDs + manifest + suite computation: `WidgetWeaver/EditorTooling.swift`
+- Manifest guard tests (fails fast if a tool is added without explicit eligibility/capability decisions): `WidgetWeaverTests/WidgetWeaverTests.swift`
+
 ### Layout templates
 
 Widget specs are built from a small set of layout templates and style tokens.
