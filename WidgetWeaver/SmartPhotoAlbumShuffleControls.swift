@@ -732,9 +732,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             return
         }
 
-        if outcome.didUpdate {
-            WidgetWeaverWidgetRefresh.forceKick()
-        }
+        if outcome.didUpdate { await MainActor.run { WidgetWeaverWidgetRefresh.kickIfNeeded(minIntervalSeconds: 20) } }
 
         await refreshFromManifest()
 
