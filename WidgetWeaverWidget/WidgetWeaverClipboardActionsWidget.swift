@@ -70,8 +70,6 @@ extension WidgetWeaverClipboardActionsWidget {
 // MARK: - View
 
 private enum ActionInboxShortcuts {
-    /// Shortcut name to run from the widget.
-    /// Create a Shortcut with this exact name.
     static let runShortcutName: String = "WW AutoDetect"
 
     static var runURL: URL {
@@ -79,9 +77,6 @@ private enum ActionInboxShortcuts {
         return URL(string: "shortcuts://run-shortcut?name=\(encoded)")!
     }
 
-    static let openShortcutsURL: URL = URL(string: "shortcuts://")!
-
-    /// Optional “open app” deep link. If you don’t have a handler, it still opens the app.
     static let openAppURL: URL = URL(string: "widgetweaver://clipboard")!
 }
 
@@ -104,9 +99,18 @@ private struct ActionInboxModel {
 private struct WidgetWeaverActionInboxStatusView: View {
     let entry: WidgetWeaverClipboardEntry
     @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetContentMargins) private var widgetContentMargins
 
     var body: some View {
         let model = buildModel(snapshot: entry.snapshot)
+        let m = widgetContentMargins
+        let extraInset: CGFloat = 2
+        let insets = EdgeInsets(
+            top: m.top + extraInset,
+            leading: m.leading + extraInset,
+            bottom: m.bottom + extraInset,
+            trailing: m.trailing + extraInset
+        )
 
         VStack(alignment: .leading, spacing: 10) {
             header(model: model)
@@ -124,7 +128,7 @@ private struct WidgetWeaverActionInboxStatusView: View {
             footer(model: model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(14)
+        .padding(insets)
     }
 
     // MARK: - Sections
