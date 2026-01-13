@@ -17,7 +17,7 @@ public struct WidgetWeaverClipboardActionsWidget: Widget {
             WidgetWeaverClipboardActionsView(entry: entry)
         }
         .configurationDisplayName("Clipboard Actions")
-        .description("Capture clipboard text and run quick actions.")
+        .description("Run quick actions on the last text sent to WidgetWeaver.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -60,7 +60,6 @@ extension WidgetWeaverClipboardActionsWidget {
             let now = Date()
             let entry = Entry(date: now, snapshot: snap)
 
-            // Mostly updated via WidgetCenter reloads from App Intents.
             let refresh = now.addingTimeInterval(30 * 60)
             completion(Timeline(entries: [entry], policy: .after(refresh)))
         }
@@ -117,7 +116,7 @@ private struct WidgetWeaverClipboardActionsView: View {
                     .lineLimit(family == .systemSmall ? 3 : 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text("Tap Capture to load clipboard text.")
+                Text("Send text via Shortcuts (Get Clipboard → Auto Detect from Text).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -150,13 +149,13 @@ private struct WidgetWeaverClipboardActionsView: View {
 
     private var smallButtons: some View {
         HStack(spacing: 10) {
-            Button(intent: WidgetWeaverClipboardCaptureIntent()) {
-                Label("Capture", systemImage: "arrow.down.doc")
+            Button(intent: WidgetWeaverClipboardAutoDetectIntent()) {
+                Label("Auto", systemImage: "wand.and.stars")
             }
             .buttonStyle(.borderedProminent)
 
-            Button(intent: WidgetWeaverClipboardAutoDetectIntent()) {
-                Label("Auto", systemImage: "wand.and.stars")
+            Button(intent: WidgetWeaverClipboardClearInboxIntent()) {
+                Label("Clear", systemImage: "trash")
             }
             .buttonStyle(.bordered)
         }
@@ -166,15 +165,10 @@ private struct WidgetWeaverClipboardActionsView: View {
     private var mediumButtons: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button(intent: WidgetWeaverClipboardCaptureIntent()) {
-                    Label("Capture", systemImage: "arrow.down.doc")
-                }
-                .buttonStyle(.borderedProminent)
-
                 Button(intent: WidgetWeaverClipboardAutoDetectIntent()) {
                     Label("Auto", systemImage: "wand.and.stars")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
 
                 Button(intent: WidgetWeaverClipboardClearInboxIntent()) {
                     Label("Clear", systemImage: "trash")

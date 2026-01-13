@@ -9,7 +9,6 @@ import AppIntents
 import EventKit
 import Foundation
 import ScreenActionsCore
-import UIKit
 import WidgetKit
 
 private enum ClipboardActionIntentError: Error, LocalizedError {
@@ -148,7 +147,7 @@ private enum ClipboardActionHelpers {
         return try await ScreenActionsCore.ContactsService.save(contact: detected)
     }
 
-    static func exportReceiptCSV(from text: String, copyCSVToClipboard: Bool) async throws -> URL {
+    static func exportReceiptCSV(from text: String) async throws -> URL {
         let csv = ScreenActionsCore.CSVExporter.makeReceiptCSV(from: text)
 
         let df = DateFormatter()
@@ -159,43 +158,11 @@ private enum ClipboardActionHelpers {
 
         let fileName = "receipt-\(stamp).csv"
         let dir = WidgetWeaverClipboardInboxStore.exportsDirectoryURL()
-        let url = try ScreenActionsCore.CSVExporter.writeCSV(filename: fileName, csv: csv, directory: dir)
-
-        if copyCSVToClipboard {
-            UIPasteboard.general.string = csv
-        }
-
-        return url
+        return try ScreenActionsCore.CSVExporter.writeCSV(filename: fileName, csv: csv, directory: dir)
     }
 }
 
 // MARK: - Intents
-
-struct WidgetWeaverClipboardCaptureIntent: AppIntent {
-    static var title: LocalizedStringResource { "Capture Clipboard to WidgetWeaver" }
-    static var description: IntentDescription {
-        IntentDescription("Copies the current clipboard text into the WidgetWeaver clipboard inbox.")
-    }
-    static var openAppWhenRun: Bool { false }
-
-    init() {}
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        let raw = UIPasteboard.general.string
-        let cleaned = raw?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let cleaned, !cleaned.isEmpty {
-            WidgetWeaverClipboardInboxStore.saveInboxText(cleaned, capturedAt: Date())
-            ClipboardActionHelpers.setResult(kind: "capture", message: "Captured clipboard.")
-        } else {
-            WidgetWeaverClipboardInboxStore.saveInboxText(nil, capturedAt: Date())
-            ClipboardActionHelpers.setResult(kind: "capture", message: "Clipboard was empty.")
-        }
-
-        return .result()
-    }
-}
 
 struct WidgetWeaverClipboardAutoDetectIntent: AppIntent {
     static var title: LocalizedStringResource { "Auto Detect Clipboard Action" }
@@ -214,8 +181,8 @@ struct WidgetWeaverClipboardAutoDetectIntent: AppIntent {
 
             switch decision.kind {
             case .receipt:
-                let url = try await ClipboardActionHelpers.exportReceiptCSV(from: text, copyCSVToClipboard: true)
-                ClipboardActionHelpers.setResult(kind: "auto-receipt", message: "CSV exported (copied to clipboard).", exportedCSVURL: url)
+                let url = try await ClipboardActionHelpers.exportReceiptCSV(from: text)
+                ClipboardActionHelpers.setResult(kind: "auto-receipt", message: "CSV exported.", exportedCSVURL: url)
 
             case .contact:
                 let id = try await ClipboardActionHelpers.createContact(from: text)
@@ -308,8 +275,8 @@ struct WidgetWeaverClipboardExportReceiptCSVIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         do {
             let text = try ClipboardActionHelpers.loadInboxText()
-            let url = try await ClipboardActionHelpers.exportReceiptCSV(from: text, copyCSVToClipboard: true)
-            ClipboardActionHelpers.setResult(kind: "csv", message: "CSV exported (copied to clipboard).", exportedCSVURL: url)
+            let url = try await ClipboardActionHelpers.exportReceiptCSV(from: text)
+            ClipboardActionHelpers.setResult(kind: "csv", message: "CSV exported.", exportedCSVURL: url)
         } catch {
             ClipboardActionHelpers.setResult(kind: "csv-error", message: error.localizedDescription)
         }
