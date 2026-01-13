@@ -17,11 +17,15 @@ public struct WidgetWeaverClipboardActionsWidget: Widget {
         StaticConfiguration(kind: WidgetWeaverWidgetKinds.clipboardActions, provider: Provider()) { entry in
             WidgetWeaverActionInboxStatusView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
+                // Makes the widget itself useful: tap anywhere (not a button) to run the shortcut.
+                .widgetURL(ActionInboxShortcuts.runURL)
         }
         .configurationDisplayName("Action Inbox")
         .description("Shows the last text sent to WidgetWeaver and a suggested action.")
         .supportedFamilies([.systemSmall, .systemMedium])
-        .contentMarginsDisabled()
+
+        // IMPORTANT:
+        // No .contentMarginsDisabled() here. Disabling margins is what causes the rounded-corner clipping.
     }
 }
 
@@ -61,15 +65,15 @@ extension WidgetWeaverClipboardActionsWidget {
         func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
             let snap = context.isPreview ? placeholder(in: context).snapshot : WidgetWeaverClipboardInboxStore.load()
             let now = Date()
-            let entry = Entry(date: now, snapshot: snap)
-            completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60))))
+            completion(Timeline(entries: [Entry(date: now, snapshot: snap)], policy: .after(now.addingTimeInterval(60 * 60))))
         }
     }
 }
 
-// MARK: - View
+// MARK: - Shortcuts links
 
 private enum ActionInboxShortcuts {
+    /// Shortcut name to run from the widget background tap + Run button.
     static let runShortcutName: String = "WW AutoDetect"
 
     static var runURL: URL {
@@ -80,11 +84,13 @@ private enum ActionInboxShortcuts {
     static let openAppURL: URL = URL(string: "widgetweaver://clipboard")!
 }
 
+// MARK: - View
+
 private struct ActionInboxModel {
     var isEmpty: Bool
 
     var title: String
-    var preview: String?
+    var lines: [String]
 
     var kind: ScreenActionKind?
     var detailLine: String?
@@ -99,39 +105,140 @@ private struct ActionInboxModel {
 private struct WidgetWeaverActionInboxStatusView: View {
     let entry: WidgetWeaverClipboardEntry
     @Environment(\.widgetFamily) private var family
-    @Environment(\.widgetContentMargins) private var widgetContentMargins
 
     var body: some View {
         let model = buildModel(snapshot: entry.snapshot)
-        let m = widgetContentMargins
-        let extraInset: CGFloat = 6
-        let insets = EdgeInsets(
-            top: m.top + extraInset,
-            leading: m.leading + extraInset,
-            bottom: m.bottom + extraInset,
-            trailing: m.trailing + extraInset
-        )
 
+        Group {
+            if model.isEmpty {
+                ViewThatFits(in: .vertical) {
+                    emptyFull(model: model)
+                    emptyCompact(model: model)
+                }
+            } else {
+                ViewThatFits(in: .vertical) {
+                    full(model: model)
+                    compact(model: model)
+                    minimal(model: model)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Layout variants (ViewThatFits)
+
+    private func full(model: ActionInboxModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             header(model: model)
 
-            if model.isEmpty {
-                emptyState()
-            } else {
-                content(model: model)
+            VStack(alignment: .leading, spacing: 8) {
+                titleRow(model: model)
+
+                if let preview = previewText(lines: model.lines, maxLines: family == .systemSmall ? 3 : 5) {
+                    Text(preview)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(family == .systemSmall ? 3 : 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let detail = model.detailLine, !detail.isEmpty {
+                    infoRow(systemImage: "info.circle", text: detail)
+                }
+
+                if let msg = model.lastActionMessage, !msg.isEmpty {
+                    lastActionRow(message: msg, at: model.lastActionAt)
+                }
+
+                if family == .systemMedium, let file = model.exportedFileName, !file.isEmpty {
+                    infoRow(systemImage: "doc.text", text: "Last export: \(file)")
+                }
             }
 
             Spacer(minLength: 0)
 
             controls(model: model)
-
-            footer(model: model)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(insets)
     }
 
-    // MARK: - Sections
+    private func compact(model: ActionInboxModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(model: model)
+
+            VStack(alignment: .leading, spacing: 8) {
+                titleRow(model: model)
+
+                if let preview = previewText(lines: model.lines, maxLines: family == .systemSmall ? 2 : 3) {
+                    Text(preview)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(family == .systemSmall ? 2 : 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let detail = model.detailLine, !detail.isEmpty {
+                    infoRow(systemImage: "info.circle", text: detail)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            controls(model: model)
+        }
+    }
+
+    private func minimal(model: ActionInboxModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(model: model)
+            titleRow(model: model)
+            Spacer(minLength: 0)
+            controls(model: model)
+        }
+    }
+
+    private func emptyFull(model: ActionInboxModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(model: model)
+
+            Text("No text yet")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+
+            Text("Tap the widget (or Run) to execute “\(ActionInboxShortcuts.runShortcutName)” and send clipboard text here.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(family == .systemSmall ? 3 : 4)
+
+            Spacer(minLength: 0)
+
+            controls(model: model)
+        }
+    }
+
+    private func emptyCompact(model: ActionInboxModel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header(model: model)
+
+            Text("No text yet")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+
+            Text("Tap to run “\(ActionInboxShortcuts.runShortcutName)”.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
+
+            controls(model: model)
+        }
+    }
+
+    // MARK: - Building blocks
 
     private func header(model: ActionInboxModel) -> some View {
         HStack(spacing: 8) {
@@ -152,69 +259,52 @@ private struct WidgetWeaverActionInboxStatusView: View {
         }
     }
 
-    private func emptyState() -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("No text yet")
+    private func titleRow(model: ActionInboxModel) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(model.title)
                 .font(.title3)
                 .fontWeight(.semibold)
                 .lineLimit(1)
-                .minimumScaleFactor(0.9)
+                .minimumScaleFactor(0.8)
 
-            Text("Run the shortcut “\(ActionInboxShortcuts.runShortcutName)” to send clipboard text here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(family == .systemSmall ? 3 : 4)
+            Spacer(minLength: 0)
+
+            if let kind = model.kind {
+                kindPill(kind: kind)
+            }
         }
     }
 
-    private func content(model: ActionInboxModel) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(model.title)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+    private func infoRow(systemImage: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
 
-                Spacer(minLength: 0)
+    private func lastActionRow(message: String, at: Date?) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
-                if let kind = model.kind {
-                    kindPill(kind: kind)
-                }
-            }
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
-            if let preview = model.preview {
-                Text(preview)
-                    .font(.caption)
-                    .foregroundStyle(.primary)
-                    .lineLimit(family == .systemSmall ? 3 : 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            Spacer(minLength: 0)
 
-            if let detail = model.detailLine, !detail.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-            }
-
-            if family == .systemMedium, let file = model.exportedFileName, !file.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Last export: \(file)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
+            if let at {
+                Text(at, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -237,33 +327,9 @@ private struct WidgetWeaverActionInboxStatusView: View {
                 Label("Clear", systemImage: "trash")
             }
             .buttonStyle(.bordered)
+            .disabled(model.isEmpty)
         }
         .labelStyle(.iconOnly)
-    }
-
-    private func footer(model: ActionInboxModel) -> some View {
-        Group {
-            if let msg = model.lastActionMessage, !msg.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    Text(msg)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    if let at = model.lastActionAt {
-                        Text(at, style: .time)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
     }
 
     private func kindPill(kind: ScreenActionKind) -> some View {
@@ -299,24 +365,17 @@ private struct WidgetWeaverActionInboxStatusView: View {
             return trimmed.isEmpty ? nil : trimmed
         }()
 
-        let title: String = {
-            guard let cleanedText else { return "No text" }
-            let first = cleanedText.components(separatedBy: .newlines).first ?? ""
-            let t = first.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? "Untitled" : String(t.prefix(80))
-        }()
-
-        let preview: String? = {
-            guard let cleanedText else { return nil }
-            let lines = cleanedText
+        let lines: [String] = {
+            guard let cleanedText else { return [] }
+            return cleanedText
                 .components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
+        }()
 
-            if lines.isEmpty { return nil }
-
-            let maxLines = (family == .systemSmall) ? 4 : 8
-            return lines.prefix(maxLines).joined(separator: "\n")
+        let title: String = {
+            guard let first = lines.first else { return "No text" }
+            return String(first.prefix(80))
         }()
 
         let exportedFileName: String? = {
@@ -328,7 +387,7 @@ private struct WidgetWeaverActionInboxStatusView: View {
             return ActionInboxModel(
                 isEmpty: true,
                 title: title,
-                preview: nil,
+                lines: [],
                 kind: nil,
                 detailLine: nil,
                 capturedAt: snapshot.capturedAt,
@@ -343,8 +402,8 @@ private struct WidgetWeaverActionInboxStatusView: View {
 
         return ActionInboxModel(
             isEmpty: false,
-            title: title,
-            preview: preview,
+            title: title.isEmpty ? "Untitled" : title,
+            lines: lines,
             kind: decision.kind,
             detailLine: detail,
             capturedAt: snapshot.capturedAt,
@@ -352,6 +411,11 @@ private struct WidgetWeaverActionInboxStatusView: View {
             lastActionAt: snapshot.lastActionAt,
             exportedFileName: exportedFileName
         )
+    }
+
+    private func previewText(lines: [String], maxLines: Int) -> String? {
+        guard !lines.isEmpty else { return nil }
+        return lines.prefix(maxLines).joined(separator: "\n")
     }
 
     private func buildDetailLine(text: String, kind: ScreenActionKind, dateRange: ScreenActionsCore.DetectedDateRange?) -> String? {
