@@ -36,8 +36,6 @@ struct WidgetWeaverPawPulseLatestCatProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let now = Date()
-        let base = now
-
         let refreshIntervalSeconds: TimeInterval = 60.0 * 30.0
         let count = 14
 
@@ -48,7 +46,7 @@ struct WidgetWeaverPawPulseLatestCatProvider: TimelineProvider {
         entries.reserveCapacity(count)
 
         for i in 0..<count {
-            let d = base.addingTimeInterval(TimeInterval(i) * refreshIntervalSeconds)
+            let d = now.addingTimeInterval(TimeInterval(i) * refreshIntervalSeconds)
             entries.append(Entry(date: d, item: item, image: image))
         }
 
@@ -73,33 +71,53 @@ struct WidgetWeaverPawPulseLatestCatView: View {
     let entry: WidgetWeaverPawPulseLatestCatEntry
 
     var body: some View {
+        foreground
+            .containerBackground(for: .widget) {
+                backgroundLayer
+            }
+            .widgetURL(URL(string: "widgetweaver://pawpulse")!)
+    }
+
+    // Foreground content only (no manual background here).
+    private var foreground: some View {
         ZStack(alignment: .bottomLeading) {
-            if let image = entry.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            } else {
-                ZStack {
-                    Rectangle().fill(.thinMaterial)
-                    VStack(spacing: 8) {
-                        Image(systemName: "pawprint")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Text(placeholderText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 10)
-                    }
-                }
+            if entry.image == nil {
+                placeholderContent
             }
 
             overlay
                 .padding(10)
         }
-        .widgetURL(URL(string: "widgetweaver://pawpulse")!)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var backgroundLayer: some View {
+        if let image = entry.image {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+        } else {
+            Rectangle()
+                .fill(.thinMaterial)
+        }
+    }
+
+    private var placeholderContent: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "pawprint")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+
+            Text(placeholderText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var placeholderText: String {
@@ -129,7 +147,8 @@ struct WidgetWeaverPawPulseLatestCatView: View {
     }
 
     private var titleText: String {
-        let name = (entry.item?.pageName ?? entry.item?.source ?? PawPulseSettingsStore.loadDisplayName()).trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (entry.item?.pageName ?? entry.item?.source ?? PawPulseSettingsStore.loadDisplayName())
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? "PawPulse" : name
     }
 
