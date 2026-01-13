@@ -15,8 +15,23 @@
             </array>
         </dict>
     </array>
+
     <key>NSPhotoLibraryUsageDescription</key>
     <string>WidgetWeaver needs access to your photo library to prepare album shuffle Smart Photos for widgets.</string>
+
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+
+    <key>NSContactsUsageDescription</key>
+    <string>WidgetWeaver needs access to Contacts to create contacts from captured clipboard text.</string>
+
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>

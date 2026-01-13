@@ -23,4 +23,6 @@ public enum WidgetWeaverWidgetKinds {
     public static let pawPulseLatestCat = "WidgetWeaverPawPulseLatestCatWidget"
 
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
+
+    public static let clipboardActions = "WidgetWeaverClipboardActionsWidget"
 }

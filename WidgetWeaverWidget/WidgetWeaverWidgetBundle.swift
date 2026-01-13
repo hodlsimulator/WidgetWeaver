@@ -20,5 +20,6 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverLockScreenActivityWidget()
         WidgetWeaverPawPulseLatestCatWidget()
         WidgetWeaverNoiseMachineWidget()
+        WidgetWeaverClipboardActionsWidget()
     }
 }

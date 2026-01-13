@@ -22,11 +22,26 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+
+    <key>NSContactsUsageDescription</key>
+    <string>WidgetWeaver needs access to Contacts to create contacts from captured clipboard text.</string>
+
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.widgetkit-extension</string>
     </dict>
+
     <key>UIAppFonts</key>
     <array>
         <string>WWClockSecondHand-Regular.ttf</string>
