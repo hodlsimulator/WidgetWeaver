@@ -25,16 +25,26 @@ struct WidgetWeaverClockWidgetLiveView: View {
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
 
     var body: some View {
-        // Timeline entries can be applied slightly late by WidgetKit.
-        // To keep the minute hand landing *on* the minute tick (in sync with the seconds hand),
-        // drive hour/minute hand updates using a minute-aligned TimelineView schedule.
-        let scheduleStart = Self.floorToMinute(entryDate)
+        // WidgetKit can apply timeline entries slightly late.
+        // A time-aware ProgressView acts as a lightweight “heartbeat” so hour/minute hands can
+        // stay aligned to wall-clock time without requesting high-frequency widget timeline reloads.
+        let progressRange = Self.progressDriverRange(anchor: entryDate)
 
         WidgetWeaverRenderClock.withNow(entryDate) {
-            TimelineView(.periodic(from: scheduleStart, by: 60.0)) { timeline in
+            ProgressView(
+                timerInterval: progressRange,
+                countsDown: false,
+                label: { EmptyView() },
+                currentValueLabel: { EmptyView() }
+            )
+            .progressViewStyle(.linear)
+            .accessibilityHidden(true)
+            // Keep the progress view practically invisible while still allowing it to drive updates.
+            .opacity(0.001)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
                 let sysNow = Date()
                 let ctxNow = WidgetWeaverRenderClock.now
-                let tlNow = timeline.date
 
                 // WidgetKit can render a widget entry ahead-of-time.
                 // In those cases, `Date()` reflects wall-clock time, but the render pass should use
@@ -50,9 +60,8 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 //    produces a snapshot that is effectively “one minute behind” for the entry being rendered.
                 let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
 
-                // Use the schedule's current date when live (minute-aligned updates), but fall back to the
-                // entry date when pre-rendering.
-                let liveNow: Date = isPrerender ? ctxNow : tlNow
+                // Use wall-clock time when live, but fall back to the entry date when pre-rendering.
+                let liveNow: Date = isPrerender ? ctxNow : sysNow
 
                 // Tick-style hour + minute hands: snap to the minute boundary so the hands do not drift
                 // between updates.
@@ -90,11 +99,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                     let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
                     let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
-                    let tlRef = Int(tlNow.timeIntervalSinceReferenceDate.rounded())
                     let handsRef = Int(handsNow.timeIntervalSinceReferenceDate.rounded())
 
                     let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
-                    let tlMinusSysMs = Int(((tlNow.timeIntervalSince(sysNow)) * 1000.0).rounded())
                     let leadMs = Int((leadSeconds * 1000.0).rounded())
 
                     let handsH = cal.component(.hour, from: handsNow)
@@ -106,6 +113,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
                     let hDeg = Int(baseAngles.hour.rounded())
                     let mDeg = Int(baseAngles.minute.rounded())
+
+                    let driverStartRef = Int(progressRange.lowerBound.timeIntervalSinceReferenceDate.rounded())
+                    let driverEndRef = Int(progressRange.upperBound.timeIntervalSinceReferenceDate.rounded())
 
                     let anchorRef = Int(secondsMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
                     let startRef = Int(timerStart.timeIntervalSinceReferenceDate.rounded())
@@ -121,13 +131,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         return "none"
                     }()
 
-                    return "render ctxRef=\(ctxRef) sysRef=\(sysRef) tlRef=\(tlRef) ctx-sys=\(ctxMinusSys)s tl-sysMs=\(tlMinusSysMs) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) onMinute=\(liveOnMinute ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
+                    return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) onMinute=\(liveOnMinute ? 1 : 0) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) font=\(fontOK ? 1 : 0) rm=\(reduceMotion ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef) anchorRef=\(anchorRef) rangeRef=\(startRef)...\(endRef) expected=\(expectedString)"
                 }
 
                 ZStack {
-                    // Hour + minute hands are driven by a minute-aligned TimelineView schedule.
-                    // This stays deterministic and budget-safe, while keeping the minute tick in sync with
-                    // the seconds hand overlay.
                     WidgetWeaverClockIconView(
                         palette: palette,
                         hourAngle: hourAngle,
@@ -169,6 +176,20 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 #endif
             }
         }
+    }
+
+    private static let progressDriverWindowSeconds: TimeInterval = 4.0 * 3600.0
+
+    private static func floorToHour(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 3600.0) * 3600.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static func progressDriverRange(anchor: Date) -> ClosedRange<Date> {
+        let start = floorToHour(anchor)
+        let end = start.addingTimeInterval(progressDriverWindowSeconds)
+        return start...end
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
