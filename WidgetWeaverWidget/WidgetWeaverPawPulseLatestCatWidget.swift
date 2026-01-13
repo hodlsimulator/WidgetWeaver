@@ -71,24 +71,16 @@ struct WidgetWeaverPawPulseLatestCatView: View {
     let entry: WidgetWeaverPawPulseLatestCatEntry
 
     var body: some View {
-        foreground
-            .containerBackground(for: .widget) {
-                backgroundLayer
-            }
-            .widgetURL(URL(string: "widgetweaver://pawpulse")!)
-    }
-
-    // Foreground content only (no manual background here).
-    private var foreground: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack {
             if entry.image == nil {
                 placeholderContent
             }
-
-            overlay
-                .padding(10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .containerBackground(for: .widget) {
+            backgroundLayer
+        }
+        .widgetURL(URL(string: "widgetweaver://pawpulse")!)
     }
 
     @ViewBuilder
@@ -106,60 +98,9 @@ struct WidgetWeaverPawPulseLatestCatView: View {
     }
 
     private var placeholderContent: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "pawprint")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-
-            Text(placeholderText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 10)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var placeholderText: String {
-        if entry.item == nil {
-            return "Open the app to set a PawPulse feed."
-        }
-        return "Updating…"
-    }
-
-    private var overlay: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(titleText)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-
-            Text(subtitleText)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private var titleText: String {
-        let name = (entry.item?.pageName ?? entry.item?.source ?? PawPulseSettingsStore.loadDisplayName())
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "PawPulse" : name
-    }
-
-    private var subtitleText: String {
-        if let d = entry.item?.createdDate {
-            return "Posted " + d.formatted(date: .abbreviated, time: .shortened)
-        }
-        if let raw = entry.item?.createdTime?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
-            return "Posted " + raw
-        }
-        return "Latest cat"
+        Image(systemName: "pawprint")
+            .font(.title2)
+            .foregroundStyle(.secondary)
     }
 }
 
