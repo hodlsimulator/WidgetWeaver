@@ -104,7 +104,7 @@ private struct WidgetWeaverActionInboxStatusView: View {
     var body: some View {
         let model = buildModel(snapshot: entry.snapshot)
         let m = widgetContentMargins
-        let extraInset: CGFloat = 2
+        let extraInset: CGFloat = 6
         let insets = EdgeInsets(
             top: m.top + extraInset,
             leading: m.leading + extraInset,
