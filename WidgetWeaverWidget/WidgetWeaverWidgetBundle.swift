@@ -18,6 +18,7 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverLockScreenWeatherWidget()
         WidgetWeaverLockScreenStepsWidget()
         WidgetWeaverLockScreenActivityWidget()
+        WidgetWeaverPawPulseLatestCatWidget()
         WidgetWeaverNoiseMachineWidget()
     }
 }

@@ -13,6 +13,10 @@ struct WidgetWeaverApp: App {
 
     init() {
         AppGroup.ensureImagesDirectoryExists()
+        PawPulseCache.ensureDirectoryExists()
+
+        PawPulseBackgroundTasks.register()
+        PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
 
         Task {
             await NoiseMachineController.shared.bootstrapOnLaunch()
@@ -38,6 +42,7 @@ struct WidgetWeaverApp: App {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background {
                     Task { await NoiseMachineController.shared.flushPersistence() }
+                    PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
                 }
 
 #if !DEBUG

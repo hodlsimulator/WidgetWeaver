@@ -20,5 +20,7 @@ public enum WidgetWeaverWidgetKinds {
 
     public static let homeScreenClock = "WidgetWeaverHomeScreenClockWidgetV156"
 
+    public static let pawPulseLatestCat = "WidgetWeaverPawPulseLatestCatWidget"
+
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
 }

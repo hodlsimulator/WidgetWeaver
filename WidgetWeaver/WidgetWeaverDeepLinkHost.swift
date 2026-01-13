@@ -10,6 +10,8 @@ import SwiftUI
 
 enum WidgetWeaverDeepLink: String, Identifiable {
     case noiseMachine
+    case pawPulseLatestCat
+    case pawPulseSettings
 
     var id: String { rawValue }
 
@@ -20,6 +22,10 @@ enum WidgetWeaverDeepLink: String, Identifiable {
         switch host {
         case "noisemachine", "noise", "noise-machine":
             return .noiseMachine
+        case "pawpulse", "pawpulse-latest", "latestcat", "latest-cat":
+            return .pawPulseLatestCat
+        case "pawpulse-settings", "pawpulse-config", "pawpulseconfig":
+            return .pawPulseSettings
         default:
             return nil
         }
@@ -47,6 +53,8 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
                     if noiseMachinePresentationTracker.isVisible {
                         return
                     }
+                case .pawPulseLatestCat, .pawPulseSettings:
+                    break
                 }
 
                 activeDeepLink = link
@@ -56,6 +64,30 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
                 case .noiseMachine:
                     NavigationStack {
                         NoiseMachineView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Close") {
+                                        activeDeepLink = nil
+                                    }
+                                }
+                            }
+                    }
+
+                case .pawPulseLatestCat:
+                    NavigationStack {
+                        PawPulseLatestCatDetailView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Close") {
+                                        activeDeepLink = nil
+                                    }
+                                }
+                            }
+                    }
+
+                case .pawPulseSettings:
+                    NavigationStack {
+                        PawPulseSettingsView()
                             .toolbar {
                                 ToolbarItem(placement: .topBarLeading) {
                                     Button("Close") {

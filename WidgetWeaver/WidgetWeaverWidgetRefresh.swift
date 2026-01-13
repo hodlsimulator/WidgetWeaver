@@ -72,6 +72,7 @@ public enum WidgetWeaverWidgetRefresh {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenActivity)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenSteps)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenActivity)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.pawPulseLatestCat)
 
         if includeClock {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
