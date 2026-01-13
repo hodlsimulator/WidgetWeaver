@@ -6,13 +6,13 @@
 //
 
 import Foundation
-import BackgroundTasks
+@preconcurrency import BackgroundTasks
 
 public enum PawPulseBackgroundTasks {
     public static let refreshTaskIdentifier: String = "com.conornolan.widgetweaver.pawpulse.refresh"
 
     public static func register() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshTaskIdentifier, using: nil) { task in
+        _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshTaskIdentifier, using: nil) { task in
             guard let appRefreshTask = task as? BGAppRefreshTask else {
                 task.setTaskCompleted(success: false)
                 return
@@ -34,20 +34,32 @@ public enum PawPulseBackgroundTasks {
         }
     }
 
-    private static func handle(_ task: BGAppRefreshTask) {
+    private static func handle(_ bgTask: BGAppRefreshTask) {
         scheduleNextEarliest(minutesFromNow: 30)
 
-        let updateTask = Task.detached(priority: .utility) {
+        let completer = BGTaskCompleter(bgTask)
+
+        let work = Task(priority: .utility) {
+            defer {
+                completer.complete(success: !Task.isCancelled)
+            }
             _ = await PawPulseEngine.shared.updateIfNeeded(force: false)
         }
 
-        task.expirationHandler = {
-            updateTask.cancel()
+        bgTask.expirationHandler = {
+            work.cancel()
+        }
+    }
+
+    private final class BGTaskCompleter: @unchecked Sendable {
+        private let bgTask: BGAppRefreshTask
+
+        init(_ bgTask: BGAppRefreshTask) {
+            self.bgTask = bgTask
         }
 
-        Task.detached(priority: .utility) {
-            _ = await updateTask.result
-            task.setTaskCompleted(success: !updateTask.isCancelled)
+        func complete(success: Bool) {
+            bgTask.setTaskCompleted(success: success)
         }
     }
 }
