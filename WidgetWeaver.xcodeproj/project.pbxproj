@@ -38,13 +38,10 @@
 		E16011482F15EC4600A3B10B /* PawPulseCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011462F15EC4200A3B10B /* PawPulseCache.swift */; };
 		E160114A2F15EC5F00A3B10B /* PawPulseSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */; };
 		E160114B2F15EC5F00A3B10B /* PawPulseSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */; };
-		E160114D2F15EC9E00A3B10B /* PawPulseEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160114C2F15EC9C00A3B10B /* PawPulseEngine.swift */; };
 		E160114E2F15EC9E00A3B10B /* PawPulseEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160114C2F15EC9C00A3B10B /* PawPulseEngine.swift */; };
 		E16011512F15ECB600A3B10B /* PawPulseBackgroundTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160114F2F15ECB400A3B10B /* PawPulseBackgroundTasks.swift */; };
-		E16011532F15ECCE00A3B10B /* PawPulseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */; };
 		E16011542F15ECCE00A3B10B /* PawPulseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */; };
 		E16011562F15ECE600A3B10B /* PawPulseLatestCatDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */; };
-		E16011572F15ECE600A3B10B /* PawPulseLatestCatDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */; };
 		E16D84692EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846A2EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846C2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */; };
@@ -697,7 +694,6 @@
 				E1C834E32EFB345B00E3AA98 /* RainSurfacePRNG.swift in Sources */,
 				E12EAD5B2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */,
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
-				E160114D2F15EC9E00A3B10B /* PawPulseEngine.swift in Sources */,
 				E1C834D22EFAB7CF00E3AA98 /* WidgetWeaverWeatherTemplateNowcastChart.swift in Sources */,
 				E1C834EA2EFB8FF200E3AA98 /* WidgetWeaverRuntime.swift in Sources */,
 				E1C834D52EFAB7F700E3AA98 /* WidgetWeaverWeatherTemplateHourlyStrip.swift in Sources */,
@@ -708,7 +704,6 @@
 				E1C834D72EFB33CA00E3AA98 /* RainForecastSurfaceRenderer.swift in Sources */,
 				E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				5CF6BEA50DAA46AEA889C134 /* WidgetSpec+Layout.swift in Sources */,
-				E16011532F15ECCE00A3B10B /* PawPulseSettingsView.swift in Sources */,
 				E1C835CB2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
 				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
 				E12EAD582EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
@@ -721,7 +716,6 @@
 				E1C834E02EFB343B00E3AA98 /* RainSurfaceMath.swift in Sources */,
 				E1C835C52F0324B600E3AA98 /* RainSurfaceDrawing+Core.swift in Sources */,
 				E16011442F15EC2000A3B10B /* PawPulseLatestItem.swift in Sources */,
-				E16011572F15ECE600A3B10B /* PawPulseLatestCatDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
