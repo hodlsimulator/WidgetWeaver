@@ -439,6 +439,15 @@ struct RainForecastSurfaceRenderer {
             }
         }
 
+        // If the segment is anchored to the baseline at both ends, force horizontal tangents at the
+        // endpoints. Without this, the cubic can leave/arrive the baseline almost vertically when
+        // the first/last interior samples are close in x, which reads as a “cliff” instead of a taper.
+        let baselineEps: CGFloat = 0.0001
+        if abs(pts[0].y - pts[n - 1].y) <= baselineEps {
+            tangents[0] = 0.0
+            tangents[n - 1] = 0.0
+        }
+
         // Clamp to avoid overshoot.
         for i in 0..<(n - 1) {
             if m[i] == 0 {
