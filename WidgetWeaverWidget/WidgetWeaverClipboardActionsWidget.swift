@@ -15,12 +15,13 @@ public struct WidgetWeaverClipboardActionsWidget: Widget {
 
     public var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetWeaverWidgetKinds.clipboardActions, provider: Provider()) { entry in
-            WidgetWeaverClipboardStatusView(entry: entry)
-                .widgetURL(URL(string: "widgetweaver://clipboard")!)
+            WidgetWeaverActionInboxStatusView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Action Inbox")
-        .description("Shows the last text sent to WidgetWeaver and what it looks like.")
+        .description("Shows the last text sent to WidgetWeaver and a suggested action.")
         .supportedFamilies([.systemSmall, .systemMedium])
+        .contentMarginsDisabled()
     }
 }
 
@@ -61,8 +62,6 @@ extension WidgetWeaverClipboardActionsWidget {
             let snap = context.isPreview ? placeholder(in: context).snapshot : WidgetWeaverClipboardInboxStore.load()
             let now = Date()
             let entry = Entry(date: now, snapshot: snap)
-
-            // Mostly updated via WidgetCenter reloads from intents.
             completion(Timeline(entries: [entry], policy: .after(now.addingTimeInterval(60 * 60))))
         }
     }
@@ -70,60 +69,74 @@ extension WidgetWeaverClipboardActionsWidget {
 
 // MARK: - View
 
-private struct ClipboardStatusModel {
+private enum ActionInboxShortcuts {
+    /// Shortcut name to run from the widget.
+    /// Create a Shortcut with this exact name.
+    static let runShortcutName: String = "WW AutoDetect"
+
+    static var runURL: URL {
+        let encoded = runShortcutName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? runShortcutName
+        return URL(string: "shortcuts://run-shortcut?name=\(encoded)")!
+    }
+
+    static let openShortcutsURL: URL = URL(string: "shortcuts://")!
+
+    /// Optional “open app” deep link. If you don’t have a handler, it still opens the app.
+    static let openAppURL: URL = URL(string: "widgetweaver://clipboard")!
+}
+
+private struct ActionInboxModel {
     var isEmpty: Bool
 
     var title: String
     var preview: String?
 
+    var kind: ScreenActionKind?
+    var detailLine: String?
+
     var capturedAt: Date?
-    var suggestedKind: ScreenActionKind?
-    var suggestedReason: String?
-
-    var detailPrimary: String?
-    var detailSecondary: String?
-
     var lastActionMessage: String?
     var lastActionAt: Date?
+
     var exportedFileName: String?
 }
 
-private struct WidgetWeaverClipboardStatusView: View {
+private struct WidgetWeaverActionInboxStatusView: View {
     let entry: WidgetWeaverClipboardEntry
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        let model = makeModel(from: entry.snapshot)
+        let model = buildModel(snapshot: entry.snapshot)
 
         VStack(alignment: .leading, spacing: 10) {
             header(model: model)
 
             if model.isEmpty {
-                emptyState(model: model)
+                emptyState()
             } else {
                 content(model: model)
             }
 
             Spacer(minLength: 0)
 
-            actionsRow(model: model)
+            controls(model: model)
 
             footer(model: model)
         }
-        .containerBackground(.fill.tertiary, for: .widget)
-        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(14)
     }
 
     // MARK: - Sections
 
-    @ViewBuilder
-    private func header(model: ClipboardStatusModel) -> some View {
+    private func header(model: ActionInboxModel) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "tray.full")
                 .font(.headline)
 
             Text("Action Inbox")
                 .font(.headline)
+                .lineLimit(1)
 
             Spacer(minLength: 0)
 
@@ -135,40 +148,34 @@ private struct WidgetWeaverClipboardStatusView: View {
         }
     }
 
-    @ViewBuilder
-    private func emptyState(model: ClipboardStatusModel) -> some View {
+    private func emptyState() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("No text received yet.")
-                .font(.subheadline)
+            Text("No text yet")
+                .font(.title3)
                 .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
 
-            Text("Send text via Shortcuts (e.g. Get Clipboard → Auto Detect from Text).")
+            Text("Run the shortcut “\(ActionInboxShortcuts.runShortcutName)” to send clipboard text here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(family == .systemSmall ? 3 : 4)
-
-            if let msg = model.lastActionMessage, !msg.isEmpty {
-                Text(msg)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
         }
     }
 
-    @ViewBuilder
-    private func content(model: ClipboardStatusModel) -> some View {
+    private func content(model: ActionInboxModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(model.title)
-                    .font(.subheadline)
+                    .font(.title3)
                     .fontWeight(.semibold)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 Spacer(minLength: 0)
 
-                if let kind = model.suggestedKind {
-                    suggestionBadge(kind: kind)
+                if let kind = model.kind {
+                    kindPill(kind: kind)
                 }
             }
 
@@ -180,25 +187,12 @@ private struct WidgetWeaverClipboardStatusView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if let p = model.detailPrimary, !p.isEmpty {
+            if let detail = model.detailLine, !detail.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text(p)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-            }
-
-            if family == .systemMedium, let s = model.detailSecondary, !s.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "bolt.horizontal")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(s)
+                    Text(detail)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -221,15 +215,19 @@ private struct WidgetWeaverClipboardStatusView: View {
         }
     }
 
-    @ViewBuilder
-    private func actionsRow(model: ClipboardStatusModel) -> some View {
-        // Status-first: keep actions minimal.
+    private func controls(model: ActionInboxModel) -> some View {
         HStack(spacing: 10) {
-            Button(intent: WidgetWeaverClipboardAutoDetectIntent()) {
-                Label("Auto", systemImage: "wand.and.stars")
+            Link(destination: ActionInboxShortcuts.runURL) {
+                Label("Run", systemImage: "bolt.fill")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.isEmpty)
+
+            if family == .systemMedium {
+                Link(destination: ActionInboxShortcuts.openAppURL) {
+                    Label("Open", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.bordered)
+            }
 
             Button(intent: WidgetWeaverClipboardClearInboxIntent()) {
                 Label("Clear", systemImage: "trash")
@@ -239,35 +237,33 @@ private struct WidgetWeaverClipboardStatusView: View {
         .labelStyle(.iconOnly)
     }
 
-    @ViewBuilder
-    private func footer(model: ClipboardStatusModel) -> some View {
-        if let msg = model.lastActionMessage, !msg.isEmpty {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                Text(msg)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                if let at = model.lastActionAt {
-                    Text(at, style: .time)
+    private func footer(model: ActionInboxModel) -> some View {
+        Group {
+            if let msg = model.lastActionMessage, !msg.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+
+                    Text(msg)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let at = model.lastActionAt {
+                        Text(at, style: .time)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
     }
 
-    // MARK: - Badge
-
-    private func suggestionBadge(kind: ScreenActionKind) -> some View {
+    private func kindPill(kind: ScreenActionKind) -> some View {
         let (symbol, label) = kindBadge(kind)
-
         return HStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.caption2)
@@ -276,27 +272,23 @@ private struct WidgetWeaverClipboardStatusView: View {
                 .fontWeight(.semibold)
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(.quaternary, in: Capsule())
     }
 
     private func kindBadge(_ kind: ScreenActionKind) -> (String, String) {
         switch kind {
-        case .reminder:
-            return ("checklist", "Reminder")
-        case .event:
-            return ("calendar", "Event")
-        case .contact:
-            return ("person.crop.circle", "Contact")
-        case .receipt:
-            return ("tablecells", "Receipt")
+        case .reminder: return ("checklist", "Reminder")
+        case .event:    return ("calendar", "Event")
+        case .contact:  return ("person.crop.circle", "Contact")
+        case .receipt:  return ("tablecells", "Receipt")
         }
     }
 
-    // MARK: - Model building
+    // MARK: - Model
 
-    private func makeModel(from snapshot: WidgetWeaverClipboardInboxSnapshot) -> ClipboardStatusModel {
+    private func buildModel(snapshot: WidgetWeaverClipboardInboxSnapshot) -> ActionInboxModel {
         let cleanedText: String? = {
             guard let t = snapshot.text else { return nil }
             let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -307,7 +299,7 @@ private struct WidgetWeaverClipboardStatusView: View {
             guard let cleanedText else { return "No text" }
             let first = cleanedText.components(separatedBy: .newlines).first ?? ""
             let t = first.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? "Untitled" : String(t.prefix(64))
+            return t.isEmpty ? "Untitled" : String(t.prefix(80))
         }()
 
         let preview: String? = {
@@ -329,15 +321,13 @@ private struct WidgetWeaverClipboardStatusView: View {
         }()
 
         guard let cleanedText else {
-            return ClipboardStatusModel(
+            return ActionInboxModel(
                 isEmpty: true,
                 title: title,
                 preview: nil,
+                kind: nil,
+                detailLine: nil,
                 capturedAt: snapshot.capturedAt,
-                suggestedKind: nil,
-                suggestedReason: nil,
-                detailPrimary: nil,
-                detailSecondary: nil,
                 lastActionMessage: snapshot.lastActionMessage,
                 lastActionAt: snapshot.lastActionAt,
                 exportedFileName: exportedFileName
@@ -345,89 +335,61 @@ private struct WidgetWeaverClipboardStatusView: View {
         }
 
         let decision = ScreenActionsCore.ActionRouter.route(text: cleanedText)
+        let detail = buildDetailLine(text: cleanedText, kind: decision.kind, dateRange: decision.dateRange)
 
-        var detailPrimary: String?
-        var detailSecondary: String?
-
-        switch decision.kind {
-        case .event:
-            if let r = decision.dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: cleanedText) {
-                detailPrimary = "When: \(formatDateRange(start: r.start, end: r.end))"
-            } else {
-                detailPrimary = "When: No date detected"
-            }
-            if let reason = cleanedDecisionReason(decision.reason) {
-                detailSecondary = "Why: \(reason)"
-            }
-
-        case .reminder:
-            if let due = (decision.dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: cleanedText))?.start {
-                detailPrimary = "Due: \(formatDateTime(due))"
-            } else {
-                detailPrimary = "Due: No date detected"
-            }
-            if let reason = cleanedDecisionReason(decision.reason) {
-                detailSecondary = "Why: \(reason)"
-            }
-
-        case .contact:
-            let c = ScreenActionsCore.ContactParser.detect(in: cleanedText)
-            var parts: [String] = []
-            if !c.emails.isEmpty { parts.append(pluralCount(c.emails.count, singular: "email")) }
-            if !c.phones.isEmpty { parts.append(pluralCount(c.phones.count, singular: "phone")) }
-            if c.postalAddress != nil { parts.append("address") }
-
-            detailPrimary = parts.isEmpty ? "No contact fields detected" : parts.joined(separator: " · ")
-            if let reason = cleanedDecisionReason(decision.reason) {
-                detailSecondary = "Why: \(reason)"
-            }
-
-        case .receipt:
-            let lines = cleanedText
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-
-            detailPrimary = "\(lines.count) lines"
-            if let reason = cleanedDecisionReason(decision.reason) {
-                detailSecondary = "Why: \(reason)"
-            }
-        }
-
-        return ClipboardStatusModel(
+        return ActionInboxModel(
             isEmpty: false,
             title: title,
             preview: preview,
+            kind: decision.kind,
+            detailLine: detail,
             capturedAt: snapshot.capturedAt,
-            suggestedKind: decision.kind,
-            suggestedReason: decision.reason,
-            detailPrimary: detailPrimary,
-            detailSecondary: detailSecondary,
             lastActionMessage: snapshot.lastActionMessage,
             lastActionAt: snapshot.lastActionAt,
             exportedFileName: exportedFileName
         )
     }
 
-    private func cleanedDecisionReason(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return nil }
-        return String(trimmed.prefix(60))
+    private func buildDetailLine(text: String, kind: ScreenActionKind, dateRange: ScreenActionsCore.DetectedDateRange?) -> String? {
+        switch kind {
+        case .event:
+            let r = dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: text)
+            guard let r else { return "When: No date detected" }
+            return "When: \(formatDateRange(start: r.start, end: r.end))"
+
+        case .reminder:
+            let due = (dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: text))?.start
+            guard let due else { return "Due: No date detected" }
+            return "Due: \(formatDateTime(due))"
+
+        case .contact:
+            let c = ScreenActionsCore.ContactParser.detect(in: text)
+            var parts: [String] = []
+            if !c.emails.isEmpty { parts.append(countString(c.emails.count, singular: "email")) }
+            if !c.phones.isEmpty { parts.append(countString(c.phones.count, singular: "phone")) }
+            if c.postalAddress != nil { parts.append("address") }
+            return parts.isEmpty ? "No contact fields detected" : parts.joined(separator: " · ")
+
+        case .receipt:
+            let lines = text
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return "\(lines.count) lines"
+        }
     }
 
-    private func pluralCount(_ count: Int, singular: String) -> String {
-        if count == 1 { return "1 \(singular)" }
-        return "\(count) \(singular)s"
+    private func countString(_ count: Int, singular: String) -> String {
+        count == 1 ? "1 \(singular)" : "\(count) \(singular)s"
     }
 
     private func formatDateRange(start: Date, end: Date) -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = .current
-        dateFormatter.timeZone = .current
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .none
-        dateFormatter.doesRelativeDateFormatting = true
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = .current
+        dayFormatter.timeZone = .current
+        dayFormatter.dateStyle = .medium
+        dayFormatter.timeStyle = .none
+        dayFormatter.doesRelativeDateFormatting = true
 
         let timeFormatter = DateFormatter()
         timeFormatter.locale = .current
@@ -435,7 +397,7 @@ private struct WidgetWeaverClipboardStatusView: View {
         timeFormatter.dateStyle = .none
         timeFormatter.timeStyle = .short
 
-        let day = dateFormatter.string(from: start)
+        let day = dayFormatter.string(from: start)
         let startTime = timeFormatter.string(from: start)
         let endTime = timeFormatter.string(from: end)
 
