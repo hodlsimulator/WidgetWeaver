@@ -141,11 +141,15 @@ Key implementation files:
 
 ### Current approach
 
-- **Minutes / hours:** the provider publishes minute-boundary WidgetKit timeline entries (budget-safe; ~120 minutes precomputed per timeline). The live view snaps the hour/minute hands to the current minute boundary.
-- **Live vs pre-render:** when the widget is actually live on the Home Screen, hour/minute are derived from the wall clock (`Date()`). When WidgetKit is pre-rendering future entries (timeline caching), hour/minute are derived from the pinned entry date for deterministic snapshots.
+- **Provider timeline (budget-safe):** the provider publishes minute-boundary WidgetKit timeline entries (typically ~120 minutes precomputed per timeline). This bounds provider work and ensures the widget updates even if the view-level heartbeat is suppressed.
+- **Minute-accurate hands (view-level heartbeat):** the live view does not rely on WidgetKit delivering the *next* minute entry exactly on time. Instead it uses an invisible, time-aware `ProgressView(timerInterval:)` as a lightweight heartbeat so SwiftUI re-evaluates the view frequently while still avoiding high-frequency WidgetKit reloads.
+- **Heartbeat interval:** the heartbeat is a **60-second** interval anchored to the **current minute** and keyed by that minute anchor. Long timer intervals (e.g. multi-hour ranges) can be updated too infrequently by iOS, which reintroduces “late” minute ticks.
+- **Live vs pre-render:** when the widget is live on the Home Screen, hour/minute are derived from the wall clock (`Date()`). When WidgetKit is pre-rendering future entries (timeline caching), hour/minute are derived from the pinned entry date (`WidgetWeaverRenderClock.now`) for deterministic snapshots.
+- **Hours / minutes (tick-style):** the hour and minute hands are snapped to the minute boundary (`floorToMinute(renderNow)`) to avoid drift between updates.
 - **Seconds (ticking, no sweep):** rendered using the **glyphs method**:
   - A custom font (`WWClockSecondHand-Regular.ttf`) contains a pre-drawn seconds hand glyph at the corresponding angle.
   - The widget view uses `Text(timerInterval: timerRange, countsDown: false)` updating once per second and the font turns it into the correct hand.
+  - A small spillover window past `:59` avoids a brief freeze if the next minute entry arrives slightly late.
 
 ### Clock logs (budget-safe)
 
@@ -154,6 +158,7 @@ Clock diagnostics are written via `WWClockDebugLog` and must never be able to de
 - **Storage:** file-backed in the App Group container (`WidgetWeaverClockDebugLog.txt`), not a giant `[String]` in `UserDefaults`.
 - **Hard cap:** pruned to a small fixed size (currently 256 KB) and only the most recent lines are shown in the in-app viewer.
 - **Write path:** best-effort and asynchronous; never call `UserDefaults.synchronize()` from a widget and never do “log every frame” in the extension. Under Swift 6, avoid capturing a mutable `var` into `DispatchQueue.async` closures (build a `let` line first).
+- **Clearing logs:** `clear()` deletes the file and drops any legacy `UserDefaults` key (no migration), so an old oversized log cannot reintroduce timing issues.
 
 If the minute tick ever “goes slow again”, the first sanity check is: clear the clock log and confirm logging isn’t accidentally spamming writes from the widget.
 
@@ -161,35 +166,38 @@ If the minute tick ever “goes slow again”, the first sanity check is: clear 
 
 If the clock looks fine in the widget gallery preview but is wrong on the Home Screen, these are the repeat offenders.
 
-#### 1) Minute hand can look “slow” if hour/minute render from the entry date (or render is delayed)
+#### 1) Minute hand can look “slow” if the view only advances when WidgetKit applies the next entry (or render work blocks)
 
-WidgetKit delivery of minute-boundary entries is best-effort. A `:16:00` entry can arrive a few seconds late on the Home Screen. If hour/minute angles are computed from the timeline entry’s date, the minute hand visibly lags behind real time.
+WidgetKit delivery of minute-boundary entries is best-effort. A `:16:00` entry can arrive a few seconds late on the Home Screen. If hour/minute only change when the next entry is applied, the minute tick visibly lags behind real time.
 
 Separately: expensive work inside the widget render path (most often debug logging) can delay the render enough that the minute tick appears late.
 
 Fix / rule:
 
-- When the widget is actually on-screen (“live”), compute hour/minute from `Date()` (wall clock) and snap to the minute boundary.
-- When WidgetKit is pre-rendering future entries (timeline caching), compute from the entry date for deterministic snapshots.
+- Keep the **view-level heartbeat** via an invisible `ProgressView(timerInterval:)` anchored to the current minute:
+
+        let minuteAnchor = floorToMinute(Date())
+        ProgressView(timerInterval: minuteAnchor...minuteAnchor.addingTimeInterval(60), countsDown: false)
+            .id(minuteAnchor)
+            .opacity(0.001)
+
+- Keep the **pre-render check** so live renders use the wall clock and pre-rendered renders stay deterministic:
+
+        let sysNow = Date()
+        let ctxNow = WidgetWeaverRenderClock.now   // pinned to the timeline entry date
+
+        let sysMinuteAnchor = floorToMinute(sysNow)
+        let ctxMinuteAnchor = floorToMinute(ctxNow)
+
+        // If ctxNow is far ahead of sysNow (or has already rolled into the next minute), WidgetKit is pre-rendering.
+        let isPrerender = (ctxNow.timeIntervalSince(sysNow) > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
+
+        // Hour/minute angles MUST use renderNow (live = wall clock, pre-render = entry date).
+        let renderNow = isPrerender ? ctxNow : sysNow
+
 - Keep widget diagnostics cheap (see “Clock logs” above).
 
-The shipped implementation uses `WidgetWeaverRenderClock.withNow(entryDate)` plus a pre-render check:
-
-    let sysNow = Date()
-    let ctxNow = WidgetWeaverRenderClock.now   // pinned to the timeline entry date
-
-    let sysMinuteAnchor = floorToMinute(sysNow)
-    let ctxMinuteAnchor = floorToMinute(ctxNow)
-
-    // If ctxNow is far ahead of sysNow (or has already rolled into the next minute), WidgetKit is pre-rendering.
-    let isPrerender = (ctxNow.timeIntervalSince(sysNow) > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
-
-    // Hour/minute angles MUST use renderNow (live = wall clock, pre-render = entry date).
-    let renderNow = isPrerender ? ctxNow : sysNow
-
-If the minute hand is ever “slow again”, confirm this logic still exists and that hour/minute angles are derived from `renderNow` (not from `entryDate` directly), and confirm the clock log hasn’t grown huge again.
-
-Do NOT “fix” minute accuracy by switching to 1-second WidgetKit timeline entries or adding timers. The design is intentionally budget-safe.
+Do NOT “fix” minute accuracy by switching to 1-second WidgetKit timeline entries. The design is intentionally budget-safe.
 
 #### 2) Home Screen can cache a stale snapshot unless the widget tree is entry-keyed
 
@@ -205,12 +213,12 @@ Fix / rule:
 
 - Keep the Home Screen clock widget keyed by the timeline entry date in the widget configuration closure:
 
-    AppIntentConfiguration(...) { entry in
-        WidgetWeaverHomeScreenClockView(entry: entry)
-            .id(entry.date)
-    }
+        AppIntentConfiguration(...) { entry in
+            WidgetWeaverHomeScreenClockView(entry: entry)
+                .id(entry.date)
+        }
 
-Removing this has repeatedly caused “black tile + frozen minute hand” regressions.
+- Inside the live view, keep minute-keyed identity for the hands (`.id(handsNow)`) and minute-keyed identity for the heartbeat (`.id(minuteAnchor)`), so Home Screen caching has fewer ways to “stick”.
 
 #### 3) Proving minute accuracy (debug)
 
@@ -223,16 +231,16 @@ Example:
 
     2026-01-14T02:05:00.012Z [clock] [com.conornolan.WidgetWeaver.WidgetWeaverWidget] minuteTick hm=2:05 handsRef=... lagMs=12 ok=1 ...
 
-If only `render ... live=0` lines appear, those are from WidgetKit pre-rendering future entries (expected) and won’t prove live ticking.
+If only pre-render output appears (large `ctx-sys` lead, or `live=0` in older log formats), those entries are from WidgetKit timeline caching and won’t prove live ticking.
 
 ### Notes
 
 - The clock attempts frequent updates; WidgetKit delivery is best-effort.
 - A small spillover past `:59` is allowed to avoid a brief blank seconds hand if the next minute entry arrives slightly late.
-- If you’re fiddling with the clock, always do a 2-minute Home Screen test after changes:
+- When changing clock code, a short Home Screen test is required:
   - minute boundary tick is on time (not slow),
   - no black tile on add,
-  - minute hand actually advances on Home Screen,
+  - minute hand advances on Home Screen,
   - seconds hand behaviour unchanged.
 
 ---
