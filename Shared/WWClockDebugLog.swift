@@ -23,10 +23,11 @@ public enum WWClockDebugLog {
     private static let logFileName = "WidgetWeaverClockDebugLog.txt"
 
     /// Hard cap to prevent logs growing without bound.
-    private static let maxBytes: Int = 256 * 1024
+    /// Increase if needed, but keep bounded (this can be written by the widget extension).
+    private static let maxBytes: Int = 512 * 1024
 
-    private static let maxLinesDefault: Int = 240
-    private static let maxCharsPerLine: Int = 1024
+    private static let maxLinesDefault: Int = 400
+    private static let maxCharsPerLine: Int = 1200
 
     private static var logFileURL: URL {
         AppGroup.containerURL.appendingPathComponent(logFileName)
@@ -105,23 +106,15 @@ public enum WWClockDebugLog {
             return s
         }()
 
+        #if DEBUG
+        // Helpful during widget debugging if App Group file reading is miswired.
+        print(lineOut)
+        #endif
+
         // Avoid blocking widget rendering on file I/O.
         ioQueue.async {
             dropLegacyDefaultsLogIfNeededLocked()
             appendLineLocked(lineOut)
-        }
-    }
-
-    /// Convenience wrapper (eager string).
-    public static func append(
-        _ message: String,
-        category: String = "clock",
-        throttleID: String? = nil,
-        minInterval: TimeInterval = 20.0,
-        now: Date = Date()
-    ) {
-        appendLazy(category: category, throttleID: throttleID, minInterval: minInterval, now: now) {
-            message
         }
     }
 
@@ -186,7 +179,6 @@ public enum WWClockDebugLog {
             try h.write(contentsOf: data)
             try h.close()
         } catch {
-            // Best-effort logging only.
             return
         }
 
@@ -221,7 +213,7 @@ public enum WWClockDebugLog {
         let defaults = AppGroup.userDefaults
         guard defaults.object(forKey: legacyDefaultsLogKey) != nil else { return }
 
-        // Do not migrate large legacy logs; they were the source of the original performance issue.
+        // Do not migrate large legacy logs; they were a performance footgun.
         defaults.removeObject(forKey: legacyDefaultsLogKey)
     }
 }
