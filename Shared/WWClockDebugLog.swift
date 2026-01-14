@@ -23,7 +23,7 @@ public enum WWClockDebugLog {
     private static let logFileName = "WidgetWeaverClockDebugLog.txt"
 
     /// Hard cap to prevent logs growing without bound.
-    /// Increase if needed, but keep bounded (this can be written by the widget extension).
+    /// Kept small because this can be written from a widget extension.
     private static let maxBytes: Int = 512 * 1024
 
     private static let maxLinesDefault: Int = 400
@@ -75,6 +75,19 @@ public enum WWClockDebugLog {
         defaults.set(enabled, forKey: enabledKey)
     }
 
+    /// Convenience wrapper used by existing call sites (including WWClockSecondHandFont.swift).
+    public static func append(
+        _ message: String,
+        category: String = "clock",
+        throttleID: String? = nil,
+        minInterval: TimeInterval = 20.0,
+        now: Date = Date()
+    ) {
+        appendLazy(category: category, throttleID: throttleID, minInterval: minInterval, now: now) {
+            message
+        }
+    }
+
     /// Appends a message if the throttle window allows it.
     /// The closure is only evaluated when a log entry will actually be written.
     public static func appendLazy(
@@ -107,7 +120,7 @@ public enum WWClockDebugLog {
         }()
 
         #if DEBUG
-        // Helpful during widget debugging if App Group file reading is miswired.
+        // Useful during widget debugging if App Group file reading is miswired.
         print(lineOut)
         #endif
 
