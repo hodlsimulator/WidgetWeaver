@@ -23,7 +23,6 @@ public enum WWClockDebugLog {
     private static let logFileName = "WidgetWeaverClockDebugLog.txt"
 
     /// Hard cap to prevent logs growing without bound.
-    /// Kept small because this can be written from a widget extension.
     private static let maxBytes: Int = 256 * 1024
 
     private static let maxLinesDefault: Int = 240
@@ -98,15 +97,18 @@ public enum WWClockDebugLog {
         let ts = timestampString(now)
         let bundleID = Bundle.main.bundleIdentifier ?? "unknown.bundle"
 
-        var line = "\(ts) [\(category)] [\(bundleID)] \(trimmed)"
-        if line.count > maxCharsPerLine {
-            line = String(line.prefix(maxCharsPerLine)) + "…"
-        }
+        let lineOut: String = {
+            var s = "\(ts) [\(category)] [\(bundleID)] \(trimmed)"
+            if s.count > maxCharsPerLine {
+                s = String(s.prefix(maxCharsPerLine)) + "…"
+            }
+            return s
+        }()
 
         // Avoid blocking widget rendering on file I/O.
         ioQueue.async {
             dropLegacyDefaultsLogIfNeededLocked()
-            appendLineLocked(line)
+            appendLineLocked(lineOut)
         }
     }
 
@@ -161,7 +163,6 @@ public enum WWClockDebugLog {
     // MARK: - Helpers
 
     private static func timestampString(_ date: Date) -> String {
-        // Local formatter per call avoids shared mutable state / Sendable warnings under strict concurrency.
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.string(from: date)
@@ -181,7 +182,7 @@ public enum WWClockDebugLog {
 
         do {
             let h = try FileHandle(forWritingTo: logFileURL)
-            try h.seekToEnd()
+            _ = try h.seekToEnd()
             try h.write(contentsOf: data)
             try h.close()
         } catch {
@@ -202,8 +203,8 @@ public enum WWClockDebugLog {
         guard let data = try? Data(contentsOf: logFileURL) else { return }
         if data.count <= maxBytes { return }
 
-        let keep = data.suffix(maxBytes)
-        var trimmed = Data(keep)
+        // Keep the last maxBytes.
+        var trimmed = Data(data.suffix(maxBytes))
 
         // Drop a partial first line if the slice started mid-line.
         if let nl = trimmed.firstIndex(of: 0x0A) {
@@ -221,7 +222,6 @@ public enum WWClockDebugLog {
         guard defaults.object(forKey: legacyDefaultsLogKey) != nil else { return }
 
         // Do not migrate large legacy logs; they were the source of the original performance issue.
-        // Simply drop them and start fresh with the capped file-backed log.
         defaults.removeObject(forKey: legacyDefaultsLogKey)
     }
 }
