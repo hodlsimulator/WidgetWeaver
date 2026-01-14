@@ -27,7 +27,7 @@ public enum WWClockDebugLog {
 
     private static let logFileName = "WidgetWeaverClockDebugLog.txt"
 
-    /// Hard cap to prevent logs growing without bound in the safe backend.
+    /// Hard cap to prevent logs growing without bound in the file backend.
     /// Kept small because this can be written from a widget extension.
     private static let maxBytes: Int = 512 * 1024
 
@@ -66,21 +66,6 @@ public enum WWClockDebugLog {
     }
 
     private static let throttleState = ThrottleState()
-
-    // MARK: - Backend selection
-
-    private enum Backend {
-        case safeFile
-        case balloonDefaults
-    }
-
-    private static func backend() -> Backend {
-        #if DEBUG
-        return isBallooningEnabled() ? .balloonDefaults : .safeFile
-        #else
-        return .safeFile
-        #endif
-    }
 
     // MARK: - Public API
 
@@ -130,10 +115,9 @@ public enum WWClockDebugLog {
     ) {
         guard isEnabled() else { return }
 
-        let useBackend = backend()
-        let isBalloon = (useBackend == .balloonDefaults)
+        let balloon = isBallooningEnabled()
 
-        if !isBalloon, let throttleID {
+        if !balloon, let throttleID {
             if !throttleState.shouldLog(id: throttleID, now: now, minInterval: minInterval) {
                 return
             }
@@ -157,11 +141,16 @@ public enum WWClockDebugLog {
         print(lineOut)
         #endif
 
-        switch useBackend {
-        case .balloonDefaults:
+        if balloon {
+            // Legacy balloon behaviour (slow + huge + synchronous).
             appendLegacyDefaultsBlocking(lineOut)
 
-        case .safeFile:
+            // Mirror to file so file-based viewers still show something.
+            ioQueue.async {
+                appendLineLocked(lineOut)
+            }
+        } else {
+            // Avoid blocking widget rendering on file I/O.
             ioQueue.async {
                 dropLegacyDefaultsLogIfNeededLocked()
                 appendLineLocked(lineOut)
@@ -170,25 +159,26 @@ public enum WWClockDebugLog {
     }
 
     public static func readLines() -> [String] {
-        switch backend() {
-        case .balloonDefaults:
+        // If ballooning is on, prefer showing the balloon source if it exists.
+        if isBallooningEnabled() {
             let defaults = AppGroup.userDefaults
             let raw = (defaults.array(forKey: legacyDefaultsLogKey) as? [String]) ?? []
-            if raw.count <= maxLinesDefault { return raw }
-            return Array(raw.suffix(maxLinesDefault))
-
-        case .safeFile:
-            return ioQueue.sync {
-                dropLegacyDefaultsLogIfNeededLocked()
-
-                guard FileManager.default.fileExists(atPath: logFileURL.path) else { return [] }
-                guard let data = try? Data(contentsOf: logFileURL) else { return [] }
-                guard let text = String(data: data, encoding: .utf8) else { return [] }
-
-                let rawLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-                if rawLines.count <= maxLinesDefault { return rawLines }
-                return Array(rawLines.suffix(maxLinesDefault))
+            if !raw.isEmpty {
+                if raw.count <= maxLinesDefault { return raw }
+                return Array(raw.suffix(maxLinesDefault))
             }
+        }
+
+        return ioQueue.sync {
+            dropLegacyDefaultsLogIfNeededLocked()
+
+            guard FileManager.default.fileExists(atPath: logFileURL.path) else { return [] }
+            guard let data = try? Data(contentsOf: logFileURL) else { return [] }
+            guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+            let rawLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            if rawLines.count <= maxLinesDefault { return rawLines }
+            return Array(rawLines.suffix(maxLinesDefault))
         }
     }
 
@@ -282,7 +272,7 @@ public enum WWClockDebugLog {
     }
 
     private static func dropLegacyDefaultsLogIfNeededLocked() {
-        // Balloon mode uses this key; do not delete it in that mode.
+        // If ballooning is on, do not delete the balloon source.
         #if DEBUG
         if isBallooningEnabled() { return }
         #endif
