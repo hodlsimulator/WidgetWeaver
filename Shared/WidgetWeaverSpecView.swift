@@ -655,7 +655,16 @@ public struct WidgetWeaverSpecView: View {
                 weatherBackdrop(style: style, accent: accent)
             } else if layout.template == .poster,
                       let image = spec.image,
-                      let uiImage = image.loadUIImageForRender(family: family) {
+                      let uiImage = image.loadUIImageForRender(
+                          family: family,
+                          debugContext: WWPhotoLogContext(
+                              renderContext: context.rawValue,
+                              family: String(describing: family),
+                              template: "poster",
+                              specID: String(spec.id.uuidString.prefix(8)),
+                              specName: spec.name
+                          )
+                      ) {
                 Color(uiColor: .systemBackground)
 
                 Image(uiImage: uiImage)
@@ -670,6 +679,22 @@ public struct WidgetWeaverSpecView: View {
                       let image = spec.image,
                       let manifestFile = image.smartPhoto?.shuffleManifestFileName,
                       !manifestFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let ctx = WWPhotoLogContext(
+                    renderContext: context.rawValue,
+                    family: String(describing: family),
+                    template: "poster",
+                    specID: String(spec.id.uuidString.prefix(8)),
+                    specName: spec.name
+                )
+                let _ = WWPhotoDebugLog.appendLazy(
+                    category: "photo.render",
+                    throttleID: "poster.placeholder.\(spec.id.uuidString.prefix(8)).\(family)",
+                    minInterval: 20.0,
+                    context: ctx
+                ) {
+                    "poster: showing placeholder (image load returned nil) manifest=\(manifestFile)"
+                }
+
                 Color(uiColor: .systemBackground)
 
                 Rectangle()

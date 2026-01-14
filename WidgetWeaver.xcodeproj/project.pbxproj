@@ -45,6 +45,10 @@
 		E160115B2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */; };
 		E160115C2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */; };
 		E16011642F16173600A3B10B /* ScreenActionsCore in Frameworks */ = {isa = PBXBuildFile; productRef = E16011632F16173600A3B10B /* ScreenActionsCore */; };
+		E16011682F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */; };
+		E16011692F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */; };
+		E160116B2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160116A2F1839B900A3B10B /* WidgetWeaverRemindersConfig.swift */; };
+		E160116C2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160116A2F1839B900A3B10B /* WidgetWeaverRemindersConfig.swift */; };
 		E16D84692EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846A2EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846C2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */; };
@@ -174,6 +178,8 @@
 		E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PawPulseSettingsView.swift; sourceTree = "<group>"; };
 		E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PawPulseLatestCatDetailView.swift; sourceTree = "<group>"; };
 		E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardInboxStore.swift; sourceTree = "<group>"; };
+		E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverFeatureFlags.swift; sourceTree = "<group>"; };
+		E160116A2F1839B900A3B10B /* WidgetWeaverRemindersConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersConfig.swift; sourceTree = "<group>"; };
 		E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WWThumbnailRenderingPolicy.swift; sourceTree = "<group>"; };
 		E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRenderClock.swift; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
@@ -414,6 +420,8 @@
 				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
 				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
+				E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */,
+				E160116A2F1839B900A3B10B /* WidgetWeaverRemindersConfig.swift */,
 				E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */,
 				E1C834E92EFB8FEF00E3AA98 /* WidgetWeaverRuntime.swift */,
 				28FA1B0B8F684F39BFCEFE63 /* WidgetWeaverSpecView.swift */,
@@ -627,6 +635,7 @@
 				E160114E2F15EC9E00A3B10B /* PawPulseEngine.swift in Sources */,
 				E160115C2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */,
 				E16011452F15EC2000A3B10B /* PawPulseLatestItem.swift in Sources */,
+				E16011692F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */,
 				E16011512F15ECB600A3B10B /* PawPulseBackgroundTasks.swift in Sources */,
 				E1C834D42EFAB7F700E3AA98 /* WidgetWeaverWeatherTemplateHourlyStrip.swift in Sources */,
 				E16D846C2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */,
@@ -665,6 +674,7 @@
 				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E1C834CC2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
+				E160116C2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */,
 				E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
 				E1E878642F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */,
 				E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
@@ -686,6 +696,7 @@
 				E1C834DB2EFB33F100E3AA98 /* RainSurfaceDrawing.swift in Sources */,
 				E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
 				E160115B2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */,
+				E16011682F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */,
 				E16D846D2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */,
 				E15B0BB12EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E1785EBC2EF628E300F7D707 /* WidgetWeaverWeatherTemplateView.swift in Sources */,
@@ -718,6 +729,7 @@
 				E1C835CE2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */,
 				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
 				4CB1CC0E8A3A4228B0809450 /* WidgetWeaverSpecView.swift in Sources */,
+				E160116B2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */,
 				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
 				E1C835C82F03250800E3AA98 /* RainSurfaceDrawing+Fuzz.swift in Sources */,
 				E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,

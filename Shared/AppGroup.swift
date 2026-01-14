@@ -169,16 +169,63 @@ public enum AppGroup {
     ///
     /// - Note: This intentionally performs **no** caching. SwiftUI/WidgetKit should own the
     ///   lifetime of the current render image.
-    public static func loadWidgetImage(fileName: String, maxPixel: Int) -> UIImage? {
+    public static func loadWidgetImage(fileName: String, maxPixel: Int, debugContext: WWPhotoLogContext? = nil) -> UIImage? {
+        let shouldLog = (debugContext != nil)
+
+        let throttleBase: String = {
+            guard let debugContext else { return "unknown" }
+            let spec = (debugContext.specID ?? "unknown").replacingOccurrences(of: " ", with: "_")
+            let fam = (debugContext.family ?? "unknown").replacingOccurrences(of: " ", with: "_")
+            let ctx = (debugContext.renderContext ?? "unknown").replacingOccurrences(of: " ", with: "_")
+            let tpl = (debugContext.template ?? "unknown").replacingOccurrences(of: " ", with: "_")
+            return "\(spec).\(fam).\(ctx).\(tpl)"
+        }()
+
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.decode",
+                    throttleID: "decode.emptyFileName.\(throttleBase)",
+                    minInterval: 8.0,
+                    context: debugContext
+                ) {
+                    "loadWidgetImage: empty fileName"
+                }
+            }
+            return nil
+        }
 
         let safe = sanitisedFileName(trimmed)
-        guard !safe.isEmpty else { return nil }
+        guard !safe.isEmpty else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.decode",
+                    throttleID: "decode.emptySanitised.\(throttleBase)",
+                    minInterval: 8.0,
+                    context: debugContext
+                ) {
+                    "loadWidgetImage: sanitised fileName empty raw=\(trimmed)"
+                }
+            }
+            return nil
+        }
 
         // Resolve URL inside the App Group container.
         let url = imagesDirectoryURL.appendingPathComponent(safe)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.decode",
+                    throttleID: "decode.missing.\(throttleBase)",
+                    minInterval: 10.0,
+                    context: debugContext
+                ) {
+                    "loadWidgetImage: file missing file=\(safe)"
+                }
+            }
+            return nil
+        }
 
         let clampedMaxPixel = max(1, maxPixel)
         let t0 = CFAbsoluteTimeGetCurrent()
@@ -189,6 +236,16 @@ public enum AppGroup {
         ]
 
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.decode",
+                    throttleID: "decode.sourceFail.\(throttleBase)",
+                    minInterval: 10.0,
+                    context: debugContext
+                ) {
+                    "loadWidgetImage: CGImageSourceCreateWithURL failed file=\(safe)"
+                }
+            }
             return nil
         }
 
@@ -201,10 +258,31 @@ public enum AppGroup {
         ]
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.decode",
+                    throttleID: "decode.thumbFail.\(throttleBase).\(clampedMaxPixel)",
+                    minInterval: 10.0,
+                    context: debugContext
+                ) {
+                    "loadWidgetImage: CGImageSourceCreateThumbnailAtIndex failed file=\(safe) max=\(clampedMaxPixel)"
+                }
+            }
             return nil
         }
 
         let dtMs = Int(((CFAbsoluteTimeGetCurrent() - t0) * 1000.0).rounded())
+
+        if shouldLog {
+            WWPhotoDebugLog.appendLazy(
+                category: "photo.decode",
+                throttleID: "decode.ok.\(throttleBase).\(clampedMaxPixel)",
+                minInterval: 30.0,
+                context: debugContext
+            ) {
+                "decoded file=\(safe) px=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms"
+            }
+        }
 
         #if DEBUG
         print("[WWWidgetImage] file=\(safe) px=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms")

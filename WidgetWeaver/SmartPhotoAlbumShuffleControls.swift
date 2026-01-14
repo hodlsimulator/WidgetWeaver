@@ -34,8 +34,6 @@ struct SmartPhotoAlbumShuffleControls: View {
     @State private var albums: [AlbumOption] = []
 
     @State private var progress: ProgressSummary?
-    @State private var rankingRows: [RankingRow] = []
-    @State private var rankingAlbumID: String? = nil
 
     @State private var rotationIntervalMinutes: Int = 60
     @State private var nextChangeDate: Date?
@@ -60,10 +58,6 @@ struct SmartPhotoAlbumShuffleControls: View {
             Divider()
 
             statusText
-
-            if shuffleEnabled {
-                rankingDebug
-            }
 
             actionRow
                 .padding(.top, 2)
@@ -307,82 +301,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
     }
 
-    private var rankingDebug: some View {
-        let rows = rankingRows
-        let albumID = rankingAlbumID ?? "unknownAlbum"
-
-        return DisclosureGroup {
-            if rows.isEmpty {
-                Text("No prepared photos yet.\nUse “Prepare next \(batchSize)” or leave this screen open to build up the pool.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { pair in
-                        let (idx, row) = pair
-                        NavigationLink {
-                            SmartPhotoAlbumShufflePhotoDetailView(
-                                manifestFileName: manifestFileName,
-                                albumID: albumID,
-                                itemID: row.id,
-                                focus: focus
-                            )
-                        } label: {
-                            HStack(spacing: 8) {
-                                if row.isCurrent {
-                                    Image(systemName: "circle.fill")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.blue)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Text("#\(idx + 1)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 36, alignment: .leading)
-
-                                Text(row.scoreText)
-                                    .font(.caption2)
-                                    .monospacedDigit()
-                                    .frame(width: 52, alignment: .leading)
-
-                                if row.flagsText.isEmpty {
-                                    Text(row.id)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                } else {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(row.id)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                        Text(row.flagsText)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-
-                                Spacer(minLength: 0)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.top, 4)
-            }
-        } label: {
-            Text("Ranking (preview)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: - Focus snapshot handling
 
     private func handleAlbumPickerPresentationChange(isPresented _: Bool) {
@@ -491,7 +409,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         smartPhoto = sp
 
         progress = nil
-        rankingRows = []
         nextChangeDate = nil
         rotationIntervalMinutes = 60
 
@@ -796,8 +713,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         guard !mf.isEmpty else {
             await MainActor.run {
                 progress = nil
-                rankingRows = []
-                rankingAlbumID = nil
                 nextChangeDate = nil
                 rotationIntervalMinutes = 60
             }
@@ -807,8 +722,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
             await MainActor.run {
                 progress = nil
-                rankingRows = []
-                rankingAlbumID = nil
                 nextChangeDate = nil
                 rotationIntervalMinutes = 60
             }
@@ -831,41 +744,9 @@ struct SmartPhotoAlbumShuffleControls: View {
             return manifest.entries[currentIndex].isPrepared
         }()
 
-        let currentID: String? = {
-            guard manifest.entries.indices.contains(currentIndex) else { return nil }
-            return manifest.entries[currentIndex].id
-        }()
-
         let next: Date? = {
             if manifest.rotationIntervalMinutes <= 0 { return nil }
             return manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
-        }()
-
-        // Only keep a small preview set for UI responsiveness (albums can be huge).
-        let rows: [RankingRow] = {
-            let preparedEntries = manifest.entries.filter { $0.isPrepared }
-
-            let sorted = preparedEntries.sorted { a, b in
-                let sa = a.scoreValue
-                let sb = b.scoreValue
-                if sa != sb { return sa > sb }
-
-                let da = a.preparedAt ?? .distantPast
-                let db = b.preparedAt ?? .distantPast
-                if da != db { return da > db }
-
-                return a.id < b.id
-            }
-
-            let maxRows = 60
-            return sorted.prefix(maxRows).map { entry in
-                RankingRow(
-                    id: entry.id,
-                    score: entry.scoreValue,
-                    flags: entry.flags.filter { $0 != "failed" },
-                    isCurrent: entry.id == currentID
-                )
-            }
         }()
 
         await MainActor.run {
@@ -876,9 +757,6 @@ struct SmartPhotoAlbumShuffleControls: View {
                 currentIndex: currentIndex,
                 currentIsPrepared: currentIsPrepared
             )
-
-            rankingRows = rows
-            rankingAlbumID = manifest.sourceID
 
             rotationIntervalMinutes = manifest.rotationIntervalMinutes
             nextChangeDate = next
@@ -891,22 +769,6 @@ struct SmartPhotoAlbumShuffleControls: View {
         let failed: Int
         let currentIndex: Int
         let currentIsPrepared: Bool
-    }
-
-    private struct RankingRow: Identifiable, Hashable {
-        let id: String
-        let score: Double
-        let flags: [String]
-        let isCurrent: Bool
-
-        var scoreText: String {
-            String(format: "%.3f", score)
-        }
-
-        var flagsText: String {
-            if flags.isEmpty { return "" }
-            return flags.joined(separator: ", ")
-        }
     }
 
     private enum PrepError: Error {

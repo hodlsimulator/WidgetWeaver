@@ -255,6 +255,12 @@ struct WidgetWeaverAboutView: View {
     @State private var clockLogLineCount: Int = 0
     @State private var clockLastTimelineBuild: Date? = nil
 
+    @State private var clockLogEnabled: Bool = false
+
+    @State private var photoLogPreview: String = ""
+    @State private var photoLogLineCount: Int = 0
+    @State private var photoLogEnabled: Bool = false
+
     var diagnosticsSection: some View {
         Section {
             WidgetWeaverAboutCard(accent: .gray) {
@@ -267,11 +273,32 @@ struct WidgetWeaverAboutView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    Text("Basic app metadata and a shareable clock debug log.")
+                    Text("Basic app metadata and shareable debug logs for clock + photos.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
                     Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Enable clock log", isOn: Binding(
+                            get: { clockLogEnabled },
+                            set: { newValue in
+                                clockLogEnabled = newValue
+                                WWClockDebugLog.setEnabled(newValue)
+                                refreshClockDiagnostics()
+                            }
+                        ))
+
+                        Toggle("Enable photo log", isOn: Binding(
+                            get: { photoLogEnabled },
+                            set: { newValue in
+                                photoLogEnabled = newValue
+                                WWPhotoDebugLog.setEnabled(newValue)
+                                refreshPhotoDiagnostics()
+                            }
+                        ))
+                    }
+                    .font(.subheadline)
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -402,6 +429,74 @@ struct WidgetWeaverAboutView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Photo log lines")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(photoLogLineCount)")
+                                .monospacedDigit()
+                        }
+                    }
+                    .font(.subheadline)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            refreshPhotoDiagnostics()
+                        } label: {
+                            Label("Reload photo log", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            let text = WWPhotoDebugLog.readText(maxLines: 240)
+                            copyToPasteboard(text.isEmpty ? "Photo debug log is empty." : text)
+                        } label: {
+                            Label("Copy photo log", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Button(role: .destructive) {
+                        WWPhotoDebugLog.clear()
+                        refreshPhotoDiagnostics()
+                        withAnimation(.spring(duration: 0.35)) {
+                            statusMessage = "Cleared photo log"
+                        }
+
+                        Task {
+                            try? await Task.sleep(nanoseconds: 900_000_000)
+                            await MainActor.run {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    if statusMessage == "Cleared photo log" { statusMessage = "" }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Clear photo log", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if !photoLogPreview.isEmpty {
+                        ScrollView {
+                            Text(photoLogPreview)
+                                .font(.caption2.monospacedDigit())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                        }
+                        .frame(maxHeight: 180)
+                    } else {
+                        Text("No photo log entries yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .task {
                     if designCount == nil {
@@ -409,6 +504,7 @@ struct WidgetWeaverAboutView: View {
                         await MainActor.run { designCount = count }
                     }
                     refreshClockDiagnostics()
+                    refreshPhotoDiagnostics()
                 }
             }
             .wwAboutListRow()
@@ -421,8 +517,18 @@ struct WidgetWeaverAboutView: View {
         let defaults = AppGroup.userDefaults
         clockLastTimelineBuild = defaults.object(forKey: "widgetweaver.clock.timelineBuild.last") as? Date
 
+        clockLogEnabled = WWClockDebugLog.isEnabled()
+
         let lines = WWClockDebugLog.readLines()
         clockLogLineCount = lines.count
         clockLogPreview = lines.suffix(40).joined(separator: "\n")
+    }
+
+    private func refreshPhotoDiagnostics() {
+        photoLogEnabled = WWPhotoDebugLog.isEnabled()
+
+        let lines = WWPhotoDebugLog.readLines()
+        photoLogLineCount = lines.count
+        photoLogPreview = lines.suffix(40).joined(separator: "\n")
     }
 }
