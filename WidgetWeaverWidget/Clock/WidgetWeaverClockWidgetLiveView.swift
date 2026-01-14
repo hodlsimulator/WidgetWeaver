@@ -21,12 +21,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     @State private var lastLoggedMinuteRef: Int = Int.min
 
     private static let timerStartBiasSeconds: TimeInterval = 0.25
-
-    /// Keeps the seconds hand moving even if the next minute-boundary refresh arrives late.
-    /// Requires the ligature font to support `1:SS` in addition to `0:SS`.
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
-
-    /// 4-hour heartbeat window (matches the earlier “driverRef … +14400s” logs).
     private static let progressDriverWindowSeconds: TimeInterval = 4.0 * 3600.0
 
     var body: some View {
@@ -51,15 +46,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
                 let leadSeconds = ctxNow.timeIntervalSince(sysNow)
 
-                // Pre-render detection:
-                // - far-future pre-render: ctxNow is well ahead of sysNow
-                // - minute-boundary skew: ctxMinuteAnchor has rolled while sysMinuteAnchor has not
                 let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
 
-                // Live: wall-clock. Pre-render: pinned entry date.
                 let renderNow: Date = isPrerender ? ctxNow : sysNow
-
-                // Tick-style: snap to the minute boundary.
                 let handsNow = Self.floorToMinute(renderNow)
 
                 let isPrivacy = redactionReasons.contains(.privacy)
@@ -72,21 +61,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let hourAngle = Angle.degrees(baseAngles.hour)
                 let minuteAngle = Angle.degrees(baseAngles.minute)
 
-                // Seconds anchor + spillover window.
                 let secondsMinuteAnchor = handsNow
                 let timerStart = secondsMinuteAnchor.addingTimeInterval(-Self.timerStartBiasSeconds)
                 let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
                 let timerRange = timerStart...timerEnd
 
                 #if DEBUG
-                // Verbose render log (throttled; message built lazily).
-                let _ = WWClockDebugLog.appendLazy(
-                    category: "clock",
-                    throttleID: "clockWidget.render",
-                    minInterval: 15.0,
-                    now: sysNow
-                ) {
-                    let cal = Calendar.autoupdatingCurrent
+                let _ : Void = {
+                    let balloon = WWClockDebugLog.isBallooningEnabled()
 
                     let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
                     let sysRef = Int(sysNow.timeIntervalSinceReferenceDate.rounded())
@@ -95,6 +77,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     let ctxMinusSys = Int((ctxNow.timeIntervalSince(sysNow)).rounded())
                     let leadMs = Int((leadSeconds * 1000.0).rounded())
 
+                    let cal = Calendar.autoupdatingCurrent
                     let handsH = cal.component(.hour, from: handsNow)
                     let handsM = cal.component(.minute, from: handsNow)
                     let liveS = cal.component(.second, from: renderNow)
@@ -112,8 +95,17 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         return "none"
                     }()
 
-                    return "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef)"
-                }
+                    WWClockDebugLog.appendLazy(
+                        category: "clock",
+                        throttleID: balloon ? nil : "clockWidget.render",
+                        minInterval: balloon ? 0.0 : 15.0,
+                        now: sysNow
+                    ) {
+                        "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef)"
+                    }
+
+                    return ()
+                }()
                 #endif
 
                 ZStack {
@@ -154,7 +146,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     .padding(6)
                 }
                 .onChange(of: handsNow) { _, newHands in
-                    // Only prove live ticks (pre-render output is expected to be ahead).
                     if isPrerender { return }
 
                     let handsRef = Int(newHands.timeIntervalSinceReferenceDate.rounded())
@@ -213,15 +204,10 @@ private struct WWClockBaseAngles {
         let sec = secondInt + (nano / 1_000_000_000.0)
         let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        // Hour hand: 360° per 12 hours.
         self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
-
-        // Minute hand: 360° per hour.
         self.minute = (minuteInt + sec / 60.0) * 6.0
     }
 }
-
-// MARK: - Seconds + hub overlay (time-aware seconds hand)
 
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
@@ -281,8 +267,6 @@ private struct WWClockSecondHandGlyphView: View {
             .accessibilityHidden(true)
     }
 }
-
-// MARK: - Dial layout (matches WidgetWeaverClockIconView)
 
 private struct WWClockDialLayout {
     let dialDiameter: CGFloat

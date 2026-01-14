@@ -11,18 +11,23 @@ import Foundation
 public enum WWClockDebugLog {
     #if DEBUG
     private static let defaultEnabled: Bool = true
+    private static let defaultBalloonEnabled: Bool = true
     #else
     private static let defaultEnabled: Bool = false
+    private static let defaultBalloonEnabled: Bool = false
     #endif
 
     private static let enabledKey = "widgetweaver.clock.debug.log.enabled.v1"
+
+    // DEBUG-only toggle that re-enables the legacy ballooning behaviour.
+    private static let balloonEnabledKey = "widgetweaver.clock.debug.log.balloon.enabled.v1"
 
     // Legacy key used by older builds that stored log lines as a [String] in App Group defaults.
     private static let legacyDefaultsLogKey = "widgetweaver.clock.debug.log.v1"
 
     private static let logFileName = "WidgetWeaverClockDebugLog.txt"
 
-    /// Hard cap to prevent logs growing without bound.
+    /// Hard cap to prevent logs growing without bound in the safe backend.
     /// Kept small because this can be written from a widget extension.
     private static let maxBytes: Int = 512 * 1024
 
@@ -62,6 +67,21 @@ public enum WWClockDebugLog {
 
     private static let throttleState = ThrottleState()
 
+    // MARK: - Backend selection
+
+    private enum Backend {
+        case safeFile
+        case balloonDefaults
+    }
+
+    private static func backend() -> Backend {
+        #if DEBUG
+        return isBallooningEnabled() ? .balloonDefaults : .safeFile
+        #else
+        return .safeFile
+        #endif
+    }
+
     // MARK: - Public API
 
     public static func isEnabled() -> Bool {
@@ -73,6 +93,17 @@ public enum WWClockDebugLog {
     public static func setEnabled(_ enabled: Bool) {
         let defaults = AppGroup.userDefaults
         defaults.set(enabled, forKey: enabledKey)
+    }
+
+    public static func isBallooningEnabled() -> Bool {
+        let defaults = AppGroup.userDefaults
+        if defaults.object(forKey: balloonEnabledKey) == nil { return defaultBalloonEnabled }
+        return defaults.bool(forKey: balloonEnabledKey)
+    }
+
+    public static func setBallooningEnabled(_ enabled: Bool) {
+        let defaults = AppGroup.userDefaults
+        defaults.set(enabled, forKey: balloonEnabledKey)
     }
 
     /// Convenience wrapper used by existing call sites (including WWClockSecondHandFont.swift).
@@ -88,8 +119,8 @@ public enum WWClockDebugLog {
         }
     }
 
-    /// Appends a message if the throttle window allows it.
-    /// The closure is only evaluated when a log entry will actually be written.
+    /// Appends a message if enabled.
+    /// In balloon mode, throttling is bypassed to reproduce the old “enormous logs” behaviour.
     public static func appendLazy(
         category: String = "clock",
         throttleID: String? = nil,
@@ -99,7 +130,10 @@ public enum WWClockDebugLog {
     ) {
         guard isEnabled() else { return }
 
-        if let throttleID {
+        let useBackend = backend()
+        let isBalloon = (useBackend == .balloonDefaults)
+
+        if !isBalloon, let throttleID {
             if !throttleState.shouldLog(id: throttleID, now: now, minInterval: minInterval) {
                 return
             }
@@ -120,28 +154,41 @@ public enum WWClockDebugLog {
         }()
 
         #if DEBUG
-        // Useful during widget debugging if App Group file reading is miswired.
         print(lineOut)
         #endif
 
-        // Avoid blocking widget rendering on file I/O.
-        ioQueue.async {
-            dropLegacyDefaultsLogIfNeededLocked()
-            appendLineLocked(lineOut)
+        switch useBackend {
+        case .balloonDefaults:
+            appendLegacyDefaultsBlocking(lineOut)
+
+        case .safeFile:
+            ioQueue.async {
+                dropLegacyDefaultsLogIfNeededLocked()
+                appendLineLocked(lineOut)
+            }
         }
     }
 
     public static func readLines() -> [String] {
-        ioQueue.sync {
-            dropLegacyDefaultsLogIfNeededLocked()
+        switch backend() {
+        case .balloonDefaults:
+            let defaults = AppGroup.userDefaults
+            let raw = (defaults.array(forKey: legacyDefaultsLogKey) as? [String]) ?? []
+            if raw.count <= maxLinesDefault { return raw }
+            return Array(raw.suffix(maxLinesDefault))
 
-            guard FileManager.default.fileExists(atPath: logFileURL.path) else { return [] }
-            guard let data = try? Data(contentsOf: logFileURL) else { return [] }
-            guard let text = String(data: data, encoding: .utf8) else { return [] }
+        case .safeFile:
+            return ioQueue.sync {
+                dropLegacyDefaultsLogIfNeededLocked()
 
-            let rawLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
-            if rawLines.count <= maxLinesDefault { return rawLines }
-            return Array(rawLines.suffix(maxLinesDefault))
+                guard FileManager.default.fileExists(atPath: logFileURL.path) else { return [] }
+                guard let data = try? Data(contentsOf: logFileURL) else { return [] }
+                guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+                let rawLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+                if rawLines.count <= maxLinesDefault { return rawLines }
+                return Array(rawLines.suffix(maxLinesDefault))
+            }
         }
     }
 
@@ -172,6 +219,18 @@ public enum WWClockDebugLog {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.string(from: date)
+    }
+
+    // MARK: - Balloon backend (legacy UserDefaults array)
+
+    private static func appendLegacyDefaultsBlocking(_ line: String) {
+        let defaults = AppGroup.userDefaults
+
+        var lines = (defaults.array(forKey: legacyDefaultsLogKey) as? [String]) ?? []
+        lines.append(line)
+
+        defaults.set(lines, forKey: legacyDefaultsLogKey)
+        defaults.synchronize()
     }
 
     // MARK: - File I/O (serialised on ioQueue)
@@ -223,6 +282,11 @@ public enum WWClockDebugLog {
     }
 
     private static func dropLegacyDefaultsLogIfNeededLocked() {
+        // Balloon mode uses this key; do not delete it in that mode.
+        #if DEBUG
+        if isBallooningEnabled() { return }
+        #endif
+
         let defaults = AppGroup.userDefaults
         guard defaults.object(forKey: legacyDefaultsLogKey) != nil else { return }
 
