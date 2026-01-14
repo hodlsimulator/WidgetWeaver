@@ -73,7 +73,7 @@ struct RainForecastSurfaceRenderer {
         }
 
         let onePx: CGFloat = 1.0 / max(1.0, ds)
-        let wetThresholdPt: CGFloat = onePx * 0.85
+        let wetThresholdPt: CGFloat = onePx * 2.0
         let segments = Self.buildWetSegments(
             rect: rect,
             baselineY: baselineY,
