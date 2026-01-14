@@ -1,234 +1,138 @@
 # WidgetWeaver
 
-WidgetWeaver builds and previews real WidgetKit widgets from saved designs.
+WidgetWeaver builds and previews real WidgetKit widgets in a fast “template catalogue (Explore) + editor” workflow.
 
-It runs on **iOS 26** and ships with: 
+The core idea:
 
-- A template catalogue (Explore) with multiple remixes per template
-- A searchable design Library (set Default, duplicate, delete)
-- An Editor that pushes updates to widgets on Save
-- Share/export/import JSON design packages (with embedded images) with an Import Review step (preview + selective import)
-- Smart Photos for Poster images (app-only Vision prep + per-family renders + per-size preview strip + manual framing editor; widget loads a single size-appropriate file)
-- Robust widget previews across sizes and contexts (Home Screen + Lock Screen)
-- Weather, Calendar, Steps, and Activity setups that cache snapshots for offline widget rendering
-- A small Home Screen clock widget (ticking seconds hand via the glyphs method)
-- A Sleep Machine-style Noise Machine (4-layer procedural noise) with instant resume + Home Screen controller widget
-- Shareable Noise Machine diagnostics log (Dump status / Rebuild engine / Share log)
+- widgets are composed from **capability-driven tools** (layout, text, symbols, images, Smart Photos, clock, weather, etc.)
+- the editor is **context-aware**, so only tools relevant to the current focus/selection are visible
+- heavy work (Vision, ranking, rendering prep) happens in the **app**, while widgets stay deterministic and budget-safe
 
-WidgetWeaver uses an App Group so the app and widget extension share designs, snapshots, and images.
+Minimum OS: **iOS 26**
 
 ---
 
-## App structure
+## Status
 
-WidgetWeaver has three tabs:
-
-- **Explore**: featured templates + remixes (Weather / Calendar / Steps / Activity / Clock) + Noise Machine
-- **Library**: saved designs (search, set Default, duplicate, delete)
-- **Editor**: edit a design and Save to push updates to widgets
-
-Pro features (matched sets, variables, actions) are unlocked via an in-app purchase.
+WidgetWeaver is in active development. The codebase is structured so new tools can be added incrementally while keeping widget rendering safe and deterministic.
 
 ---
 
-## Key files
+## High-level architecture
 
-### Widget rendering
+WidgetWeaver is split into three layers:
 
-- `Shared/WidgetSpec.swift` — the design model used by the app and widget extension
-- `Shared/WidgetWeaverSpecView.swift` — deterministic SwiftUI renderer for a spec
-- `WidgetWeaverWidget/WidgetWeaverWidget.swift` — widget entry points (Home Screen + Lock Screen families)
+1) **Model + persistence (App Group shared)**
+- All widget state that the widget needs is stored in the App Group.
+- Widgets read shared state and render deterministically.
 
-### Data snapshots (Weather / Calendar / Steps)
+2) **Editor (App)**
+- The editor builds and edits widget drafts.
+- The editor can perform heavy work (Vision, ranking, asset prep) that cannot run in widgets.
 
-Widgets do not fetch heavy data directly. Instead the app builds and caches small snapshots in the App Group:
-
-- `Shared/WidgetWeaverWeatherEngine.swift` — location + weather snapshot
-- `Shared/WidgetWeaverCalendarEngine.swift` — Next Up snapshot via EventKit
-- `Shared/WidgetWeaverStepsEngine.swift` — Steps + Activity snapshots via HealthKit
-- `Shared/AppGroup.swift` — shared file + UserDefaults access
-
----
-
-## Featured — Weather
-
-WidgetWeaver includes a rain-first Weather template for Lock Screen and Home Screen.
-
-Weather templates render from a cached Weather snapshot built in the app.
-
-### Weather setup checklist
-
-1) Open **Weather** settings inside the app.
-2) Pick a location.
-3) Confirm attribution is shown.
-4) Confirm widgets update when you Refresh.
+3) **Widgets (Widget extension)**
+- Widgets render based on shared state and timeline entries.
+- Widgets must stay budget-safe and avoid expensive work at render time.
 
 ---
 
-## Featured — Next Up (Calendar)
+## Context-aware editor
 
-WidgetWeaver includes Next Up templates for Lock Screen and Home Screen.
+The editor is context-aware: the visible tool suite is derived from what is currently being edited (selection/focus/mode), so irrelevant tools are hidden.
 
-A cached “Next Up snapshot” is built in the app using EventKit and contains:
+Key ideas:
 
-- next event (title, start/end, all-day, location),
-- optional second event (“Then”),
-- and a countdown-friendly start date.
+- Tools declare required capabilities and selection constraints.
+- Content types (e.g. Smart Photos, Clock) declare what they support.
+- A single source of truth produces an `EditorToolContext` (focus, selection descriptor, capabilities, mode).
+- The tool suite is computed from that context and is stable/deterministic.
+- Tool teardown actions prevent “dangling state” when focus changes (e.g. leaving a crop editor, exiting a modal flow).
 
-The snapshot is stored in the App Group for offline widget rendering.
-
-### Calendar setup checklist
-
-1) Open **Calendar** settings inside the app.
-2) Grant calendar access.
-3) Select calendars to include.
-4) Confirm the “Next Up snapshot” is updating.
+This keeps the editor predictable even as more tools are added.
 
 ---
 
-## Featured — Steps
+## Project structure
 
-WidgetWeaver includes Steps templates for both Lock Screen and Home Screen.
+- `WidgetWeaver/` — app (editor)
+- `WidgetWeaverWidget/` — widget extension
+- `Shared/` — shared code used by both app and widget extension
+- `Resources/` — assets, localisation, fonts, etc.
 
-Steps widgets render from a cached “today snapshot” stored in the App Group:
-
-- current day step count
-- optional goal + ring
-- last updated timestamp
-
-### Steps setup checklist
-
-1) Open **Steps** settings inside the app.
-2) Grant Health access.
-3) Set a goal (optional).
-4) Confirm the “today snapshot” is updating.
+Shared code uses the App Group for persistence and cross-process signalling.
 
 ---
 
-## Featured — Activity
+## Storage & App Group
 
-WidgetWeaver includes Activity templates for both Lock Screen and Home Screen.
+WidgetWeaver stores shared state in the App Group so:
 
-Activity widgets render from a cached “today snapshot” stored in the App Group:
+- widget rendering is deterministic
+- the widget can update quickly after edits
+- the app and widget can communicate without network dependencies
 
-- steps today
-- flights climbed
-- walking/running distance
-- active energy
-- last updated timestamp
-
-The **Steps** screen in the app includes an **Activity (steps + more)** section so the same snapshot that powers Activity widgets (and `__activity_*` keys) is visible in-app.
-
-### Activity setup checklist
-
-1) Open **Steps** settings inside the app.
-2) Scroll to **Activity (steps + more)**.
-3) Tap **Request Activity Access**.
-4) Confirm the “today snapshot” is updating.
-5) Add an Activity widget and confirm it renders offline (Airplane Mode).
+App Group helper: `Shared/AppGroup.swift`
 
 ---
 
-## Featured — Smart Photos (Poster)
+## Widget catalogue (Explore)
 
-WidgetWeaver can prepare photos in the app so widgets always show a good crop per size, without doing heavy work in the widget extension.
+Explore presents widget templates that can be remixed.
 
-### Current implementation (Phase 0)
+A template can be:
 
-- The app runs a one-time “photo prep” step when importing a photo:
-  - Vision analysis in the app (faces/pets/saliency fallback)
-  - writes a **master** image plus **Small/Medium/Large** pre-rendered crops into the App Group
-- `ImageSpec` stores:
-  - `fileName` (currently set to the Medium render for backwards compatibility)
-  - optional `smartPhoto` metadata with `masterFileName` and the per-family render filenames
-- The widget extension:
-  - does **not** import Vision
-  - loads exactly **one** already-cropped image file for the current widget family (Poster background path is family-aware)
-  - uses a smaller, cost-limited in-memory image cache to reduce jetsam risk
-- Import/export and cleanup treat Smart Photo images as first-class:
-  - export embeds the master + all render files used by a design
-  - import rewrites embedded filenames consistently
-  - cleanup removes unreferenced masters/renders
+- a static preset
+- a preset plus tool defaults
+- a preset with optional dynamic behaviour (e.g. Smart Photos rotation)
 
-### Editor feature set (Batch D + Batch E)
+Explore is designed to keep the “edit loop” fast: find a template, remix, preview, save.
 
-- Choosing a photo in the Editor prefers Smart Photo import:
-  - One master + per-family renders are generated immediately.
-  - If Smart Photo prep fails (decode/Vision), the app falls back to the legacy single-file import.
-- When a design has Smart Photo metadata:
-  - **Regenerate smart renders** rebuilds master + Small/Medium/Large renders using the current device’s pixel targets.
-  - The per-size preview strip shows the exact Small/Medium/Large renders:
-    - Tap **S/M/L** to switch which size you’re editing (drives `previewFamily`).
-    - A **Manual** badge appears when the render file name contains `-manual`.
-  - **Fix framing (Small/Medium/Large)** opens the manual crop editor for the selected size.
-- Matched sets:
-  - If a matched-set design still uses legacy images, **Upgrade legacy photos to Smart Photo** upgrades up to 3 legacy files per tap.
+---
 
-### Pipeline details (what gets written)
+## Draft model
 
-- Render targets are device-specific pixel sizes derived from `WidgetPreviewMetrics` (widget points × screen scale).
-- Smart Photo prep writes 4 JPEG files into the App Group images directory:
-  - `smart-master-<uuid>.jpg` — downsampled master (~3072px longest edge), size-capped (~2.5 MB).
-  - `smart-small-<uuid>.jpg` — Small render, size-capped (~450 KB).
-  - `smart-medium-<uuid>.jpg` — Medium render, size-capped (~650 KB).
-  - `smart-large-<uuid>.jpg` — Large render, size-capped (~900 KB).
-- Crop rectangles are stored in **normalised 0…1 space** (top-left origin) so the exact crop can be re-applied to the master.
-- Detection runs on an analysis image (~1024px longest edge) and uses a fallback order:
-  - faces → animals → humans (upper body) → saliency → centred crop.
-- Per-family framing strategy (high-level):
-  - **Small:** prefers a robust pair/cluster when possible (keeps two subjects from drifting off-edge).
-  - **Medium:** usually frames the top two ranked detections.
-  - **Large:** can include a broader union of detections.
+Widget drafts are designed around:
 
-### Manual framing (per-size override)
+- typed capability sets (what a draft can support)
+- explicit selection descriptors (what is selected, how many, homogeneous/heterogeneous)
+- predictable focus boundaries (widget vs Smart Photos vs Clock, etc.)
 
-- Manual framing always uses the Smart master image as the source and re-renders only the chosen size.
-- A manual render is written with a `-manual` suffix in the prefix, e.g. `smart-small-manual-<uuid>.jpg`.
-- When a manual render is applied:
-  - that size’s `SmartPhotoVariantSpec` is updated (cropRect + renderFileName),
-  - the previous render file for that size is deleted,
-  - `ImageSpec.fileName` is kept pointing at the Medium render for backwards compatibility (and is updated when the Medium render is manually overridden).
+The editor uses this to derive tool availability.
 
-### Widget rendering behaviour (what the extension does)
+---
 
-- The widget remains a pure render client:
-  - no Vision imports,
-  - no crop decisions,
-  - no probing multiple variants.
-- For a Smart Photo image, the widget resolves a single per-family render filename and loads exactly **one** pre-rendered image file for that entry.
+## Smart Photos
 
-### Debug overlay (app-only, DEBUG builds)
+Smart Photos are “widget-safe photo experiences” that can be prepared in-app and rendered deterministically in widgets.
 
-- The Smart Photo crop editor includes a DEBUG-only ladybug menu:
-  - Toggle **Debug overlay** to draw Vision detections on top of the master.
-  - **Re-run detection** forces a fresh run.
-- The overlay is app-only and does not change widget code paths.
+### Current shape
 
-### Import/export/cleanup rules (Smart Photos are first-class)
+- Smart Photos are prepared and ranked in the app (Vision allowed).
+- Widgets only render from the prepared artifacts.
+- Prep includes:
+  - thumbnail + per-family renders (Small/Medium/Large)
+  - crop metadata
+  - ranking/quality info (debuggable)
+  - shuffle/rotation manifests (budget-safe)
 
-- Export packages include every image file referenced by a design, including Smart Photo masters and all per-family renders (including manual overrides).
-- Imports rewrite embedded filenames to avoid collisions and keep references consistent.
-- Cleanup treats Smart Photo masters/renders as regular assets when deciding what is unreferenced and safe to delete.
+### Key implementation files
 
-### Roadmap (next)
-
-- Batch F: Widget memory hardening (single decode + downsample-at-decode in the widget render path; minimal/no caching).
-- Batch G: Privacy modes (hide/blur when locked; default OFF).
-- Batch H: Album shuffle MVP (progressive processing + manifest).
-- Batch I: Quality ranking (explainable heuristics; no heavy ML).
-- Batch J: Rotation scheduling & manifest (WidgetKit-throttle-friendly rotation).
+- Smart Photo pipeline: `WidgetWeaver/SmartPhotoPipeline/*`
+- Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
+- Shuffle manifest store: `WidgetWeaver/SmartPhotoShuffleManifestStore.swift`
+- Widget render: `WidgetWeaverWidget/SmartPhoto/*`
 
 ### Why Vision stays out of the widget
 
-Widgets have tight CPU/memory budgets and timeline generation can be terminated; all Vision work is done in the app so widget rendering stays deterministic and fast.
+Widgets have tight CPU/memory budgets and timeline generation limits. Vision and asset prep must be done in the app so widget rendering stays deterministic and fast.
 
-**Note:** per-family loading is currently wired into the Poster template’s background image path. Other templates that reference `ImageSpec.fileName` will show the Medium render until they adopt family-aware loading.
+**Note:** per-family loading is currently wired into the pipeline but not fully adopted everywhere. Some hosts will show the Medium render until they adopt family-aware loading.
 
 ---
 
 ## Featured — Clock (Home Screen)
 
-WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV116`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
+WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV156`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
 
 Key implementation files:
 
@@ -237,36 +141,53 @@ Key implementation files:
 
 ### Current approach
 
-- **Minutes / hours:** driven by minute-boundary WidgetKit timeline entries from the provider (budget-safe; ~120 minutes precomputed per timeline).
+- **Minutes / hours:** the provider publishes minute-boundary WidgetKit timeline entries (budget-safe; ~120 minutes precomputed per timeline). The live view snaps the hour/minute hands to the current minute boundary.
+- **Live vs pre-render:** when the widget is actually live on the Home Screen, hour/minute are derived from the wall clock (`Date()`). When WidgetKit is pre-rendering future entries (timeline caching), hour/minute are derived from the pinned entry date for deterministic snapshots.
 - **Seconds (ticking, no sweep):** rendered using the **glyphs method**:
   - A custom font (`WWClockSecondHand-Regular.ttf`) contains a pre-drawn seconds hand glyph at the corresponding angle.
   - The widget view uses `Text(timerInterval: timerRange, countsDown: false)` updating once per second and the font turns it into the correct hand.
 
+### Clock logs (budget-safe)
+
+Clock diagnostics are written via `WWClockDebugLog` and must never be able to delay rendering:
+
+- **Storage:** file-backed in the App Group container (`WidgetWeaverClockDebugLog.txt`), not a giant `[String]` in `UserDefaults`.
+- **Hard cap:** pruned to a small fixed size (currently 256 KB) and only the most recent lines are shown in the in-app viewer.
+- **Write path:** best-effort and asynchronous; never call `UserDefaults.synchronize()` from a widget and never do “log every frame” in the extension. Under Swift 6, avoid capturing a mutable `var` into `DispatchQueue.async` closures (build a `let` line first).
+
+If the minute tick ever “goes slow again”, the first sanity check is: clear the clock log and confirm logging isn’t accidentally spamming writes from the widget.
+
 ### 🚨 Do not break these invariants (easy to regress)
 
-If the clock looks fine in the widget gallery preview but is wrong on the Home Screen, these are the two repeat offenders.
+If the clock looks fine in the widget gallery preview but is wrong on the Home Screen, these are the repeat offenders.
 
-#### 1) Minute hand can look “slow” if hour/minute render from the entry date
+#### 1) Minute hand can look “slow” if hour/minute render from the entry date (or render is delayed)
 
 WidgetKit delivery of minute-boundary entries is best-effort. A `:16:00` entry can arrive a few seconds late on the Home Screen. If hour/minute angles are computed from the timeline entry’s date, the minute hand visibly lags behind real time.
 
+Separately: expensive work inside the widget render path (most often debug logging) can delay the render enough that the minute tick appears late.
+
 Fix / rule:
 
-- When the widget is actually on-screen (“live”), compute hour/minute from `Date()` (wall clock).
+- When the widget is actually on-screen (“live”), compute hour/minute from `Date()` (wall clock) and snap to the minute boundary.
 - When WidgetKit is pre-rendering future entries (timeline caching), compute from the entry date for deterministic snapshots.
+- Keep widget diagnostics cheap (see “Clock logs” above).
 
 The shipped implementation uses `WidgetWeaverRenderClock.withNow(entryDate)` plus a pre-render check:
 
     let sysNow = Date()
     let ctxNow = WidgetWeaverRenderClock.now   // pinned to the timeline entry date
 
-    // If ctxNow is far ahead of sysNow, WidgetKit is pre-rendering a future entry.
-    let isPrerender = ctxNow.timeIntervalSince(sysNow) > 5.0
+    let sysMinuteAnchor = floorToMinute(sysNow)
+    let ctxMinuteAnchor = floorToMinute(ctxNow)
 
-    // Hour/minute angles MUST use renderNow.
+    // If ctxNow is far ahead of sysNow (or has already rolled into the next minute), WidgetKit is pre-rendering.
+    let isPrerender = (ctxNow.timeIntervalSince(sysNow) > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
+
+    // Hour/minute angles MUST use renderNow (live = wall clock, pre-render = entry date).
     let renderNow = isPrerender ? ctxNow : sysNow
 
-If the minute hand is ever “slow again”, confirm this logic still exists and that hour/minute angles are derived from `renderNow` (not from `entryDate` directly).
+If the minute hand is ever “slow again”, confirm this logic still exists and that hour/minute angles are derived from `renderNow` (not from `entryDate` directly), and confirm the clock log hasn’t grown huge again.
 
 Do NOT “fix” minute accuracy by switching to 1-second WidgetKit timeline entries or adding timers. The design is intentionally budget-safe.
 
@@ -290,6 +211,19 @@ Fix / rule:
     }
 
 Removing this has repeatedly caused “black tile + frozen minute hand” regressions.
+
+#### 3) Proving minute accuracy (debug)
+
+In DEBUG builds, the widget emits a `minuteTick` line once per live minute:
+
+- `lagMs`: milliseconds between the exact minute boundary and when the view ticked.
+- `ok=1`: within tolerance (currently ±250 ms).
+
+Example:
+
+    2026-01-14T02:05:00.012Z [clock] [com.conornolan.WidgetWeaver.WidgetWeaverWidget] minuteTick hm=2:05 handsRef=... lagMs=12 ok=1 ...
+
+If only `render ... live=0` lines appear, those are from WidgetKit pre-rendering future entries (expected) and won’t prove live ticking.
 
 ### Notes
 
@@ -326,138 +260,72 @@ It requests `AVAudioSession` category `.playback` with `.mixWithOthers` and fall
 
 ### Diagnostics
 
-If playback is flaky (won’t start, won’t resume after Pause, or stops unexpectedly), use the built-in diagnostics:
+Noise Machine includes diagnostics in debug builds:
 
-- **Diagnostics → Dump status** writes a one-shot engine/session snapshot to the log.
-- **Diagnostics → Rebuild engine** tears down and recreates the audio graph, then re-applies the saved mix.
-- **Diagnostics → Share log** exports the last ~250 log entries (app + widget intents) as plain text.
+- audio graph stability
+- session state
+- engine reconfiguration paths
+- layer state snapshots
 
-### Noise Machine setup checklist
+### Implementation files
 
-1) In Xcode, enable **Background Modes → Audio** on the **WidgetWeaver** app target (required for playback with the screen off).
-2) Open **Explore → Noise Machine** and press **Play**.
-3) Optional: enable **Resume on launch** so force-quit → relaunch restarts audio automatically.
-4) Add the **Noise Machine** widget to the Home Screen and test Play/Pause + layer toggles.
-
-The widget is a controller only: buttons run App Intents (AudioPlaybackIntent) that update the stored state and drive playback in the app process.
-
----
-
-## Current status (0.9.5 (2))
-
-### App
-
-- ✅ Explore templates + remixes
-- ✅ Library (search, set Default, duplicate, delete)
-- ✅ Editor (save → widgets update)
-- ✅ Robust previews (Home Screen + Lock Screen)
-- ✅ Import Review (preview + selective import)
-- ✅ Theme extraction + more remixes
-- ✅ Smart Photos (app-only prep pipeline: Vision analysis + per-family renders stored in the App Group)
-- ✅ Smart Photos editor tools (per-size preview strip + manual “Fix framing” crop editor + DEBUG Vision overlay)
-- ✅ Noise Machine (4-layer procedural mixer + instant resume + widget controls)
-- ✅ Noise Machine diagnostics (shareable log + audio status dump + engine rebuild)
-- ✅ Pro: matched sets (S/M/L) share style tokens
-- ✅ Share/export/import JSON (optionally embedding images) with Import Review (preview + selective import)
-- ✅ On-device AI (generate + patch)
-- ✅ Weather setup + cached snapshot + attribution
-- ✅ Calendar snapshot engine for Next Up (permission + cached “next/second” events)
-- ✅ Steps setup (HealthKit access + cached today snapshot + goal schedule + streak rules)
-- ✅ Activity setup (HealthKit access + cached today snapshot: steps + distance + flights + active energy; surfaced in Steps → Activity (steps + more))
-- ✅ Steps History (timeline + monthly calendar + year heatmap / calendar) + insights + “Pin this day”
-- ✅ Inspector sheet (resolved spec + JSON + quick checks)
-- ✅ In-app preview dock (preview vs live, Small/Medium/Large)
-
-### Widgets
-
-- ✅ **Home Screen widget (“WidgetWeaver”)** renders a saved design (Small / Medium / Large)
-- ✅ Poster templates can load per-family Smart Photo crops (no Vision in widget; single-file render per size)
-- ✅ Widget image cache is memory-capped in the extension (small count + total decoded cost limit) to reduce jetsam risk
-- ✅ **Lock Screen widget (“Rain (WidgetWeaver)”)** next hour precipitation + temperature + nowcast (accessory rectangular)
-- ✅ **Lock Screen widget (“Next Up (WidgetWeaver)”)** next calendar event + countdown (inline / circular / rectangular)
-- ✅ **Lock Screen widget (“Steps (WidgetWeaver)”)** today’s step count + optional goal gauge (inline / circular / rectangular)
-- ✅ **Home Screen widget (“Steps (Home)”)** today’s step count + goal ring (Small / Medium / Large)
-- ✅ **Lock Screen widget (“Activity (WidgetWeaver)”)** multi-metric activity snapshot (steps / distance / flights / energy)
-- ✅ **Home Screen widget (“Activity (Home)”)** multi-metric activity snapshot (Small / Medium / Large)
-- ✅ **Home Screen widget (“Clock (Icon)”)** analogue clock face with minute ticks and a ticking seconds hand (glyphs method)
-- ✅ **Home Screen widget (“Noise Machine (WidgetWeaver)”)** controller widget (play/pause/stop + 4 layer toggles)
-- ✅ Per-widget configuration (Home Screen “WidgetWeaver” widget): Default (App) or pick a specific saved design
-- ✅ Optional interactive action bar (Pro) with up to 2 buttons that can trigger App Intents and update Pro variables (no Shortcuts setup required)
-- ✅ Weather + Calendar templates render from cached snapshots stored in the App Group
-- ✅ Steps widgets render from a cached “today” snapshot stored in the App Group
-- ✅ `__weather_*` built-in variables available in any design (free)
-- ✅ `__steps_*` built-in variables available in any design once Steps is set up (free)
-- ✅ `__activity_*` built-in variables available in any design once Activity is set up (free)
-- ✅ Time-sensitive designs can attempt minute-level timeline updates (delivery is best-effort; WidgetKit can delay or coalesce updates)
-
-### Layout + style
-
-- ✅ Layout templates: Classic / Hero / Poster / Weather / Next Up / Steps / Activity / Gallery / Banner / Chip (Calendar) (includes starter designs via `__steps_*` and `__activity_*` keys)
-- ✅ More remixes for templates (Explore)
-- ✅ Image themes (palette extraction + background/foreground harmonisation)
-- ✅ Inline validation (spec clamps + safe defaults)
+- Controller: `Shared/NoiseMachine/NoiseMachineController.swift`
+- Engine + DSP: `Shared/NoiseMachine/NoiseMachineController+Engine.swift`
+- Graph: `Shared/NoiseMachine/NoiseMachineController+Graph.swift`
+- State: `Shared/NoiseMachine/NoiseMachineController+State.swift`
+- View: `Shared/NoiseMachine/NoiseMachineView.swift`
+- Widget: `WidgetWeaverWidget/NoiseMachine/*`
 
 ---
 
-## Project setup checklist
+## Widgets
 
-1) Open `WidgetWeaver.xcodeproj`
-2) Select an iOS 26 device/simulator
-3) Run the app target
-4) Confirm App Group is configured and accessible
-5) Add widgets from the Home Screen / Lock Screen widget gallery
-6) If using Noise Machine: enable **Background Modes → Audio** on the WidgetWeaver app target
+WidgetWeaver widgets are built as real WidgetKit widgets with:
 
-First run expectations:
+- widget-safe rendering
+- App Group state reads
+- budget-safe timelines
 
-- First run: templates added from **Explore** into the Library
-- Designs edited in **Editor**, then saved to push updates to widgets
-- Weather / Calendar / Steps / Activity setup performed (for templates that depend on cached snapshots)
+Widget work is split into:
 
-Widgets can be added from the Home Screen / Lock Screen widget gallery and configured to select a specific saved design when relevant.
-
-Pro features require a Pro unlock; Variables and Actions become available in the editor after unlock.
+- providers (timeline entries)
+- views (rendering)
+- shared state stores (App Group)
 
 ---
 
-## Editor features
+## Build & run
 
-### Context-aware Editor
-
-The Editor tool panel is context-aware: the visible tool suite is derived from what is currently being edited (selection + focus), rather than being a fixed list.
-
-- **Selection + focus driven:** tools appear/disappear based on whether you’re editing the whole widget or a specific element, and based on the active sub-flow (e.g. Smart Photo crop, album shuffle, smart rules).
-- **Capability driven:** each tool declares required capabilities (template + configuration + permissions) and non-Photos requirements (e.g. Pro unlock state). Irrelevant tools are hidden.
-- **Standard unavailable UX:** some tools stay visible but render an **Unavailable** state with a consistent explanation when gated (e.g. Variables / Matched Sets / AI), rather than silently disappearing.
-- **Mixed selection behaviour is explicit:** tools declare whether they support multi-selection; single-target tools are removed when a mixed selection is active.
-- **Live changes are deterministic:** when capabilities flip at runtime (e.g. Pro purchase, Photos permission change, toggling matched sets), the tool suite recomputes predictably, any active sub-flow is torn down safely, and focus is restored so edits aren’t lost.
-- **Performance is guarded:** visible tool computation is memoised and protected by a performance test; live-flip recomputes explicitly invalidate caches so stale suites cannot be shown.
-
-Implementation orientation:
-
-- Tool IDs + manifest + suite computation: `WidgetWeaver/EditorTooling.swift`
-- Manifest guard tests (fails fast if a tool is added without explicit eligibility/capability decisions): `WidgetWeaverTests/WidgetWeaverTests.swift`
-
-### Layout templates
-
-Widget specs are built from a small set of layout templates and style tokens.
-
-### Action bars (Pro)
-
-Action Bars can add up to 2 interactive buttons that can trigger App Intents (no Shortcuts required).
-
-### Variables (Pro)
-
-Variables can be referenced inside text fields and updated via App Intents.
+- Open `WidgetWeaver.xcodeproj`
+- Build the app target and widget extension target
+- Run the app on a device or simulator
+- Add widgets from the Home Screen
 
 ---
 
-## AI
+## Debugging tips
 
-AI features are optional and are built around structured generation into the WidgetSpec schema.
+- Widget rendering can be cached; use `.id(entry.date)` to force refresh across entries where needed.
+- If a widget looks stuck, remove and re-add the widget.
+- In DEBUG builds, prefer logging through `WWClockDebugLog` and keep logs small.
 
 ---
 
-## Licence / notes
+## Principles / guardrails
 
-WidgetWeaver is a personal project. All assets and code are for the repo owner.
+- Widgets must remain deterministic and budget-safe.
+- Vision and heavy ranking work is app-only.
+- Avoid frequent widget reloads; prefer short precomputed timelines.
+- Context-aware editor must remain stable and predictable.
+
+---
+
+## Roadmap (high level)
+
+- Continue adding tools incrementally while keeping widget rendering stable.
+- Expand template catalogue and remix options.
+- Improve Smart Photos adoption and family-aware loading.
+- Expand Weather / time-critical widgets.
+- Harden editor teardown and selection stability as tool count grows.
+
+---
