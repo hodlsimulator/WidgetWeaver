@@ -214,6 +214,38 @@ public extension SmartPhotoShuffleManifest.Entry {
 }
 #endif
 
+#if canImport(WidgetKit)
+@MainActor
+private final class SmartPhotoShuffleWidgetReloadDebouncer {
+    static let shared = SmartPhotoShuffleWidgetReloadDebouncer()
+
+    private var pendingWorkItem: DispatchWorkItem?
+
+    private init() {}
+
+    func scheduleReloadCoalesced() {
+        if isRunningInWidgetKitExtension() { return }
+
+        pendingWorkItem?.cancel()
+
+        let work = DispatchWorkItem {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        }
+
+        pendingWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func isRunningInWidgetKitExtension() -> Bool {
+        guard let ext = Bundle.main.object(forInfoDictionaryKey: "NSExtension") as? [String: Any] else {
+            return false
+        }
+        let pointID = ext["NSExtensionPointIdentifier"] as? String
+        return pointID == "com.apple.widgetkit-extension"
+    }
+}
+#endif
+
 /// Storage helpers for shuffle manifests.
 ///
 /// This is intentionally tiny and file-based (no CoreData / no heavy caching).
@@ -279,10 +311,15 @@ public enum SmartPhotoShuffleManifestStore {
 
         bumpUpdateToken()
     }
-
     private static func bumpUpdateToken() {
         let defaults = AppGroup.userDefaults
         let current = defaults.integer(forKey: updateTokenKey)
         defaults.set(current &+ 1, forKey: updateTokenKey)
+
+        #if canImport(WidgetKit)
+        Task { @MainActor in
+            SmartPhotoShuffleWidgetReloadDebouncer.shared.scheduleReloadCoalesced()
+        }
+        #endif
     }
 }
