@@ -24,6 +24,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
     private static let minuteSpilloverSeconds: TimeInterval = 59.0
     private static let progressDriverWindowSeconds: TimeInterval = 4.0 * 3600.0
 
+    private static var buildLabel: String {
+        #if DEBUG
+        return "debug"
+        #else
+        return "release"
+        #endif
+    }
+
     var body: some View {
         let progressRange = Self.progressDriverRange(anchor: entryDate)
 
@@ -66,8 +74,10 @@ struct WidgetWeaverClockWidgetLiveView: View {
                 let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + Self.minuteSpilloverSeconds)
                 let timerRange = timerStart...timerEnd
 
-                #if DEBUG
+                // Render-path proof logging (NOT compiled out).
                 let _ : Void = {
+                    guard WWClockDebugLog.isEnabled() else { return () }
+
                     let balloon = WWClockDebugLog.isBallooningEnabled()
 
                     let ctxRef = Int(ctxNow.timeIntervalSinceReferenceDate.rounded())
@@ -101,12 +111,11 @@ struct WidgetWeaverClockWidgetLiveView: View {
                         minInterval: balloon ? 0.0 : 15.0,
                         now: sysNow
                     ) {
-                        "render ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef)"
+                        "render build=\(Self.buildLabel) ctxRef=\(ctxRef) sysRef=\(sysRef) ctx-sys=\(ctxMinusSys)s leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef)"
                     }
 
                     return ()
                 }()
-                #endif
 
                 ZStack {
                     WidgetWeaverClockIconView(
@@ -134,18 +143,22 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     )
                 }
                 .widgetURL(URL(string: "widgetweaver://clock"))
-                #if DEBUG
                 .overlay(alignment: .bottomTrailing) {
-                    WWClockWidgetDebugBadge(
-                        entryDate: renderNow,
-                        minuteAnchor: secondsMinuteAnchor,
-                        timerRange: timerRange,
-                        showSeconds: showSeconds,
-                        tickModeLabel: showSeconds ? "secondsSweep" : "minuteOnly"
-                    )
-                    .padding(6)
+                    // Keep the badge runtime-gated so it never appears unless clock logging is enabled.
+                    if WWClockDebugLog.isEnabled() {
+                        WWClockWidgetDebugBadge(
+                            entryDate: renderNow,
+                            minuteAnchor: secondsMinuteAnchor,
+                            timerRange: timerRange,
+                            showSeconds: showSeconds,
+                            tickModeLabel: showSeconds ? "secondsSweep" : "minuteOnly"
+                        )
+                        .padding(6)
+                    }
                 }
                 .onChange(of: handsNow) { _, newHands in
+                    // Minute tick proof logging (NOT compiled out).
+                    guard WWClockDebugLog.isEnabled() else { return }
                     if isPrerender { return }
 
                     let handsRef = Int(newHands.timeIntervalSinceReferenceDate.rounded())
@@ -161,10 +174,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
                     let m = cal.component(.minute, from: newHands)
 
                     WWClockDebugLog.appendLazy(category: "clock", throttleID: nil, minInterval: 0, now: tickNow) {
-                        "minuteTick hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
+                        "minuteTick build=\(Self.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
                     }
                 }
-                #endif
             }
         }
     }
