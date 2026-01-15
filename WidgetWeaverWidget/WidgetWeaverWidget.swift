@@ -154,6 +154,13 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let shuffleSchedule = SmartPhotoShuffleSchedule.load(for: familySpec, now: now)
 
         // Poster-only shuffle: schedule entries exactly at rotation boundaries.
+        //
+        // Important:
+        // WidgetKit may pre-render a lot of timeline entries ahead-of-time. If each entry decodes a different
+        // photo, a dense timeline can exceed WidgetKit’s time/memory budget and the system will fall back to
+        // a placeholder.
+        //
+        // Keep this timeline deliberately small and ask WidgetKit to reload again soon.
         if let shuffleSchedule,
            !usesWeather,
            !usesTime,
@@ -161,33 +168,29 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
            !usesSteps,
            !usesActivity
         {
-            let maxEntries: Int = {
-                // Rotating photos means each entry usually decodes a different image.
-                // Very dense timelines can exceed WidgetKit's time/memory budget and result in a placeholder.
-                if shuffleSchedule.intervalSeconds < (15 * 60) {
-                    return 32
-                }
-                return 240
-            }()
-            let desiredHorizon: TimeInterval = 60 * 60 * 6
-            let horizon = max(desiredHorizon, shuffleSchedule.nextChangeDate.timeIntervalSince(now) + (shuffleSchedule.intervalSeconds * 4))
+            let interval = shuffleSchedule.intervalSeconds
+            let targetHorizon: TimeInterval = 60 * 30 // 30 minutes
+
+            // 3–6 entries total (now + 2–5 future rotation boundaries).
+            let desiredEntries = max(3, min(6, Int((targetHorizon / interval).rounded(.down)) + 3))
 
             var entries: [Entry] = []
-            entries.reserveCapacity(min(maxEntries, 32))
+            entries.reserveCapacity(desiredEntries)
 
             entries.append(Entry(date: now, family: context.family, spec: spec, isWidgetKitPreview: false))
 
             var d = shuffleSchedule.nextChangeDate
-            while entries.count < maxEntries && d > now && d <= now.addingTimeInterval(horizon) {
+            if d <= now {
+                d = now.addingTimeInterval(interval)
+            }
+
+            while entries.count < desiredEntries {
                 entries.append(Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: false))
-                d = d.addingTimeInterval(shuffleSchedule.intervalSeconds)
+                d = d.addingTimeInterval(interval)
             }
 
-            if entries.count == 1 {
-                entries.append(Entry(date: shuffleSchedule.nextChangeDate, family: context.family, spec: spec, isWidgetKitPreview: false))
-            }
-
-            return Timeline(entries: entries, policy: .atEnd)
+            let reload = (entries.last?.date ?? now).addingTimeInterval(1)
+            return Timeline(entries: entries, policy: .after(reload))
         }
 
         var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
