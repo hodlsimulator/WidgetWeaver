@@ -13,52 +13,36 @@ public enum WidgetWeaverRenderClock {
 
     /// Returns the current render-time date.
     ///
-    /// WidgetKit can render views ahead-of-time (for future timeline entries). In those cases,
-    /// `Date()` is not stable. Prefer `WidgetWeaverRenderClock.now` in time-dependent widget UI,
-    /// and wrap widget rendering in `WidgetWeaverRenderClock.withNow(entry.date)`.
+    /// WidgetKit can render timelines for future dates; by default SwiftUI's `Date()` reflects real-time.
+    /// Using a thread-local override lets any render-time code use the correct timeline date.
     public static var now: Date {
-        (Thread.current.threadDictionary[threadDictionaryKey] as? Date) ?? Date()
+        Thread.current.threadDictionary[threadDictionaryKey] as? Date ?? Date()
     }
 
-    @discardableResult
-    public static func withNow<T>(_ date: Date, operation: () -> T) -> T {
-        let dict = Thread.current.threadDictionary
-        let key = threadDictionaryKey
-        let previous = dict[key]
-
-        dict[key] = date
+    /// Executes `content` with the render clock overridden to `date` (thread-local).
+    public static func withNow<T>(_ date: Date, _ content: () -> T) -> T {
+        let td = Thread.current.threadDictionary
+        let prev = td[threadDictionaryKey]
+        td[threadDictionaryKey] = date
         defer {
-            if let previous {
-                dict[key] = previous
+            if let prev {
+                td[threadDictionaryKey] = prev
             } else {
-                dict.removeObject(forKey: key)
+                td.removeObject(forKey: threadDictionaryKey)
             }
         }
-
-        return operation()
+        return content()
     }
 
-    @MainActor
-    @ViewBuilder
-    public static func withNow<Content: View>(_ date: Date, @ViewBuilder _ content: () -> Content) -> some View {
-        WidgetWeaverRenderClockScope(now: date, content: content())
-    }
-}
-
-@MainActor
-private struct WidgetWeaverRenderClockScope<Content: View>: View {
-    let now: Date
-    let content: Content
-
-    var body: some View {
-        // WARNING:
-        // `WidgetWeaverRenderClock.withNow(now) { content }` must not be called from within this scope.
-        // Overload resolution can pick the ViewBuilder `withNow` and re-wrap another scope, causing
-        // infinite SwiftUI view recursion and a widget render crash (Home Screen widgets appear black).
-        //
-        // The scope’s job is only to set the threadDictionary key for the current render pass and
-        // return `content` directly.
-        Thread.current.threadDictionary[WidgetWeaverRenderClock.threadDictionaryKey] = now
-        return content
+    /// Returns an aligned start date for `.periodic(from:by:)` so independent TimelineViews tick together.
+    ///
+    /// A TimelineView scheduled from `Date()` starts at a slightly different phase per view, which can
+    /// cause multiple previews to advance at different moments. Aligning to a fixed epoch boundary
+    /// keeps all preview surfaces in sync.
+    public static func alignedTimelineStartDate(interval: TimeInterval, now: Date = Date()) -> Date {
+        let i = max(0.001, interval)
+        let t = now.timeIntervalSince1970
+        let aligned = floor(t / i) * i
+        return Date(timeIntervalSince1970: aligned)
     }
 }

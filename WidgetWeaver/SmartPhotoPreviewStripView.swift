@@ -16,6 +16,9 @@ struct SmartPhotoPreviewStripView: View {
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
 
+    @AppStorage("preview.liveEnabled")
+    private var liveEnabled: Bool = true
+
     private var shuffleManifestFileName: String {
         (smart.shuffleManifestFileName ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,12 +28,21 @@ struct SmartPhotoPreviewStripView: View {
         !shuffleManifestFileName.isEmpty
     }
 
+    private var usesShuffleRotation: Bool {
+        guard shuffleEnabled else { return false }
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return true }
+        return manifest.rotationIntervalMinutes > 0
+    }
+
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
 
         Group {
-            if shuffleEnabled {
-                TimelineView(.periodic(from: Date(), by: shuffleTickIntervalSeconds())) { ctx in
+            if usesShuffleRotation {
+                let interval: TimeInterval = liveEnabled ? 5 : 60
+                let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
+
+                TimelineView(.periodic(from: start, by: interval)) { ctx in
                     WidgetWeaverRenderClock.withNow(ctx.date) {
                         stripBody
                     }
@@ -153,18 +165,5 @@ struct SmartPhotoPreviewStripView: View {
     private func isManual(renderFileName: String?) -> Bool {
         guard let renderFileName else { return false }
         return renderFileName.contains("-manual")
-    }
-
-    private func shuffleTickIntervalSeconds() -> TimeInterval {
-        let mf = shuffleManifestFileName
-        guard !mf.isEmpty, let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
-            return 30
-        }
-
-        let minutes = manifest.rotationIntervalMinutes
-        guard minutes > 0 else { return 60 }
-
-        let seconds = Double(minutes) * 60.0
-        return max(5, min(60, seconds / 4.0))
     }
 }

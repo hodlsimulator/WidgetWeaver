@@ -231,6 +231,9 @@ private struct EditorResolvedImagePreview: View {
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
 
+    @AppStorage("preview.liveEnabled")
+    private var liveEnabled: Bool = true
+
     private var shuffleManifestFileName: String {
         (imageSpec.smartPhoto?.shuffleManifestFileName ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -240,12 +243,21 @@ private struct EditorResolvedImagePreview: View {
         !shuffleManifestFileName.isEmpty
     }
 
+    private var usesShuffleRotation: Bool {
+        guard shuffleEnabled else { return false }
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return true }
+        return manifest.rotationIntervalMinutes > 0
+    }
+
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
 
         Group {
-            if shuffleEnabled {
-                TimelineView(.periodic(from: Date(), by: shuffleTickIntervalSeconds())) { ctx in
+            if usesShuffleRotation {
+                let interval: TimeInterval = liveEnabled ? 5 : 60
+                let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
+
+                TimelineView(.periodic(from: start, by: interval)) { ctx in
                     WidgetWeaverRenderClock.withNow(ctx.date) {
                         previewBody
                     }
@@ -303,18 +315,5 @@ private struct EditorResolvedImagePreview: View {
     private var missingImageMessage: String {
         if shuffleEnabled { return "No prepared shuffle photo yet." }
         return "Selected image file not found in App Group."
-    }
-
-    private func shuffleTickIntervalSeconds() -> TimeInterval {
-        let mf = shuffleManifestFileName
-        guard !mf.isEmpty, let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
-            return 30
-        }
-
-        let minutes = manifest.rotationIntervalMinutes
-        guard minutes > 0 else { return 60 }
-
-        let seconds = Double(minutes) * 60.0
-        return max(5, min(60, seconds / 4.0))
     }
 }

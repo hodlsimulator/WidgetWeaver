@@ -284,7 +284,7 @@ struct WidgetWeaverWidget: Widget {
         ) { entry in
             WidgetWeaverRenderClock.withNow(entry.date) {
                 let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
-                WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
+                return WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
                     .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
                     .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
             }

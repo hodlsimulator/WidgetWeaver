@@ -38,13 +38,20 @@ struct WidgetPreview: View {
         let familySpec = spec.resolved(for: family)
 
         let usesTemplateTime = spec.normalised().usesTimeDependentRendering()
-        let usesSmartPhotoShuffle: Bool = {
+
+        let shuffleManifestFileName: String? = {
             let mf = (familySpec.image?.smartPhoto?.shuffleManifestFileName ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return !mf.isEmpty
+            return mf.isEmpty ? nil : mf
         }()
 
-        let isTimeDependent = usesTemplateTime || usesSmartPhotoShuffle
+        let usesSmartPhotoShuffleRotation: Bool = {
+            guard let mf = shuffleManifestFileName else { return false }
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return true }
+            return manifest.rotationIntervalMinutes > 0
+        }()
+
+        let isTimeDependent = usesTemplateTime || usesSmartPhotoShuffleRotation
 
         Group {
             if isTimeDependent {
@@ -54,11 +61,13 @@ struct WidgetPreview: View {
                 // promptly in the editor when “Next photo” is used.
                 let interval: TimeInterval = {
                     if usesTemplateTime { return isLive ? 1 : 60 }
-                    if usesSmartPhotoShuffle { return isLive ? 5 : 60 }
+                    if usesSmartPhotoShuffleRotation { return isLive ? 5 : 60 }
                     return 60
                 }()
 
-                TimelineView(.periodic(from: Date(), by: interval)) { ctx in
+                let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
+
+                TimelineView(.periodic(from: start, by: interval)) { ctx in
                     WidgetWeaverRenderClock.withNow(ctx.date) {
                         previewBody
                     }

@@ -20,6 +20,7 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
 
     @Published private(set) var variablesFingerprint: String = "0000000000000000"
     @Published private(set) var weatherFingerprint: String = "0000000000000000"
+    @Published private(set) var smartPhotoShuffleFingerprint: String = "0000000000000000"
 
     private let userDefaults: UserDefaults
     private var observer: NSObjectProtocol?
@@ -42,8 +43,17 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
     }
 
     func dependencyFingerprint(for spec: WidgetSpec) -> String {
-        if spec.usesWeatherRendering() {
+        let usesWeather = spec.usesWeatherRendering()
+        let usesShuffle = specUsesSmartPhotoShuffle(spec)
+
+        if usesWeather && usesShuffle {
+            return "\(variablesFingerprint).\(weatherFingerprint).\(smartPhotoShuffleFingerprint)"
+        }
+        if usesWeather {
             return "\(variablesFingerprint).\(weatherFingerprint)"
+        }
+        if usesShuffle {
+            return "\(variablesFingerprint).\(smartPhotoShuffleFingerprint)"
         }
         return variablesFingerprint
     }
@@ -70,14 +80,17 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
             let unitPreferenceRaw = self.userDefaults.string(forKey: WidgetWeaverWeatherStore.Keys.unitPreference) ?? ""
             let lastErrorRaw = self.userDefaults.string(forKey: WidgetWeaverWeatherStore.Keys.lastError) ?? ""
 
-            let (variables, weather) = await Task.detached(priority: .utility) {
+            let shuffleToken = self.userDefaults.integer(forKey: SmartPhotoShuffleManifestStore.updateTokenKey)
+
+            let (variables, weather, shuffle) = await Task.detached(priority: .utility) {
                 Self.computeFingerprints(
                     variablesData: variablesData,
                     locationData: locationData,
                     snapshotData: snapshotData,
                     attributionData: attributionData,
                     unitPreferenceRaw: unitPreferenceRaw,
-                    lastErrorRaw: lastErrorRaw
+                    lastErrorRaw: lastErrorRaw,
+                    shuffleToken: shuffleToken
                 )
             }.value
 
@@ -86,6 +99,9 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
             }
             if self.weatherFingerprint != weather {
                 self.weatherFingerprint = weather
+            }
+            if self.smartPhotoShuffleFingerprint != shuffle {
+                self.smartPhotoShuffleFingerprint = shuffle
             }
         }
     }
@@ -96,8 +112,9 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
         snapshotData: Data,
         attributionData: Data,
         unitPreferenceRaw: String,
-        lastErrorRaw: String
-    ) -> (String, String) {
+        lastErrorRaw: String,
+        shuffleToken: Int
+    ) -> (String, String, String) {
         let variables = fnv1a64Hex(variablesData)
 
         let weatherParts: [String] = [
@@ -109,7 +126,28 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
         ]
 
         let weather = weatherParts.joined(separator: ".")
-        return (variables, weather)
+        let shuffle = fnv1a64Hex(Data(String(shuffleToken).utf8))
+        return (variables, weather, shuffle)
+    }
+
+    private func specUsesSmartPhotoShuffle(_ spec: WidgetSpec) -> Bool {
+        func imageHasShuffle(_ image: ImageSpec?) -> Bool {
+            let mf = (image?.smartPhoto?.shuffleManifestFileName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !mf.isEmpty
+        }
+
+        if imageHasShuffle(spec.image) {
+            return true
+        }
+
+        if let matched = spec.matchedSet {
+            if imageHasShuffle(matched.small?.image) { return true }
+            if imageHasShuffle(matched.medium?.image) { return true }
+            if imageHasShuffle(matched.large?.image) { return true }
+        }
+
+        return false
     }
 
     nonisolated private static func fnv1a64Hex(_ data: Data) -> String {
@@ -121,6 +159,7 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
         return String(format: "%016llx", hash)
     }
 }
+
 
 @MainActor
 final class WidgetPreviewThumbnailCacheSignal: ObservableObject {
@@ -242,11 +281,7 @@ struct WidgetPreviewThumbnail: View {
     var body: some View {
         switch renderingStyle {
         case .live:
-            if #available(iOS 16.0, *) {
-                renderedBody(renderImmediately: true)
-            } else {
-                legacyLiveBody
-            }
+            WidgetPreviewLiveThumbnail(spec: spec, family: family, height: height)
         case .rasterCached:
             if #available(iOS 16.0, *) {
                 renderedBody(renderImmediately: false)
@@ -365,6 +400,115 @@ struct WidgetPreviewThumbnail: View {
         .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
         .frame(width: size.width, height: size.height, alignment: .center)
         .accessibilityHidden(true)
+    }
+
+    private func scaledWidgetCornerRadius(scale: CGFloat) -> CGFloat {
+        let base: CGFloat = (UIDevice.current.userInterfaceIdiom == .pad) ? 24 : 22
+        return WidgetPreviewMetrics.floorToPixel(base * max(0, scale), scale: max(1, displayScale))
+    }
+}
+
+@MainActor
+private struct WidgetPreviewLiveThumbnail: View {
+    let spec: WidgetSpec
+    let family: WidgetFamily
+    let height: CGFloat
+
+    @Environment(\.displayScale) private var displayScale
+
+    // Mirrors WidgetPreviewDock's setting so the thumbnail stays in sync with the main preview.
+    @AppStorage("preview.liveEnabled")
+    private var liveEnabled: Bool = true
+
+    // Forces a re-render when variables change in-app (including via AppIntent buttons).
+    @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults)
+    private var variablesData: Data = Data()
+
+    // Forces a re-render when Smart Photo shuffle manifests are saved/advanced.
+    @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
+    private var smartPhotoShuffleUpdateToken: Int = 0
+
+    var body: some View {
+        let _ = variablesData
+        let _ = smartPhotoShuffleUpdateToken
+
+        let base = WidgetPreview.widgetSize(for: family)
+        let s = WidgetPreviewMetrics.thumbnailScale(nativeSize: base, targetHeight: height, allowUpscale: false)
+        let displaySize = WidgetPreviewMetrics.scaledSize(baseSize: base, scale: s, displayScale: displayScale)
+
+        let usesTemplateTime = spec.normalised().usesTimeDependentRendering()
+        let usesSmartPhotoShuffleRotation = specUsesSmartPhotoShuffleRotation(spec)
+        let isTimeDependent = usesTemplateTime || usesSmartPhotoShuffleRotation
+
+        let cornerRadius = scaledWidgetCornerRadius(scale: s)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        Group {
+            if isTimeDependent {
+                let interval: TimeInterval = {
+                    if usesTemplateTime { return liveEnabled ? 1 : 60 }
+                    if usesSmartPhotoShuffleRotation { return liveEnabled ? 5 : 60 }
+                    return 60
+                }()
+
+                let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
+
+                TimelineView(.periodic(from: start, by: interval)) { ctx in
+                    WidgetWeaverRenderClock.withNow(ctx.date) {
+                        liveBody(base: base, scale: s, displaySize: displaySize, shape: shape)
+                    }
+                }
+            } else {
+                liveBody(base: base, scale: s, displaySize: displaySize, shape: shape)
+            }
+        }
+    }
+
+    private func liveBody(base: CGSize, scale: CGFloat, displaySize: CGSize, shape: RoundedRectangle) -> some View {
+        WidgetWeaverSpecView(spec: spec, family: family, context: liveEnabled ? .simulator : .preview)
+            .frame(width: base.width, height: base.height)
+            .scaleEffect(scale, anchor: .center)
+            .frame(width: displaySize.width, height: displaySize.height, alignment: .center)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+
+    private func specUsesSmartPhotoShuffleRotation(_ spec: WidgetSpec) -> Bool {
+        func manifestFileName(for image: ImageSpec?) -> String? {
+            let mf = (image?.smartPhoto?.shuffleManifestFileName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return mf.isEmpty ? nil : mf
+        }
+
+        var manifestFiles: [String] = []
+
+        if let mf = manifestFileName(for: spec.image) {
+            manifestFiles.append(mf)
+        }
+
+        if let matched = spec.matchedSet {
+            if let mf = manifestFileName(for: matched.small?.image) { manifestFiles.append(mf) }
+            if let mf = manifestFileName(for: matched.medium?.image) { manifestFiles.append(mf) }
+            if let mf = manifestFileName(for: matched.large?.image) { manifestFiles.append(mf) }
+        }
+
+        if manifestFiles.isEmpty {
+            return false
+        }
+
+        for mf in manifestFiles {
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+                // Keep updating in case the manifest becomes available shortly.
+                return true
+            }
+
+            if manifest.rotationIntervalMinutes > 0 {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func scaledWidgetCornerRadius(scale: CGFloat) -> CGFloat {
