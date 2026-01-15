@@ -56,6 +56,14 @@ extension ContentView {
                 Label("Activity settings", systemImage: "figure.walk.circle")
             }
 
+            if WidgetWeaverFeatureFlags.remindersTemplateEnabled {
+                Button {
+                    activeSheet = .reminders
+                } label: {
+                    Label("Reminders settings", systemImage: "checkmark.circle")
+                }
+            }
+
             Divider()
 
             Button {
@@ -94,6 +102,17 @@ extension ContentView {
 
 #if DEBUG
             Divider()
+
+            Toggle(
+                "Debug: enable Reminders template",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.remindersTemplateEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setRemindersTemplateEnabled(newValue)
+                        EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                    }
+                )
+            )
 
             Toggle("Debug: editor diagnostics", isOn: $showEditorDiagnostics)
 #endif
