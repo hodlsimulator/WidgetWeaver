@@ -28,6 +28,22 @@ public struct WidgetWeaverSpecView: View {
     @AppStorage(WidgetWeaverWeatherStore.Keys.attributionData, store: AppGroup.userDefaults)
     private var weatherAttributionData: Data = Data()
 
+    @AppStorage(WidgetWeaverRemindersStore.Keys.snapshotData, store: AppGroup.userDefaults)
+    private var remindersSnapshotData: Data = Data()
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastUpdatedAt, store: AppGroup.userDefaults)
+    private var remindersLastUpdatedAt: Double = 0
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastErrorKind, store: AppGroup.userDefaults)
+    private var remindersLastErrorKind: String = ""
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastErrorMessage, store: AppGroup.userDefaults)
+    private var remindersLastErrorMessage: String = ""
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastErrorAt, store: AppGroup.userDefaults)
+    private var remindersLastErrorAt: Double = 0
+
+
     // Forces a re-render when the saved spec store changes (so Home Screen widgets update).
     @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults)
     private var specsData: Data = Data()
@@ -43,6 +59,11 @@ public struct WidgetWeaverSpecView: View {
         let _ = weatherSnapshotData
         let _ = weatherAttributionData
         let _ = specsData
+        let _ = remindersSnapshotData
+        let _ = remindersLastUpdatedAt
+        let _ = remindersLastErrorKind
+        let _ = remindersLastErrorMessage
+        let _ = remindersLastErrorAt
 
         let baseSpec: WidgetSpec = {
             guard context == .widget else { return spec }
@@ -72,7 +93,7 @@ public struct WidgetWeaverSpecView: View {
             case .nextUpCalendar:
                 nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .reminders:
-                remindersTemplatePlaceholder(spec: resolved, layout: layout, style: style, accent: accent)
+                remindersTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             }
         }
         .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
@@ -190,6 +211,269 @@ public struct WidgetWeaverSpecView: View {
             context: context,
             accent: accent
         )
+    }
+
+    
+    private func remindersTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let store = WidgetWeaverRemindersStore.shared
+        let snapshot = store.loadSnapshot()
+        let lastError = store.loadLastError()
+        let config = (spec.remindersConfig ?? .default).normalised()
+
+        if let snapshot {
+            let now = Date()
+            let items = remindersFilteredItems(snapshot: snapshot, config: config, now: now)
+            return AnyView(
+                VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+                    headerRow(spec: spec, style: style, accent: accent)
+
+                    VStack(alignment: layout.alignment.alignment, spacing: 10) {
+                        Text(config.mode.displayName)
+                            .font(style.primaryTextStyle.font(fallback: .headline))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        if items.isEmpty {
+                            if let lastError {
+                                remindersErrorBody(lastError: lastError, layout: layout, style: style)
+                            } else {
+                                Text("No reminders to show.")
+                                    .font(style.secondaryTextStyle.font(fallback: .caption2))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            remindersRows(items: items, config: config, layout: layout, style: style, accent: accent)
+                        }
+
+                        if let updatedAt = store.loadLastUpdatedAt() {
+                            Text("Updated \(updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.top, 2)
+
+                    if layout.showsAccentBar {
+                        accentBar(accent: accent, style: style)
+                    }
+                }
+            )
+        }
+
+        if let lastError {
+            return AnyView(
+                VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+                    headerRow(spec: spec, style: style, accent: accent)
+
+                    VStack(alignment: layout.alignment.alignment, spacing: 10) {
+                        Text("Reminders")
+                            .font(style.primaryTextStyle.font(fallback: .headline))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        remindersErrorBody(lastError: lastError, layout: layout, style: style)
+                    }
+                    .padding(.top, 2)
+
+                    if layout.showsAccentBar {
+                        accentBar(accent: accent, style: style)
+                    }
+                }
+            )
+        }
+
+        return AnyView(remindersTemplatePlaceholder(spec: spec, layout: layout, style: style, accent: accent))
+    }
+
+    private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics, layout: LayoutSpec, style: StyleSpec) -> some View {
+        let kindText: String = {
+            switch lastError.kind {
+            case .ok:
+                return "OK"
+            case .notAuthorised:
+                return "Not authorised"
+            case .writeOnly:
+                return "Write-only"
+            case .denied:
+                return "Denied"
+            case .restricted:
+                return "Restricted"
+            case .error:
+                return "Error"
+            }
+        }()
+
+        let message = lastError.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeMessage = message.isEmpty ? "No details." : message
+
+        return VStack(alignment: layout.alignment.alignment, spacing: 6) {
+            Text("\(kindText): \(safeMessage)")
+                .font(style.secondaryTextStyle.font(fallback: .caption2))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(lastError.at.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private func remindersRows(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
+        let limited = Array(items.prefix(maxRows))
+
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(limited) { item in
+                remindersRow(item: item, config: config, style: style, accent: accent)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+        .opacity(0.92)
+    }
+
+    private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, style: StyleSpec, accent: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(accent)
+                .opacity(0.9)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(style.secondaryTextStyle.font(fallback: .caption))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                if let dueText = remindersDueText(for: item, showDueTimes: config.showDueTimes) {
+                    Text(dueText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func remindersDueText(for item: WidgetWeaverReminderItem, showDueTimes: Bool) -> String? {
+        guard let dueDate = item.dueDate else { return nil }
+        if showDueTimes && item.dueHasTime {
+            return dueDate.formatted(date: .abbreviated, time: .shortened)
+        }
+        return dueDate.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func remindersMaxRows(for family: WidgetFamily, presentation: WidgetWeaverRemindersPresentation) -> Int {
+        if presentation == .focus { return 1 }
+
+        switch family {
+        case .systemSmall:
+            return 3
+        case .systemMedium:
+            return 5
+        case .systemLarge:
+            return 8
+        case .systemExtraLarge:
+            return 10
+        case .accessoryRectangular:
+            return 2
+        default:
+            return 3
+        }
+    }
+
+    private func remindersFilteredItems(snapshot: WidgetWeaverRemindersSnapshot, config: WidgetWeaverRemindersConfig, now: Date) -> [WidgetWeaverReminderItem] {
+        var base = snapshot.items
+
+        if !config.selectedListIDs.isEmpty {
+            let allowed = Set(config.selectedListIDs)
+            base = base.filter { allowed.contains($0.listID) }
+        }
+
+        if config.hideCompleted {
+            base = base.filter { !$0.isCompleted }
+        }
+
+        if let modeSnapshot = snapshot.modes.first(where: { $0.mode == config.mode }), !modeSnapshot.itemIDs.isEmpty {
+            let byID = snapshot.itemsByID
+            let ordered = modeSnapshot.itemIDs.compactMap { byID[$0] }
+            if !ordered.isEmpty {
+                return ordered
+            }
+        }
+
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: now)
+        let endOfToday = cal.date(byAdding: .day, value: 1, to: startOfToday) ?? now
+
+        func sortKey(_ item: WidgetWeaverReminderItem) -> (Date, String) {
+            let date = item.dueDate ?? item.startDate ?? Date.distantFuture
+            return (date, item.title)
+        }
+
+        switch config.mode {
+        case .today:
+            let dueToday = base.filter { item in
+                guard let due = item.dueDate else { return false }
+                return due >= startOfToday && due < endOfToday
+            }
+
+            if config.includeStartDatesInToday {
+                let startToday = base.filter { item in
+                    guard let start = item.startDate else { return false }
+                    return start >= startOfToday && start < endOfToday
+                }
+
+                let merged = Array(Set(dueToday + startToday))
+                return merged.sorted { sortKey($0) < sortKey($1) }
+            }
+
+            return dueToday.sorted { sortKey($0) < sortKey($1) }
+
+        case .overdue:
+            let overdue = base.filter { item in
+                guard let due = item.dueDate else { return false }
+                return due < startOfToday
+            }
+            return overdue.sorted { sortKey($0) < sortKey($1) }
+
+        case .soon:
+            let windowSeconds = TimeInterval(config.soonWindowMinutes * 60)
+            let end = now.addingTimeInterval(windowSeconds)
+            let soon = base.filter { item in
+                guard let due = item.dueDate else { return false }
+                return due >= now && due <= end
+            }
+            return soon.sorted { sortKey($0) < sortKey($1) }
+
+        case .flagged:
+            let flagged = base.filter { $0.isFlagged }
+            return flagged.sorted { sortKey($0) < sortKey($1) }
+
+        case .focus:
+            let sorted = base.sorted { sortKey($0) < sortKey($1) }
+            if let first = sorted.first {
+                return [first]
+            }
+            return []
+
+        case .list:
+            return base.sorted { a, b in
+                let listComp = a.listTitle.localizedCaseInsensitiveCompare(b.listTitle)
+                if listComp != .orderedSame {
+                    return listComp == .orderedAscending
+                }
+                return sortKey(a) < sortKey(b)
+            }
+        }
     }
 
     private func remindersTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {

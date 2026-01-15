@@ -21,6 +21,7 @@ struct WidgetWeaverRemindersSettingsView: View {
 
     @StateObject private var permissions = RemindersPermissionsModel()
     @StateObject private var readSpike = RemindersReadSpikeModel()
+    @StateObject private var snapshotDebug = RemindersSnapshotDebugModel()
 
     #if DEBUG
     @AppStorage(WidgetWeaverRemindersDebugStore.Keys.testReminderID, store: AppGroup.userDefaults)
@@ -233,6 +234,57 @@ struct WidgetWeaverRemindersSettingsView: View {
                 }
             }
 
+
+
+            Section("Snapshot cache (debug)") {
+                Text("Writes a temporary snapshot into the App Group so widgets and previews can render Reminders content without any EventKit reads in the widget.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    snapshotDebug.writeSnapshotFromTodaySample(readSpike.todaySample)
+                } label: {
+                    HStack {
+                        Text("Write snapshot now")
+                        Spacer()
+                        if snapshotDebug.isWriting {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(snapshotDebug.isWriting)
+
+                Button(role: .destructive) {
+                    snapshotDebug.clearSnapshot()
+                } label: {
+                    Text("Clear snapshot")
+                }
+
+                if let snapshot = snapshotDebug.snapshot {
+                    Text("Snapshot: \(snapshot.items.count) item(s) • generated \(snapshot.generatedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Snapshot: none")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastUpdated = snapshotDebug.lastUpdatedAt {
+                    Text("Last updated \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let err = snapshotDebug.lastError {
+                    Text("Last error (\(err.kind.rawValue)) \(err.at.formatted(date: .abbreviated, time: .shortened)): \(err.message)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Section("Feature flag") {
                 HStack {
                     Text("Reminders template enabled")
@@ -284,6 +336,7 @@ struct WidgetWeaverRemindersSettingsView: View {
         }
         .onAppear {
             permissions.refreshStatus()
+            snapshotDebug.refreshFromStore()
         }
     }
 
@@ -384,6 +437,7 @@ private final class RemindersReadSpikeModel: ObservableObject {
     struct ReminderRow: Identifiable, Hashable, Sendable {
         let id: String
         let title: String
+        let listID: String
         let listTitle: String
         let dueDate: Date?
         let dueHasTime: Bool
@@ -573,6 +627,7 @@ private final class RemindersReadSpikeModel: ObservableObject {
                     return ReminderRow(
                         id: r.calendarItemIdentifier,
                         title: safeTitle,
+                        listID: r.calendar.calendarIdentifier,
                         listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
                         dueDate: dueDate,
                         dueHasTime: hasTime
@@ -582,5 +637,73 @@ private final class RemindersReadSpikeModel: ObservableObject {
                 cont.resume(returning: rows)
             }
         }
+    }
+}
+
+@MainActor
+private final class RemindersSnapshotDebugModel: ObservableObject {
+    @Published private(set) var snapshot: WidgetWeaverRemindersSnapshot?
+    @Published private(set) var lastUpdatedAt: Date?
+    @Published private(set) var lastError: WidgetWeaverRemindersDiagnostics?
+
+    @Published private(set) var isWriting: Bool = false
+
+    private let store = WidgetWeaverRemindersStore.shared
+
+    func refreshFromStore() {
+        snapshot = store.loadSnapshot()
+        lastUpdatedAt = store.loadLastUpdatedAt()
+        lastError = store.loadLastError()
+    }
+
+    func writeSnapshotFromTodaySample(_ sample: [RemindersReadSpikeModel.ReminderRow]) {
+        guard !isWriting else { return }
+        isWriting = true
+        defer { isWriting = false }
+
+        let now = Date()
+
+        let items: [WidgetWeaverReminderItem]
+        if sample.isEmpty {
+            items = WidgetWeaverRemindersSnapshot.sample(now: now).items
+        } else {
+            items = sample.map { r in
+                WidgetWeaverReminderItem(
+                    id: r.id,
+                    title: r.title,
+                    dueDate: r.dueDate,
+                    dueHasTime: r.dueHasTime,
+                    startDate: nil,
+                    startHasTime: false,
+                    isCompleted: false,
+                    isFlagged: false,
+                    listID: r.listID,
+                    listTitle: r.listTitle
+                )
+            }
+        }
+
+        let snapshot = WidgetWeaverRemindersSnapshot(
+            generatedAt: now,
+            items: items,
+            modes: [],
+            diagnostics: WidgetWeaverRemindersDiagnostics(
+                kind: .ok,
+                message: sample.isEmpty
+                    ? "Debug snapshot (built-in sample)"
+                    : "Debug snapshot (Today sample, \(items.count) item(s))",
+                at: now
+            )
+        )
+
+        store.saveSnapshot(snapshot)
+        refreshFromStore()
+    }
+
+    func clearSnapshot() {
+        store.clearSnapshot()
+        store.saveLastUpdatedAt(nil)
+        store.clearLastError()
+        refreshFromStore()
     }
 }
