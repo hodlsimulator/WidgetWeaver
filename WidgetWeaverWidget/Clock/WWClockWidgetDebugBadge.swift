@@ -92,6 +92,14 @@ struct WWClockWidgetDebugBadge: View {
             Text("font=\(WWClockSecondHandFont.isAvailable() ? "1" : "0") entryΔ=\(entryDeltaSeconds(entryDate, minuteAnchor))s")
                 .font(.system(size: 9, weight: .regular, design: .monospaced))
                 .opacity(0.9)
+            Text("bid=\(bundleShortLabel())")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .opacity(0.9)
+
+            Text("agUD=\(appGroupDefaultsOK() ? "1" : "0") agURL=\(appGroupURLOK() ? "1" : "0") bal=\(WWClockDebugLog.isBallooningEnabled() ? "1" : "0")")
+                .font(.system(size: 9, weight: .regular, design: .monospaced))
+                .opacity(0.9)
+
 
             HStack(spacing: 6) {
                 Text("sys:")
@@ -172,4 +180,22 @@ struct WWClockWidgetDebugBadge: View {
     private func entryDeltaSeconds(_ entry: Date, _ anchor: Date) -> Int {
         Int((entry.timeIntervalSince(anchor)).rounded())
     }
+
+    private func bundleShortLabel() -> String {
+        let bid = Bundle.main.bundleIdentifier ?? "nil"
+        let parts = bid.split(separator: ".")
+        if parts.count >= 2 {
+            return parts.suffix(2).joined(separator: ".")
+        }
+        return bid
+    }
+
+    private func appGroupDefaultsOK() -> Bool {
+        UserDefaults(suiteName: AppGroup.identifier) != nil
+    }
+
+    private func appGroupURLOK() -> Bool {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) != nil
+    }
+
 }
