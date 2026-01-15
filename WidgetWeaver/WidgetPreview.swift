@@ -26,17 +26,42 @@ struct WidgetPreview: View {
     @AppStorage("widgetweaver.variables.v1", store: AppGroup.userDefaults)
     private var variablesData: Data = Data()
 
+    // Forces a re-render when Smart Photo shuffle manifests are saved/advanced.
+    @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
+    private var smartPhotoShuffleUpdateToken: Int = 0
+
     var body: some View {
         let _ = variablesData
 
-        let isTimeDependent = spec.normalised().usesTimeDependentRendering()
+        let _ = smartPhotoShuffleUpdateToken
+
+        let familySpec = spec.resolved(for: family)
+
+        let usesTemplateTime = spec.normalised().usesTimeDependentRendering()
+        let usesSmartPhotoShuffle: Bool = {
+            let mf = (familySpec.image?.smartPhoto?.shuffleManifestFileName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !mf.isEmpty
+        }()
+
+        let isTimeDependent = usesTemplateTime || usesSmartPhotoShuffle
 
         Group {
             if isTimeDependent {
                 // Preview mode should still advance time so Medium/Large never drift apart.
-                let interval: TimeInterval = isLive ? 1 : 60
-                TimelineView(.periodic(from: Date(), by: interval)) { _ in
-                    previewBody
+                //
+                // Smart Photo shuffle is also time-dependent (rotation schedule) and should respond
+                // promptly in the editor when “Next photo” is used.
+                let interval: TimeInterval = {
+                    if usesTemplateTime { return isLive ? 1 : 60 }
+                    if usesSmartPhotoShuffle { return isLive ? 5 : 60 }
+                    return 60
+                }()
+
+                TimelineView(.periodic(from: Date(), by: interval)) { ctx in
+                    WidgetWeaverRenderClock.withNow(ctx.date) {
+                        previewBody
+                    }
                 }
             } else {
                 previewBody

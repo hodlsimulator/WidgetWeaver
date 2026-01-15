@@ -220,6 +220,14 @@ public extension SmartPhotoShuffleManifest.Entry {
 public enum SmartPhotoShuffleManifestStore {
     private static let directoryName = "WidgetWeaverSmartPhoto"
 
+    /// UserDefaults key used as a lightweight invalidation signal.
+    ///
+    /// The shuffle manifest itself is file-based, so SwiftUI views that render the current photo
+    /// need a cheap way to know when the manifest changed (e.g. user tapped “Next photo”).
+    ///
+    /// Any code path that saves a manifest should bump this token.
+    public static let updateTokenKey: String = "widgetweaver.smartPhotoShuffle.updateToken"
+
     private static func ensureDirectoryExists() {
         let url = AppGroup.containerURL.appendingPathComponent(directoryName, isDirectory: true)
         do {
@@ -268,5 +276,13 @@ public enum SmartPhotoShuffleManifestStore {
         let url = manifestURL(fileName: safe)
         let data = try JSONEncoder().encode(manifest)
         try data.write(to: url, options: [.atomic])
+
+        bumpUpdateToken()
+    }
+
+    private static func bumpUpdateToken() {
+        let defaults = AppGroup.userDefaults
+        let current = defaults.integer(forKey: updateTokenKey)
+        defaults.set(current &+ 1, forKey: updateTokenKey)
     }
 }
