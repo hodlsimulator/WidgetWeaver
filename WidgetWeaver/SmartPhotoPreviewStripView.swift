@@ -13,12 +13,42 @@ struct SmartPhotoPreviewStripView: View {
     let selectedFamily: EditingFamily
     let onSelectFamily: (EditingFamily) -> Void
 
+    @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
+    private var smartPhotoShuffleUpdateToken: Int = 0
+
+    private var shuffleManifestFileName: String {
+        (smart.shuffleManifestFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shuffleEnabled: Bool {
+        !shuffleManifestFileName.isEmpty
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let _ = smartPhotoShuffleUpdateToken
+
+        Group {
+            if shuffleEnabled {
+                TimelineView(.periodic(from: Date(), by: shuffleTickIntervalSeconds())) { ctx in
+                    WidgetWeaverRenderClock.withNow(ctx.date) {
+                        stripBody
+                    }
+                }
+            } else {
+                stripBody
+            }
+        }
+    }
+
+    private var stripBody: some View {
+        let entry = currentShuffleEntry()
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                previewButton(family: .small, variant: smart.small)
-                previewButton(family: .medium, variant: smart.medium)
-                previewButton(family: .large, variant: smart.large)
+                previewButton(family: .small, entry: entry)
+                previewButton(family: .medium, entry: entry)
+                previewButton(family: .large, entry: entry)
             }
 
             Text("Tap a preview to edit that size.")
@@ -28,20 +58,22 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     @ViewBuilder
-    private func previewButton(family: EditingFamily, variant: SmartPhotoVariantSpec?) -> some View {
+    private func previewButton(family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> some View {
+        let renderFileName = resolvedRenderFileName(for: family, entry: entry)
+
         Button {
             onSelectFamily(family)
         } label: {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    previewImage(variant: variant)
+                    previewImage(renderFileName: renderFileName)
                         .frame(width: 80, height: 60)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay {
                             selectionBorder(family: family)
                         }
 
-                    if isManual(variant: variant) {
+                    if isManual(renderFileName: renderFileName) {
                         manualBadge
                     }
                 }
@@ -69,11 +101,6 @@ struct SmartPhotoPreviewStripView: View {
         }
     }
 
-    private func isManual(variant: SmartPhotoVariantSpec?) -> Bool {
-        guard let variant else { return false }
-        return variant.renderFileName.contains("-manual")
-    }
-
     private var manualBadge: some View {
         Text("Manual")
             .font(.caption2)
@@ -84,8 +111,8 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     @ViewBuilder
-    private func previewImage(variant: SmartPhotoVariantSpec?) -> some View {
-        if let renderName = variant?.renderFileName,
+    private func previewImage(renderFileName: String?) -> some View {
+        if let renderName = renderFileName,
            let uiImage = AppGroup.loadUIImage(fileName: renderName) {
             Image(uiImage: uiImage)
                 .resizable()
@@ -99,5 +126,45 @@ struct SmartPhotoPreviewStripView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func currentShuffleEntry() -> SmartPhotoShuffleManifest.Entry? {
+        guard shuffleEnabled else { return nil }
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return nil }
+        return manifest.entryForRender()
+    }
+
+    private func resolvedRenderFileName(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> String? {
+        if shuffleEnabled {
+            switch family {
+            case .small: return entry?.smallFile
+            case .medium: return entry?.mediumFile
+            case .large: return entry?.largeFile
+            }
+        }
+
+        switch family {
+        case .small: return smart.small?.renderFileName
+        case .medium: return smart.medium?.renderFileName
+        case .large: return smart.large?.renderFileName
+        }
+    }
+
+    private func isManual(renderFileName: String?) -> Bool {
+        guard let renderFileName else { return false }
+        return renderFileName.contains("-manual")
+    }
+
+    private func shuffleTickIntervalSeconds() -> TimeInterval {
+        let mf = shuffleManifestFileName
+        guard !mf.isEmpty, let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            return 30
+        }
+
+        let minutes = manifest.rotationIntervalMinutes
+        guard minutes > 0 else { return 60 }
+
+        let seconds = Double(minutes) * 60.0
+        return max(5, min(60, seconds / 4.0))
     }
 }

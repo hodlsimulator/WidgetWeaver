@@ -12,7 +12,8 @@ import WidgetKit
 
 extension ContentView {
     var imageSection: some View {
-        let currentImageFileName = currentFamilyDraft().imageFileName
+        let d = currentFamilyDraft()
+        let currentImageFileName = d.imageFileName
         let hasImage = !currentImageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return Section {
@@ -23,16 +24,17 @@ extension ContentView {
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
 
             if hasImage {
-                if let uiImage = AppGroup.loadUIImage(fileName: currentImageFileName) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 140)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                } else {
-                    Text("Selected image file not found in App Group.")
-                        .foregroundStyle(.secondary)
-                }
+                EditorResolvedImagePreview(
+                    imageSpec: ImageSpec(
+                        fileName: currentImageFileName,
+                        contentMode: d.imageContentMode,
+                        height: d.imageHeight,
+                        cornerRadius: d.imageCornerRadius,
+                        smartPhoto: d.imageSmartPhoto
+                    ),
+                    family: previewFamily,
+                    maxHeight: 140
+                )
 
                 Picker("Content mode", selection: binding(\.imageContentMode)) {
                     ForEach(ImageContentModeToken.allCases) { token in
@@ -218,5 +220,101 @@ extension ContentView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct EditorResolvedImagePreview: View {
+    let imageSpec: ImageSpec
+    let family: WidgetFamily
+    let maxHeight: CGFloat
+
+    @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
+    private var smartPhotoShuffleUpdateToken: Int = 0
+
+    private var shuffleManifestFileName: String {
+        (imageSpec.smartPhoto?.shuffleManifestFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shuffleEnabled: Bool {
+        !shuffleManifestFileName.isEmpty
+    }
+
+    var body: some View {
+        let _ = smartPhotoShuffleUpdateToken
+
+        Group {
+            if shuffleEnabled {
+                TimelineView(.periodic(from: Date(), by: shuffleTickIntervalSeconds())) { ctx in
+                    WidgetWeaverRenderClock.withNow(ctx.date) {
+                        previewBody
+                    }
+                }
+            } else {
+                previewBody
+            }
+        }
+    }
+
+    private var previewBody: some View {
+        let uiImage = imageSpec.loadUIImageForRender(family: family, debugContext: nil)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            if let label = previewLabel {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let uiImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: maxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.quaternary)
+                        .frame(maxHeight: maxHeight)
+
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+
+                        Text(missingImageMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 10)
+                }
+            }
+        }
+    }
+
+    private var previewLabel: String? {
+        if shuffleEnabled { return "Current shuffle photo" }
+        if imageSpec.smartPhoto != nil { return "Smart Photo render" }
+        return nil
+    }
+
+    private var missingImageMessage: String {
+        if shuffleEnabled { return "No prepared shuffle photo yet." }
+        return "Selected image file not found in App Group."
+    }
+
+    private func shuffleTickIntervalSeconds() -> TimeInterval {
+        let mf = shuffleManifestFileName
+        guard !mf.isEmpty, let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            return 30
+        }
+
+        let minutes = manifest.rotationIntervalMinutes
+        guard minutes > 0 else { return 60 }
+
+        let seconds = Double(minutes) * 60.0
+        return max(5, min(60, seconds / 4.0))
     }
 }
