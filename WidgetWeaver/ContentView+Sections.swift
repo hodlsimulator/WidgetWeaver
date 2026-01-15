@@ -22,12 +22,34 @@ extension ContentView {
     var contentSection: some View {
         let currentTemplate = currentFamilyDraft().template
         let canReadCalendar = WidgetWeaverCalendarStore.shared.canReadEvents()
+        let remindersEnabled = WidgetWeaverFeatureFlags.remindersTemplateEnabled
+
+        let templateTokens: [LayoutTemplateToken] = {
+            var tokens = LayoutTemplateToken.allCases.filter { token in
+                remindersEnabled || token != .reminders
+            }
+
+            // If a hidden template is already selected (eg. imported design), include it so the
+            // picker has a matching tag. Do not expose it as selectable when the flag is off.
+            if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
+                tokens.append(.reminders)
+            }
+            return tokens
+        }()
 
         return Section {
             Picker("Template", selection: binding(\.template)) {
-                ForEach(LayoutTemplateToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                ForEach(templateTokens) { token in
+                    Text(token.displayName)
+                        .tag(token)
+                        .disabled(token == .reminders && !remindersEnabled)
                 }
+            }
+
+            if currentTemplate == .reminders && !remindersEnabled {
+                Text("Reminders template is disabled (feature flag off).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             ControlGroup {
@@ -481,11 +503,32 @@ extension ContentView {
     }
 
     var layoutSection: some View {
-        Section {
+        let currentTemplate = currentFamilyDraft().template
+        let remindersEnabled = WidgetWeaverFeatureFlags.remindersTemplateEnabled
+
+        let templateTokens: [LayoutTemplateToken] = {
+            var tokens = LayoutTemplateToken.allCases.filter { token in
+                remindersEnabled || token != .reminders
+            }
+            if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
+                tokens.append(.reminders)
+            }
+            return tokens
+        }()
+
+        return Section {
             Picker("Layout template", selection: binding(\.template)) {
-                ForEach(LayoutTemplateToken.allCases) { token in
-                    Text(token.displayName).tag(token)
+                ForEach(templateTokens) { token in
+                    Text(token.displayName)
+                        .tag(token)
+                        .disabled(token == .reminders && !remindersEnabled)
                 }
+            }
+
+            if currentTemplate == .reminders && !remindersEnabled {
+                Text("Reminders template is disabled (feature flag off).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Toggle("Show accent bar", isOn: binding(\.showsAccentBar))

@@ -71,6 +71,8 @@ public struct WidgetWeaverSpecView: View {
                 weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .nextUpCalendar:
                 nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+            case .reminders:
+                remindersTemplatePlaceholder(spec: resolved, layout: layout, style: style, accent: accent)
             }
         }
         .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
@@ -188,6 +190,55 @@ public struct WidgetWeaverSpecView: View {
             context: context,
             accent: accent
         )
+    }
+
+    private func remindersTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            headerRow(spec: spec, style: style, accent: accent)
+
+            VStack(alignment: layout.alignment.alignment, spacing: 10) {
+                Text("Reminders")
+                    .font(style.primaryTextStyle.font(fallback: .headline))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("This template is not wired up yet.\nIt will render from real Reminders once enabled.")
+                    .font(style.secondaryTextStyle.font(fallback: .caption2))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    placeholderReminderRow(title: "Buy milk", accent: accent, style: style)
+                    placeholderReminderRow(title: "Reply to email", accent: accent, style: style)
+                    placeholderReminderRow(title: "Book dentist", accent: accent, style: style)
+                }
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+                .opacity(0.85)
+            }
+            .padding(.top, 2)
+
+            if layout.showsAccentBar {
+                accentBar(accent: accent, style: style)
+            }
+        }
+    }
+
+    private func placeholderReminderRow(title: String, accent: Color, style: StyleSpec) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(accent)
+                .opacity(0.9)
+
+            Text(title)
+                .font(style.secondaryTextStyle.font(fallback: .caption))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: - Building Blocks

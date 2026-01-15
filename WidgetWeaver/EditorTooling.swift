@@ -578,6 +578,9 @@ enum EditorToolRegistry {
 
         case .nextUpCalendar:
             c.insert(.canEditTypography)
+
+        case .reminders:
+            c.insert(.canEditTypography)
         }
 
         // Permissions and derived availability.
