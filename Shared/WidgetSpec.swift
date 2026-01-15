@@ -13,7 +13,7 @@ import WidgetKit
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
     // Bump when the schema changes.
-    public static let currentVersion: Int = 6
+    public static let currentVersion: Int = 7
 
     public var version: Int
     public var id: UUID
@@ -26,6 +26,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var layout: LayoutSpec
     public var style: StyleSpec
     public var actionBar: WidgetActionBarSpec?
+
+    public var remindersConfig: WidgetWeaverRemindersConfig?
 
     /// Optional per-size overrides.
     /// Convention in this milestone:
@@ -45,6 +47,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         layout: LayoutSpec = .defaultLayout,
         style: StyleSpec = .defaultStyle,
         actionBar: WidgetActionBarSpec? = nil,
+        remindersConfig: WidgetWeaverRemindersConfig? = nil,
         matchedSet: WidgetSpecMatchedSet? = nil
     ) {
         self.version = version
@@ -58,6 +61,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.layout = layout
         self.style = style
         self.actionBar = actionBar
+        self.remindersConfig = remindersConfig
         self.matchedSet = matchedSet
     }
 
@@ -91,8 +95,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
         let trimmedPrimary = s.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Weather + NextUp templates may legitimately ignore primaryText.
-        if s.layout.template == .weather || s.layout.template == .nextUpCalendar {
+        // Weather + NextUp + Reminders templates may legitimately ignore primaryText.
+        if s.layout.template == .weather || s.layout.template == .nextUpCalendar || s.layout.template == .reminders {
             s.primaryText = trimmedPrimary
         } else {
             s.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
@@ -126,6 +130,12 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
         s.layout = s.layout.normalised()
         s.style = s.style.normalised()
+
+        if s.layout.template == .reminders {
+            s.remindersConfig = (s.remindersConfig ?? WidgetWeaverRemindersConfig.default).normalised()
+        } else if let rc = s.remindersConfig {
+            s.remindersConfig = rc.normalised()
+        }
 
         if let bar = s.actionBar?.normalisedOrNil() {
             s.actionBar = bar
@@ -179,6 +189,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case layout
         case style
         case actionBar
+        case remindersConfig
         case matchedSet
     }
 
@@ -195,6 +206,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let layout = (try? c.decode(LayoutSpec.self, forKey: .layout)) ?? .defaultLayout
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
         let actionBar = (try? c.decodeIfPresent(WidgetActionBarSpec.self, forKey: .actionBar)) ?? nil
+        let remindersConfig = (try? c.decodeIfPresent(WidgetWeaverRemindersConfig.self, forKey: .remindersConfig)) ?? nil
         let matchedSet = (try? c.decodeIfPresent(WidgetSpecMatchedSet.self, forKey: .matchedSet)) ?? nil
 
         self.init(
@@ -209,6 +221,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             layout: layout,
             style: style,
             actionBar: actionBar,
+            remindersConfig: remindersConfig,
             matchedSet: matchedSet
         )
     }
@@ -226,6 +239,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encode(layout, forKey: .layout)
         try c.encode(style, forKey: .style)
         try c.encodeIfPresent(actionBar, forKey: .actionBar)
+        try c.encodeIfPresent(remindersConfig, forKey: .remindersConfig)
         try c.encodeIfPresent(matchedSet, forKey: .matchedSet)
     }
 }
@@ -427,7 +441,7 @@ public struct WidgetSpecVariant: Codable, Hashable {
         var v = self
         let trimmedPrimary = v.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if v.layout.template == .weather || v.layout.template == .nextUpCalendar {
+        if v.layout.template == .weather || v.layout.template == .nextUpCalendar || v.layout.template == .reminders {
             v.primaryText = trimmedPrimary
         } else {
             v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
@@ -463,4 +477,3 @@ public struct WidgetSpecVariant: Codable, Hashable {
         return v
     }
 }
-
