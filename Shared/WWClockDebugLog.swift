@@ -43,13 +43,15 @@ public enum WWClockDebugLog {
 
     // MARK: - Throttling
 
-    private static var throttleState = WWThrottleState()
-
-    private struct WWThrottleState {
+    private final class WWThrottleState: @unchecked Sendable {
         private var lastWrite: [String: Date] = [:]
+        private let lock = NSLock()
 
-        mutating func shouldLog(id: String, now: Date, minInterval: TimeInterval) -> Bool {
+        func shouldLog(id: String, now: Date, minInterval: TimeInterval) -> Bool {
             if minInterval <= 0 { return true }
+            lock.lock()
+            defer { lock.unlock() }
+
             if let last = lastWrite[id], now.timeIntervalSince(last) < minInterval {
                 return false
             }
@@ -57,10 +59,14 @@ public enum WWClockDebugLog {
             return true
         }
 
-        mutating func reset() {
+        func reset() {
+            lock.lock()
+            defer { lock.unlock() }
             lastWrite.removeAll()
         }
     }
+
+    private static let throttleState = WWThrottleState()
 
     // MARK: - Public API
 
@@ -152,7 +158,6 @@ public enum WWClockDebugLog {
             }
         }
     }
-
 
     /// Synchronous variant of `appendLazy`.
     ///
@@ -317,17 +322,53 @@ public enum WWClockDebugLog {
 
 // MARK: - WWPhoto logging (must stay, other files depend on it)
 
-public struct WWPhotoLogContext {
-    public let widgetKind: String
-    public let requestID: String
-    public let urlHash: String
-    public let isPlaceholder: Bool
+public struct WWPhotoLogContext: Sendable {
+    public let renderContext: String?
+    public let family: String?
+    public let template: String?
+    public let specID: String?
+    public let specName: String?
+    public let isAppExtension: Bool
 
-    public init(widgetKind: String, requestID: String, urlHash: String, isPlaceholder: Bool) {
-        self.widgetKind = widgetKind
-        self.requestID = requestID
-        self.urlHash = urlHash
-        self.isPlaceholder = isPlaceholder
+    public init(
+        renderContext: String? = nil,
+        family: String? = nil,
+        template: String? = nil,
+        specID: String? = nil,
+        specName: String? = nil,
+        isAppExtension: Bool = false
+    ) {
+        self.renderContext = renderContext
+        self.family = family
+        self.template = template
+        self.specID = specID
+        self.specName = specName
+        self.isAppExtension = isAppExtension
+    }
+
+    fileprivate func inlineLabel() -> String {
+        var parts: [String] = []
+
+        if let specID, !specID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("spec=\(specID)")
+        }
+        if let family, !family.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("fam=\(family)")
+        }
+        if let renderContext, !renderContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("ctx=\(renderContext)")
+        }
+        if let template, !template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("tpl=\(template)")
+        }
+        if let specName, !specName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append("name=\(specName)")
+        }
+
+        parts.append("appex=\(isAppExtension ? "1" : "0")")
+
+        if parts.isEmpty { return "" }
+        return parts.joined(separator: " ")
     }
 }
 
@@ -352,13 +393,15 @@ public enum WWPhotoDebugLog {
         AppGroup.containerURL.appendingPathComponent(logFileName, isDirectory: false)
     }
 
-    private static var throttleState = WWThrottleState()
-
-    private struct WWThrottleState {
+    private final class WWThrottleState: @unchecked Sendable {
         private var lastWrite: [String: Date] = [:]
+        private let lock = NSLock()
 
-        mutating func shouldLog(id: String, now: Date, minInterval: TimeInterval) -> Bool {
+        func shouldLog(id: String, now: Date, minInterval: TimeInterval) -> Bool {
             if minInterval <= 0 { return true }
+            lock.lock()
+            defer { lock.unlock() }
+
             if let last = lastWrite[id], now.timeIntervalSince(last) < minInterval {
                 return false
             }
@@ -366,10 +409,14 @@ public enum WWPhotoDebugLog {
             return true
         }
 
-        mutating func reset() {
+        func reset() {
+            lock.lock()
+            defer { lock.unlock() }
             lastWrite.removeAll()
         }
     }
+
+    private static let throttleState = WWThrottleState()
 
     public static func isEnabled() -> Bool {
         let defaults = AppGroup.userDefaults
@@ -387,6 +434,7 @@ public enum WWPhotoDebugLog {
         throttleID: String? = nil,
         minInterval: TimeInterval = 20.0,
         now: Date = Date(),
+        context: WWPhotoLogContext? = nil,
         _ makeMessage: () -> String
     ) {
         guard isEnabled() else { return }
@@ -400,11 +448,14 @@ public enum WWPhotoDebugLog {
         let trimmed = makeMessage().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let ctxLabel = context?.inlineLabel() ?? ""
+        let msg = ctxLabel.isEmpty ? trimmed : "\(ctxLabel) \(trimmed)"
+
         let ts = timestampString(now)
         let bundleID = Bundle.main.bundleIdentifier ?? "unknown.bundle"
 
         let lineOut: String = {
-            var s = "\(ts) [\(category)] [\(bundleID)] \(trimmed)"
+            var s = "\(ts) [\(category)] [\(bundleID)] \(msg)"
             if s.count > maxCharsPerLine {
                 s = String(s.prefix(maxCharsPerLine)) + "…"
             }
@@ -430,6 +481,14 @@ public enum WWPhotoDebugLog {
             if rawLines.count <= maxLinesDefault { return rawLines }
             return Array(rawLines.suffix(maxLinesDefault))
         }
+    }
+
+    public static func readText(maxLines: Int? = nil) -> String {
+        let lines = readLines()
+        if let maxLines, lines.count > maxLines {
+            return lines.suffix(maxLines).joined(separator: "\n")
+        }
+        return lines.joined(separator: "\n")
     }
 
     public static func clear() {
