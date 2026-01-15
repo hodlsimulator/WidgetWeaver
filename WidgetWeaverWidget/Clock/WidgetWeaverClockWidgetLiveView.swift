@@ -17,7 +17,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     fileprivate static let timerStartBiasSeconds: TimeInterval = 0.25
     fileprivate static let minuteSpilloverSeconds: TimeInterval = 59.0
-    fileprivate static let progressDriverWindowSeconds: TimeInterval = 4.0 * 3600.0
 
     fileprivate static var buildLabel: String {
         #if DEBUG
@@ -28,42 +27,14 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 
     var body: some View {
-        let progressRange = Self.progressDriverRange(anchor: entryDate)
-
-        // IMPORTANT:
-        // The clock rendering must be inside the time-driven ProgressView style, not an overlay.
-        // An overlay closure is not guaranteed to be re-evaluated when the ProgressView's timer advances.
-        // If the overlay doesn't re-run, hour/minute hands (and render logs) can stall and then "tick late".
         WidgetWeaverRenderClock.withNow(entryDate) {
-            ProgressView(
-                timerInterval: progressRange,
-                countsDown: false,
-                label: { EmptyView() },
-                currentValueLabel: { EmptyView() }
+            WWClockEveryMinuteRoot(
+                palette: palette,
+                entryDate: entryDate,
+                tickMode: tickMode,
+                tickSeconds: tickSeconds
             )
-            .progressViewStyle(
-                WWClockHeartbeatProgressStyle(
-                    palette: palette,
-                    entryDate: entryDate,
-                    tickMode: tickMode,
-                    tickSeconds: tickSeconds,
-                    progressRange: progressRange
-                )
-            )
-            .accessibilityHidden(true)
         }
-    }
-
-    fileprivate static func floorToHour(_ date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t / 3600.0) * 3600.0
-        return Date(timeIntervalSinceReferenceDate: floored)
-    }
-
-    fileprivate static func progressDriverRange(anchor: Date) -> ClosedRange<Date> {
-        let start = floorToHour(anchor)
-        let end = start.addingTimeInterval(progressDriverWindowSeconds)
-        return start...end
     }
 
     fileprivate static func floorToMinute(_ date: Date) -> Date {
@@ -73,37 +44,38 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Heartbeat (ProgressViewStyle)
+// MARK: - Live driver (every minute)
 
-fileprivate struct WWClockHeartbeatProgressStyle: ProgressViewStyle {
+fileprivate struct WWClockEveryMinuteRoot: View {
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
-    let progressRange: ClosedRange<Date>
 
-    func makeBody(configuration: Configuration) -> some View {
-        // fractionCompleted is the key signal that causes SwiftUI to re-evaluate as time advances.
-        let frac = configuration.fractionCompleted ?? 0.0
-
-        return WWClockHeartbeatBody(
-            palette: palette,
-            entryDate: entryDate,
-            tickMode: tickMode,
-            tickSeconds: tickSeconds,
-            progressRange: progressRange,
-            fractionCompleted: frac
-        )
+    var body: some View {
+        // In widgets, SwiftUI time-driven primitives can advance without WidgetKit delivering
+        // a new timeline entry. TimelineView is a low-cost driver that can re-evaluate the
+        // hour/minute hands at minute granularity.
+        TimelineView(.everyMinute) { timelineCtx in
+            WWClockRenderBody(
+                palette: palette,
+                entryDate: entryDate,
+                tickMode: tickMode,
+                tickSeconds: tickSeconds,
+                timelineNow: timelineCtx.date
+            )
+        }
     }
 }
 
-fileprivate struct WWClockHeartbeatBody: View {
+// MARK: - Render body
+
+fileprivate struct WWClockRenderBody: View {
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
-    let progressRange: ClosedRange<Date>
-    let fractionCompleted: Double
+    let timelineNow: Date
 
     @Environment(\.redactionReasons) private var redactionReasons
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -111,21 +83,10 @@ fileprivate struct WWClockHeartbeatBody: View {
     @State private var lastLoggedMinuteRef: Int = Int.min
 
     var body: some View {
-        let clampedFrac = max(0.0, min(1.0, fractionCompleted))
-
-        let start = progressRange.lowerBound
-        let end = progressRange.upperBound
-        let duration = max(0.001, end.timeIntervalSince(start))
-
-        // A derived driver time from the progress fraction.
-        // This is not used for correctness; it exists to prove the ProgressView is advancing.
-        let driverNow = start.addingTimeInterval(clampedFrac * duration)
-        let driverRefSec = Int(driverNow.timeIntervalSinceReferenceDate.rounded())
-
-        // Real wall clock.
+        // Wall clock.
         let wallNow = Date()
 
-        // Render clock (pinned to entry date while WidgetKit pre-renders).
+        // Render clock (pinned to entryDate via WidgetWeaverRenderClock.withNow).
         let ctxNow = WidgetWeaverRenderClock.now
 
         let sysMinuteAnchor = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow)
@@ -137,8 +98,8 @@ fileprivate struct WWClockHeartbeatBody: View {
         // - minute-boundary skew: ctxMinuteAnchor is ahead of sysMinuteAnchor
         let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
 
-        // Live: wall clock. Pre-render: entry date for deterministic snapshots.
-        let renderNow: Date = isPrerender ? ctxNow : wallNow
+        // Live: TimelineView date (should tick every minute). Pre-render: ctxNow for deterministic snapshots.
+        let renderNow: Date = isPrerender ? ctxNow : timelineNow
 
         // Tick-style hour + minute hands: snap to the minute boundary.
         let handsNow = WidgetWeaverClockWidgetLiveView.floorToMinute(renderNow)
@@ -159,7 +120,7 @@ fileprivate struct WWClockHeartbeatBody: View {
         let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + WidgetWeaverClockWidgetLiveView.minuteSpilloverSeconds)
         let timerRange = timerStart...timerEnd
 
-        // Render-path proof logging.
+        // Render-path proof logging (sync to survive widget process teardown).
         let _ : Void = {
             guard WWClockDebugLog.isEnabled() else { return () }
 
@@ -170,18 +131,14 @@ fileprivate struct WWClockHeartbeatBody: View {
             let handsRef = Int(handsNow.timeIntervalSinceReferenceDate.rounded())
 
             let leadMs = Int((leadSeconds * 1000.0).rounded())
-            let wallMinusDriverMs = Int(((wallNow.timeIntervalSince(driverNow)) * 1000.0).rounded())
 
             let cal = Calendar.autoupdatingCurrent
             let handsH = cal.component(.hour, from: handsNow)
             let handsM = cal.component(.minute, from: handsNow)
-            let liveS = cal.component(.second, from: renderNow)
+            let liveS = cal.component(.second, from: wallNow)
 
             let hDeg = Int(baseAngles.hour.rounded())
             let mDeg = Int(baseAngles.minute.rounded())
-
-            let driverStartRef = Int(progressRange.lowerBound.timeIntervalSinceReferenceDate.rounded())
-            let driverEndRef = Int(progressRange.upperBound.timeIntervalSinceReferenceDate.rounded())
 
             let redactLabel: String = {
                 if isPlaceholder && isPrivacy { return "placeholder+privacy" }
@@ -190,13 +147,16 @@ fileprivate struct WWClockHeartbeatBody: View {
                 return "none"
             }()
 
-            WWClockDebugLog.appendLazy(
+            // How late was this render relative to the minute boundary?
+            let lagMs = Int((wallNow.timeIntervalSince(handsNow) * 1000.0).rounded())
+
+            WWClockDebugLog.appendLazySync(
                 category: "clock",
                 throttleID: balloon ? nil : "clockWidget.render",
                 minInterval: balloon ? 0.0 : 15.0,
                 now: wallNow
             ) {
-                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) driverRef=\(driverStartRef)...\(driverEndRef) wall-driverMs=\(wallMinusDriverMs)"
+                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs)"
             }
 
             return ()
@@ -241,35 +201,6 @@ fileprivate struct WWClockHeartbeatBody: View {
                 .padding(6)
             }
         }
-        .onChange(of: driverRefSec) { _, newDriverRef in
-            // Prove the ProgressView heartbeat is actually advancing while the widget is live.
-            guard WWClockDebugLog.isEnabled() else { return }
-
-            let wallNow2 = Date()
-            let ctxNow2 = WidgetWeaverRenderClock.now
-            let sysMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow2)
-            let ctxMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow2)
-            let leadSeconds2 = ctxNow2.timeIntervalSince(wallNow2)
-            let isPrerender2 = (leadSeconds2 > 5.0) || (ctxMinuteAnchor2 > sysMinuteAnchor2)
-            if isPrerender2 { return }
-
-            let balloon = WWClockDebugLog.isBallooningEnabled()
-
-            let leadMs2 = Int((leadSeconds2 * 1000.0).rounded())
-            let cal = Calendar.autoupdatingCurrent
-            let h = cal.component(.hour, from: wallNow2)
-            let m = cal.component(.minute, from: wallNow2)
-            let s = cal.component(.second, from: wallNow2)
-
-            WWClockDebugLog.appendLazy(
-                category: "clock",
-                throttleID: balloon ? nil : "clockWidget.driverPulse",
-                minInterval: balloon ? 0.0 : 10.0,
-                now: wallNow2
-            ) {
-                "driverPulse build=\(WidgetWeaverClockWidgetLiveView.buildLabel) driverRef=\(newDriverRef) now=\(h):\(String(format: "%02d", m)):\(String(format: "%02d", s)) leadMs=\(leadMs2)"
-            }
-        }
         .onChange(of: handsNow) { _, newHands in
             // Minute tick proof logging.
             guard WWClockDebugLog.isEnabled() else { return }
@@ -279,6 +210,8 @@ fileprivate struct WWClockHeartbeatBody: View {
             lastLoggedMinuteRef = handsRef
 
             let wallNow2 = Date()
+
+            // Skip minuteTick logs for pre-render passes.
             let ctxNow2 = WidgetWeaverRenderClock.now
             let sysMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow2)
             let ctxMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow2)
@@ -293,7 +226,7 @@ fileprivate struct WWClockHeartbeatBody: View {
             let h = cal.component(.hour, from: newHands)
             let m = cal.component(.minute, from: newHands)
 
-            WWClockDebugLog.appendLazy(category: "clock", throttleID: nil, minInterval: 0, now: wallNow2) {
+            WWClockDebugLog.appendLazySync(category: "clock", throttleID: nil, minInterval: 0, now: wallNow2) {
                 "minuteTick build=\(WidgetWeaverClockWidgetLiveView.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
             }
         }
