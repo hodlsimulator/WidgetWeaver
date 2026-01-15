@@ -19,7 +19,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     fileprivate static let minuteSpilloverSeconds: TimeInterval = 59.0
 
     // Must match Scripts/generate_minute_hand_font.py WINDOW_HOURS.
-    fileprivate static let minuteHandTimerWindowSeconds: TimeInterval = 4.0 * 3600.0
+    fileprivate static let minuteHandTimerWindowSeconds: TimeInterval = 2.0 * 3600.0
 
     fileprivate static var buildLabel: String {
         #if DEBUG
@@ -122,7 +122,7 @@ fileprivate struct WWClockRenderBody: View {
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)
         // - Disable for placeholder
-        let showsMinuteHandGlyph = (!isPrerender) && (!isPlaceholder)
+        let showsMinuteHandGlyph = (!isPrerender) && (!isPlaceholder) && WWClockMinuteHandFont.isAvailable()
 
         let baseAngles = WWClockBaseAngles(date: handsNow)
         let hourAngle = Angle.degrees(baseAngles.hour)

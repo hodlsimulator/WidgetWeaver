@@ -65,17 +65,6 @@ enum WWClockMinuteHandFont {
             )
             return
         }
-
-        #if canImport(UIKit)
-        let available = UIFont(name: postScriptName, size: 12) != nil
-        WWClockDebugLog.append(
-            "minuteHandFont register ok available=\(available ? 1 : 0)",
-            category: "clock",
-            throttleID: "clock.font.minute.registerOK",
-            minInterval: 600,
-            now: Date()
-        )
-        #endif
     }()
 
     static func font(size: CGFloat) -> Font {

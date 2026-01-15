@@ -4,10 +4,9 @@
 """
 generate_minute_hand_font.py
 
-Creates WWClockMinuteHand-Regular.ttf by cloning the existing WWClockSecondHand-Regular.ttf
-and replacing:
-- sec00 ... sec59 glyph outlines (minute-hand geometry at 0..59 minutes)
-- GSUB ligatures (map the system timer string to the correct minute glyph)
+Clones WWClockSecondHand-Regular.ttf into WWClockMinuteHand-Regular.ttf and replaces:
+- sec00..sec59 outlines with a minute-hand needle silhouette at 60 angles
+- the GSUB ligature lookup so Text(timerInterval:) selects minute-of-hour (0..59)
 
 Output:
   WidgetWeaverWidget/Clock/WWClockMinuteHand-Regular.ttf
@@ -15,23 +14,23 @@ Output:
 Dependencies:
   python3 -m pip install --user fonttools
 
-Run from the repo root:
-  python3 Scripts/generate_minute_hand_font.py
+Run from repo root:
+  python3 -u Scripts/generate_minute_hand_font.py
 """
 
 from __future__ import annotations
 
 import math
 import os
-from typing import Dict, List, Tuple
+import sys
+from typing import Dict, List, Optional, Tuple
 
 from fontTools.otlLib import builder as otl
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
 
-# Must match the Swift-side minute hand timer window.
-WINDOW_HOURS = 4
+WINDOW_HOURS = 2  # Must match Swift timer window (2 hours recommended)
 
 
 REPO_REL_TEMPLATE_TTF = os.path.join(
@@ -47,50 +46,51 @@ REPO_REL_OUTPUT_TTF = os.path.join(
 )
 
 
-DIGIT_TO_GLYPH = {
-    "0": "zero",
-    "1": "one",
-    "2": "two",
-    "3": "three",
-    "4": "four",
-    "5": "five",
-    "6": "six",
-    "7": "seven",
-    "8": "eight",
-    "9": "nine",
-}
+def log(msg: str) -> None:
+    print(msg, flush=True)
 
 
-def glyph_seq_for_string(s: str) -> Tuple[str, ...]:
+def get_char_to_glyph(font: TTFont) -> Dict[str, str]:
+    cmap = font.getBestCmap()
+    if cmap is None:
+        raise RuntimeError("Font has no cmap")
+
+    needed = "0123456789:"
+    out: Dict[str, str] = {}
+    for ch in needed:
+        g = cmap.get(ord(ch))
+        if not g:
+            raise RuntimeError(f"Font cmap missing glyph for character {ch!r} (U+{ord(ch):04X})")
+        out[ch] = g
+
+    return out
+
+
+def glyph_seq_for_string(char_to_glyph: Dict[str, str], s: str) -> Tuple[str, ...]:
     seq: List[str] = []
     for ch in s:
-        if ch.isdigit():
-            seq.append(DIGIT_TO_GLYPH[ch])
-        elif ch == ":":
-            seq.append("colon")
-        else:
+        if ch not in char_to_glyph:
             raise ValueError(f"Unsupported char {ch!r} in {s!r}")
+        seq.append(char_to_glyph[ch])
     return tuple(seq)
 
 
 def minute_target_glyph_name(minute: int) -> str:
-    # Reuse the existing glyph names from the template font.
-    # The cloned minute font will overwrite the outlines for sec00..sec59.
     return f"sec{minute:02d}"
 
 
-def build_mapping_window(hours: int) -> Dict[Tuple[str, ...], str]:
+def build_mapping_window(char_to_glyph: Dict[str, str], hours: int) -> Dict[Tuple[str, ...], str]:
     """
-    Maps the system timer string to minute-of-hour.
+    Maps timer strings to minute-of-hour.
 
-    For hour 0, the typical timer format is:
-      m:ss   for m < 10
-      mm:ss  for m >= 10
+    For < 1 hour, SwiftUI timer strings are typically:
+      m:ss   (m < 10)
+      mm:ss  (m >= 10)
 
-    For hour 1..(hours-1), the format is typically:
+    For >= 1 hour:
       h:mm:ss
 
-    Each mapping collapses all seconds within a minute to the same minute glyph.
+    Each mapping collapses all seconds in a minute to the same output glyph.
     """
     if hours < 1:
         raise ValueError("hours must be >= 1")
@@ -105,30 +105,16 @@ def build_mapping_window(hours: int) -> Dict[Tuple[str, ...], str]:
             else:
                 timer_str = f"{m:02d}:{s:02d}"
 
-            mapping[glyph_seq_for_string(timer_str)] = minute_target_glyph_name(m)
-
-            # Safety: if the system ever zero-pads single-digit minutes (rare),
-            # support 0m:ss as well.
-            if m < 10:
-                padded = f"0{m}:{s:02d}"
-                mapping[glyph_seq_for_string(padded)] = minute_target_glyph_name(m)
+            mapping[glyph_seq_for_string(char_to_glyph, timer_str)] = minute_target_glyph_name(m)
 
     # Hours 1..(hours-1): h:mm:ss
     for h in range(1, hours):
         for m in range(0, 60):
             for s in range(0, 60):
                 timer_str = f"{h}:{m:02d}:{s:02d}"
-                mapping[glyph_seq_for_string(timer_str)] = minute_target_glyph_name(m)
+                mapping[glyph_seq_for_string(char_to_glyph, timer_str)] = minute_target_glyph_name(m)
 
     return mapping
-
-
-def make_square(pen: TTGlyphPen, x0: int, y0: int, x1: int, y1: int) -> None:
-    pen.moveTo((x0, y0))
-    pen.lineTo((x1, y0))
-    pen.lineTo((x1, y1))
-    pen.lineTo((x0, y1))
-    pen.closePath()
 
 
 def make_minute_hand_glyph(
@@ -140,20 +126,17 @@ def make_minute_hand_glyph(
     length: float = 420.0,
 ):
     """
-    Builds a glyph that matches WidgetWeaverClockMinuteNeedleShape:
+    Needle silhouette matching the Swift shape proportions:
+      shaftInset = 0.10 * width
+      tipHeight  = 0.95 * width
 
-    - bottom is at dial centre
-    - tip points outward
-    - shape is a 5-point needle: bottom-left -> shaft-top-left -> tip -> shaft-top-right -> bottom-right
-
-    Coordinate system matches the template seconds font:
-    - origin at bottom-left
-    - y+ is up
-    - centre at (dial_size/2, dial_size/2)
-    - minute rotation is clockwise on screen, so use negative rotation here.
+    Coordinates:
+      - square dial box: 0..dial_size
+      - centre at (dial_size/2, dial_size/2)
+      - 0 degrees points up (12 o’clock)
+      - rotation clockwise on screen -> negative rotation here
     """
     cx = cy = dial_size / 2.0
-
     x0 = cx - (width / 2.0)
 
     shaft_inset = width * 0.10
@@ -183,11 +166,6 @@ def make_minute_hand_glyph(
         rotated.append((int(round(xr)), int(round(yr))))
 
     pen = TTGlyphPen(glyph_set)
-
-    # Preserve the template’s “bounds forcing” markers (keeps layout stable).
-    make_square(pen, 0, 0, 32, 32)
-    make_square(pen, 968, 968, 1000, 1000)
-
     pen.moveTo(rotated[0])
     for p in rotated[1:]:
         pen.lineTo(p)
@@ -196,7 +174,35 @@ def make_minute_hand_glyph(
     return pen.glyph()
 
 
+def find_seconds_ligature_lookup_index(font: TTFont) -> Optional[int]:
+    if "GSUB" not in font:
+        return None
+
+    gsub = font["GSUB"].table
+    lookups = gsub.LookupList.Lookup
+
+    for idx, lookup in enumerate(lookups):
+        if getattr(lookup, "LookupType", None) != 4:
+            continue
+
+        for st in lookup.SubTable:
+            ligs = getattr(st, "ligatures", None)
+            if not ligs:
+                continue
+
+            for first, lst in ligs.items():
+                for lig in lst:
+                    out = getattr(lig, "LigGlyph", "")
+                    if isinstance(out, str) and out.startswith("sec"):
+                        return idx
+
+    return None
+
+
 def update_name_table(font: TTFont) -> None:
+    if "name" not in font:
+        return
+
     name_table = font["name"]
 
     def set_name(name_id: int, value: str) -> None:
@@ -225,33 +231,56 @@ def main() -> None:
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Template font missing: {template_path}")
 
+    log("Loading template font…")
     font = TTFont(template_path)
 
-    mapping = build_mapping_window(WINDOW_HOURS)
+    glyph_order = set(font.getGlyphOrder())
+    if "sec00" not in glyph_order or "sec59" not in glyph_order:
+        raise RuntimeError("Template font does not contain sec00..sec59 glyphs")
 
-    first_glyphs = sorted({seq[0] for seq in mapping.keys()})
-    subtables = []
-    for fg in first_glyphs:
-        submap = {seq: out for (seq, out) in mapping.items() if seq[0] == fg}
-        subtables.append(otl.buildLigatureSubstSubtable(submap))
+    log("Reading cmap for digit/colon glyph names…")
+    char_to_glyph = get_char_to_glyph(font)
+
+    log(f"Building ligature mapping (WINDOW_HOURS={WINDOW_HOURS})…")
+    mapping = build_mapping_window(char_to_glyph, WINDOW_HOURS)
+    log(f"Mapping entries: {len(mapping)}")
+
+    idx = find_seconds_ligature_lookup_index(font)
+    if idx is None:
+        raise RuntimeError("Could not locate the seconds-hand ligature lookup in GSUB")
+
+    log(f"Replacing GSUB ligature lookup at index {idx}…")
+    subtable = otl.buildLigatureSubstSubtable(mapping)
 
     gsub = font["GSUB"].table
-    lookup = gsub.LookupList.Lookup[0]
-    lookup.SubTable = subtables
-    lookup.SubTableCount = len(subtables)
+    lookup = gsub.LookupList.Lookup[idx]
+    lookup.LookupType = 4
+    lookup.SubTable = [subtable]
+    lookup.SubTableCount = 1
 
+    log("Rebuilding sec00..sec59 outlines as minute-hand needles…")
     glyph_set = font.getGlyphSet()
     glyf = font["glyf"]
 
     for m in range(60):
         glyf[f"sec{m:02d}"] = make_minute_hand_glyph(glyph_set, m)
+        if m % 10 == 0:
+            log(f"  wrote sec{m:02d}…")
 
+    log("Updating name table…")
     update_name_table(font)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    log("Saving font (no output until complete)…")
     font.save(out_path)
-    print(out_path)
+
+    log(f"Wrote: {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        raise
