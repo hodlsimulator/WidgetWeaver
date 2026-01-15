@@ -40,13 +40,15 @@ struct WidgetWeaverClockHandShadowsView: View {
                 .offset(x: hourShadowOffset, y: hourShadowOffset)
                 .blur(radius: hourShadowBlur)
 
-            WidgetWeaverClockMinuteNeedleShape()
-                .fill(palette.handShadow.opacity(0.40))
-                .frame(width: minuteWidth, height: minuteLength)
-                .rotationEffect(minuteAngle, anchor: .bottom)
-                .offset(y: -minuteLength / 2.0)
-                .offset(x: minuteShadowOffset, y: minuteShadowOffset)
-                .blur(radius: minuteShadowBlur)
+            if minuteLength > 0.0 && minuteWidth > 0.0 {
+                WidgetWeaverClockMinuteNeedleShape()
+                    .fill(palette.handShadow.opacity(0.40))
+                    .frame(width: minuteWidth, height: minuteLength)
+                    .rotationEffect(minuteAngle, anchor: .bottom)
+                    .offset(y: -minuteLength / 2.0)
+                    .offset(x: minuteShadowOffset, y: minuteShadowOffset)
+                    .blur(radius: minuteShadowBlur)
+            }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -135,100 +137,104 @@ struct WidgetWeaverClockHandsView: View {
                         .offset(y: -hourLength / 2.0)
                 )
 
-            // MARK: Minute hand (defined ridge + opposing dark edge + blue edge emission)
-            metalField
-                .mask(
-                    WidgetWeaverClockMinuteNeedleShape()
-                        .frame(width: minuteWidth, height: minuteLength)
-                        .rotationEffect(minuteAngle, anchor: .bottom)
-                        .offset(y: -minuteLength / 2.0)
-                )
-                .overlay(
-                    // Ridge highlight (lit side).
-                    Rectangle()
-                        .fill(Color.white.opacity(0.34))
-                        .frame(width: max(px, minuteWidth * 0.14), height: minuteLength)
-                        .offset(x: -minuteWidth * 0.18, y: -minuteLength / 2.0)
-                        .rotationEffect(minuteAngle)
-                        .blendMode(.screen)
-                        .mask(
-                            WidgetWeaverClockMinuteNeedleShape()
-                                .frame(width: minuteWidth, height: minuteLength)
-                                .rotationEffect(minuteAngle, anchor: .bottom)
-                                .offset(y: -minuteLength / 2.0)
-                        )
-                )
-                .overlay(
-                    // Dark opposing edge.
-                    Rectangle()
-                        .fill(Color.black.opacity(0.22))
-                        .frame(width: max(px, minuteWidth * 0.12), height: minuteLength)
-                        .offset(x: minuteWidth * 0.22, y: -minuteLength / 2.0)
-                        .rotationEffect(minuteAngle)
-                        .blendMode(.multiply)
-                        .mask(
-                            WidgetWeaverClockMinuteNeedleShape()
-                                .frame(width: minuteWidth, height: minuteLength)
-                                .rotationEffect(minuteAngle, anchor: .bottom)
-                                .offset(y: -minuteLength / 2.0)
-                        )
-                )
-                .overlay(
-                    // Crisp blue edge emission (inside the hand; glow is in overlay layer).
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: palette.accent.opacity(0.00), location: 0.00),
-                                    .init(color: palette.accent.opacity(0.10), location: 0.45),
-                                    .init(color: palette.accent.opacity(0.80), location: 1.00)
-                                ]),
-                                startPoint: .bottom,
-                                endPoint: .top
+            if minuteLength > 0.0 && minuteWidth > 0.0 {
+                // MARK: Minute hand (defined ridge + opposing dark edge + blue edge emission)
+                metalField
+                    .mask(
+                        WidgetWeaverClockMinuteNeedleShape()
+                            .frame(width: minuteWidth, height: minuteLength)
+                            .rotationEffect(minuteAngle, anchor: .bottom)
+                            .offset(y: -minuteLength / 2.0)
+                    )
+                    .overlay(
+                        // Ridge highlight (lit side).
+                        Rectangle()
+                            .fill(Color.white.opacity(0.34))
+                            .frame(width: max(px, minuteWidth * 0.14), height: minuteLength)
+                            .offset(x: -minuteWidth * 0.18, y: -minuteLength / 2.0)
+                            .rotationEffect(minuteAngle)
+                            .blendMode(.screen)
+                            .mask(
+                                WidgetWeaverClockMinuteNeedleShape()
+                                    .frame(width: minuteWidth, height: minuteLength)
+                                    .rotationEffect(minuteAngle, anchor: .bottom)
+                                    .offset(y: -minuteLength / 2.0)
                             )
-                        )
-                        .frame(width: max(px, minuteWidth * 0.10), height: minuteLength)
-                        .offset(x: minuteWidth * 0.36, y: -minuteLength / 2.0)
-                        .rotationEffect(minuteAngle)
-                        .blendMode(.screen)
-                        .mask(
-                            WidgetWeaverClockMinuteNeedleShape()
-                                .frame(width: minuteWidth, height: minuteLength)
-                                .rotationEffect(minuteAngle, anchor: .bottom)
-                                .offset(y: -minuteLength / 2.0)
-                        )
-                )
-                .overlay(
-                    // Crisp tip highlight (no blob).
-                    Ellipse()
-                        .fill(Color.white.opacity(0.30))
-                        .frame(width: minuteWidth * 0.70, height: minuteWidth * 0.55)
-                        .offset(x: -minuteWidth * 0.06, y: -minuteLength * 0.48)
-                        .mask(
-                            WidgetWeaverClockMinuteNeedleShape()
-                                .frame(width: minuteWidth, height: minuteLength)
-                                .rotationEffect(minuteAngle, anchor: .bottom)
-                                .offset(y: -minuteLength / 2.0)
-                        )
-                        .blendMode(.screen)
-                )
-                .overlay(
-                    WidgetWeaverClockMinuteNeedleShape()
-                        .stroke(palette.handEdge, lineWidth: max(px, minuteWidth * 0.075))
-                        .frame(width: minuteWidth, height: minuteLength)
-                        .rotationEffect(minuteAngle, anchor: .bottom)
-                        .offset(y: -minuteLength / 2.0)
-                )
+                    )
+                    .overlay(
+                        // Dark opposing edge.
+                        Rectangle()
+                            .fill(Color.black.opacity(0.22))
+                            .frame(width: max(px, minuteWidth * 0.12), height: minuteLength)
+                            .offset(x: minuteWidth * 0.22, y: -minuteLength / 2.0)
+                            .rotationEffect(minuteAngle)
+                            .blendMode(.multiply)
+                            .mask(
+                                WidgetWeaverClockMinuteNeedleShape()
+                                    .frame(width: minuteWidth, height: minuteLength)
+                                    .rotationEffect(minuteAngle, anchor: .bottom)
+                                    .offset(y: -minuteLength / 2.0)
+                            )
+                    )
+                    .overlay(
+                        // Crisp blue edge emission (inside the hand; glow is in overlay layer).
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: palette.accent.opacity(0.00), location: 0.00),
+                                        .init(color: palette.accent.opacity(0.10), location: 0.45),
+                                        .init(color: palette.accent.opacity(0.80), location: 1.00)
+                                    ]),
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .frame(width: max(px, minuteWidth * 0.10), height: minuteLength)
+                            .offset(x: minuteWidth * 0.36, y: -minuteLength / 2.0)
+                            .rotationEffect(minuteAngle)
+                            .blendMode(.screen)
+                            .mask(
+                                WidgetWeaverClockMinuteNeedleShape()
+                                    .frame(width: minuteWidth, height: minuteLength)
+                                    .rotationEffect(minuteAngle, anchor: .bottom)
+                                    .offset(y: -minuteLength / 2.0)
+                            )
+                    )
+                    .overlay(
+                        // Crisp tip highlight (no blob).
+                        Ellipse()
+                            .fill(Color.white.opacity(0.30))
+                            .frame(width: minuteWidth * 0.70, height: minuteWidth * 0.55)
+                            .offset(x: -minuteWidth * 0.06, y: -minuteLength * 0.48)
+                            .mask(
+                                WidgetWeaverClockMinuteNeedleShape()
+                                    .frame(width: minuteWidth, height: minuteLength)
+                                    .rotationEffect(minuteAngle, anchor: .bottom)
+                                    .offset(y: -minuteLength / 2.0)
+                            )
+                            .blendMode(.screen)
+                    )
+                    .overlay(
+                        WidgetWeaverClockMinuteNeedleShape()
+                            .stroke(palette.handEdge, lineWidth: max(px, minuteWidth * 0.075))
+                            .frame(width: minuteWidth, height: minuteLength)
+                            .rotationEffect(minuteAngle, anchor: .bottom)
+                            .offset(y: -minuteLength / 2.0)
+                    )
+            }
 
-            // MARK: Second hand (thin, straight, reduced dominance + terminal square)
-            WidgetWeaverClockSecondHandView(
-                colour: palette.accent,
-                width: secondWidth,
-                length: secondLength,
-                angle: secondAngle,
-                tipSide: secondTipSide,
-                scale: scale
-            )
+            if secondLength > 0.0 && secondWidth > 0.0 {
+                // MARK: Second hand (thin, straight, reduced dominance + terminal square)
+                WidgetWeaverClockSecondHandView(
+                    colour: palette.accent,
+                    width: secondWidth,
+                    length: secondLength,
+                    angle: secondAngle,
+                    tipSide: secondTipSide,
+                    scale: scale
+                )
+            }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

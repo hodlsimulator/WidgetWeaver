@@ -45,6 +45,7 @@
     <key>UIAppFonts</key>
     <array>
         <string>WWClockSecondHand-Regular.ttf</string>
+        <string>WWClockMinuteHand-Regular.ttf</string>
     </array>
 </dict>
 </plist>

@@ -15,20 +15,19 @@ struct WidgetWeaverClockIconView: View {
     let secondAngle: Angle
 
     let showsSecondHand: Bool
+    let showsMinuteHand: Bool
     let showsHandShadows: Bool
     let showsGlows: Bool
     let showsCentreHub: Bool
-
     let handsOpacity: Double
-
-    @Environment(\.displayScale) private var displayScale
 
     init(
         palette: WidgetWeaverClockPalette,
-        hourAngle: Angle = .degrees(310.0),
-        minuteAngle: Angle = .degrees(120.0),
-        secondAngle: Angle = .degrees(180.0),
+        hourAngle: Angle,
+        minuteAngle: Angle,
+        secondAngle: Angle,
         showsSecondHand: Bool = true,
+        showsMinuteHand: Bool = true,
         showsHandShadows: Bool = true,
         showsGlows: Bool = true,
         showsCentreHub: Bool = true,
@@ -39,6 +38,7 @@ struct WidgetWeaverClockIconView: View {
         self.minuteAngle = minuteAngle
         self.secondAngle = secondAngle
         self.showsSecondHand = showsSecondHand
+        self.showsMinuteHand = showsMinuteHand
         self.showsHandShadows = showsHandShadows
         self.showsGlows = showsGlows
         self.showsCentreHub = showsCentreHub
@@ -47,6 +47,7 @@ struct WidgetWeaverClockIconView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let displayScale = proxy.environment.displayScale
             let s = min(proxy.size.width, proxy.size.height)
 
             let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
@@ -66,197 +67,129 @@ struct WidgetWeaverClockIconView: View {
 
             let R = outerRadius - ringA - ringB - ringC
             let dialDiameter = R * 2.0
-
-            let occlusionWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.013, min: R * 0.010, max: R * 0.015),
-                scale: displayScale
-            )
-
-            let dotRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.922, min: R * 0.910, max: R * 0.930),
-                scale: displayScale
-            )
-            let dotDiameter = WWClock.pixel(
-                WWClock.clamp(R * 0.010, min: R * 0.009, max: R * 0.011),
-                scale: displayScale
-            )
-
-            let batonCentreRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.815, min: R * 0.780, max: R * 0.830),
-                scale: displayScale
-            )
-            let batonLength = WWClock.pixel(
-                WWClock.clamp(R * 0.155, min: R * 0.135, max: R * 0.170),
-                scale: displayScale
-            )
-            let batonWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
-                scale: displayScale
-            )
-            let capLength = WWClock.pixel(
-                WWClock.clamp(R * 0.026, min: R * 0.020, max: R * 0.030),
-                scale: displayScale
-            )
-
-            let pipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.016, min: R * 0.014, max: R * 0.018),
-                scale: displayScale
-            )
-            let pipInset = WWClock.pixel(1.5, scale: displayScale)
-            let pipRadius = dotRadius - pipInset
-
-            let numeralsRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.70, min: R * 0.66, max: R * 0.74),
-                scale: displayScale
-            )
-            let numeralsSize = WWClock.pixel(R * 0.32, scale: displayScale)
+            let dialRadius = R
 
             let hourLength = WWClock.pixel(
-                WWClock.clamp(R * 0.50, min: R * 0.46, max: R * 0.54),
+                WWClock.clamp(R * 0.60, min: R * 0.56, max: R * 0.64),
                 scale: displayScale
             )
+
             let hourWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.18, min: R * 0.16, max: R * 0.20),
+                WWClock.clamp(R * 0.090, min: R * 0.075, max: R * 0.105),
                 scale: displayScale
             )
 
             let minuteLength = WWClock.pixel(
-                WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.86),
+                WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.88),
                 scale: displayScale
             )
+
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
+                WWClock.clamp(R * 0.034, min: R * 0.028, max: R * 0.040),
                 scale: displayScale
             )
+
+            let usedMinuteLength: CGFloat = showsMinuteHand ? minuteLength : 0.0
+            let usedMinuteWidth: CGFloat = showsMinuteHand ? minuteWidth : 0.0
 
             let secondLength = WWClock.pixel(
-                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
-                scale: displayScale
-            )
-            let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
-                scale: displayScale
-            )
-            let secondTipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                WWClock.clamp(R * 0.90, min: R * 0.87, max: R * 0.94),
                 scale: displayScale
             )
 
-            let usedSecondLength: CGFloat = showsSecondHand ? secondLength : 0.0
-            let usedSecondWidth: CGFloat = showsSecondHand ? secondWidth : 0.0
-            let usedSecondTipSide: CGFloat = showsSecondHand ? secondTipSide : 0.0
+            let secondWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.010, min: R * 0.008, max: R * 0.012),
+                scale: displayScale
+            )
+
+            let secondTipSide = WWClock.pixel(
+                WWClock.clamp(R * 0.020, min: R * 0.016, max: R * 0.024),
+                scale: displayScale
+            )
 
             let hubBaseRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
                 scale: displayScale
             )
+
             let hubCapRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
                 scale: displayScale
             )
 
             ZStack {
-                ZStack {
-                    WidgetWeaverClockDialFaceView(
-                        palette: palette,
-                        radius: R,
-                        occlusionWidth: occlusionWidth
-                    )
+                WidgetWeaverClockFaceView(
+                    palette: palette,
+                    ringA: ringA,
+                    ringB: ringB,
+                    ringC: ringC,
+                    dialRadius: dialRadius,
+                    scale: displayScale
+                )
+                .frame(width: outerDiameter, height: outerDiameter)
 
-                    WidgetWeaverClockMinuteDotsView(
-                        count: 60,
-                        radius: dotRadius,
-                        dotDiameter: dotDiameter,
-                        dotColour: palette.minuteDot,
-                        scale: displayScale
-                    )
-
-                    WidgetWeaverClockHourIndicesView(
+                if showsHandShadows {
+                    WidgetWeaverClockHandShadowsView(
                         palette: palette,
                         dialDiameter: dialDiameter,
-                        centreRadius: batonCentreRadius,
-                        length: batonLength,
-                        width: batonWidth,
-                        capLength: capLength,
-                        capColour: palette.accent,
+                        hourAngle: hourAngle,
+                        minuteAngle: minuteAngle,
+                        hourLength: hourLength,
+                        hourWidth: hourWidth,
+                        minuteLength: usedMinuteLength,
+                        minuteWidth: usedMinuteWidth,
                         scale: displayScale
                     )
-
-                    WidgetWeaverClockCardinalPipsView(
-                        pipColour: palette.accent,
-                        side: pipSide,
-                        radius: pipRadius
-                    )
-
-                    WidgetWeaverClockNumeralsView(
-                        palette: palette,
-                        radius: numeralsRadius,
-                        fontSize: numeralsSize,
-                        scale: displayScale
-                    )
-
-                    Group {
-                        if showsHandShadows {
-                            WidgetWeaverClockHandShadowsView(
-                                palette: palette,
-                                dialDiameter: dialDiameter,
-                                hourAngle: hourAngle,
-                                minuteAngle: minuteAngle,
-                                hourLength: hourLength,
-                                hourWidth: hourWidth,
-                                minuteLength: minuteLength,
-                                minuteWidth: minuteWidth,
-                                scale: displayScale
-                            )
-                        }
-
-                        WidgetWeaverClockHandsView(
-                            palette: palette,
-                            dialDiameter: dialDiameter,
-                            hourAngle: hourAngle,
-                            minuteAngle: minuteAngle,
-                            secondAngle: secondAngle,
-                            hourLength: hourLength,
-                            hourWidth: hourWidth,
-                            minuteLength: minuteLength,
-                            minuteWidth: minuteWidth,
-                            secondLength: usedSecondLength,
-                            secondWidth: usedSecondWidth,
-                            secondTipSide: usedSecondTipSide,
-                            scale: displayScale
-                        )
-
-                        if showsGlows {
-                            WidgetWeaverClockGlowsOverlayView(
-                                palette: palette,
-                                hourCapCentreRadius: batonCentreRadius,
-                                batonLength: batonLength,
-                                batonWidth: batonWidth,
-                                capLength: capLength,
-                                pipSide: pipSide,
-                                pipRadius: pipRadius,
-                                minuteAngle: minuteAngle,
-                                minuteLength: minuteLength,
-                                minuteWidth: minuteWidth,
-                                secondAngle: secondAngle,
-                                secondLength: usedSecondLength,
-                                secondWidth: usedSecondWidth,
-                                secondTipSide: usedSecondTipSide,
-                                scale: displayScale
-                            )
-                        }
-
-                        if showsCentreHub {
-                            WidgetWeaverClockCentreHubView(
-                                palette: palette,
-                                baseRadius: hubBaseRadius,
-                                capRadius: hubCapRadius,
-                                scale: displayScale
-                            )
-                        }
-                    }
                     .opacity(handsOpacity)
                 }
+
+                WidgetWeaverClockHandsView(
+                    palette: palette,
+                    dialDiameter: dialDiameter,
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: secondAngle,
+                    hourLength: hourLength,
+                    hourWidth: hourWidth,
+                    minuteLength: usedMinuteLength,
+                    minuteWidth: usedMinuteWidth,
+                    secondLength: showsSecondHand ? secondLength : 0.0,
+                    secondWidth: showsSecondHand ? secondWidth : 0.0,
+                    secondTipSide: showsSecondHand ? secondTipSide : 0.0,
+                    scale: displayScale
+                )
+                .opacity(handsOpacity)
+
+                if showsGlows {
+                    WidgetWeaverClockGlowsOverlayView(
+                        palette: palette,
+                        dialDiameter: dialDiameter,
+                        secondAngle: secondAngle,
+                        minuteAngle: minuteAngle,
+                        secondLength: showsSecondHand ? secondLength : 0.0,
+                        secondWidth: showsSecondHand ? secondWidth : 0.0,
+                        minuteLength: usedMinuteLength,
+                        minuteWidth: usedMinuteWidth,
+                        scale: displayScale
+                    )
+                    .opacity(handsOpacity)
+                }
+
+                if showsCentreHub {
+                    WidgetWeaverClockCentreHubView(
+                        palette: palette,
+                        baseRadius: hubBaseRadius,
+                        capRadius: hubCapRadius,
+                        scale: displayScale
+                    )
+                    .opacity(handsOpacity)
+                }
+
+                WidgetWeaverClockHandPipsView(
+                    palette: palette,
+                    dialRadius: dialRadius,
+                    scale: displayScale
+                )
                 .frame(width: dialDiameter, height: dialDiameter)
                 .clipShape(Circle())
 

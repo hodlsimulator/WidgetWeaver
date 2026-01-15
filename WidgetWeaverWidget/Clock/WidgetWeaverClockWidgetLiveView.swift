@@ -18,6 +18,9 @@ struct WidgetWeaverClockWidgetLiveView: View {
     fileprivate static let timerStartBiasSeconds: TimeInterval = 0.25
     fileprivate static let minuteSpilloverSeconds: TimeInterval = 59.0
 
+    // Must match Scripts/generate_minute_hand_font.py WINDOW_HOURS.
+    fileprivate static let minuteHandTimerWindowSeconds: TimeInterval = 4.0 * 3600.0
+
     fileprivate static var buildLabel: String {
         #if DEBUG
         return "debug"
@@ -40,6 +43,12 @@ struct WidgetWeaverClockWidgetLiveView: View {
     fileprivate static func floorToMinute(_ date: Date) -> Date {
         let t = date.timeIntervalSinceReferenceDate
         let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    fileprivate static func floorToHour(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 3600.0) * 3600.0
         return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
@@ -110,6 +119,11 @@ fileprivate struct WWClockRenderBody: View {
         let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
         let showSeconds = (tickMode == .secondsSweep)
 
+        // Live minute-hand glyph:
+        // - Disable for pre-render (must match entryDate snapshot)
+        // - Disable for placeholder
+        let showsMinuteHandGlyph = (!isPrerender) && (!isPlaceholder)
+
         let baseAngles = WWClockBaseAngles(date: handsNow)
         let hourAngle = Angle.degrees(baseAngles.hour)
         let minuteAngle = Angle.degrees(baseAngles.minute)
@@ -119,6 +133,12 @@ fileprivate struct WWClockRenderBody: View {
         let timerStart = secondsMinuteAnchor.addingTimeInterval(-WidgetWeaverClockWidgetLiveView.timerStartBiasSeconds)
         let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + WidgetWeaverClockWidgetLiveView.minuteSpilloverSeconds)
         let timerRange = timerStart...timerEnd
+
+        // Minute-hand timer range (hour-anchored, multi-hour window).
+        let minuteHourAnchor = WidgetWeaverClockWidgetLiveView.floorToHour(wallNow)
+        let minuteTimerStart = minuteHourAnchor.addingTimeInterval(-WidgetWeaverClockWidgetLiveView.timerStartBiasSeconds)
+        let minuteTimerEnd = minuteHourAnchor.addingTimeInterval(WidgetWeaverClockWidgetLiveView.minuteHandTimerWindowSeconds)
+        let minuteTimerRange = minuteTimerStart...minuteTimerEnd
 
         // Render-path proof logging (sync to survive widget process teardown).
         let _ : Void = {
@@ -156,7 +176,7 @@ fileprivate struct WWClockRenderBody: View {
                 minInterval: balloon ? 0.0 : 15.0,
                 now: wallNow
             ) {
-                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs)"
+                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) minuteGlyph=\(showsMinuteHandGlyph ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs)"
             }
 
             return ()
@@ -169,6 +189,7 @@ fileprivate struct WWClockRenderBody: View {
                 minuteAngle: minuteAngle,
                 secondAngle: .degrees(0),
                 showsSecondHand: false,
+                showsMinuteHand: !showsMinuteHandGlyph,
                 showsHandShadows: false,
                 showsGlows: false,
                 showsCentreHub: false,
@@ -182,6 +203,8 @@ fileprivate struct WWClockRenderBody: View {
 
             WWClockSecondsAndHubOverlay(
                 palette: palette,
+                showsMinuteHand: showsMinuteHandGlyph,
+                minuteTimerRange: minuteTimerRange,
                 showsSeconds: showSeconds,
                 timerRange: timerRange,
                 handsOpacity: handsOpacity
@@ -256,6 +279,9 @@ private struct WWClockBaseAngles {
 
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
+    let showsMinuteHand: Bool
+    let minuteTimerRange: ClosedRange<Date>
+
     let showsSeconds: Bool
     let timerRange: ClosedRange<Date>
     let handsOpacity: Double
@@ -267,6 +293,15 @@ private struct WWClockSecondsAndHubOverlay: View {
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
 
             ZStack {
+                if showsMinuteHand {
+                    WWClockMinuteHandGlyphView(
+                        palette: palette,
+                        timerRange: minuteTimerRange,
+                        diameter: layout.dialDiameter
+                    )
+                    .opacity(handsOpacity)
+                }
+
                 if showsSeconds {
                     WWClockSecondHandGlyphView(
                         palette: palette,
@@ -290,6 +325,49 @@ private struct WWClockSecondsAndHubOverlay: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+}
+
+private struct WWClockMinuteHandGlyphView: View {
+    let palette: WidgetWeaverClockPalette
+    let timerRange: ClosedRange<Date>
+    let diameter: CGFloat
+
+    var body: some View {
+        let metalField = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.handLight, location: 0.00),
+                .init(color: palette.handMid, location: 0.52),
+                .init(color: palette.handDark, location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(width: diameter, height: diameter)
+
+        let glyph = Text(timerInterval: timerRange, countsDown: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(WWClockMinuteHandFont.font(size: diameter))
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: diameter, height: diameter, alignment: .center)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
+        ZStack {
+            // Edge stroke approximation:
+            // Draw the glyph in edge colour, then inset the fill slightly.
+            glyph
+                .foregroundStyle(palette.handEdge)
+
+            metalField
+                .mask(
+                    glyph
+                        .foregroundStyle(Color.white)
+                        .scaleEffect(0.94, anchor: .center)
+                )
+        }
+        .frame(width: diameter, height: diameter, alignment: .center)
     }
 }
 
