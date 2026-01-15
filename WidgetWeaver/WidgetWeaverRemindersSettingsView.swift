@@ -13,6 +13,7 @@ import SwiftUI
 /// Phase 1A (app-only spikes):
 /// - 1A.1: Permission diagnostics (authorisation state + request full access).
 /// - 1A.2: Read spike (list names + a small sample of incomplete reminders for Today).
+/// - 1A.3: Complete spike (tap a Today sample row to complete the reminder).
 ///
 /// Note: This screen remains gated behind `WidgetWeaverFeatureFlags.remindersTemplateEnabled`.
 struct WidgetWeaverRemindersSettingsView: View {
@@ -32,7 +33,7 @@ struct WidgetWeaverRemindersSettingsView: View {
                     Text("Reminders Pack")
                         .font(.headline)
 
-                    Text("Phase 1A.2: in-app read spike (lists + Today sample). Widgets still render placeholders and do not read or modify reminders yet.")
+                    Text("Phase 1A.3: in-app complete spike (lists + Today sample + tap to complete). Widgets still render placeholders and do not read or modify reminders yet.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -81,8 +82,8 @@ struct WidgetWeaverRemindersSettingsView: View {
                 .disabled(permissions.isRequesting)
             }
 
-            Section("Read spike (in-app only)") {
-                Text("Loads reminder lists and a small set of incomplete reminders due Today. No writes.")
+            Section("Read + complete spike (in-app only)") {
+                Text("Loads reminder lists and a small set of incomplete reminders due Today. Tap a Today row to mark it complete (in-app only).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -117,6 +118,13 @@ struct WidgetWeaverRemindersSettingsView: View {
                     Text("Last updated \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                if let summary = readSpike.lastCompletionSummary {
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let err = readSpike.lastError {
@@ -155,23 +163,42 @@ struct WidgetWeaverRemindersSettingsView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    ForEach(readSpike.todaySample) { r in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.title)
-                                .lineLimit(2)
+                    Text("Tap a row to mark it complete.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
 
-                            HStack(spacing: 8) {
-                                Text(r.listTitle)
-                                if let dueText = r.dueText {
-                                    Text("•")
-                                    Text(dueText)
+                    ForEach(readSpike.todaySample) { r in
+                        Button {
+                            readSpike.completeTodaySampleReminder(reminderID: r.id)
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.title)
+                                        .lineLimit(2)
+
+                                    HStack(spacing: 8) {
+                                        Text(r.listTitle)
+                                        if let dueText = r.dueText {
+                                            Text("•")
+                                            Text(dueText)
+                                        }
+                                    }
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                }
+
+                                Spacer(minLength: 0)
+
+                                if readSpike.completingReminderID == r.id {
+                                    ProgressView()
                                 }
                             }
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .contentShape(Rectangle())
+                            .padding(.vertical, 2)
                         }
-                        .padding(.vertical, 2)
+                        .buttonStyle(.plain)
+                        .disabled(readSpike.isBusy)
                     }
                 }
             }
@@ -191,7 +218,7 @@ struct WidgetWeaverRemindersSettingsView: View {
             }
 
             Section("Next") {
-                Label("Complete spike (tap row in-app)", systemImage: "checkmark.circle")
+                Label("Complete spike (tap row in-app)", systemImage: "checkmark.circle.fill")
                 Label("Widget interactivity spike (AppIntent)", systemImage: "hand.tap")
             }
         }
@@ -314,13 +341,16 @@ private final class RemindersReadSpikeModel: ObservableObject {
 
     @Published private(set) var isLoadingLists: Bool = false
     @Published private(set) var isLoadingReminders: Bool = false
+    @Published private(set) var isCompletingReminder: Bool = false
+    @Published private(set) var completingReminderID: String?
 
     @Published private(set) var lastUpdatedAt: Date?
     @Published private(set) var lastError: String?
+    @Published private(set) var lastCompletionSummary: String?
 
     private let eventStore = EKEventStore()
 
-    var isBusy: Bool { isLoadingLists || isLoadingReminders }
+    var isBusy: Bool { isLoadingLists || isLoadingReminders || isCompletingReminder }
 
     func loadLists() {
         guard !isBusy else { return }
@@ -353,59 +383,117 @@ private final class RemindersReadSpikeModel: ObservableObject {
     func loadTodaySample() {
         guard !isBusy else { return }
         lastError = nil
+        lastCompletionSummary = nil
         isLoadingReminders = true
 
         Task { @MainActor in
             defer { isLoadingReminders = false }
 
-            guard canReadReminders() else {
-                todaySample = []
-                lastError = "Cannot read reminders (authorisation is not Full Access)."
+            await refreshTodaySampleInternal()
+        }
+    }
+
+    func completeTodaySampleReminder(reminderID: String) {
+        guard !isBusy else { return }
+        lastError = nil
+        lastCompletionSummary = nil
+        isCompletingReminder = true
+        completingReminderID = reminderID
+
+        Task { @MainActor in
+            defer {
+                self.isCompletingReminder = false
+                self.completingReminderID = nil
+            }
+
+            guard canWriteReminders() else {
+                lastError = "Cannot complete reminders (authorisation is not Full Access or Write-only)."
                 return
             }
 
-            let now = Date()
-            let cal = Calendar.current
-            let start = cal.startOfDay(for: now)
-            guard let end = cal.date(byAdding: .day, value: 1, to: start) else {
-                todaySample = []
-                lastError = "Failed to compute Today window."
+            guard let reminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder else {
+                lastError = "Reminder not found (it may have been deleted)."
                 return
             }
 
-            let calendars = eventStore.calendars(for: .reminder)
-            let predicate = eventStore.predicateForIncompleteReminders(
-                withDueDateStarting: start,
-                ending: end,
-                calendars: calendars
-            )
+            let rawTitle = (reminder.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let safeTitle = rawTitle.isEmpty ? "Untitled" : rawTitle
 
-            let mapped = await fetchReminderRows(matching: predicate, calendar: cal)
+            reminder.isCompleted = true
+            reminder.completionDate = Date()
 
-            todaySample = mapped
-                .sorted { a, b in
-                    switch (a.dueDate, b.dueDate) {
-                    case let (da?, db?):
-                        if da != db { return da < db }
-                        return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-                    case (_?, nil):
-                        return true
-                    case (nil, _?):
-                        return false
-                    case (nil, nil):
-                        return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-                    }
-                }
-                .prefix(25)
-                .map { $0 }
+            do {
+                try eventStore.save(reminder, commit: true)
+            } catch {
+                lastError = "Failed to complete reminder: \(error.localizedDescription)"
+                return
+            }
 
-            lastUpdatedAt = Date()
+            if canReadReminders() {
+                isLoadingReminders = true
+                defer { isLoadingReminders = false }
+                await refreshTodaySampleInternal()
+            } else {
+                todaySample.removeAll { $0.id == reminderID }
+            }
+
+            lastCompletionSummary = "Completed “\(safeTitle)”."
         }
     }
 
     private func canReadReminders() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .reminder)
         return status == .fullAccess
+    }
+
+    private func canWriteReminders() -> Bool {
+        let status = EKEventStore.authorizationStatus(for: .reminder)
+        return status == .fullAccess || status == .writeOnly
+    }
+
+    private func refreshTodaySampleInternal() async {
+        guard canReadReminders() else {
+            todaySample = []
+            lastError = "Cannot read reminders (authorisation is not Full Access)."
+            return
+        }
+
+        let now = Date()
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: now)
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else {
+            todaySample = []
+            lastError = "Failed to compute Today window."
+            return
+        }
+
+        let calendars = eventStore.calendars(for: .reminder)
+        let predicate = eventStore.predicateForIncompleteReminders(
+            withDueDateStarting: start,
+            ending: end,
+            calendars: calendars
+        )
+
+        let mapped = await fetchReminderRows(matching: predicate, calendar: cal)
+
+        todaySample = mapped
+            .sorted { a, b in
+                switch (a.dueDate, b.dueDate) {
+                case let (da?, db?):
+                    if da != db { return da < db }
+                    return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+                }
+            }
+            .prefix(25)
+            .map { $0 }
+
+        lastUpdatedAt = Date()
     }
 
     /// Converts EventKit reminders into Sendable rows inside the EventKit callback,

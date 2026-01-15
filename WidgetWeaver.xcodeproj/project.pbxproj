@@ -266,6 +266,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		E16011732F19618B00A3B10B /* Scripts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Scripts;
+			sourceTree = "<group>";
+		};
 		E186767A2EF227C30098B095 /* WidgetWeaver */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -351,6 +356,7 @@
 		E186766E2EF227C20098B095 = {
 			isa = PBXGroup;
 			children = (
+				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
 				E18676A62EF240690098B095 /* Shared */,
@@ -463,6 +469,7 @@
 				E186769D2EF2321A0098B095 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
 				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
