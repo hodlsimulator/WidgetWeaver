@@ -25,4 +25,7 @@ public enum WidgetWeaverWidgetKinds {
     public static let noiseMachine = "WidgetWeaverNoiseMachineWidget"
 
     public static let clipboardActions = "WidgetWeaverClipboardActionsWidget"
+
+    // Debug-only widget used for the Reminders AppIntent interactivity spike.
+    public static let remindersDebugSpike = "WidgetWeaverRemindersDebugSpikeWidget"
 }

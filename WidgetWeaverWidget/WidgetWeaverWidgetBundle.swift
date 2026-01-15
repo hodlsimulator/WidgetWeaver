@@ -21,5 +21,9 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverPawPulseLatestCatWidget()
         WidgetWeaverNoiseMachineWidget()
         WidgetWeaverClipboardActionsWidget()
+
+        #if DEBUG
+        WidgetWeaverRemindersDebugSpikeWidget()
+        #endif
     }
 }

@@ -22,6 +22,11 @@ struct WidgetWeaverRemindersSettingsView: View {
     @StateObject private var permissions = RemindersPermissionsModel()
     @StateObject private var readSpike = RemindersReadSpikeModel()
 
+    #if DEBUG
+    @AppStorage(WidgetWeaverRemindersDebugStore.Keys.testReminderID, store: AppGroup.userDefaults)
+    private var widgetTestReminderID: String = ""
+    #endif
+
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
     }
@@ -167,6 +172,13 @@ struct WidgetWeaverRemindersSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
+                    #if DEBUG
+                    Text("Long-press a row to set it as the widget test reminder ID (for the Reminders Spike widget).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    #endif
+
                     ForEach(readSpike.todaySample) { r in
                         Button {
                             readSpike.completeTodaySampleReminder(reminderID: r.id)
@@ -199,6 +211,24 @@ struct WidgetWeaverRemindersSettingsView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(readSpike.isBusy)
+
+                        #if DEBUG
+                        .contextMenu {
+                            Button {
+                                WidgetWeaverRemindersDebugStore.setTestReminderID(r.id)
+                            } label: {
+                                Label("Use as widget test ID", systemImage: "widget.small")
+                            }
+
+                            if !widgetTestReminderID.isEmpty {
+                                Button(role: .destructive) {
+                                    WidgetWeaverRemindersDebugStore.setTestReminderID(nil)
+                                } label: {
+                                    Label("Clear widget test ID", systemImage: "xmark.circle")
+                                }
+                            }
+                        }
+                        #endif
                     }
                 }
             }
@@ -221,6 +251,27 @@ struct WidgetWeaverRemindersSettingsView: View {
                 Label("Complete spike (tap row in-app)", systemImage: "checkmark.circle.fill")
                 Label("Widget interactivity spike (AppIntent)", systemImage: "hand.tap")
             }
+
+            #if DEBUG
+            Section("Widget interactivity spike (debug)") {
+                HStack {
+                    Text("Widget test reminder")
+                    Spacer()
+                    Text(widgetTestReminderID.isEmpty ? "Not set" : shortIDForUI(widgetTestReminderID))
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("The “Reminders Spike” widget reads this ID from the App Group and runs an AppIntent to complete it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Clear widget test ID") {
+                    WidgetWeaverRemindersDebugStore.setTestReminderID(nil)
+                }
+                .disabled(widgetTestReminderID.isEmpty)
+            }
+            #endif
         }
         .navigationTitle("Reminders")
         .navigationBarTitleDisplayMode(.inline)
@@ -235,6 +286,16 @@ struct WidgetWeaverRemindersSettingsView: View {
             permissions.refreshStatus()
         }
     }
+
+    #if DEBUG
+    private func shortIDForUI(_ id: String) -> String {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 10 else { return trimmed }
+        let start = trimmed.prefix(4)
+        let end = trimmed.suffix(4)
+        return "\(start)…\(end)"
+    }
+    #endif
 }
 
 @MainActor
