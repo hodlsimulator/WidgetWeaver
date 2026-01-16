@@ -135,7 +135,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     public func cleanupUnusedImages() -> WidgetWeaverImageCleanupResult {
         let specs = loadAllInternal()
-        let referenced = Set(collectUniqueImageFileNames(in: specs))
+        var referenced = Set(collectUniqueImageFileNames(in: specs))
+        referenced.formUnion(collectUniqueImageFileNamesFromReferencedShuffleManifests(in: specs))
         let existing = AppGroup.listImageFileNames()
 
         var deleted: [String] = []
@@ -496,6 +497,54 @@ private extension WidgetSpecStore {
         }
 
         return Array(set).sorted()
+    }
+
+    func collectUniqueImageFileNamesFromReferencedShuffleManifests(in specs: [WidgetSpec]) -> [String] {
+        var manifestFileNames = Set<String>()
+
+        func insertShuffleManifest(_ image: ImageSpec?) {
+            guard let mf = image?.smartPhoto?.shuffleManifestFileName else { return }
+            let trimmed = mf.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            manifestFileNames.insert(trimmed)
+        }
+
+        for spec in specs {
+            insertShuffleManifest(spec.image)
+            if let matched = spec.matchedSet {
+                if let v = matched.small { insertShuffleManifest(v.image) }
+                if let v = matched.medium { insertShuffleManifest(v.image) }
+                if let v = matched.large { insertShuffleManifest(v.image) }
+            }
+        }
+
+        var out = Set<String>()
+
+        func insertImageName(_ raw: String?) {
+            let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            let last = (trimmed as NSString).lastPathComponent
+            let safe = String(last.prefix(256))
+            guard !safe.isEmpty else { return }
+            out.insert(safe)
+        }
+
+        for mf in manifestFileNames {
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { continue }
+            for entry in manifest.entries {
+                insertImageName(entry.sourceFileName)
+
+                insertImageName(entry.smallFile)
+                insertImageName(entry.mediumFile)
+                insertImageName(entry.largeFile)
+
+                insertImageName(entry.smallManualFile)
+                insertImageName(entry.mediumManualFile)
+                insertImageName(entry.largeManualFile)
+            }
+        }
+
+        return Array(out).sorted()
     }
 }
 

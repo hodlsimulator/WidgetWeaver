@@ -225,12 +225,46 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let horizon: TimeInterval = min(desiredHorizon, refreshSeconds * Double(maxEntries - 1))
         let count = max(2, Int(horizon / refreshSeconds) + 1)
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(count)
+        var dates: [Date] = []
+        dates.reserveCapacity(count + 12)
 
         for i in 0..<count {
-            let d = base.addingTimeInterval(TimeInterval(i) * refreshSeconds)
-            entries.append(Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: false))
+            dates.append(base.addingTimeInterval(TimeInterval(i) * refreshSeconds))
+        }
+
+        // Ensure the widget renders at shuffle boundaries, not merely at fixed intervals
+        // starting from `now`. This prevents drift where the Home Screen snapshot can
+        // stay on an old photo until the next periodic refresh.
+        if let shuffleSchedule {
+            let interval = shuffleSchedule.intervalSeconds
+            var d = shuffleSchedule.nextChangeDate
+            if d <= now {
+                d = now.addingTimeInterval(interval)
+            }
+
+            let maxDate = dates.last ?? now
+            while d <= maxDate {
+                dates.append(d)
+                d = d.addingTimeInterval(interval)
+            }
+        }
+
+        dates.sort()
+
+        // De-duplicate dates (WidgetKit can behave oddly if there are near-equal dates).
+        var uniqueDates: [Date] = []
+        uniqueDates.reserveCapacity(min(maxEntries, dates.count))
+
+        for d in dates {
+            if let last = uniqueDates.last {
+                if abs(d.timeIntervalSince(last)) < 0.5 { continue }
+            }
+            uniqueDates.append(d)
+            if uniqueDates.count >= maxEntries { break }
+        }
+
+        let entries: [Entry] = uniqueDates.map { d in
+            Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: false)
         }
 
         return Timeline(entries: entries, policy: .atEnd)

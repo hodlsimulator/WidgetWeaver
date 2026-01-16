@@ -17,9 +17,34 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
     public struct Entry: Codable, Hashable, Sendable, Identifiable {
         public var id: String
 
+        /// App Group file name for the persistent source image for this entry.
+        ///
+        /// Constraint:
+        /// The widget extension cannot read the Photos library. To support manual re-rendering
+        /// (per-photo overrides) from the app, every shuffle entry needs a stable source image
+        /// stored in the App Group container.
+        public var sourceFileName: String?
+
         public var smallFile: String?
         public var mediumFile: String?
         public var largeFile: String?
+
+        /// Auto crop rects (normalised 0...1). These allow the crop editor to reopen using
+        /// the same auto framing that produced the auto renders.
+        public var smallAutoCropRect: NormalisedRect?
+        public var mediumAutoCropRect: NormalisedRect?
+        public var largeAutoCropRect: NormalisedRect?
+
+        /// Optional manual per-size render file names.
+        /// When present, these should be preferred over the auto render file names.
+        public var smallManualFile: String?
+        public var mediumManualFile: String?
+        public var largeManualFile: String?
+
+        /// Optional manual crop rects (normalised 0...1) used to reopen the crop editor.
+        public var smallManualCropRect: NormalisedRect?
+        public var mediumManualCropRect: NormalisedRect?
+        public var largeManualCropRect: NormalisedRect?
 
         public var preparedAt: Date?
         public var flags: [String]
@@ -29,17 +54,37 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
 
         public init(
             id: String,
+            sourceFileName: String? = nil,
             smallFile: String? = nil,
             mediumFile: String? = nil,
             largeFile: String? = nil,
+            smallAutoCropRect: NormalisedRect? = nil,
+            mediumAutoCropRect: NormalisedRect? = nil,
+            largeAutoCropRect: NormalisedRect? = nil,
+            smallManualFile: String? = nil,
+            mediumManualFile: String? = nil,
+            largeManualFile: String? = nil,
+            smallManualCropRect: NormalisedRect? = nil,
+            mediumManualCropRect: NormalisedRect? = nil,
+            largeManualCropRect: NormalisedRect? = nil,
             preparedAt: Date? = nil,
             flags: [String] = [],
             score: Double? = nil
         ) {
             self.id = id
+            self.sourceFileName = sourceFileName
             self.smallFile = smallFile
             self.mediumFile = mediumFile
             self.largeFile = largeFile
+            self.smallAutoCropRect = smallAutoCropRect
+            self.mediumAutoCropRect = mediumAutoCropRect
+            self.largeAutoCropRect = largeAutoCropRect
+            self.smallManualFile = smallManualFile
+            self.mediumManualFile = mediumManualFile
+            self.largeManualFile = largeManualFile
+            self.smallManualCropRect = smallManualCropRect
+            self.mediumManualCropRect = mediumManualCropRect
+            self.largeManualCropRect = largeManualCropRect
             self.preparedAt = preparedAt
             self.flags = flags
             self.score = score
@@ -50,6 +95,11 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
             let m = (mediumFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let l = (largeFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return !s.isEmpty && !m.isEmpty && !l.isEmpty
+        }
+
+        public var hasSourceImageFile: Bool {
+            let t = (sourceFileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !t.isEmpty
         }
 
         public var scoreValue: Double {
@@ -200,16 +250,53 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
 #if canImport(WidgetKit)
 public extension SmartPhotoShuffleManifest.Entry {
     func fileName(for family: WidgetFamily) -> String? {
+        let manualCandidate: String?
+        let autoCandidate: String?
+
         switch family {
         case .systemSmall:
-            return smallFile
+            manualCandidate = smallManualFile
+            autoCandidate = smallFile
         case .systemMedium:
-            return mediumFile
+            manualCandidate = mediumManualFile
+            autoCandidate = mediumFile
         case .systemLarge:
-            return largeFile
+            manualCandidate = largeManualFile
+            autoCandidate = largeFile
         default:
-            return mediumFile ?? smallFile ?? largeFile
+            // Prefer medium as the general fallback (matches existing behaviour).
+            manualCandidate = mediumManualFile ?? smallManualFile ?? largeManualFile
+            autoCandidate = mediumFile ?? smallFile ?? largeFile
         }
+
+        let manualTrimmed = (manualCandidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !manualTrimmed.isEmpty {
+            let url = AppGroup.imageFileURL(fileName: manualTrimmed)
+            if FileManager.default.fileExists(atPath: url.path) {
+                return manualTrimmed
+            }
+        }
+
+        let autoTrimmed = (autoCandidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return autoTrimmed.isEmpty ? nil : autoTrimmed
+    }
+
+    func isManual(for family: WidgetFamily) -> Bool {
+        let manualCandidate: String?
+        switch family {
+        case .systemSmall:
+            manualCandidate = smallManualFile
+        case .systemMedium:
+            manualCandidate = mediumManualFile
+        case .systemLarge:
+            manualCandidate = largeManualFile
+        default:
+            manualCandidate = nil
+        }
+
+        let manualTrimmed = (manualCandidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !manualTrimmed.isEmpty else { return false }
+        return fileName(for: family) == manualTrimmed
     }
 }
 #endif

@@ -455,7 +455,9 @@ public extension ImageSpec {
                     return nil
                 }
 
+                let entryIndex = manifest.entries.firstIndex(where: { $0.id == entry.id }) ?? -1
                 let chosen = entry.fileName(for: family)
+                let isManual = entry.isManual(for: family)
                 let trimmed = (chosen ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     if shouldLog {
@@ -465,7 +467,7 @@ public extension ImageSpec {
                             minInterval: 20.0,
                             context: ctx
                         ) {
-                            "resolve: chosen file=\(trimmed)"
+                            "resolve: chosen entryID=\(entry.id) entryIndex=\(entryIndex) manual=\(isManual) file=\(trimmed)"
                         }
                     }
                     return trimmed

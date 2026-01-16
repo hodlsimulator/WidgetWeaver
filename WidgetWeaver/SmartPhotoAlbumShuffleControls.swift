@@ -367,7 +367,7 @@ struct SmartPhotoAlbumShuffleControls: View {
         let next = scheduledNextChangeDate(from: Date(), minutes: defaultRotationMinutes)
 
         let manifest = SmartPhotoShuffleManifest(
-            version: 3,
+            version: 4,
             sourceID: album.id,
             entries: assetIDs.map { SmartPhotoShuffleManifest.Entry(id: $0) },
             currentIndex: 0,
@@ -616,6 +616,17 @@ struct SmartPhotoAlbumShuffleControls: View {
                     entry.smallFile = small
                     entry.mediumFile = medium
                     entry.largeFile = large
+
+                    // Persist the App Group source file so the app can later re-render
+                    // manual per-photo crops without touching the Photos library.
+                    entry.sourceFileName = sp.masterFileName
+
+                    // Persist the auto crop rects so the crop editor can reopen using the
+                    // saved auto framing.
+                    entry.smallAutoCropRect = sp.small?.cropRect
+                    entry.mediumAutoCropRect = sp.medium?.cropRect
+                    entry.largeAutoCropRect = sp.large?.cropRect
+
                     entry.preparedAt = sp.preparedAt
                     entry.score = scoreResult.score
                     entry.flags = Array(Set(entry.flags).union(scoreResult.flags)).sorted()

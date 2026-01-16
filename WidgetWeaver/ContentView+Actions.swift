@@ -227,6 +227,252 @@ extension ContentView {
         }
     }
 
+    // MARK: - Manual Smart Crop (Album Shuffle per-entry override)
+
+    func applyManualSmartCropForShuffleEntry(
+        manifestFileName: String,
+        entryID: String,
+        family: EditingFamily,
+        cropRect: NormalisedRect
+    ) async {
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else {
+            saveStatusMessage = "Shuffle manifest file name is missing."
+            return
+        }
+
+        let id = entryID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            saveStatusMessage = "Shuffle entry ID is missing."
+            return
+        }
+
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            saveStatusMessage = "Shuffle manifest not found."
+            return
+        }
+
+        guard let idx = manifest.entries.firstIndex(where: { $0.id == id }) else {
+            saveStatusMessage = "Selected shuffle photo is no longer in the manifest."
+            return
+        }
+
+        let entry = manifest.entries[idx]
+        guard entry.isPrepared else {
+            saveStatusMessage = "Selected shuffle photo has not been prepared yet."
+            return
+        }
+
+        let sourceFile = (entry.sourceFileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourceFile.isEmpty else {
+            saveStatusMessage = "Source image is missing for this shuffled photo.\nRe-prepare this album shuffle set to enable manual framing."
+            return
+        }
+
+        guard let masterData = AppGroup.readImageData(fileName: sourceFile) else {
+            saveStatusMessage = "Source image file not found on disk.\nRe-prepare this album shuffle set to enable manual framing."
+            return
+        }
+
+        let newCrop = cropRect.normalised()
+
+        let targets = SmartPhotoRenderTargets.forCurrentDevice()
+        let targetPixels: PixelSize = {
+            switch family {
+            case .small: return targets.small
+            case .medium: return targets.medium
+            case .large: return targets.large
+            }
+        }()
+
+        let oldManualFileName: String? = {
+            switch family {
+            case .small: return entry.smallManualFile
+            case .medium: return entry.mediumManualFile
+            case .large: return entry.largeManualFile
+            }
+        }()
+
+        let newRenderFileName = AppGroup.createImageFileName(prefix: "smart-shuffle-\(family.rawValue)-manual", ext: "jpg")
+
+        let maxBytes: Int = {
+            switch family {
+            case .small: return 450_000
+            case .medium: return 650_000
+            case .large: return 900_000
+            }
+        }()
+
+        saveStatusMessage = "Applying crop…"
+
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                guard let masterImage = UIImage(data: masterData) else {
+                    throw ManualSmartCropError.decodeFailed
+                }
+
+                let rendered = ManualSmartCropRenderer.render(
+                    master: masterImage,
+                    cropRect: newCrop,
+                    targetPixels: targetPixels
+                )
+
+                let jpeg = try ManualSmartCropRenderer.encodeJPEG(
+                    image: rendered,
+                    startQuality: 0.85,
+                    maxBytes: maxBytes
+                )
+
+                try AppGroup.writeImageData(jpeg, fileName: newRenderFileName)
+
+                if let old = oldManualFileName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !old.isEmpty
+                {
+                    AppGroup.deleteImage(fileName: old)
+                }
+            }.value
+
+            guard var latest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+                saveStatusMessage = "Shuffle manifest not found after rendering."
+                return
+            }
+
+            guard let latestIdx = latest.entries.firstIndex(where: { $0.id == id }) else {
+                saveStatusMessage = "Selected shuffle photo is no longer in the manifest."
+                return
+            }
+
+            var updated = latest.entries[latestIdx]
+            switch family {
+            case .small:
+                updated.smallManualFile = newRenderFileName
+                updated.smallManualCropRect = newCrop
+            case .medium:
+                updated.mediumManualFile = newRenderFileName
+                updated.mediumManualCropRect = newCrop
+            case .large:
+                updated.largeManualFile = newRenderFileName
+                updated.largeManualCropRect = newCrop
+            }
+
+            latest.entries[latestIdx] = updated
+            try SmartPhotoShuffleManifestStore.save(latest, fileName: mf)
+
+            saveStatusMessage = "Updated \(family.label) framing for the selected shuffled photo."
+        } catch {
+            saveStatusMessage = "Crop update failed: \(error.localizedDescription)"
+        }
+    }
+
+    func resetManualSmartCropForShuffleEntry(
+        manifestFileName: String,
+        entryID: String,
+        family: EditingFamily
+    ) async {
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else {
+            saveStatusMessage = "Shuffle manifest file name is missing."
+            return
+        }
+
+        let id = entryID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            saveStatusMessage = "Shuffle entry ID is missing."
+            return
+        }
+
+        guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            saveStatusMessage = "Shuffle manifest not found."
+            return
+        }
+
+        guard let idx = manifest.entries.firstIndex(where: { $0.id == id }) else {
+            saveStatusMessage = "Selected shuffle photo is no longer in the manifest."
+            return
+        }
+
+        var entry = manifest.entries[idx]
+
+        let oldManualFile: String? = {
+            switch family {
+            case .small: return entry.smallManualFile
+            case .medium: return entry.mediumManualFile
+            case .large: return entry.largeManualFile
+            }
+        }()
+
+        switch family {
+        case .small:
+            entry.smallManualFile = nil
+            entry.smallManualCropRect = nil
+        case .medium:
+            entry.mediumManualFile = nil
+            entry.mediumManualCropRect = nil
+        case .large:
+            entry.largeManualFile = nil
+            entry.largeManualCropRect = nil
+        }
+
+        manifest.entries[idx] = entry
+
+        do {
+            try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+
+            if let old = oldManualFile?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !old.isEmpty
+            {
+                AppGroup.deleteImage(fileName: old)
+            }
+
+            saveStatusMessage = "Reset \(family.label) framing to Auto for the selected shuffled photo."
+        } catch {
+            saveStatusMessage = "Failed to reset framing: \(error.localizedDescription)"
+        }
+    }
+
+    func makeShuffleEntryCurrent(
+        manifestFileName: String,
+        entryID: String
+    ) async {
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else {
+            saveStatusMessage = "Shuffle manifest file name is missing."
+            return
+        }
+
+        let id = entryID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            saveStatusMessage = "Shuffle entry ID is missing."
+            return
+        }
+
+        guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
+            saveStatusMessage = "Shuffle manifest not found."
+            return
+        }
+
+        guard let idx = manifest.entries.firstIndex(where: { $0.id == id }) else {
+            saveStatusMessage = "Selected shuffle photo is no longer in the manifest."
+            return
+        }
+
+        let now = Date()
+        _ = manifest.catchUpRotation(now: now)
+
+        manifest.currentIndex = idx
+        if manifest.rotationIntervalMinutes > 0 {
+            manifest.nextChangeDate = now.addingTimeInterval(TimeInterval(manifest.rotationIntervalMinutes) * 60.0)
+        }
+
+        do {
+            try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+            WidgetWeaverWidgetRefresh.forceKick()
+            saveStatusMessage = "Pinned the selected shuffled photo as the current widget photo."
+        } catch {
+            saveStatusMessage = "Failed to set current photo: \(error.localizedDescription)"
+        }
+    }
+
     func upgradeLegacyPhotosInCurrentDesign(maxUpgrades: Int = 3) async {
         let clampedMax = max(1, min(3, maxUpgrades))
 

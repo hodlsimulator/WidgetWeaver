@@ -7,11 +7,17 @@
 
 import SwiftUI
 import UIKit
+import WidgetKit
 
 struct SmartPhotoPreviewStripView: View {
     let smart: SmartPhotoSpec
     let selectedFamily: EditingFamily
     let onSelectFamily: (EditingFamily) -> Void
+
+    /// When Album Shuffle is enabled, this view normally follows `manifest.entryForRender()`.
+    /// In the manual framing editor, the selected entry should be stable so edits apply to a
+    /// single photo at a time.
+    let fixedShuffleEntry: SmartPhotoShuffleManifest.Entry? = nil
 
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
@@ -29,6 +35,7 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     private var usesShuffleRotation: Bool {
+        if fixedShuffleEntry != nil { return false }
         guard shuffleEnabled else { return false }
         guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return true }
         return manifest.rotationIntervalMinutes > 0
@@ -54,7 +61,7 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     private var stripBody: some View {
-        let entry = currentShuffleEntry()
+        let entry = fixedShuffleEntry ?? currentShuffleEntry()
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
@@ -85,7 +92,7 @@ struct SmartPhotoPreviewStripView: View {
                             selectionBorder(family: family)
                         }
 
-                    if isManual(renderFileName: renderFileName) {
+                    if shouldShowManualBadge(for: family, entry: entry, renderFileName: renderFileName) {
                         manualBadge
                     }
                 }
@@ -147,12 +154,8 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     private func resolvedRenderFileName(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> String? {
-        if shuffleEnabled {
-            switch family {
-            case .small: return entry?.smallFile
-            case .medium: return entry?.mediumFile
-            case .large: return entry?.largeFile
-            }
+        if shuffleEnabled, let entry {
+            return entry.fileName(for: widgetFamily(for: family))
         }
 
         switch family {
@@ -165,5 +168,33 @@ struct SmartPhotoPreviewStripView: View {
     private func isManual(renderFileName: String?) -> Bool {
         guard let renderFileName else { return false }
         return renderFileName.contains("-manual")
+    }
+
+    private func shouldShowManualBadge(
+        for family: EditingFamily,
+        entry: SmartPhotoShuffleManifest.Entry?,
+        renderFileName: String?
+    ) -> Bool {
+        if shuffleEnabled {
+            guard let entry else { return false }
+            switch family {
+            case .small:
+                return !(entry.smallManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .medium:
+                return !(entry.mediumManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .large:
+                return !(entry.largeManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+
+        return isManual(renderFileName: renderFileName)
+    }
+
+    private func widgetFamily(for family: EditingFamily) -> WidgetFamily {
+        switch family {
+        case .small: return .systemSmall
+        case .medium: return .systemMedium
+        case .large: return .systemLarge
+        }
     }
 }
