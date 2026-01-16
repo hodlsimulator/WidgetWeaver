@@ -266,6 +266,12 @@ struct WidgetWeaverRemindersSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let diag = snapshot.diagnostics {
+                        Text("Diagnostics (\(diag.kind.rawValue)) \(diag.at.formatted(date: .abbreviated, time: .shortened)): \(diag.message)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
                     Text("Snapshot: none")
                         .font(.footnote)

@@ -9,6 +9,8 @@ Per-second minute-hand ticking font.
 Clones WWClockSecondHand-Regular.ttf into WWClockMinuteHand-Regular.ttf and replaces:
 - GSUB ligature lookup so Text(timerInterval:) selects a minute-hand glyph based on timer text
 - adds mh0000..mh3599 glyphs (one per second-of-hour) as rotated needle silhouettes
+- adds invisible corner markers (outside the dial circle) so glyph bounds remain 0..1000 like sec**,
+  preventing CoreText/SwiftUI centring drift
 - updates the name table (Mac + Windows records) so iOS registers the font as WWClockMinuteHand-Regular
 
 Output:
@@ -43,6 +45,10 @@ TICK_SECONDS = 1
 
 SECONDS_PER_HOUR = 3600
 GLYPH_PREFIX = "mh"
+
+# Matches WWClockSecondHand-Regular.ttf: two small squares in opposite corners.
+# These sit outside the dial circle and get clipped away, but they force bounds to 0..1000.
+CORNER_MARK_SIZE = 32
 
 REPO_REL_TEMPLATE_TTF = os.path.join(
     "WidgetWeaverWidget",
@@ -106,6 +112,25 @@ def glyph_name_for_bucket(bucket: int) -> str:
     return f"{GLYPH_PREFIX}{bucket:04d}"
 
 
+def add_corner_markers(pen: TTGlyphPen, dial_size: int) -> None:
+    m = CORNER_MARK_SIZE
+    maxv = dial_size
+
+    # Bottom-left square: (0,0) .. (m,m)
+    pen.moveTo((0, 0))
+    pen.lineTo((m, 0))
+    pen.lineTo((m, m))
+    pen.lineTo((0, m))
+    pen.closePath()
+
+    # Top-right square: (maxv-m, maxv-m) .. (maxv, maxv)
+    pen.moveTo((maxv - m, maxv - m))
+    pen.lineTo((maxv, maxv - m))
+    pen.lineTo((maxv, maxv))
+    pen.lineTo((maxv - m, maxv))
+    pen.closePath()
+
+
 def make_hand_glyph(
     glyph_set,
     angle_degrees: float,
@@ -154,6 +179,11 @@ def make_hand_glyph(
         rotated.append((int(round(xr)), int(round(yr))))
 
     pen = TTGlyphPen(glyph_set)
+
+    # Force stable 0..1000 bounds (outside-circle markers, clipped away in the widget).
+    add_corner_markers(pen, dial_size)
+
+    # Actual hand.
     pen.moveTo(rotated[0])
     for p in rotated[1:]:
         pen.lineTo(p)
@@ -272,7 +302,9 @@ def main() -> None:
     log(f"Mapping entries h:mm:ss: {len(mapping_h_mm_ss)}")
     log(f"Mapping entries mm:ss:  {len(mapping_mmss)}")
     log(f"Mapping entries  m:ss:  {len(mapping_mss)}")
-    log(f"Mapping total entries:  {len(mapping_h_mm_ss) + len(mapping_mmss) + len(mapping_mss)}")
+    log(
+        f"Mapping total entries:  {len(mapping_h_mm_ss) + len(mapping_mmss) + len(mapping_mss)}"
+    )
 
     idx = find_seconds_ligature_lookup_index(font)
     if idx is None:

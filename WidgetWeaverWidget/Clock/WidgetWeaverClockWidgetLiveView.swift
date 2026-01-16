@@ -16,7 +16,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     let tickSeconds: TimeInterval
 
     fileprivate static let timerStartBiasSeconds: TimeInterval = 0.25
-    fileprivate static let minuteSpilloverSeconds: TimeInterval = 59.0
+    fileprivate static let secondsHandTimerWindowSeconds: TimeInterval = 3600.0 - 1.0
 
     // Must match Scripts/generate_minute_hand_font.py WINDOW_HOURS.
     fileprivate static let minuteHandTimerWindowSeconds: TimeInterval = 2.0 * 3600.0
@@ -131,7 +131,7 @@ fileprivate struct WWClockRenderBody: View {
         // Seconds anchor:
         let secondsMinuteAnchor = handsNow
         let timerStart = secondsMinuteAnchor.addingTimeInterval(-WidgetWeaverClockWidgetLiveView.timerStartBiasSeconds)
-        let timerEnd = secondsMinuteAnchor.addingTimeInterval(60.0 + WidgetWeaverClockWidgetLiveView.minuteSpilloverSeconds)
+        let timerEnd = secondsMinuteAnchor.addingTimeInterval(WidgetWeaverClockWidgetLiveView.secondsHandTimerWindowSeconds)
         let timerRange = timerStart...timerEnd
 
         // Minute-hand timer range (hour-anchored, multi-hour window).
