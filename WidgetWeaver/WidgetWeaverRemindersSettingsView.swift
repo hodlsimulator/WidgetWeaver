@@ -573,26 +573,70 @@ private final class RemindersReadSpikeModel: ObservableObject {
             return
         }
 
-        eventStore.reset()
+        lastError = nil
 
-        let now = Date()
-        let cal = Calendar.current
-        let todayYMD = cal.dateComponents([.year, .month, .day], from: now)
+        let mapped: [ReminderRow] = await Task.detached(priority: .userInitiated) {
+            let store = EKEventStore()
+            store.reset()
 
-        let calendars = eventStore.calendars(for: .reminder)
+            let now = Date()
+            let cal = Calendar.current
+            let todayYMD = cal.dateComponents([.year, .month, .day], from: now)
 
-        // Broad fetch, then filter locally by dueDateComponents Y/M/D.
-        let predicate = eventStore.predicateForIncompleteReminders(
-            withDueDateStarting: nil,
-            ending: nil,
-            calendars: calendars
-        )
+            func matchesToday(_ comps: DateComponents?) -> Bool {
+                guard let comps else { return false }
+                return comps.year == todayYMD.year
+                    && comps.month == todayYMD.month
+                    && comps.day == todayYMD.day
+            }
 
-        let mapped = await fetchReminderRowsDueToday(
-            matching: predicate,
-            calendar: cal,
-            todayYMD: todayYMD
-        )
+            func componentsHaveTime(_ comps: DateComponents?) -> Bool {
+                guard let comps else { return false }
+                return comps.hour != nil || comps.minute != nil || comps.second != nil
+            }
+
+            let calendars = store.calendars(for: .reminder)
+
+            // Broad fetch, then filter locally by YYYY-MM-DD to match what users perceive as "Today".
+            let predicate = store.predicateForIncompleteReminders(
+                withDueDateStarting: nil,
+                ending: nil,
+                calendars: calendars
+            )
+
+            return await withCheckedContinuation { cont in
+                store.fetchReminders(matching: predicate) { reminders in
+                    let rows: [ReminderRow] = (reminders ?? []).compactMap { r in
+                        // Include "today" if either due date OR start date lands on today.
+                        let dueComps = r.dueDateComponents
+                        let startComps = r.startDateComponents
+
+                        let useDue = matchesToday(dueComps)
+                        let useStart = matchesToday(startComps)
+
+                        guard useDue || useStart else { return nil }
+
+                        let chosenComps = useDue ? dueComps : startComps
+                        let chosenDate = chosenComps.flatMap { cal.date(from: $0) }
+                        let chosenHasTime = componentsHaveTime(chosenComps)
+
+                        let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let safeTitle = title.isEmpty ? "Untitled" : title
+
+                        return ReminderRow(
+                            id: r.calendarItemIdentifier,
+                            title: safeTitle,
+                            listID: r.calendar.calendarIdentifier,
+                            listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
+                            dueDate: chosenDate,
+                            dueHasTime: chosenHasTime
+                        )
+                    }
+
+                    cont.resume(returning: rows)
+                }
+            }
+        }.value
 
         todaySample = mapped
             .sorted { a, b in
@@ -614,7 +658,8 @@ private final class RemindersReadSpikeModel: ObservableObject {
         lastUpdatedAt = Date()
     }
     
-    private func fetchReminderRowsDueToday(
+    private nonisolated static func fetchReminderRowsDueToday(
+        eventStore: EKEventStore,
         matching predicate: NSPredicate,
         calendar: Calendar,
         todayYMD: DateComponents
@@ -652,7 +697,11 @@ private final class RemindersReadSpikeModel: ObservableObject {
 
     /// Converts EventKit reminders into Sendable rows inside the EventKit callback,
     /// so no `EKReminder` values cross an `await` boundary.
-    private func fetchReminderRows(matching predicate: NSPredicate, calendar: Calendar) async -> [ReminderRow] {
+    private nonisolated static func fetchReminderRows(
+        eventStore: EKEventStore,
+        matching predicate: NSPredicate,
+        calendar: Calendar
+    ) async -> [ReminderRow] {
         await withCheckedContinuation { cont in
             eventStore.fetchReminders(matching: predicate) { reminders in
                 let rows: [ReminderRow] = (reminders ?? []).map { r in
