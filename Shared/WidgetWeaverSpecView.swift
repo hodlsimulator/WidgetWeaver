@@ -338,8 +338,12 @@ public struct WidgetWeaverSpecView: View {
         .opacity(0.92)
     }
 
+    @ViewBuilder
     private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, style: StyleSpec, accent: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        let cleanedID = item.id.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let isInteractive = (context == .widget) && !item.isCompleted && !cleanedID.isEmpty
+
+        let row = HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(accent)
@@ -360,6 +364,17 @@ public struct WidgetWeaverSpecView: View {
             }
 
             Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+
+        if isInteractive {
+            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: cleanedID)) {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            row
         }
     }
 

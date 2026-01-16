@@ -12,8 +12,13 @@
 //    place where EventKit reads/writes are performed for Reminders Pack.
 //
 
+import AppIntents
 import EventKit
 import Foundation
+
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 /// Single owner for EventKit Reminders reads/writes.
 ///
@@ -114,6 +119,57 @@ public actor WidgetWeaverRemindersEngine {
                     sourceTitle: cal.source.title
                 )
             }
+    }
+
+
+    // MARK: - Completion (Phase 5)
+
+    /// Marks a reminder as completed.
+    ///
+    /// Notes:
+    /// - This requires Full Access because the widget reads reminder identifiers from snapshots.
+    /// - This does not prompt for permission (AppIntents must not prompt).
+    public func completeReminder(identifier: String) async -> WidgetWeaverRemindersActionDiagnostics {
+        let cleanedID = identifier.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        guard !cleanedID.isEmpty else {
+            return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Missing reminder ID.")
+        }
+
+        let status = Self.authorisationStatus()
+        guard status == .fullAccess else {
+            return WidgetWeaverRemindersActionDiagnostics(
+                kind: .error,
+                message: "Reminders Full Access is not granted (status=\(status)). Open WidgetWeaver → Reminders and request Full Access."
+            )
+        }
+
+        guard let reminder = eventStore.calendarItem(withIdentifier: cleanedID) as? EKReminder else {
+            return WidgetWeaverRemindersActionDiagnostics(
+                kind: .error,
+                message: "Reminder not found (or not readable). It may have been deleted, or the snapshot is stale."
+            )
+        }
+
+        let rawTitle = (reminder.title ?? "").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let title = rawTitle.isEmpty ? "Untitled" : rawTitle
+
+        if reminder.isCompleted {
+            return WidgetWeaverRemindersActionDiagnostics(kind: .noop, message: "Already completed: \(title).")
+        }
+
+        reminder.isCompleted = true
+        reminder.completionDate = Date()
+
+        do {
+            try eventStore.save(reminder, commit: true)
+        } catch {
+            return WidgetWeaverRemindersActionDiagnostics(
+                kind: .error,
+                message: "Failed to complete reminder: \(error.localizedDescription)"
+            )
+        }
+
+        return WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title).")
     }
 
     // MARK: - Snapshot generation (Phase 3.2)
@@ -355,5 +411,54 @@ public actor WidgetWeaverRemindersEngine {
     private static func componentsHaveTime(_ components: DateComponents?) -> Bool {
         guard let components else { return false }
         return components.hour != nil || components.minute != nil || components.second != nil
+    }
+}
+
+// MARK: - Widget action intent (Phase 5)
+
+/// Completes a reminder from an interactive widget row tap.
+///
+/// Behaviour:
+/// - Writes last-action diagnostics to the Reminders store.
+/// - Refreshes the snapshot cache so the widget content converges.
+/// - Reloads the main widget timelines so Home Screen redraws promptly.
+public struct WidgetWeaverCompleteReminderWidgetIntent: AppIntent {
+    public static var title: LocalizedStringResource { "Complete Reminder" }
+
+    public static var description: IntentDescription {
+        IntentDescription("Marks a specific reminder (by identifier) as completed.")
+    }
+
+    public static var openAppWhenRun: Bool { false }
+
+    @Parameter(title: "Reminder ID")
+    public var reminderID: String
+
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Complete reminder \(\.$reminderID)")
+    }
+
+    public init() {}
+
+    public init(reminderID: String) {
+        self.reminderID = reminderID
+    }
+
+    public func perform() async throws -> some IntentResult {
+        let cleanedID = reminderID.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+        let action = await WidgetWeaverRemindersEngine.shared.completeReminder(identifier: cleanedID)
+        WidgetWeaverRemindersStore.shared.saveLastAction(action)
+
+        _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache()
+
+        await MainActor.run {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            #if DEBUG
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
+        }
+
+        return .result()
     }
 }

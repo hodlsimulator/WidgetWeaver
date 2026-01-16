@@ -315,6 +315,61 @@ public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
     }
 }
 
+/// Diagnostics captured after an interactive widget action (Phase 5).
+///
+/// This is intentionally separate from snapshot diagnostics:
+/// - Snapshot diagnostics describe *refresh* outcomes.
+/// - Action diagnostics describe a *user-triggered action* (e.g. completing a reminder).
+public struct WidgetWeaverRemindersActionDiagnostics: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable {
+        case completed
+        case noop
+        case error
+    }
+
+    public var kind: Kind
+    public var message: String
+    public var at: Date
+
+    public init(kind: Kind, message: String, at: Date = Date()) {
+        self.kind = kind
+        self.message = String(message.prefix(240))
+        self.at = at
+
+        self = self.normalised()
+    }
+
+    public func normalised() -> WidgetWeaverRemindersActionDiagnostics {
+        var d = self
+        let trimmed = d.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        d.message = trimmed.isEmpty ? "" : String(trimmed.prefix(240))
+        return d
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case message
+        case at
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        let kind = (try? c.decode(Kind.self, forKey: .kind)) ?? .error
+        let message = (try? c.decode(String.self, forKey: .message)) ?? ""
+        let at = (try? c.decode(Date.self, forKey: .at)) ?? Date()
+
+        self.init(kind: kind, message: message, at: at)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(message, forKey: .message)
+        try c.encode(at, forKey: .at)
+    }
+}
+
 /// A cached snapshot of reminders data for widget rendering.
 ///
 /// Notes:

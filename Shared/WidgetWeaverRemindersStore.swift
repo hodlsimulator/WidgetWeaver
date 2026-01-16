@@ -27,6 +27,10 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         public static let lastErrorKind = "widgetweaver.reminders.lastError.kind.v1"
         public static let lastErrorMessage = "widgetweaver.reminders.lastError.message.v1"
         public static let lastErrorAt = "widgetweaver.reminders.lastError.at.v1"
+
+        public static let lastActionKind = "widgetweaver.reminders.lastAction.kind.v1"
+        public static let lastActionMessage = "widgetweaver.reminders.lastAction.message.v1"
+        public static let lastActionAt = "widgetweaver.reminders.lastAction.at.v1"
     }
 
     private let defaults: UserDefaults
@@ -230,6 +234,83 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorKind)
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorMessage)
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorAt)
+
+        synchroniseAppGroupDefaults()
+    }
+
+
+    // MARK: Last action
+
+    public func loadLastAction() -> WidgetWeaverRemindersActionDiagnostics? {
+        synchroniseAppGroupDefaults()
+
+        let rawMessage = (defaults.string(forKey: Keys.lastActionMessage)
+                          ?? UserDefaults.standard.string(forKey: Keys.lastActionMessage)
+                          ?? "")
+        let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return nil }
+
+        let rawKind = (defaults.string(forKey: Keys.lastActionKind)
+                       ?? UserDefaults.standard.string(forKey: Keys.lastActionKind)
+                       ?? WidgetWeaverRemindersActionDiagnostics.Kind.error.rawValue)
+
+        let kind = WidgetWeaverRemindersActionDiagnostics.Kind(rawValue: rawKind) ?? .error
+
+        let timestamp = defaults.double(forKey: Keys.lastActionAt)
+        let at: Date = {
+            if timestamp > 0 { return Date(timeIntervalSince1970: timestamp) }
+            let legacy = UserDefaults.standard.double(forKey: Keys.lastActionAt)
+            if legacy > 0 {
+                defaults.set(legacy, forKey: Keys.lastActionAt)
+                synchroniseAppGroupDefaults()
+                return Date(timeIntervalSince1970: legacy)
+            }
+            return Date()
+        }()
+
+        // Heal any legacy values.
+        if defaults.string(forKey: Keys.lastActionMessage) == nil {
+            defaults.set(message, forKey: Keys.lastActionMessage)
+        }
+        if defaults.string(forKey: Keys.lastActionKind) == nil {
+            defaults.set(kind.rawValue, forKey: Keys.lastActionKind)
+        }
+
+        synchroniseAppGroupDefaults()
+
+        return WidgetWeaverRemindersActionDiagnostics(kind: kind, message: message, at: at)
+    }
+
+    public func saveLastAction(_ action: WidgetWeaverRemindersActionDiagnostics?) {
+        let cleanedKind = action?.kind.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedMessage = action?.message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let cleanedMessage, !cleanedMessage.isEmpty {
+            let kindRaw = (cleanedKind?.isEmpty ?? true) ? WidgetWeaverRemindersActionDiagnostics.Kind.error.rawValue : cleanedKind!
+
+            defaults.set(kindRaw, forKey: Keys.lastActionKind)
+            defaults.set(String(cleanedMessage.prefix(240)), forKey: Keys.lastActionMessage)
+            defaults.set((action?.at ?? Date()).timeIntervalSince1970, forKey: Keys.lastActionAt)
+
+            UserDefaults.standard.set(kindRaw, forKey: Keys.lastActionKind)
+            UserDefaults.standard.set(String(cleanedMessage.prefix(240)), forKey: Keys.lastActionMessage)
+            UserDefaults.standard.set((action?.at ?? Date()).timeIntervalSince1970, forKey: Keys.lastActionAt)
+        } else {
+            clearLastAction()
+        }
+
+        synchroniseAppGroupDefaults()
+        notifyWidgetsRemindersUpdated()
+    }
+
+    public func clearLastAction() {
+        defaults.removeObject(forKey: Keys.lastActionKind)
+        defaults.removeObject(forKey: Keys.lastActionMessage)
+        defaults.removeObject(forKey: Keys.lastActionAt)
+
+        UserDefaults.standard.removeObject(forKey: Keys.lastActionKind)
+        UserDefaults.standard.removeObject(forKey: Keys.lastActionMessage)
+        UserDefaults.standard.removeObject(forKey: Keys.lastActionAt)
 
         synchroniseAppGroupDefaults()
     }
