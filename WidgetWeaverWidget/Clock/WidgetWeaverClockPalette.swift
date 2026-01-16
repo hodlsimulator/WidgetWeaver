@@ -89,16 +89,16 @@ struct WidgetWeaverClockPalette {
         // Ring D / separator: near-black but not pure black.
         let separatorRing: Color = WWClock.colour(0x0B0F15, alpha: 1.0)
 
-        // Dial: keep it near-black, no lifted mid-grey.
-        let dialCenter: Color = WWClock.colour(0x05070B, alpha: 1.0)
-        let dialMid: Color = WWClock.colour(0x030509, alpha: 1.0)
-        let dialEdge: Color = WWClock.colour(0x010102, alpha: 1.0)
+        // Dial: lifted off pure-black to better match the icon mock.
+        let dialCenter: Color = WWClock.colour(0x1B2431, alpha: 1.0)
+        let dialMid: Color = WWClock.colour(0x121824, alpha: 1.0)
+        let dialEdge: Color = WWClock.colour(0x090C12, alpha: 1.0)
 
-        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.68)
-        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.045)
+        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.55)
+        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.060)
 
-        // Minute dots: materially more visible, uniform.
-        let minuteDot: Color = WWClock.colour(0xC7D3E6, alpha: 0.72)
+        // Minute dots: more visible, uniform.
+        let minuteDot: Color = WWClock.colour(0xD0DBEE, alpha: 0.80)
 
         // Batons: crisp bevel range.
         let batonBright: Color = WWClock.colour(0xF2F6FB, alpha: 0.96)

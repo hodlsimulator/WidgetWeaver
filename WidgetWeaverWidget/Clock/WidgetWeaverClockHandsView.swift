@@ -295,17 +295,37 @@ struct WidgetWeaverClockCentreHubView: View {
 struct WidgetWeaverClockHourWedgeShape: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width
+        let h = rect.height
 
-        let baseInset = w * 0.035
-        let baseLeft = CGPoint(x: rect.minX + baseInset, y: rect.maxY)
-        let baseRight = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
+        let baseInset = w * 0.06
+        let baseWidth = max(1, w - (baseInset * 2.0))
 
-        let tip = CGPoint(x: rect.midX, y: rect.minY)
+        let stemWidth = max(1, baseWidth * 0.56)
+        let stemHeight = max(1, min(h * 0.22, w * 0.60))
+
+        let topWidth = max(1, w * 0.46)
+        let topY = rect.minY
+        let stemTopY = rect.maxY - stemHeight
+
+        let cx = rect.midX
+
+        let p0 = CGPoint(x: cx - stemWidth * 0.5, y: rect.maxY)
+        let p1 = CGPoint(x: cx + stemWidth * 0.5, y: rect.maxY)
+        let p2 = CGPoint(x: cx + baseWidth * 0.5, y: stemTopY)
+        let p3 = CGPoint(x: cx + topWidth * 0.5, y: topY)
+        let p4 = CGPoint(x: cx - topWidth * 0.5, y: topY)
+        let p5 = CGPoint(x: cx - baseWidth * 0.5, y: stemTopY)
+
+        let r = max(1, min(w * 0.28, stemHeight * 0.55))
 
         var p = Path()
-        p.move(to: baseLeft)
-        p.addLine(to: tip)
-        p.addLine(to: baseRight)
+        let points = [p0, p1, p2, p3, p4, p5]
+        p.move(to: points[0])
+        for i in 0..<points.count {
+            let t1 = points[(i + 1) % points.count]
+            let t2 = points[(i + 2) % points.count]
+            p.addArc(tangent1End: t1, tangent2End: t2, radius: r)
+        }
         p.closeSubpath()
         return p
     }

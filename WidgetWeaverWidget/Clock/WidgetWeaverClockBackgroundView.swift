@@ -14,34 +14,19 @@ struct WidgetWeaverClockBackgroundView: View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
             let corner = s * 0.205
+            let stroke = max(1, s * 0.003)
 
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        gradient: Gradient(colors: [palette.backgroundTop, palette.backgroundBottom]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(palette.backgroundTop)
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: max(1, s * 0.003))
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: stroke)
                         .blendMode(.overlay)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.white.opacity(0.10),
-                                    Color.white.opacity(0.00),
-                                    Color.black.opacity(0.22)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .blendMode(.overlay)
+                        .strokeBorder(Color.black.opacity(0.28), lineWidth: stroke)
+                        .blendMode(.multiply)
                 )
         }
     }

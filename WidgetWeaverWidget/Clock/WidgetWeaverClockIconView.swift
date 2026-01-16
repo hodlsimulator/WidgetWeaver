@@ -80,7 +80,7 @@ struct WidgetWeaverClockIconView: View {
                 scale: displayScale
             )
             let dotDiameter = WWClock.pixel(
-                WWClock.clamp(R * 0.010, min: R * 0.009, max: R * 0.011),
+                WWClock.clamp(R * 0.013, min: R * 0.011, max: R * 0.014),
                 scale: displayScale
             )
 
@@ -115,7 +115,7 @@ struct WidgetWeaverClockIconView: View {
             let numeralsSize = WWClock.pixel(R * 0.32, scale: displayScale)
 
             let hourLength = WWClock.pixel(
-                WWClock.clamp(R * 0.50, min: R * 0.46, max: R * 0.54),
+                WWClock.clamp(R * 0.56, min: R * 0.52, max: R * 0.60),
                 scale: displayScale
             )
             let hourWidth = WWClock.pixel(
