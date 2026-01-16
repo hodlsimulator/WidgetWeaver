@@ -14,58 +14,69 @@ extension ContentView {
         let hasImage = editorToolContext.hasImageConfigured
         let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
 
-        return VStack(alignment: .leading, spacing: 12) {
-            if hasSmartPhoto, let manifestFileName = d.imageSmartPhotoShuffleManifestFileName, !manifestFileName.isEmpty {
-                SmartPhotoShuffleFramingEditorView(
-                    smart: binding(\.imageSmartPhoto).wrappedValue,
-                    manifestFileName: manifestFileName,
-                    selectedFamily: editingFamily,
-                    focus: focus,
-                    isBusy: isBusy,
-                    onSelectFamily: { fam in
-                        // Selected family in the strip should drive which draft the user is “editing”.
-                        previewFamily = widgetFamily(for: fam)
-                    },
-                    onApplyCrop: { entryID, fam, cropRect in
-                        await applyManualSmartCropForShuffleEntry(
-                            entryID: entryID,
-                            manifestFileName: manifestFileName,
-                            family: widgetFamily(for: fam),
-                            cropRect: cropRect,
-                            smart: binding(\.imageSmartPhoto).wrappedValue
-                        )
-                    },
-                    onResetToAuto: { entryID, fam in
-                        await resetShuffleEntryToAuto(
-                            entryID: entryID,
-                            manifestFileName: manifestFileName,
-                            family: widgetFamily(for: fam)
-                        )
-                    },
-                    onMakeCurrent: { entryID in
-                        await makeShuffleEntryCurrent(
-                            entryID: entryID,
-                            manifestFileName: manifestFileName
-                        )
-                    }
+        return Section {
+            if !hasImage {
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.imageRequiredForSmartPhotoFraming(),
+                    isBusy: importInProgress,
+                    onPerformCTA: performEditorUnavailableCTA
                 )
-            } else if hasSmartPhoto, !(d.imageSmartPhotoShuffleManifestFileName ?? "").isEmpty {
-                Text("Shuffle manifest file name is set, but there is no Smart Photo configured.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if hasSmartPhoto {
-                Text("Enable album shuffle (and prepare at least one photo) to use manual Smart Photo framing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if hasImage {
-                Text("Smart Photo framing controls are available when using Smart Photo image mode.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } else if !hasSmartPhoto {
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.smartPhotoRequiredForSmartPhotoFraming(),
+                    isBusy: importInProgress,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
+            } else if let smart = d.imageSmartPhoto {
+                let manifestFileName = (smart.shuffleManifestFileName ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if !manifestFileName.isEmpty {
+                    SmartPhotoShuffleFramingEditorView(
+                        smart: smart,
+                        manifestFileName: manifestFileName,
+                        selectedFamily: editingFamily,
+                        focus: focus,
+                        isBusy: importInProgress,
+                        onSelectFamily: { fam in
+                            previewFamily = widgetFamily(for: fam)
+                        },
+                        onApplyCrop: { entryID, fam, cropRect in
+                            await applyManualSmartCropForShuffleEntry(
+                                manifestFileName: manifestFileName,
+                                entryID: entryID,
+                                family: fam,
+                                cropRect: cropRect
+                            )
+                        },
+                        onResetToAuto: { entryID, fam in
+                            await resetManualSmartCropForShuffleEntry(
+                                manifestFileName: manifestFileName,
+                                entryID: entryID,
+                                family: fam
+                            )
+                        },
+                        onMakeCurrent: { entryID in
+                            await makeShuffleEntryCurrent(
+                                manifestFileName: manifestFileName,
+                                entryID: entryID
+                            )
+                        }
+                    )
+                } else {
+                    Text("Album Shuffle is off. Enable it in Album Shuffle to use per-photo framing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                Text("Configure an Image layer first to enable Smart Photo framing controls.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                EditorUnavailableStateView(
+                    state: EditorUnavailableState.smartPhotoRequiredForSmartPhotoFraming(),
+                    isBusy: importInProgress,
+                    onPerformCTA: performEditorUnavailableCTA
+                )
             }
+        } header: {
+            sectionHeader("Smart Photo Framing")
         }
     }
 
