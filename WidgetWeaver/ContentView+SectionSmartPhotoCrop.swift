@@ -14,100 +14,58 @@ extension ContentView {
         let hasImage = editorToolContext.hasImageConfigured
         let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
 
-        return Section {
-            if !hasImage {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.imageRequiredForSmartPhotoFraming(),
-                    isBusy: false
-                )
-            } else if !hasSmartPhoto {
-                EditorUnavailableStateView(
-                    state: EditorUnavailableState.smartPhotoRequiredForSmartPhotoFraming(),
-                    isBusy: false
-                )
-            } else if let smart = d.imageSmartPhoto {
-                let manifestFile = (smart.shuffleManifestFileName ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                let shuffleEnabled = !manifestFile.isEmpty
-
-                if shuffleEnabled {
-                    SmartPhotoShuffleFramingEditorView(
-                        smart: smart,
-                        manifestFileName: manifestFile,
-                        selectedFamily: editingFamily,
-                        focus: focus,
-                        isBusy: importInProgress,
-                        onSelectFamily: { family in
-                            previewFamily = widgetFamily(for: family)
-                        },
-                        onApplyCrop: { entryID, family, rect in
-                            await applyManualSmartCropForShuffleEntry(
-                                manifestFileName: manifestFile,
-                                entryID: entryID,
-                                family: family,
-                                cropRect: rect
-                            )
-                        },
-                        onResetToAuto: { entryID, family in
-                            await resetManualSmartCropForShuffleEntry(
-                                manifestFileName: manifestFile,
-                                entryID: entryID,
-                                family: family
-                            )
-                        },
-                        onMakeCurrent: { entryID in
-                            await makeShuffleEntryCurrent(
-                                manifestFileName: manifestFile,
-                                entryID: entryID
-                            )
-                        }
-                    )
-                } else {
-                    SmartPhotoPreviewStripView(
-                        smart: smart,
-                        selectedFamily: editingFamily,
-                        onSelectFamily: { family in
-                            previewFamily = widgetFamily(for: family)
-                        }
-                    )
-
-                    let family = editingFamily
-                    let familyLabel = editingFamilyLabel
-
-                    let variant: SmartPhotoVariantSpec? = {
-                        switch family {
-                        case .small: return smart.small
-                        case .medium: return smart.medium
-                        case .large: return smart.large
-                        }
-                    }()
-
-                    if let variant {
-                        NavigationLink {
-                            SmartPhotoCropEditorView(
-                                family: family,
-                                masterFileName: smart.masterFileName,
-                                targetPixels: variant.pixelSize,
-                                initialCropRect: variant.cropRect,
-                                focus: focus,
-                                onApply: { rect in
-                                    await applyManualSmartCrop(family: family, cropRect: rect)
-                                }
-                            )
-                        } label: {
-                            Label("Fix framing (\(familyLabel))", systemImage: "crop")
-                        }
-                        .disabled(importInProgress)
-                    } else {
-                        Text("Smart render data missing for \(familyLabel).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: 12) {
+            if hasSmartPhoto, let manifestFileName = d.imageSmartPhotoShuffleManifestFileName, !manifestFileName.isEmpty {
+                SmartPhotoShuffleFramingEditorView(
+                    smart: binding(\.imageSmartPhoto).wrappedValue,
+                    manifestFileName: manifestFileName,
+                    selectedFamily: editingFamily,
+                    focus: focus,
+                    isBusy: isBusy,
+                    onSelectFamily: { fam in
+                        // Selected family in the strip should drive which draft the user is “editing”.
+                        previewFamily = widgetFamily(for: fam)
+                    },
+                    onApplyCrop: { entryID, fam, cropRect in
+                        await applyManualSmartCropForShuffleEntry(
+                            entryID: entryID,
+                            manifestFileName: manifestFileName,
+                            family: widgetFamily(for: fam),
+                            cropRect: cropRect,
+                            smart: binding(\.imageSmartPhoto).wrappedValue
+                        )
+                    },
+                    onResetToAuto: { entryID, fam in
+                        await resetShuffleEntryToAuto(
+                            entryID: entryID,
+                            manifestFileName: manifestFileName,
+                            family: widgetFamily(for: fam)
+                        )
+                    },
+                    onMakeCurrent: { entryID in
+                        await makeShuffleEntryCurrent(
+                            entryID: entryID,
+                            manifestFileName: manifestFileName
+                        )
                     }
-                }
+                )
+            } else if hasSmartPhoto, !(d.imageSmartPhotoShuffleManifestFileName ?? "").isEmpty {
+                Text("Shuffle manifest file name is set, but there is no Smart Photo configured.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if hasSmartPhoto {
+                Text("Enable album shuffle (and prepare at least one photo) to use manual Smart Photo framing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if hasImage {
+                Text("Smart Photo framing controls are available when using Smart Photo image mode.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Configure an Image layer first to enable Smart Photo framing controls.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-        } header: {
-            sectionHeader("Smart Photo Framing")
         }
     }
 
@@ -121,11 +79,17 @@ extension ContentView {
 }
 
 private struct SmartPhotoShuffleFramingEditorView: View {
+    private enum SelectionMode: String, CaseIterable {
+        case current
+        case browse
+    }
+
     let smart: SmartPhotoSpec
     let manifestFileName: String
     let selectedFamily: EditingFamily
     let focus: Binding<EditorFocusSnapshot>
     let isBusy: Bool
+
     let onSelectFamily: (EditingFamily) -> Void
     let onApplyCrop: (String, EditingFamily, NormalisedRect) async -> Void
     let onResetToAuto: (String, EditingFamily) async -> Void
@@ -134,30 +98,58 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
 
+    @AppStorage("preview.liveEnabled")
+    private var liveEnabled: Bool = true
+
+    @State private var selectionMode: SelectionMode = .current
     @State private var selectedShuffleEntryID: String?
 
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
-
         let trimmedManifestFile = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return Group {
+        Group {
             if trimmedManifestFile.isEmpty {
                 Text("Shuffle manifest file name is missing.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } else if shouldDriveLiveUpdates(manifestFile: trimmedManifestFile) {
+                let interval: TimeInterval = liveEnabled ? 5.0 : 60.0
+                let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
+
+                TimelineView(.periodic(from: start, by: interval)) { ctx in
+                    WidgetWeaverRenderClock.withNow(ctx.date) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            shuffleBody(manifestFile: trimmedManifestFile)
+                        }
+                    }
+                }
+                .task { setDefaultSelectionIfNeeded() }
+                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in setDefaultSelectionIfNeeded() }
+                .onChange(of: selectionMode) { _, newValue in
+                    guard newValue == .browse else { return }
+                    snapBrowseSelectionToCurrentIfPossible()
+                }
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     shuffleBody(manifestFile: trimmedManifestFile)
                 }
-                .task {
-                    setDefaultSelectionIfNeeded()
-                }
-                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in
-                    setDefaultSelectionIfNeeded()
+                .task { setDefaultSelectionIfNeeded() }
+                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in setDefaultSelectionIfNeeded() }
+                .onChange(of: selectionMode) { _, newValue in
+                    guard newValue == .browse else { return }
+                    snapBrowseSelectionToCurrentIfPossible()
                 }
             }
         }
+    }
+
+    private func shouldDriveLiveUpdates(manifestFile: String) -> Bool {
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFile) else {
+            // If the manifest is missing temporarily, keep the view responsive so it can recover without needing a scroll refresh.
+            return true
+        }
+        return manifest.rotationIntervalMinutes > 0
     }
 
     private func shuffleBody(manifestFile: String) -> some View {
@@ -170,13 +162,26 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    let resolved = resolveSelectedEntry(prepared: prepared, manifest: manifest)
-                    let selectedEntry = resolved?.entry ?? prepared[0].entry
-                    let selectedPosition = prepared.firstIndex(where: { $0.entry.id == selectedEntry.id }) ?? 0
+                    let currentResolved = resolveCurrentEntry(prepared: prepared, manifest: manifest)
+                    let currentEntry = currentResolved?.entry ?? prepared[0].entry
+                    let currentPosition = prepared.firstIndex(where: { $0.entry.id == currentEntry.id }) ?? 0
 
-                    selectedHeader(
-                        selectedPosition: selectedPosition,
+                    let displayedEntry: SmartPhotoShuffleManifest.Entry = {
+                        switch selectionMode {
+                        case .current:
+                            return currentEntry
+                        case .browse:
+                            return resolveBrowseSelectedEntry(prepared: prepared, fallback: currentEntry) ?? currentEntry
+                        }
+                    }()
+
+                    let displayedPosition = prepared.firstIndex(where: { $0.entry.id == displayedEntry.id }) ?? 0
+
+                    header(
+                        manifest: manifest,
                         preparedCount: prepared.count,
+                        displayedPosition: displayedPosition,
+                        currentPosition: currentPosition,
                         canNavigate: prepared.count > 1,
                         onPrev: { selectPrevious(prepared: prepared) },
                         onNext: { selectNext(prepared: prepared) }
@@ -186,28 +191,21 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                         smart: smart,
                         selectedFamily: selectedFamily,
                         onSelectFamily: onSelectFamily,
-                        fixedShuffleEntry: selectedEntry
+                        fixedShuffleEntry: displayedEntry
                     )
 
-                    sizeControls(entry: selectedEntry, manifestFile: manifestFile)
+                    sizeControls(entry: displayedEntry)
 
-                    Button {
-                        Task { await onMakeCurrent(selectedEntry.id) }
-                    } label: {
-                        Label("Make this the current widget photo", systemImage: "pin")
+                    if selectionMode == .browse {
+                        Button {
+                            Task { await onMakeCurrent(displayedEntry.id) }
+                        } label: {
+                            Label("Make this the current widget photo", systemImage: "pin")
+                        }
+                        .disabled(isBusy)
                     }
-                    .disabled(isBusy)
 
-                    if manifest.rotationIntervalMinutes > 0,
-                       let next = manifest.nextChangeDateFrom(now: Date()) {
-                        Text("Home Screen updates at shuffle boundaries. Next change: \(next.formatted(date: .abbreviated, time: .shortened)).")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Rotation is off. Use Prev/Next in Album Shuffle to change the widget photo.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    footer(manifest: manifest)
                 }
             } else {
                 Text("Shuffle manifest not found.")
@@ -217,41 +215,102 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
-    private func selectedHeader(
-        selectedPosition: Int,
+    private func header(
+        manifest: SmartPhotoShuffleManifest,
         preparedCount: Int,
+        displayedPosition: Int,
+        currentPosition: Int,
         canNavigate: Bool,
         onPrev: @escaping () -> Void,
         onNext: @escaping () -> Void
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Selected photo")
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectionMode == .current ? "Current photo" : "Selected photo")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("Photo \(min(preparedCount, displayedPosition + 1)) of \(preparedCount)")
+                        .font(.subheadline)
+                        .bold()
+                }
+
+                Spacer(minLength: 0)
+
+                Picker("Photo selection", selection: $selectionMode) {
+                    Text("Current").tag(SelectionMode.current)
+                    Text("Browse").tag(SelectionMode.browse)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .frame(maxWidth: 220)
+            }
+
+            if selectionMode == .browse {
+                HStack(alignment: .center, spacing: 12) {
+                    Button(action: onPrev) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isBusy || !canNavigate)
+
+                    Button(action: onNext) {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isBusy || !canNavigate)
+
+                    Spacer()
+
+                    if currentPosition != displayedPosition {
+                        Text("Current widget photo: \(min(preparedCount, currentPosition + 1)) of \(preparedCount)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Currently showing this photo")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("Following the shuffle schedule.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-
-                Text("Photo \(min(preparedCount, selectedPosition + 1)) of \(preparedCount)")
-                    .font(.subheadline)
-                    .bold()
             }
 
-            Spacer()
-
-            Button(action: onPrev) {
-                Image(systemName: "chevron.left")
+            if manifest.rotationIntervalMinutes > 0,
+               let next = manifest.nextChangeDateFrom(now: WidgetWeaverRenderClock.now)
+            {
+                Text("Next change: \(next.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Rotation is off (manual only).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderless)
-            .disabled(isBusy || !canNavigate)
-
-            Button(action: onNext) {
-                Image(systemName: "chevron.right")
-            }
-            .buttonStyle(.borderless)
-            .disabled(isBusy || !canNavigate)
         }
     }
 
-    private func sizeControls(entry: SmartPhotoShuffleManifest.Entry, manifestFile: String) -> some View {
+    private func footer(manifest: SmartPhotoShuffleManifest) -> some View {
+        Group {
+            if manifest.rotationIntervalMinutes > 0,
+               let next = manifest.nextChangeDateFrom(now: WidgetWeaverRenderClock.now)
+            {
+                Text("Home Screen updates at shuffle boundaries. Next change: \(next.formatted(date: .abbreviated, time: .shortened)).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Rotation is off. Use Prev/Next in Album Shuffle to change the widget photo.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func sizeControls(entry: SmartPhotoShuffleManifest.Entry) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(EditingFamily.allCases, id: \.rawValue) { family in
                 let hasManual = entryHasManual(for: family, entry: entry)
@@ -305,23 +364,32 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
-    private func resolveSelectedEntry(
+    private func resolveCurrentEntry(
         prepared: [(index: Int, entry: SmartPhotoShuffleManifest.Entry)],
         manifest: SmartPhotoShuffleManifest
     ) -> (index: Int, entry: SmartPhotoShuffleManifest.Entry)? {
-        if let selectedID = selectedShuffleEntryID?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !selectedID.isEmpty,
-           let found = prepared.first(where: { $0.entry.id == selectedID }) {
-            return found
-        }
-
         if let current = manifest.entryForRender(),
-           let found = prepared.first(where: { $0.entry.id == current.id }) {
+           let found = prepared.first(where: { $0.entry.id == current.id })
+        {
             return found
         }
 
         return prepared.first
+    }
+
+    private func resolveBrowseSelectedEntry(
+        prepared: [(index: Int, entry: SmartPhotoShuffleManifest.Entry)],
+        fallback: SmartPhotoShuffleManifest.Entry
+    ) -> SmartPhotoShuffleManifest.Entry? {
+        if let selectedID = selectedShuffleEntryID?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !selectedID.isEmpty,
+           let found = prepared.first(where: { $0.entry.id == selectedID })?.entry
+        {
+            return found
+        }
+
+        return fallback
     }
 
     private func setDefaultSelectionIfNeeded() {
@@ -332,16 +400,41 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         let prepared = preparedEntries(manifest)
         guard !prepared.isEmpty else { return }
 
-        if let selectedID = selectedShuffleEntryID?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !selectedID.isEmpty,
-           prepared.contains(where: { $0.entry.id == selectedID }) {
+        if selectionMode == .browse {
+            if let selectedID = selectedShuffleEntryID?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !selectedID.isEmpty,
+               prepared.contains(where: { $0.entry.id == selectedID })
+            {
+                return
+            }
+
+            if let current = manifest.entryForRender(),
+               prepared.contains(where: { $0.entry.id == current.id })
+            {
+                selectedShuffleEntryID = current.id
+            } else {
+                selectedShuffleEntryID = prepared.first?.entry.id
+            }
             return
         }
+
+        if selectedShuffleEntryID == nil,
+           let current = manifest.entryForRender()
+        {
+            selectedShuffleEntryID = current.id
+        }
+    }
+
+    private func snapBrowseSelectionToCurrentIfPossible() {
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else { return }
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return }
 
         if let current = manifest.entryForRender() {
             selectedShuffleEntryID = current.id
         } else {
+            let prepared = preparedEntries(manifest)
             selectedShuffleEntryID = prepared.first?.entry.id
         }
     }
