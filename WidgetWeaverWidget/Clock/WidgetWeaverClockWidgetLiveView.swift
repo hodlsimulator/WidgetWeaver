@@ -117,7 +117,7 @@ fileprivate struct WWClockRenderBody: View {
         let isPlaceholder = redactionReasons.contains(.placeholder)
 
         let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
-        let showSeconds = (tickMode == .secondsSweep)
+        let showSeconds = (tickMode == .secondsSweep) && (!isPlaceholder)
 
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)

@@ -7,13 +7,9 @@ generate_minute_hand_font.py
 Per-second minute-hand ticking font.
 
 Clones WWClockSecondHand-Regular.ttf into WWClockMinuteHand-Regular.ttf and replaces:
-- GSUB ligature lookup so Text(timerInterval:) selects a minute-hand glyph based on mm:ss (and m:ss)
+- GSUB ligature lookup so Text(timerInterval:) selects a minute-hand glyph based on timer text
 - adds mh0000..mh3599 glyphs (one per second-of-hour) as rotated needle silhouettes
-- updates the name table
-
-The GSUB mapping intentionally ignores the hour prefix. In strings like "1:05:07", the
-sequence "05:07" still exists and is sufficient to select the correct per-second
-minute-hand position. Hour digits/colon glyphs in the template are empty/zero-width.
+- updates the name table (Mac + Windows records) so iOS registers the font as WWClockMinuteHand-Regular
 
 Output:
   WidgetWeaverWidget/Clock/WWClockMinuteHand-Regular.ttf
@@ -23,20 +19,12 @@ Dependencies:
 
 Run from repo root:
   python3 -u Scripts/generate_minute_hand_font.py
-
-Debug:
-  - While saving, a heartbeat prints periodically.
-  - Sending SIGUSR1 prints a Python stack trace:
-      pgrep -f generate_minute_hand_font.py
-      kill -USR1 <pid>
 """
 
 from __future__ import annotations
 
-import faulthandler
 import math
 import os
-import signal
 import sys
 import threading
 import time
@@ -46,6 +34,9 @@ from fontTools.otlLib import builder as otl
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
+
+# Must match WidgetWeaverClockWidgetLiveView.minuteHandTimerWindowSeconds (2 hours).
+WINDOW_HOURS = 2
 
 # 1 = per-second positions (3600 glyphs/hour). 5 = every 5s (720 glyphs/hour), etc.
 TICK_SECONDS = 1
@@ -132,7 +123,6 @@ def make_hand_glyph(
       - square dial box: 0..dial_size
       - centre at (dial_size/2, dial_size/2)
       - 0 degrees points up (12 o’clock)
-      - rotation clockwise on screen -> negative rotation here
     """
     cx = cy = dial_size / 2.0
     x0 = cx - (width / 2.0)
@@ -188,7 +178,7 @@ def find_seconds_ligature_lookup_index(font: TTFont) -> Optional[int]:
             if not ligs:
                 continue
 
-            for first, lst in ligs.items():
+            for _, lst in ligs.items():
                 for lig in lst:
                     out = getattr(lig, "LigGlyph", "")
                     if isinstance(out, str) and out.startswith("sec"):
@@ -203,32 +193,31 @@ def update_name_table(font: TTFont) -> None:
 
     name_table = font["name"]
 
-    def set_name(name_id: int, value: str) -> None:
-        remove = []
+    def set_name_all_platforms(name_id: int, value: str) -> None:
+        kept = []
         for rec in name_table.names:
-            if rec.nameID == name_id and rec.platformID == 3 and rec.langID == 0x409:
-                remove.append(rec)
-        for rec in remove:
-            name_table.names.remove(rec)
-        name_table.setName(value, name_id, 3, 1, 0x409)
+            if rec.nameID == name_id and rec.platformID in (1, 3):
+                continue
+            kept.append(rec)
+        name_table.names = kept
 
-    set_name(1, "WWClockMinuteHand")
-    set_name(2, "Regular")
-    set_name(3, "WWClockMinuteHand-Regular")
-    set_name(4, "WWClockMinuteHand Regular")
-    set_name(5, "Version 1.0")
-    set_name(6, "WWClockMinuteHand-Regular")
+        # Mac (platform 1) — language 0 = English, encoding 0 = Roman
+        name_table.setName(value, name_id, 1, 0, 0)
+
+        # Windows (platform 3) — encoding 1 = Unicode BMP, lang 0x0409 = en-US
+        name_table.setName(value, name_id, 3, 1, 0x0409)
+
+    set_name_all_platforms(1, "WWClockMinuteHand")
+    set_name_all_platforms(2, "Regular")
+    set_name_all_platforms(3, "WWClockMinuteHand-Regular")
+    set_name_all_platforms(4, "WWClockMinuteHand Regular")
+    set_name_all_platforms(5, "Version 1.0")
+    set_name_all_platforms(6, "WWClockMinuteHand-Regular")
 
 
 def main() -> None:
     if SECONDS_PER_HOUR % TICK_SECONDS != 0:
         raise ValueError("TICK_SECONDS must divide 3600 evenly")
-
-    faulthandler.enable()
-    try:
-        faulthandler.register(signal.SIGUSR1)
-    except Exception:
-        pass
 
     repo_root = os.getcwd()
     template_path = os.path.join(repo_root, REPO_REL_TEMPLATE_TTF)
@@ -246,8 +235,25 @@ def main() -> None:
     positions = SECONDS_PER_HOUR // TICK_SECONDS
     log(f"Per-hour positions: {positions} (TICK_SECONDS={TICK_SECONDS})")
 
-    log("Building ligature mappings for mm:ss and m:ss…")
+    log("Building ligature mappings…")
+
+    # 1) Hour form: h:mm:ss (covers WINDOW_HOURS, to avoid m:ss matching the hour prefix)
+    mapping_h_mm_ss: Dict[Tuple[str, ...], str] = {}
+
+    # Map hours 0..(WINDOW_HOURS-1). For WINDOW_HOURS=2 => 0 and 1.
+    for h in range(0, WINDOW_HOURS):
+        for m in range(0, 60):
+            for s in range(0, 60):
+                t = m * 60 + s
+                bucket = t // TICK_SECONDS
+                out_glyph = glyph_name_for_bucket(bucket)
+
+                timer_h = f"{h}:{m:02d}:{s:02d}"
+                mapping_h_mm_ss[glyph_seq_for_string(char_to_glyph, timer_h)] = out_glyph
+
+    # 2) Under 1 hour: mm:ss
     mapping_mmss: Dict[Tuple[str, ...], str] = {}
+    # 3) Under 10 minutes: m:ss
     mapping_mss: Dict[Tuple[str, ...], str] = {}
 
     for m in range(0, 60):
@@ -263,23 +269,25 @@ def main() -> None:
                 timer_mss = f"{m}:{s:02d}"
                 mapping_mss[glyph_seq_for_string(char_to_glyph, timer_mss)] = out_glyph
 
-    log(f"Mapping entries mm:ss: {len(mapping_mmss)}")
-    log(f"Mapping entries  m:ss: {len(mapping_mss)}")
-    log(f"Mapping total entries: {len(mapping_mmss) + len(mapping_mss)}")
+    log(f"Mapping entries h:mm:ss: {len(mapping_h_mm_ss)}")
+    log(f"Mapping entries mm:ss:  {len(mapping_mmss)}")
+    log(f"Mapping entries  m:ss:  {len(mapping_mss)}")
+    log(f"Mapping total entries:  {len(mapping_h_mm_ss) + len(mapping_mmss) + len(mapping_mss)}")
 
     idx = find_seconds_ligature_lookup_index(font)
     if idx is None:
         raise RuntimeError("Could not locate the seconds-hand ligature lookup in GSUB")
 
     log(f"Replacing GSUB ligature lookup at index {idx}…")
+    sub_h = otl.buildLigatureSubstSubtable(mapping_h_mm_ss)
     sub_mmss = otl.buildLigatureSubstSubtable(mapping_mmss)
     sub_mss = otl.buildLigatureSubstSubtable(mapping_mss)
 
     gsub = font["GSUB"].table
     lookup = gsub.LookupList.Lookup[idx]
     lookup.LookupType = 4
-    lookup.SubTable = [sub_mmss, sub_mss]
-    lookup.SubTableCount = 2
+    lookup.SubTable = [sub_h, sub_mmss, sub_mss]
+    lookup.SubTableCount = 3
 
     log("Adding mh**** glyphs + outlines…")
     glyf = font["glyf"]
@@ -317,7 +325,7 @@ def main() -> None:
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    log("Saving font (heartbeat will print)…")
+    log("Saving font (heartbeat will print if slow)…")
     stop = start_heartbeat("Saving font", interval_seconds=5.0)
     try:
         font.save(out_path)
