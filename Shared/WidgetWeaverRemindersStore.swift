@@ -51,6 +51,11 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         return d
     }
 
+    @inline(__always)
+    private func synchroniseAppGroupDefaults() {
+        defaults.synchronize()
+    }
+
     private func notifyWidgetsRemindersUpdated() {
         #if canImport(WidgetKit)
         // Avoid re-entrant reload loops while the widget extension is rendering.
@@ -58,6 +63,9 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
 
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            #if DEBUG
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
         }
         #endif
     }
@@ -65,6 +73,8 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
     // MARK: Snapshot
 
     public func loadSnapshot() -> WidgetWeaverRemindersSnapshot? {
+        synchroniseAppGroupDefaults()
+
         let decoder = makeDecoder()
 
         if let data = defaults.data(forKey: Keys.snapshotData),
@@ -81,6 +91,7 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
             let encoder = makeEncoder()
             if let healed = try? encoder.encode(snap) {
                 defaults.set(healed, forKey: Keys.snapshotData)
+                synchroniseAppGroupDefaults()
             }
             return snap
         }
@@ -95,11 +106,15 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
             defaults.set(data, forKey: Keys.snapshotData)
             UserDefaults.standard.set(data, forKey: Keys.snapshotData)
 
+            synchroniseAppGroupDefaults()
+
             saveLastUpdatedAt(snapshot.generatedAt)
             clearLastError()
         } else {
             defaults.removeObject(forKey: Keys.snapshotData)
             UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+
+            synchroniseAppGroupDefaults()
         }
 
         notifyWidgetsRemindersUpdated()
@@ -108,18 +123,22 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
     public func clearSnapshot() {
         defaults.removeObject(forKey: Keys.snapshotData)
         UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+        synchroniseAppGroupDefaults()
         notifyWidgetsRemindersUpdated()
     }
 
     // MARK: Last updated
 
     public func loadLastUpdatedAt() -> Date? {
+        synchroniseAppGroupDefaults()
+
         let t = defaults.double(forKey: Keys.lastUpdatedAt)
         if t > 0 { return Date(timeIntervalSince1970: t) }
 
         let legacy = UserDefaults.standard.double(forKey: Keys.lastUpdatedAt)
         if legacy > 0 {
             defaults.set(legacy, forKey: Keys.lastUpdatedAt)
+            synchroniseAppGroupDefaults()
             return Date(timeIntervalSince1970: legacy)
         }
 
@@ -135,11 +154,15 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
             defaults.removeObject(forKey: Keys.lastUpdatedAt)
             UserDefaults.standard.removeObject(forKey: Keys.lastUpdatedAt)
         }
+
+        synchroniseAppGroupDefaults()
     }
 
     // MARK: Last error
 
     public func loadLastError() -> WidgetWeaverRemindersDiagnostics? {
+        synchroniseAppGroupDefaults()
+
         let rawMessage = (defaults.string(forKey: Keys.lastErrorMessage)
                           ?? UserDefaults.standard.string(forKey: Keys.lastErrorMessage)
                           ?? "")
@@ -158,6 +181,7 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
             let legacy = UserDefaults.standard.double(forKey: Keys.lastErrorAt)
             if legacy > 0 {
                 defaults.set(legacy, forKey: Keys.lastErrorAt)
+                synchroniseAppGroupDefaults()
                 return Date(timeIntervalSince1970: legacy)
             }
             return Date()
@@ -170,6 +194,8 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         if defaults.string(forKey: Keys.lastErrorKind) == nil {
             defaults.set(kind.rawValue, forKey: Keys.lastErrorKind)
         }
+
+        synchroniseAppGroupDefaults()
 
         return WidgetWeaverRemindersDiagnostics(kind: kind, message: message, at: at)
     }
@@ -192,6 +218,7 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
             clearLastError()
         }
 
+        synchroniseAppGroupDefaults()
         notifyWidgetsRemindersUpdated()
     }
 
@@ -203,5 +230,7 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorKind)
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorMessage)
         UserDefaults.standard.removeObject(forKey: Keys.lastErrorAt)
+
+        synchroniseAppGroupDefaults()
     }
 }
