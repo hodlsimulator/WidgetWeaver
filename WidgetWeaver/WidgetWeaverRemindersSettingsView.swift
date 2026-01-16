@@ -577,21 +577,22 @@ private final class RemindersReadSpikeModel: ObservableObject {
 
         let now = Date()
         let cal = Calendar.current
-        let start = cal.startOfDay(for: now)
-        guard let end = cal.date(byAdding: .day, value: 1, to: start) else {
-            todaySample = []
-            lastError = "Failed to compute Today window."
-            return
-        }
+        let todayYMD = cal.dateComponents([.year, .month, .day], from: now)
 
         let calendars = eventStore.calendars(for: .reminder)
+
+        // Broad fetch, then filter locally by dueDateComponents Y/M/D.
         let predicate = eventStore.predicateForIncompleteReminders(
-            withDueDateStarting: start,
-            ending: end,
+            withDueDateStarting: nil,
+            ending: nil,
             calendars: calendars
         )
 
-        let mapped = await fetchReminderRows(matching: predicate, calendar: cal)
+        let mapped = await fetchReminderRowsDueToday(
+            matching: predicate,
+            calendar: cal,
+            todayYMD: todayYMD
+        )
 
         todaySample = mapped
             .sorted { a, b in
@@ -611,6 +612,42 @@ private final class RemindersReadSpikeModel: ObservableObject {
             .map { $0 }
 
         lastUpdatedAt = Date()
+    }
+    
+    private func fetchReminderRowsDueToday(
+        matching predicate: NSPredicate,
+        calendar: Calendar,
+        todayYMD: DateComponents
+    ) async -> [ReminderRow] {
+        await withCheckedContinuation { cont in
+            eventStore.fetchReminders(matching: predicate) { reminders in
+                let rows: [ReminderRow] = (reminders ?? []).compactMap { r in
+                    guard let dueComponents = r.dueDateComponents else { return nil }
+                    guard
+                        dueComponents.year == todayYMD.year,
+                        dueComponents.month == todayYMD.month,
+                        dueComponents.day == todayYMD.day
+                    else { return nil }
+
+                    let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let safeTitle = title.isEmpty ? "Untitled" : title
+
+                    let dueDate = calendar.date(from: dueComponents)
+                    let hasTime = (dueComponents.hour != nil) || (dueComponents.minute != nil) || (dueComponents.second != nil)
+
+                    return ReminderRow(
+                        id: r.calendarItemIdentifier,
+                        title: safeTitle,
+                        listID: r.calendar.calendarIdentifier,
+                        listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
+                        dueDate: dueDate,
+                        dueHasTime: hasTime
+                    )
+                }
+
+                cont.resume(returning: rows)
+            }
+        }
     }
 
     /// Converts EventKit reminders into Sendable rows inside the EventKit callback,
