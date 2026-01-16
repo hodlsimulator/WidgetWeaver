@@ -260,10 +260,80 @@ public actor WidgetWeaverRemindersEngine {
         return WidgetWeaverRemindersSnapshot(
             generatedAt: Date(),
             items: limited,
-            modes: [],
+            modes: Self.buildModeSnapshots(items: limited),
             diagnostics: WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: Date())
         )
     }
+
+    // MARK: - Mode snapshots (Phase 3.3)
+
+    /// Builds per-mode ordering indices for widget rendering.
+    ///
+    /// Notes:
+    /// - These are intentionally *ordering* indices, not per-widget filters.
+    /// - Widgets still apply their own config filters (list selection, soon window, etc.).
+    /// - Tie-breaks include `id` to keep ordering stable.
+    private static func buildModeSnapshots(items: [WidgetWeaverReminderItem]) -> [WidgetWeaverRemindersModeSnapshot] {
+        func compareGeneral(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
+            let da = a.dueDate ?? a.startDate ?? Date.distantFuture
+            let db = b.dueDate ?? b.startDate ?? Date.distantFuture
+
+            if da != db { return da < db }
+
+            let titleComp = a.title.localizedCaseInsensitiveCompare(b.title)
+            if titleComp != .orderedSame { return titleComp == .orderedAscending }
+
+            return a.id < b.id
+        }
+
+        func compareDueOnly(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
+            let da = a.dueDate ?? Date.distantFuture
+            let db = b.dueDate ?? Date.distantFuture
+
+            if da != db { return da < db }
+
+            let titleComp = a.title.localizedCaseInsensitiveCompare(b.title)
+            if titleComp != .orderedSame { return titleComp == .orderedAscending }
+
+            return a.id < b.id
+        }
+
+        func compareList(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
+            let listComp = a.listTitle.localizedCaseInsensitiveCompare(b.listTitle)
+            if listComp != .orderedSame { return listComp == .orderedAscending }
+
+            let da = a.dueDate ?? a.startDate ?? Date.distantFuture
+            let db = b.dueDate ?? b.startDate ?? Date.distantFuture
+
+            if da != db { return da < db }
+
+            let titleComp = a.title.localizedCaseInsensitiveCompare(b.title)
+            if titleComp != .orderedSame { return titleComp == .orderedAscending }
+
+            return a.id < b.id
+        }
+
+        let allSorted = items.sorted(by: compareGeneral)
+        let dueSorted = items
+            .filter { $0.dueDate != nil }
+            .sorted(by: compareDueOnly)
+
+        let flaggedSorted = items
+            .filter { $0.isFlagged }
+            .sorted(by: compareGeneral)
+
+        let listSorted = items.sorted(by: compareList)
+
+        return [
+            WidgetWeaverRemindersModeSnapshot(mode: .today, itemIDs: allSorted.map { $0.id }),
+            WidgetWeaverRemindersModeSnapshot(mode: .overdue, itemIDs: dueSorted.map { $0.id }),
+            WidgetWeaverRemindersModeSnapshot(mode: .soon, itemIDs: dueSorted.map { $0.id }),
+            WidgetWeaverRemindersModeSnapshot(mode: .flagged, itemIDs: flaggedSorted.map { $0.id }),
+            WidgetWeaverRemindersModeSnapshot(mode: .focus, itemIDs: allSorted.map { $0.id }),
+            WidgetWeaverRemindersModeSnapshot(mode: .list, itemIDs: listSorted.map { $0.id }),
+        ]
+    }
+
 
     // MARK: - Fetching
 
