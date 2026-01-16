@@ -428,13 +428,13 @@ private final class RemindersPermissionsModel: ObservableObject {
 
 @MainActor
 private final class RemindersReadSpikeModel: ObservableObject {
-    struct ReminderListRow: Identifiable, Hashable, Sendable {
+    nonisolated struct ReminderListRow: Identifiable, Hashable, Sendable {
         let id: String
         let title: String
         let sourceTitle: String?
     }
 
-    struct ReminderRow: Identifiable, Hashable, Sendable {
+    nonisolated struct ReminderRow: Identifiable, Hashable, Sendable {
         let id: String
         let title: String
         let listID: String
