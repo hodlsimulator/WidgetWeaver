@@ -17,7 +17,19 @@ struct SmartPhotoPreviewStripView: View {
     /// When Album Shuffle is enabled, this view normally follows `manifest.entryForRender()`.
     /// In the manual framing editor, the selected entry should be stable so edits apply to a
     /// single photo at a time.
-    let fixedShuffleEntry: SmartPhotoShuffleManifest.Entry? = nil
+    let fixedShuffleEntry: SmartPhotoShuffleManifest.Entry?
+
+    init(
+        smart: SmartPhotoSpec,
+        selectedFamily: EditingFamily,
+        onSelectFamily: @escaping (EditingFamily) -> Void,
+        fixedShuffleEntry: SmartPhotoShuffleManifest.Entry? = nil
+    ) {
+        self.smart = smart
+        self.selectedFamily = selectedFamily
+        self.onSelectFamily = onSelectFamily
+        self.fixedShuffleEntry = fixedShuffleEntry
+    }
 
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
