@@ -35,6 +35,7 @@ extension ContentView {
                     smartPhoto: binding(\.imageSmartPhoto),
                     importInProgress: $importInProgress,
                     saveStatusMessage: $saveStatusMessage,
+                    specID: selectedSpecID,
                     focus: $editorFocusSnapshot,
                     albumPickerPresented: $albumShufflePickerPresented
                 )

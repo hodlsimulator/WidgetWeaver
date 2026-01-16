@@ -65,6 +65,52 @@ public final class WidgetSpecStore: @unchecked Sendable {
         loadAllInternal().first(where: { $0.id == id })?.normalised()
     }
 
+    /// Updates the Smart Photo album-shuffle manifest reference for a spec without overwriting other fields.
+    ///
+    /// This is used for Album Shuffle enable/disable so the Home Screen widget and in-app previews stay in sync
+    /// even when the user has other unsaved draft changes.
+    public func setSmartPhotoShuffleManifestFileName(specID: UUID, manifestFileName: String?) {
+        var specs = loadAllInternal()
+        guard let idx = specs.firstIndex(where: { $0.id == specID }) else { return }
+
+        var spec = specs[idx].normalised()
+
+        let cleaned: String? = {
+            let trimmed = (manifestFileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }()
+
+        func updateImageSpec(_ image: inout ImageSpec?) {
+            guard var img = image else { return }
+            guard var sp = img.smartPhoto else { return }
+            sp.shuffleManifestFileName = cleaned
+            img.smartPhoto = sp
+            image = img
+        }
+
+        updateImageSpec(&spec.image)
+
+        if var matched = spec.matchedSet {
+            if var v = matched.small {
+                updateImageSpec(&v.image)
+                matched.small = v
+            }
+            if var v = matched.medium {
+                updateImageSpec(&v.image)
+                matched.medium = v
+            }
+            if var v = matched.large {
+                updateImageSpec(&v.image)
+                matched.large = v
+            }
+            spec.matchedSet = matched.normalisedOrNil()
+        }
+
+        specs[idx] = spec.normalised()
+        saveAllInternal(specs)
+        flushAndNotifyWidgets()
+    }
+
     public func defaultSpecID() -> UUID? {
         guard let raw = defaults.string(forKey: defaultIDKey) else { return nil }
         return UUID(uuidString: raw)

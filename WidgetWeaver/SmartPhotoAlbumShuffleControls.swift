@@ -19,6 +19,8 @@ struct SmartPhotoAlbumShuffleControls: View {
     @Binding var importInProgress: Bool
     @Binding var saveStatusMessage: String
 
+    let specID: UUID
+
     var focus: Binding<EditorFocusSnapshot>? = nil
 
     var albumPickerPresented: Binding<Bool>? = nil
@@ -386,6 +388,9 @@ struct SmartPhotoAlbumShuffleControls: View {
         sp.shuffleManifestFileName = manifestFile
         smartPhoto = sp
 
+        // Persist immediately so the widget extension uses the same manifest as the editor.
+        WidgetSpecStore.shared.setSmartPhotoShuffleManifestFileName(specID: specID, manifestFileName: manifestFile)
+
         albumPickerPresentedBinding.wrappedValue = false
         albumPickerState = .idle
 
@@ -408,11 +413,14 @@ struct SmartPhotoAlbumShuffleControls: View {
         sp.shuffleManifestFileName = nil
         smartPhoto = sp
 
+        // Persist immediately so the widget extension stays in sync with the editor.
+        WidgetSpecStore.shared.setSmartPhotoShuffleManifestFileName(specID: specID, manifestFileName: nil)
+
         progress = nil
         nextChangeDate = nil
         rotationIntervalMinutes = 60
 
-        saveStatusMessage = "Album shuffle disabled (draft only).\nSave to update widgets."
+        saveStatusMessage = "Album shuffle disabled."
     }
 
     // MARK: - Rotation
@@ -450,9 +458,9 @@ struct SmartPhotoAlbumShuffleControls: View {
         await refreshFromManifest()
 
         if minutes <= 0 {
-            saveStatusMessage = "Rotation disabled (manual only).\nSave to update widgets."
+            saveStatusMessage = "Rotation disabled (manual only)."
         } else {
-            saveStatusMessage = "Rotation set to \(rotationLabel(minutes: minutes)).\nSave to update widgets."
+            saveStatusMessage = "Rotation set to \(rotationLabel(minutes: minutes))."
         }
     }
 
@@ -530,9 +538,9 @@ struct SmartPhotoAlbumShuffleControls: View {
         await refreshFromManifest()
 
         if didCatchUp {
-            saveStatusMessage = "Advanced to next photo (rotation caught up).\nSave to update widgets."
+            saveStatusMessage = "Advanced to next photo (rotation caught up)."
         } else {
-            saveStatusMessage = "Advanced to next photo.\nSave to update widgets."
+            saveStatusMessage = "Advanced to next photo."
         }
     }
 
@@ -665,11 +673,11 @@ struct SmartPhotoAlbumShuffleControls: View {
         await refreshFromManifest()
 
         if outcome.preparedNow == 0, outcome.failedNow == 0 {
-            saveStatusMessage = "No more photos to prepare right now.\nSave to update widgets."
+            saveStatusMessage = "No more photos to prepare right now."
         } else if outcome.failedNow == 0 {
-            saveStatusMessage = "Prepared \(outcome.preparedNow) photos for shuffle.\nSave to update widgets."
+            saveStatusMessage = "Prepared \(outcome.preparedNow) photos for shuffle."
         } else {
-            saveStatusMessage = "Prepared \(outcome.preparedNow) photos (\(outcome.failedNow) failed).\nSave to update widgets."
+            saveStatusMessage = "Prepared \(outcome.preparedNow) photos (\(outcome.failedNow) failed)."
         }
     }
 
