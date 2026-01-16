@@ -41,8 +41,8 @@ struct WidgetWeaverClockGlowsOverlayView: View {
         let capGlowBlur = max(px, capLength * 0.18)
         let pipGlowBlur = max(px, pipSide * 0.20)
 
-        let minuteGlowWidth = max(px, minuteWidth * 0.14)
-        let minuteGlowBlur = max(px, minuteWidth * 0.20)
+        let minuteGlowWidth = max(px, minuteWidth * 0.10)
+        let minuteGlowBlur = max(px, minuteWidth * 0.14)
 
         let secondGlowBlur = max(px, secondWidth * 0.95)
         let secondTipGlowBlur = max(px, secondWidth * 1.05)
@@ -75,8 +75,8 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: palette.accent.opacity(0.00), location: 0.00),
-                            .init(color: palette.accent.opacity(0.08), location: 0.55),
-                            .init(color: palette.accent.opacity(0.34), location: 1.00)
+                            .init(color: palette.accent.opacity(0.04), location: 0.55),
+                            .init(color: palette.accent.opacity(0.18), location: 1.00)
                         ]),
                         startPoint: .bottom,
                         endPoint: .top

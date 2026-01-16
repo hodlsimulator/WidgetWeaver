@@ -153,26 +153,79 @@ struct WidgetWeaverClockNumeralsView: View {
     @ViewBuilder
     private func numeral(_ text: String, px: CGFloat) -> some View {
         let face = Text(text)
-            .font(.system(size: fontSize, weight: .semibold, design: .default))
+            .font(.system(size: fontSize, weight: .bold, design: .default))
             .fixedSize()
 
-        ZStack {
-            face
-                .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: px, y: px)
+        let fill = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.numeralLight, location: 0.00),
+                .init(color: palette.numeralMid, location: 0.56),
+                .init(color: palette.numeralDark, location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
 
+        let bevelOverlay = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.26), location: 0.00),
+                .init(color: Color.clear, location: 0.52),
+                .init(color: Color.black.opacity(0.22), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        ZStack {
+            // Drop depth (small, so it reads embossed not floating).
+            face
+                .foregroundStyle(palette.numeralDark.opacity(0.55))
+                .offset(x: px * 1.6, y: px * 1.9)
+                .blur(radius: max(0, px * 0.45))
+                .blendMode(.multiply)
+
+            // Inner bevel: highlight + shade.
             face
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -px, y: -px)
+                .offset(x: -px * 1.1, y: -px * 1.2)
+                .blur(radius: max(0, px * 0.40))
+                .blendMode(.screen)
 
             face
-                .foregroundStyle(palette.numeralLight)
+                .foregroundStyle(palette.numeralInnerShade)
+                .offset(x: px * 1.1, y: px * 1.2)
+                .blur(radius: max(0, px * 0.45))
+                .blendMode(.multiply)
+
+            face
+                .foregroundStyle(fill)
+                .overlay(
+                    face
+                        .foregroundStyle(bevelOverlay)
+                        .blendMode(.overlay)
+                )
+
+            // Specular streak (very subtle).
+            face
+                .foregroundStyle(
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: Color.white.opacity(0.0), location: 0.00),
+                            .init(color: Color.white.opacity(0.14), location: 0.40),
+                            .init(color: Color.white.opacity(0.0), location: 1.00)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .blendMode(.screen)
+                .opacity(0.85)
         }
         .shadow(
             color: palette.numeralShadow,
-            radius: max(px, fontSize * 0.06),
+            radius: max(px, fontSize * 0.05),
             x: 0,
-            y: max(px, fontSize * 0.03)
+            y: max(px, fontSize * 0.025)
         )
     }
 }

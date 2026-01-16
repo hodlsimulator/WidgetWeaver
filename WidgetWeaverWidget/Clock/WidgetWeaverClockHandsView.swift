@@ -25,6 +25,10 @@ struct WidgetWeaverClockHandShadowsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
+        let hourStemLength = hourLength * 0.26
+        let hourWedgeLift = hourStemLength * 0.62
+        let hourWedgeLength = max(1, hourLength - hourWedgeLift)
+
         let hourShadowBlur = max(px, hourWidth * 0.055)
         let hourShadowOffset = max(px, hourWidth * 0.055)
 
@@ -32,11 +36,12 @@ struct WidgetWeaverClockHandShadowsView: View {
         let minuteShadowOffset = max(px, minuteWidth * 0.050)
 
         ZStack {
+            // Hour wedge shadow (wedge is lifted to expose the stem).
             WidgetWeaverClockHourWedgeShape()
                 .fill(palette.handShadow.opacity(0.55))
-                .frame(width: hourWidth, height: hourLength)
+                .frame(width: hourWidth, height: hourWedgeLength)
                 .rotationEffect(hourAngle, anchor: .bottom)
-                .offset(y: -hourLength / 2.0)
+                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                 .offset(x: hourShadowOffset, y: hourShadowOffset)
                 .blur(radius: hourShadowBlur)
 
@@ -78,6 +83,13 @@ struct WidgetWeaverClockHandsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
+        let hourStemLength = hourLength * 0.26
+        let hourWedgeLift = hourStemLength * 0.62
+        let hourWedgeLength = max(1, hourLength - hourWedgeLift)
+
+        let stemWidth = max(px, hourWidth * 0.34)
+        let stemCorner = stemWidth * 0.42
+
         // Screen-space metal field (consistent light direction).
         let metalField = LinearGradient(
             gradient: Gradient(stops: [
@@ -91,50 +103,83 @@ struct WidgetWeaverClockHandsView: View {
         .frame(width: dialDiameter, height: dialDiameter)
 
         ZStack {
-            // MARK: Hour hand (heavier wedge, stronger bevel separation)
+            // MARK: Hour hand stem (dark, as in the mock)
+            ZStack {
+                let stemShape = RoundedRectangle(cornerRadius: stemCorner, style: .continuous)
+
+                stemShape
+                    .fill(palette.separatorRing.opacity(0.98))
+
+                stemShape
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.10), location: 0.0),
+                                .init(color: Color.clear, location: 0.55),
+                                .init(color: Color.black.opacity(0.28), location: 1.0)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.overlay)
+
+                stemShape
+                    .strokeBorder(Color.black.opacity(0.42), lineWidth: max(px, stemWidth * 0.14))
+
+                stemShape
+                    .strokeBorder(Color.white.opacity(0.07), lineWidth: max(px, stemWidth * 0.10))
+                    .blendMode(.screen)
+            }
+            .frame(width: stemWidth, height: hourStemLength)
+            .rotationEffect(hourAngle, anchor: .bottom)
+            .offset(y: -hourStemLength / 2.0)
+            .shadow(color: Color.black.opacity(0.16), radius: max(px, stemWidth * 0.10), x: px, y: px)
+
+            // MARK: Hour hand (original wedge silhouette, slightly rounded corners)
             metalField
                 .mask(
                     WidgetWeaverClockHourWedgeShape()
-                        .frame(width: hourWidth, height: hourLength)
+                        .frame(width: hourWidth, height: hourWedgeLength)
                         .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(y: -hourLength / 2.0)
+                        .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                 )
                 .overlay(
                     // Bright ridge highlight (tight).
                     Rectangle()
                         .fill(Color.white.opacity(0.30))
-                        .frame(width: max(px, hourWidth * 0.16), height: hourLength)
-                        .offset(x: -hourWidth * 0.12, y: -hourLength / 2.0)
+                        .frame(width: max(px, hourWidth * 0.16), height: hourWedgeLength)
+                        .offset(x: -hourWidth * 0.12, y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                         .rotationEffect(hourAngle)
                         .blendMode(.screen)
                         .mask(
                             WidgetWeaverClockHourWedgeShape()
-                                .frame(width: hourWidth, height: hourLength)
+                                .frame(width: hourWidth, height: hourWedgeLength)
                                 .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(y: -hourLength / 2.0)
+                                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                         )
                 )
                 .overlay(
                     // Dark underside plane (tight).
                     Rectangle()
                         .fill(Color.black.opacity(0.22))
-                        .frame(width: max(px, hourWidth * 0.22), height: hourLength)
-                        .offset(x: hourWidth * 0.16, y: -hourLength / 2.0)
+                        .frame(width: max(px, hourWidth * 0.22), height: hourWedgeLength)
+                        .offset(x: hourWidth * 0.16, y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                         .rotationEffect(hourAngle)
                         .blendMode(.multiply)
                         .mask(
                             WidgetWeaverClockHourWedgeShape()
-                                .frame(width: hourWidth, height: hourLength)
+                                .frame(width: hourWidth, height: hourWedgeLength)
                                 .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(y: -hourLength / 2.0)
+                                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                         )
                 )
                 .overlay(
                     WidgetWeaverClockHourWedgeShape()
                         .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
-                        .frame(width: hourWidth, height: hourLength)
+                        .frame(width: hourWidth, height: hourWedgeLength)
                         .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(y: -hourLength / 2.0)
+                        .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
                 )
 
             if minuteLength > 0.0 && minuteWidth > 0.0 {
@@ -297,29 +342,16 @@ struct WidgetWeaverClockHourWedgeShape: Shape {
         let w = rect.width
         let h = rect.height
 
-        let baseInset = w * 0.06
-        let baseWidth = max(1, w - (baseInset * 2.0))
+        let baseInset = w * 0.035
+        let baseLeft = CGPoint(x: rect.minX + baseInset, y: rect.maxY)
+        let baseRight = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
 
-        let stemWidth = max(1, baseWidth * 0.56)
-        let stemHeight = max(1, min(h * 0.22, w * 0.60))
+        let tip = CGPoint(x: rect.midX, y: rect.minY)
 
-        let topWidth = max(1, w * 0.46)
-        let topY = rect.minY
-        let stemTopY = rect.maxY - stemHeight
-
-        let cx = rect.midX
-
-        let p0 = CGPoint(x: cx - stemWidth * 0.5, y: rect.maxY)
-        let p1 = CGPoint(x: cx + stemWidth * 0.5, y: rect.maxY)
-        let p2 = CGPoint(x: cx + baseWidth * 0.5, y: stemTopY)
-        let p3 = CGPoint(x: cx + topWidth * 0.5, y: topY)
-        let p4 = CGPoint(x: cx - topWidth * 0.5, y: topY)
-        let p5 = CGPoint(x: cx - baseWidth * 0.5, y: stemTopY)
-
-        let r = max(1, min(w * 0.28, stemHeight * 0.55))
+        let r = max(1, min(w * 0.10, h * 0.10))
 
         var p = Path()
-        let points = [p0, p1, p2, p3, p4, p5]
+        let points = [baseLeft, tip, baseRight]
         p.move(to: points[0])
         for i in 0..<points.count {
             let t1 = points[(i + 1) % points.count]

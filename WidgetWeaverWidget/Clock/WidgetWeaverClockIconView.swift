@@ -105,8 +105,7 @@ struct WidgetWeaverClockIconView: View {
                 WWClock.clamp(R * 0.016, min: R * 0.014, max: R * 0.018),
                 scale: displayScale
             )
-            let pipInset = WWClock.pixel(1.5, scale: displayScale)
-            let pipRadius = dotRadius - pipInset
+            let pipRadius = dotRadius
 
             let numeralsRadius = WWClock.pixel(
                 WWClock.clamp(R * 0.70, min: R * 0.66, max: R * 0.74),
