@@ -55,6 +55,8 @@
 		E16011802F1985B500A3B10B /* WidgetWeaverRemindersModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160117E2F1985B300A3B10B /* WidgetWeaverRemindersModels.swift */; };
 		E16011822F1985E900A3B10B /* WidgetWeaverRemindersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011812F1985E600A3B10B /* WidgetWeaverRemindersStore.swift */; };
 		E16011832F1985E900A3B10B /* WidgetWeaverRemindersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011812F1985E600A3B10B /* WidgetWeaverRemindersStore.swift */; };
+		E16011852F19C52B00A3B10B /* WidgetWeaverRemindersEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011842F19C52800A3B10B /* WidgetWeaverRemindersEngine.swift */; };
+		E16011862F19C52B00A3B10B /* WidgetWeaverRemindersEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011842F19C52800A3B10B /* WidgetWeaverRemindersEngine.swift */; };
 		E16D84692EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846A2EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */; };
 		E16D846C2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */; };
@@ -189,6 +191,7 @@
 		E16011772F19764A00A3B10B /* WidgetWeaverRemindersDebugStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersDebugStore.swift; sourceTree = "<group>"; };
 		E160117E2F1985B300A3B10B /* WidgetWeaverRemindersModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersModels.swift; sourceTree = "<group>"; };
 		E16011812F1985E600A3B10B /* WidgetWeaverRemindersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersStore.swift; sourceTree = "<group>"; };
+		E16011842F19C52800A3B10B /* WidgetWeaverRemindersEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersEngine.swift; sourceTree = "<group>"; };
 		E16D84682EF8B47700552DCF /* WWThumbnailRenderingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WWThumbnailRenderingPolicy.swift; sourceTree = "<group>"; };
 		E16D846B2EF8E80800552DCF /* WidgetWeaverRenderClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRenderClock.swift; sourceTree = "<group>"; };
 		E1785EB42EF52A6A00F7D707 /* WidgetWeaverWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverWeather.swift; sourceTree = "<group>"; };
@@ -418,6 +421,7 @@
 				E1C834CD2EFAAF3600E3AA98 /* RainForecastSurfaceView.swift */,
 				E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */,
 				E1C834D92EFB33EF00E3AA98 /* RainSurfaceDrawing.swift */,
+				E16011842F19C52800A3B10B /* WidgetWeaverRemindersEngine.swift */,
 				E1C835C32F0324B300E3AA98 /* RainSurfaceDrawing+Core.swift */,
 				E1C835C62F03250600E3AA98 /* RainSurfaceDrawing+Fuzz.swift */,
 				E1C835C92F03256400E3AA98 /* RainSurfaceDrawing+Rim.swift */,
@@ -658,6 +662,7 @@
 				E16011832F1985E900A3B10B /* WidgetWeaverRemindersStore.swift in Sources */,
 				E160117F2F1985B500A3B10B /* WidgetWeaverRemindersModels.swift in Sources */,
 				E16011512F15ECB600A3B10B /* PawPulseBackgroundTasks.swift in Sources */,
+				E16011862F19C52B00A3B10B /* WidgetWeaverRemindersEngine.swift in Sources */,
 				E1C834D42EFAB7F700E3AA98 /* WidgetWeaverWeatherTemplateHourlyStrip.swift in Sources */,
 				E16D846C2EF8E80B00552DCF /* WidgetWeaverRenderClock.swift in Sources */,
 				E16011792F19764C00A3B10B /* WidgetWeaverRemindersDebugStore.swift in Sources */,
@@ -726,6 +731,7 @@
 				E1C834DE2EFB341500E3AA98 /* RainSurfaceGeometry.swift in Sources */,
 				E1C834C82EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */,
 				E15B0BC32EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
+				E16011852F19C52B00A3B10B /* WidgetWeaverRemindersEngine.swift in Sources */,
 				E160114A2F15EC5F00A3B10B /* PawPulseSettingsStore.swift in Sources */,
 				E18676AE2EF240F10098B095 /* WidgetSpec.swift in Sources */,
 				E15B0BB32EF6CD0700760C03 /* WidgetWeaverWeatherTemplateComponents.swift in Sources */,
