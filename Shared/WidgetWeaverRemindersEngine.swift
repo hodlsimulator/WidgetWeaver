@@ -107,13 +107,106 @@ public actor WidgetWeaverRemindersEngine {
                 a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
             }
             .map { cal in
-                let title = cal.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let title = cal.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                 return ReminderListSummary(
                     id: cal.calendarIdentifier,
                     title: title.isEmpty ? "Untitled" : title,
                     sourceTitle: cal.source.title
                 )
             }
+    }
+
+    // MARK: - Snapshot generation (Phase 3.2)
+
+    /// Builds and writes a real Reminders snapshot into the App Group store.
+    ///
+    /// Behaviour:
+    /// - When not authorised (including write-only), clears the cached snapshot (privacy) and writes a helpful error.
+    /// - When authorised, writes a snapshot of *incomplete* reminders (capped to `maxItems`).
+    ///
+    /// Widgets must continue to render from the cached snapshot only.
+    @discardableResult
+    public func refreshSnapshotCache(maxItems: Int = 250) async -> WidgetWeaverRemindersDiagnostics {
+        let store = WidgetWeaverRemindersStore.shared
+        let status = Self.authorisationStatus()
+
+        guard status == .fullAccess else {
+            let diag = diagnosticsForUnauthorisedStatus(status)
+            store.clearSnapshot()
+            store.saveLastUpdatedAt(nil)
+            store.saveLastError(diag)
+            return diag
+        }
+
+        let startedAt = Date()
+
+        do {
+            let snapshot = try await buildGlobalIncompleteSnapshot(maxItems: maxItems)
+            store.saveSnapshot(snapshot)
+
+            let duration = Date().timeIntervalSince(startedAt)
+            let durationString = String(format: "%.2f", duration)
+            let message = "Snapshot updated in \(durationString)s."
+            let diag = WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: Date())
+            return diag
+        } catch {
+            let diag = WidgetWeaverRemindersDiagnostics(
+                kind: .error,
+                message: "Snapshot refresh failed: \(error.localizedDescription)",
+                at: Date()
+            )
+            store.saveLastError(diag)
+            return diag
+        }
+    }
+
+    private func diagnosticsForUnauthorisedStatus(_ status: EKAuthorizationStatus) -> WidgetWeaverRemindersDiagnostics {
+        switch status {
+        case .notDetermined:
+            return WidgetWeaverRemindersDiagnostics(kind: .notAuthorised, message: "Reminders access has not been requested yet.")
+        case .denied:
+            return WidgetWeaverRemindersDiagnostics(kind: .denied, message: "Reminders access is denied. Grant Full Access in Settings to enable Reminders widgets.")
+        case .restricted:
+            return WidgetWeaverRemindersDiagnostics(kind: .restricted, message: "Reminders access is restricted by device policy.")
+        case .writeOnly:
+            return WidgetWeaverRemindersDiagnostics(kind: .writeOnly, message: "Reminders access is write-only. Widgets need Full Access to render snapshots.")
+        case .fullAccess:
+            return WidgetWeaverRemindersDiagnostics(kind: .ok, message: "Reminders access granted.")
+        @unknown default:
+            return WidgetWeaverRemindersDiagnostics(kind: .error, message: "Unknown Reminders authorisation status.")
+        }
+    }
+
+    private func buildGlobalIncompleteSnapshot(maxItems: Int) async throws -> WidgetWeaverRemindersSnapshot {
+        try requireFullAccess()
+
+        let cal = Calendar.current
+        let calendars = eventStore.calendars(for: .reminder)
+
+        let predicate = eventStore.predicateForIncompleteReminders(
+            withDueDateStarting: nil,
+            ending: nil,
+            calendars: calendars
+        )
+
+        let fetched = await fetchReminderItems(matching: predicate, calendar: cal)
+
+        let cappedMax = max(1, min(maxItems, 2_000))
+        let limited = Array(fetched.prefix(cappedMax))
+
+        let message: String = {
+            if fetched.count > limited.count {
+                return "Fetched \(fetched.count) reminder(s) (trimmed to \(limited.count))."
+            }
+            return "Fetched \(limited.count) reminder(s)."
+        }()
+
+        return WidgetWeaverRemindersSnapshot(
+            generatedAt: Date(),
+            items: limited,
+            modes: [],
+            diagnostics: WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: Date())
+        )
     }
 
     // MARK: - Fetching
@@ -189,7 +282,7 @@ public actor WidgetWeaverRemindersEngine {
 
     private func calendarsForSelectedLists(_ selectedListIDs: [String]) -> [EKCalendar]? {
         let cleaned = selectedListIDs
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
         guard !cleaned.isEmpty else {
@@ -203,14 +296,28 @@ public actor WidgetWeaverRemindersEngine {
     }
 
     /// Converts EventKit reminders into `WidgetWeaverReminderItem` inside the EventKit callback.
+    ///
+    /// This implementation intentionally avoids calling `.map` on an Optional, because SwiftUI
+    /// provides a Gesture-related `map` overload that can be selected in some contexts and produce
+    /// `_MapGesture` type errors.
     private func fetchReminderItems(
         matching predicate: NSPredicate,
         calendar: Calendar
     ) async -> [WidgetWeaverReminderItem] {
-        await withCheckedContinuation { cont in
+        await withCheckedContinuation { (cont: CheckedContinuation<[WidgetWeaverReminderItem], Never>) in
             eventStore.fetchReminders(matching: predicate) { reminders in
-                let items: [WidgetWeaverReminderItem] = (reminders ?? []).map { r in
-                    let rawTitle = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let reminderList: [EKReminder]
+                if let reminders {
+                    reminderList = reminders
+                } else {
+                    reminderList = []
+                }
+
+                var items: [WidgetWeaverReminderItem] = []
+                items.reserveCapacity(reminderList.count)
+
+                for r in reminderList {
+                    let rawTitle = (r.title ?? "").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     let title = rawTitle.isEmpty ? "Untitled" : rawTitle
 
                     let dueComponents = r.dueDateComponents
@@ -221,17 +328,22 @@ public actor WidgetWeaverRemindersEngine {
                     let startDate = startComponents.flatMap { calendar.date(from: $0) }
                     let startHasTime = Self.componentsHaveTime(startComponents)
 
-                    return WidgetWeaverReminderItem(
-                        id: r.calendarItemIdentifier,
-                        title: title,
-                        dueDate: dueDate,
-                        dueHasTime: dueHasTime,
-                        startDate: startDate,
-                        startHasTime: startHasTime,
-                        isCompleted: r.isCompleted,
-                        isFlagged: false,
-                        listID: r.calendar.calendarIdentifier,
-                        listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title
+                    let rawListTitle = r.calendar.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    let listTitle = rawListTitle.isEmpty ? "Untitled" : rawListTitle
+
+                    items.append(
+                        WidgetWeaverReminderItem(
+                            id: r.calendarItemIdentifier,
+                            title: title,
+                            dueDate: dueDate,
+                            dueHasTime: dueHasTime,
+                            startDate: startDate,
+                            startHasTime: startHasTime,
+                            isCompleted: r.isCompleted,
+                            isFlagged: false,
+                            listID: r.calendar.calendarIdentifier,
+                            listTitle: listTitle
+                        )
                     )
                 }
 

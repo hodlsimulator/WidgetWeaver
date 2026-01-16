@@ -236,17 +236,17 @@ struct WidgetWeaverRemindersSettingsView: View {
 
 
 
-            Section("Snapshot cache (debug)") {
-                Text("Writes a temporary snapshot into the App Group so widgets and previews can render Reminders content without any EventKit reads in the widget.")
+            Section("Snapshot cache") {
+                Text("Writes a snapshot into the App Group so widgets and previews can render Reminders content without any EventKit reads in the widget.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
+                
                 Button {
-                    snapshotDebug.writeSnapshotFromTodaySample(readSpike.todaySample)
+                    snapshotDebug.refreshSnapshotFromRemindersEngine()
                 } label: {
                     HStack {
-                        Text("Write snapshot now")
+                        Text("Refresh snapshot now")
                         Spacer()
                         if snapshotDebug.isWriting {
                             ProgressView()
@@ -254,20 +254,36 @@ struct WidgetWeaverRemindersSettingsView: View {
                     }
                 }
                 .disabled(snapshotDebug.isWriting)
-
+                
+#if DEBUG
+                Button {
+                    snapshotDebug.writeSnapshotFromTodaySample(readSpike.todaySample)
+                } label: {
+                    HStack {
+                        Text("Debug: write snapshot from Today sample")
+                        Spacer()
+                        if snapshotDebug.isWriting {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(snapshotDebug.isWriting)
+#endif
+                
                 Button(role: .destructive) {
                     snapshotDebug.clearSnapshot()
                 } label: {
                     Text("Clear snapshot")
                 }
-
+                
                 if let snapshot = snapshotDebug.snapshot {
                     Text("Snapshot: \(snapshot.items.count) item(s) • generated \(snapshot.generatedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    
                     if let diag = snapshot.diagnostics {
-                        Text("Diagnostics (\(diag.kind.rawValue)) \(diag.at.formatted(date: .abbreviated, time: .shortened)): \(diag.message)")
+                        Text("Snapshot diagnostics (\(diag.kind.rawValue)) \(diag.at.formatted(date: .abbreviated, time: .shortened)): \(diag.message)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -277,13 +293,13 @@ struct WidgetWeaverRemindersSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
+                
                 if let lastUpdated = snapshotDebug.lastUpdatedAt {
                     Text("Last updated \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
+                
                 if let err = snapshotDebug.lastError {
                     Text("Last error (\(err.kind.rawValue)) \(err.at.formatted(date: .abbreviated, time: .shortened)): \(err.message)")
                         .font(.footnote)
@@ -291,6 +307,7 @@ struct WidgetWeaverRemindersSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            
             Section("Feature flag") {
                 HStack {
                     Text("Reminders template enabled")
@@ -748,6 +765,18 @@ private final class RemindersSnapshotDebugModel: ObservableObject {
         snapshot = store.loadSnapshot()
         lastUpdatedAt = store.loadLastUpdatedAt()
         lastError = store.loadLastError()
+    }
+
+    func refreshSnapshotFromRemindersEngine(maxItems: Int = 250) {
+        guard !isWriting else { return }
+        isWriting = true
+
+        Task { @MainActor in
+            defer { self.isWriting = false }
+
+            _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache(maxItems: maxItems)
+            self.refreshFromStore()
+        }
     }
 
     func writeSnapshotFromTodaySample(_ sample: [RemindersReadSpikeModel.ReminderRow]) {
