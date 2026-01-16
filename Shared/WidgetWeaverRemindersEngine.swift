@@ -447,10 +447,15 @@ public struct WidgetWeaverCompleteReminderWidgetIntent: AppIntent {
     public func perform() async throws -> some IntentResult {
         let cleanedID = reminderID.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
-        let action = await WidgetWeaverRemindersEngine.shared.completeReminder(identifier: cleanedID)
-        WidgetWeaverRemindersStore.shared.saveLastAction(action)
+        let store = WidgetWeaverRemindersStore.shared
 
-        _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache()
+        let action = await WidgetWeaverRemindersEngine.shared.completeReminder(identifier: cleanedID)
+        store.saveLastAction(action)
+
+        let refresh = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache()
+        if action.kind == .completed, refresh.kind == .ok {
+            store.clearLastAction()
+        }
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)

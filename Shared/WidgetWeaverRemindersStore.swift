@@ -313,5 +313,6 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         UserDefaults.standard.removeObject(forKey: Keys.lastActionAt)
 
         synchroniseAppGroupDefaults()
+        notifyWidgetsRemindersUpdated()
     }
 }

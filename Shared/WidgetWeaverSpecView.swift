@@ -43,6 +43,15 @@ public struct WidgetWeaverSpecView: View {
     @AppStorage(WidgetWeaverRemindersStore.Keys.lastErrorAt, store: AppGroup.userDefaults)
     private var remindersLastErrorAt: Double = 0
 
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastActionKind, store: AppGroup.userDefaults)
+    private var remindersLastActionKind: String = ""
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastActionMessage, store: AppGroup.userDefaults)
+    private var remindersLastActionMessage: String = ""
+
+    @AppStorage(WidgetWeaverRemindersStore.Keys.lastActionAt, store: AppGroup.userDefaults)
+    private var remindersLastActionAt: Double = 0
+
 
     // Forces a re-render when the saved spec store changes (so Home Screen widgets update).
     @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults)
@@ -64,6 +73,9 @@ public struct WidgetWeaverSpecView: View {
         let _ = remindersLastErrorKind
         let _ = remindersLastErrorMessage
         let _ = remindersLastErrorAt
+        let _ = remindersLastActionKind
+        let _ = remindersLastActionMessage
+        let _ = remindersLastActionAt
 
         let baseSpec: WidgetSpec = {
             guard context == .widget else { return spec }
@@ -218,6 +230,7 @@ public struct WidgetWeaverSpecView: View {
         let store = WidgetWeaverRemindersStore.shared
         let snapshot = store.loadSnapshot()
         let lastError = store.loadLastError()
+        let lastAction = store.loadLastAction()
         let config = (spec.remindersConfig ?? .default).normalised()
 
         if let snapshot {
@@ -248,7 +261,9 @@ public struct WidgetWeaverSpecView: View {
                             remindersRows(items: items, config: config, layout: layout, style: style, accent: accent)
                         }
 
-                        if let updatedAt = store.loadLastUpdatedAt() {
+                        if let lastAction {
+                            remindersActionBody(lastAction: lastAction, layout: layout, style: style)
+                        } else if let updatedAt = store.loadLastUpdatedAt() {
                             Text("Updated \(updatedAt.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -276,6 +291,10 @@ public struct WidgetWeaverSpecView: View {
                             .lineLimit(1)
 
                         remindersErrorBody(lastError: lastError, layout: layout, style: style)
+
+                        if let lastAction {
+                            remindersActionBody(lastAction: lastAction, layout: layout, style: style)
+                        }
                     }
                     .padding(.top, 2)
 
@@ -324,6 +343,37 @@ public struct WidgetWeaverSpecView: View {
                 .lineLimit(1)
         }
     }
+
+    private func remindersActionBody(lastAction: WidgetWeaverRemindersActionDiagnostics, layout: LayoutSpec, style: StyleSpec) -> some View {
+        let message = lastAction.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeMessage = message.isEmpty ? "No details." : message
+
+        let displayMessage: String = {
+            switch lastAction.kind {
+            case .completed:
+                return safeMessage
+            case .noop:
+                return "No action: \(safeMessage)"
+            case .error:
+                return "Action failed: \(safeMessage)"
+            }
+        }()
+
+        return VStack(alignment: layout.alignment.alignment, spacing: 6) {
+            Text(displayMessage)
+                .font(style.secondaryTextStyle.font(fallback: .caption2))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(lastAction.at.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
 
     private func remindersRows(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
