@@ -195,7 +195,6 @@ fileprivate struct WWClockRenderBody: View {
                 showsCentreHub: false,
                 handsOpacity: handsOpacity
             )
-            .id(handsNow)
             .transition(.identity)
             .transaction { transaction in
                 transaction.animation = nil

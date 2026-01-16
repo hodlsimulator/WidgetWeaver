@@ -212,7 +212,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             // Without an entry-keyed identity, WidgetKit can keep an archived snapshot and stop applying
             // timeline advances to the rendered view.
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
