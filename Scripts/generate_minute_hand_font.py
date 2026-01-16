@@ -4,9 +4,16 @@
 """
 generate_minute_hand_font.py
 
+Per-second minute-hand ticking font.
+
 Clones WWClockSecondHand-Regular.ttf into WWClockMinuteHand-Regular.ttf and replaces:
-- sec00..sec59 outlines with a minute-hand needle silhouette at 60 angles
-- the GSUB ligature lookup so Text(timerInterval:) selects minute-of-hour (0..59)
+- GSUB ligature lookup so Text(timerInterval:) selects a minute-hand glyph based on mm:ss (and m:ss)
+- adds mh0000..mh3599 glyphs (one per second-of-hour) as rotated needle silhouettes
+- updates the name table
+
+The GSUB mapping intentionally ignores the hour prefix. In strings like "1:05:07", the
+sequence "05:07" still exists and is sufficient to select the correct per-second
+minute-hand position. Hour digits/colon glyphs in the template are empty/zero-width.
 
 Output:
   WidgetWeaverWidget/Clock/WWClockMinuteHand-Regular.ttf
@@ -16,13 +23,23 @@ Dependencies:
 
 Run from repo root:
   python3 -u Scripts/generate_minute_hand_font.py
+
+Debug:
+  - While saving, a heartbeat prints periodically.
+  - Sending SIGUSR1 prints a Python stack trace:
+      pgrep -f generate_minute_hand_font.py
+      kill -USR1 <pid>
 """
 
 from __future__ import annotations
 
+import faulthandler
 import math
 import os
+import signal
 import sys
+import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 from fontTools.otlLib import builder as otl
@@ -30,8 +47,11 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
 
-WINDOW_HOURS = 2  # Must match Swift timer window (2 hours recommended)
+# 1 = per-second positions (3600 glyphs/hour). 5 = every 5s (720 glyphs/hour), etc.
+TICK_SECONDS = 1
 
+SECONDS_PER_HOUR = 3600
+GLYPH_PREFIX = "mh"
 
 REPO_REL_TEMPLATE_TTF = os.path.join(
     "WidgetWeaverWidget",
@@ -50,6 +70,20 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def start_heartbeat(label: str, interval_seconds: float = 5.0) -> threading.Event:
+    stop = threading.Event()
+
+    def run() -> None:
+        start = time.perf_counter()
+        while not stop.wait(interval_seconds):
+            elapsed = time.perf_counter() - start
+            log(f"{label}… ({elapsed:.0f}s elapsed)")
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return stop
+
+
 def get_char_to_glyph(font: TTFont) -> Dict[str, str]:
     cmap = font.getBestCmap()
     if cmap is None:
@@ -60,7 +94,9 @@ def get_char_to_glyph(font: TTFont) -> Dict[str, str]:
     for ch in needed:
         g = cmap.get(ord(ch))
         if not g:
-            raise RuntimeError(f"Font cmap missing glyph for character {ch!r} (U+{ord(ch):04X})")
+            raise RuntimeError(
+                f"Font cmap missing glyph for character {ch!r} (U+{ord(ch):04X})"
+            )
         out[ch] = g
 
     return out
@@ -75,51 +111,13 @@ def glyph_seq_for_string(char_to_glyph: Dict[str, str], s: str) -> Tuple[str, ..
     return tuple(seq)
 
 
-def minute_target_glyph_name(minute: int) -> str:
-    return f"sec{minute:02d}"
+def glyph_name_for_bucket(bucket: int) -> str:
+    return f"{GLYPH_PREFIX}{bucket:04d}"
 
 
-def build_mapping_window(char_to_glyph: Dict[str, str], hours: int) -> Dict[Tuple[str, ...], str]:
-    """
-    Maps timer strings to minute-of-hour.
-
-    For < 1 hour, SwiftUI timer strings are typically:
-      m:ss   (m < 10)
-      mm:ss  (m >= 10)
-
-    For >= 1 hour:
-      h:mm:ss
-
-    Each mapping collapses all seconds in a minute to the same output glyph.
-    """
-    if hours < 1:
-        raise ValueError("hours must be >= 1")
-
-    mapping: Dict[Tuple[str, ...], str] = {}
-
-    # Hour 0: m:ss / mm:ss
-    for m in range(0, 60):
-        for s in range(0, 60):
-            if m < 10:
-                timer_str = f"{m}:{s:02d}"
-            else:
-                timer_str = f"{m:02d}:{s:02d}"
-
-            mapping[glyph_seq_for_string(char_to_glyph, timer_str)] = minute_target_glyph_name(m)
-
-    # Hours 1..(hours-1): h:mm:ss
-    for h in range(1, hours):
-        for m in range(0, 60):
-            for s in range(0, 60):
-                timer_str = f"{h}:{m:02d}:{s:02d}"
-                mapping[glyph_seq_for_string(char_to_glyph, timer_str)] = minute_target_glyph_name(m)
-
-    return mapping
-
-
-def make_minute_hand_glyph(
+def make_hand_glyph(
     glyph_set,
-    minute: int,
+    angle_degrees: float,
     *,
     dial_size: int = 1000,
     width: float = 18.0,
@@ -153,7 +151,7 @@ def make_minute_hand_glyph(
         (x0 + width - shaft_inset, cy),
     ]
 
-    theta = -math.radians(minute * 6.0)
+    theta = -math.radians(angle_degrees)
     c = math.cos(theta)
     s = math.sin(theta)
 
@@ -223,8 +221,16 @@ def update_name_table(font: TTFont) -> None:
 
 
 def main() -> None:
-    repo_root = os.getcwd()
+    if SECONDS_PER_HOUR % TICK_SECONDS != 0:
+        raise ValueError("TICK_SECONDS must divide 3600 evenly")
 
+    faulthandler.enable()
+    try:
+        faulthandler.register(signal.SIGUSR1)
+    except Exception:
+        pass
+
+    repo_root = os.getcwd()
     template_path = os.path.join(repo_root, REPO_REL_TEMPLATE_TTF)
     out_path = os.path.join(repo_root, REPO_REL_OUTPUT_TTF)
 
@@ -234,46 +240,89 @@ def main() -> None:
     log("Loading template font…")
     font = TTFont(template_path)
 
-    glyph_order = set(font.getGlyphOrder())
-    if "sec00" not in glyph_order or "sec59" not in glyph_order:
-        raise RuntimeError("Template font does not contain sec00..sec59 glyphs")
-
     log("Reading cmap for digit/colon glyph names…")
     char_to_glyph = get_char_to_glyph(font)
 
-    log(f"Building ligature mapping (WINDOW_HOURS={WINDOW_HOURS})…")
-    mapping = build_mapping_window(char_to_glyph, WINDOW_HOURS)
-    log(f"Mapping entries: {len(mapping)}")
+    positions = SECONDS_PER_HOUR // TICK_SECONDS
+    log(f"Per-hour positions: {positions} (TICK_SECONDS={TICK_SECONDS})")
+
+    log("Building ligature mappings for mm:ss and m:ss…")
+    mapping_mmss: Dict[Tuple[str, ...], str] = {}
+    mapping_mss: Dict[Tuple[str, ...], str] = {}
+
+    for m in range(0, 60):
+        for s in range(0, 60):
+            t = m * 60 + s
+            bucket = t // TICK_SECONDS
+            out_glyph = glyph_name_for_bucket(bucket)
+
+            timer_mmss = f"{m:02d}:{s:02d}"
+            mapping_mmss[glyph_seq_for_string(char_to_glyph, timer_mmss)] = out_glyph
+
+            if m < 10:
+                timer_mss = f"{m}:{s:02d}"
+                mapping_mss[glyph_seq_for_string(char_to_glyph, timer_mss)] = out_glyph
+
+    log(f"Mapping entries mm:ss: {len(mapping_mmss)}")
+    log(f"Mapping entries  m:ss: {len(mapping_mss)}")
+    log(f"Mapping total entries: {len(mapping_mmss) + len(mapping_mss)}")
 
     idx = find_seconds_ligature_lookup_index(font)
     if idx is None:
         raise RuntimeError("Could not locate the seconds-hand ligature lookup in GSUB")
 
     log(f"Replacing GSUB ligature lookup at index {idx}…")
-    subtable = otl.buildLigatureSubstSubtable(mapping)
+    sub_mmss = otl.buildLigatureSubstSubtable(mapping_mmss)
+    sub_mss = otl.buildLigatureSubstSubtable(mapping_mss)
 
     gsub = font["GSUB"].table
     lookup = gsub.LookupList.Lookup[idx]
     lookup.LookupType = 4
-    lookup.SubTable = [subtable]
-    lookup.SubTableCount = 1
+    lookup.SubTable = [sub_mmss, sub_mss]
+    lookup.SubTableCount = 2
 
-    log("Rebuilding sec00..sec59 outlines as minute-hand needles…")
-    glyph_set = font.getGlyphSet()
+    log("Adding mh**** glyphs + outlines…")
     glyf = font["glyf"]
+    hmtx = font["hmtx"]
+    glyph_set = font.getGlyphSet()
 
-    for m in range(60):
-        glyf[f"sec{m:02d}"] = make_minute_hand_glyph(glyph_set, m)
-        if m % 10 == 0:
-            log(f"  wrote sec{m:02d}…")
+    base_aw = hmtx["sec00"][0] if "sec00" in hmtx.metrics else 1000
+
+    new_names: List[str] = []
+    for bucket in range(positions):
+        name = glyph_name_for_bucket(bucket)
+        new_names.append(name)
+
+        t = bucket * TICK_SECONDS
+        angle_deg = (t / 3600.0) * 360.0  # 360° per hour
+
+        glyf[name] = make_hand_glyph(glyph_set, angle_deg)
+        hmtx.metrics[name] = (base_aw, 0)
+
+        if bucket % 300 == 0:
+            log(f"  wrote {name} (t={t:4d}s, angle={angle_deg:7.3f}°)…")
+
+    order = font.getGlyphOrder()
+    existing = set(order)
+    for name in new_names:
+        if name not in existing:
+            order.append(name)
+    font.setGlyphOrder(order)
+
+    if "maxp" in font:
+        font["maxp"].numGlyphs = len(order)
 
     log("Updating name table…")
     update_name_table(font)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    log("Saving font (no output until complete)…")
-    font.save(out_path)
+    log("Saving font (heartbeat will print)…")
+    stop = start_heartbeat("Saving font", interval_seconds=5.0)
+    try:
+        font.save(out_path)
+    finally:
+        stop.set()
 
     log(f"Wrote: {out_path}")
 

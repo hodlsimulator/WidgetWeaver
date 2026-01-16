@@ -573,6 +573,8 @@ private final class RemindersReadSpikeModel: ObservableObject {
             return
         }
 
+        eventStore.reset()
+
         let now = Date()
         let cal = Calendar.current
         let start = cal.startOfDay(for: now)
