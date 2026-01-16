@@ -25,6 +25,9 @@ struct SmartPhotoCropEditorView: View {
     @State private var dragStartRect: NormalisedRect?
     @State private var pinchStartRect: NormalisedRect?
 
+    @State private var isPrecisionDragActive: Bool = false
+    @State private var precisionStartRect: NormalisedRect?
+
     @State private var previousFocusSnapshot: EditorFocusSnapshot?
 
     // Debug overlay (Batch E)
@@ -280,13 +283,59 @@ struct SmartPhotoCropEditorView: View {
 
                 Rectangle()
                     .fill(.clear)
-                    .frame(width: cropFrame.width, height: cropFrame.height)
-                    .position(x: cropFrame.midX, y: cropFrame.midY)
+                    .frame(width: displayRect.width, height: displayRect.height)
+                    .position(x: displayRect.midX, y: displayRect.midY)
                     .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        LongPressGesture(minimumDuration: 0.25, maximumDistance: 12)
+                            .sequenced(before: DragGesture(minimumDistance: 0))
+                            .onChanged { value in
+                                guard !isApplying else { return }
+
+                                switch value {
+                                case .first(true):
+                                    break
+
+                                case .second(true, let drag?):
+                                    if !isPrecisionDragActive {
+                                        isPrecisionDragActive = true
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
+
+                                    if precisionStartRect == nil { precisionStartRect = cropRect }
+                                    guard let start = precisionStartRect else { return }
+
+                                    let dx = Double(drag.translation.width / max(1.0, displayRect.width)) * 0.25
+                                    let dy = Double(drag.translation.height / max(1.0, displayRect.height)) * 0.25
+
+                                    let proposed = NormalisedRect(
+                                        x: start.x + dx,
+                                        y: start.y + dy,
+                                        width: start.width,
+                                        height: start.height
+                                    )
+
+                                    cropRect = pixelSnappedRect(
+                                        proposed,
+                                        masterPixels: masterPixelSize,
+                                        rectAspect: normalisedRectAspect
+                                    )
+
+                                default:
+                                    break
+                                }
+                            }
+                            .onEnded { _ in
+                                precisionStartRect = nil
+                                isPrecisionDragActive = false
+                            }
+                    )
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 guard !isApplying else { return }
+                                if isPrecisionDragActive { return }
+
                                 if dragStartRect == nil { dragStartRect = cropRect }
                                 guard let start = dragStartRect else { return }
 
@@ -310,6 +359,8 @@ struct SmartPhotoCropEditorView: View {
                         MagnificationGesture()
                             .onChanged { value in
                                 guard !isApplying else { return }
+                                if isPrecisionDragActive { return }
+
                                 if pinchStartRect == nil { pinchStartRect = cropRect }
                                 guard let start = pinchStartRect else { return }
 
@@ -335,6 +386,25 @@ struct SmartPhotoCropEditorView: View {
                                 pinchStartRect = nil
                             }
                     )
+                    .simultaneousGesture(
+                        SpatialTapGesture(count: 2)
+                            .onEnded { value in
+                                guard !isApplying else { return }
+
+                                let anchor = CGPoint(
+                                    x: value.location.x / max(1.0, displayRect.width),
+                                    y: value.location.y / max(1.0, displayRect.height)
+                                )
+
+                                withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                                    cropRect = toggleZoomRect(
+                                        current: cropRect,
+                                        rectAspect: normalisedRectAspect,
+                                        anchor: anchor
+                                    )
+                                }
+                            }
+                    )
 
                 if debugOverlayEnabled {
                     SmartPhotoDebugHUDView(
@@ -351,7 +421,7 @@ struct SmartPhotoCropEditorView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.95))
 
-                    Text("Drag to move. Pinch to zoom.")
+                    Text("Drag to move. Pinch to zoom. Double-tap to zoom. Press and hold, then drag for fine moves.")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.8))
                 }
@@ -363,6 +433,49 @@ struct SmartPhotoCropEditorView: View {
                 .padding(.bottom, 10)
             }
         }
+    }
+
+    private func pixelSnappedRect(_ rect: NormalisedRect, masterPixels: PixelSize, rectAspect: Double) -> NormalisedRect {
+        let a = max(0.0001, rectAspect)
+        var r = clampRect(rect, rectAspect: a)
+
+        let stepX = 1.0 / Double(max(1, masterPixels.width))
+        let stepY = 1.0 / Double(max(1, masterPixels.height))
+
+        let snappedX = (r.x / stepX).rounded() * stepX
+        let snappedY = (r.y / stepY).rounded() * stepY
+
+        r = NormalisedRect(x: snappedX, y: snappedY, width: r.width, height: r.height)
+        return clampRect(r, rectAspect: a)
+    }
+
+    private func toggleZoomRect(current: NormalisedRect, rectAspect: Double, anchor: CGPoint) -> NormalisedRect {
+        let a = max(0.0001, rectAspect)
+
+        let maxW = min(1.0, a)
+        let minW = min(maxW, 0.08)
+
+        let zoomedOutThreshold = maxW * 0.92
+        let targetW: Double
+        if current.width >= zoomedOutThreshold {
+            targetW = max(minW, current.width / 2.0)
+        } else {
+            targetW = maxW
+        }
+
+        let targetH = targetW / a
+
+        let ax = min(1.0, max(0.0, Double(anchor.x)))
+        let ay = min(1.0, max(0.0, Double(anchor.y)))
+
+        let proposed = NormalisedRect(
+            x: ax - (targetW / 2.0),
+            y: ay - (targetH / 2.0),
+            width: targetW,
+            height: targetH
+        )
+
+        return clampRect(proposed, rectAspect: a)
     }
 
     private func pixelSize(of image: UIImage) -> PixelSize {
