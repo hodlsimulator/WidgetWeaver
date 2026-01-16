@@ -90,12 +90,12 @@ struct WidgetWeaverClockPalette {
         let separatorRing: Color = WWClock.colour(0x0B0F15, alpha: 1.0)
 
         // Dial: lifted off pure-black to better match the icon mock.
-        let dialCenter: Color = WWClock.colour(0x121824, alpha: 1.0)
-        let dialMid: Color = WWClock.colour(0x0F141D, alpha: 1.0)
+        let dialCenter: Color = WWClock.colour(0x101722, alpha: 1.0)
+        let dialMid: Color = WWClock.colour(0x0E141E, alpha: 1.0)
         let dialEdge: Color = WWClock.colour(0x0B0F15, alpha: 1.0)
 
-        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.30)
-        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.055)
+        let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.22)
+        let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.040)
 
         // Minute dots: more visible, uniform.
         let minuteDot: Color = WWClock.colour(0xD0DBEE, alpha: 0.80)

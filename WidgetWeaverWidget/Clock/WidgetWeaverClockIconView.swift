@@ -102,7 +102,7 @@ struct WidgetWeaverClockIconView: View {
             )
 
             let pipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.016, min: R * 0.014, max: R * 0.018),
+                WWClock.clamp(R * 0.020, min: R * 0.018, max: R * 0.024),
                 scale: displayScale
             )
             let pipRadius = dotRadius
@@ -114,7 +114,7 @@ struct WidgetWeaverClockIconView: View {
             let numeralsSize = WWClock.pixel(R * 0.32, scale: displayScale)
 
             let hourLength = WWClock.pixel(
-                WWClock.clamp(R * 0.56, min: R * 0.52, max: R * 0.60),
+                WWClock.clamp(R * 0.50, min: R * 0.46, max: R * 0.54),
                 scale: displayScale
             )
             let hourWidth = WWClock.pixel(

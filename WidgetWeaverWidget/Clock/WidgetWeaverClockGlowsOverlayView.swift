@@ -41,8 +41,9 @@ struct WidgetWeaverClockGlowsOverlayView: View {
         let capGlowBlur = max(px, capLength * 0.18)
         let pipGlowBlur = max(px, pipSide * 0.20)
 
-        let minuteGlowWidth = max(px, minuteWidth * 0.10)
-        let minuteGlowBlur = max(px, minuteWidth * 0.14)
+        // Keep this extremely subtle; the minute hand already has an internal edge tint.
+        let minuteGlowWidth = max(px, minuteWidth * 0.08)
+        let minuteGlowBlur = max(px, minuteWidth * 0.12)
 
         let secondGlowBlur = max(px, secondWidth * 0.95)
         let secondTipGlowBlur = max(px, secondWidth * 1.05)
@@ -61,8 +62,8 @@ struct WidgetWeaverClockGlowsOverlayView: View {
 
             ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
-                RoundedRectangle(cornerRadius: pipSide * 0.14, style: .continuous)
-                    .fill(palette.accent.opacity(0.26))
+                RoundedRectangle(cornerRadius: pipSide * 0.32, style: .continuous)
+                    .fill(palette.accent.opacity(0.24))
                     .frame(width: pipSide, height: pipSide)
                     .offset(y: -pipRadius)
                     .rotationEffect(.degrees(degrees))
@@ -75,15 +76,15 @@ struct WidgetWeaverClockGlowsOverlayView: View {
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: palette.accent.opacity(0.00), location: 0.00),
-                            .init(color: palette.accent.opacity(0.04), location: 0.55),
-                            .init(color: palette.accent.opacity(0.18), location: 1.00)
+                            .init(color: palette.accent.opacity(0.02), location: 0.55),
+                            .init(color: palette.accent.opacity(0.10), location: 1.00)
                         ]),
                         startPoint: .bottom,
                         endPoint: .top
                     )
                 )
                 .frame(width: minuteGlowWidth, height: minuteLength)
-                .offset(x: minuteWidth * 0.36, y: 0)
+                .offset(x: minuteWidth * 0.34, y: 0)
                 .frame(width: minuteWidth, height: minuteLength)
                 .rotationEffect(minuteAngle, anchor: .bottom)
                 .offset(y: -minuteLength / 2.0)

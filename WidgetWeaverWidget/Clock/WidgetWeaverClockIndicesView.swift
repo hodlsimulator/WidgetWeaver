@@ -105,14 +105,22 @@ struct WidgetWeaverClockCardinalPipsView: View {
     let radius: CGFloat
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: side * 0.14, style: .continuous)
+        // A rounded-square reads closer to the iOS Clock icon than a perfect circle.
+        let shape = RoundedRectangle(cornerRadius: side * 0.32, style: .continuous)
 
         ZStack {
             ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
+
                 shape
                     .fill(pipColour)
                     .frame(width: side, height: side)
+                    .overlay(
+                        shape
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: max(1, side * 0.10))
+                            .blendMode(.overlay)
+                    )
+                    .shadow(color: Color.black.opacity(0.22), radius: max(1, side * 0.10), x: 0, y: max(1, side * 0.06))
                     .offset(y: -radius)
                     .rotationEffect(.degrees(degrees))
             }
@@ -166,66 +174,36 @@ struct WidgetWeaverClockNumeralsView: View {
             endPoint: .bottomTrailing
         )
 
-        let bevelOverlay = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.26), location: 0.00),
-                .init(color: Color.clear, location: 0.52),
-                .init(color: Color.black.opacity(0.22), location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-
         ZStack {
-            // Drop depth (small, so it reads embossed not floating).
+            // Small depth shadow so it reads embossed, not floating.
             face
-                .foregroundStyle(palette.numeralDark.opacity(0.55))
-                .offset(x: px * 1.6, y: px * 1.9)
-                .blur(radius: max(0, px * 0.45))
+                .foregroundStyle(palette.numeralDark.opacity(0.42))
+                .offset(x: px * 1.2, y: px * 1.4)
+                .blur(radius: max(0, px * 0.30))
                 .blendMode(.multiply)
 
             // Inner bevel: highlight + shade.
             face
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -px * 1.1, y: -px * 1.2)
-                .blur(radius: max(0, px * 0.40))
+                .offset(x: -px * 0.9, y: -px * 1.0)
+                .blur(radius: max(0, px * 0.24))
                 .blendMode(.screen)
 
             face
                 .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: px * 1.1, y: px * 1.2)
-                .blur(radius: max(0, px * 0.45))
+                .offset(x: px * 0.9, y: px * 1.0)
+                .blur(radius: max(0, px * 0.26))
                 .blendMode(.multiply)
 
+            // Main metal fill.
             face
                 .foregroundStyle(fill)
-                .overlay(
-                    face
-                        .foregroundStyle(bevelOverlay)
-                        .blendMode(.overlay)
-                )
-
-            // Specular streak (very subtle).
-            face
-                .foregroundStyle(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.0), location: 0.00),
-                            .init(color: Color.white.opacity(0.14), location: 0.40),
-                            .init(color: Color.white.opacity(0.0), location: 1.00)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .blendMode(.screen)
-                .opacity(0.85)
         }
         .shadow(
             color: palette.numeralShadow,
-            radius: max(px, fontSize * 0.05),
+            radius: max(px, fontSize * 0.045),
             x: 0,
-            y: max(px, fontSize * 0.025)
+            y: max(px, fontSize * 0.020)
         )
     }
 }

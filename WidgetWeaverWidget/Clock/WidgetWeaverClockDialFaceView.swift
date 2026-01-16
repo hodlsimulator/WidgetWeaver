@@ -18,7 +18,7 @@ struct WidgetWeaverClockDialFaceView: View {
                 RadialGradient(
                     gradient: Gradient(stops: [
                         .init(color: palette.dialCenter, location: 0.0),
-                        .init(color: palette.dialMid, location: 0.90),
+                        .init(color: palette.dialMid, location: 0.95),
                         .init(color: palette.dialEdge, location: 1.0)
                     ]),
                     center: .center,
@@ -26,7 +26,7 @@ struct WidgetWeaverClockDialFaceView: View {
                     endRadius: radius
                 )
             )
-            // Perimeter vignette: darken outer ~12–18%.
+            // Perimeter vignette: keep it gentle so the dial does not read as a harsh centre-to-edge gradient.
             .overlay(
                 Circle()
                     .fill(
@@ -36,7 +36,7 @@ struct WidgetWeaverClockDialFaceView: View {
                                 .init(color: palette.dialVignette, location: 1.0)
                             ]),
                             center: .center,
-                            startRadius: radius * 0.84,
+                            startRadius: radius * 0.90,
                             endRadius: radius
                         )
                     )
@@ -65,7 +65,7 @@ struct WidgetWeaverClockDialFaceView: View {
                     .frame(width: radius * 2.15, height: radius * 1.70)
                     .offset(x: -radius * 0.20, y: -radius * 0.24)
                     .blendMode(.screen)
-                    .opacity(0.80)
+                    .opacity(0.60)
                     .mask(Circle())
             )
             // Ring D: tight inner occlusion separator (crisp, no halo).

@@ -353,27 +353,7 @@ private struct WWClockMinuteHandGlyphView: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
-        // Subtle glow only.
-        let glowTight = diameter * 0.005
-        let glowWide = diameter * 0.012
-
-        // Depth shadow (kept light so the glyph stays crisp).
-        let shadowBlur = diameter * 0.008
-        let shadowOffset = diameter * 0.003
-
         ZStack {
-            glyph
-                .foregroundStyle(palette.accent.opacity(0.22))
-                .blur(radius: glowTight)
-                .shadow(color: palette.accent.opacity(0.10), radius: glowWide, x: 0, y: 0)
-                .blendMode(.screen)
-
-            glyph
-                .foregroundStyle(palette.handShadow.opacity(0.28))
-                .blur(radius: shadowBlur)
-                .offset(x: shadowOffset, y: shadowOffset)
-                .blendMode(.multiply)
-
             // Edge stroke approximation:
             // Draw the glyph in edge colour, then inset the fill slightly.
             glyph
