@@ -140,6 +140,80 @@ struct WidgetWeaverAboutView: View {
         }
     }
 
+    func handleAddRemindersSmartStackKit() {
+        let kitSpecs: [WidgetSpec] = [
+            Self.specRemindersToday(),
+            Self.specRemindersOverdue(),
+            Self.specRemindersSoon(),
+            Self.specRemindersPriority(),
+            Self.specRemindersFocus(),
+            Self.specRemindersLists(),
+        ]
+
+        let store = WidgetSpecStore.shared
+        let existingNames = Set(store.loadAll().map(\.name))
+
+        var alreadyCount = 0
+        var addedCount = 0
+
+        for spec in kitSpecs {
+            if existingNames.contains(spec.name) {
+                alreadyCount += 1
+                continue
+            }
+
+            let beforeCount = store.loadAll().count
+            onAddTemplate(spec, false)
+            let afterCount = store.loadAll().count
+
+            if afterCount > beforeCount {
+                addedCount += 1
+            } else {
+                break
+            }
+        }
+
+        let total = kitSpecs.count
+        let missingCount = total - alreadyCount
+        let remainingMissing = max(0, missingCount - addedCount)
+
+        let message: String = {
+            if alreadyCount == total {
+                return "All 6 already in Library."
+            }
+
+            if remainingMissing == 0 {
+                if alreadyCount == 0 { return "Added all 6." }
+                if addedCount == 0 { return "No changes." }
+                return "Added \(addedCount). \(alreadyCount) already in Library."
+            }
+
+            if addedCount == 0 {
+                if alreadyCount == 0 { return "Unable to add (design limit)." }
+                return "\(alreadyCount) already in Library. Unlock Pro for the rest."
+            }
+
+            return "Added \(addedCount) of \(missingCount) missing. Unlock Pro for the rest."
+        }()
+
+        withAnimation(.spring(duration: 0.35)) {
+            statusMessage = message
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            await MainActor.run {
+                withAnimation(.spring(duration: 0.35)) {
+                    if statusMessage == message { statusMessage = "" }
+                }
+            }
+        }
+
+        if addedCount > 0 || alreadyCount > 0 {
+            onGoToLibrary()
+        }
+    }
+
     func presentCalendarPermissionFlow() {
         let store = EKEventStore()
         store.requestFullAccessToEvents { granted, error in

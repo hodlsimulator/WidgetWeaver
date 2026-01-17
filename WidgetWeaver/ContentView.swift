@@ -429,7 +429,7 @@ struct ContentView: View {
             onShowWidgetHelp: { activeSheet = .widgetHelp },
             onOpenWeatherSettings: { activeSheet = .weather },
             onOpenStepsSettings: { activeSheet = .steps },
-            onGoToLibrary: { selectedTab = .library }
+            onGoToLibrary: { clearLibrarySearchAndFilter(); selectedTab = .library }
         )
     }
 

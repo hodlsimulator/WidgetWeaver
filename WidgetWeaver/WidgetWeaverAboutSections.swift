@@ -614,10 +614,19 @@ extension WidgetWeaverAboutView {
             .padding(.top, 1)
             .accessibilityHidden(true)
 
-            Text("Tip: These 6 are designed to be used together in a Smart Stack.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Tip: These 6 are designed to be used together in a Smart Stack.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    handleAddRemindersSmartStackKit()
+                } label: {
+                    Label("Add all 6", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
 
             Spacer(minLength: 0)
         }
