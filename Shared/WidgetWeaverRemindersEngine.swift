@@ -20,6 +20,72 @@ import Foundation
 import WidgetKit
 #endif
 
+/// Controls how aggressively the Reminders engine refreshes the snapshot cache.
+///
+/// Goals:
+/// - Avoid churn and WidgetKit budget issues.
+/// - Converge quickly after interactive widget actions.
+/// - Back off after repeated failures to prevent tight error loops.
+public struct WidgetWeaverRemindersRefreshPolicy: Hashable, Sendable {
+    /// Minimum time between refresh attempts after a successful refresh.
+    public var minimumIntervalSeconds: TimeInterval
+
+    /// Base delay applied after the first failure. Subsequent failures double this value.
+    public var baseErrorBackoffSeconds: TimeInterval
+
+    /// Maximum delay cap for exponential backoff.
+    public var maximumErrorBackoffSeconds: TimeInterval
+
+    /// Caps the consecutive failure count used for backoff calculations.
+    public var maximumConsecutiveFailureCount: Int
+
+    public init(
+        minimumIntervalSeconds: TimeInterval,
+        baseErrorBackoffSeconds: TimeInterval,
+        maximumErrorBackoffSeconds: TimeInterval,
+        maximumConsecutiveFailureCount: Int
+    ) {
+        self.minimumIntervalSeconds = max(0, minimumIntervalSeconds)
+        self.baseErrorBackoffSeconds = max(0, baseErrorBackoffSeconds)
+        self.maximumErrorBackoffSeconds = max(0, maximumErrorBackoffSeconds)
+        self.maximumConsecutiveFailureCount = max(1, maximumConsecutiveFailureCount)
+    }
+
+    /// Default policy for user-initiated refreshes.
+    public static let `default` = WidgetWeaverRemindersRefreshPolicy(
+        minimumIntervalSeconds: 15,
+        baseErrorBackoffSeconds: 20,
+        maximumErrorBackoffSeconds: 60 * 10,
+        maximumConsecutiveFailureCount: 8
+    )
+
+    /// Policy tuned for interactive widget actions (row taps).
+    public static let widgetAction = WidgetWeaverRemindersRefreshPolicy(
+        minimumIntervalSeconds: 3,
+        baseErrorBackoffSeconds: 10,
+        maximumErrorBackoffSeconds: 60 * 2,
+        maximumConsecutiveFailureCount: 6
+    )
+
+    /// Policy for unattended refreshes (future use).
+    public static let background = WidgetWeaverRemindersRefreshPolicy(
+        minimumIntervalSeconds: 60,
+        baseErrorBackoffSeconds: 60,
+        maximumErrorBackoffSeconds: 60 * 30,
+        maximumConsecutiveFailureCount: 10
+    )
+
+    /// Returns the backoff delay for the given consecutive failure count.
+    public func backoffSeconds(consecutiveFailures: Int) -> TimeInterval {
+        let failures = max(1, consecutiveFailures)
+        let clamped = min(maximumConsecutiveFailureCount, failures)
+        let exponent = max(0, clamped - 1)
+
+        let seconds = baseErrorBackoffSeconds * pow(2.0, Double(exponent))
+        return min(maximumErrorBackoffSeconds, seconds)
+    }
+}
+
 /// Single owner for EventKit Reminders reads/writes.
 ///
 /// Notes:
@@ -56,6 +122,9 @@ public actor WidgetWeaverRemindersEngine {
     }
 
     private let eventStore: EKEventStore
+
+    // Phase 3.4: Coalesce refresh calls to avoid overlapping EventKit fetches.
+    private var inFlightRefresh: Task<WidgetWeaverRemindersDiagnostics, Never>?
 
     public init(eventStore: EKEventStore = EKEventStore()) {
         self.eventStore = eventStore
@@ -182,12 +251,62 @@ public actor WidgetWeaverRemindersEngine {
     ///
     /// Widgets must continue to render from the cached snapshot only.
     @discardableResult
-    public func refreshSnapshotCache(maxItems: Int = 250) async -> WidgetWeaverRemindersDiagnostics {
+    public func refreshSnapshotCache(
+        maxItems: Int = 250,
+        force: Bool = false,
+        policy: WidgetWeaverRemindersRefreshPolicy = .default
+    ) async -> WidgetWeaverRemindersDiagnostics {
+        if let inFlightRefresh {
+            return await inFlightRefresh.value
+        }
+
+        let task = Task { () -> WidgetWeaverRemindersDiagnostics in
+            await self.performRefreshSnapshotCache(maxItems: maxItems, force: force, policy: policy)
+        }
+
+        inFlightRefresh = task
+        let out = await task.value
+        inFlightRefresh = nil
+        return out
+    }
+
+    private func performRefreshSnapshotCache(
+        maxItems: Int,
+        force: Bool,
+        policy: WidgetWeaverRemindersRefreshPolicy
+    ) async -> WidgetWeaverRemindersDiagnostics {
         let store = WidgetWeaverRemindersStore.shared
+        let now = Date()
+
+        store.saveRefreshLastAttemptAt(now)
+
+        if !force, let nextAllowedAt = store.loadRefreshNextAllowedAt(), now < nextAllowedAt {
+            let remaining = max(0, nextAllowedAt.timeIntervalSince(now))
+            let remainingSeconds = Int(ceil(remaining))
+            let message = "Refresh skipped (throttled). Try again in \(remainingSeconds)s."
+            let diag = WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: now)
+
+            // Surface the decision in app settings without causing widget reload churn.
+            _ = store.updateSnapshotDiagnosticsInPlace(diag)
+            return diag
+        }
+
         let status = Self.authorisationStatus()
 
         guard status == .fullAccess else {
-            let diag = diagnosticsForUnauthorisedStatus(status)
+            let base = diagnosticsForUnauthorisedStatus(status)
+
+            // For permission-denied paths, do not carry over exponential backoff.
+            store.saveRefreshConsecutiveFailureCount(0)
+
+            let permissionThrottleSeconds = min(policy.minimumIntervalSeconds, 10)
+            let nextAllowedAt = now.addingTimeInterval(max(0, permissionThrottleSeconds))
+            store.saveRefreshNextAllowedAt(nextAllowedAt)
+
+            let remainingSeconds = Int(ceil(max(0, nextAllowedAt.timeIntervalSince(now))))
+            let message = "\(base.message) Next retry after \(remainingSeconds)s."
+            let diag = WidgetWeaverRemindersDiagnostics(kind: base.kind, message: message, at: now)
+
             store.clearSnapshot()
             store.saveLastUpdatedAt(nil)
             store.saveLastError(diag)
@@ -197,20 +316,53 @@ public actor WidgetWeaverRemindersEngine {
         let startedAt = Date()
 
         do {
-            let snapshot = try await buildGlobalIncompleteSnapshot(maxItems: maxItems)
-            store.saveSnapshot(snapshot)
+            let (items, fetchedCount) = try await fetchGlobalIncompleteReminderItems(maxItems: maxItems)
 
             let duration = Date().timeIntervalSince(startedAt)
             let durationString = String(format: "%.2f", duration)
-            let message = "Snapshot updated in \(durationString)s."
-            let diag = WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: Date())
+
+            let message: String = {
+                if fetchedCount > items.count {
+                    return "Fetched \(fetchedCount) reminder(s) (trimmed to \(items.count)) in \(durationString)s."
+                }
+                return "Fetched \(items.count) reminder(s) in \(durationString)s."
+            }()
+
+            let diag = WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: now)
+
+            let snapshot = WidgetWeaverRemindersSnapshot(
+                generatedAt: now,
+                items: items,
+                modes: Self.buildModeSnapshots(items: items),
+                diagnostics: diag
+            )
+
+            store.saveSnapshot(snapshot)
+
+            store.saveRefreshConsecutiveFailureCount(0)
+            store.saveRefreshNextAllowedAt(now.addingTimeInterval(max(0, policy.minimumIntervalSeconds)))
+
             return diag
         } catch {
+            let duration = Date().timeIntervalSince(startedAt)
+            let durationString = String(format: "%.2f", duration)
+
+            let previousFailures = store.loadRefreshConsecutiveFailureCount()
+            let nextFailures = min(previousFailures + 1, policy.maximumConsecutiveFailureCount)
+            store.saveRefreshConsecutiveFailureCount(nextFailures)
+
+            let backoffSeconds = max(policy.minimumIntervalSeconds, policy.backoffSeconds(consecutiveFailures: nextFailures))
+            let nextAllowedAt = now.addingTimeInterval(max(0, backoffSeconds))
+            store.saveRefreshNextAllowedAt(nextAllowedAt)
+
+            let remainingSeconds = Int(ceil(max(0, nextAllowedAt.timeIntervalSince(now))))
+
             let diag = WidgetWeaverRemindersDiagnostics(
                 kind: .error,
-                message: "Snapshot refresh failed: \(error.localizedDescription)",
-                at: Date()
+                message: "Snapshot refresh failed in \(durationString)s: \(error.localizedDescription) Next retry after \(remainingSeconds)s.",
+                at: now
             )
+
             store.saveLastError(diag)
             return diag
         }
@@ -233,7 +385,9 @@ public actor WidgetWeaverRemindersEngine {
         }
     }
 
-    private func buildGlobalIncompleteSnapshot(maxItems: Int) async throws -> WidgetWeaverRemindersSnapshot {
+    private func fetchGlobalIncompleteReminderItems(
+        maxItems: Int
+    ) async throws -> (items: [WidgetWeaverReminderItem], fetchedCount: Int) {
         try requireFullAccess()
 
         let cal = Calendar.current
@@ -250,19 +404,7 @@ public actor WidgetWeaverRemindersEngine {
         let cappedMax = max(1, min(maxItems, 2_000))
         let limited = Array(fetched.prefix(cappedMax))
 
-        let message: String = {
-            if fetched.count > limited.count {
-                return "Fetched \(fetched.count) reminder(s) (trimmed to \(limited.count))."
-            }
-            return "Fetched \(limited.count) reminder(s)."
-        }()
-
-        return WidgetWeaverRemindersSnapshot(
-            generatedAt: Date(),
-            items: limited,
-            modes: Self.buildModeSnapshots(items: limited),
-            diagnostics: WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: Date())
-        )
+        return (items: limited, fetchedCount: fetched.count)
     }
 
     // MARK: - Mode snapshots (Phase 3.3)
@@ -522,8 +664,18 @@ public struct WidgetWeaverCompleteReminderWidgetIntent: AppIntent {
         let action = await WidgetWeaverRemindersEngine.shared.completeReminder(identifier: cleanedID)
         store.saveLastAction(action)
 
-        let refresh = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache()
-        if action.kind == .completed, refresh.kind == .ok {
+        let beforeUpdatedAt = store.loadLastUpdatedAt()
+
+        let refresh = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache(policy: .widgetAction)
+
+        let afterUpdatedAt = store.loadLastUpdatedAt()
+        let refreshAdvanced: Bool = {
+            guard let afterUpdatedAt else { return false }
+            guard let beforeUpdatedAt else { return true }
+            return afterUpdatedAt > beforeUpdatedAt
+        }()
+
+        if action.kind == .completed, refresh.kind == .ok, refreshAdvanced {
             store.clearLastAction()
         }
 

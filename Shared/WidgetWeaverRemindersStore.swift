@@ -31,6 +31,11 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         public static let lastActionKind = "widgetweaver.reminders.lastAction.kind.v1"
         public static let lastActionMessage = "widgetweaver.reminders.lastAction.message.v1"
         public static let lastActionAt = "widgetweaver.reminders.lastAction.at.v1"
+
+        // Phase 3.4: Refresh throttling/backoff (metadata only).
+        public static let refreshLastAttemptAt = "widgetweaver.reminders.refresh.lastAttemptAt.v1"
+        public static let refreshNextAllowedAt = "widgetweaver.reminders.refresh.nextAllowedAt.v1"
+        public static let refreshConsecutiveFailureCount = "widgetweaver.reminders.refresh.consecutiveFailureCount.v1"
     }
 
     private let defaults: UserDefaults
@@ -315,4 +320,123 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         synchroniseAppGroupDefaults()
         notifyWidgetsRemindersUpdated()
     }
+
+    // MARK: Refresh throttling (Phase 3.4)
+
+    public func loadRefreshLastAttemptAt() -> Date? {
+        synchroniseAppGroupDefaults()
+
+        let t = defaults.double(forKey: Keys.refreshLastAttemptAt)
+        if t > 0 { return Date(timeIntervalSince1970: t) }
+
+        let legacy = UserDefaults.standard.double(forKey: Keys.refreshLastAttemptAt)
+        if legacy > 0 {
+            defaults.set(legacy, forKey: Keys.refreshLastAttemptAt)
+            synchroniseAppGroupDefaults()
+            return Date(timeIntervalSince1970: legacy)
+        }
+
+        return nil
+    }
+
+    public func saveRefreshLastAttemptAt(_ date: Date?) {
+        if let date {
+            let t = date.timeIntervalSince1970
+            defaults.set(t, forKey: Keys.refreshLastAttemptAt)
+            UserDefaults.standard.set(t, forKey: Keys.refreshLastAttemptAt)
+        } else {
+            defaults.removeObject(forKey: Keys.refreshLastAttemptAt)
+            UserDefaults.standard.removeObject(forKey: Keys.refreshLastAttemptAt)
+        }
+
+        synchroniseAppGroupDefaults()
+    }
+
+    public func loadRefreshNextAllowedAt() -> Date? {
+        synchroniseAppGroupDefaults()
+
+        let t = defaults.double(forKey: Keys.refreshNextAllowedAt)
+        if t > 0 { return Date(timeIntervalSince1970: t) }
+
+        let legacy = UserDefaults.standard.double(forKey: Keys.refreshNextAllowedAt)
+        if legacy > 0 {
+            defaults.set(legacy, forKey: Keys.refreshNextAllowedAt)
+            synchroniseAppGroupDefaults()
+            return Date(timeIntervalSince1970: legacy)
+        }
+
+        return nil
+    }
+
+    public func saveRefreshNextAllowedAt(_ date: Date?) {
+        if let date {
+            let t = date.timeIntervalSince1970
+            defaults.set(t, forKey: Keys.refreshNextAllowedAt)
+            UserDefaults.standard.set(t, forKey: Keys.refreshNextAllowedAt)
+        } else {
+            defaults.removeObject(forKey: Keys.refreshNextAllowedAt)
+            UserDefaults.standard.removeObject(forKey: Keys.refreshNextAllowedAt)
+        }
+
+        synchroniseAppGroupDefaults()
+    }
+
+    public func loadRefreshConsecutiveFailureCount() -> Int {
+        synchroniseAppGroupDefaults()
+
+        let count = defaults.integer(forKey: Keys.refreshConsecutiveFailureCount)
+        if count > 0 { return count }
+
+        let legacy = UserDefaults.standard.integer(forKey: Keys.refreshConsecutiveFailureCount)
+        if legacy > 0 {
+            defaults.set(legacy, forKey: Keys.refreshConsecutiveFailureCount)
+            synchroniseAppGroupDefaults()
+            return legacy
+        }
+
+        return 0
+    }
+
+    public func saveRefreshConsecutiveFailureCount(_ count: Int) {
+        let cleaned = max(0, count)
+        defaults.set(cleaned, forKey: Keys.refreshConsecutiveFailureCount)
+        UserDefaults.standard.set(cleaned, forKey: Keys.refreshConsecutiveFailureCount)
+        synchroniseAppGroupDefaults()
+    }
+
+    public func clearRefreshThrottleState() {
+        defaults.removeObject(forKey: Keys.refreshLastAttemptAt)
+        defaults.removeObject(forKey: Keys.refreshNextAllowedAt)
+        defaults.removeObject(forKey: Keys.refreshConsecutiveFailureCount)
+
+        UserDefaults.standard.removeObject(forKey: Keys.refreshLastAttemptAt)
+        UserDefaults.standard.removeObject(forKey: Keys.refreshNextAllowedAt)
+        UserDefaults.standard.removeObject(forKey: Keys.refreshConsecutiveFailureCount)
+
+        synchroniseAppGroupDefaults()
+    }
+
+
+    // MARK: Snapshot diagnostics (metadata-only)
+
+    /// Updates `snapshot.diagnostics` without updating `lastUpdatedAt` or notifying widgets.
+    ///
+    /// Intended for Phase 3.4 throttling diagnostics so the settings screen can surface
+    /// the most recent refresh decision without causing WidgetKit churn.
+    @discardableResult
+    public func updateSnapshotDiagnosticsInPlace(_ diagnostics: WidgetWeaverRemindersDiagnostics?) -> Bool {
+        guard var snap = loadSnapshot() else { return false }
+
+        snap.diagnostics = diagnostics
+
+        let encoder = makeEncoder()
+        guard let data = try? encoder.encode(snap) else { return false }
+
+        defaults.set(data, forKey: Keys.snapshotData)
+        UserDefaults.standard.set(data, forKey: Keys.snapshotData)
+
+        synchroniseAppGroupDefaults()
+        return true
+    }
+
 }
