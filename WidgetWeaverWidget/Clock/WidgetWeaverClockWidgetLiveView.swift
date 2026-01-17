@@ -67,9 +67,22 @@ fileprivate struct WWClockRenderBody: View {
     @State private var lastLoggedMinuteRef: Int = Int.min
     @State private var significantTimeChangeToken: Int = 0
 
+    // Wall clock change detection (manual time changes, toggling Set Automatically).
+    // Uses the difference between the wall clock and monotonic uptime.
+    @State private var lastWallSignatureSeconds: Int = Int.min
+    @State private var lastClockJumpUptime: TimeInterval = -1.0
+
+    private static func wallClockSignatureSeconds(now: Date, uptime: TimeInterval) -> Int {
+        // Signature is stable under normal operation; it jumps when the wall clock changes.
+        let signature = now.timeIntervalSinceReferenceDate - uptime
+        return Int(signature.rounded())
+    }
+
     var body: some View {
         // Wall clock.
         let wallNow = Date()
+        let uptimeNow = ProcessInfo.processInfo.systemUptime
+        let wallSignatureSeconds = Self.wallClockSignatureSeconds(now: wallNow, uptime: uptimeNow)
 
         // Render clock (pinned to entryDate via WidgetWeaverRenderClock.withNow).
         let ctxNow = WidgetWeaverRenderClock.now
@@ -78,10 +91,14 @@ fileprivate struct WWClockRenderBody: View {
         let ctxMinuteAnchor = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow)
         let leadSeconds = ctxNow.timeIntervalSince(wallNow)
 
+        // If the wall clock has jumped recently, treat the view as live even if the timeline entry
+        // date is far ahead/behind (WidgetKit can be holding a stale entry after a manual time change).
+        let recentlyJumped = (lastClockJumpUptime >= 0.0) && ((uptimeNow - lastClockJumpUptime) < (15.0 * 60.0))
+
         // Pre-render detection:
         // - far-future: ctxNow is way ahead of wallNow
         // - minute-boundary skew: ctxMinuteAnchor is ahead of sysMinuteAnchor
-        let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
+        let isPrerender = !recentlyJumped && ((leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor))
 
         // Live: wallNow. Pre-render: ctxNow for deterministic snapshots.
         let renderNow: Date = isPrerender ? ctxNow : wallNow
@@ -159,7 +176,7 @@ fileprivate struct WWClockRenderBody: View {
                 minInterval: balloon ? 0.0 : 15.0,
                 now: wallNow
             ) {
-                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) minuteGlyph=\(showsMinuteHandGlyph ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs)"
+                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) minuteGlyph=\(showsMinuteHandGlyph ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs) sig=\(wallSignatureSeconds) jump=\(recentlyJumped ? 1 : 0)"
             }
 
             return ()
@@ -230,7 +247,11 @@ fileprivate struct WWClockRenderBody: View {
             let sysMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow2)
             let ctxMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow2)
             let leadSeconds2 = ctxNow2.timeIntervalSince(wallNow2)
-            let isPrerender2 = (leadSeconds2 > 5.0) || (ctxMinuteAnchor2 > sysMinuteAnchor2)
+
+            let uptime2 = ProcessInfo.processInfo.systemUptime
+            let recentlyJumped2 = (lastClockJumpUptime >= 0.0) && ((uptime2 - lastClockJumpUptime) < (15.0 * 60.0))
+
+            let isPrerender2 = !recentlyJumped2 && ((leadSeconds2 > 5.0) || (ctxMinuteAnchor2 > sysMinuteAnchor2))
             if isPrerender2 { return }
 
             let lagMs = Int((wallNow2.timeIntervalSince(newHands) * 1000.0).rounded())
@@ -244,12 +265,39 @@ fileprivate struct WWClockRenderBody: View {
                 "minuteTick build=\(WidgetWeaverClockWidgetLiveView.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
             }
         }
+        .onChange(of: wallSignatureSeconds) { _, newSig in
+            let prev = lastWallSignatureSeconds
+            lastWallSignatureSeconds = newSig
+
+            guard prev != Int.min else { return }
+
+            let delta = abs(newSig - prev)
+            if delta >= 2 {
+                significantTimeChangeToken &+= 1
+                lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
+                lastLoggedMinuteRef = Int.min
+
+                if WWClockDebugLog.isEnabled() {
+                    let wallNow3 = Date()
+                    WWClockDebugLog.appendLazySync(category: "clock", throttleID: nil, minInterval: 0, now: wallNow3) {
+                        "clockJump build=\(WidgetWeaverClockWidgetLiveView.buildLabel) prevSig=\(prev) newSig=\(newSig) delta=\(delta)"
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if lastWallSignatureSeconds == Int.min {
+                lastWallSignatureSeconds = wallSignatureSeconds
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemClockDidChange)) { _ in
             significantTimeChangeToken &+= 1
+            lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
             lastLoggedMinuteRef = Int.min
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
             significantTimeChangeToken &+= 1
+            lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
             lastLoggedMinuteRef = Int.min
         }
     }
@@ -276,6 +324,11 @@ private struct WWClockBaseAngles {
     }
 }
 
+private struct WWClockDynamicHandID: Hashable {
+    let anchorRef: Int
+    let token: Int
+}
+
 private struct WWClockSecondsAndHubOverlay: View {
     let palette: WidgetWeaverClockPalette
     let showsMinuteHand: Bool
@@ -293,6 +346,16 @@ private struct WWClockSecondsAndHubOverlay: View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
 
+            let minuteID = WWClockDynamicHandID(
+                anchorRef: Int(minuteTimerRange.lowerBound.timeIntervalSinceReferenceDate.rounded()),
+                token: refreshToken
+            )
+
+            let secondID = WWClockDynamicHandID(
+                anchorRef: Int(timerRange.lowerBound.timeIntervalSinceReferenceDate.rounded()),
+                token: refreshToken
+            )
+
             ZStack {
                 if showsMinuteHand {
                     WWClockMinuteHandGlyphView(
@@ -300,7 +363,7 @@ private struct WWClockSecondsAndHubOverlay: View {
                         timerRange: minuteTimerRange,
                         diameter: layout.dialDiameter
                     )
-                    .id(refreshToken)
+                    .id(minuteID)
                     .transition(.identity)
                     .transaction { transaction in
                         transaction.animation = nil
@@ -314,7 +377,7 @@ private struct WWClockSecondsAndHubOverlay: View {
                         timerRange: timerRange,
                         diameter: layout.dialDiameter
                     )
-                    .id(refreshToken)
+                    .id(secondID)
                     .transition(.identity)
                     .transaction { transaction in
                         transaction.animation = nil
