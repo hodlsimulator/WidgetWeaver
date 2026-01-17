@@ -262,6 +262,7 @@
 		E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Clock/WidgetWeaverClockDesignConfig.swift,
 				"Clock/WWClockSecondHand-Regular.ttf",
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
