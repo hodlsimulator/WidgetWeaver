@@ -47,9 +47,27 @@ public struct WidgetWeaverRemindersTemplateView: View {
             VStack(alignment: layout.alignment.alignment, spacing: 10) {
                 if let snapshot {
                     let now = Date()
+                    let lastUpdatedAt = store.loadLastUpdatedAt()
+                    let gate = InteractivityGate(
+                        lastErrorKind: lastError?.kind,
+                        lastUpdatedAt: lastUpdatedAt,
+                        snapshotGeneratedAt: snapshot.generatedAt,
+                        now: now
+                    )
+
                     let model = Self.makeModel(snapshot: snapshot, config: config, now: now)
 
                     modeHeader(title: config.mode.displayName, progress: model.progress, showProgressBadge: config.showProgressBadge)
+
+                    if let statusLine = gate.statusLine {
+                        Text(statusLine)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+                    }
+
 
                     if model.isEmpty {
                         if let lastError {
@@ -58,10 +76,10 @@ public struct WidgetWeaverRemindersTemplateView: View {
                             emptyBody(text: "No reminders to show.")
                         }
                     } else {
-                        remindersContent(model: model, config: config)
+                        remindersContent(model: model, config: config, gate: gate)
                     }
 
-                    remindersFooter(lastAction: lastAction, lastUpdatedAt: store.loadLastUpdatedAt())
+                    remindersFooter(lastAction: lastAction, lastUpdatedAt: lastUpdatedAt)
                 } else if let lastError {
                     modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
                     remindersErrorBody(lastError: lastError)
@@ -370,28 +388,28 @@ public struct WidgetWeaverRemindersTemplateView: View {
     // MARK: - Content
 
     @ViewBuilder
-    private func remindersContent(model: Model, config: WidgetWeaverRemindersConfig) -> some View {
+    private func remindersContent(model: Model, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
         if model.usesSections {
-            remindersSectionedRows(sections: model.sections, config: config)
+            remindersSectionedRows(sections: model.sections, config: config, gate: gate)
         } else {
-            remindersDenseRows(items: model.items, config: config)
+            remindersDenseRows(items: model.items, config: config, gate: gate)
         }
     }
 
-    private func remindersDenseRows(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig) -> some View {
+    private func remindersDenseRows(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
         let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
         let limited = Array(items.prefix(maxRows))
 
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(limited) { item in
-                remindersRow(item: item, config: config)
+                remindersRow(item: item, config: config, gate: gate)
             }
         }
         .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
         .opacity(0.92)
     }
 
-    private func remindersSectionedRows(sections: [RenderSection], config: WidgetWeaverRemindersConfig) -> some View {
+    private func remindersSectionedRows(sections: [RenderSection], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
         let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
 
         var remaining = maxRows
@@ -419,7 +437,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(section.items) { item in
-                            remindersRow(item: item, config: config)
+                            remindersRow(item: item, config: config, gate: gate)
                         }
                     }
                 }
@@ -467,12 +485,73 @@ public struct WidgetWeaverRemindersTemplateView: View {
         }
     }
 
+    // MARK: - Interactivity gating (Phase 5.2.3)
+
+    private struct InteractivityGate {
+        var canCompleteFromWidget: Bool
+        var statusLine: String?
+
+        private static let hardStaleSeconds: TimeInterval = 60 * 60 * 24
+
+        init(
+            lastErrorKind: WidgetWeaverRemindersDiagnostics.Kind?,
+            lastUpdatedAt: Date?,
+            snapshotGeneratedAt: Date?,
+            now: Date = Date()
+        ) {
+            let effectiveUpdatedAt = lastUpdatedAt ?? snapshotGeneratedAt
+
+            let permissionBlocked: Bool = {
+                guard let kind = lastErrorKind else { return false }
+                switch kind {
+                case .ok:
+                    return false
+                case .notAuthorised, .writeOnly, .denied, .restricted:
+                    return true
+                case .error:
+                    return false
+                }
+            }()
+
+            if permissionBlocked {
+                self.canCompleteFromWidget = false
+                self.statusLine = "Taps disabled: Reminders access not granted."
+                return
+            }
+
+            // Snapshot presence is required for reliable completion UI in the widget.
+            guard let effectiveUpdatedAt else {
+                self.canCompleteFromWidget = false
+                self.statusLine = "Taps disabled: No snapshot yet. Open the app to refresh."
+                return
+            }
+
+            let isHardStale = now.timeIntervalSince(effectiveUpdatedAt) > Self.hardStaleSeconds
+            if isHardStale {
+                self.canCompleteFromWidget = false
+                self.statusLine = "Taps disabled: Snapshot is out of date. Open the app to refresh."
+                return
+            }
+
+            // If the last known state is a generic refresh error, pessimistically disable completion
+            // until the app refreshes the snapshot successfully.
+            if lastErrorKind == .error {
+                self.canCompleteFromWidget = false
+                self.statusLine = "Taps disabled: Reminders are unavailable. Open the app to refresh."
+                return
+            }
+
+            self.canCompleteFromWidget = true
+            self.statusLine = nil
+        }
+    }
+
     // MARK: - Row
 
     @ViewBuilder
-    private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig) -> some View {
+    private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
         let cleanedID = item.id.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        let isInteractive = (context == .widget) && !item.isCompleted && !cleanedID.isEmpty
+        let isInteractive = (context == .widget) && !item.isCompleted && !cleanedID.isEmpty && gate.canCompleteFromWidget
 
         let row = HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")

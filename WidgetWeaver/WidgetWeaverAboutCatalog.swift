@@ -73,6 +73,66 @@ extension WidgetWeaverAboutView {
             spec: specList()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-reminders-today",
+            title: "Today",
+            subtitle: "Reminders",
+            description: "Reminders due today.",
+            tags: ["Reminders", "Today"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersToday()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reminders-overdue",
+            title: "Overdue",
+            subtitle: "Reminders",
+            description: "Overdue reminders, sorted by due date.",
+            tags: ["Reminders", "Overdue"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersOverdue()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reminders-soon",
+            title: "Soon",
+            subtitle: "Reminders",
+            description: "Upcoming reminders in the next few hours.",
+            tags: ["Reminders", "Soon"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersSoon()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reminders-priority",
+            title: "Priority",
+            subtitle: "Reminders",
+            description: "High-priority reminders (flagged approximation).",
+            tags: ["Reminders", "Priority"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersPriority()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reminders-focus",
+            title: "Focus",
+            subtitle: "Reminders",
+            description: "A calm one-thing view for a single reminder.",
+            tags: ["Reminders", "Focus"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersFocus()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-reminders-list",
+            title: "Lists",
+            subtitle: "Reminders",
+            description: "All reminders sorted by list.",
+            tags: ["Reminders", "Lists"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specRemindersLists()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-reading",
             title: "Reading",
             subtitle: "Progress",
@@ -365,6 +425,108 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
         spec.symbol = nil
+        return spec.normalised()
+    }
+
+    static func specRemindersToday() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Today"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .blue
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.16
+        spec.style.backgroundGlowEnabled = false
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .today, presentation: .dense)
+        return spec.normalised()
+    }
+
+    static func specRemindersOverdue() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Overdue"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .red
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.14
+        spec.style.backgroundGlowEnabled = false
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .overdue, presentation: .dense)
+        return spec.normalised()
+    }
+
+    static func specRemindersSoon() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Soon"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .orange
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.14
+        spec.style.backgroundGlowEnabled = false
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .soon, presentation: .dense, soonWindowMinutes: 360)
+        return spec.normalised()
+    }
+
+    static func specRemindersPriority() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Priority"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .yellow
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.12
+        spec.style.backgroundGlowEnabled = false
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .flagged, presentation: .dense)
+        return spec.normalised()
+    }
+
+    static func specRemindersFocus() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Focus"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = false
+        spec.style.accent = .purple
+        spec.style.background = .radialGlow
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = true
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .focus, presentation: .focus)
+        return spec.normalised()
+    }
+
+    static func specRemindersLists() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Lists"
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.layout.template = .reminders
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .green
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .radialGlow
+        spec.style.backgroundOverlayOpacity = 0.14
+        spec.style.backgroundGlowEnabled = false
+        spec.symbol = nil
+        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .list, presentation: .dense)
         return spec.normalised()
     }
 

@@ -553,8 +553,16 @@ extension WidgetWeaverAboutView {
     // MARK: - Starter templates
 
     var starterTemplatesSection: some View {
-        Section {
-            ForEach(Self.starterTemplates) { template in
+        let remindersEnabled = WidgetWeaverFeatureFlags.remindersTemplateEnabled
+        let templates = Self.starterTemplates.filter { template in
+            if remindersEnabled {
+                return template.id != "starter-list"
+            }
+            return !template.id.hasPrefix("starter-reminders-")
+        }
+
+        return Section {
+            ForEach(templates) { template in
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
@@ -570,6 +578,7 @@ extension WidgetWeaverAboutView {
                 .foregroundStyle(.secondary)
         }
     }
+
 
     // MARK: - Pro templates
 

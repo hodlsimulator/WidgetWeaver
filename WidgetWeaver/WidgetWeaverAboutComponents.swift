@@ -210,6 +210,18 @@ struct WidgetWeaverAboutTemplateRow: View {
             return "quote.opening"
         case "starter-list":
             return "checklist"
+        case "starter-reminders-today":
+            return "calendar"
+        case "starter-reminders-overdue":
+            return "exclamationmark.circle"
+        case "starter-reminders-soon":
+            return "clock"
+        case "starter-reminders-priority":
+            return "flag.fill"
+        case "starter-reminders-focus":
+            return "scope"
+        case "starter-reminders-list":
+            return "list.bullet.rectangle"
         case "starter-reading":
             return "book.closed"
         case "starter-steps":
