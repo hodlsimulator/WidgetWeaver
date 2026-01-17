@@ -115,6 +115,7 @@ struct FamilyDraft: Hashable {
 
     // Layout
     var template: LayoutTemplateToken
+    var posterOverlayMode: PosterOverlayMode
     var showsAccentBar: Bool
     var axis: LayoutAxisToken
     var alignment: LayoutAlignmentToken
@@ -162,6 +163,7 @@ struct FamilyDraft: Hashable {
         }
 
         self.template = s.layout.template
+        self.posterOverlayMode = s.layout.posterOverlayMode
         self.showsAccentBar = s.layout.showsAccentBar
         self.axis = s.layout.axis
         self.alignment = s.layout.alignment
@@ -196,6 +198,7 @@ struct FamilyDraft: Hashable {
 
         let layout = LayoutSpec(
             template: template,
+            posterOverlayMode: posterOverlayMode,
             showsAccentBar: showsAccentBar,
             axis: axis,
             alignment: alignment,
@@ -253,6 +256,7 @@ struct FamilyDraft: Hashable {
 
         let layout = LayoutSpec(
             template: template,
+            posterOverlayMode: posterOverlayMode,
             showsAccentBar: showsAccentBar,
             axis: axis,
             alignment: alignment,
@@ -309,6 +313,7 @@ struct FamilyDraft: Hashable {
         }
 
         template = s.layout.template
+        posterOverlayMode = s.layout.posterOverlayMode
         showsAccentBar = s.layout.showsAccentBar
         axis = s.layout.axis
         alignment = s.layout.alignment

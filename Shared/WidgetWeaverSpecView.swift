@@ -167,45 +167,53 @@ public struct WidgetWeaverSpecView: View {
         .padding(style.padding)
     }
 
+    @ViewBuilder
     private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 0)
+        switch layout.posterOverlayMode {
+        case .none:
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack(alignment: .leading, spacing: 10) {
-                if !spec.name.isEmpty {
-                    Text(spec.name)
-                        .font(style.nameTextStyle.font(fallback: .caption))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                }
+        case .caption:
+            VStack(alignment: .leading, spacing: 0) {
+                Spacer(minLength: 0)
 
-                if !spec.primaryText.isEmpty {
-                    Text(spec.primaryText)
-                        .font(style.primaryTextStyle.font(fallback: .title3))
-                        .foregroundStyle(.white)
-                        .lineLimit(layout.primaryLineLimit)
-                }
+                VStack(alignment: .leading, spacing: 10) {
+                    if !spec.name.isEmpty {
+                        Text(spec.name)
+                            .font(style.nameTextStyle.font(fallback: .caption))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                    }
 
-                if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
-                    Text(secondaryText)
-                        .font(style.secondaryTextStyle.font(fallback: .caption2))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(layout.secondaryLineLimit)
+                    if !spec.primaryText.isEmpty {
+                        Text(spec.primaryText)
+                            .font(style.primaryTextStyle.font(fallback: .title3))
+                            .foregroundStyle(.white)
+                            .lineLimit(layout.primaryLineLimit)
+                    }
+
+                    if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                        Text(secondaryText)
+                            .font(style.secondaryTextStyle.font(fallback: .caption2))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(layout.secondaryLineLimit)
+                    }
                 }
-            }
-            .padding(style.padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.55),
-                        Color.black.opacity(0.10),
-                        Color.clear,
-                    ],
-                    startPoint: .bottom,
-                    endPoint: .top
+                .padding(style.padding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.55),
+                            Color.black.opacity(0.10),
+                            Color.clear,
+                        ],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
                 )
-            )
+            }
         }
     }
 

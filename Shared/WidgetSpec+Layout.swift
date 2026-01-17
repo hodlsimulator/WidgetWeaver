@@ -12,6 +12,7 @@ import SwiftUI
 
 public struct LayoutSpec: Codable, Hashable, Sendable {
     public var template: LayoutTemplateToken
+    public var posterOverlayMode: PosterOverlayMode
     public var showsAccentBar: Bool
     public var axis: LayoutAxisToken
     public var alignment: LayoutAlignmentToken
@@ -23,6 +24,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
 
     public static let defaultLayout = LayoutSpec(
         template: .classic,
+        posterOverlayMode: .caption,
         showsAccentBar: true,
         axis: .vertical,
         alignment: .leading,
@@ -35,6 +37,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
 
     public init(
         template: LayoutTemplateToken = .classic,
+        posterOverlayMode: PosterOverlayMode = .caption,
         showsAccentBar: Bool = true,
         axis: LayoutAxisToken = .vertical,
         alignment: LayoutAlignmentToken = .leading,
@@ -45,6 +48,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
         secondaryLineLimit: Int = 2
     ) {
         self.template = template
+        self.posterOverlayMode = posterOverlayMode
         self.showsAccentBar = showsAccentBar
         self.axis = axis
         self.alignment = alignment
@@ -73,6 +77,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case template
+        case posterOverlayMode
         case showsAccentBar
         case axis
         case alignment
@@ -86,6 +91,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.template = (try? c.decode(LayoutTemplateToken.self, forKey: .template)) ?? .classic
+        self.posterOverlayMode = (try? c.decode(PosterOverlayMode.self, forKey: .posterOverlayMode)) ?? .caption
         self.showsAccentBar = (try? c.decode(Bool.self, forKey: .showsAccentBar)) ?? true
         self.axis = (try? c.decode(LayoutAxisToken.self, forKey: .axis)) ?? .vertical
         self.alignment = (try? c.decode(LayoutAlignmentToken.self, forKey: .alignment)) ?? .leading
@@ -106,6 +112,7 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(template, forKey: .template)
+        try c.encode(posterOverlayMode, forKey: .posterOverlayMode)
         try c.encode(showsAccentBar, forKey: .showsAccentBar)
         try c.encode(axis, forKey: .axis)
         try c.encode(alignment, forKey: .alignment)
@@ -114,6 +121,20 @@ public struct LayoutSpec: Codable, Hashable, Sendable {
         try c.encode(primaryLineLimit, forKey: .primaryLineLimit)
         try c.encode(secondaryLineLimitSmall, forKey: .secondaryLineLimitSmall)
         try c.encode(secondaryLineLimit, forKey: .secondaryLineLimit)
+    }
+}
+
+public enum PosterOverlayMode: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case caption
+    case none
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .caption: return "Caption"
+        case .none: return "None"
+        }
     }
 }
 
