@@ -95,6 +95,17 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         case browse
     }
 
+    private struct CropRoute: Identifiable {
+        var entryID: String
+        var family: EditingFamily
+        var masterFileName: String
+        var targetPixels: PixelSize
+        var initialCropRect: NormalisedRect
+        var autoCropRect: NormalisedRect?
+
+        var id: String { "\(entryID)-\(family.rawValue)" }
+    }
+
     let smart: SmartPhotoSpec
     let manifestFileName: String
     let selectedFamily: EditingFamily
@@ -114,6 +125,8 @@ private struct SmartPhotoShuffleFramingEditorView: View {
 
     @State private var selectionMode: SelectionMode = .current
     @State private var selectedShuffleEntryID: String?
+
+    @State private var activeCropRoute: CropRoute?
 
     @State private var showOtherSizes: Bool = false
     @State private var lastFocusDrivenEntryID: String?
@@ -168,6 +181,25 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
         .onChange(of: focus.wrappedValue.focus) { _, _ in
             applySelectionFromFocusIfNeeded()
+        }
+        .fullScreenCover(item: $activeCropRoute) { route in
+            NavigationStack {
+                SmartPhotoCropEditorView(
+                    family: route.family,
+                    masterFileName: route.masterFileName,
+                    targetPixels: route.targetPixels,
+                    initialCropRect: route.initialCropRect,
+                    autoCropRect: route.autoCropRect,
+                    focus: nil,
+                    onResetToAuto: {
+                        await onResetToAuto(route.entryID, route.family)
+                    },
+                    onApply: { rect in
+                        await onApplyCrop(route.entryID, route.family, rect)
+                    }
+                )
+                .id("cropSheet-\(route.entryID)-\(route.family.rawValue)")
+            }
         }
     }
 
@@ -363,6 +395,18 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
+    private func cropRoute(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> CropRoute {
+        CropRoute(
+            entryID: entry.id,
+            family: family,
+            masterFileName: (entry.sourceFileName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            targetPixels: targetPixels(for: family),
+            initialCropRect: initialCropRect(for: family, entry: entry),
+            autoCropRect: autoCropRect(for: family, entry: entry)
+        )
+    }
+
     @ViewBuilder
     private func sizeRow(
         family: EditingFamily,
@@ -370,30 +414,19 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         canEdit: Bool
     ) -> some View {
         let hasManual = entryHasManual(for: family, entry: entry)
+        let route = cropRoute(for: family, entry: entry)
 
         HStack(alignment: .center, spacing: 12) {
-            NavigationLink {
-                SmartPhotoCropEditorView(
-                    family: family,
-                    masterFileName: (entry.sourceFileName ?? "")
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                    targetPixels: targetPixels(for: family),
-                    initialCropRect: initialCropRect(for: family, entry: entry),
-                    autoCropRect: autoCropRect(for: family, entry: entry),
-                    focus: focus,
-                    onResetToAuto: {
-                        await onResetToAuto(entry.id, family)
-                    },
-                    onApply: { rect in
-                        await onApplyCrop(entry.id, family, rect)
-                    }
-                )
-                .id("cropEditor-\(entry.id)-\(family.rawValue)")
+            Button {
+                activeCropRoute = route
             } label: {
                 Label("Fix framing (\(family.label))", systemImage: "crop")
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            .id("cropLink-\(entry.id)-\(family.rawValue)")
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .id("cropButton-\(entry.id)-\(family.rawValue)")
             .disabled(isBusy || !canEdit)
 
             if hasManual {
