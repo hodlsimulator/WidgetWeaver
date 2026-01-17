@@ -88,6 +88,16 @@ extension ContentView {
             baseDraft = FamilyDraft(from: n)
             matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
         }
+
+        // Route focus when loading a design so the tool suite is correctly gated.
+        //
+        // Clock templates have a specialised, element-less editing surface and should
+        // enter `.clock` focus immediately to avoid surfacing unrelated tools.
+        if currentFamilyDraft().template == .clockIcon {
+            editorFocusSnapshot = .clockFocus()
+        } else {
+            editorFocusSnapshot = .widgetDefault
+        }
     }
 
     func draftSpec(id: UUID) -> WidgetSpec {
