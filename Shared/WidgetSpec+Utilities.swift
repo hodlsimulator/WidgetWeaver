@@ -1195,6 +1195,15 @@ public extension WidgetSpec {
     }
 
     func usesTimeDependentRendering() -> Bool {
+        // Clock templates must tick even when there are no variable templates present.
+        if layout.template == .clockIcon { return true }
+        if let m = matchedSet {
+            if m.small?.layout.template == .clockIcon { return true }
+            if m.medium?.layout.template == .clockIcon { return true }
+            if m.large?.layout.template == .clockIcon { return true }
+        }
+
+        // Variable templates can also be time-dependent (e.g. __now, relative time).
         for t in allTemplateStrings() {
             if WidgetWeaverVariableTemplate.isTimeDependentTemplate(t) {
                 return true
