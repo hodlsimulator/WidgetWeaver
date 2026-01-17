@@ -215,7 +215,11 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                 .transaction { transaction in
                     transaction.animation = nil
                 }
-                .id(entry.date)
+                .overlay(alignment: .topLeading) {
+                    // Cache-buster: forces WidgetKit to see per-entry output changes without
+                    // rebuilding the entire view tree (which can cause hand "blink").
+                    WWClockEntryKeyView(date: entry.date)
+                }
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
@@ -244,5 +248,24 @@ private struct WidgetWeaverHomeScreenClockView: View {
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
+    }
+}
+
+/// Forces WidgetKit to treat each timeline entry as distinct output without using `.id(...)`.
+///
+/// The clock widget previously used `.id(entry.date)` as a brute-force fix for WidgetKit caching,
+/// but that can cause visible hand "blink" when the entry advances. This tiny, invisible text keeps
+/// the view tree stable while still making the rendered output depend on `entry.date`.
+private struct WWClockEntryKeyView: View {
+    let date: Date
+
+    var body: some View {
+        Text(verbatim: String(Int(date.timeIntervalSinceReferenceDate)))
+            .font(.system(size: 1))
+            .foregroundStyle(Color.primary.opacity(0.001))
+            .frame(width: 1, height: 1)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

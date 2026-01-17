@@ -117,7 +117,10 @@ fileprivate struct WWClockRenderBody: View {
         let isPlaceholder = redactionReasons.contains(.placeholder)
 
         let handsOpacity: Double = isPrivacy ? 0.85 : 1.0
-        let showSeconds = (tickMode == .secondsSweep) && (!isPlaceholder)
+        // The seconds hand is also used as a “live” rendering driver (via Text(timerInterval:)).
+        // Some widget hosting paths can transiently apply placeholder redaction even on Home Screen.
+        // Hiding the seconds hand in those moments makes the clock look frozen.
+        let showSeconds = (tickMode == .secondsSweep)
 
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)
@@ -347,6 +350,7 @@ private struct WWClockMinuteHandGlyphView: View {
         let glyph = Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockMinuteHandFont.font(size: diameter))
+            .unredacted()
             .lineLimit(1)
             .multilineTextAlignment(.center)
             .frame(width: diameter, height: diameter, alignment: .center)
@@ -380,6 +384,7 @@ private struct WWClockSecondHandGlyphView: View {
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
             .foregroundStyle(palette.accent)
+            .unredacted()
             .lineLimit(1)
             .multilineTextAlignment(.center)
             .frame(width: diameter, height: diameter, alignment: .center)
