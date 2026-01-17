@@ -205,10 +205,19 @@ struct FamilyDraft: Hashable {
             secondaryLineLimit: secondaryLineLimit
         ).normalised()
 
+        let allowsEmptyPrimaryText = layout.template == .weather
+            || layout.template == .nextUpCalendar
+            || layout.template == .reminders
+            || layout.template == .clockIcon
+
+        let finalPrimaryText = allowsEmptyPrimaryText
+            ? trimmedPrimary
+            : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
+
         return WidgetSpec(
             id: id,
             name: name,
-            primaryText: template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
+            primaryText: finalPrimaryText,
             secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
             updatedAt: updatedAt,
             symbol: symbol,
@@ -253,8 +262,17 @@ struct FamilyDraft: Hashable {
             secondaryLineLimit: secondaryLineLimit
         ).normalised()
 
+        let allowsEmptyPrimaryText = layout.template == .weather
+            || layout.template == .nextUpCalendar
+            || layout.template == .reminders
+            || layout.template == .clockIcon
+
+        let finalPrimaryText = allowsEmptyPrimaryText
+            ? trimmedPrimary
+            : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
+
         return WidgetSpecVariant(
-            primaryText: layout.template == .weather ? trimmedPrimary : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary),
+            primaryText: finalPrimaryText,
             secondaryText: trimmedSecondary.isEmpty ? nil : trimmedSecondary,
             symbol: symbol,
             image: image,
