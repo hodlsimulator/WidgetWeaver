@@ -30,6 +30,11 @@ struct WidgetWeaverClockHandShadowsView: View {
         let hourWedgeLift = max(0, hourStemLength - (px * 2.0))
         let hourWedgeLength = max(1, hourLength - hourWedgeLift)
 
+        let hourTheta = hourAngle.radians
+        let hourLiftX = CGFloat(sin(hourTheta)) * hourWedgeLift
+        let hourLiftY = CGFloat(-cos(hourTheta)) * hourWedgeLift
+        let hourWedgeOffsetY = (-hourWedgeLength / 2.0) + hourLiftY
+
         let hourShadowBlur = max(px, hourWidth * 0.055)
         let hourShadowOffset = max(px, hourWidth * 0.055)
 
@@ -41,7 +46,7 @@ struct WidgetWeaverClockHandShadowsView: View {
                 .fill(palette.handShadow.opacity(0.55))
                 .frame(width: hourWidth, height: hourWedgeLength)
                 .rotationEffect(hourAngle, anchor: .bottom)
-                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                .offset(x: hourLiftX, y: hourWedgeOffsetY)
                 .offset(x: hourShadowOffset, y: hourShadowOffset)
                 .blur(radius: hourShadowBlur)
 
@@ -87,6 +92,11 @@ struct WidgetWeaverClockHandsView: View {
         let hourStemLength = hourLength * 0.20
         let hourWedgeLift = max(0, hourStemLength - (px * 2.0))
         let hourWedgeLength = max(1, hourLength - hourWedgeLift)
+
+        let hourTheta = hourAngle.radians
+        let hourLiftX = CGFloat(sin(hourTheta)) * hourWedgeLift
+        let hourLiftY = CGFloat(-cos(hourTheta)) * hourWedgeLift
+        let hourWedgeOffsetY = (-hourWedgeLength / 2.0) + hourLiftY
 
         let stemWidth = max(px, hourWidth * 0.34)
         let stemCorner = stemWidth * 0.42
@@ -142,21 +152,21 @@ struct WidgetWeaverClockHandsView: View {
                     WidgetWeaverClockHourWedgeShape()
                         .frame(width: hourWidth, height: hourWedgeLength)
                         .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                        .offset(x: hourLiftX, y: hourWedgeOffsetY)
                 )
                 .overlay(
                     // Bright ridge highlight (tight).
                     Rectangle()
                         .fill(Color.white.opacity(0.30))
                         .frame(width: max(px, hourWidth * 0.16), height: hourWedgeLength)
-                        .offset(x: -hourWidth * 0.12, y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                        .offset(x: -hourWidth * 0.12 + hourLiftX, y: hourWedgeOffsetY)
                         .rotationEffect(hourAngle)
                         .blendMode(.screen)
                         .mask(
                             WidgetWeaverClockHourWedgeShape()
                                 .frame(width: hourWidth, height: hourWedgeLength)
                                 .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                                .offset(x: hourLiftX, y: hourWedgeOffsetY)
                         )
                 )
                 .overlay(
@@ -164,14 +174,14 @@ struct WidgetWeaverClockHandsView: View {
                     Rectangle()
                         .fill(Color.black.opacity(0.22))
                         .frame(width: max(px, hourWidth * 0.22), height: hourWedgeLength)
-                        .offset(x: hourWidth * 0.16, y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                        .offset(x: hourWidth * 0.16 + hourLiftX, y: hourWedgeOffsetY)
                         .rotationEffect(hourAngle)
                         .blendMode(.multiply)
                         .mask(
                             WidgetWeaverClockHourWedgeShape()
                                 .frame(width: hourWidth, height: hourWedgeLength)
                                 .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                                .offset(x: hourLiftX, y: hourWedgeOffsetY)
                         )
                 )
                 .overlay(
@@ -179,7 +189,7 @@ struct WidgetWeaverClockHandsView: View {
                         .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
                         .frame(width: hourWidth, height: hourWedgeLength)
                         .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(y: -(hourWedgeLength / 2.0 + hourWedgeLift))
+                        .offset(x: hourLiftX, y: hourWedgeOffsetY)
                 )
 
             if minuteLength > 0.0 && minuteWidth > 0.0 {

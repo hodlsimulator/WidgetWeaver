@@ -215,6 +215,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                 .transaction { transaction in
                     transaction.animation = nil
                 }
+                .id(entry.date)
         }
         .configurationDisplayName("Clock (Icon)")
         .description("A small analogue clock.")
