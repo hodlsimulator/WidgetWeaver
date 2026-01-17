@@ -227,11 +227,40 @@ struct WidgetWeaverAboutTemplateRow: View {
         template.spec.style.accent.swiftUIColor
     }
 
-    private var showsSmartStackBadge: Bool {
-        template.id.hasPrefix("starter-reminders-")
+    private var remindersSmartStackIndex: Int? {
+        switch template.id {
+        case "starter-reminders-today":
+            return 1
+        case "starter-reminders-overdue":
+            return 2
+        case "starter-reminders-soon":
+            return 3
+        case "starter-reminders-priority":
+            return 4
+        case "starter-reminders-focus":
+            return 5
+        case "starter-reminders-list":
+            return 6
+        default:
+            return nil
+        }
     }
 
+    private var isRemindersSmartStackTemplate: Bool {
+        remindersSmartStackIndex != nil
+    }
 
+    private var showsSmartStackBadge: Bool {
+        isRemindersSmartStackTemplate
+    }
+
+    private var showsRemindersSmartStackGroupIntro: Bool {
+        template.id == "starter-reminders-today"
+    }
+
+    private var showsRemindersSmartStackGroupOutro: Bool {
+        template.id == "starter-reminders-list"
+    }
 
     private var iconName: String {
         switch template.id {
@@ -272,9 +301,30 @@ struct WidgetWeaverAboutTemplateRow: View {
         }
     }
 
+
+    private func remindersSmartStackGroupLabel(text: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(templateAccent)
+
+            Text(text)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     var body: some View {
         WidgetWeaverAboutCard(accent: templateAccent) {
             VStack(alignment: .leading, spacing: 12) {
+                if showsRemindersSmartStackGroupIntro {
+                    remindersSmartStackGroupLabel(
+                        text: "Reminders Smart Stack • 6 templates",
+                        systemImage: "square.stack.3d.up.fill"
+                    )
+                }
+
                 headerRow
 
                 Text(template.description)
@@ -286,6 +336,13 @@ struct WidgetWeaverAboutTemplateRow: View {
                 }
 
                 previewStrip
+
+                if showsRemindersSmartStackGroupOutro {
+                    remindersSmartStackGroupLabel(
+                        text: "End of Reminders Smart Stack",
+                        systemImage: "checkmark.seal.fill"
+                    )
+                }
             }
         }
         .tint(templateAccent)
@@ -317,6 +374,10 @@ struct WidgetWeaverAboutTemplateRow: View {
 
                     if showsSmartStackBadge {
                         WidgetWeaverAboutBadge("Smart Stack", accent: templateAccent)
+
+                        if let idx = remindersSmartStackIndex {
+                            WidgetWeaverAboutBadge("\(idx)/6", accent: templateAccent)
+                        }
                     }
                 }
 
@@ -336,18 +397,30 @@ struct WidgetWeaverAboutTemplateRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             } else {
-                Menu {
-                    Button { onAdd(false) } label: {
-                        Label("Add to library", systemImage: "plus")
+                HStack(spacing: 8) {
+                    if isRemindersSmartStackTemplate {
+                        NavigationLink {
+                            WidgetWeaverRemindersSmartStackGuideView(onClose: nil)
+                        } label: {
+                            Label("Guide", systemImage: "square.stack.3d.up.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    Button { onAdd(true) } label: {
-                        Label("Add & Make Default", systemImage: "star.fill")
+
+                    Menu {
+                        Button { onAdd(false) } label: {
+                            Label("Add to library", systemImage: "plus")
+                        }
+                        Button { onAdd(true) } label: {
+                            Label("Add & Make Default", systemImage: "star.fill")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus.circle.fill")
                     }
-                } label: {
-                    Label("Add", systemImage: "plus.circle.fill")
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
     }

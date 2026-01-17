@@ -90,7 +90,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
                     remindersPlaceholder()
                 }
             }
-            .padding(.top, 2)
+            .padding(.vertical, 2)
 
             if layout.showsAccentBar {
                 accentBar()

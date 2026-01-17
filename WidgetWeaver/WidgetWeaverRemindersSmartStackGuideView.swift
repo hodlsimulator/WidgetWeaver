@@ -50,7 +50,9 @@ struct WidgetWeaverRemindersSmartStackGuideView: View {
             Section("Notes") {
                 WidgetWeaverAboutBulletList(items: [
                     "Widgets render cached snapshots only (no direct Reminders reads).",
-                    "Tap-to-complete requires iOS 17+ and Reminders Full Access.",
+                    "Tap-to-complete requires Reminders Full Access and a recent snapshot refresh.",
+                    "“Add all 6” is safe to run again; it only creates missing designs by default.",
+                    "This guide can be reopened from Explore → Templates (Reminders) → Guide.",
                     "The six designs are numbered so they sort together in widget configuration."
                 ])
             }
@@ -58,8 +60,10 @@ struct WidgetWeaverRemindersSmartStackGuideView: View {
         .navigationTitle("Smart Stack Setup")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { onClose?() }
+            if let onClose {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onClose() }
+                }
             }
         }
     }
