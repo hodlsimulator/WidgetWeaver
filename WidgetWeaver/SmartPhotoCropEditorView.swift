@@ -14,7 +14,9 @@ struct SmartPhotoCropEditorView: View {
     let masterFileName: String
     let targetPixels: PixelSize
     let initialCropRect: NormalisedRect
+    let autoCropRect: NormalisedRect?
     let focus: Binding<EditorFocusSnapshot>?
+    let onResetToAuto: (() async -> Void)?
     let onApply: (NormalisedRect) async -> Void
 
     @State private var masterImage: UIImage?
@@ -45,14 +47,18 @@ struct SmartPhotoCropEditorView: View {
         masterFileName: String,
         targetPixels: PixelSize,
         initialCropRect: NormalisedRect,
+        autoCropRect: NormalisedRect? = nil,
         focus: Binding<EditorFocusSnapshot>? = nil,
+        onResetToAuto: (() async -> Void)? = nil,
         onApply: @escaping (NormalisedRect) async -> Void
     ) {
         self.family = family
         self.masterFileName = masterFileName
         self.targetPixels = targetPixels.normalised()
         self.initialCropRect = initialCropRect.normalised()
+        self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
+        self.onResetToAuto = onResetToAuto
         self.onApply = onApply
 
         _cropRect = State(initialValue: initialCropRect.normalised())
@@ -97,7 +103,7 @@ struct SmartPhotoCropEditorView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
-        .navigationTitle("Fix framing")
+        .navigationTitle("Fix framing (\(family.label))")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             pushFocusIfNeeded()
@@ -116,9 +122,14 @@ struct SmartPhotoCropEditorView: View {
                     .disabled(isApplying || masterImage == nil)
             }
 
-            ToolbarItem(placement: .bottomBar) {
+            ToolbarItemGroup(placement: .bottomBar) {
                 Button("Reset") { cropRect = initialCropRect.normalised() }
                     .disabled(isApplying || masterImage == nil)
+
+                if autoCropRect != nil {
+                    Button("Reset to Auto") { resetToAutoAndDismissIfPossible() }
+                        .disabled(isApplying)
+                }
             }
 
             #if DEBUG
@@ -184,6 +195,25 @@ struct SmartPhotoCropEditorView: View {
                 dismiss()
             }
         }
+    }
+
+    private func resetToAutoAndDismissIfPossible() {
+        guard !isApplying else { return }
+        guard let auto = autoCropRect?.normalised() else { return }
+
+        if let onResetToAuto {
+            isApplying = true
+            Task {
+                await onResetToAuto()
+                await MainActor.run {
+                    isApplying = false
+                    dismiss()
+                }
+            }
+            return
+        }
+
+        cropRect = auto
     }
 
     private func pushFocusIfNeeded() {

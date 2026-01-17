@@ -278,7 +278,12 @@ public extension SmartPhotoShuffleManifest.Entry {
         }
 
         let autoTrimmed = (autoCandidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return autoTrimmed.isEmpty ? nil : autoTrimmed
+        guard !autoTrimmed.isEmpty else { return nil }
+
+        let autoURL = AppGroup.imageFileURL(fileName: autoTrimmed)
+        guard FileManager.default.fileExists(atPath: autoURL.path) else { return nil }
+
+        return autoTrimmed
     }
 
     func isManual(for family: WidgetFamily) -> Bool {

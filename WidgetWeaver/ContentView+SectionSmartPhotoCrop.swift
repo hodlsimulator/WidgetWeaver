@@ -115,6 +115,9 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     @State private var selectionMode: SelectionMode = .current
     @State private var selectedShuffleEntryID: String?
 
+    @State private var showOtherSizes: Bool = false
+    @State private var lastFocusDrivenEntryID: String?
+
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
         let trimmedManifestFile = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -135,8 +138,13 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                         }
                     }
                 }
-                .task { setDefaultSelectionIfNeeded() }
-                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in setDefaultSelectionIfNeeded() }
+                .task {
+                    setDefaultSelectionIfNeeded()
+                    applySelectionFromFocusIfNeeded()
+                }
+                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in
+                    setDefaultSelectionIfNeeded()
+                }
                 .onChange(of: selectionMode) { _, newValue in
                     guard newValue == .browse else { return }
                     snapBrowseSelectionToCurrentIfPossible()
@@ -145,13 +153,21 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     shuffleBody(manifestFile: trimmedManifestFile)
                 }
-                .task { setDefaultSelectionIfNeeded() }
-                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in setDefaultSelectionIfNeeded() }
+                .task {
+                    setDefaultSelectionIfNeeded()
+                    applySelectionFromFocusIfNeeded()
+                }
+                .onChange(of: smartPhotoShuffleUpdateToken) { _, _ in
+                    setDefaultSelectionIfNeeded()
+                }
                 .onChange(of: selectionMode) { _, newValue in
                     guard newValue == .browse else { return }
                     snapBrowseSelectionToCurrentIfPossible()
                 }
             }
+        }
+        .onChange(of: focus.wrappedValue.focus) { _, _ in
+            applySelectionFromFocusIfNeeded()
         }
     }
 
@@ -294,7 +310,9 @@ private struct SmartPhotoShuffleFramingEditorView: View {
             if manifest.rotationIntervalMinutes > 0,
                let next = manifest.nextChangeDateFrom(now: WidgetWeaverRenderClock.now)
             {
-                Text("Next change: \(next.formatted(date: .omitted, time: .shortened))")
+                let now = WidgetWeaverRenderClock.now
+                let sameDay = Calendar.current.isDate(next, inSameDayAs: now)
+                Text("Next change: \(next.formatted(date: sameDay ? .omitted : .abbreviated, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
@@ -322,47 +340,69 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     }
 
     private func sizeControls(entry: SmartPhotoShuffleManifest.Entry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(EditingFamily.allCases, id: \.rawValue) { family in
-                let hasManual = entryHasManual(for: family, entry: entry)
-                let canEdit = entryHasSource(entry: entry)
+        let canEdit = entryHasSource(entry: entry)
 
-                HStack(alignment: .center, spacing: 12) {
-                    NavigationLink {
-                        SmartPhotoCropEditorView(
-                            family: family,
-                            masterFileName: (entry.sourceFileName ?? "")
-                                .trimmingCharacters(in: .whitespacesAndNewlines),
-                            targetPixels: targetPixels(for: family),
-                            initialCropRect: initialCropRect(for: family, entry: entry),
-                            focus: focus,
-                            onApply: { rect in
-                                await onApplyCrop(entry.id, family, rect)
-                            }
-                        )
-                    } label: {
-                        Label("Fix framing (\(family.label))", systemImage: "crop")
-                    }
-                    .disabled(isBusy || !canEdit)
+        return VStack(alignment: .leading, spacing: 10) {
+            sizeRow(family: selectedFamily, entry: entry, canEdit: canEdit)
 
-                    Spacer()
-
-                    if hasManual {
-                        Button {
-                            Task { await onResetToAuto(entry.id, family) }
-                        } label: {
-                            Text("Reset to Auto")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isBusy)
-                    }
+            DisclosureGroup(isExpanded: $showOtherSizes) {
+                ForEach(EditingFamily.allCases.filter { $0 != selectedFamily }, id: \.rawValue) { family in
+                    sizeRow(family: family, entry: entry, canEdit: canEdit)
                 }
+            } label: {
+                Text("Other sizes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                if !canEdit {
-                    Text("Source image for this shuffled photo is missing.\nRe-prepare this album shuffle set to enable manual framing.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            if !canEdit {
+                Text("Source image for this shuffled photo is missing.\nRe-prepare this album shuffle set to enable manual framing.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sizeRow(
+        family: EditingFamily,
+        entry: SmartPhotoShuffleManifest.Entry,
+        canEdit: Bool
+    ) -> some View {
+        let hasManual = entryHasManual(for: family, entry: entry)
+
+        HStack(alignment: .center, spacing: 12) {
+            NavigationLink {
+                SmartPhotoCropEditorView(
+                    family: family,
+                    masterFileName: (entry.sourceFileName ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                    targetPixels: targetPixels(for: family),
+                    initialCropRect: initialCropRect(for: family, entry: entry),
+                    autoCropRect: autoCropRect(for: family, entry: entry),
+                    focus: focus,
+                    onResetToAuto: {
+                        await onResetToAuto(entry.id, family)
+                    },
+                    onApply: { rect in
+                        await onApplyCrop(entry.id, family, rect)
+                    }
+                )
+            } label: {
+                Label("Fix framing (\(family.label))", systemImage: "crop")
+            }
+            .disabled(isBusy || !canEdit)
+
+            Spacer()
+
+            if hasManual {
+                Button {
+                    Task { await onResetToAuto(entry.id, family) }
+                } label: {
+                    Text("Reset to Auto")
                 }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
             }
         }
     }
@@ -437,15 +477,55 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
+    private func applySelectionFromFocusIfNeeded() {
+        guard case .albumPhoto(_, let itemID, let subtype) = focus.wrappedValue.focus else { return }
+        guard subtype == .smart else { return }
+
+        let trimmed = itemID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if lastFocusDrivenEntryID == trimmed {
+            return
+        }
+
+        lastFocusDrivenEntryID = trimmed
+        selectedShuffleEntryID = trimmed
+
+        // Auto-switch into Browse when the selected focus does not match the current render entry.
+        // This avoids flipping the segmented control when editing the already-current entry.
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !mf.isEmpty,
+           let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf),
+           let current = manifest.entryForRender(),
+           current.id == trimmed
+        {
+            return
+        }
+
+        selectionMode = .browse
+    }
+
     private func snapBrowseSelectionToCurrentIfPossible() {
         let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !mf.isEmpty else { return }
         guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return }
 
-        if let current = manifest.entryForRender() {
+        let prepared = preparedEntries(manifest)
+        guard !prepared.isEmpty else { return }
+
+        if let selectedID = selectedShuffleEntryID?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !selectedID.isEmpty,
+           prepared.contains(where: { $0.entry.id == selectedID })
+        {
+            return
+        }
+
+        if let current = manifest.entryForRender(),
+           prepared.contains(where: { $0.entry.id == current.id })
+        {
             selectedShuffleEntryID = current.id
         } else {
-            let prepared = preparedEntries(manifest)
             selectedShuffleEntryID = prepared.first?.entry.id
         }
     }
@@ -493,6 +573,17 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         case .small: return targets.small
         case .medium: return targets.medium
         case .large: return targets.large
+        }
+    }
+
+    private func autoCropRect(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> NormalisedRect? {
+        switch family {
+        case .small:
+            return entry.smallAutoCropRect?.normalised()
+        case .medium:
+            return entry.mediumAutoCropRect?.normalised()
+        case .large:
+            return entry.largeAutoCropRect?.normalised()
         }
     }
 

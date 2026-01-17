@@ -82,7 +82,7 @@ struct SmartPhotoPreviewStripView: View {
                 previewButton(family: .large, entry: entry)
             }
 
-            Text("Tap a preview to edit that size.")
+            Text("Tap a preview to select that size.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
