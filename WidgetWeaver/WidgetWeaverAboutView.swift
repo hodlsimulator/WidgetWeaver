@@ -29,6 +29,7 @@ struct WidgetWeaverAboutView: View {
     var onOpenWeatherSettings: @MainActor @Sendable () -> Void
     var onOpenStepsSettings: @MainActor @Sendable () -> Void
     var onGoToLibrary: @MainActor @Sendable () -> Void
+    var onShowRemindersSmartStackGuide: @MainActor @Sendable () -> Void
 
     @State private var isListScrolling = false
     @State var statusMessage: String = ""
@@ -211,6 +212,7 @@ struct WidgetWeaverAboutView: View {
 
         if addedCount > 0 || alreadyCount > 0 {
             onGoToLibrary()
+            onShowRemindersSmartStackGuide()
         }
     }
 
