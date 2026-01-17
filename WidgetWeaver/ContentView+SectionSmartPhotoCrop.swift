@@ -95,6 +95,15 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         case browse
     }
 
+    private struct CropRoute: Hashable {
+        var entryID: String
+        var family: EditingFamily
+        var masterFileName: String
+        var targetPixels: PixelSize
+        var initialCropRect: NormalisedRect
+        var autoCropRect: NormalisedRect?
+    }
+
     let smart: SmartPhotoSpec
     let manifestFileName: String
     let selectedFamily: EditingFamily
@@ -168,6 +177,23 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
         .onChange(of: focus.wrappedValue.focus) { _, _ in
             applySelectionFromFocusIfNeeded()
+        }
+        .navigationDestination(for: CropRoute.self) { route in
+            SmartPhotoCropEditorView(
+                family: route.family,
+                masterFileName: route.masterFileName,
+                targetPixels: route.targetPixels,
+                initialCropRect: route.initialCropRect,
+                autoCropRect: route.autoCropRect,
+                focus: focus,
+                onResetToAuto: {
+                    await onResetToAuto(route.entryID, route.family)
+                },
+                onApply: { rect in
+                    await onApplyCrop(route.entryID, route.family, rect)
+                }
+            )
+            .id("cropEditor-\(route.entryID)-\(route.family.rawValue)")
         }
     }
 
@@ -363,6 +389,18 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
+    private func cropRoute(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> CropRoute {
+        CropRoute(
+            entryID: entry.id,
+            family: family,
+            masterFileName: (entry.sourceFileName ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            targetPixels: targetPixels(for: family),
+            initialCropRect: initialCropRect(for: family, entry: entry),
+            autoCropRect: autoCropRect(for: family, entry: entry)
+        )
+    }
+
     @ViewBuilder
     private func sizeRow(
         family: EditingFamily,
@@ -372,25 +410,10 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         let hasManual = entryHasManual(for: family, entry: entry)
 
         HStack(alignment: .center, spacing: 12) {
-            NavigationLink {
-                SmartPhotoCropEditorView(
-                    family: family,
-                    masterFileName: (entry.sourceFileName ?? "")
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                    targetPixels: targetPixels(for: family),
-                    initialCropRect: initialCropRect(for: family, entry: entry),
-                    autoCropRect: autoCropRect(for: family, entry: entry),
-                    focus: focus,
-                    onResetToAuto: {
-                        await onResetToAuto(entry.id, family)
-                    },
-                    onApply: { rect in
-                        await onApplyCrop(entry.id, family, rect)
-                    }
-                )
-            } label: {
+            NavigationLink(value: cropRoute(for: family, entry: entry)) {
                 Label("Fix framing (\(family.label))", systemImage: "crop")
             }
+            .id("cropLink-\(entry.id)-\(family.rawValue)")
             .disabled(isBusy || !canEdit)
 
             Spacer()
@@ -405,6 +428,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                 .disabled(isBusy)
             }
         }
+        .id("sizeRow-\(entry.id)-\(family.rawValue)")
     }
 
     private func preparedEntries(_ manifest: SmartPhotoShuffleManifest) -> [(index: Int, entry: SmartPhotoShuffleManifest.Entry)] {
