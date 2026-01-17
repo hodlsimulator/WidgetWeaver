@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import EventKit
 
 extension ContentView {
     func sectionHeader(_ title: String) -> some View {
@@ -531,6 +532,16 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
+            if currentTemplate == .reminders && remindersEnabled {
+                RemindersPackControls(
+                    config: Binding(
+                        get: { remindersDraft.normalised() },
+                        set: { newValue in remindersDraft = newValue.normalised() }
+                    ),
+                    onOpenRemindersSettings: { activeSheet = .reminders }
+                )
+            }
+
             Toggle("Show accent bar", isOn: binding(\.showsAccentBar))
 
             Stepper(
@@ -642,4 +653,293 @@ extension ContentView {
         }
     }
 
+}
+
+
+private struct RemindersPackControls: View {
+    @Binding var config: WidgetWeaverRemindersConfig
+    let onOpenRemindersSettings: () -> Void
+
+    @State private var lists: [WidgetWeaverRemindersEngine.ReminderListSummary] = []
+    @State private var isLoadingLists: Bool = false
+    @State private var lastError: String?
+
+    @State private var enableFilteringAfterLoad: Bool = false
+
+    private var permissionStatus: EKAuthorizationStatus {
+        EKEventStore.authorizationStatus(for: .reminder)
+    }
+
+    private var permissionTitle: String {
+        switch permissionStatus {
+        case .notDetermined: return "Not requested"
+        case .restricted: return "Restricted"
+        case .denied: return "Denied"
+        case .authorized: return "Authorised"
+        case .fullAccess: return "Full Access"
+        case .writeOnly: return "Write Only"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private var listSummary: String {
+        if config.selectedListIDs.isEmpty { return "All lists" }
+        return "\(config.selectedListIDs.count) selected"
+    }
+
+    private var soonWindowOptions: [Int] {
+        [
+            60 * 6,
+            60 * 12,
+            60 * 24,
+            60 * 24 * 3,
+            60 * 24 * 7,
+            60 * 24 * 14,
+            60 * 24 * 31,
+        ]
+    }
+
+    private func soonWindowTitle(minutes: Int) -> String {
+        let clamped = max(15, minutes)
+        let days = clamped / (60 * 24)
+        let hours = (clamped % (60 * 24)) / 60
+        if days > 0 {
+            if hours == 0 { return "\(days)d" }
+            return "\(days)d \(hours)h"
+        }
+        return "\(max(1, hours))h"
+    }
+
+    private func loadLists() {
+        guard !isLoadingLists else { return }
+        isLoadingLists = true
+        lastError = nil
+
+        Task { @MainActor in
+            defer { self.isLoadingLists = false }
+
+            do {
+                let fetched = try await WidgetWeaverRemindersEngine.shared.fetchReminderLists()
+                self.lists = fetched
+
+                if self.enableFilteringAfterLoad {
+                    self.enableFilteringAfterLoad = false
+                    self.config.selectedListIDs = fetched.map { $0.id }
+                }
+
+                // If filtering is enabled, keep IDs aligned with currently-known lists.
+                if !self.config.selectedListIDs.isEmpty {
+                    let known = Set(fetched.map { $0.id })
+                    let current = Set(self.config.selectedListIDs)
+                    let pruned = current.intersection(known)
+
+                    if pruned.isEmpty {
+                        // Fallback to all known lists rather than silently switching to “All lists” (empty means all).
+                        self.config.selectedListIDs = fetched.map { $0.id }
+                    } else {
+                        // Preserve stable ordering from the fetched lists.
+                        self.config.selectedListIDs = fetched.map { $0.id }.filter { pruned.contains($0) }
+                    }
+                }
+
+            } catch {
+                self.enableFilteringAfterLoad = false
+                self.lastError = error.localizedDescription
+            }
+        }
+    }
+
+    private func enableListFiltering() {
+        lastError = nil
+
+        if lists.isEmpty {
+            enableFilteringAfterLoad = true
+            loadLists()
+            return
+        }
+
+        config.selectedListIDs = lists.map { $0.id }
+    }
+
+    private func disableListFiltering() {
+        lastError = nil
+        config.selectedListIDs = []
+    }
+
+    private func setListIncluded(_ included: Bool, listID: String) {
+        var next = Set(config.selectedListIDs)
+
+        if included {
+            next.insert(listID)
+        } else {
+            next.remove(listID)
+
+            if next.isEmpty {
+                // Keep at least one list selected when filtering is enabled.
+                next.insert(listID)
+                lastError = "Select at least one list, or disable list filtering to show all lists."
+            }
+        }
+
+        if lists.isEmpty {
+            config.selectedListIDs = Array(next)
+        } else {
+            config.selectedListIDs = lists.map { $0.id }.filter { next.contains($0) }
+        }
+    }
+
+    var body: some View {
+        Group {
+            HStack {
+                Text("Reminders access")
+                Spacer()
+                Text(permissionTitle)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                onOpenRemindersSettings()
+            } label: {
+                Label("Open Reminders settings", systemImage: "gear")
+            }
+
+            Divider()
+
+            Picker("Mode", selection: Binding(
+                get: { config.mode },
+                set: { newValue in config.mode = newValue; config = config.normalised() }
+            )) {
+                ForEach(WidgetWeaverRemindersMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+
+            Picker("Presentation", selection: Binding(
+                get: { config.presentation },
+                set: { newValue in config.presentation = newValue; config = config.normalised() }
+            )) {
+                ForEach(WidgetWeaverRemindersPresentation.allCases) { p in
+                    Text(p.displayName).tag(p)
+                }
+            }
+
+            Toggle("Hide completed", isOn: Binding(
+                get: { config.hideCompleted },
+                set: { newValue in config.hideCompleted = newValue; config = config.normalised() }
+            ))
+
+            Toggle("Show due times", isOn: Binding(
+                get: { config.showDueTimes },
+                set: { newValue in config.showDueTimes = newValue; config = config.normalised() }
+            ))
+
+            Toggle("Show progress badge", isOn: Binding(
+                get: { config.showProgressBadge },
+                set: { newValue in config.showProgressBadge = newValue; config = config.normalised() }
+            ))
+
+            if config.mode == .today {
+                Toggle("Include start dates in Today", isOn: Binding(
+                    get: { config.includeStartDatesInToday },
+                    set: { newValue in config.includeStartDatesInToday = newValue; config = config.normalised() }
+                ))
+            }
+
+            if config.mode == .soon {
+                Picker("Soon window", selection: Binding(
+                    get: { config.soonWindowMinutes },
+                    set: { newValue in config.soonWindowMinutes = newValue; config = config.normalised() }
+                )) {
+                    ForEach(soonWindowOptions, id: \.self) { minutes in
+                        Text(soonWindowTitle(minutes: minutes)).tag(minutes)
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Text("List filter")
+                Spacer()
+                Text(listSummary)
+                    .foregroundStyle(.secondary)
+            }
+
+            if config.selectedListIDs.isEmpty {
+                Button {
+                    enableListFiltering()
+                } label: {
+                    HStack {
+                        Text("Filter by list…")
+                        Spacer()
+                        if isLoadingLists {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isLoadingLists)
+
+                Text("Empty selection means “All lists”. Enable filtering to pick specific lists.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button {
+                    disableListFiltering()
+                } label: {
+                    Label("Show all lists", systemImage: "line.3.horizontal")
+                }
+
+                Button {
+                    loadLists()
+                } label: {
+                    HStack {
+                        Text(lists.isEmpty ? "Load lists" : "Reload lists")
+                        Spacer()
+                        if isLoadingLists {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isLoadingLists)
+
+                if lists.isEmpty {
+                    ForEach(config.selectedListIDs, id: \.self) { id in
+                        Text(id)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                } else {
+                    ForEach(lists) { list in
+                        Toggle(isOn: Binding(
+                            get: { config.selectedListIDs.contains(list.id) },
+                            set: { newValue in setListIncluded(newValue, listID: list.id) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(list.title)
+                                if let source = list.sourceTitle {
+                                    Text(source)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let err = lastError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("List filtering is per-widget. Snapshot refresh can also globally restrict lists (Reminders settings).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
 }

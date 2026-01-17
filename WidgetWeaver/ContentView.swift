@@ -37,6 +37,8 @@ struct ContentView: View {
     @State var styleDraft: StyleDraft = .defaultDraft
     @State var actionBarDraft: ActionBarDraft = .defaultDraft
 
+    @State var remindersDraft: WidgetWeaverRemindersConfig = .default
+
     @State var baseDraft: FamilyDraft = .defaultDraft
     @State var matchedSetEnabled: Bool = false
     @State var matchedDrafts: MatchedDrafts = MatchedDrafts(
