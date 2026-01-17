@@ -106,6 +106,8 @@ public struct WidgetWeaverSpecView: View {
                 nextUpCalendarTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .reminders:
                 WidgetWeaverRemindersTemplateView(spec: resolved, family: family, context: context, layout: layout, style: style, accent: accent)
+            case .clockIcon:
+                clockIconTemplatePlaceholder(spec: resolved, layout: layout, style: style, accent: accent)
             }
         }
         .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
@@ -223,6 +225,45 @@ public struct WidgetWeaverSpecView: View {
             context: context,
             accent: accent
         )
+    }
+
+    private func clockIconTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let stroke = max(2, side * 0.05)
+
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(0.05))
+
+                Circle()
+                    .strokeBorder(accent.opacity(0.70), lineWidth: stroke)
+
+                // Hour hand (placeholder geometry).
+                RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
+                    .fill(accent.opacity(0.90))
+                    .frame(width: max(2, side * 0.05), height: side * 0.24)
+                    .offset(y: -side * 0.12)
+                    .rotationEffect(.degrees(-65))
+
+                // Minute hand (placeholder geometry).
+                RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
+                    .fill(accent.opacity(0.80))
+                    .frame(width: max(2, side * 0.04), height: side * 0.34)
+                    .offset(y: -side * 0.17)
+                    .rotationEffect(.degrees(18))
+
+                Circle()
+                    .fill(accent)
+                    .frame(width: side * 0.09, height: side * 0.09)
+
+                Text("Clock (Placeholder)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, side * 0.85)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
+        }
     }
 
 }

@@ -581,6 +581,8 @@ enum EditorToolRegistry {
 
         case .reminders:
             c.insert(.canEditTypography)
+            
+        case .clockIcon: break
         }
 
         // Permissions and derived availability.

@@ -126,6 +126,7 @@ public enum LayoutTemplateToken: String, Codable, CaseIterable, Hashable, Identi
     // NEW:
     case nextUpCalendar
     case reminders
+    case clockIcon
 
     public var id: String { rawValue }
 
@@ -137,6 +138,7 @@ public enum LayoutTemplateToken: String, Codable, CaseIterable, Hashable, Identi
         case .weather: return "Weather"
         case .nextUpCalendar: return "Next Up (Calendar)"
         case .reminders: return "Reminders"
+        case .clockIcon: return "Clock (Icon)"
         }
     }
 }
