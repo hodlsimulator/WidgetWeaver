@@ -106,11 +106,30 @@ extension ContentView {
             return baseDraft.template == .reminders
         }()
 
+        let usesClockTemplate: Bool = {
+            if matchedSetEnabled {
+                return matchedDrafts.small.template == .clockIcon
+                || matchedDrafts.medium.template == .clockIcon
+                || matchedDrafts.large.template == .clockIcon
+            }
+            return baseDraft.template == .clockIcon
+        }()
+
+        func clockThemeRawForSpec() -> String {
+            if matchedSetEnabled {
+                if matchedDrafts.medium.template == .clockIcon { return matchedDrafts.medium.clockThemeRaw }
+                if matchedDrafts.small.template == .clockIcon { return matchedDrafts.small.clockThemeRaw }
+                if matchedDrafts.large.template == .clockIcon { return matchedDrafts.large.clockThemeRaw }
+                return WidgetWeaverClockDesignConfig.defaultTheme
+            }
+            return baseDraft.clockThemeRaw
+        }
+
         func overridePrimaryTextForSpecialTemplates(_ spec: inout WidgetSpec, source: FamilyDraft) {
             let trimmedPrimary = source.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
             switch spec.layout.template {
-            case .weather, .nextUpCalendar, .reminders:
+            case .weather, .nextUpCalendar, .reminders, .clockIcon:
                 spec.primaryText = trimmedPrimary
             default:
                 break
@@ -121,7 +140,7 @@ extension ContentView {
             let trimmedPrimary = source.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
             switch variant.layout.template {
-            case .weather, .nextUpCalendar, .reminders:
+            case .weather, .nextUpCalendar, .reminders, .clockIcon:
                 variant.primaryText = trimmedPrimary
             default:
                 break
@@ -155,6 +174,7 @@ extension ContentView {
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.matchedSet = matched
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
+            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec()) : nil
             return out.normalised()
 
         } else {
@@ -168,6 +188,7 @@ extension ContentView {
 
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
+            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec()) : nil
             return out.normalised()
         }
     }

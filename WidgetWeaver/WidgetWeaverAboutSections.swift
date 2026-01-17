@@ -561,8 +561,26 @@ extension WidgetWeaverAboutView {
             return !template.id.hasPrefix("starter-reminders-")
         }
 
+        let firstRemindersIndex = templates.firstIndex(where: { $0.id.hasPrefix("starter-reminders-") })
+        let templatesBeforeReminders = firstRemindersIndex.map { Array(templates[..<$0]) } ?? templates
+        let templatesFromReminders = firstRemindersIndex.map { Array(templates[$0...]) } ?? []
+        let showsRemindersCallout = remindersEnabled && firstRemindersIndex != nil
+
         return Section {
-            ForEach(templates) { template in
+            ForEach(templatesBeforeReminders) { template in
+                WidgetWeaverAboutTemplateRow(
+                    template: template,
+                    isProUnlocked: proManager.isProUnlocked,
+                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                    onShowPro: onShowPro
+                )
+            }
+
+            if showsRemindersCallout {
+                remindersSmartStackCalloutRow
+            }
+
+            ForEach(templatesFromReminders) { template in
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
@@ -579,6 +597,39 @@ extension WidgetWeaverAboutView {
         }
     }
 
+    private var remindersSmartStackCalloutRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(.orange.opacity(0.15))
+
+                Circle()
+                    .strokeBorder(.orange.opacity(0.25), lineWidth: 1)
+
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.orange)
+            }
+            .frame(width: 28, height: 28)
+            .padding(.top, 1)
+            .accessibilityHidden(true)
+
+            Text("Tip: These 6 are designed to be used together in a Smart Stack.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        )
+        .wwAboutListRow()
+    }
 
     // MARK: - Pro templates
 

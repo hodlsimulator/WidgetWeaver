@@ -124,6 +124,9 @@ struct FamilyDraft: Hashable {
     var primaryLineLimit: Int
     var secondaryLineLimit: Int
 
+    // Clock
+    var clockThemeRaw: String
+
     static var defaultDraft: FamilyDraft { FamilyDraft(from: WidgetSpec.defaultSpec()) }
 
     init(from spec: WidgetSpec) {
@@ -171,6 +174,12 @@ struct FamilyDraft: Hashable {
         self.primaryLineLimitSmall = s.layout.primaryLineLimitSmall
         self.primaryLineLimit = s.layout.primaryLineLimit
         self.secondaryLineLimit = s.layout.secondaryLineLimit
+
+        if s.layout.template == .clockIcon {
+            self.clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
+        } else {
+            self.clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
+        }
     }
 
     func toFlatSpec(id: UUID, name: String, style: StyleSpec, updatedAt: Date) -> WidgetSpec {
@@ -217,6 +226,10 @@ struct FamilyDraft: Hashable {
             ? trimmedPrimary
             : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
 
+        let clockConfig: WidgetWeaverClockDesignConfig? = layout.template == .clockIcon
+            ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw)
+            : nil
+
         return WidgetSpec(
             id: id,
             name: name,
@@ -227,6 +240,7 @@ struct FamilyDraft: Hashable {
             image: image,
             layout: layout,
             style: style,
+            clockConfig: clockConfig,
             matchedSet: nil
         ).normalised()
     }
@@ -321,6 +335,12 @@ struct FamilyDraft: Hashable {
         primaryLineLimitSmall = s.layout.primaryLineLimitSmall
         primaryLineLimit = s.layout.primaryLineLimit
         secondaryLineLimit = s.layout.secondaryLineLimit
+
+        if s.layout.template == .clockIcon {
+            clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
+        } else {
+            clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
+        }
     }
 }
 
