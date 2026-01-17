@@ -608,7 +608,7 @@ public actor WidgetWeaverRemindersEngine {
                             startDate: startDate,
                             startHasTime: startHasTime,
                             isCompleted: r.isCompleted,
-                            isFlagged: false,
+                            isFlagged: Self.isFlaggedApproximation(priority: r.priority),
                             listID: r.calendar.calendarIdentifier,
                             listTitle: listTitle
                         )
@@ -624,6 +624,14 @@ public actor WidgetWeaverRemindersEngine {
         guard let components else { return false }
         return components.hour != nil || components.minute != nil || components.second != nil
     }
+
+    private static func isFlaggedApproximation(priority: Int) -> Bool {
+        // EventKit does not currently expose the Reminders app "Flagged" state.
+        // Approximation: treat "High Priority" (1-4) as "flagged" so the mode is useful.
+        guard priority > 0 else { return false }
+        return priority <= 4
+    }
+
 }
 
 // MARK: - Widget action intent (Phase 5)

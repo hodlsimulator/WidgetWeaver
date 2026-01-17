@@ -25,7 +25,7 @@ public enum WidgetWeaverRemindersMode: String, Codable, CaseIterable, Hashable, 
         case .today: return "Today"
         case .overdue: return "Overdue"
         case .soon: return "Soon"
-        case .flagged: return "Flagged"
+        case .flagged: return "Priority"
         case .focus: return "Focus"
         case .list: return "List"
         }
