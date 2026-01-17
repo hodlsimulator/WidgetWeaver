@@ -27,13 +27,21 @@ extension ContentView {
 
         let templateTokens: [LayoutTemplateToken] = {
             var tokens = LayoutTemplateToken.allCases.filter { token in
-                remindersEnabled || token != .reminders
+                // Hide Clock (Icon) by default so it can't be accidentally chosen.
+                // If a clock design is already selected (eg. imported), include it so the picker has a matching tag.
+                if token == .clockIcon { return currentTemplate == .clockIcon }
+
+                // Reminders is feature-flag gated.
+                return remindersEnabled || token != .reminders
             }
 
             // If a hidden template is already selected (eg. imported design), include it so the
             // picker has a matching tag. Do not expose it as selectable when the flag is off.
             if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
                 tokens.append(.reminders)
+            }
+            if currentTemplate == .clockIcon, !tokens.contains(.clockIcon) {
+                tokens.append(.clockIcon)
             }
             return tokens
         }()
@@ -509,10 +517,18 @@ extension ContentView {
 
         let templateTokens: [LayoutTemplateToken] = {
             var tokens = LayoutTemplateToken.allCases.filter { token in
-                remindersEnabled || token != .reminders
+                // Hide Clock (Icon) by default so it can't be accidentally chosen.
+                // If a clock design is already selected (eg. imported), include it so the picker has a matching tag.
+                if token == .clockIcon { return currentTemplate == .clockIcon }
+
+                // Reminders is feature-flag gated.
+                return remindersEnabled || token != .reminders
             }
             if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
                 tokens.append(.reminders)
+            }
+            if currentTemplate == .clockIcon, !tokens.contains(.clockIcon) {
+                tokens.append(.clockIcon)
             }
             return tokens
         }()
