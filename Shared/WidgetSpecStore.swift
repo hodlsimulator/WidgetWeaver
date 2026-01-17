@@ -27,6 +27,30 @@ public struct WidgetWeaverImageCleanupResult: Hashable, Sendable {
 
 public final class WidgetSpecStore: @unchecked Sendable {
     public static let shared = WidgetSpecStore()
+    
+    private static let floatStringPositiveInfinity = "Infinity"
+    private static let floatStringNegativeInfinity = "-Infinity"
+    private static let floatStringNaN = "NaN"
+
+    private static func makeJSONEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: floatStringPositiveInfinity,
+            negativeInfinity: floatStringNegativeInfinity,
+            nan: floatStringNaN
+        )
+        return encoder
+    }
+
+    private static func makeJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: floatStringPositiveInfinity,
+            negativeInfinity: floatStringNegativeInfinity,
+            nan: floatStringNaN
+        )
+        return decoder
+    }
 
     private let defaults: UserDefaults
     private let specsKey = "widgetweaver.specs.v1"
@@ -232,7 +256,8 @@ public final class WidgetSpecStore: @unchecked Sendable {
     private func loadAllInternal() -> [WidgetSpec] {
         guard let data = defaults.data(forKey: specsKey) else { return [] }
         do {
-            let specs = try JSONDecoder().decode([WidgetSpec].self, from: data)
+            let decoder = Self.makeJSONDecoder()
+            let specs = try decoder.decode([WidgetSpec].self, from: data)
             return specs.map { $0.normalised() }
         } catch {
             return []
@@ -241,10 +266,11 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     private func saveAllInternal(_ specs: [WidgetSpec]) {
         do {
-            let data = try JSONEncoder().encode(specs.map { $0.normalised() })
+            let encoder = Self.makeJSONEncoder()
+            let data = try encoder.encode(specs.map { $0.normalised() })
             defaults.set(data, forKey: specsKey)
         } catch {
-            // Intentionally ignored.
+            assertionFailure("Failed to encode specs for storage: \(error)")
         }
     }
 
