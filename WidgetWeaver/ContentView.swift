@@ -423,9 +423,7 @@ struct ContentView: View {
             onAddTemplate: { spec, makeDefault in
                 let previousSpecID = selectedSpecID
                 addTemplateDesign(spec, makeDefault: makeDefault)
-                if selectedSpecID != previousSpecID {
-                    selectedTab = .editor
-                }
+                if selectedSpecID != previousSpecID { clearLibrarySearchAndFilter(); selectedTab = .library }
             },
             onShowPro: { activeSheet = .pro },
             onShowWidgetHelp: { activeSheet = .widgetHelp },
