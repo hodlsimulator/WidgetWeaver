@@ -13,7 +13,7 @@ import WidgetKit
 
 public struct WidgetSpec: Codable, Hashable, Identifiable {
     // Bump when the schema changes.
-    public static let currentVersion: Int = 7
+    public static let currentVersion: Int = 8
 
     public var version: Int
     public var id: UUID
@@ -28,6 +28,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
     public var actionBar: WidgetActionBarSpec?
 
     public var remindersConfig: WidgetWeaverRemindersConfig?
+
+    public var clockConfig: WidgetWeaverClockDesignConfig?
 
     /// Optional per-size overrides.
     /// Convention in this milestone:
@@ -48,6 +50,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         style: StyleSpec = .defaultStyle,
         actionBar: WidgetActionBarSpec? = nil,
         remindersConfig: WidgetWeaverRemindersConfig? = nil,
+        clockConfig: WidgetWeaverClockDesignConfig? = nil,
         matchedSet: WidgetSpecMatchedSet? = nil
     ) {
         self.version = version
@@ -62,6 +65,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         self.style = style
         self.actionBar = actionBar
         self.remindersConfig = remindersConfig
+        self.clockConfig = clockConfig
         self.matchedSet = matchedSet
     }
 
@@ -95,8 +99,8 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
         let trimmedPrimary = s.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Weather + NextUp + Reminders templates may legitimately ignore primaryText.
-        if s.layout.template == .weather || s.layout.template == .nextUpCalendar || s.layout.template == .reminders {
+        // Weather + NextUp + Reminders + Clock templates may legitimately ignore primaryText.
+        if s.layout.template == .weather || s.layout.template == .nextUpCalendar || s.layout.template == .reminders || s.layout.template == .clockIcon {
             s.primaryText = trimmedPrimary
         } else {
             s.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary
@@ -149,6 +153,17 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             s.matchedSet = nil
         }
 
+        let usesClockTemplate = s.layout.template == .clockIcon
+            || s.matchedSet?.small?.layout.template == .clockIcon
+            || s.matchedSet?.medium?.layout.template == .clockIcon
+            || s.matchedSet?.large?.layout.template == .clockIcon
+
+        if usesClockTemplate {
+            s.clockConfig = (s.clockConfig ?? WidgetWeaverClockDesignConfig.default).normalised()
+        } else if let cc = s.clockConfig {
+            s.clockConfig = cc.normalised()
+        }
+
         return s
     }
 
@@ -190,6 +205,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         case style
         case actionBar
         case remindersConfig
+        case clockConfig
         case matchedSet
     }
 
@@ -207,6 +223,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         let style = (try? c.decode(StyleSpec.self, forKey: .style)) ?? .defaultStyle
         let actionBar = (try? c.decodeIfPresent(WidgetActionBarSpec.self, forKey: .actionBar)) ?? nil
         let remindersConfig = (try? c.decodeIfPresent(WidgetWeaverRemindersConfig.self, forKey: .remindersConfig)) ?? nil
+        let clockConfig = (try? c.decodeIfPresent(WidgetWeaverClockDesignConfig.self, forKey: .clockConfig)) ?? nil
         let matchedSet = (try? c.decodeIfPresent(WidgetSpecMatchedSet.self, forKey: .matchedSet)) ?? nil
 
         self.init(
@@ -222,6 +239,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             style: style,
             actionBar: actionBar,
             remindersConfig: remindersConfig,
+            clockConfig: clockConfig,
             matchedSet: matchedSet
         )
     }
@@ -240,6 +258,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
         try c.encode(style, forKey: .style)
         try c.encodeIfPresent(actionBar, forKey: .actionBar)
         try c.encodeIfPresent(remindersConfig, forKey: .remindersConfig)
+        try c.encodeIfPresent(clockConfig, forKey: .clockConfig)
         try c.encodeIfPresent(matchedSet, forKey: .matchedSet)
     }
 }
@@ -441,7 +460,7 @@ public struct WidgetSpecVariant: Codable, Hashable {
         var v = self
         let trimmedPrimary = v.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if v.layout.template == .weather || v.layout.template == .nextUpCalendar || v.layout.template == .reminders {
+        if v.layout.template == .weather || v.layout.template == .nextUpCalendar || v.layout.template == .reminders || v.layout.template == .clockIcon {
             v.primaryText = trimmedPrimary
         } else {
             v.primaryText = trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary

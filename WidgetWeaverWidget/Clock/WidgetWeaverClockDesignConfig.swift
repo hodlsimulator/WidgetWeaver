@@ -7,38 +7,29 @@
 
 import Foundation
 
-// MARK: - Clock design configuration (schema-only)
-
-/// Configuration for the `.clockIcon` layout template.
-///
-/// Notes:
-/// - This is intentionally minimal (v1): a single theme token.
-/// - Theme values are stable string tokens (lowercased) to keep future migrations simple.
 public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
-    /// Supported theme identifier tokens.
     public static let supportedThemes: Set<String> = [
         "classic",
         "ocean",
-        "graphite",
+        "graphite"
     ]
 
-    /// Default theme token used when missing/invalid.
     public static let defaultTheme: String = "classic"
 
-    /// The selected theme token (e.g. "classic", "ocean", "graphite").
     public var theme: String
 
-    public init(theme: String = WidgetWeaverClockDesignConfig.defaultTheme) {
+    public init(theme: String = Self.defaultTheme) {
         self.theme = theme
         self = self.normalised()
     }
 
     public static var `default`: WidgetWeaverClockDesignConfig {
-        WidgetWeaverClockDesignConfig()
+        WidgetWeaverClockDesignConfig(theme: Self.defaultTheme)
     }
 
     public func normalised() -> WidgetWeaverClockDesignConfig {
         var c = self
+
         let cleaned = c.theme
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -51,8 +42,6 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
 
         return c
     }
-
-    // MARK: Codable compatibility (future-proofing)
 
     private enum CodingKeys: String, CodingKey {
         case theme
