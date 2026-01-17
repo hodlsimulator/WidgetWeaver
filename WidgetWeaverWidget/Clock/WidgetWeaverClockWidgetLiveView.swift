@@ -31,7 +31,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
-            WWClockEveryMinuteRoot(
+            WWClockRenderBody(
                 palette: palette,
                 entryDate: entryDate,
                 tickMode: tickMode,
@@ -53,30 +53,6 @@ struct WidgetWeaverClockWidgetLiveView: View {
     }
 }
 
-// MARK: - Live driver (every minute)
-
-fileprivate struct WWClockEveryMinuteRoot: View {
-    let palette: WidgetWeaverClockPalette
-    let entryDate: Date
-    let tickMode: WidgetWeaverClockTickMode
-    let tickSeconds: TimeInterval
-
-    var body: some View {
-        // In widgets, SwiftUI time-driven primitives can advance without WidgetKit delivering
-        // a new timeline entry. TimelineView is a low-cost driver that can re-evaluate the
-        // hour/minute hands at minute granularity.
-        TimelineView(.everyMinute) { timelineCtx in
-            WWClockRenderBody(
-                palette: palette,
-                entryDate: entryDate,
-                tickMode: tickMode,
-                tickSeconds: tickSeconds,
-                timelineNow: timelineCtx.date
-            )
-        }
-    }
-}
-
 // MARK: - Render body
 
 fileprivate struct WWClockRenderBody: View {
@@ -84,12 +60,12 @@ fileprivate struct WWClockRenderBody: View {
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
-    let timelineNow: Date
 
     @Environment(\.redactionReasons) private var redactionReasons
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var lastLoggedMinuteRef: Int = Int.min
+    @State private var significantTimeChangeToken: Int = 0
 
     var body: some View {
         // Wall clock.
@@ -107,8 +83,8 @@ fileprivate struct WWClockRenderBody: View {
         // - minute-boundary skew: ctxMinuteAnchor is ahead of sysMinuteAnchor
         let isPrerender = (leadSeconds > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
 
-        // Live: TimelineView date (should tick every minute). Pre-render: ctxNow for deterministic snapshots.
-        let renderNow: Date = isPrerender ? ctxNow : timelineNow
+        // Live: wallNow. Pre-render: ctxNow for deterministic snapshots.
+        let renderNow: Date = isPrerender ? ctxNow : wallNow
 
         // Tick-style hour + minute hands: snap to the minute boundary.
         let handsNow = WidgetWeaverClockWidgetLiveView.floorToMinute(renderNow)
@@ -124,8 +100,8 @@ fileprivate struct WWClockRenderBody: View {
 
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)
-        // - Disable for placeholder
-        let showsMinuteHandGlyph = (!isPrerender) && (!isPlaceholder) && WWClockMinuteHandFont.isAvailable()
+        // - Keep enabled during placeholder redaction to avoid transient hand swapping
+        let showsMinuteHandGlyph = (!isPrerender) && WWClockMinuteHandFont.isAvailable()
 
         let baseAngles = WWClockBaseAngles(date: handsNow)
         let hourAngle = Angle.degrees(baseAngles.hour)
@@ -142,6 +118,10 @@ fileprivate struct WWClockRenderBody: View {
         let minuteTimerStart = minuteHourAnchor.addingTimeInterval(-WidgetWeaverClockWidgetLiveView.timerStartBiasSeconds)
         let minuteTimerEnd = minuteHourAnchor.addingTimeInterval(WidgetWeaverClockWidgetLiveView.minuteHandTimerWindowSeconds)
         let minuteTimerRange = minuteTimerStart...minuteTimerEnd
+
+        // Wall-clock heartbeat: force a body refresh at minute granularity without relying on
+        // WidgetKit delivering a new entry at exactly the minute boundary.
+        let heartbeatRange = sysMinuteAnchor...sysMinuteAnchor.addingTimeInterval(60.0)
 
         // Render-path proof logging (sync to survive widget process teardown).
         let _ : Void = {
@@ -186,6 +166,14 @@ fileprivate struct WWClockRenderBody: View {
         }()
 
         ZStack {
+            if !isPrerender {
+                ProgressView(timerInterval: heartbeatRange, countsDown: false)
+                    .id(sysMinuteAnchor)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
             WidgetWeaverClockIconView(
                 palette: palette,
                 hourAngle: hourAngle,
@@ -209,7 +197,8 @@ fileprivate struct WWClockRenderBody: View {
                 minuteTimerRange: minuteTimerRange,
                 showsSeconds: showSeconds,
                 timerRange: timerRange,
-                handsOpacity: handsOpacity
+                handsOpacity: handsOpacity,
+                refreshToken: significantTimeChangeToken
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -255,6 +244,14 @@ fileprivate struct WWClockRenderBody: View {
                 "minuteTick build=\(WidgetWeaverClockWidgetLiveView.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemClockDidChange)) { _ in
+            significantTimeChangeToken &+= 1
+            lastLoggedMinuteRef = Int.min
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
+            significantTimeChangeToken &+= 1
+            lastLoggedMinuteRef = Int.min
+        }
     }
 }
 
@@ -288,6 +285,8 @@ private struct WWClockSecondsAndHubOverlay: View {
     let timerRange: ClosedRange<Date>
     let handsOpacity: Double
 
+    let refreshToken: Int
+
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -301,6 +300,11 @@ private struct WWClockSecondsAndHubOverlay: View {
                         timerRange: minuteTimerRange,
                         diameter: layout.dialDiameter
                     )
+                    .id(refreshToken)
+                    .transition(.identity)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                     .opacity(handsOpacity)
                 }
 
@@ -310,6 +314,11 @@ private struct WWClockSecondsAndHubOverlay: View {
                         timerRange: timerRange,
                         diameter: layout.dialDiameter
                     )
+                    .id(refreshToken)
+                    .transition(.identity)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                     .opacity(handsOpacity)
                 }
 
@@ -335,6 +344,21 @@ private struct WWClockMinuteHandGlyphView: View {
     let timerRange: ClosedRange<Date>
     let diameter: CGFloat
 
+    private func glyph() -> some View {
+        Text(timerInterval: timerRange, countsDown: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(WWClockMinuteHandFont.font(size: diameter))
+            .unredacted()
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(width: diameter, height: diameter, alignment: .center)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+    }
+
     var body: some View {
         let metalField = LinearGradient(
             gradient: Gradient(stops: [
@@ -347,25 +371,15 @@ private struct WWClockMinuteHandGlyphView: View {
         )
         .frame(width: diameter, height: diameter)
 
-        let glyph = Text(timerInterval: timerRange, countsDown: false)
-            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(WWClockMinuteHandFont.font(size: diameter))
-            .unredacted()
-            .lineLimit(1)
-            .multilineTextAlignment(.center)
-            .frame(width: diameter, height: diameter, alignment: .center)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-
         ZStack {
             // Edge stroke approximation:
             // Draw the glyph in edge colour, then inset the fill slightly.
-            glyph
+            glyph()
                 .foregroundStyle(palette.handEdge)
 
             metalField
                 .mask(
-                    glyph
+                    glyph()
                         .foregroundStyle(Color.white)
                         .scaleEffect(0.94, anchor: .center)
                 )
@@ -392,6 +406,9 @@ private struct WWClockSecondHandGlyphView: View {
             .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
     }
 }
 
