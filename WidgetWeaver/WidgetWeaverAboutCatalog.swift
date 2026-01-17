@@ -430,7 +430,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersToday() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Today"
+        spec.name = "Reminders 1 — Today"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders
@@ -447,7 +447,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersOverdue() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Overdue"
+        spec.name = "Reminders 2 — Overdue"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders
@@ -464,7 +464,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersSoon() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Soon"
+        spec.name = "Reminders 3 — Soon"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders
@@ -481,7 +481,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersPriority() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Priority"
+        spec.name = "Reminders 4 — Priority"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders
@@ -498,7 +498,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersFocus() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Focus"
+        spec.name = "Reminders 5 — Focus"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders
@@ -515,7 +515,7 @@ extension WidgetWeaverAboutView {
 
     static func specRemindersLists() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Lists"
+        spec.name = "Reminders 6 — Lists"
         spec.primaryText = ""
         spec.secondaryText = nil
         spec.layout.template = .reminders

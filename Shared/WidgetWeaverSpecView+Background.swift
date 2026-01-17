@@ -16,86 +16,118 @@ extension WidgetWeaverSpecView {
 
     func backgroundView(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         ZStack {
-            if layout.template == .weather {
+            switch layout.template {
+            case .weather:
                 weatherBackdrop(style: style, accent: accent)
-            } else if layout.template == .poster,
-                      let image = spec.image,
-                      let uiImage = image.loadUIImageForRender(
-                          family: family,
-                          debugContext: WWPhotoLogContext(
-                              renderContext: context.rawValue,
-                              family: String(describing: family),
-                              template: "poster",
-                              specID: String(spec.id.uuidString.prefix(8)),
-                              specName: spec.name
-                          )
-                      ) {
-                Color(uiColor: .systemBackground)
 
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-                    .clipped()
+            case .poster:
+                posterBackdrop(spec: spec, layout: layout, style: style, accent: accent)
 
-                Rectangle()
-                    .fill(style.backgroundOverlay.shapeStyle(accent: accent))
-                    .opacity(style.backgroundOverlayOpacity)
-            } else if layout.template == .poster,
-                      let image = spec.image,
-                      let manifestFile = image.smartPhoto?.shuffleManifestFileName,
-                      !manifestFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let ctx = WWPhotoLogContext(
-                    renderContext: context.rawValue,
-                    family: String(describing: family),
-                    template: "poster",
-                    specID: String(spec.id.uuidString.prefix(8)),
-                    specName: spec.name
-                )
-                let _ = WWPhotoDebugLog.appendLazy(
-                    category: "photo.render",
-                    throttleID: "poster.placeholder.\(spec.id.uuidString.prefix(8)).\(family)",
-                    minInterval: 20.0,
-                    context: ctx
-                ) {
-                    "poster: showing placeholder (image load returned nil) manifest=\(manifestFile)"
-                }
-
-                Color(uiColor: .systemBackground)
-
-                Rectangle()
-                    .fill(style.background.shapeStyle(accent: accent))
-
-                VStack(spacing: 10) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text("No photo configured")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(14)
-
-                Rectangle()
-                    .fill(style.backgroundOverlay.shapeStyle(accent: accent))
-                    .opacity(style.backgroundOverlayOpacity)
-
-                backgroundEffects(style: style, accent: accent)
-            } else {
-                Color(uiColor: .systemBackground)
-
-                Rectangle()
-                    .fill(style.background.shapeStyle(accent: accent))
-
-                Rectangle()
-                    .fill(style.backgroundOverlay.shapeStyle(accent: accent))
-                    .opacity(style.backgroundOverlayOpacity)
-
-                backgroundEffects(style: style, accent: accent)
+            default:
+                defaultBackdrop(style: style, accent: accent)
             }
         }
         .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private func posterBackdrop(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+        let isAppExtension: Bool = {
+            let url = Bundle.main.bundleURL
+            if url.pathExtension == "appex" { return true }
+            return url.path.contains(".appex/")
+        }()
+
+        let debugContext: WWPhotoLogContext? = {
+            guard WWPhotoDebugLog.isEnabled() else { return nil }
+            return WWPhotoLogContext(
+                renderContext: context.rawValue,
+                family: String(describing: family),
+                template: "poster",
+                specID: String(spec.id.uuidString.prefix(8)),
+                specName: spec.name,
+                isAppExtension: isAppExtension
+            )
+        }()
+
+        let loadedPosterImage: UIImage? = {
+            guard let image = spec.image else { return nil }
+            return image.loadUIImageForRender(family: family, debugContext: debugContext)
+        }()
+
+        if let uiImage = loadedPosterImage {
+            Color(uiColor: .systemBackground)
+
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .clipped()
+
+            Rectangle()
+                .fill(style.backgroundOverlay.shapeStyle(accent: accent))
+                .opacity(style.backgroundOverlayOpacity)
+        } else if shouldShowPosterPhotoEmptyState(spec: spec, layout: layout) {
+            if let debugContext, spec.image != nil {
+                let manifest = (spec.image?.smartPhoto?.shuffleManifestFileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let manifestLabel = manifest.isEmpty ? "none" : manifest
+                let _ = WWPhotoDebugLog.appendLazy(
+                    category: "photo.render",
+                    throttleID: "poster.photoPlaceholder.\(spec.id.uuidString.prefix(8)).\(family)",
+                    minInterval: 25.0,
+                    context: debugContext
+                ) {
+                    "poster: photo placeholder (image load returned nil) baseFile=\(spec.image?.fileName ?? "") manifest=\(manifestLabel)"
+                }
+            }
+
+            defaultBackdrop(style: style, accent: accent)
+            photoEmptyStateContent(message: "Choose a photo in Editor")
+        } else {
+            defaultBackdrop(style: style, accent: accent)
+        }
+    }
+
+    private func shouldShowPosterPhotoEmptyState(spec: WidgetSpec, layout: LayoutSpec) -> Bool {
+        guard layout.template == .poster else { return false }
+
+        // Photo-only posters should never look like a blank gradient when no photo is selected.
+        if layout.posterOverlayMode == .none { return true }
+
+        // If the spec includes an image payload (static or Smart Photo), the poster is photo-backed.
+        // When decoding fails or files are missing, show an explicit placeholder instead of silently
+        // falling back to a random gradient.
+        if spec.image != nil { return true }
+
+        return false
+    }
+
+    @ViewBuilder
+    private func defaultBackdrop(style: StyleSpec, accent: Color) -> some View {
+        Color(uiColor: .systemBackground)
+
+        Rectangle()
+            .fill(style.background.shapeStyle(accent: accent))
+
+        Rectangle()
+            .fill(style.backgroundOverlay.shapeStyle(accent: accent))
+            .opacity(style.backgroundOverlayOpacity)
+
+        backgroundEffects(style: style, accent: accent)
+    }
+
+    @ViewBuilder
+    private func photoEmptyStateContent(message: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "photo")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(14)
     }
 
     /// Weather uses a lot of `.ultraThinMaterial`. In WidgetKit, materials take their blur source from the
@@ -161,7 +193,7 @@ struct WidgetWeaverBackgroundModifier<Background: View>: ViewModifier {
         // iOS controls the outer widget mask.
         // Widget designs cannot change the widget’s shape.
         // The preview uses a stable approximation for the outer mask so sliders do not appear
-        // to change the widget’s outer corners.
+        // to change widget’s outer corners.
         let outerCornerRadius = Self.systemWidgetCornerRadius()
 
         switch context {

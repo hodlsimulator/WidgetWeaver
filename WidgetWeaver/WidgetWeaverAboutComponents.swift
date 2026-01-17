@@ -190,6 +190,33 @@ struct WidgetWeaverAboutTemplate: Identifiable, Hashable {
     let spec: WidgetSpec
 }
 
+// MARK: - Badges
+
+struct WidgetWeaverAboutBadge: View {
+    let text: String
+    let accent: Color
+
+    init(_ text: String, accent: Color = WidgetWeaverAboutTheme.pageTint) {
+        self.text = text
+        self.accent = accent
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(accent.opacity(0.12), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(accent.opacity(0.22), lineWidth: 1)
+            )
+            .accessibilityLabel(text)
+    }
+}
+
+
 struct WidgetWeaverAboutTemplateRow: View {
     let template: WidgetWeaverAboutTemplate
     let isProUnlocked: Bool
@@ -199,6 +226,12 @@ struct WidgetWeaverAboutTemplateRow: View {
     private var templateAccent: Color {
         template.spec.style.accent.swiftUIColor
     }
+
+    private var showsSmartStackBadge: Bool {
+        template.id.hasPrefix("starter-reminders-")
+    }
+
+
 
     private var iconName: String {
         switch template.id {
@@ -278,8 +311,14 @@ struct WidgetWeaverAboutTemplateRow: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(template.title)
-                    .font(.headline)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(template.title)
+                        .font(.headline)
+
+                    if showsSmartStackBadge {
+                        WidgetWeaverAboutBadge("Smart Stack", accent: templateAccent)
+                    }
+                }
 
                 Text(template.subtitle)
                     .font(.caption)
