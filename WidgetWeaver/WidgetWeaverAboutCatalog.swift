@@ -17,7 +17,7 @@ extension WidgetWeaverAboutView {
     static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredWeatherTemplateID })!
     static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredCalendarTemplateID })!
     static let featuredStepsTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredStepsTemplateID })!
-
+ 
     static let featuredTemplateIDs: Set<String> = [
         featuredWeatherTemplateID,
         featuredCalendarTemplateID,
