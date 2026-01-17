@@ -421,8 +421,11 @@ struct ContentView: View {
         WidgetWeaverAboutView(
             proManager: proManager,
             onAddTemplate: { spec, makeDefault in
+                let previousSpecID = selectedSpecID
                 addTemplateDesign(spec, makeDefault: makeDefault)
-                selectedTab = .editor
+                if selectedSpecID != previousSpecID {
+                    selectedTab = .editor
+                }
             },
             onShowPro: { activeSheet = .pro },
             onShowWidgetHelp: { activeSheet = .widgetHelp },
