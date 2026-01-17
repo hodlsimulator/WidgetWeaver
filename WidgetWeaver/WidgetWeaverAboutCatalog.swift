@@ -10,15 +10,19 @@ import SwiftUI
 import WidgetKit
 
 extension WidgetWeaverAboutView {
+    static let featuredPhotoTemplateID = "starter-photo-single"
     static let featuredWeatherTemplateID = "starter-weather"
     static let featuredCalendarTemplateID = "starter-calendar-nextup"
     static let featuredStepsTemplateID = "starter-steps"
+
+    static let featuredPhotoTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredPhotoTemplateID })!
 
     static let featuredWeatherTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredWeatherTemplateID })!
     static let featuredCalendarTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredCalendarTemplateID })!
     static let featuredStepsTemplate: WidgetWeaverAboutTemplate = starterTemplatesAll.first(where: { $0.id == featuredStepsTemplateID })!
  
     static let featuredTemplateIDs: Set<String> = [
+        featuredPhotoTemplateID,
         featuredWeatherTemplateID,
         featuredCalendarTemplateID,
         featuredStepsTemplateID,
@@ -32,6 +36,16 @@ extension WidgetWeaverAboutView {
     }
 
     static let starterTemplatesAll: [WidgetWeaverAboutTemplate] = [
+        WidgetWeaverAboutTemplate(
+            id: "starter-photo-single",
+            title: "Photo (Single)",
+            subtitle: "Full-bleed",
+            description: "A clean, photo-first widget. Add it, then choose an image in the Editor.",
+            tags: ["Photo", "Full-bleed", "Minimal"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoSingle()
+        ),
         WidgetWeaverAboutTemplate(
             id: "starter-focus",
             title: "Focus",
@@ -231,6 +245,26 @@ extension WidgetWeaverAboutView {
     ]
 
     // MARK: - Template specs (colourful defaults)
+
+    static func specPhotoSingle() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Photo (Single)"
+        spec.primaryText = "Your photo"
+        spec.secondaryText = nil
+        spec.symbol = nil
+
+        spec.layout.template = .poster
+        spec.layout.posterOverlayMode = .none
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .pink
+        spec.style.background = .subtleMaterial
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        return spec.normalised()
+    }
 
     static func specFocus() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()

@@ -41,6 +41,7 @@ struct WidgetWeaverAboutView: View {
             List {
                 aboutHeaderSection
 
+                featuredPhotosSection
                 featuredWeatherSection
                 featuredClockSection
                 featuredCalendarSection

@@ -395,7 +395,13 @@ struct ContentView: View {
             onAddTemplate: { spec, makeDefault in
                 let previousSpecID = selectedSpecID
                 addTemplateDesign(spec, makeDefault: makeDefault)
-                if selectedSpecID != previousSpecID { clearLibrarySearchAndFilter(); selectedTab = .library }
+
+                // After adding a template, jumping straight into the Editor keeps the flow tight:
+                // add -> tweak (or choose a photo) -> done.
+                if selectedSpecID != previousSpecID {
+                    clearLibrarySearchAndFilter()
+                    selectedTab = .editor
+                }
             },
             onShowPro: { activeSheet = .pro },
             onShowWidgetHelp: { activeSheet = .widgetHelp },
