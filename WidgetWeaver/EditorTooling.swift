@@ -582,7 +582,10 @@ enum EditorToolRegistry {
         case .reminders:
             c.insert(.canEditTypography)
             
-        case .clockIcon: break
+        case .clockIcon:
+            // Clock designs have a specialised editing surface and do not expose text content.
+            // This is a hard-disable so the legacy tool suite (feature flag OFF) remains safe.
+            c.remove(.canEditTextContent)
         }
 
         // Permissions and derived availability.

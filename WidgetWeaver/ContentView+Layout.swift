@@ -99,6 +99,18 @@ extension ContentView {
     private var widgetListSelectionRows: [EditorWidgetListSelectionSurface.Row] {
         let draft = currentFamilyDraft()
 
+        if draft.template == .clockIcon {
+            return [
+                EditorWidgetListSelectionSurface.Row(
+                    id: "clock",
+                    title: "Clock",
+                    subtitle: "Clock editor",
+                    item: .clock,
+                    accessibilityID: "EditorWidgetListSelection.Item.clock"
+                ),
+            ]
+        }
+
         var out: [EditorWidgetListSelectionSurface.Row] = [
             EditorWidgetListSelectionSurface.Row(
                 id: "text",
@@ -132,6 +144,7 @@ extension ContentView {
 
         return out
     }
+
 
     private func resolvedSmartAlbumContainerSelection(from draft: FamilyDraft) -> (albumID: String, subtitle: String) {
         let fallbackAlbumID = "smartPhoto.album"

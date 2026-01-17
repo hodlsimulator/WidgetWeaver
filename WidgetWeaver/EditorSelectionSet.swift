@@ -13,12 +13,15 @@ import Foundation
 /// surfaces (lists, browsers, pickers) can use this model to derive origin-backed
 /// focus snapshots with explicit `selectionCount` and `selectionComposition`.
 enum EditorSelectionItem: Hashable, Sendable {
+    case clock
     case nonAlbumElement(id: String)
     case albumContainer(id: String, subtype: EditorAlbumSubtype)
     case albumPhotoItem(albumID: String, itemID: String, subtype: EditorAlbumSubtype)
 
     var impliedSelectionCategory: EditorSelectionCategory {
         switch self {
+        case .clock:
+            return .nonAlbum
         case .nonAlbumElement:
             return .nonAlbum
         case .albumContainer:
@@ -30,6 +33,8 @@ enum EditorSelectionItem: Hashable, Sendable {
 
     var impliedFocusTarget: EditorFocusTarget {
         switch self {
+        case .clock:
+            return .clock
         case .nonAlbumElement(let id):
             return .element(id: id)
         case .albumContainer(let id, let subtype):

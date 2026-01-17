@@ -89,6 +89,34 @@ extension ContentView {
             matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
         }
 
+
+        if matchedSetEnabled {
+            // Matched sets can place the clock template in only one family.
+            // Ensure the editor opens on a clock-bearing family so focus routing
+            // (D1) can immediately enter `.clock` focus.
+            let clockFamily: WidgetFamily? = {
+                if matchedDrafts.small.template == .clockIcon { return .systemSmall }
+                if matchedDrafts.medium.template == .clockIcon { return .systemMedium }
+                if matchedDrafts.large.template == .clockIcon { return .systemLarge }
+                return nil
+            }()
+
+            if let clockFamily {
+                let currentFamilyUsesClock: Bool = {
+                    switch previewFamily {
+                    case .systemSmall: return matchedDrafts.small.template == .clockIcon
+                    case .systemMedium: return matchedDrafts.medium.template == .clockIcon
+                    case .systemLarge: return matchedDrafts.large.template == .clockIcon
+                    default: return false
+                    }
+                }()
+
+                if !currentFamilyUsesClock {
+                    previewFamily = clockFamily
+                }
+            }
+        }
+
         // Route focus when loading a design so the tool suite is correctly gated.
         //
         // Clock templates have a specialised, element-less editing surface and should
