@@ -7,749 +7,679 @@
 
 import EventKit
 import SwiftUI
+import UIKit
 
-/// Reminders settings screen for the Reminders Pack.
-///
-/// Phase 1A (app-only spikes):
-/// - 1A.1: Permission diagnostics (authorisation state + request full access).
-/// - 1A.2: Read spike (list names + a small sample of incomplete reminders for Today).
-/// - 1A.3: Complete spike (tap a Today sample row to complete the reminder).
-///
-/// Note: This screen remains gated behind `WidgetWeaverFeatureFlags.remindersTemplateEnabled`.
 struct WidgetWeaverRemindersSettingsView: View {
     let onClose: (() -> Void)?
 
+    @Environment(\.openURL) private var openURL
+
     @StateObject private var permissions = RemindersPermissionsModel()
+    @StateObject private var listSelection = RemindersListSelectionModel()
     @StateObject private var readSpike = RemindersReadSpikeModel()
     @StateObject private var snapshotDebug = RemindersSnapshotDebugModel()
 
-    #if DEBUG
-    @AppStorage(WidgetWeaverRemindersDebugStore.Keys.testReminderID, store: AppGroup.userDefaults)
-    private var widgetTestReminderID: String = ""
-    #endif
-
-    init(onClose: (() -> Void)? = nil) {
-        self.onClose = onClose
-    }
-
     var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Reminders Pack")
-                        .font(.headline)
-
-                    Text("Phase 1A.3: in-app complete spike (lists + Today sample + tap to complete). Widgets still render placeholders and do not read or modify reminders yet.")
+        NavigationView {
+            List {
+                Section {
+                    Text("Manage Reminders Pack access, list inclusion, and snapshot refresh. Widgets render cached snapshots only; row taps can complete reminders when Full Access is granted.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.vertical, 4)
-            }
 
-            Section("Reminders access") {
-                HStack {
-                    Text("Authorisation")
-                    Spacer()
-                    Text(permissions.statusTitle)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let hint = permissions.statusHint {
-                    Text(hint)
+                    Text("Note: Snapshot generation and completion require Reminders Full Access (not write-only). Widgets still do not read EventKit directly.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Button {
-                    permissions.requestFullAccess()
-                } label: {
+                Section("Reminders access") {
                     HStack {
-                        Text("Request full access")
+                        Text("Status")
                         Spacer()
-                        if permissions.isRequesting {
-                            ProgressView()
-                        }
+                        Text(permissions.statusTitle)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .disabled(permissions.isRequesting)
 
-                if let summary = permissions.lastRequestSummary {
-                    Text(summary)
+                    Text(permissions.statusHint)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
 
-                Button("Refresh status") {
-                    permissions.refreshStatus()
-                }
-                .disabled(permissions.isRequesting)
-            }
-
-            Section("Read + complete spike (in-app only)") {
-                Text("Loads reminder lists and a small set of incomplete reminders due Today. Tap a Today row to mark it complete (in-app only).")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    readSpike.loadLists()
-                } label: {
-                    HStack {
-                        Text("Load lists")
-                        Spacer()
-                        if readSpike.isLoadingLists {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(readSpike.isBusy)
-
-                Button {
-                    readSpike.loadTodaySample()
-                } label: {
-                    HStack {
-                        Text("Load Today sample")
-                        Spacer()
-                        if readSpike.isLoadingReminders {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(readSpike.isBusy)
-
-                if let lastUpdated = readSpike.lastUpdatedAt {
-                    Text("Last updated \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let summary = readSpike.lastCompletionSummary {
-                    Text(summary)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let err = readSpike.lastError {
-                    Text(err)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if readSpike.lists.isEmpty {
-                    Text("Lists: none loaded")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Lists: \(readSpike.lists.count)")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    ForEach(readSpike.lists) { list in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(list.title)
-                            if let sourceTitle = list.sourceTitle {
-                                Text(sourceTitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                    Button {
+                        permissions.requestFullAccess()
+                    } label: {
+                        HStack {
+                            Text("Request Full Access")
+                            Spacer()
+                            if permissions.isRequesting {
+                                ProgressView()
                             }
                         }
-                        .padding(.vertical, 2)
                     }
-                }
+                    .disabled(permissions.isRequesting)
 
-                if readSpike.todaySample.isEmpty {
-                    Text("Today sample: none loaded")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Today sample: \(readSpike.todaySample.count)")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text("Tap a row to mark it complete.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    #if DEBUG
-                    Text("Long-press a row to set it as the widget test reminder ID (for the Reminders Spike widget).")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    #endif
-
-                    ForEach(readSpike.todaySample) { r in
+                    if permissions.shouldOfferOpenSettings {
                         Button {
-                            readSpike.completeTodaySampleReminder(reminderID: r.id)
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
                         } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(r.title)
-                                        .lineLimit(2)
-
-                                    HStack(spacing: 8) {
-                                        Text(r.listTitle)
-                                        if let dueText = r.dueText {
-                                            Text("•")
-                                            Text(dueText)
-                                        }
-                                    }
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                if readSpike.completingReminderID == r.id {
-                                    ProgressView()
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .padding(.vertical, 2)
+                            Label("Open Settings", systemImage: "gear")
                         }
-                        .buttonStyle(.plain)
-                        .disabled(readSpike.isBusy)
-
-                        #if DEBUG
-                        .contextMenu {
-                            Button {
-                                WidgetWeaverRemindersDebugStore.setTestReminderID(r.id)
-                            } label: {
-                                Label("Use as widget test ID", systemImage: "widget.small")
-                            }
-
-                            if !widgetTestReminderID.isEmpty {
-                                Button(role: .destructive) {
-                                    WidgetWeaverRemindersDebugStore.setTestReminderID(nil)
-                                } label: {
-                                    Label("Clear widget test ID", systemImage: "xmark.circle")
-                                }
-                            }
-                        }
-                        #endif
+                        .disabled(permissions.isRequesting)
                     }
-                }
-            }
 
-
-
-            Section("Snapshot cache") {
-                Text("Writes a snapshot into the App Group so widgets and previews can render Reminders content without any EventKit reads in the widget.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Button {
-                    snapshotDebug.refreshSnapshotFromRemindersEngine()
-                } label: {
-                    HStack {
-                        Text("Refresh snapshot now")
-                        Spacer()
-                        if snapshotDebug.isWriting {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(snapshotDebug.isWriting)
-                
-#if DEBUG
-                Button {
-                    snapshotDebug.writeSnapshotFromTodaySample(readSpike.todaySample)
-                } label: {
-                    HStack {
-                        Text("Debug: write snapshot from Today sample")
-                        Spacer()
-                        if snapshotDebug.isWriting {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(snapshotDebug.isWriting)
-#endif
-                
-                Button(role: .destructive) {
-                    snapshotDebug.clearSnapshot()
-                } label: {
-                    Text("Clear snapshot")
-                }
-                
-                if let snapshot = snapshotDebug.snapshot {
-                    Text("Snapshot: \(snapshot.items.count) item(s) • generated \(snapshot.generatedAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    
-                    if let diag = snapshot.diagnostics {
-                        Text("Snapshot diagnostics (\(diag.kind.rawValue)) \(diag.at.formatted(date: .abbreviated, time: .shortened)): \(diag.message)")
+                    if let summary = permissions.lastRequestSummary {
+                        Text(summary)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                } else {
-                    Text("Snapshot: none")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+
+                    Button("Refresh status") {
+                        permissions.refreshStatus()
+                    }
                 }
-                
-                if let lastUpdated = snapshotDebug.lastUpdatedAt {
-                    Text("Last updated \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                
-                if let err = snapshotDebug.lastError {
-                    Text("Last error (\(err.kind.rawValue)) \(err.at.formatted(date: .abbreviated, time: .shortened)): \(err.message)")
+
+                Section("Lists included in snapshots") {
+                    Text("This list selection affects snapshot refresh for all Reminders Pack widgets. After changing it, refresh the snapshot below.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Text("Current selection")
+                        Spacer()
+                        Text(listSelection.selectionSummary)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { listSelection.includeAllLists },
+                        set: { listSelection.setIncludeAllLists($0) }
+                    )) {
+                        Text("Include all lists")
+                    }
+
+                    if !listSelection.includeAllLists {
+                        Button {
+                            listSelection.loadLists()
+                        } label: {
+                            HStack {
+                                Text(listSelection.lists.isEmpty ? "Load lists" : "Reload lists")
+                                Spacer()
+                                if listSelection.isLoadingLists {
+                                    ProgressView()
+                                }
+                            }
+                        }
+                        .disabled(listSelection.isLoadingLists)
+
+                        if let err = listSelection.lastError {
+                            Text(err)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if listSelection.lists.isEmpty {
+                            Text("No lists loaded yet.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(listSelection.lists) { list in
+                                Toggle(isOn: Binding(
+                                    get: { listSelection.selectedListIDs.contains(list.id) },
+                                    set: { newValue in listSelection.setListIncluded(newValue, listID: list.id) }
+                                )) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(list.title)
+                                        if let sourceTitle = list.sourceTitle {
+                                            Text(sourceTitle)
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if let message = listSelection.validationMessage {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
-            }
-            
-            Section("Feature flag") {
-                HStack {
-                    Text("Reminders template enabled")
-                    Spacer()
-                    Text(WidgetWeaverFeatureFlags.remindersTemplateEnabled ? "On" : "Off")
+
+                Section("Read + complete spike (in-app only)") {
+                    Text("Loads lists + Today items inside the app for feasibility. Widgets still render from snapshots only.")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        readSpike.loadLists()
+                    } label: {
+                        HStack {
+                            Text("Load lists")
+                            Spacer()
+                            if readSpike.isLoadingLists {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(readSpike.isLoadingLists)
+
+                    if let err = readSpike.loadListsError {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !readSpike.lists.isEmpty {
+                        ForEach(readSpike.lists.indices, id: \.self) { idx in
+                            let list = readSpike.lists[idx]
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(list.title)
+                                if let source = list.sourceTitle {
+                                    Text(source)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(list.id)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        readSpike.loadToday()
+                    } label: {
+                        HStack {
+                            Text("Load Today (sample)")
+                            Spacer()
+                            if readSpike.isLoadingToday {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(readSpike.isLoadingToday)
+
+                    if let err = readSpike.loadTodayError {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !readSpike.todayItems.isEmpty {
+                        ForEach(readSpike.todayItems.indices, id: \.self) { idx in
+                            let item = readSpike.todayItems[idx]
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title)
+                                        Text(item.listTitle)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if item.isCompleted {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                if let due = item.dueDate {
+                                    Text("Due: \(due.formatted(date: .abbreviated, time: item.dueHasTime ? .shortened : .omitted))")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Due: —")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                if !item.isCompleted {
+                                    Button {
+                                        readSpike.complete(id: item.id)
+                                    } label: {
+                                        HStack {
+                                            Text("Complete")
+                                            Spacer()
+                                            if readSpike.isCompletingID == item.id {
+                                                ProgressView()
+                                            }
+                                        }
+                                    }
+                                    .disabled(readSpike.isCompletingID != nil)
+                                }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
                 }
 
-                Text("This screen is reachable from the toolbar only when the flag is enabled.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section("Next") {
-                Label("Complete spike (tap row in-app)", systemImage: "checkmark.circle.fill")
-                Label("Widget interactivity spike (AppIntent)", systemImage: "hand.tap")
-            }
-
-            #if DEBUG
-            Section("Widget interactivity spike (debug)") {
-                HStack {
-                    Text("Widget test reminder")
-                    Spacer()
-                    Text(widgetTestReminderID.isEmpty ? "Not set" : shortIDForUI(widgetTestReminderID))
+                Section("Snapshot cache (App Group)") {
+                    Text("This is what widgets actually render. Use this to validate widget content and WidgetKit caching behaviour.")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let snapshot = snapshotDebug.snapshot {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Generated: \(snapshot.generatedAt.formatted(date: .abbreviated, time: .standard))")
+                            Text("Items: \(snapshot.items.count)")
+                            if let diag = snapshot.diagnostics {
+                                Text("Diagnostics: \(diag.kind.rawValue) — \(diag.message)")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    } else {
+                        Text("No snapshot cached yet.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let lastUpdated = snapshotDebug.lastUpdatedAt {
+                        Text("Last updated at: \(lastUpdated.formatted(date: .abbreviated, time: .standard))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let lastError = snapshotDebug.lastError {
+                        Text("Last error: \(lastError.kind.rawValue) — \(lastError.message)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button {
+                        snapshotDebug.refreshSnapshotFromRemindersEngine()
+                    } label: {
+                        HStack {
+                            Text("Refresh snapshot now")
+                            Spacer()
+                            if snapshotDebug.isWriting {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(snapshotDebug.isWriting)
+
+                    Button {
+                        snapshotDebug.refreshSnapshotFromRemindersEngine(force: true)
+                    } label: {
+                        HStack {
+                            Text("Force refresh snapshot now")
+                            Spacer()
+                            if snapshotDebug.isWriting {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(snapshotDebug.isWriting)
+
+                    Button("Clear refresh throttle/backoff") {
+                        snapshotDebug.clearRefreshThrottleState()
+                    }
+
+                    Button(role: .destructive) {
+                        snapshotDebug.clearSnapshot()
+                    } label: {
+                        Text("Clear snapshot")
+                    }
+
+                    #if DEBUG
+                    Button(role: .destructive) {
+                        snapshotDebug.writeDebugSampleSnapshot()
+                    } label: {
+                        Text("Write debug sample snapshot (DEBUG)")
+                    }
+                    #endif
                 }
 
-                Text("The “Reminders Spike” widget reads this ID from the App Group and runs an AppIntent to complete it.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                #if DEBUG
+                Section("Debug: write snapshot (DEBUG)") {
+                    Text("Writes a deterministic sample snapshot so widgets can be tested without Reminders access.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Button("Clear widget test ID") {
-                    WidgetWeaverRemindersDebugStore.setTestReminderID(nil)
+                    Button(role: .destructive) {
+                        snapshotDebug.writeDebugSampleSnapshot()
+                    } label: {
+                        Text("Write debug sample snapshot")
+                    }
                 }
-                .disabled(widgetTestReminderID.isEmpty)
+                #endif
+
+                Section {
+                    if let onClose {
+                        Button {
+                            onClose()
+                        } label: {
+                            Text("Done")
+                        }
+                    }
+                }
             }
-            #endif
-        }
-        .navigationTitle("Reminders")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let onClose {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { onClose() }
+            .navigationTitle("Reminders")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let onClose {
+                        Button("Done") {
+                            onClose()
+                        }
+                    }
                 }
             }
         }
         .onAppear {
             permissions.refreshStatus()
+            listSelection.refreshFromStore()
             snapshotDebug.refreshFromStore()
+
+            if permissions.status == .fullAccess {
+                listSelection.loadLists()
+            }
+        }
+        .onChange(of: permissions.status) { _, newStatus in
+            if newStatus == .fullAccess {
+                listSelection.loadLists()
+            }
         }
     }
-
-    #if DEBUG
-    private func shortIDForUI(_ id: String) -> String {
-        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 10 else { return trimmed }
-        let start = trimmed.prefix(4)
-        let end = trimmed.suffix(4)
-        return "\(start)…\(end)"
-    }
-    #endif
 }
+
+// MARK: - Permissions model
 
 @MainActor
 private final class RemindersPermissionsModel: ObservableObject {
     @Published private(set) var status: EKAuthorizationStatus = EKEventStore.authorizationStatus(for: .reminder)
     @Published private(set) var isRequesting: Bool = false
-    @Published private(set) var lastRequest: RequestResult?
+    @Published private(set) var lastRequestSummary: String?
 
-    private let eventStore = EKEventStore()
+    var statusTitle: String {
+        switch status {
+        case .notDetermined: return "Not determined"
+        case .denied: return "Denied"
+        case .restricted: return "Restricted"
+        case .writeOnly: return "Write-only"
+        case .fullAccess: return "Full Access"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    var statusHint: String {
+        switch status {
+        case .notDetermined:
+            return "Tap “Request Full Access” to allow snapshot refresh and widget completion."
+        case .denied:
+            return "Access is denied. Enable Reminders Full Access in Settings to use the Reminders Pack."
+        case .restricted:
+            return "Access is restricted by device policy (e.g. Screen Time / MDM)."
+        case .writeOnly:
+            return "Write-only access cannot read reminders. Widgets need Full Access to render snapshots."
+        case .fullAccess:
+            return "Full Access granted. Snapshots can be refreshed and widgets can complete reminders."
+        @unknown default:
+            return "Unknown authorisation status."
+        }
+    }
+
+    var shouldOfferOpenSettings: Bool {
+        switch status {
+        case .denied, .restricted, .writeOnly:
+            return true
+        default:
+            return false
+        }
+    }
 
     func refreshStatus() {
         status = EKEventStore.authorizationStatus(for: .reminder)
     }
 
-    var statusTitle: String {
-        switch status {
-        case .notDetermined:
-            return "Not determined"
-        case .restricted:
-            return "Restricted"
-        case .denied:
-            return "Denied"
-        case .fullAccess:
-            return "Full access"
-        case .writeOnly:
-            return "Write-only"
-        @unknown default:
-            return "Unknown"
-        }
-    }
-
-    var statusHint: String? {
-        switch status {
-        case .notDetermined:
-            return "Requesting access should trigger the system permission prompt."
-        case .restricted:
-            return "Access is restricted by device policy (Screen Time or MDM)."
-        case .denied:
-            return "Access has been denied. Grant access in Settings if needed."
-        case .writeOnly:
-            return "Write-only access can create/modify reminders, but may not be able to read them."
-        default:
-            return nil
-        }
-    }
-
-    var lastRequestSummary: String? {
-        guard let lastRequest else { return nil }
-        let grantedText = lastRequest.granted ? "true" : "false"
-        if let errorDescription = lastRequest.errorDescription {
-            return "Last request: granted=\(grantedText), error=\(errorDescription)"
-        }
-        return "Last request: granted=\(grantedText)"
-    }
-
     func requestFullAccess() {
         guard !isRequesting else { return }
         isRequesting = true
-        lastRequest = nil
+        lastRequestSummary = nil
 
-        eventStore.requestFullAccessToReminders { [weak self] granted, error in
-            let errorDescription = error?.localizedDescription
-            Task { @MainActor in
-                guard let self else { return }
-                self.isRequesting = false
-                self.refreshStatus()
-                self.lastRequest = RequestResult(granted: granted, errorDescription: errorDescription)
+        Task { @MainActor in
+            defer { self.isRequesting = false }
+
+            let before = EKEventStore.authorizationStatus(for: .reminder)
+            _ = await WidgetWeaverRemindersEngine.shared.requestAccessIfNeeded()
+            let after = EKEventStore.authorizationStatus(for: .reminder)
+
+            self.status = after
+
+            self.lastRequestSummary = "Request finished (before=\(before), after=\(after))."
+        }
+    }
+}
+
+// MARK: - List selection model (Phase 6)
+
+@MainActor
+private final class RemindersListSelectionModel: ObservableObject {
+    @Published private(set) var lists: [WidgetWeaverRemindersEngine.ReminderListSummary] = []
+    @Published private(set) var selectedListIDs: Set<String> = []
+    @Published private(set) var includeAllLists: Bool = true
+    @Published private(set) var isLoadingLists: Bool = false
+    @Published private(set) var lastError: String?
+    @Published private(set) var validationMessage: String?
+
+    var selectionSummary: String {
+        if includeAllLists { return "All lists" }
+        let count = selectedListIDs.count
+        return "\(count) selected"
+    }
+
+    func refreshFromStore() {
+        let ids = WidgetWeaverRemindersStore.shared.loadSelectedListIDs()
+        includeAllLists = ids.isEmpty
+        selectedListIDs = Set(ids)
+        lastError = nil
+        validationMessage = nil
+    }
+
+    func setIncludeAllLists(_ includeAll: Bool) {
+        validationMessage = nil
+        lastError = nil
+
+        if includeAll {
+            includeAllLists = true
+            selectedListIDs = []
+            WidgetWeaverRemindersStore.shared.saveSelectedListIDs([])
+            return
+        }
+
+        includeAllLists = false
+
+        if lists.isEmpty {
+            loadLists()
+            return
+        }
+
+        if selectedListIDs.isEmpty {
+            selectedListIDs = Set(lists.map { $0.id })
+        }
+
+        WidgetWeaverRemindersStore.shared.saveSelectedListIDs(Array(selectedListIDs))
+    }
+
+    func loadLists() {
+        guard !isLoadingLists else { return }
+        isLoadingLists = true
+        lastError = nil
+
+        Task { @MainActor in
+            defer { self.isLoadingLists = false }
+
+            do {
+                let fetched = try await WidgetWeaverRemindersEngine.shared.fetchReminderLists()
+                self.lists = fetched
+
+                if !self.includeAllLists {
+                    let known = Set(fetched.map { $0.id })
+                    let pruned = self.selectedListIDs.intersection(known)
+                    if pruned.isEmpty {
+                        self.selectedListIDs = known
+                    } else {
+                        self.selectedListIDs = pruned
+                    }
+
+                    if !self.selectedListIDs.isEmpty {
+                        WidgetWeaverRemindersStore.shared.saveSelectedListIDs(Array(self.selectedListIDs))
+                    }
+                }
+            } catch {
+                self.lastError = error.localizedDescription
             }
         }
     }
 
-    struct RequestResult: Equatable, Sendable {
-        let granted: Bool
-        let errorDescription: String?
+    func setListIncluded(_ included: Bool, listID: String) {
+        guard !includeAllLists else { return }
+        validationMessage = nil
+        lastError = nil
+
+        var next = selectedListIDs
+        if included {
+            next.insert(listID)
+        } else {
+            next.remove(listID)
+            if next.isEmpty {
+                validationMessage = "Select at least one list (or enable “Include all lists”)."
+                next.insert(listID)
+                selectedListIDs = next
+                return
+            }
+        }
+
+        selectedListIDs = next
+        WidgetWeaverRemindersStore.shared.saveSelectedListIDs(Array(next))
     }
 }
 
+// MARK: - Read spike model (in-app)
+
 @MainActor
 private final class RemindersReadSpikeModel: ObservableObject {
-    nonisolated struct ReminderListRow: Identifiable, Hashable, Sendable {
+    struct ListRow: Identifiable, Hashable {
         let id: String
         let title: String
         let sourceTitle: String?
     }
 
-    nonisolated struct ReminderRow: Identifiable, Hashable, Sendable {
-        let id: String
-        let title: String
-        let listID: String
-        let listTitle: String
-        let dueDate: Date?
-        let dueHasTime: Bool
-
-        var dueText: String? {
-            guard let dueDate else { return nil }
-            if dueHasTime {
-                return dueDate.formatted(date: .abbreviated, time: .shortened)
-            }
-            return dueDate.formatted(date: .abbreviated, time: .omitted)
-        }
-    }
-
-    @Published private(set) var lists: [ReminderListRow] = []
-    @Published private(set) var todaySample: [ReminderRow] = []
-
     @Published private(set) var isLoadingLists: Bool = false
-    @Published private(set) var isLoadingReminders: Bool = false
-    @Published private(set) var isCompletingReminder: Bool = false
-    @Published private(set) var completingReminderID: String?
+    @Published private(set) var lists: [ListRow] = []
+    @Published private(set) var loadListsError: String?
 
-    @Published private(set) var lastUpdatedAt: Date?
-    @Published private(set) var lastError: String?
-    @Published private(set) var lastCompletionSummary: String?
+    @Published private(set) var isLoadingToday: Bool = false
+    @Published private(set) var todayItems: [WidgetWeaverReminderItem] = []
+    @Published private(set) var loadTodayError: String?
 
-    private let eventStore = EKEventStore()
+    @Published private(set) var isCompletingID: String?
+    @Published private(set) var completeError: String?
 
-    var isBusy: Bool { isLoadingLists || isLoadingReminders || isCompletingReminder }
+    private let store = EKEventStore()
 
-    func loadLists() {
-        guard !isBusy else { return }
-        lastError = nil
-        isLoadingLists = true
-        defer { isLoadingLists = false }
-
-        guard canReadReminders() else {
-            lists = []
-            lastError = "Cannot read reminders (authorisation is not Full Access)."
-            return
-        }
-
-        let calendars = eventStore.calendars(for: .reminder)
-            .sorted { a, b in
-                a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-            }
-
-        lists = calendars.map { cal in
-            ReminderListRow(
-                id: cal.calendarIdentifier,
-                title: cal.title.isEmpty ? "Untitled" : cal.title,
-                sourceTitle: cal.source.title
-            )
-        }
-
-        lastUpdatedAt = Date()
-    }
-
-    func loadTodaySample() {
-        guard !isBusy else { return }
-        lastError = nil
-        lastCompletionSummary = nil
-        isLoadingReminders = true
-
-        Task { @MainActor in
-            defer { isLoadingReminders = false }
-
-            await refreshTodaySampleInternal()
-        }
-    }
-
-    func completeTodaySampleReminder(reminderID: String) {
-        guard !isBusy else { return }
-        lastError = nil
-        lastCompletionSummary = nil
-        isCompletingReminder = true
-        completingReminderID = reminderID
-
-        Task { @MainActor in
-            defer {
-                self.isCompletingReminder = false
-                self.completingReminderID = nil
-            }
-
-            guard canWriteReminders() else {
-                lastError = "Cannot complete reminders (authorisation is not Full Access or Write-only)."
-                return
-            }
-
-            guard let reminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder else {
-                lastError = "Reminder not found (it may have been deleted)."
-                return
-            }
-
-            let rawTitle = (reminder.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let safeTitle = rawTitle.isEmpty ? "Untitled" : rawTitle
-
-            reminder.isCompleted = true
-            reminder.completionDate = Date()
-
-            do {
-                try eventStore.save(reminder, commit: true)
-            } catch {
-                lastError = "Failed to complete reminder: \(error.localizedDescription)"
-                return
-            }
-
-            if canReadReminders() {
-                isLoadingReminders = true
-                defer { isLoadingReminders = false }
-                await refreshTodaySampleInternal()
-            } else {
-                todaySample.removeAll { $0.id == reminderID }
-            }
-
-            lastCompletionSummary = "Completed “\(safeTitle)”."
-        }
-    }
-
-    private func canReadReminders() -> Bool {
+    private var canReadReminders: Bool {
         let status = EKEventStore.authorizationStatus(for: .reminder)
         return status == .fullAccess
     }
 
-    private func canWriteReminders() -> Bool {
-        let status = EKEventStore.authorizationStatus(for: .reminder)
-        return status == .fullAccess || status == .writeOnly
-    }
+    func loadLists() {
+        guard !isLoadingLists else { return }
+        isLoadingLists = true
+        loadListsError = nil
 
-    private func refreshTodaySampleInternal() async {
-        guard canReadReminders() else {
-            todaySample = []
-            lastError = "Cannot read reminders (authorisation is not Full Access)."
-            return
-        }
+        Task { @MainActor in
+            defer { self.isLoadingLists = false }
 
-        lastError = nil
-
-        let mapped: [ReminderRow] = await Task.detached(priority: .userInitiated) {
-            let store = EKEventStore()
-            store.reset()
-
-            let now = Date()
-            let cal = Calendar.current
-            let todayYMD = cal.dateComponents([.year, .month, .day], from: now)
-
-            func matchesToday(_ comps: DateComponents?) -> Bool {
-                guard let comps else { return false }
-                return comps.year == todayYMD.year
-                    && comps.month == todayYMD.month
-                    && comps.day == todayYMD.day
-            }
-
-            func componentsHaveTime(_ comps: DateComponents?) -> Bool {
-                guard let comps else { return false }
-                return comps.hour != nil || comps.minute != nil || comps.second != nil
+            guard self.canReadReminders else {
+                self.loadListsError = "Reminders Full Access not granted (status=\(EKEventStore.authorizationStatus(for: .reminder)))."
+                self.lists = []
+                return
             }
 
             let calendars = store.calendars(for: .reminder)
 
-            // Broad fetch, then filter locally by YYYY-MM-DD to match what users perceive as "Today".
-            let predicate = store.predicateForIncompleteReminders(
-                withDueDateStarting: nil,
-                ending: nil,
-                calendars: calendars
-            )
+            self.lists = calendars.map { cal in
+                let title = cal.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanedTitle = title.isEmpty ? "Untitled" : title
 
-            return await withCheckedContinuation { cont in
-                store.fetchReminders(matching: predicate) { reminders in
-                    let rows: [ReminderRow] = (reminders ?? []).compactMap { r in
-                        // Include "today" if either due date OR start date lands on today.
-                        let dueComps = r.dueDateComponents
-                        let startComps = r.startDateComponents
+                let sourceTitle: String? = {
+                    let s = cal.source.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if s.isEmpty { return nil }
+                    return s
+                }()
 
-                        let useDue = matchesToday(dueComps)
-                        let useStart = matchesToday(startComps)
-
-                        guard useDue || useStart else { return nil }
-
-                        let chosenComps = useDue ? dueComps : startComps
-                        let chosenDate = chosenComps.flatMap { cal.date(from: $0) }
-                        let chosenHasTime = componentsHaveTime(chosenComps)
-
-                        let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                        let safeTitle = title.isEmpty ? "Untitled" : title
-
-                        return ReminderRow(
-                            id: r.calendarItemIdentifier,
-                            title: safeTitle,
-                            listID: r.calendar.calendarIdentifier,
-                            listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
-                            dueDate: chosenDate,
-                            dueHasTime: chosenHasTime
-                        )
-                    }
-
-                    cont.resume(returning: rows)
-                }
+                return ListRow(id: cal.calendarIdentifier, title: cleanedTitle, sourceTitle: sourceTitle)
             }
-        }.value
-
-        todaySample = mapped
             .sorted { a, b in
-                switch (a.dueDate, b.dueDate) {
-                case let (da?, db?):
-                    if da != db { return da < db }
-                    return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-                case (_?, nil):
-                    return true
-                case (nil, _?):
-                    return false
-                case (nil, nil):
-                    return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-                }
-            }
-            .prefix(25)
-            .map { $0 }
-
-        lastUpdatedAt = Date()
-    }
-    
-    private nonisolated static func fetchReminderRowsDueToday(
-        eventStore: EKEventStore,
-        matching predicate: NSPredicate,
-        calendar: Calendar,
-        todayYMD: DateComponents
-    ) async -> [ReminderRow] {
-        await withCheckedContinuation { cont in
-            eventStore.fetchReminders(matching: predicate) { reminders in
-                let rows: [ReminderRow] = (reminders ?? []).compactMap { r in
-                    guard let dueComponents = r.dueDateComponents else { return nil }
-                    guard
-                        dueComponents.year == todayYMD.year,
-                        dueComponents.month == todayYMD.month,
-                        dueComponents.day == todayYMD.day
-                    else { return nil }
-
-                    let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let safeTitle = title.isEmpty ? "Untitled" : title
-
-                    let dueDate = calendar.date(from: dueComponents)
-                    let hasTime = (dueComponents.hour != nil) || (dueComponents.minute != nil) || (dueComponents.second != nil)
-
-                    return ReminderRow(
-                        id: r.calendarItemIdentifier,
-                        title: safeTitle,
-                        listID: r.calendar.calendarIdentifier,
-                        listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
-                        dueDate: dueDate,
-                        dueHasTime: hasTime
-                    )
-                }
-
-                cont.resume(returning: rows)
+                let sa = a.sourceTitle ?? ""
+                let sb = b.sourceTitle ?? ""
+                if sa != sb { return sa.localizedCaseInsensitiveCompare(sb) == .orderedAscending }
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
             }
         }
     }
 
-    /// Converts EventKit reminders into Sendable rows inside the EventKit callback,
-    /// so no `EKReminder` values cross an `await` boundary.
-    private nonisolated static func fetchReminderRows(
-        eventStore: EKEventStore,
-        matching predicate: NSPredicate,
-        calendar: Calendar
-    ) async -> [ReminderRow] {
-        await withCheckedContinuation { cont in
-            eventStore.fetchReminders(matching: predicate) { reminders in
-                let rows: [ReminderRow] = (reminders ?? []).map { r in
-                    let title = (r.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let safeTitle = title.isEmpty ? "Untitled" : title
+    func loadToday() {
+        guard !isLoadingToday else { return }
+        isLoadingToday = true
+        loadTodayError = nil
 
-                    let dueComponents = r.dueDateComponents
-                    let dueDate = dueComponents.flatMap { calendar.date(from: $0) }
-                    let hasTime = (dueComponents?.hour != nil) || (dueComponents?.minute != nil) || (dueComponents?.second != nil)
+        Task { @MainActor in
+            defer { self.isLoadingToday = false }
 
-                    return ReminderRow(
-                        id: r.calendarItemIdentifier,
-                        title: safeTitle,
-                        listID: r.calendar.calendarIdentifier,
-                        listTitle: r.calendar.title.isEmpty ? "Untitled" : r.calendar.title,
-                        dueDate: dueDate,
-                        dueHasTime: hasTime
-                    )
-                }
+            guard self.canReadReminders else {
+                self.loadTodayError = "Reminders Full Access not granted (status=\(EKEventStore.authorizationStatus(for: .reminder)))."
+                self.todayItems = []
+                return
+            }
 
-                cont.resume(returning: rows)
+            do {
+                let items = try await WidgetWeaverRemindersEngine.shared.fetchTodayIncompleteReminders(limit: 25)
+                self.todayItems = items
+            } catch {
+                self.loadTodayError = error.localizedDescription
+                self.todayItems = []
+            }
+        }
+    }
+
+    func complete(id: String) {
+        guard isCompletingID == nil else { return }
+        isCompletingID = id
+        completeError = nil
+
+        Task { @MainActor in
+            defer { self.isCompletingID = nil }
+
+            let action = await WidgetWeaverRemindersEngine.shared.completeReminder(identifier: id)
+
+            if action.kind == .completed {
+                // Refresh local list for display.
+                self.loadToday()
+            } else if action.kind == .error {
+                self.completeError = action.message
             }
         }
     }
 }
+
+// MARK: - Snapshot debug model
 
 @MainActor
 private final class RemindersSnapshotDebugModel: ObservableObject {
@@ -767,66 +697,36 @@ private final class RemindersSnapshotDebugModel: ObservableObject {
         lastError = store.loadLastError()
     }
 
-    func refreshSnapshotFromRemindersEngine(maxItems: Int = 250) {
+    func refreshSnapshotFromRemindersEngine(maxItems: Int = 250, force: Bool = false) {
         guard !isWriting else { return }
         isWriting = true
 
         Task { @MainActor in
             defer { self.isWriting = false }
 
-            _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache(maxItems: maxItems)
+            _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache(maxItems: maxItems, force: force)
             self.refreshFromStore()
         }
     }
 
-    func writeSnapshotFromTodaySample(_ sample: [RemindersReadSpikeModel.ReminderRow]) {
-        guard !isWriting else { return }
-        isWriting = true
-        defer { isWriting = false }
-
-        let now = Date()
-
-        let items: [WidgetWeaverReminderItem]
-        if sample.isEmpty {
-            items = WidgetWeaverRemindersSnapshot.sample(now: now).items
-        } else {
-            items = sample.map { r in
-                WidgetWeaverReminderItem(
-                    id: r.id,
-                    title: r.title,
-                    dueDate: r.dueDate,
-                    dueHasTime: r.dueHasTime,
-                    startDate: nil,
-                    startHasTime: false,
-                    isCompleted: false,
-                    isFlagged: false,
-                    listID: r.listID,
-                    listTitle: r.listTitle
-                )
-            }
-        }
-
-        let snapshot = WidgetWeaverRemindersSnapshot(
-            generatedAt: now,
-            items: items,
-            modes: [],
-            diagnostics: WidgetWeaverRemindersDiagnostics(
-                kind: .ok,
-                message: sample.isEmpty
-                    ? "Debug snapshot (built-in sample)"
-                    : "Debug snapshot (Today sample, \(items.count) item(s))",
-                at: now
-            )
-        )
-
-        store.saveSnapshot(snapshot)
+    func clearRefreshThrottleState() {
+        store.clearRefreshThrottleState()
         refreshFromStore()
     }
 
     func clearSnapshot() {
         store.clearSnapshot()
+        store.clearRefreshThrottleState()
         store.saveLastUpdatedAt(nil)
-        store.clearLastError()
+        store.saveLastError(nil)
         refreshFromStore()
     }
+
+    #if DEBUG
+    func writeDebugSampleSnapshot() {
+        let sample = WidgetWeaverRemindersSnapshot.sample()
+        store.saveSnapshot(sample)
+        refreshFromStore()
+    }
+    #endif
 }

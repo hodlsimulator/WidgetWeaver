@@ -24,6 +24,10 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
 
         public static let lastUpdatedAt = "widgetweaver.reminders.lastUpdatedAt.v1"
 
+        // Phase 6: List selection (applies to snapshot refresh).
+        // Empty means "all lists".
+        public static let selectedListIDs = "widgetweaver.reminders.selectedListIDs.v1"
+
         public static let lastErrorKind = "widgetweaver.reminders.lastError.kind.v1"
         public static let lastErrorMessage = "widgetweaver.reminders.lastError.message.v1"
         public static let lastErrorAt = "widgetweaver.reminders.lastError.at.v1"
@@ -165,6 +169,65 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
         }
 
         synchroniseAppGroupDefaults()
+    }
+
+
+
+    // MARK: List selection (Phase 6)
+
+    private func cleanedUniqueListIDs(_ ids: [String]) -> [String] {
+        var seen: Set<String> = []
+        var out: [String] = []
+        out.reserveCapacity(ids.count)
+
+        for raw in ids {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            guard !seen.contains(trimmed) else { continue }
+            seen.insert(trimmed)
+            out.append(trimmed)
+        }
+
+        return out
+    }
+
+    /// Returns the selected list IDs (EKCalendar.calendarIdentifier) for snapshot refresh.
+    ///
+    /// Semantics:
+    /// - Empty means "all lists".
+    public func loadSelectedListIDs() -> [String] {
+        synchroniseAppGroupDefaults()
+
+        if let ids = defaults.array(forKey: Keys.selectedListIDs) as? [String] {
+            return cleanedUniqueListIDs(ids)
+        }
+
+        if let legacy = UserDefaults.standard.array(forKey: Keys.selectedListIDs) as? [String] {
+            defaults.set(legacy, forKey: Keys.selectedListIDs)
+            synchroniseAppGroupDefaults()
+            return cleanedUniqueListIDs(legacy)
+        }
+
+        return []
+    }
+
+    /// Saves the selected list IDs (EKCalendar.calendarIdentifier) for snapshot refresh.
+    ///
+    /// Semantics:
+    /// - Empty means "all lists".
+    public func saveSelectedListIDs(_ ids: [String]) {
+        let cleaned = cleanedUniqueListIDs(ids)
+
+        if cleaned.isEmpty {
+            defaults.removeObject(forKey: Keys.selectedListIDs)
+            UserDefaults.standard.removeObject(forKey: Keys.selectedListIDs)
+        } else {
+            defaults.set(cleaned, forKey: Keys.selectedListIDs)
+            UserDefaults.standard.set(cleaned, forKey: Keys.selectedListIDs)
+        }
+
+        synchroniseAppGroupDefaults()
+        notifyWidgetsRemindersUpdated()
     }
 
     // MARK: Last error

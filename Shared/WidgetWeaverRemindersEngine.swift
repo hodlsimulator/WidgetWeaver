@@ -15,90 +15,48 @@
 import AppIntents
 import EventKit
 import Foundation
-
-#if canImport(WidgetKit)
 import WidgetKit
-#endif
 
-/// Controls how aggressively the Reminders engine refreshes the snapshot cache.
-///
-/// Goals:
-/// - Avoid churn and WidgetKit budget issues.
-/// - Converge quickly after interactive widget actions.
-/// - Back off after repeated failures to prevent tight error loops.
-public struct WidgetWeaverRemindersRefreshPolicy: Hashable, Sendable {
-    /// Minimum time between refresh attempts after a successful refresh.
-    public var minimumIntervalSeconds: TimeInterval
+public struct WidgetWeaverRemindersRefreshPolicy: Sendable {
+    public let minimumIntervalSeconds: TimeInterval
+    public let maximumConsecutiveFailureCount: Int
 
-    /// Base delay applied after the first failure. Subsequent failures double this value.
-    public var baseErrorBackoffSeconds: TimeInterval
-
-    /// Maximum delay cap for exponential backoff.
-    public var maximumErrorBackoffSeconds: TimeInterval
-
-    /// Caps the consecutive failure count used for backoff calculations.
-    public var maximumConsecutiveFailureCount: Int
-
-    public init(
-        minimumIntervalSeconds: TimeInterval,
-        baseErrorBackoffSeconds: TimeInterval,
-        maximumErrorBackoffSeconds: TimeInterval,
-        maximumConsecutiveFailureCount: Int
-    ) {
-        self.minimumIntervalSeconds = max(0, minimumIntervalSeconds)
-        self.baseErrorBackoffSeconds = max(0, baseErrorBackoffSeconds)
-        self.maximumErrorBackoffSeconds = max(0, maximumErrorBackoffSeconds)
+    public init(minimumIntervalSeconds: TimeInterval, maximumConsecutiveFailureCount: Int) {
+        self.minimumIntervalSeconds = minimumIntervalSeconds
         self.maximumConsecutiveFailureCount = max(1, maximumConsecutiveFailureCount)
     }
 
-    /// Default policy for user-initiated refreshes.
-    public static let `default` = WidgetWeaverRemindersRefreshPolicy(
-        minimumIntervalSeconds: 15,
-        baseErrorBackoffSeconds: 20,
-        maximumErrorBackoffSeconds: 60 * 10,
-        maximumConsecutiveFailureCount: 8
-    )
-
-    /// Policy tuned for interactive widget actions (row taps).
-    public static let widgetAction = WidgetWeaverRemindersRefreshPolicy(
-        minimumIntervalSeconds: 3,
-        baseErrorBackoffSeconds: 10,
-        maximumErrorBackoffSeconds: 60 * 2,
-        maximumConsecutiveFailureCount: 6
-    )
-
-    /// Policy for unattended refreshes (future use).
-    public static let background = WidgetWeaverRemindersRefreshPolicy(
-        minimumIntervalSeconds: 60,
-        baseErrorBackoffSeconds: 60,
-        maximumErrorBackoffSeconds: 60 * 30,
-        maximumConsecutiveFailureCount: 10
-    )
-
-    /// Returns the backoff delay for the given consecutive failure count.
     public func backoffSeconds(consecutiveFailures: Int) -> TimeInterval {
-        let failures = max(1, consecutiveFailures)
-        let clamped = min(maximumConsecutiveFailureCount, failures)
-        let exponent = max(0, clamped - 1)
-
-        let seconds = baseErrorBackoffSeconds * pow(2.0, Double(exponent))
-        return min(maximumErrorBackoffSeconds, seconds)
+        // Exponential backoff: 2^n seconds (capped).
+        let n = max(0, consecutiveFailures)
+        let exp = pow(2.0, Double(n))
+        return min(300, exp)
     }
+
+    public static let `default` = WidgetWeaverRemindersRefreshPolicy(minimumIntervalSeconds: 15, maximumConsecutiveFailureCount: 6)
+    public static let widgetAction = WidgetWeaverRemindersRefreshPolicy(minimumIntervalSeconds: 3, maximumConsecutiveFailureCount: 4)
 }
 
-/// Single owner for EventKit Reminders reads/writes.
-///
-/// Notes:
-/// - `EKEventStore` is not `Sendable`. Actor isolation provides the safety boundary.
-/// - Any mapping from `EKReminder` to `Sendable` models must occur inside the EventKit callback,
-///   so no `EKReminder` values cross an `await` boundary.
+public enum WidgetWeaverRemindersEngineAccessResult: Sendable {
+    case granted
+    case denied
+    case restricted
+    case writeOnly
+}
+
 public actor WidgetWeaverRemindersEngine {
     public static let shared = WidgetWeaverRemindersEngine()
 
-    public struct ReminderListSummary: Identifiable, Hashable, Sendable {
-        public var id: String
-        public var title: String
-        public var sourceTitle: String?
+    public enum EngineError: Error {
+        case notAuthorised
+        case writeOnlyAccess
+        case failedToComputeDateWindow
+    }
+
+    public struct ReminderListSummary: Identifiable, Sendable, Hashable {
+        public let id: String
+        public let title: String
+        public let sourceTitle: String?
 
         public init(id: String, title: String, sourceTitle: String?) {
             self.id = id
@@ -107,96 +65,99 @@ public actor WidgetWeaverRemindersEngine {
         }
     }
 
-    public enum EngineError: Error, LocalizedError, Sendable {
-        case notAuthorised(status: EKAuthorizationStatus)
-        case failedToComputeDateWindow
-
-        public var errorDescription: String? {
-            switch self {
-            case .notAuthorised(let status):
-                return "Reminders access is not granted (status=\(status))."
-            case .failedToComputeDateWindow:
-                return "Failed to compute the requested date window."
-            }
-        }
-    }
-
     private let eventStore: EKEventStore
-
-    // Phase 3.4: Coalesce refresh calls to avoid overlapping EventKit fetches.
     private var inFlightRefresh: Task<WidgetWeaverRemindersDiagnostics, Never>?
 
-    public init(eventStore: EKEventStore = EKEventStore()) {
+    private init(eventStore: EKEventStore = EKEventStore()) {
         self.eventStore = eventStore
     }
-
-    // MARK: - Authorisation
 
     public static func authorisationStatus() -> EKAuthorizationStatus {
         EKEventStore.authorizationStatus(for: .reminder)
     }
 
-    /// Requests Full Access to Reminders if the current status is `.notDetermined`.
-    ///
-    /// Returns `true` when Full Access is granted.
+    // MARK: - Access
+
     @discardableResult
-    public func requestAccessIfNeeded() async -> Bool {
+    public func requestAccessIfNeeded() async -> WidgetWeaverRemindersEngineAccessResult {
         let status = Self.authorisationStatus()
+
         switch status {
         case .fullAccess:
-            return true
+            return .granted
+        case .denied:
+            return .denied
+        case .restricted:
+            return .restricted
+        case .writeOnly:
+            return .writeOnly
         case .notDetermined:
-            return await requestFullAccessToReminders()
-        default:
-            return false
-        }
-    }
-
-    private func requestFullAccessToReminders() async -> Bool {
-        await withCheckedContinuation { cont in
-            eventStore.requestFullAccessToReminders { granted, error in
-                if let error {
-                    _ = error
-                }
-                cont.resume(returning: granted)
+            do {
+                _ = try await eventStore.requestFullAccessToReminders()
+            } catch {
+                // If request throws (rare), treat as denied-ish.
+                return .denied
             }
+
+            let after = Self.authorisationStatus()
+            if after == .fullAccess { return .granted }
+            if after == .writeOnly { return .writeOnly }
+            if after == .restricted { return .restricted }
+            return .denied
+        @unknown default:
+            return .denied
         }
     }
 
     private func requireFullAccess() throws {
         let status = Self.authorisationStatus()
         guard status == .fullAccess else {
-            throw EngineError.notAuthorised(status: status)
+            if status == .writeOnly { throw EngineError.writeOnlyAccess }
+            throw EngineError.notAuthorised
         }
     }
 
     // MARK: - Lists
 
-    /// Loads all reminder lists (EventKit reminder calendars).
     public func fetchReminderLists() throws -> [ReminderListSummary] {
         try requireFullAccess()
 
-        return eventStore.calendars(for: .reminder)
-            .sorted { a, b in
-                a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        let calendars = eventStore.calendars(for: .reminder)
+
+        let out = calendars.map { cal in
+            let title = cal.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            let cleanedTitle = title.isEmpty ? "Untitled" : title
+
+            let sourceTitle: String? = {
+                let source = cal.source.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                if source.isEmpty { return nil }
+                return source
+            }()
+
+            return ReminderListSummary(
+                id: cal.calendarIdentifier,
+                title: cleanedTitle,
+                sourceTitle: sourceTitle
+            )
+        }
+        .sorted { a, b in
+            let sa = a.sourceTitle ?? ""
+            let sb = b.sourceTitle ?? ""
+            if sa != sb {
+                return sa.localizedCaseInsensitiveCompare(sb) == .orderedAscending
             }
-            .map { cal in
-                let title = cal.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                return ReminderListSummary(
-                    id: cal.calendarIdentifier,
-                    title: title.isEmpty ? "Untitled" : title,
-                    sourceTitle: cal.source.title
-                )
-            }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+
+        return out
     }
 
+    // MARK: - Completion
 
-    // MARK: - Completion (Phase 5)
-
-    /// Marks a reminder as completed.
+    /// Completes a specific reminder by calendar item identifier.
     ///
     /// Notes:
-    /// - This requires Full Access because the widget reads reminder identifiers from snapshots.
+    /// - This is used by the production widget intent (Phase 5.1).
     /// - This does not prompt for permission (AppIntents must not prompt).
     public func completeReminder(identifier: String) async -> WidgetWeaverRemindersActionDiagnostics {
         let cleanedID = identifier.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -314,18 +275,27 @@ public actor WidgetWeaverRemindersEngine {
         }
 
         let startedAt = Date()
+        let selectedListIDs = store.loadSelectedListIDs()
 
         do {
-            let (items, fetchedCount) = try await fetchGlobalIncompleteReminderItems(maxItems: maxItems)
+            let (items, fetchedCount) = try await fetchGlobalIncompleteReminderItems(
+                maxItems: maxItems,
+                selectedListIDs: selectedListIDs
+            )
 
             let duration = Date().timeIntervalSince(startedAt)
             let durationString = String(format: "%.2f", duration)
 
+            let listFilterText: String = {
+                if selectedListIDs.isEmpty { return "" }
+                return " (\(selectedListIDs.count) list(s))"
+            }()
+
             let message: String = {
                 if fetchedCount > items.count {
-                    return "Fetched \(fetchedCount) reminder(s) (trimmed to \(items.count)) in \(durationString)s."
+                    return "Fetched \(fetchedCount) reminder(s)\(listFilterText) (trimmed to \(items.count)) in \(durationString)s."
                 }
-                return "Fetched \(items.count) reminder(s) in \(durationString)s."
+                return "Fetched \(items.count) reminder(s)\(listFilterText) in \(durationString)s."
             }()
 
             let diag = WidgetWeaverRemindersDiagnostics(kind: .ok, message: message, at: now)
@@ -386,12 +356,13 @@ public actor WidgetWeaverRemindersEngine {
     }
 
     private func fetchGlobalIncompleteReminderItems(
-        maxItems: Int
+        maxItems: Int,
+        selectedListIDs: [String]
     ) async throws -> (items: [WidgetWeaverReminderItem], fetchedCount: Int) {
         try requireFullAccess()
 
         let cal = Calendar.current
-        let calendars = eventStore.calendars(for: .reminder)
+        let calendars = calendarsForSelectedLists(selectedListIDs)
 
         let predicate = eventStore.predicateForIncompleteReminders(
             withDueDateStarting: nil,
