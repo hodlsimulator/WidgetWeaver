@@ -47,6 +47,36 @@ extension WidgetWeaverAboutView {
             spec: specPhotoSingle()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-photo-caption",
+            title: "Photo + Caption",
+            subtitle: "Caption overlay",
+            description: "A photo poster with a subtle caption panel for readable text over your image.",
+            tags: ["Photo", "Caption", "Poster"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoCaption()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-photo-clock",
+            title: "Photo Clock",
+            subtitle: "Time overlay",
+            description: "A photo poster that shows the current time and weekday over your image.",
+            tags: ["Photo", "Clock", "Time"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoClock()
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-photo-quote",
+            title: "Photo Quote",
+            subtitle: "Motto overlay",
+            description: "A photo poster designed for a short quote or motto over a single image.",
+            tags: ["Photo", "Quote", "Typography"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoQuote()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-focus",
             title: "Focus",
             subtitle: "Daily priority",
@@ -262,6 +292,93 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
+
+        return spec.normalised()
+    }
+
+    static func specPhotoCaption() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Photo + Caption"
+        spec.primaryText = "Your caption"
+        spec.secondaryText = "Tap to edit"
+        spec.symbol = nil
+
+        spec.layout.template = .poster
+        spec.layout.posterOverlayMode = .caption
+        spec.layout.showsAccentBar = false
+
+        spec.layout.primaryLineLimitSmall = 1
+        spec.layout.primaryLineLimit = 2
+        spec.layout.secondaryLineLimitSmall = 1
+        spec.layout.secondaryLineLimit = 1
+
+        spec.style.accent = .pink
+        spec.style.background = .subtleMaterial
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        spec.style.nameTextStyle = .caption2
+        spec.style.primaryTextStyle = .title3
+        spec.style.secondaryTextStyle = .caption
+
+        return spec.normalised()
+    }
+
+    static func specPhotoClock() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Photo Clock"
+        spec.primaryText = "{{__time}}"
+        spec.secondaryText = "{{__weekday}}"
+        spec.symbol = nil
+
+        spec.layout.template = .poster
+        spec.layout.posterOverlayMode = .caption
+        spec.layout.showsAccentBar = false
+
+        spec.layout.primaryLineLimitSmall = 1
+        spec.layout.primaryLineLimit = 1
+        spec.layout.secondaryLineLimitSmall = 1
+        spec.layout.secondaryLineLimit = 1
+
+        spec.style.accent = .blue
+        spec.style.background = .subtleMaterial
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        spec.style.nameTextStyle = .caption2
+        spec.style.primaryTextStyle = .title2
+        spec.style.secondaryTextStyle = .subheadline
+
+        return spec.normalised()
+    }
+
+    static func specPhotoQuote() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Photo Quote"
+        spec.primaryText = "Make it simple."
+        spec.secondaryText = "Do the next right thing."
+        spec.symbol = nil
+
+        spec.layout.template = .poster
+        spec.layout.posterOverlayMode = .caption
+        spec.layout.showsAccentBar = false
+
+        spec.layout.primaryLineLimitSmall = 2
+        spec.layout.primaryLineLimit = 3
+        spec.layout.secondaryLineLimitSmall = 1
+        spec.layout.secondaryLineLimit = 2
+
+        spec.style.accent = .purple
+        spec.style.background = .subtleMaterial
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        spec.style.nameTextStyle = .caption2
+        spec.style.primaryTextStyle = .title3
+        spec.style.secondaryTextStyle = .caption
 
         return spec.normalised()
     }

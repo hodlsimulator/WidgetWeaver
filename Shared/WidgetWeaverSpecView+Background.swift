@@ -90,15 +90,10 @@ extension WidgetWeaverSpecView {
     private func shouldShowPosterPhotoEmptyState(spec: WidgetSpec, layout: LayoutSpec) -> Bool {
         guard layout.template == .poster else { return false }
 
-        // Photo-only posters should never look like a blank gradient when no photo is selected.
-        if layout.posterOverlayMode == .none { return true }
-
-        // If the spec includes an image payload (static or Smart Photo), the poster is photo-backed.
-        // When decoding fails or files are missing, show an explicit placeholder instead of silently
-        // falling back to a random gradient.
-        if spec.image != nil { return true }
-
-        return false
+        // Poster templates are photo-backed.
+        // If no usable image is available (not chosen, missing file, decode failure), show a
+        // deliberate placeholder instead of silently falling back to a random gradient.
+        return true
     }
 
     @ViewBuilder
