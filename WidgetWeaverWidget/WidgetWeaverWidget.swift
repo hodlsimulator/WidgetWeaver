@@ -193,21 +193,15 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             return Timeline(entries: entries, policy: .after(reload))
         }
 
-        let prefersViewLevelTimeTick: Bool = {
-            // Photo posters that include time-dependent text are expensive to re-render every minute
-            // (each entry would re-decode the poster image). Prefer view-level ticking for the text
-            // and keep the WidgetKit timeline coarse, unless other features (weather/shuffle/etc)
-            // require more frequent reloads.
-            guard usesTime else { return false }
-            guard familySpec.layout.template == .poster else { return false }
-            guard familySpec.image != nil else { return false }
-            return true
-        }()
+        // Note:
+        // The Home Screen widget host does not reliably run view-level minute timers for wall-clock text.
+        // To keep time-based text (for example {{__time}}) accurate, drive updates via the WidgetKit timeline
+        // even for photo posters (Photo Clock).
+        let prefersViewLevelTimeTick: Bool = false
 
         // Base refresh:
         // - Most widgets: hourly
-        // - Time-dependent widgets: every minute
-        // - Time-dependent photo posters: hourly (text can tick live in the view)
+        // - Time-dependent widgets (including Photo Clock posters): every minute
         var refreshSeconds: TimeInterval = (usesTime && !prefersViewLevelTimeTick) ? 60 : (60 * 60)
 
         if let shuffleSchedule {
