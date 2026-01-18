@@ -58,8 +58,30 @@ extension ContentView {
 
         if matchedSetEnabled {
             matchedDrafts[editingFamily] = v
+
+            if v.template == .clockIcon {
+                propagateClockThemeToAllClockDrafts(rawTheme: v.clockThemeRaw)
+            }
         } else {
             baseDraft = v
+
+            if v.template == .clockIcon {
+                baseDraft.clockThemeRaw = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw).theme
+            }
+        }
+    }
+
+    private func propagateClockThemeToAllClockDrafts(rawTheme: String) {
+        let canonical = WidgetWeaverClockDesignConfig(theme: rawTheme).theme
+
+        if matchedDrafts.small.template == .clockIcon {
+            matchedDrafts.small.clockThemeRaw = canonical
+        }
+        if matchedDrafts.medium.template == .clockIcon {
+            matchedDrafts.medium.clockThemeRaw = canonical
+        }
+        if matchedDrafts.large.template == .clockIcon {
+            matchedDrafts.large.clockThemeRaw = canonical
         }
     }
 

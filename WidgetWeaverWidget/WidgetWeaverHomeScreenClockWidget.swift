@@ -14,12 +14,14 @@ struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigur
     static var title: LocalizedStringResource { "Clock" }
     static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
-    @Parameter(title: "Colour Scheme")
-    var colourScheme: WidgetWeaverClockWidgetColourScheme?
+    @Parameter(title: "Colour Scheme", default: .classic)
+    var colourScheme: WidgetWeaverClockWidgetColourScheme
 
-    init() {
-        self.colourScheme = .classic
+    static var parameterSummary: some ParameterSummary {
+        Summary("Colour Scheme: \(\.$colourScheme)")
     }
+
+    init() {}
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -61,7 +63,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let scheme = (configuration.colourScheme ?? .classic).paletteScheme
+        let scheme = configuration.colourScheme.paletteScheme
 
         return Entry(
             date: now,
@@ -73,7 +75,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let scheme = (configuration.colourScheme ?? .classic).paletteScheme
+        let scheme = configuration.colourScheme.paletteScheme
 
         WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 

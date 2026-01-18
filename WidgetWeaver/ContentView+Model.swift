@@ -155,9 +155,15 @@ extension ContentView {
 
         func clockThemeRawForSpec() -> String {
             if matchedSetEnabled {
+                let current = currentFamilyDraft()
+                if current.template == .clockIcon {
+                    return current.clockThemeRaw
+                }
+
                 if matchedDrafts.medium.template == .clockIcon { return matchedDrafts.medium.clockThemeRaw }
                 if matchedDrafts.small.template == .clockIcon { return matchedDrafts.small.clockThemeRaw }
                 if matchedDrafts.large.template == .clockIcon { return matchedDrafts.large.clockThemeRaw }
+
                 return WidgetWeaverClockDesignConfig.defaultTheme
             }
             return baseDraft.clockThemeRaw
