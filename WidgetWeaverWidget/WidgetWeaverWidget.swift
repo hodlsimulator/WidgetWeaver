@@ -193,7 +193,23 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             return Timeline(entries: entries, policy: .after(reload))
         }
 
-        var refreshSeconds: TimeInterval = usesTime ? 60 : (60 * 60)
+        let prefersViewLevelTimeTick: Bool = {
+            // Photo posters that include time-dependent text are expensive to re-render every minute
+            // (each entry would re-decode the poster image). Prefer view-level ticking for the text
+            // and keep the WidgetKit timeline coarse, unless other features (weather/shuffle/etc)
+            // require more frequent reloads.
+            guard usesTime else { return false }
+            guard familySpec.layout.template == .poster else { return false }
+            guard familySpec.image != nil else { return false }
+            return true
+        }()
+
+        // Base refresh:
+        // - Most widgets: hourly
+        // - Time-dependent widgets: every minute
+        // - Time-dependent photo posters: hourly (text can tick live in the view)
+        var refreshSeconds: TimeInterval = (usesTime && !prefersViewLevelTimeTick) ? 60 : (60 * 60)
+
         if let shuffleSchedule {
             refreshSeconds = min(refreshSeconds, shuffleSchedule.intervalSeconds)
         }
@@ -202,11 +218,11 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         if usesWeather { refreshSeconds = 60 }
         if usesCalendar { refreshSeconds = min(refreshSeconds, 60) }
 
-        if usesSteps && !usesTime {
+        if usesSteps {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverStepsStore.shared.recommendedRefreshIntervalSeconds()))
         }
 
-        if usesActivity && !usesTime {
+        if usesActivity {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverActivityStore.shared.recommendedRefreshIntervalSeconds()))
         }
 

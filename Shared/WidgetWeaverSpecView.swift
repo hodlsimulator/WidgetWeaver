@@ -87,7 +87,8 @@ public struct WidgetWeaverSpecView: View {
             return WidgetSpecStore.shared.load(id: spec.id) ?? spec
         }()
 
-        let resolved = baseSpec.resolved(for: family).resolvingVariables()
+        let familySpec = baseSpec.resolved(for: family)
+        let resolved = familySpec.resolvingVariables()
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
@@ -135,7 +136,7 @@ public struct WidgetWeaverSpecView: View {
             case .hero:
                 heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .poster:
-                posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+                posterTemplate(templateSpec: familySpec, spec: resolved, layout: layout, style: style, accent: accent)
             case .weather:
                 weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .nextUpCalendar:
@@ -205,52 +206,21 @@ public struct WidgetWeaverSpecView: View {
     }
 
     @ViewBuilder
-    private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+    private func posterTemplate(templateSpec: WidgetSpec, spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         switch layout.posterOverlayMode {
         case .none:
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .caption:
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    if !spec.name.isEmpty {
-                        Text(spec.name)
-                            .font(style.nameTextStyle.font(fallback: .caption))
-                            .foregroundStyle(.white.opacity(0.92))
-                            .lineLimit(1)
-                    }
-
-                    if !spec.primaryText.isEmpty {
-                        Text(spec.primaryText)
-                            .font(style.primaryTextStyle.font(fallback: .title3))
-                            .foregroundStyle(.white)
-                            .lineLimit(layout.primaryLineLimit)
-                    }
-
-                    if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
-                        Text(secondaryText)
-                            .font(style.secondaryTextStyle.font(fallback: .caption2))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(layout.secondaryLineLimit)
-                    }
-                }
-                .padding(style.padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.55),
-                            Color.black.opacity(0.10),
-                            Color.clear,
-                        ],
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
-            }
+            WidgetWeaverPosterCaptionOverlayView(
+                templateSpec: templateSpec,
+                staticSpec: spec,
+                family: family,
+                context: context,
+                layout: layout,
+                style: style
+            )
         }
     }
 
@@ -354,4 +324,141 @@ public struct WidgetWeaverSpecView: View {
         }
     }
 
+}
+
+// MARK: - Poster caption overlay (time-dependent)
+
+/// Poster caption overlay that can tick at minute granularity.
+///
+/// Photo-based posters (e.g. Photo Clock) are expensive to re-render every minute because WidgetKit
+/// would repeatedly decode the poster image. This view keeps the *text* fresh via a lightweight
+/// view-level heartbeat while leaving the photo background untouched.
+private struct WidgetWeaverPosterCaptionOverlayView: View {
+    /// The poster spec with variable templates intact.
+    ///
+    /// This should be resolved for the target family (matched sets dropped) but NOT have variables applied.
+    let templateSpec: WidgetSpec
+
+    /// The spec resolved for the target family and with variables applied using the widget entry date.
+    ///
+    /// Used for WidgetKit pre-render/snapshot contexts where live ticking is undesirable.
+    let staticSpec: WidgetSpec
+
+    let family: WidgetFamily
+    let context: WidgetWeaverRenderContext
+    let layout: LayoutSpec
+    let style: StyleSpec
+
+    var body: some View {
+        if shouldTick {
+            tickingOverlay
+        } else {
+            overlayBody(spec: staticSpec)
+        }
+    }
+
+    private var shouldTick: Bool {
+        guard templateSpec.usesTimeDependentRendering() else { return false }
+
+        switch context {
+        case .widget:
+            return true
+        case .simulator:
+            return true
+        case .preview:
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private var tickingOverlay: some View {
+        let sysNow = Date()
+        let ctxNow = WidgetWeaverRenderClock.now
+
+        let sysMinuteAnchor = Self.floorToMinute(sysNow)
+        let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
+        let leadSeconds = ctxNow.timeIntervalSince(sysNow)
+
+        // WidgetKit can pre-render future entries. If `ctxNow` is meaningfully in the future vs wall clock,
+        // avoid running a live heartbeat and render using the entry date instead.
+        let isPrerender: Bool = {
+            guard context == .widget else { return false }
+            if leadSeconds > 5.0 { return true }
+            if ctxMinuteAnchor > sysMinuteAnchor { return true }
+            return false
+        }()
+
+        if isPrerender {
+            overlayBody(spec: staticSpec)
+        } else {
+            let heartbeatRange = sysMinuteAnchor...sysMinuteAnchor.addingTimeInterval(60.0)
+            let minuteNow = sysMinuteAnchor
+            let minuteID = Int(minuteNow.timeIntervalSince1970 / 60.0)
+
+            let dynamicSpec = templateSpec
+                .resolvingVariables(now: minuteNow)
+                .normalised()
+
+            ZStack {
+                // Invisible heartbeat to refresh the view frequently while the widget is visible,
+                // without requiring a WidgetKit timeline reload.
+                ProgressView(timerInterval: heartbeatRange, countsDown: false)
+                    .id(sysMinuteAnchor)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                overlayBody(spec: dynamicSpec)
+                    .id(minuteID)
+            }
+        }
+    }
+
+    private func overlayBody(spec: WidgetSpec) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if !spec.name.isEmpty {
+                    Text(spec.name)
+                        .font(style.nameTextStyle.font(fallback: .caption))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                }
+
+                if !spec.primaryText.isEmpty {
+                    Text(spec.primaryText)
+                        .font(style.primaryTextStyle.font(fallback: .title3))
+                        .foregroundStyle(.white)
+                        .lineLimit(layout.primaryLineLimit)
+                }
+
+                if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                    Text(secondaryText)
+                        .font(style.secondaryTextStyle.font(fallback: .caption2))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(layout.secondaryLineLimit)
+                }
+            }
+            .padding(style.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.55),
+                        Color.black.opacity(0.10),
+                        Color.clear,
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
+        }
+    }
+
+    private static func floorToMinute(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
 }
