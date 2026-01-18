@@ -348,7 +348,7 @@ extension WidgetWeaverAboutView {
                                 let accent = template.spec.style.accent.swiftUIColor
 
                                 WidgetWeaverAboutPreviewLabeled(familyLabel: template.subtitle, accent: accent) {
-                                    WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86)
+                                    WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86, renderingStyle: .live)
                                 }
                             }
                         }

@@ -1,11 +1,11 @@
 # Clock regression checklist (manual)
 
-This checklist exists to protect the **Home Screen clock widget** invariants while the editor becomes context-aware.
+This checklist exists to protect the **Home Screen clock widget** invariants while the editor becomes context-aware and clock designs become first-class.
 
 Scope guardrails:
 
-- Do **not** change `WidgetWeaverWidget/Clock/*` timing/ticking logic.
-- Editor tool-suite work must not regress clock widget behaviour (minute accuracy, seconds hand, caching).
+- Do **not** change `WidgetWeaverWidget/Clock/*` timing/ticking logic unless the widget is being explicitly reworked.
+- Editor/tool-suite work must not regress clock widget behaviour (minute accuracy, seconds hand, caching).
 
 ---
 
@@ -24,13 +24,10 @@ Simulator toggle (booted simulator):
 
 ```sh
 # Disable context-aware tool filtering (legacy tools)
-xcrun simctl spawn booted defaults write com.conornolan.WidgetWeaver \
-  widgetweaver.feature.editor.contextAwareToolSuite.enabled -bool false
+xcrun simctl spawn booted defaults write com.conornolan.WidgetWeaver   widgetweaver.feature.editor.contextAwareToolSuite.enabled -bool false
 
 # Re-enable context-aware tool filtering
-xcrun simctl spawn booted defaults write com.conornolan.WidgetWeaver \
-  widgetweaver.feature.editor.contextAwareToolSuite.enabled -bool true
+xcrun simctl spawn booted defaults write com.conornolan.WidgetWeaver   widgetweaver.feature.editor.contextAwareToolSuite.enabled -bool true
 
 # Return to default behaviour (delete the override)
-xcrun simctl spawn booted defaults delete com.conornolan.WidgetWeaver \
-  widgetweaver.feature.editor.contextAwareToolSuite.enabled
+xcrun simctl spawn booted defaults delete com.conornolan.WidgetWeaver   widgetweaver.feature.editor.contextAwareToolSuite.enabled

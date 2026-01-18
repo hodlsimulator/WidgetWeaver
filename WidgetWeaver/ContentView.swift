@@ -596,7 +596,7 @@ struct ContentView: View {
 
     private func libraryRow(spec: WidgetSpec) -> some View {
         HStack(spacing: 12) {
-            WidgetPreviewThumbnail(spec: spec, family: .systemSmall, height: 62)
+            WidgetPreviewThumbnail(spec: spec, family: .systemSmall, height: 62, renderingStyle: spec.normalised().usesTimeDependentRendering() ? .live : .rasterCached)
                 .frame(width: 62, height: 62)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
