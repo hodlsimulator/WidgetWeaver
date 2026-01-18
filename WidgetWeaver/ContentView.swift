@@ -484,6 +484,14 @@ struct ContentView: View {
                                 libraryRow(spec: spec)
                             }
                             .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: savedSpecs.count > 1) {
+                                Button(role: .destructive) {
+                                    deleteDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(savedSpecs.count <= 1)
+                            }
                             .contextMenu {
                                 Button {
                                     selectDesignFromLibrary(spec)
