@@ -10,18 +10,16 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
-    public static var title: LocalizedStringResource { "Clock" }
-    public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
+struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
+    static var title: LocalizedStringResource { "Clock" }
+    static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
-    @Parameter(title: "Colour Scheme", default: .classic)
-    public var colourScheme: WidgetWeaverClockColourScheme
+    @Parameter(title: "Colour Scheme")
+    var colourScheme: WidgetWeaverClockWidgetColourScheme?
 
-    public static var parameterSummary: some ParameterSummary {
-        Summary("Colour Scheme: \(\.$colourScheme)")
+    init() {
+        self.colourScheme = .classic
     }
-
-    public init() {}
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -42,12 +40,7 @@ private struct WWClockRootID: Hashable {
 }
 
 private enum WWClockTimelineConfig {
-    /// 120 minute-boundary entries (plus the current minute anchor) ≈ 2 hours of reliable ticking.
-    /// Kept intentionally small to stay within WidgetKit’s timeline budget.
     static let maxEntriesPerTimeline: Int = 121
-
-    /// Request a refresh *before* the current timeline runs out.
-    /// This prevents a gap (no future entries) that makes WidgetKit fall back to placeholder rendering.
     static let reloadAfterMinutes: Int = 60
 }
 
@@ -68,7 +61,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let scheme = configuration.colourScheme
+        let scheme = (configuration.colourScheme ?? .classic).paletteScheme
 
         return Entry(
             date: now,
@@ -80,12 +73,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let scheme = configuration.colourScheme
+        let scheme = (configuration.colourScheme ?? .classic).paletteScheme
 
         WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 
-        // Minute-boundary entries are reliable for hour/minute ticks.
-        // The seconds hand is handled by a time-aware SwiftUI text view, not the timeline.
         return makeMinuteTimeline(now: now, colourScheme: scheme)
     }
 
@@ -96,8 +87,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry uses `now` so a configuration change mid-minute cannot be deduped as
-        // “same current entry date, keep archived rendering”.
+        // Immediate entry uses `now` so configuration edits mid-minute cannot be treated as “same entry”.
         entries.append(
             Entry(
                 date: now,
@@ -107,7 +97,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         )
 
-        // Minute-boundary entries.
         var next = nextMinuteBoundary
         while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
