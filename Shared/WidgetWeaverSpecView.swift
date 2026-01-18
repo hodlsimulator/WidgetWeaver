@@ -334,6 +334,9 @@ public struct WidgetWeaverSpecView: View {
 /// would repeatedly decode the poster image. This view keeps the *text* fresh via a lightweight
 /// view-level heartbeat while leaving the photo background untouched.
 private struct WidgetWeaverPosterCaptionOverlayView: View {
+    @Environment(\.wwLowGraphicsBudget)
+    private var lowGraphicsBudget
+
     /// The poster spec with variable templates intact.
     ///
     /// This should be resolved for the target family (matched sets dropped) but NOT have variables applied.
@@ -358,6 +361,7 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
     }
 
     private var shouldTick: Bool {
+        guard !lowGraphicsBudget else { return false }
         guard templateSpec.usesTimeDependentRendering() else { return false }
 
         switch context {
@@ -372,45 +376,45 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
     @ViewBuilder
     private var tickingOverlay: some View {
-        let sysNow = Date()
-        let ctxNow = WidgetWeaverRenderClock.now
+        switch context {
+        case .widget:
+            // WidgetKit can pre-render future timeline entries.
+            // Use the entry date as a lower bound so future entries remain distinct, then allow a live
+            // minute tick once wall-clock time catches up.
+            let entryNow = Self.floorToMinute(WidgetWeaverRenderClock.now)
+            let scheduleStart = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: 60, now: Date())
 
-        let sysMinuteAnchor = Self.floorToMinute(sysNow)
-        let ctxMinuteAnchor = Self.floorToMinute(ctxNow)
-        let leadSeconds = ctxNow.timeIntervalSince(sysNow)
+            TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                let liveNow = Self.floorToMinute(timeline.date)
+                let now = maxDate(entryNow, liveNow)
+                let minuteID = Int(now.timeIntervalSince1970 / 60.0)
 
-        // WidgetKit can pre-render future entries. If `ctxNow` is meaningfully in the future vs wall clock,
-        // avoid running a live heartbeat and render using the entry date instead.
-        let isPrerender: Bool = {
-            guard context == .widget else { return false }
-            if leadSeconds > 5.0 { return true }
-            if ctxMinuteAnchor > sysMinuteAnchor { return true }
-            return false
-        }()
-
-        if isPrerender {
-            overlayBody(spec: staticSpec)
-        } else {
-            let heartbeatRange = sysMinuteAnchor...sysMinuteAnchor.addingTimeInterval(60.0)
-            let minuteNow = sysMinuteAnchor
-            let minuteID = Int(minuteNow.timeIntervalSince1970 / 60.0)
-
-            let dynamicSpec = templateSpec
-                .resolvingVariables(now: minuteNow)
-                .normalised()
-
-            ZStack {
-                // Invisible heartbeat to refresh the view frequently while the widget is visible,
-                // without requiring a WidgetKit timeline reload.
-                ProgressView(timerInterval: heartbeatRange, countsDown: false)
-                    .id(sysMinuteAnchor)
-                    .opacity(0.001)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                let dynamicSpec = templateSpec
+                    .resolvingVariables(now: now)
+                    .normalised()
 
                 overlayBody(spec: dynamicSpec)
                     .id(minuteID)
             }
+
+        case .simulator:
+            // Simulator-only: live ticking inside the running app.
+            let scheduleStart = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: 60, now: Date())
+
+            TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                let now = Self.floorToMinute(timeline.date)
+                let minuteID = Int(now.timeIntervalSince1970 / 60.0)
+
+                let dynamicSpec = templateSpec
+                    .resolvingVariables(now: now)
+                    .normalised()
+
+                overlayBody(spec: dynamicSpec)
+                    .id(minuteID)
+            }
+
+        case .preview:
+            overlayBody(spec: staticSpec)
         }
     }
 
@@ -454,6 +458,11 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
                 )
             )
         }
+    }
+
+    private func maxDate(_ a: Date, _ b: Date) -> Date {
+        if a >= b { return a }
+        return b
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
