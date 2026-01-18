@@ -66,13 +66,15 @@ struct WidgetWeaverClockPalette {
 
         let accent: Color = {
             switch scheme {
-            case .classic: return WWClock.colour(0x3FC0F0)
-            case .ocean: return WWClock.colour(0x4FA9FF)
-            case .mint: return WWClock.colour(0x4BE3B4)
-            case .orchid: return WWClock.colour(0xB08CFF)
-            case .sunset: return WWClock.colour(0xFF9F4E)
-            case .ember: return WWClock.colour(0xFF4D4A)
-            case .graphite: return WWClock.colour(0x93A7C2)
+            // Use high-contrast, clearly-distinct accents so scheme changes are obvious
+            // both in-widget and in the in-app preview.
+            case .classic: return WWClock.colour(0xFF9F0A)   // system-like orange
+            case .ocean: return WWClock.colour(0x0A84FF)     // system-like blue
+            case .mint: return WWClock.colour(0x34C759)      // system-like green
+            case .orchid: return WWClock.colour(0xAF52DE)    // system-like purple
+            case .sunset: return WWClock.colour(0xFF2D55)    // system-like pink
+            case .ember: return WWClock.colour(0xFF3B30)     // system-like red
+            case .graphite: return WWClock.colour(0x8E8E93)  // system-like gray
             }
         }()
 
