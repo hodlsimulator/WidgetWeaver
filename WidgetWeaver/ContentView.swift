@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
 
     @StateObject var proManager = WidgetWeaverProManager()
 
@@ -260,20 +261,43 @@ struct ContentView: View {
         return Button {
             libraryFilterRaw = filter.rawValue
         } label: {
-            Text(filter.title)
-                .font(.caption)
-                .foregroundStyle(isSelected ? .primary : .secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(.thinMaterial)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
-                            lineWidth: 1
-                        )
-                )
+            if colorScheme == .light {
+                Text(filter.title)
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isSelected ? Color.primary.opacity(0.18) : Color.black.opacity(0.08),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(isSelected ? 0.10 : 0.04),
+                        radius: isSelected ? 10 : 6,
+                        x: 0,
+                        y: isSelected ? 6 : 4
+                    )
+            } else {
+                // Dark mode is intentionally unchanged.
+                Text(filter.title)
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.thinMaterial)
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isSelected ? Color.primary.opacity(0.25) : Color.secondary.opacity(0.2),
+                                lineWidth: 1
+                            )
+                    )
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(filter.title)
