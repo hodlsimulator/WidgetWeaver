@@ -10,7 +10,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
     public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
@@ -228,5 +228,15 @@ private struct WidgetWeaverHomeScreenClockView: View {
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
+        #if DEBUG
+        .overlay(alignment: .topLeading) {
+            Text("scheme=\(entry.colourScheme.rawValue)")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary.opacity(0.65))
+                .padding(6)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        #endif
     }
 }
