@@ -42,8 +42,13 @@ private struct WWClockRootID: Hashable {
 }
 
 private enum WWClockTimelineConfig {
-    static let maxEntriesPerTimeline: Int = 121
-    static let reloadAfterMinutes: Int = 60
+    // The clock relies on WidgetKit timeline entries to force periodic view reconstruction.
+    // Some hosts can suppress view-level time updates after a while; if the timeline is too short,
+    // the widget can "run out" of entries and appear frozen.
+    //
+    // Keep a multi-hour horizon and ask WidgetKit to reload at the end.
+    // This also provides slack if reloads are delayed.
+    static let maxEntriesPerTimeline: Int = 241 // ~4 hours of minute entries + an immediate `now` entry.
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -112,10 +117,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             next = next.addingTimeInterval(60.0)
         }
 
-        let reloadDate = minuteAnchorNow.addingTimeInterval(
-            TimeInterval(WWClockTimelineConfig.reloadAfterMinutes * 60)
-        )
-
         WWClockDebugLog.appendLazy(
             category: "clock",
             throttleID: "clockWidget.provider.timeline",
@@ -129,12 +130,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
             let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
 
-            let reloadRef = Int(reloadDate.timeIntervalSinceReferenceDate.rounded())
-
-            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) reloadRef=\(reloadRef) policy=after"
+            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
         }
 
-        return Timeline(entries: entries, policy: .after(reloadDate))
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
