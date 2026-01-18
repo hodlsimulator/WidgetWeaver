@@ -95,6 +95,13 @@ public struct WidgetWeaverSpecView: View {
 
         let background = backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
 
+        // Widgets are clipped to the system container shape. When a design uses very small padding
+        // (for example 0), glyphs can get shaved by a pixel at the top/bottom.
+        // Keep horizontal padding exactly as configured, but ensure a tiny vertical safe inset.
+        let needsOuterPadding = (layout.template != .poster && layout.template != .weather)
+        let horizontalPadding = needsOuterPadding ? style.padding : 0.0
+        let verticalPadding = needsOuterPadding ? max(2.0, style.padding) : 0.0
+
         return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             switch layout.template {
             case .classic:
@@ -113,7 +120,8 @@ public struct WidgetWeaverSpecView: View {
                 clockIconTemplatePlaceholder(spec: resolved, layout: layout, style: style, accent: accent)
             }
         }
-        .padding(layout.template == .poster || layout.template == .weather ? 0 : style.padding)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
         .modifier(
             WidgetWeaverBackgroundModifier(
