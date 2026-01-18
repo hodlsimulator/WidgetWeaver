@@ -21,6 +21,7 @@ public struct WidgetWeaverSpecView: View {
     public let spec: WidgetSpec
     public let family: WidgetFamily
     public let context: WidgetWeaverRenderContext
+    public let renderDate: Date
 
     @AppStorage(WidgetWeaverWeatherStore.Keys.snapshotData, store: AppGroup.userDefaults)
     private var weatherSnapshotData: Data = Data()
@@ -60,10 +61,11 @@ public struct WidgetWeaverSpecView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext) {
+    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, now: Date = Date()) {
         self.spec = spec
         self.family = family
         self.context = context
+        self.renderDate = now
     }
 
     public var body: some View {
@@ -88,7 +90,7 @@ public struct WidgetWeaverSpecView: View {
         }()
 
         let familySpec = baseSpec.resolved(for: family)
-        let resolved = familySpec.resolvingVariables()
+        let resolved = familySpec.resolvingVariables(now: renderDate)
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
@@ -216,7 +218,7 @@ public struct WidgetWeaverSpecView: View {
             WidgetWeaverPosterCaptionOverlayView(
                 templateSpec: templateSpec,
                 staticSpec: spec,
-                entryDate: WidgetWeaverRenderClock.now,
+                entryDate: renderDate,
                 family: family,
                 context: context,
                 layout: layout,
@@ -279,7 +281,7 @@ public struct WidgetWeaverSpecView: View {
         return GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
 
-            let now = WidgetWeaverRenderClock.now
+            let now = renderDate
             let cal = Calendar.autoupdatingCurrent
             let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: now)
 
@@ -373,7 +375,7 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
         switch context {
         case .widget:
-            return true
+            return false
         case .simulator:
             return true
         case .preview:

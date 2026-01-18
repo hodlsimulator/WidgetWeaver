@@ -130,7 +130,7 @@ extension WidgetWeaverSpecView {
     /// This backdrop is used as the widget container background so the weather glass has a real source.
     private func weatherBackdrop(style: StyleSpec, accent: Color) -> some View {
         let store = WidgetWeaverWeatherStore.shared
-        let now = WidgetWeaverRenderClock.now
+        let now = renderDate
         let snapshot = store.snapshotForRender(context: context)
 
         let palette: WeatherPalette = {

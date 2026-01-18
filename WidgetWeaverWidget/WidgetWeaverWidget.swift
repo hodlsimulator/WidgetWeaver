@@ -219,10 +219,16 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         if usesActivity {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverActivityStore.shared.recommendedRefreshIntervalSeconds()))
         }
-
-        // Important: use `now` as the base so a timeline reload inside the same minute
-        // produces a new entry date and forces a redraw on the Home Screen.
-        let base: Date = now
+        // Align to minute boundaries for clock-like text, but still include an immediate `now` entry
+        // so design edits can refresh within the current minute.
+        let alignedBase: Date = {
+            if refreshSeconds <= 60 {
+                let t = now.timeIntervalSince1970
+                let aligned = floor(t / 60.0) * 60.0
+                return Date(timeIntervalSince1970: aligned)
+            }
+            return now
+        }()
 
         // Buffer enough future entries so the widget doesn't "run out" if WidgetKit delays reloads.
         let maxEntries: Int = {
@@ -238,8 +244,11 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         var dates: [Date] = []
         dates.reserveCapacity(count + 12)
 
+        // Always include an immediate entry so WidgetKit can redraw straight away.
+        dates.append(now)
+
         for i in 0..<count {
-            dates.append(base.addingTimeInterval(TimeInterval(i) * refreshSeconds))
+            dates.append(alignedBase.addingTimeInterval(TimeInterval(i) * refreshSeconds))
         }
 
         // Ensure the widget renders at shuffle boundaries, not merely at fixed intervals
@@ -326,13 +335,12 @@ struct WidgetWeaverWidget: Widget {
             intent: WidgetWeaverDesignSelectionIntent.self,
             provider: WidgetWeaverProvider()
         ) { entry in
-            WidgetWeaverRenderClock.withNow(entry.date) {
-                let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
-                return WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget)
-                    .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
-                    .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
-            }
-            .id(entry.date)
+            let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
+
+            WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget, now: entry.date)
+                .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
+                .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
+                .id(entry.date)
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")
