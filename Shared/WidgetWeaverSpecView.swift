@@ -87,7 +87,8 @@ public struct WidgetWeaverSpecView: View {
             return WidgetSpecStore.shared.load(id: spec.id) ?? spec
         }()
 
-        let resolved = baseSpec.resolved(for: family).resolvingVariables()
+        let familySpec = baseSpec.resolved(for: family)
+        let resolved = familySpec.resolvingVariables()
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
@@ -95,32 +96,12 @@ public struct WidgetWeaverSpecView: View {
 
         let background = backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
 
-        // Widgets are clipped to the system container shape.
-        // The main widget disables the system's default content margins (`.contentMarginsDisabled()`),
-        // so a design can legitimately request 0 padding.
-        //
-        // Some content (notably the Reminders template's header + footer) sits flush against the
-        // container mask when padding is small and can look uncomfortably tight or even get clipped.
-        //
-        // Respect the user's configured padding, but enforce a small per-template minimum so text
-        // never touches the outer mask.
+        // Widgets are clipped to the system container shape. When a design uses very small padding
+        // (for example 0), glyphs can get shaved by a pixel at the top/bottom.
+        // Keep horizontal padding exactly as configured, but ensure a tiny vertical safe inset.
         let needsOuterPadding = (layout.template != .poster && layout.template != .weather)
-
-        let minimumSafePadding: Double = {
-            guard needsOuterPadding else { return 0 }
-            switch layout.template {
-            case .reminders:
-                // The Reminders template has a header at the very top and an optional status line
-                // at the very bottom; it needs a larger minimum to avoid top/bottom clipping.
-                return 10
-            default:
-                return 2
-            }
-        }()
-
-        let resolvedPadding = needsOuterPadding ? max(minimumSafePadding, style.padding) : 0.0
-        let horizontalPadding = resolvedPadding
-        let verticalPadding = resolvedPadding
+        let horizontalPadding = needsOuterPadding ? style.padding : 0.0
+        let verticalPadding = needsOuterPadding ? max(2.0, style.padding) : 0.0
 
         return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             switch layout.template {
@@ -129,7 +110,7 @@ public struct WidgetWeaverSpecView: View {
             case .hero:
                 heroTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .poster:
-                posterTemplate(spec: resolved, layout: layout, style: style, accent: accent)
+                posterTemplate(templateSpec: familySpec, spec: resolved, layout: layout, style: style, accent: accent)
             case .weather:
                 weatherTemplate(spec: resolved, layout: layout, style: style, accent: accent)
             case .nextUpCalendar:
@@ -199,52 +180,98 @@ public struct WidgetWeaverSpecView: View {
     }
 
     @ViewBuilder
-    private func posterTemplate(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
+    private func posterTemplate(templateSpec: WidgetSpec, spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         switch layout.posterOverlayMode {
         case .none:
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .caption:
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
+            posterCaptionOverlay(templateSpec: templateSpec, spec: spec, layout: layout, style: style)
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    if !spec.name.isEmpty {
-                        Text(spec.name)
-                            .font(style.nameTextStyle.font(fallback: .caption))
-                            .foregroundStyle(.white.opacity(0.92))
-                            .lineLimit(1)
-                    }
 
-                    if !spec.primaryText.isEmpty {
-                        Text(spec.primaryText)
-                            .font(style.primaryTextStyle.font(fallback: .title3))
-                            .foregroundStyle(.white)
-                            .lineLimit(layout.primaryLineLimit)
-                    }
 
-                    if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
-                        Text(secondaryText)
-                            .font(style.secondaryTextStyle.font(fallback: .caption2))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(layout.secondaryLineLimit)
-                    }
-                }
-                .padding(style.padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.55),
-                            Color.black.opacity(0.10),
-                            Color.clear,
-                        ],
-                        startPoint: .bottom,
-                        endPoint: .top
-                    )
-                )
+    private static func floorToMinute(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
+    }
+
+    private static func maxDate(_ a: Date, _ b: Date) -> Date {
+        return a >= b ? a : b
+    }
+
+    @ViewBuilder
+    private func posterCaptionOverlay(templateSpec: WidgetSpec, spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec) -> some View {
+        let shouldTick: Bool = {
+            // Only tick when the template contains time-dependent variable templates.
+            // This avoids forcing minute-by-minute redraws for static photo posters.
+            guard context == .widget || context == .simulator else { return false }
+            return templateSpec.usesTimeDependentRendering()
+        }()
+
+        if shouldTick {
+            // Minute tick implemented locally (like the Weather template) so time-based poster text
+            // stays fresh even when WidgetKit delays timeline delivery.
+            let entryNow = Self.floorToMinute(WidgetWeaverRenderClock.now)
+            let scheduleStart = Self.floorToMinute(Date())
+
+            TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
+                let liveNow = Self.floorToMinute(timeline.date)
+                let now = Self.maxDate(entryNow, liveNow)
+                let minuteID = Int(now.timeIntervalSince1970 / 60.0)
+
+                let dynamic = templateSpec.resolvingVariables(now: now).resolved(for: family)
+
+                posterCaptionOverlayBody(spec: dynamic, layout: layout, style: style)
+                    .id(minuteID)
             }
+        } else {
+            posterCaptionOverlayBody(spec: spec, layout: layout, style: style)
+        }
+    }
+
+    private func posterCaptionOverlayBody(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if !spec.name.isEmpty {
+                    Text(spec.name)
+                        .font(style.nameTextStyle.font(fallback: .caption))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                }
+
+                if !spec.primaryText.isEmpty {
+                    Text(spec.primaryText)
+                        .font(style.primaryTextStyle.font(fallback: .title3))
+                        .foregroundStyle(.white)
+                        .lineLimit(layout.primaryLineLimit)
+                }
+
+                if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                    Text(secondaryText)
+                        .font(style.secondaryTextStyle.font(fallback: .caption2))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(layout.secondaryLineLimit)
+                }
+            }
+            .padding(style.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.55),
+                        Color.black.opacity(0.10),
+                        Color.clear,
+                    ],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
         }
     }
 
