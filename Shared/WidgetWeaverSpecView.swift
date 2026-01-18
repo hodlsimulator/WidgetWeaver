@@ -216,6 +216,7 @@ public struct WidgetWeaverSpecView: View {
             WidgetWeaverPosterCaptionOverlayView(
                 templateSpec: templateSpec,
                 staticSpec: spec,
+                entryDate: WidgetWeaverRenderClock.now,
                 family: family,
                 context: context,
                 layout: layout,
@@ -347,6 +348,12 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
     /// Used for WidgetKit pre-render/snapshot contexts where live ticking is undesirable.
     let staticSpec: WidgetSpec
 
+    /// The widget entry's date (pinned to the timeline entry when available).
+    ///
+    /// Used as a stable lower bound when ticking live so WidgetKit pre-rendered future
+    /// entries remain distinct.
+    let entryDate: Date
+
     let family: WidgetFamily
     let context: WidgetWeaverRenderContext
     let layout: LayoutSpec
@@ -379,15 +386,37 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         switch context {
         case .widget:
             // WidgetKit can pre-render future timeline entries.
-            // Use the entry date as a lower bound so future entries remain distinct, then allow a live
-            // minute tick once wall-clock time catches up.
-            let entryNow = Self.floorToMinute(WidgetWeaverRenderClock.now)
-            let scheduleStart = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: 60, now: Date())
+            // Use the entry date as a lower bound so future entries remain distinct.
+            //
+            // TimelineView(.periodic) is not reliably honoured on the Home Screen.
+            // Instead, use a time-aware ProgressView(timerInterval:) as a lightweight heartbeat.
+            // This forces SwiftUI to re-evaluate the overlay at minute granularity while leaving
+            // the (expensive) poster image background untouched.
+            let entryNow = Self.floorToMinute(entryDate)
 
-            TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
-                let liveNow = Self.floorToMinute(timeline.date)
-                let now = maxDate(entryNow, liveNow)
-                let minuteID = Int(now.timeIntervalSince1970 / 60.0)
+            // Wall clock minute anchor (drives the heartbeat when live).
+            let wallNow = Date()
+            let wallMinuteAnchor = Self.floorToMinute(wallNow)
+
+            // Pre-render detection: if the entry date is meaningfully ahead of the wall clock,
+            // avoid any live heartbeat so snapshots remain deterministic.
+            let leadSeconds = entryNow.timeIntervalSince(wallNow)
+            let isPrerender = (leadSeconds > 5.0) || (entryNow > wallMinuteAnchor)
+
+            // Live: wall clock (but never earlier than the entry date).
+            // Pre-render: pinned entry date.
+            let now = isPrerender ? entryNow : maxDate(entryNow, wallMinuteAnchor)
+            let minuteID = Int(now.timeIntervalSince1970 / 60.0)
+
+            ZStack(alignment: .topLeading) {
+                if !isPrerender {
+                    let heartbeatRange = wallMinuteAnchor...wallMinuteAnchor.addingTimeInterval(60.0)
+                    ProgressView(timerInterval: heartbeatRange, countsDown: false)
+                        .id(wallMinuteAnchor)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
 
                 let dynamicSpec = templateSpec
                     .resolvingVariables(now: now)
@@ -418,68 +447,21 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         }
     }
 
-    // MARK: - Dynamic time text (widgets)
 
-    /// Returns the canonical base key if `template` is a single "{{token}}" (optionally with a fallback).
-    ///
-    /// Examples:
-    /// - "{{__time}}" -> "__time"
-    /// - "{{ __time | --:-- }}" -> "__time"
-    private func templateBaseKeyIfSingleToken(_ template: String?) -> String? {
-        guard let template else { return nil }
-
-        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("{{"), trimmed.hasSuffix("}}") else { return nil }
-
-        let inner = String(trimmed.dropFirst(2).dropLast(2))
-        let body = inner.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else { return nil }
-
-        // Split off filters ("||") or fallback ("|") to get the base.
-        let basePart: String
-        if let r = body.range(of: "||") {
-            basePart = String(body[..<r.lowerBound])
-        } else if let r = body.firstIndex(of: "|") {
-            basePart = String(body[..<r])
-        } else {
-            basePart = body
-        }
-
-        let base = basePart.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else { return nil }
-        guard !base.hasPrefix("=") else { return nil }
-
-        let key = WidgetWeaverVariableStore.canonicalKey(base)
-        return key.isEmpty ? nil : key
-    }
 
     @ViewBuilder
     private func overlayText(
-        template: String?,
         resolved: String,
         font: Font,
         foreground: Color,
         lineLimit: Int
     ) -> some View {
-        let key = templateBaseKeyIfSingleToken(template)
-
-        // WidgetKit won't reliably run a per-minute SwiftUI TimelineView on the Home Screen.
-        // Date-backed `Text` *does* update in-place, so use it for the built-in clock token.
-        if !lowGraphicsBudget,
-           (context == .widget || context == .simulator),
-           key == "__time"
-        {
-            Text(Date(), style: .time)
-                .environment(\.locale, Locale(identifier: "en_GB"))
-                .font(font)
-                .foregroundStyle(foreground)
-                .lineLimit(lineLimit)
-        } else {
-            Text(resolved)
-                .font(font)
-                .foregroundStyle(foreground)
-                .lineLimit(lineLimit)
-        }
+        // The resolved string is produced by the widget's variable renderer.
+        // For poster clocks, the minute heartbeat in `tickingOverlay` keeps this fresh on the Home Screen.
+        Text(resolved)
+            .font(font)
+            .foregroundStyle(foreground)
+            .lineLimit(lineLimit)
     }
 
     private func overlayBody(spec: WidgetSpec) -> some View {
@@ -496,7 +478,6 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
                 if !spec.primaryText.isEmpty {
                     overlayText(
-                        template: templateSpec.primaryText,
                         resolved: spec.primaryText,
                         font: style.primaryTextStyle.font(fallback: .title3),
                         foreground: .white,
@@ -506,7 +487,6 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
                 if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
                     overlayText(
-                        template: templateSpec.secondaryText,
                         resolved: secondaryText,
                         font: style.secondaryTextStyle.font(fallback: .caption2),
                         foreground: .white.opacity(0.85),
