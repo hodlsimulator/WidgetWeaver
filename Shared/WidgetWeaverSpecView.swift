@@ -403,7 +403,7 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
             TimelineView(.periodic(from: scheduleStart, by: 60)) { timeline in
                 let now = Self.floorToMinute(timeline.date)
-                let minuteID = Int(now.timeIntervalSince1970 / 60.0)
+                let minuteID = Int(now.timeIntervalSinceReferenceDate / 60.0)
 
                 let dynamicSpec = templateSpec
                     .resolvingVariables(now: now)
@@ -415,6 +415,70 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
         case .preview:
             overlayBody(spec: staticSpec)
+        }
+    }
+
+    // MARK: - Dynamic time text (widgets)
+
+    /// Returns the canonical base key if `template` is a single "{{token}}" (optionally with a fallback).
+    ///
+    /// Examples:
+    /// - "{{__time}}" -> "__time"
+    /// - "{{ __time | --:-- }}" -> "__time"
+    private func templateBaseKeyIfSingleToken(_ template: String?) -> String? {
+        guard let template else { return nil }
+
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{{"), trimmed.hasSuffix("}}") else { return nil }
+
+        let inner = String(trimmed.dropFirst(2).dropLast(2))
+        let body = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+
+        // Split off filters ("||") or fallback ("|") to get the base.
+        let basePart: String
+        if let r = body.range(of: "||") {
+            basePart = String(body[..<r.lowerBound])
+        } else if let r = body.firstIndex(of: "|") {
+            basePart = String(body[..<r])
+        } else {
+            basePart = body
+        }
+
+        let base = basePart.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+        guard !base.hasPrefix("=") else { return nil }
+
+        let key = WidgetWeaverVariableStore.canonicalKey(base)
+        return key.isEmpty ? nil : key
+    }
+
+    @ViewBuilder
+    private func overlayText(
+        template: String?,
+        resolved: String,
+        font: Font,
+        foreground: Color,
+        lineLimit: Int
+    ) -> some View {
+        let key = templateBaseKeyIfSingleToken(template)
+
+        // WidgetKit won't reliably run a per-minute SwiftUI TimelineView on the Home Screen.
+        // Date-backed `Text` *does* update in-place, so use it for the built-in clock token.
+        if !lowGraphicsBudget,
+           (context == .widget || context == .simulator),
+           key == "__time"
+        {
+            Text(Date(), style: .time)
+                .environment(\.locale, Locale(identifier: "en_GB"))
+                .font(font)
+                .foregroundStyle(foreground)
+                .lineLimit(lineLimit)
+        } else {
+            Text(resolved)
+                .font(font)
+                .foregroundStyle(foreground)
+                .lineLimit(lineLimit)
         }
     }
 
@@ -431,17 +495,23 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
                 }
 
                 if !spec.primaryText.isEmpty {
-                    Text(spec.primaryText)
-                        .font(style.primaryTextStyle.font(fallback: .title3))
-                        .foregroundStyle(.white)
-                        .lineLimit(layout.primaryLineLimit)
+                    overlayText(
+                        template: templateSpec.primaryText,
+                        resolved: spec.primaryText,
+                        font: style.primaryTextStyle.font(fallback: .title3),
+                        foreground: .white,
+                        lineLimit: layout.primaryLineLimit
+                    )
                 }
 
                 if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
-                    Text(secondaryText)
-                        .font(style.secondaryTextStyle.font(fallback: .caption2))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(layout.secondaryLineLimit)
+                    overlayText(
+                        template: templateSpec.secondaryText,
+                        resolved: secondaryText,
+                        font: style.secondaryTextStyle.font(fallback: .caption2),
+                        foreground: .white.opacity(0.85),
+                        lineLimit: layout.secondaryLineLimit
+                    )
                 }
             }
             .padding(style.padding)
