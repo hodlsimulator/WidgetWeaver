@@ -64,9 +64,17 @@ extension ContentView {
                         }
                     )
                 } else {
-                    Text("Album Shuffle is off. Enable it in Album Shuffle to use per-photo framing.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SmartPhotoSingleFramingEditorView(
+                        smart: smart,
+                        selectedFamily: editingFamily,
+                        isBusy: importInProgress,
+                        onSelectFamily: { fam in
+                            previewFamily = widgetFamily(for: fam)
+                        },
+                        onApplyCrop: { fam, cropRect in
+                            await applyManualSmartCrop(family: fam, cropRect: cropRect)
+                        }
+                    )
                 }
             } else {
                 EditorUnavailableStateView(
@@ -88,6 +96,120 @@ extension ContentView {
         }
     }
 }
+
+private struct SmartPhotoSingleFramingEditorView: View {
+    private struct CropRoute: Identifiable {
+        var family: EditingFamily
+        var masterFileName: String
+        var targetPixels: PixelSize
+        var initialCropRect: NormalisedRect
+
+        var id: String { family.rawValue }
+    }
+
+    let smart: SmartPhotoSpec
+    let selectedFamily: EditingFamily
+    let isBusy: Bool
+
+    let onSelectFamily: (EditingFamily) -> Void
+    let onApplyCrop: (EditingFamily, NormalisedRect) async -> Void
+
+    @State private var activeCropRoute: CropRoute?
+    @State private var showOtherSizes: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SmartPhotoPreviewStripView(
+                smart: smart,
+                selectedFamily: selectedFamily,
+                onSelectFamily: onSelectFamily,
+                fixedShuffleEntry: nil
+            )
+
+            sizeControls
+
+            Text("Applies to this single photo. To revert to automatic framing for all sizes, use “Regenerate smart renders” in Smart Photo.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .fullScreenCover(item: $activeCropRoute) { route in
+            NavigationStack {
+                SmartPhotoCropEditorView(
+                    family: route.family,
+                    masterFileName: route.masterFileName,
+                    targetPixels: route.targetPixels,
+                    initialCropRect: route.initialCropRect,
+                    autoCropRect: nil,
+                    focus: nil,
+                    onResetToAuto: nil,
+                    onApply: { rect in
+                        await onApplyCrop(route.family, rect)
+                    }
+                )
+                .id("cropSheet-single-\(route.family.rawValue)")
+            }
+        }
+    }
+
+    private var sizeControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sizeRow(family: selectedFamily)
+
+            DisclosureGroup(isExpanded: $showOtherSizes) {
+                ForEach(EditingFamily.allCases.filter { $0 != selectedFamily }, id: \.rawValue) { family in
+                    sizeRow(family: family)
+                }
+            } label: {
+                Text("Other sizes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func variant(for family: EditingFamily) -> SmartPhotoVariantSpec? {
+        switch family {
+        case .small: return smart.small
+        case .medium: return smart.medium
+        case .large: return smart.large
+        }
+    }
+
+    private func cropRoute(for family: EditingFamily) -> CropRoute? {
+        guard let variant = variant(for: family) else { return nil }
+
+        let master = smart.masterFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !master.isEmpty else { return nil }
+
+        return CropRoute(
+            family: family,
+            masterFileName: master,
+            targetPixels: variant.pixelSize.normalised(),
+            initialCropRect: variant.cropRect.normalised()
+        )
+    }
+
+    @ViewBuilder
+    private func sizeRow(family: EditingFamily) -> some View {
+        let route = cropRoute(for: family)
+
+        HStack(alignment: .center, spacing: 12) {
+            Button {
+                activeCropRoute = route
+            } label: {
+                Label("Fix framing (\(family.label))", systemImage: "crop")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .id("singleCropButton-\(family.rawValue)")
+            .disabled(isBusy || route == nil)
+        }
+        .id("singleSizeRow-\(family.rawValue)")
+    }
+}
+
 
 private struct SmartPhotoShuffleFramingEditorView: View {
     private enum SelectionMode: String, CaseIterable {
