@@ -95,12 +95,32 @@ public struct WidgetWeaverSpecView: View {
 
         let background = backgroundView(spec: resolved, layout: layout, style: style, accent: accent)
 
-        // Widgets are clipped to the system container shape. When a design uses very small padding
-        // (for example 0), glyphs can get shaved by a pixel at the top/bottom.
-        // Keep horizontal padding exactly as configured, but ensure a tiny vertical safe inset.
+        // Widgets are clipped to the system container shape.
+        // The main widget disables the system's default content margins (`.contentMarginsDisabled()`),
+        // so a design can legitimately request 0 padding.
+        //
+        // Some content (notably the Reminders template's header + footer) sits flush against the
+        // container mask when padding is small and can look uncomfortably tight or even get clipped.
+        //
+        // Respect the user's configured padding, but enforce a small per-template minimum so text
+        // never touches the outer mask.
         let needsOuterPadding = (layout.template != .poster && layout.template != .weather)
-        let horizontalPadding = needsOuterPadding ? style.padding : 0.0
-        let verticalPadding = needsOuterPadding ? max(2.0, style.padding) : 0.0
+
+        let minimumSafePadding: Double = {
+            guard needsOuterPadding else { return 0 }
+            switch layout.template {
+            case .reminders:
+                // The Reminders template has a header at the very top and an optional status line
+                // at the very bottom; it needs a larger minimum to avoid top/bottom clipping.
+                return 10
+            default:
+                return 2
+            }
+        }()
+
+        let resolvedPadding = needsOuterPadding ? max(minimumSafePadding, style.padding) : 0.0
+        let horizontalPadding = resolvedPadding
+        let verticalPadding = resolvedPadding
 
         return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             switch layout.template {
