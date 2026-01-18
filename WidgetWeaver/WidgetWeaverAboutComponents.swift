@@ -204,6 +204,9 @@ struct WidgetWeaverAboutBadge: View {
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .allowsTightening(true)
             .foregroundStyle(accent)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -222,6 +225,8 @@ struct WidgetWeaverAboutTemplateRow: View {
     let isProUnlocked: Bool
     let onAdd: @MainActor (_ makeDefault: Bool) -> Void
     let onShowPro: @MainActor () -> Void
+
+    @State private var remindersGuidePresented: Bool = false
 
     private var templateAccent: Color {
         template.spec.style.accent.swiftUIColor
@@ -347,6 +352,12 @@ struct WidgetWeaverAboutTemplateRow: View {
         }
         .tint(templateAccent)
         .wwAboutListRow()
+        .padding(.bottom, showsRemindersSmartStackGroupOutro ? 12 : 0)
+        .sheet(isPresented: $remindersGuidePresented) {
+            NavigationStack {
+                WidgetWeaverRemindersSmartStackGuideView(onClose: { remindersGuidePresented = false })
+            }
+        }
     }
 
     @ViewBuilder
@@ -367,62 +378,141 @@ struct WidgetWeaverAboutTemplateRow: View {
             .padding(.top, 1)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(template.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
+
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(template.title)
-                        .font(.headline)
+                    Text(template.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .allowsTightening(true)
 
-                    if showsSmartStackBadge {
-                        WidgetWeaverAboutBadge("Smart Stack", accent: templateAccent)
-
-                        if let idx = remindersSmartStackIndex {
-                            WidgetWeaverAboutBadge("\(idx)/6", accent: templateAccent)
-                        }
+                    if let idx = remindersSmartStackIndex {
+                        WidgetWeaverAboutBadge("Smart Stack \(idx)/6", accent: templateAccent)
                     }
                 }
-
-                Text(template.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 0)
 
             if template.requiresPro && !isProUnlocked {
-                Button {
-                    onShowPro()
-                } label: {
-                    Label("Pro", systemImage: "lock.fill")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            } else {
-                HStack(spacing: 8) {
-                    if isRemindersSmartStackTemplate {
-                        NavigationLink {
-                            WidgetWeaverRemindersSmartStackGuideView(onClose: nil)
-                        } label: {
-                            Label("Guide", systemImage: "square.stack.3d.up.fill")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    Menu {
-                        Button { onAdd(false) } label: {
-                            Label("Add to library", systemImage: "plus")
-                        }
-                        Button { onAdd(true) } label: {
-                            Label("Add & Make Default", systemImage: "star.fill")
-                        }
+                ViewThatFits(in: .horizontal) {
+                    Button {
+                        onShowPro()
                     } label: {
-                        Label("Add", systemImage: "plus.circle.fill")
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                            Text("Pro")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .allowsTightening(true)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+
+                    Button {
+                        onShowPro()
+                    } label: {
+                        Image(systemName: "lock.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel("Pro")
                 }
+            } else {
+                templateControls
             }
         }
+    }
+
+    @ViewBuilder
+    private var templateControls: some View {
+        if isRemindersSmartStackTemplate {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    guideButton(showTitle: true)
+                    addMenu(showTitle: true)
+                }
+
+                HStack(spacing: 8) {
+                    guideButton(showTitle: false)
+                    addMenu(showTitle: false)
+                }
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                addMenu(showTitle: true)
+                addMenu(showTitle: false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func guideButton(showTitle: Bool) -> some View {
+        Button {
+            remindersGuidePresented = true
+        } label: {
+            if showTitle {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.up.fill")
+                    Text("Guide")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .allowsTightening(true)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            } else {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .accessibilityLabel("Guide")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+
+    private func addMenu(showTitle: Bool) -> some View {
+        Menu {
+            if isRemindersSmartStackTemplate {
+                Button {
+                    remindersGuidePresented = true
+                } label: {
+                    Label("Smart Stack guide", systemImage: "square.stack.3d.up.fill")
+                }
+                Divider()
+            }
+
+            Button { onAdd(false) } label: {
+                Label("Add to library", systemImage: "plus")
+            }
+            Button { onAdd(true) } label: {
+                Label("Add & Make Default", systemImage: "star.fill")
+            }
+        } label: {
+            if showTitle {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .allowsTightening(true)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            } else {
+                Image(systemName: "plus.circle.fill")
+                    .accessibilityLabel("Add")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 
     @ViewBuilder
