@@ -14,10 +14,16 @@ struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigur
     static var title: LocalizedStringResource { "Clock" }
     static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
-    @Parameter(title: "Colour Scheme", default: .classic)
-    var colourScheme: WidgetWeaverClockColourScheme
+    @Parameter(title: "Colour Scheme")
+    var colourScheme: WidgetWeaverClockColourScheme?
 
-    init() {}
+    static var parameterSummary: some ParameterSummary {
+        Summary("Colour Scheme: \(\.$colourScheme)")
+    }
+
+    init() {
+        self.colourScheme = .classic
+    }
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -30,6 +36,11 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
     let colourScheme: WidgetWeaverClockColourScheme
+}
+
+private struct WWClockRootID: Hashable {
+    let entrySecondRef: Int
+    let schemeRaw: Int
 }
 
 private enum WWClockTimelineConfig {
@@ -59,7 +70,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let scheme = configuration.colourScheme
+        let scheme = configuration.colourScheme ?? .classic
 
         return Entry(
             date: now,
@@ -71,9 +82,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let scheme = configuration.colourScheme
+        let scheme = configuration.colourScheme ?? .classic
 
-        WWClockInstrumentation.recordTimelineBuild(now: now)
+        WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 
         // Minute-boundary entries are reliable for hour/minute ticks.
         // The seconds hand is handled by a time-aware SwiftUI text view, not the timeline.
@@ -82,28 +93,16 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
-        // Offset the timeline dates by a tiny amount derived from the colour scheme.
-        //
-        // WidgetKit can keep an archived rendering for an entry *date*. If a user changes the
-        // configuration mid-minute, the minute-anchored entry date can remain identical, and the
-        // widget may not visually update until the next minute boundary. This keeps minute-boundary
-        // stability while ensuring the current entry date changes when the scheme changes.
-        let schemeOffset = TimeInterval(colourScheme.rawValue) / 1000.0
-
-        let firstEntryDate = minuteAnchorNow.addingTimeInterval(schemeOffset)
-        let nextMinuteBoundary = firstEntryDate.addingTimeInterval(60.0)
+        let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry (aligned to the current minute boundary, with a tiny scheme offset).
-        //
-        // Using `now` here causes the minute hand to jump mid-minute whenever WidgetKit reloads the
-        // timeline, which reads as “late ticking”. Keeping the first entry on the minute anchor makes
-        // the widget stable until the next minute-boundary entry.
+        // Immediate entry uses `now` to avoid WidgetKit deduping a rebuilt timeline as “unchanged”
+        // when the user edits configuration but the minute-boundary schedule would otherwise match.
         entries.append(
             Entry(
-                date: firstEntryDate,
+                date: now,
                 tickMode: .secondsSweep,
                 tickSeconds: 0.0,
                 colourScheme: colourScheme
@@ -143,7 +142,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
             let reloadRef = Int(reloadDate.timeIntervalSinceReferenceDate.rounded())
 
-            return "provider.timeline nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) reloadRef=\(reloadRef) policy=after"
+            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) reloadRef=\(reloadRef) policy=after"
         }
 
         return Timeline(entries: entries, policy: .after(reloadDate))
@@ -160,11 +159,13 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
 private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
+    private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
     private static let countPrefix = "widgetweaver.clock.timelineBuild.count."
 
-    static func recordTimelineBuild(now: Date) {
+    static func recordTimelineBuild(now: Date, scheme: WidgetWeaverClockColourScheme) {
         let defaults = AppGroup.userDefaults
         defaults.set(now, forKey: lastKey)
+        defaults.set(scheme.rawValue, forKey: schemeKey)
 
         let dayKey = Self.dayKey(for: now)
         let countKey = countPrefix + dayKey
@@ -191,12 +192,14 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Force per-entry refresh on the Home Screen.
-            //
-            // WidgetKit can keep an archived snapshot and stop applying timeline advances. On device,
-            // that often surfaces as a black/placeholder tile (preview looks fine, Home Screen is not).
+            // Force a re-render when either the entry date changes or the configuration changes.
+            let rootID = WWClockRootID(
+                entrySecondRef: Int(entry.date.timeIntervalSinceReferenceDate.rounded()),
+                schemeRaw: entry.colourScheme.rawValue
+            )
+
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
+                .id(rootID)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
