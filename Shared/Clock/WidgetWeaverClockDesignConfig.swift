@@ -2,11 +2,14 @@
 //  WidgetWeaverClockDesignConfig.swift
 //  WidgetWeaver
 //
-//  Created by . . on 1/17/26.
+//  Created by . . on 1/18/26.
 //
 
 import Foundation
 
+/// Saved-design configuration for the `.clockIcon` layout template.
+///
+/// Intentionally string-backed to keep the schema stable and forward-compatible.
 public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
     public static let supportedThemes: Set<String> = [
         "classic",
