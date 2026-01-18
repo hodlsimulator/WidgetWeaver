@@ -128,6 +128,94 @@ Widgets have tight CPU/memory budgets and timeline generation limits. Vision and
 
 **Note:** per-family loading is currently wired into the pipeline but not fully adopted everywhere. Some hosts will show the Medium render until they adopt family-aware loading.
 
+
+---
+
+## Photo widgets (Poster templates)
+
+Poster templates are photo-backed widgets. They render a prepared image as a full-bleed background, optionally with an overlay.
+
+### Variants
+
+1) **Single photo**
+- Full-bleed photo with no text overlay.
+- Intended for a “photo frame” style widget.
+- Backed by the poster template with `posterOverlayMode = .none`.
+
+2) **Photo + caption**
+- Photo background with a caption block at the bottom (with a gradient fade for legibility).
+- Caption text comes from `WidgetSpec.name`, `primaryText`, and optional `secondaryText`.
+
+3) **Photo Clock**
+- Uses the same caption overlay, but the caption contains time variables (for example `{{__time}}`).
+- Needs minute-accurate updates on the Home Screen.
+
+### How photos are sourced (widget-safe)
+
+A poster can render:
+
+- a single chosen photo (`spec.image.fileName`), or
+- a Smart Photos shuffle manifest (`spec.image.smartPhoto.shuffleManifestFileName`) for rotation.
+
+Widgets must never run Vision, ranking, or asset preparation. They only load prepared artefacts from the App Group and render deterministically.
+
+Key implementation files:
+
+- Background render: `Shared/WidgetWeaverSpecView+Background.swift` (`posterBackdrop`)
+- Overlay render: `Shared/WidgetWeaverSpecView.swift` (`posterTemplate`, `WidgetWeaverPosterCaptionOverlayView`)
+- Smart Photo widget render helpers: `WidgetWeaverWidget/SmartPhoto/*`
+- Shuffle manifest + scheduling: `WidgetWeaver/SmartPhotoPipeline/*` + `WidgetWeaver/SmartPhotoShuffleManifestStore.swift`
+
+### Timeline behaviour (rotation vs time)
+
+- Posters that only rotate photos (no time-dependent variables) schedule timeline entries at rotation boundaries (plus a small horizon), then ask WidgetKit to reload again soon.
+- Posters that include time-dependent variables (Photo Clock) must update at minute boundaries.
+
+### Known issue: Photo Clock minutes frozen / wrong time on the Home Screen
+
+Symptoms:
+
+- Works in the in-app widget preview but the Home Screen widget shows the wrong time.
+- Launching from Xcode (or opening the app) makes it jump to the correct time once, then it stops again.
+
+Root cause:
+
+- Time variables were being resolved using a wall-clock `Date()` (or other non-entry clock) during render rather than the WidgetKit `TimelineEntry.date`, and/or the view relied on a view-level timer that the Home Screen host can suppress.
+- With WidgetKit pre-rendering/caching, future timeline entries can end up with “baked” time strings.
+
+Fix (keep these in place):
+
+1) **Drive time-dependent posters via the WidgetKit timeline**
+
+If `spec.usesTimeDependentRendering()` is true (e.g. Photo Clock), generate a timeline with minute entries.
+
+2) **Align to minute boundaries**
+
+Avoid minute schedules like `21:26:37 → 21:27:37`. Use a minute-aligned base for the repeating schedule.
+
+3) **Resolve variables using the timeline entry date**
+
+Pass the timeline entry’s date down into the shared render tree and resolve variables against that date.
+
+- `WidgetWeaverSpecView` carries a `renderDate` and resolves variables using:
+
+        let resolved = familySpec.resolvingVariables(now: renderDate)
+
+- The widget configuration passes `entry.date` as that `renderDate`:
+
+        WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget, now: entry.date)
+
+4) **Key the widget view by the entry date**
+
+This reduces the odds of WidgetKit keeping a stale cached snapshot on the Home Screen:
+
+        .id(entry.date)
+
+Recovery when testing:
+
+- Remove and re-add the widget to drop cached renders.
+- If it still looks stuck, rebuild + reinstall to ensure the widget extension has been updated.
+
 ---
 
 ## Featured — Clock (Home Screen)
