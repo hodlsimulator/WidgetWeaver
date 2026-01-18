@@ -10,20 +10,18 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
-    static var title: LocalizedStringResource { "Clock" }
-    static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
+    public static var title: LocalizedStringResource { "Clock" }
+    public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
-    @Parameter(title: "Colour Scheme")
-    var colourScheme: WidgetWeaverClockColourScheme?
+    @Parameter(title: "Colour Scheme", default: .classic)
+    public var colourScheme: WidgetWeaverClockColourScheme
 
-    static var parameterSummary: some ParameterSummary {
+    public static var parameterSummary: some ParameterSummary {
         Summary("Colour Scheme: \(\.$colourScheme)")
     }
 
-    init() {
-        self.colourScheme = .classic
-    }
+    public init() {}
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -70,7 +68,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let scheme = configuration.colourScheme ?? .classic
+        let scheme = configuration.colourScheme
 
         return Entry(
             date: now,
@@ -82,7 +80,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let scheme = configuration.colourScheme ?? .classic
+        let scheme = configuration.colourScheme
 
         WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 
@@ -98,8 +96,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry uses `now` to avoid WidgetKit deduping a rebuilt timeline as “unchanged”
-        // when the user edits configuration but the minute-boundary schedule would otherwise match.
+        // Immediate entry uses `now` so a configuration change mid-minute cannot be deduped as
+        // “same current entry date, keep archived rendering”.
         entries.append(
             Entry(
                 date: now,
@@ -192,7 +190,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Force a re-render when either the entry date changes or the configuration changes.
             let rootID = WWClockRootID(
                 entrySecondRef: Int(entry.date.timeIntervalSinceReferenceDate.rounded()),
                 schemeRaw: entry.colourScheme.rawValue

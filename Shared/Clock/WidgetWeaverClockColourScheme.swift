@@ -9,26 +9,28 @@ import AppIntents
 import Foundation
 import SwiftUI
 
-enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable {
-    case classic
-    case ocean
-    case mint
-    case orchid
-    case sunset
-    case ember
-    case graphite
+public enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable, Sendable {
+    case classic = 0
+    case ocean = 1
+    case mint = 2
+    case orchid = 3
+    case sunset = 4
+    case ember = 5
+    case graphite = 6
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Clock Colour Scheme" }
+    public static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        TypeDisplayRepresentation(name: "Clock Colour Scheme")
+    }
 
-    static var caseDisplayRepresentations: [WidgetWeaverClockColourScheme: DisplayRepresentation] {
+    public static var caseDisplayRepresentations: [WidgetWeaverClockColourScheme: DisplayRepresentation] {
         [
-            .classic: "Classic",
-            .ocean: "Ocean",
-            .mint: "Mint",
-            .orchid: "Orchid",
-            .sunset: "Sunset",
-            .ember: "Ember",
-            .graphite: "Graphite",
+            .classic: DisplayRepresentation(title: "Classic"),
+            .ocean: DisplayRepresentation(title: "Ocean"),
+            .mint: DisplayRepresentation(title: "Mint"),
+            .orchid: DisplayRepresentation(title: "Orchid"),
+            .sunset: DisplayRepresentation(title: "Sunset"),
+            .ember: DisplayRepresentation(title: "Ember"),
+            .graphite: DisplayRepresentation(title: "Graphite"),
         ]
     }
 }
