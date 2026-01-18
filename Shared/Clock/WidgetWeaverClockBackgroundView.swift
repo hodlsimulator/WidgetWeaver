@@ -10,24 +10,29 @@ import SwiftUI
 struct WidgetWeaverClockBackgroundView: View {
     let palette: WidgetWeaverClockPalette
 
-    var body: some View {
-        GeometryReader { proxy in
-            let s = min(proxy.size.width, proxy.size.height)
-            let corner = s * 0.205
-            let stroke = max(1, s * 0.003)
+    @Environment(\.displayScale) private var displayScale
 
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(palette.backgroundTop)
-                .overlay(
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: stroke)
-                        .blendMode(.overlay)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.28), lineWidth: stroke)
-                        .blendMode(.multiply)
-                )
-        }
+    var body: some View {
+        let px = WWClock.px(scale: displayScale)
+
+        let bg = LinearGradient(
+            gradient: Gradient(colors: [palette.backgroundTop, palette.backgroundBottom]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        ContainerRelativeShape()
+            .fill(bg)
+            .overlay(
+                ContainerRelativeShape()
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: px)
+                    .blendMode(.overlay)
+            )
+            .overlay(
+                ContainerRelativeShape()
+                    .strokeBorder(Color.black.opacity(0.28), lineWidth: px)
+                    .blendMode(.multiply)
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

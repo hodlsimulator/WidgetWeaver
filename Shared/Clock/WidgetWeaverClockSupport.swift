@@ -40,9 +40,12 @@ extension View {
         @ViewBuilder _ background: () -> Background
     ) -> some View {
         // Prefer the widget container background API when available.
-        // On older OS versions, fall back to a regular background so widgets never render as black.
+        // Also apply a standard background as a fallback to avoid black widgets if the host
+        // does not honour the container background in some rendering paths.
         if #available(iOS 17.0, *) {
-            self.containerBackground(for: .widget) { background() }
+            self
+                .containerBackground(for: .widget) { background() }
+                .background(background())
         } else {
             self.background(background())
         }
