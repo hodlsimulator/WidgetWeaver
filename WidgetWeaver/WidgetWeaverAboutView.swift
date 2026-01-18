@@ -13,12 +13,14 @@ import EventKit
 
 @MainActor
 struct WidgetWeaverAboutView: View {
+    enum Mode {
+        case explore
+        case more
+    }
+
+    var mode: Mode = .explore
+
     @ObservedObject var proManager: WidgetWeaverProManager
-
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.displayScale) private var displayScale
-
-    @ObservedObject private var thumbnailDeps = WidgetPreviewThumbnailDependencies.shared
 
     /// Adds a template into the design library.
     /// The caller owns ID/UUID creation and any persistence details.
@@ -33,6 +35,15 @@ struct WidgetWeaverAboutView: View {
 
     @State private var isListScrolling = false
     @State var statusMessage: String = ""
+
+    private var navTitle: String {
+        switch mode {
+        case .explore:
+            return "Explore"
+        case .more:
+            return "More"
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -50,22 +61,25 @@ struct WidgetWeaverAboutView: View {
                 starterTemplatesSection
                 proTemplatesSection
 
-                capabilitiesSection
-                interactiveButtonsSection
+                if mode == .more {
+                    capabilitiesSection
+                    interactiveButtonsSection
 
-                noiseMachineSection
+                    noiseMachineSection
 
-                variablesSection
-                aiSection
-                privacySection
+                    variablesSection
+                    aiSection
+                    privacySection
+                }
 
                 supportSection
+
+                if mode == .explore {
+                    exploreMoreSection
+                }
             }
             .listStyle(.plain)
             .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
-            .task(id: preheatTaskID) {
-                await preheatExploreThumbnailsIfNeeded()
-            }
             .scrollIndicators(.hidden)
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.immediately)
@@ -75,27 +89,55 @@ struct WidgetWeaverAboutView: View {
                 isListScrolling = newPhase.isScrolling
             }
         }
-        .navigationTitle("Explore")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle(navTitle)
+        .navigationBarTitleDisplayMode(mode == .explore ? .large : .inline)
     }
 
-    private var preheatTaskID: String {
-        let scheme = (colorScheme == .dark) ? "dark" : "light"
-        return "\(scheme)|\(thumbnailDeps.variablesFingerprint)|\(thumbnailDeps.weatherFingerprint)"
+    private var exploreMoreSection: some View {
+        Section {
+            WidgetWeaverAboutCard(accent: .gray) {
+                NavigationLink {
+                    WidgetWeaverAboutView(
+                        mode: .more,
+                        proManager: proManager,
+                        onAddTemplate: onAddTemplate,
+                        onShowPro: onShowPro,
+                        onShowWidgetHelp: onShowWidgetHelp,
+                        onOpenWeatherSettings: onOpenWeatherSettings,
+                        onOpenStepsSettings: onOpenStepsSettings,
+                        onGoToLibrary: onGoToLibrary,
+                        onShowRemindersSmartStackGuide: onShowRemindersSmartStackGuide
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("More")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+
+                            Text("Guides, variables, privacy, and extra tools")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .wwAboutListRow()
+        }
     }
 
-    private func preheatExploreThumbnailsIfNeeded() async {
-        guard #available(iOS 16.0, *) else { return }
-
-        let specs = (Self.starterTemplatesAll + Self.proTemplates + Self.clockTemplates).map { $0.spec }
-        await WidgetPreviewThumbnail.preheat(
-            specs: specs,
-            colorScheme: colorScheme,
-            displayScale: displayScale
-        )
-    }
-
-    // MARK: - Helpers
+// MARK: - Helpers
 
     var appVersionString: String {
         let bundle = Bundle.main

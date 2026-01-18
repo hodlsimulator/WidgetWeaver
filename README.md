@@ -245,6 +245,65 @@ If only pre-render output appears (large `ctx-sys` lead, or `live=0` in older lo
 
 ---
 
+## Featured — Reminders
+
+WidgetWeaver includes a Reminders template that can render a widget-safe snapshot of Apple Reminders.
+
+Design goals:
+
+- **budget-safe widgets:** widgets never talk to EventKit; they render from cached snapshots only
+- **fast updates:** the host app refreshes the snapshot and signals WidgetKit to reload timelines
+- **optional interactivity:** in widget context, tapping a row can complete a reminder via an App Intent (gated when access/snapshot state is not safe)
+
+### Architecture (budget-safe)
+
+- Reminders engine (EventKit, app-only): `Shared/WidgetWeaverRemindersEngine.swift`
+- Snapshot store (App Group): `Shared/WidgetWeaverRemindersStore.swift`
+- Widget render view: `Shared/WidgetWeaverRemindersTemplateView.swift`
+- Schema/config: `Shared/WidgetWeaverRemindersConfig.swift`
+
+Widgets render from `WidgetWeaverRemindersStore` only. If no snapshot exists yet, the template shows a placeholder and asks the user to open the app to refresh.
+
+### Configuration
+
+Per-widget configuration lives in `WidgetSpec.remindersConfig` and currently supports:
+
+- modes: Today / Overdue / Soon / Priority / Focus / List
+- presentation: Dense / Focus / Sectioned
+- list filtering via `EKCalendar.calendarIdentifier` values (empty means "all lists")
+- display toggles (hide completed, show due times, progress badge)
+
+### Permissions + refresh
+
+Reminders access requires EventKit **Full Access**. Snapshot refresh is throttled and backs off after repeated failures (`WidgetWeaverRemindersRefreshPolicy`) so the app does not spam EventKit or widget reloads.
+
+### Widget interactivity (complete)
+
+In widget context, rows can be tappable to complete a reminder via `WidgetWeaverCompleteReminderWidgetIntent(reminderID:)`.
+
+Interactivity is disabled when:
+
+- Reminders permission is missing / write-only / restricted
+- there is no snapshot yet (open the app to refresh)
+- the snapshot is considered stale, or the last refresh ended in a generic error
+
+### Notes / limitations
+
+- EventKit does not currently expose the Reminders app "Flagged" state. The "Priority" mode approximates this by treating high-priority reminders (priority 1–4) as flagged.
+
+### Template visibility (feature flag)
+
+The Reminders template and its editor settings menu entry are gated by a shared feature flag:
+
+- `WidgetWeaverFeatureFlags.remindersTemplateEnabled`
+- App Group key: `widgetweaver.feature.template.reminders.enabled`
+
+The flag defaults to enabled when unset, but can be overridden per-device via the App Group store (DEBUG builds include a toolbar toggle).
+
+If the template/settings show on one device but not another, check for an explicit override on the missing device (reset/remove the key).
+
+---
+
 ## Featured — Noise Machine
 
 WidgetWeaver includes a Sleep Machine-style Noise Machine that mixes **4 simultaneous layers** of procedural noise.
