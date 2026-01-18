@@ -46,7 +46,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         A photo-first poster layout with no caption overlay.
-                        Add it, then choose a photo in the Editor.
+                        Add it, then choose a photo when prompted (or in Editor → Image).
                         """
                     )
                     .font(.caption)
@@ -78,7 +78,7 @@ extension WidgetWeaverAboutView {
 
                     WidgetWeaverAboutBulletList(items: [
                         "Add Photo (Single) to your library.",
-                        "In the Editor, open Image → choose a photo.",
+                        "Choose a photo when prompted (or open Image → Choose photo).",
                         "Add a WidgetWeaver widget and pick the design.",
                     ])
                 }

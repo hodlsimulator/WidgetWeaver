@@ -16,9 +16,14 @@ extension ContentView {
         let currentImageFileName = d.imageFileName
         let hasImage = !currentImageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
+        let isPoster = d.template == .poster
+        let pickButtonTitle = hasImage ? "Replace photo" : (isPoster ? "Choose photo" : "Choose photo (optional)")
+
         return Section {
-            PhotosPicker(selection: $pickedPhoto, matching: .images, photoLibrary: .shared()) {
-                Label(hasImage ? "Replace photo" : "Choose photo (optional)", systemImage: "photo")
+            Button {
+                photoPickerPresented = true
+            } label: {
+                Label(pickButtonTitle, systemImage: "photo")
             }
 
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
@@ -73,6 +78,47 @@ extension ContentView {
         } header: {
             sectionHeader("Image")
         }
+    }
+
+    // MARK: - Photo picker (Explore add → choose image immediately)
+
+    func markPendingAutoPresentPhotoPickerIfNeeded(addedTemplate: WidgetSpec) {
+        guard templateWantsImmediatePhotoSelection(addedTemplate) else { return }
+        pendingAutoPresentPhotoPickerSpecID = selectedSpecID
+    }
+
+    func attemptAutoPresentPhotoPickerIfNeeded() {
+        guard selectedTab == .editor else { return }
+        guard pendingAutoPresentPhotoPickerSpecID == selectedSpecID else { return }
+
+        // Consume the pending trigger regardless of whether the picker can be shown,
+        // so a dismissed picker does not loop.
+        pendingAutoPresentPhotoPickerSpecID = nil
+
+        guard activeSheet == nil else { return }
+
+        let d = currentFamilyDraft()
+        guard d.template == .poster else { return }
+
+        let hasImage = !d.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !hasImage else { return }
+
+        photoPickerPresented = true
+    }
+
+    private func templateWantsImmediatePhotoSelection(_ template: WidgetSpec) -> Bool {
+        if template.layout.template == .poster { return true }
+
+        // Future-proofing: if a template uses matched-set variants with poster,
+        // treat it as photo-first as well.
+        if let matched = template.matchedSet {
+            let variants = [matched.small, matched.medium, matched.large]
+            for variant in variants {
+                if variant?.layout.template == .poster { return true }
+            }
+        }
+
+        return false
     }
 
     var actionsSection: some View {

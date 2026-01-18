@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var editorFocusRestorationStack: EditorFocusRestorationStack = .init()
 
     @State var albumShufflePickerPresented: Bool = false
+    @State var photoPickerPresented: Bool = false
+    @State var pendingAutoPresentPhotoPickerSpecID: UUID? = nil
     @State private var previousVisibleToolIDs: [EditorToolID] = []
 
     @State var editorToolCapabilitiesDidChangeTick: UInt = 0
@@ -328,6 +330,7 @@ struct ContentView: View {
             .tag(AppTab.editor)
         }
         .sheet(item: $activeSheet, content: sheetContent)
+        .photosPicker(isPresented: $photoPickerPresented, selection: $pickedPhoto, matching: .images)
         .fileImporter(
             isPresented: $showImportPicker,
             allowedContentTypes: WidgetWeaverSharePackage.importableTypes,
@@ -409,7 +412,13 @@ struct ContentView: View {
 
             previousVisibleToolIDs = newValue
         }
-        .onChange(of: selectedSpecID) { _, _ in loadSelected() }
+        .onChange(of: selectedTab) { _, _ in
+            attemptAutoPresentPhotoPickerIfNeeded()
+        }
+        .onChange(of: selectedSpecID) { _, _ in
+            loadSelected()
+            attemptAutoPresentPhotoPickerIfNeeded()
+        }
         .onChange(of: pickedPhoto) { _, newItem in handlePickedPhotoChange(newItem) }
     }
 
@@ -423,6 +432,7 @@ struct ContentView: View {
                 // After adding a template, jumping straight into the Editor keeps the flow tight:
                 // add -> tweak (or choose a photo) -> done.
                 if selectedSpecID != previousSpecID {
+                    markPendingAutoPresentPhotoPickerIfNeeded(addedTemplate: spec)
                     clearLibrarySearchAndFilter()
                     selectedTab = .editor
                 }
