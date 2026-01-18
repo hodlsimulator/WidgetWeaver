@@ -10,30 +10,6 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-enum WidgetWeaverClockColourScheme: Int, AppEnum, CaseIterable {
-    case classic
-    case ocean
-    case mint
-    case orchid
-    case sunset
-    case ember
-    case graphite
-
-    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Clock Colour Scheme" }
-
-    static var caseDisplayRepresentations: [WidgetWeaverClockColourScheme: DisplayRepresentation] {
-        [
-            .classic: "Classic",
-            .ocean: "Ocean",
-            .mint: "Mint",
-            .orchid: "Orchid",
-            .sunset: "Sunset",
-            .ember: "Ember",
-            .graphite: "Graphite",
-        ]
-    }
-}
-
 struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "Clock" }
     static var description: IntentDescription { IntentDescription("Configure the clock widget.") }

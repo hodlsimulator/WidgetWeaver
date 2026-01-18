@@ -57,6 +57,9 @@ public struct WidgetWeaverSpecView: View {
     @AppStorage("widgetweaver.specs.v1", store: AppGroup.userDefaults)
     private var specsData: Data = Data()
 
+    @Environment(\.colorScheme)
+    private var colorScheme
+
     public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext) {
         self.spec = spec
         self.family = family
@@ -240,85 +243,77 @@ public struct WidgetWeaverSpecView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
-        let tint: Color = {
+        let scheme: WidgetWeaverClockColourScheme = {
             switch theme {
             case "ocean":
-                return .blue
+                return .ocean
             case "graphite":
-                return .gray
+                return .graphite
             default:
-                return accent
+                return .classic
             }
         }()
+
+        let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
 
         let label: String? = {
             guard context == .preview else { return nil }
 
-            switch theme {
-            case "ocean":
+            switch scheme {
+            case .ocean:
                 return "Ocean"
-            case "graphite":
+            case .graphite:
                 return "Graphite"
             default:
                 return "Classic"
             }
         }()
 
+        let showsSecondsHand = (context == .simulator)
+
         return GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
-            let stroke = max(2, side * 0.05)
 
             let now = WidgetWeaverRenderClock.now
-            let cal = Calendar.current
+            let cal = Calendar.autoupdatingCurrent
             let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: now)
 
             let hour = Double((comps.hour ?? 0) % 12)
             let minute = Double(comps.minute ?? 0)
             let second = Double(comps.second ?? 0) + Double(comps.nanosecond ?? 0) / 1_000_000_000.0
 
-            let hourAngle = (hour + minute / 60.0) / 12.0 * 360.0
-            let minuteAngle = (minute + second / 60.0) / 60.0 * 360.0
-            let secondAngle = second / 60.0 * 360.0
+            let hourAngle = Angle.degrees((hour + (minute / 60.0) + (second / 3600.0)) / 12.0 * 360.0)
+            let minuteAngle = Angle.degrees((minute + (second / 60.0)) / 60.0 * 360.0)
+            let secondAngle = Angle.degrees(second / 60.0 * 360.0)
 
-            ZStack {
-                Circle()
-                    .fill(Color.primary.opacity(0.05))
+            ZStack(alignment: .bottom) {
+                ZStack {
+                    WidgetWeaverClockBackgroundView(palette: palette)
 
-                Circle()
-                    .strokeBorder(tint.opacity(0.70), lineWidth: stroke)
-
-                // Hour hand
-                RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
-                    .fill(tint.opacity(0.90))
-                    .frame(width: max(2, side * 0.06), height: side * 0.24)
-                    .offset(y: -side * 0.12)
-                    .rotationEffect(.degrees(hourAngle))
-
-                // Minute hand
-                RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
-                    .fill(tint.opacity(0.82))
-                    .frame(width: max(2, side * 0.045), height: side * 0.34)
-                    .offset(y: -side * 0.17)
-                    .rotationEffect(.degrees(minuteAngle))
-
-                if context == .simulator {
-                    // Seconds hand (preview only)
-                    RoundedRectangle(cornerRadius: max(1, side * 0.01), style: .continuous)
-                        .fill(tint.opacity(0.55))
-                        .frame(width: max(1, side * 0.02), height: side * 0.40)
-                        .offset(y: -side * 0.20)
-                        .rotationEffect(.degrees(secondAngle))
+                    WidgetWeaverClockIconView(
+                        palette: palette,
+                        hourAngle: hourAngle,
+                        minuteAngle: minuteAngle,
+                        secondAngle: secondAngle,
+                        showsSecondHand: showsSecondsHand,
+                        showsMinuteHand: true,
+                        showsHandShadows: true,
+                        showsGlows: true,
+                        showsCentreHub: true,
+                        handsOpacity: 1.0
+                    )
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                 }
-
-                Circle()
-                    .fill(tint)
-                    .frame(width: side * 0.09, height: side * 0.09)
+                .frame(width: side, height: side)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
                 if let label {
                     Text("Clock • \(label)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .padding(.top, side * 0.85)
+                        .padding(.bottom, max(6, side * 0.04))
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)

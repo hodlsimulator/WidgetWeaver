@@ -252,13 +252,6 @@
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;
 		};
-		E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
-		};
 		E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -291,6 +284,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		E15047332F1CA2760047863A /* Clock */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Clock;
+			sourceTree = "<group>";
+		};
 		E16011732F19618B00A3B10B /* Scripts */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Scripts;
@@ -308,7 +306,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */,
-				E18676A22EF2321A0098B095 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
 			);
 			path = WidgetWeaverWidget;
 			sourceTree = "<group>";
@@ -417,6 +414,7 @@
 		E18676A62EF240690098B095 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				E15047332F1CA2760047863A /* Clock */,
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
 				E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */,
 				E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */,
@@ -502,6 +500,7 @@
 				E186769D2EF2321A0098B095 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				E15047332F1CA2760047863A /* Clock */,
 				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
@@ -525,6 +524,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				E15047332F1CA2760047863A /* Clock */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
 				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 			);
