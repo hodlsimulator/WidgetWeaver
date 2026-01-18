@@ -14,12 +14,10 @@ struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigur
     static var title: LocalizedStringResource { "Clock" }
     static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
-    @Parameter(title: "Colour Scheme")
-    var colourScheme: WidgetWeaverClockColourScheme?
+    @Parameter(title: "Colour Scheme", default: .classic)
+    var colourScheme: WidgetWeaverClockColourScheme
 
-    init() {
-        self.colourScheme = .classic
-    }
+    init() {}
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -61,7 +59,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
-        let scheme = configuration.colourScheme ?? .classic
+        let scheme = configuration.colourScheme
 
         return Entry(
             date: now,
@@ -73,7 +71,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func timeline(for configuration: Intent, in context: Context) async -> Timeline<Entry> {
         let now = Date()
-        let scheme = configuration.colourScheme ?? .classic
+        let scheme = configuration.colourScheme
 
         WWClockInstrumentation.recordTimelineBuild(now: now)
 
@@ -84,19 +82,28 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
-        let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
+        // Offset the timeline dates by a tiny amount derived from the colour scheme.
+        //
+        // WidgetKit can keep an archived rendering for an entry *date*. If a user changes the
+        // configuration mid-minute, the minute-anchored entry date can remain identical, and the
+        // widget may not visually update until the next minute boundary. This keeps minute-boundary
+        // stability while ensuring the current entry date changes when the scheme changes.
+        let schemeOffset = TimeInterval(colourScheme.rawValue) / 1000.0
+
+        let firstEntryDate = minuteAnchorNow.addingTimeInterval(schemeOffset)
+        let nextMinuteBoundary = firstEntryDate.addingTimeInterval(60.0)
 
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry (aligned to the current minute boundary).
+        // Immediate entry (aligned to the current minute boundary, with a tiny scheme offset).
         //
         // Using `now` here causes the minute hand to jump mid-minute whenever WidgetKit reloads the
         // timeline, which reads as “late ticking”. Keeping the first entry on the minute anchor makes
         // the widget stable until the next minute-boundary entry.
         entries.append(
             Entry(
-                date: minuteAnchorNow,
+                date: firstEntryDate,
                 tickMode: .secondsSweep,
                 tickSeconds: 0.0,
                 colourScheme: colourScheme

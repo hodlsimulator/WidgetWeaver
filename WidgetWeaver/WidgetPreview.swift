@@ -68,8 +68,15 @@ struct WidgetPreview: View {
                 let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
 
                 TimelineView(.periodic(from: start, by: interval)) { ctx in
+                    // Ensure the preview subtree is invalidated on each tick.
+                    //
+                    // Some templates (notably the Clock) compute their own time via `WidgetWeaverRenderClock.now`
+                    // rather than referencing `ctx.date` directly. SwiftUI may otherwise keep the subtree stable
+                    // even though `TimelineView` is advancing.
+                    let tick = Int(ctx.date.timeIntervalSinceReferenceDate.rounded())
                     WidgetWeaverRenderClock.withNow(ctx.date) {
                         previewBody
+                            .id(tick)
                     }
                 }
             } else {
