@@ -245,6 +245,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E15047452F1CA6AA0047863A /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
+		};
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -306,6 +313,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				E197A1042F06EF8200B415B8 /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaver" target */,
+				E15047452F1CA6AA0047863A /* Exceptions for "WidgetWeaverWidget" folder in "WidgetWeaverWidgetExtension" target */,
 			);
 			path = WidgetWeaverWidget;
 			sourceTree = "<group>";
