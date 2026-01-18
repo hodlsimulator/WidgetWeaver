@@ -178,7 +178,7 @@ extension ContentView {
             widgetWorkflowSection
 
         case .layout:
-            layoutSection
+            layoutSectionClockAware
 
         case .text:
             textSection
@@ -224,6 +224,74 @@ extension ContentView {
 
         case .pro:
             proSection
+        }
+    }
+
+
+    // MARK: - Layout tool (clock-safe)
+
+    /// Provides a clock-safe Layout section.
+    ///
+    /// The legacy layout section exposes controls that do not apply to the element-less clock template.
+    /// This wrapper keeps the Layout tool available (so the user can switch templates) while reducing
+    /// the UI surface when `template == .clockIcon`.
+    @ViewBuilder
+    private var layoutSectionClockAware: some View {
+        let currentTemplate = currentFamilyDraft().template
+
+        if currentTemplate != .clockIcon {
+            layoutSection
+        } else {
+            let remindersEnabled = WidgetWeaverFeatureFlags.remindersTemplateEnabled
+
+            let templateTokens: [LayoutTemplateToken] = {
+                var tokens = LayoutTemplateToken.allCases.filter { token in
+                    // Hide Clock (Icon) by default so it cannot be accidentally chosen.
+                    // If a clock design is already selected (eg. imported), include it so the picker has a matching tag.
+                    if token == .clockIcon { return currentTemplate == .clockIcon }
+
+                    // Reminders is feature-flag gated.
+                    return remindersEnabled || token != .reminders
+                }
+
+                // If a hidden template is already selected (eg. imported design), include it so the
+                // picker has a matching tag. Do not expose it as selectable when the flag is off.
+                if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
+                    tokens.append(.reminders)
+                }
+                if currentTemplate == .clockIcon, !tokens.contains(.clockIcon) {
+                    tokens.append(.clockIcon)
+                }
+                return tokens
+            }()
+
+            Section {
+                Picker("Template", selection: binding(\.template)) {
+                    ForEach(templateTokens) { token in
+                        Text(token.displayName)
+                            .tag(token)
+                            .disabled(token == .reminders && !remindersEnabled)
+                    }
+                }
+
+                Picker("Clock theme", selection: binding(\.clockThemeRaw)) {
+                    Text("Classic").tag("classic")
+                    Text("Ocean").tag("ocean")
+                    Text("Graphite").tag("graphite")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("Editor.Clock.ThemePicker")
+
+                Text("Clock designs do not use layout controls like accent bars or line limits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                sectionHeader("Layout")
+            } footer: {
+                Text("Switch Template to enable standard layout controls.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

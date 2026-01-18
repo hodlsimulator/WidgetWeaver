@@ -236,39 +236,90 @@ public struct WidgetWeaverSpecView: View {
     }
 
     private func clockIconTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        GeometryReader { proxy in
+        let theme = (spec.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        let tint: Color = {
+            switch theme {
+            case "ocean":
+                return .blue
+            case "graphite":
+                return .gray
+            default:
+                return accent
+            }
+        }()
+
+        let label: String? = {
+            guard context == .preview else { return nil }
+
+            switch theme {
+            case "ocean":
+                return "Ocean"
+            case "graphite":
+                return "Graphite"
+            default:
+                return "Classic"
+            }
+        }()
+
+        return GeometryReader { proxy in
             let side = min(proxy.size.width, proxy.size.height)
             let stroke = max(2, side * 0.05)
+
+            let now = WidgetWeaverRenderClock.now
+            let cal = Calendar.current
+            let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: now)
+
+            let hour = Double((comps.hour ?? 0) % 12)
+            let minute = Double(comps.minute ?? 0)
+            let second = Double(comps.second ?? 0) + Double(comps.nanosecond ?? 0) / 1_000_000_000.0
+
+            let hourAngle = (hour + minute / 60.0) / 12.0 * 360.0
+            let minuteAngle = (minute + second / 60.0) / 60.0 * 360.0
+            let secondAngle = second / 60.0 * 360.0
 
             ZStack {
                 Circle()
                     .fill(Color.primary.opacity(0.05))
 
                 Circle()
-                    .strokeBorder(accent.opacity(0.70), lineWidth: stroke)
+                    .strokeBorder(tint.opacity(0.70), lineWidth: stroke)
 
-                // Hour hand (placeholder geometry).
+                // Hour hand
                 RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
-                    .fill(accent.opacity(0.90))
-                    .frame(width: max(2, side * 0.05), height: side * 0.24)
+                    .fill(tint.opacity(0.90))
+                    .frame(width: max(2, side * 0.06), height: side * 0.24)
                     .offset(y: -side * 0.12)
-                    .rotationEffect(.degrees(-65))
+                    .rotationEffect(.degrees(hourAngle))
 
-                // Minute hand (placeholder geometry).
+                // Minute hand
                 RoundedRectangle(cornerRadius: max(1, side * 0.02), style: .continuous)
-                    .fill(accent.opacity(0.80))
-                    .frame(width: max(2, side * 0.04), height: side * 0.34)
+                    .fill(tint.opacity(0.82))
+                    .frame(width: max(2, side * 0.045), height: side * 0.34)
                     .offset(y: -side * 0.17)
-                    .rotationEffect(.degrees(18))
+                    .rotationEffect(.degrees(minuteAngle))
+
+                if context == .simulator {
+                    // Seconds hand (preview only)
+                    RoundedRectangle(cornerRadius: max(1, side * 0.01), style: .continuous)
+                        .fill(tint.opacity(0.55))
+                        .frame(width: max(1, side * 0.02), height: side * 0.40)
+                        .offset(y: -side * 0.20)
+                        .rotationEffect(.degrees(secondAngle))
+                }
 
                 Circle()
-                    .fill(accent)
+                    .fill(tint)
                     .frame(width: side * 0.09, height: side * 0.09)
 
-                Text("Clock (Placeholder)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, side * 0.85)
+                if let label {
+                    Text("Clock • \(label)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, side * 0.85)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
         }

@@ -43,7 +43,7 @@ struct WidgetWeaverAboutView: View {
 
                 featuredPhotosSection
                 featuredWeatherSection
-                featuredClockSection
+                featuredClockTemplatesSection
                 featuredCalendarSection
                 featuredStepsSection
 
@@ -87,7 +87,7 @@ struct WidgetWeaverAboutView: View {
     private func preheatExploreThumbnailsIfNeeded() async {
         guard #available(iOS 16.0, *) else { return }
 
-        let specs = (Self.starterTemplatesAll + Self.proTemplates).map { $0.spec }
+        let specs = (Self.starterTemplatesAll + Self.proTemplates + Self.clockTemplates).map { $0.spec }
         await WidgetPreviewThumbnail.preheat(
             specs: specs,
             colorScheme: colorScheme,
@@ -241,5 +241,164 @@ struct WidgetWeaverAboutView: View {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Featured Clock (Templates)
+
+extension WidgetWeaverAboutView {
+    var featuredClockTemplatesSection: some View {
+        let templates = Self.clockTemplates
+
+        return Section {
+            WidgetWeaverAboutCard(accent: .orange) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Clock")
+                                .font(.headline)
+
+                            Text("Analogue clock • saved as a Design")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Menu {
+                            ForEach(templates) { template in
+                                Button { handleAdd(template: template, makeDefault: false) } label: {
+                                    Label("Add \(template.subtitle)", systemImage: "plus")
+                                }
+
+                                Button { handleAdd(template: template, makeDefault: true) } label: {
+                                    Label("Add \(template.subtitle) & Make Default", systemImage: "star.fill")
+                                }
+
+                                if template.id != templates.last?.id {
+                                    Divider()
+                                }
+                            }
+                        } label: {
+                            Label("Add", systemImage: "plus.circle.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Text(
+                        """
+                        These are clock Designs you can add to your Library and edit.
+                        Use the Editor’s Layout tool to change the clock theme.
+                        """
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    if !templates.isEmpty {
+                        WidgetWeaverAboutFlowTags(tags: ["Clock", "Template", "Time‑dependent"])
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(templates) { template in
+                                let accent = template.spec.style.accent.swiftUIColor
+
+                                WidgetWeaverAboutPreviewLabeled(familyLabel: template.subtitle, accent: accent) {
+                                    WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    Divider()
+
+                    Text("Tip")
+                        .font(.subheadline.weight(.semibold))
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Add one of these Clock templates to your Library.",
+                        "Open it in the Editor and use Clock theme (Layout tool) to switch Classic / Ocean / Graphite.",
+                        "Add a WidgetWeaver widget to your Home Screen to see it live.",
+                    ])
+
+                    Button { onShowWidgetHelp() } label: {
+                        Label("How widgets work", systemImage: "questionmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Text(
+                        """
+                        Note: WidgetWeaver also ships a separate “Clock (Icon)” Home Screen widget.
+                        The templates above are Designs that work with the main WidgetWeaver widget.
+                        """
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .tint(.orange)
+        } header: {
+            WidgetWeaverAboutSectionHeader("Clock", systemImage: "clock", accent: .orange)
+        } footer: {
+            Text("Clock templates are added to your Library as Designs.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    static let clockTemplates: [WidgetWeaverAboutTemplate] = [
+        WidgetWeaverAboutTemplate(
+            id: "starter-clock-classic",
+            title: "Clock",
+            subtitle: "Classic",
+            description: "Analogue clock design (Classic theme).",
+            tags: ["Clock"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specClockTemplate(name: "Clock (Classic)", theme: "classic", accent: .orange)
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-clock-ocean",
+            title: "Clock",
+            subtitle: "Ocean",
+            description: "Analogue clock design (Ocean theme).",
+            tags: ["Clock"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specClockTemplate(name: "Clock (Ocean)", theme: "ocean", accent: .blue)
+        ),
+        WidgetWeaverAboutTemplate(
+            id: "starter-clock-graphite",
+            title: "Clock",
+            subtitle: "Graphite",
+            description: "Analogue clock design (Graphite theme).",
+            tags: ["Clock"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specClockTemplate(name: "Clock (Graphite)", theme: "graphite", accent: .gray)
+        ),
+    ]
+
+    private static func specClockTemplate(name: String, theme: String, accent: AccentToken) -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+
+        spec.name = name
+        spec.primaryText = ""
+        spec.secondaryText = nil
+        spec.symbol = nil
+        spec.image = nil
+
+        spec.layout.template = .clockIcon
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = accent
+
+        spec.clockConfig = WidgetWeaverClockDesignConfig(theme: theme)
+
+        return spec.normalised()
     }
 }
