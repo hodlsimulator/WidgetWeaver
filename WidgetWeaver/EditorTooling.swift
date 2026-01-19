@@ -439,7 +439,7 @@ enum EditorToolRegistry {
         EditorToolDefinition(
             id: .albumShuffle,
             order: 82,
-            requiredCapabilities: [.canEditAlbumShuffle, .hasSmartPhotoConfigured, .canAccessPhotoLibrary],
+            requiredCapabilities: [.canEditAlbumShuffle],
             requiredNonPhotosCapabilities: [],
             missingNonPhotosCapabilityPolicy: .hide,
             eligibility: .singleTarget(
