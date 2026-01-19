@@ -183,6 +183,12 @@ public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Ident
     case centre
     case trailing
 
+    // Poster-only opt-in tokens (no new field, just additional values).
+    // When a poster's alignment is set to a `top*` value, the caption overlay is anchored at the top.
+    case topLeading
+    case top
+    case topTrailing
+
     public var id: String { rawValue }
 
     public var displayName: String {
@@ -190,24 +196,36 @@ public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Ident
         case .leading: return "Leading"
         case .centre: return "Centre"
         case .trailing: return "Trailing"
+        case .topLeading: return "Top Leading"
+        case .top: return "Top"
+        case .topTrailing: return "Top Trailing"
         }
     }
 
     /// HorizontalAlignment for VStack/HStack.
     public var alignment: HorizontalAlignment {
         switch self {
-        case .leading: return .leading
-        case .centre: return .center
-        case .trailing: return .trailing
+        case .leading, .topLeading: return .leading
+        case .centre, .top: return .center
+        case .trailing, .topTrailing: return .trailing
         }
     }
 
     /// Alignment for frames/overlays.
     public var swiftUIAlignment: Alignment {
         switch self {
-        case .leading: return .topLeading
-        case .centre: return .top
-        case .trailing: return .topTrailing
+        case .leading, .topLeading: return .topLeading
+        case .centre, .top: return .top
+        case .trailing, .topTrailing: return .topTrailing
+        }
+    }
+
+    public var isPosterCaptionTopAligned: Bool {
+        switch self {
+        case .topLeading, .top, .topTrailing:
+            return true
+        default:
+            return false
         }
     }
 
@@ -219,6 +237,9 @@ public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Ident
         case "leading": self = .leading
         case "centre", "center": self = .centre
         case "trailing": self = .trailing
+        case "topleading", "top-leading", "top_leading": self = .topLeading
+        case "top", "topcentre", "topcenter": self = .top
+        case "toptrailing", "top-trailing", "top_trailing": self = .topTrailing
         default: self = .leading
         }
     }
@@ -230,6 +251,7 @@ public enum LayoutAlignmentToken: String, Codable, CaseIterable, Hashable, Ident
 }
 
 public extension LayoutAlignmentToken {
+
     /// American spelling convenience.
     static var center: LayoutAlignmentToken { .centre }
 }

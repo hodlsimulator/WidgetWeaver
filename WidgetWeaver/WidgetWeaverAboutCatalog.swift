@@ -67,6 +67,16 @@ extension WidgetWeaverAboutView {
             spec: specPhotoCaption()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-photo-caption-top",
+            title: "Photo + Caption (Top)",
+            subtitle: "Top caption",
+            description: "A photo poster with a caption panel anchored at the top — useful for portrait photos.",
+            tags: ["Photo", "Caption", "Top"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoCaptionTop()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-photo-caption-glass",
             title: "Photo + Caption (Glass)",
             subtitle: "Glass strip",
@@ -361,6 +371,16 @@ extension WidgetWeaverAboutView {
         spec.style.nameTextStyle = .caption2
         spec.style.primaryTextStyle = .title3
         spec.style.secondaryTextStyle = .caption
+
+        return spec.normalised()
+    }
+
+    static func specPhotoCaptionTop() -> WidgetSpec {
+        var spec = specPhotoCaption()
+        spec.name = "Photo + Caption (Top)"
+
+        // Opt-in (no schema change): top-aligned overlay anchored by layout alignment token.
+        spec.layout.alignment = .topLeading
 
         return spec.normalised()
     }

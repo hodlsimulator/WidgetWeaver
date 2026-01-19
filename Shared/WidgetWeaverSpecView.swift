@@ -475,6 +475,20 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         return style.backgroundOverlay == .subtleMaterial
     }
 
+    private var wantsTopAnchoredCaption: Bool {
+        // Layout alignment is reused as a poster-only opt-in token (no schema change).
+        // Only `top*` values anchor the caption at the top; existing values remain bottom-anchored.
+        return layout.alignment.isPosterCaptionTopAligned
+    }
+
+    private var captionBackdropStartPoint: UnitPoint {
+        wantsTopAnchoredCaption ? .top : .bottom
+    }
+
+    private var captionBackdropEndPoint: UnitPoint {
+        wantsTopAnchoredCaption ? .bottom : .top
+    }
+
     @ViewBuilder
     private var posterCaptionBackdrop: some View {
         if wantsGlassCaptionStrip {
@@ -492,8 +506,8 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
                 Color.black.opacity(0.10),
                 Color.clear,
             ],
-            startPoint: .bottom,
-            endPoint: .top
+            startPoint: captionBackdropStartPoint,
+            endPoint: captionBackdropEndPoint
         )
     }
 
@@ -509,53 +523,61 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
                     Color.black.opacity(0.10),
                     Color.clear,
                 ],
-                startPoint: .bottom,
-                endPoint: .top
+                startPoint: captionBackdropStartPoint,
+                endPoint: captionBackdropEndPoint
             )
         }
         .overlay(
             Rectangle()
                 .fill(Color.white.opacity(0.10))
                 .frame(height: 1),
-            alignment: .top
+            alignment: wantsTopAnchoredCaption ? .bottom : .top
         )
     }
 
     private func overlayBody(spec: WidgetSpec) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 0)
-
-            VStack(alignment: .leading, spacing: 10) {
-                if !spec.name.isEmpty {
-                    Text(spec.name)
-                        .font(style.nameTextStyle.font(fallback: .caption))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(1)
-                }
-
-                if !spec.primaryText.isEmpty {
-                    overlayText(
-                        resolved: spec.primaryText,
-                        font: style.primaryTextStyle.font(fallback: .title3),
-                        foreground: .white,
-                        lineLimit: layout.primaryLineLimit
-                    )
-                }
-
-                if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
-                    overlayText(
-                        resolved: secondaryText,
-                        font: style.secondaryTextStyle.font(fallback: .caption2),
-                        foreground: .white.opacity(0.85),
-                        lineLimit: layout.secondaryLineLimit
-                    )
-                }
+            if wantsTopAnchoredCaption {
+                captionPanel(spec: spec)
+                Spacer(minLength: 0)
+            } else {
+                Spacer(minLength: 0)
+                captionPanel(spec: spec)
             }
-            .padding(style.padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                posterCaptionBackdrop
+        }
+    }
+
+    private func captionPanel(spec: WidgetSpec) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !spec.name.isEmpty {
+                Text(spec.name)
+                    .font(style.nameTextStyle.font(fallback: .caption))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
             }
+
+            if !spec.primaryText.isEmpty {
+                overlayText(
+                    resolved: spec.primaryText,
+                    font: style.primaryTextStyle.font(fallback: .title3),
+                    foreground: .white,
+                    lineLimit: layout.primaryLineLimit
+                )
+            }
+
+            if let secondaryText = spec.secondaryText, !secondaryText.isEmpty {
+                overlayText(
+                    resolved: secondaryText,
+                    font: style.secondaryTextStyle.font(fallback: .caption2),
+                    foreground: .white.opacity(0.85),
+                    lineLimit: layout.secondaryLineLimit
+                )
+            }
+        }
+        .padding(style.padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            posterCaptionBackdrop
         }
     }
 
