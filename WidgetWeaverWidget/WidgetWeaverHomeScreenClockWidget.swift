@@ -10,7 +10,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
     public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
@@ -37,6 +37,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
+    // Multi-hour minute timeline to avoid the host “running out” of entries.
     static let maxEntriesPerTimeline: Int = 241
 }
 
@@ -155,11 +156,6 @@ private enum WWClockInstrumentation {
     }
 }
 
-private struct WWClockWidgetViewID: Hashable {
-    let date: Date
-    let scheme: Int
-}
-
 struct WidgetWeaverHomeScreenClockWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
 
@@ -169,8 +165,9 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
+            // Key by entry.date to avoid WidgetKit snapshot caching getting “stuck”.
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(WWClockWidgetViewID(date: entry.date, scheme: entry.colourScheme.rawValue))
+                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
