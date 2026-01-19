@@ -47,6 +47,16 @@ extension WidgetWeaverAboutView {
             spec: specPhotoSingle()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-photo-framed",
+            title: "Photo (Framed)",
+            subtitle: "Matte frame",
+            description: "A framed photo poster with a soft matte border. Add it, then choose an image in the Editor.",
+            tags: ["Photo", "Frame", "Matte"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoFramed()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-photo-caption",
             title: "Photo + Caption",
             subtitle: "Caption overlay",
@@ -279,6 +289,26 @@ extension WidgetWeaverAboutView {
     static func specPhotoSingle() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Photo (Single)"
+        spec.primaryText = "Your photo"
+        spec.secondaryText = nil
+        spec.symbol = nil
+
+        spec.layout.template = .poster
+        spec.layout.posterOverlayMode = .none
+        spec.layout.showsAccentBar = false
+
+        spec.style.accent = .pink
+        spec.style.background = .subtleMaterial
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
+        spec.style.backgroundGlowEnabled = false
+
+        return spec.normalised()
+    }
+
+    static func specPhotoFramed() -> WidgetSpec {
+        var spec = WidgetSpec.defaultSpec()
+        spec.name = "Photo (Framed)"
         spec.primaryText = "Your photo"
         spec.secondaryText = nil
         spec.symbol = nil

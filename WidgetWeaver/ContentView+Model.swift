@@ -89,6 +89,7 @@ extension ContentView {
             matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
         }
 
+        applyPhotoTemplateDefaultsIfNeeded(spec: n)
 
         if matchedSetEnabled {
             // Matched sets can place the clock template in only one family.
@@ -125,6 +126,50 @@ extension ContentView {
             editorFocusSnapshot = .clockFocus()
         } else {
             editorFocusSnapshot = .widgetDefault
+        }
+    }
+
+
+
+    private func applyPhotoTemplateDefaultsIfNeeded(spec: WidgetSpec) {
+        let trimmedName = spec.name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let isFramedPhotoTemplate = spec.layout.template == .poster
+            && spec.layout.posterOverlayMode == .none
+            && trimmedName == "Photo (Framed)"
+
+        guard isFramedPhotoTemplate else { return }
+
+        func apply(to draft: inout FamilyDraft) {
+            guard draft.template == .poster else { return }
+
+            let hasImage = !draft.imageFileName
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+
+            guard !hasImage else { return }
+
+            // Default to a framed/matte look by using the existing Image Content Mode control.
+            // The poster renderer treats `.fit` as the framed/matte variant.
+            draft.imageContentMode = .fit
+        }
+
+        if matchedSetEnabled {
+            var small = matchedDrafts.small
+            var medium = matchedDrafts.medium
+            var large = matchedDrafts.large
+
+            apply(to: &small)
+            apply(to: &medium)
+            apply(to: &large)
+
+            matchedDrafts = MatchedDrafts(small: small, medium: medium, large: large)
+            baseDraft = matchedDrafts.medium
+        } else {
+            var draft = baseDraft
+            apply(to: &draft)
+            baseDraft = draft
+            matchedDrafts = MatchedDrafts(small: draft, medium: draft, large: draft)
         }
     }
 
