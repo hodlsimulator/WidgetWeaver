@@ -466,6 +466,61 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
             .lineLimit(lineLimit)
     }
 
+    private var wantsGlassCaptionStrip: Bool {
+        guard !lowGraphicsBudget else { return false }
+
+        // Reuse an existing style knob (no schema change).
+        // When the background overlay token is Subtle Material, treat the poster caption overlay as a
+        // frosted glass strip.
+        return style.backgroundOverlay == .subtleMaterial
+    }
+
+    @ViewBuilder
+    private var posterCaptionBackdrop: some View {
+        if wantsGlassCaptionStrip {
+            posterGlassCaptionBackdrop
+        } else {
+            posterGradientCaptionBackdrop
+        }
+    }
+
+    @ViewBuilder
+    private var posterGradientCaptionBackdrop: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(0.55),
+                Color.black.opacity(0.10),
+                Color.clear,
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+    }
+
+    @ViewBuilder
+    private var posterGlassCaptionBackdrop: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.30),
+                    Color.black.opacity(0.10),
+                    Color.clear,
+                ],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        }
+        .overlay(
+            Rectangle()
+                .fill(Color.white.opacity(0.10))
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+
     private func overlayBody(spec: WidgetSpec) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 0)
@@ -498,17 +553,9 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
             }
             .padding(style.padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.55),
-                        Color.black.opacity(0.10),
-                        Color.clear,
-                    ],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-            )
+            .background {
+                posterCaptionBackdrop
+            }
         }
     }
 

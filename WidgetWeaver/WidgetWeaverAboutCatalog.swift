@@ -67,6 +67,16 @@ extension WidgetWeaverAboutView {
             spec: specPhotoCaption()
         ),
         WidgetWeaverAboutTemplate(
+            id: "starter-photo-caption-glass",
+            title: "Photo + Caption (Glass)",
+            subtitle: "Glass strip",
+            description: "A photo poster with a frosted glass caption strip for readable text over bright photos.",
+            tags: ["Photo", "Caption", "Glass"],
+            requiresPro: false,
+            triggersCalendarPermission: false,
+            spec: specPhotoCaptionGlass()
+        ),
+        WidgetWeaverAboutTemplate(
             id: "starter-photo-clock",
             title: "Photo Clock",
             subtitle: "Time overlay",
@@ -351,6 +361,18 @@ extension WidgetWeaverAboutView {
         spec.style.nameTextStyle = .caption2
         spec.style.primaryTextStyle = .title3
         spec.style.secondaryTextStyle = .caption
+
+        return spec.normalised()
+    }
+
+    static func specPhotoCaptionGlass() -> WidgetSpec {
+        var spec = specPhotoCaption()
+        spec.name = "Photo + Caption (Glass)"
+
+        // Style hint (no schema change): use Subtle Material as the overlay token to opt into
+        // a frosted glass caption strip while keeping the full-screen overlay opacity at 0.
+        spec.style.backgroundOverlay = .subtleMaterial
+        spec.style.backgroundOverlayOpacity = 0
 
         return spec.normalised()
     }
