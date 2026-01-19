@@ -10,7 +10,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
     public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
@@ -41,6 +41,26 @@ private enum WWClockTimelineConfig {
     static let maxEntriesPerTimeline: Int = 241
 }
 
+private enum WWClockConfigReload {
+    // Stored in the App Group so it survives widget process restarts.
+    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v2"
+
+    static func requestReloadIfNeeded(scheme: WidgetWeaverClockColourScheme) async {
+        let defaults = AppGroup.userDefaults
+
+        let previousRaw = defaults.object(forKey: lastSchemeRawKey) as? Int
+        if previousRaw == scheme.rawValue {
+            return
+        }
+
+        defaults.set(scheme.rawValue, forKey: lastSchemeRawKey)
+
+        await MainActor.run {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
+        }
+    }
+}
+
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverHomeScreenClockConfigurationIntent
@@ -58,6 +78,13 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
+
+        // iOS 26 can update the edit-preview via snapshot but fail to rebuild the timeline.
+        // Triggering a timeline reload here keeps the Home Screen instance in sync.
+        if !context.isPreview {
+            await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme)
+        }
+
         return Entry(
             date: now,
             tickMode: .secondsSweep,
@@ -165,7 +192,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Key by entry.date to avoid WidgetKit snapshot caching getting “stuck”.
             WidgetWeaverHomeScreenClockView(entry: entry)
                 .id(entry.date)
                 .transaction { transaction in
@@ -200,15 +226,5 @@ private struct WidgetWeaverHomeScreenClockView: View {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
         .clipShape(ContainerRelativeShape())
-        #if DEBUG
-        .overlay(alignment: .topLeading) {
-            Text("scheme=\(entry.colourScheme.rawValue)")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary.opacity(0.65))
-                .padding(6)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        #endif
     }
 }
