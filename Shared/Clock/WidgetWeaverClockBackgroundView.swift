@@ -21,7 +21,7 @@ struct WidgetWeaverClockBackgroundView: View {
             endPoint: .bottomTrailing
         )
 
-        ContainerRelativeShape()
+        Rectangle()
             .fill(bg)
             .overlay(
                 ContainerRelativeShape()
@@ -33,6 +33,6 @@ struct WidgetWeaverClockBackgroundView: View {
                     .strokeBorder(Color.black.opacity(0.28), lineWidth: px)
                     .blendMode(.multiply)
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
     }
 }

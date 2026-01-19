@@ -36,11 +36,6 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
-private struct WWClockRootID: Hashable {
-    let entrySecondRef: Int
-    let schemeRaw: Int
-}
-
 private enum WWClockTimelineConfig {
     // The clock relies on WidgetKit timeline entries to force periodic view reconstruction.
     // Some hosts can suppress view-level time updates after a while; if the timeline is too short,
@@ -180,13 +175,10 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            let rootID = WWClockRootID(
-                entrySecondRef: Int(entry.date.timeIntervalSinceReferenceDate.rounded()),
-                schemeRaw: entry.colourScheme.rawValue
-            )
-
+            // Important: key by entry.date to prevent WidgetKit snapshot caching getting “stuck”
+            // (can manifest as a black tile on the Home Screen while previews look fine).
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(rootID)
+                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
@@ -218,6 +210,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
+        .clipShape(ContainerRelativeShape())
         #if DEBUG
         .overlay(alignment: .topLeading) {
             Text("scheme=\(entry.colourScheme.rawValue)")
