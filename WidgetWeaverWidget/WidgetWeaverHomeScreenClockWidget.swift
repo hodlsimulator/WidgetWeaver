@@ -36,6 +36,11 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
+private struct WWClockRootID: Hashable {
+    let entryDate: Date
+    let schemeRaw: Int
+}
+
 private enum WWClockTimelineConfig {
     // Multi-hour minute timeline to avoid the host “running out” of entries.
     static let maxEntriesPerTimeline: Int = 241
@@ -43,7 +48,7 @@ private enum WWClockTimelineConfig {
 
 private enum WWClockConfigReload {
     // Stored in the App Group so it survives widget process restarts.
-    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v2"
+    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v3"
 
     static func requestReloadIfNeeded(scheme: WidgetWeaverClockColourScheme) async {
         let defaults = AppGroup.userDefaults
@@ -57,6 +62,7 @@ private enum WWClockConfigReload {
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 }
@@ -79,11 +85,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
 
-        // iOS 26 can update the edit-preview via snapshot but fail to rebuild the timeline.
-        // Triggering a timeline reload here keeps the Home Screen instance in sync.
-        if !context.isPreview {
-            await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme)
-        }
+        // The Edit Widget UI frequently uses snapshot() paths; ensuring a reload here keeps the
+        // Home Screen instance in sync even when timeline() is not immediately re-requested.
+        await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme)
 
         return Entry(
             date: now,
@@ -157,6 +161,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 }
 
+// MARK: - Instrumentation (App Group)
+
 private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
     private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
@@ -192,8 +198,13 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
+            let rootID = WWClockRootID(
+                entryDate: entry.date,
+                schemeRaw: entry.colourScheme.rawValue
+            )
+
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
+                .id(rootID)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
@@ -226,5 +237,15 @@ private struct WidgetWeaverHomeScreenClockView: View {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
         .clipShape(ContainerRelativeShape())
+        #if DEBUG
+        .overlay(alignment: .topLeading) {
+            Text("scheme=\(entry.colourScheme.rawValue)")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary.opacity(0.65))
+                .padding(6)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        #endif
     }
 }
