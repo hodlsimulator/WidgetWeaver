@@ -10,7 +10,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
     public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
@@ -37,39 +37,9 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    // Multi-hour minute timeline to avoid the host “running out” of entries.
-    static let maxEntriesPerTimeline: Int = 241
-}
-
-private enum WWClockConfigReload {
-    // Stored in the App Group so it survives widget process restarts.
-    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v4"
-    private static let lastReloadRefKey = "widgetweaver.clockWidget.scheme.lastReloadRef.v1"
-
-    static func requestReloadIfNeeded(scheme: WidgetWeaverClockColourScheme, now: Date) async {
-        let defaults = AppGroup.userDefaults
-
-        let previousRaw = defaults.object(forKey: lastSchemeRawKey) as? Int
-        if previousRaw == scheme.rawValue {
-            return
-        }
-
-        // Throttle: if WidgetKit calls snapshot multiple times in quick succession, avoid thrashing.
-        let nowRef = now.timeIntervalSinceReferenceDate
-        let lastReloadRef = defaults.double(forKey: lastReloadRefKey)
-        if lastReloadRef > 0, (nowRef - lastReloadRef) < 1.0 {
-            defaults.set(scheme.rawValue, forKey: lastSchemeRawKey)
-            return
-        }
-
-        defaults.set(scheme.rawValue, forKey: lastSchemeRawKey)
-        defaults.set(nowRef, forKey: lastReloadRefKey)
-
-        await MainActor.run {
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
-            WidgetCenter.shared.reloadAllTimelines()
-        }
-    }
+    // Keep this short so configuration changes cannot remain “stuck” behind a long cached timeline.
+    // This stays minute-based (budget-safe) and ensures the provider is re-queried frequently.
+    static let maxEntriesPerTimeline: Int = 2 // now + next minute boundary
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -89,11 +59,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
-
-        // Keep reload requests out of preview contexts to avoid reintroducing black tiles.
-        if !context.isPreview {
-            await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme, now: now)
-        }
 
         return Entry(
             date: now,
@@ -119,7 +84,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry uses `now` so configuration edits mid-minute cannot be treated as “same entry”.
+        // Immediate entry uses `now` so edits mid-minute have a chance to render quickly.
         entries.append(
             Entry(
                 date: now,
@@ -129,17 +94,17 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         )
 
-        var next = nextMinuteBoundary
-        while entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
+        // Single future entry ends the timeline at the next minute boundary, so WidgetKit re-requests
+        // the timeline regularly and picks up configuration changes without explicit reload calls.
+        if entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
-                    date: next,
+                    date: nextMinuteBoundary,
                     tickMode: .secondsSweep,
                     tickSeconds: 0.0,
                     colourScheme: colourScheme
                 )
             )
-            next = next.addingTimeInterval(60.0)
         }
 
         WWClockDebugLog.appendLazy(
@@ -205,7 +170,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Per README: keep this exactly entry.date to avoid WidgetKit stale/black snapshots.
+            // Keep keyed by the entry date to avoid stale/black snapshots on Home Screen.
             WidgetWeaverHomeScreenClockView(entry: entry)
                 .id(entry.date)
                 .transaction { transaction in
