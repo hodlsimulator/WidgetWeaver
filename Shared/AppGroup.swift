@@ -31,7 +31,13 @@ public enum AppGroup {
         if let ud = UserDefaults(suiteName: identifier) {
             return ud
         }
-        assertionFailure("App Group UserDefaults unavailable.\nCheck App Groups entitlement: \(identifier)")
+        if !isAppExtension {
+            assertionFailure("App Group UserDefaults unavailable.\nCheck App Groups entitlement: \(identifier)")
+        } else {
+            #if DEBUG
+            NSLog("App Group UserDefaults unavailable. Falling back to .standard. group=%@", identifier)
+            #endif
+        }
         return .standard
     }
 
@@ -39,7 +45,13 @@ public enum AppGroup {
         if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
             return url
         }
-        assertionFailure("App Group container URL unavailable.\nCheck App Groups entitlement: \(identifier)")
+        if !isAppExtension {
+            assertionFailure("App Group container URL unavailable.\nCheck App Groups entitlement: \(identifier)")
+        } else {
+            #if DEBUG
+            NSLog("App Group container URL unavailable. Falling back to temporaryDirectory. group=%@", identifier)
+            #endif
+        }
         return FileManager.default.temporaryDirectory
     }
 

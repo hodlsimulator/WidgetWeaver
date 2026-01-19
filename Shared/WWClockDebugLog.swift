@@ -19,9 +19,15 @@ public enum WWClockDebugLog {
 
     // MARK: - Settings
 
+    private static let isAppExtension: Bool = {
+        let url = Bundle.main.bundleURL
+        if url.pathExtension == "appex" { return true }
+        return url.path.contains(".appex/")
+    }()
+
     #if DEBUG
-    private static let defaultEnabled: Bool = true
-    private static let defaultBalloonEnabled: Bool = true
+    private static let defaultEnabled: Bool = isAppExtension ? false : true
+    private static let defaultBalloonEnabled: Bool = false
     #else
     private static let defaultEnabled: Bool = false
     private static let defaultBalloonEnabled: Bool = false
@@ -82,12 +88,14 @@ public enum WWClockDebugLog {
     }
 
     public static func isBallooningEnabled() -> Bool {
+        if isAppExtension { return false }
         let defaults = AppGroup.userDefaults
         if defaults.object(forKey: balloonEnabledKey) == nil { return defaultBalloonEnabled }
         return defaults.bool(forKey: balloonEnabledKey)
     }
 
     public static func setBallooningEnabled(_ enabled: Bool) {
+        if isAppExtension { return }
         let defaults = AppGroup.userDefaults
         defaults.set(enabled, forKey: balloonEnabledKey)
     }
