@@ -26,6 +26,15 @@ extension ContentView {
                 Label(pickButtonTitle, systemImage: "photo")
             }
 
+            if isPoster {
+                Button {
+                    Task { await quickStartAlbumShuffleFromImageSection() }
+                } label: {
+                    Label("Shuffle from an album…", systemImage: "shuffle")
+                }
+                .disabled(importInProgress)
+            }
+
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
 
             if hasImage {
@@ -119,6 +128,81 @@ extension ContentView {
         }
 
         return false
+    }
+
+    // MARK: - Album Shuffle quick start
+
+    @MainActor
+    func quickStartAlbumShuffleFromImageSection() async {
+        guard !importInProgress else { return }
+
+        if activeSheet != nil {
+            saveStatusMessage = "Close the current sheet to set up Album Shuffle."
+            return
+        }
+
+        let draft = currentFamilyDraft()
+        guard draft.template == .poster else { return }
+
+        let baseFileName = draft.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if baseFileName.isEmpty {
+            saveStatusMessage = "Choose a photo first."
+            photoPickerPresented = true
+            return
+        }
+
+        importInProgress = true
+        defer { importInProgress = false }
+
+        if draft.imageSmartPhoto == nil {
+            await regenerateSmartPhotoRenders()
+        }
+
+        guard currentFamilyDraft().imageSmartPhoto != nil else {
+            saveStatusMessage = "Smart Photo could not be prepared."
+            return
+        }
+
+        if !EditorPhotoLibraryAccess.current().allowsReadWrite {
+            let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
+            EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
+
+            if !granted {
+                saveStatusMessage = "Photos access not granted."
+                return
+            }
+        }
+
+        let albumID = resolvedSmartAlbumContainerIDForAlbumShuffle(from: currentFamilyDraft())
+        editorFocusSnapshot = .smartAlbumContainer(id: albumID)
+
+        await Task.yield()
+
+        if activeSheet != nil {
+            saveStatusMessage = "Close the current sheet to continue Album Shuffle setup."
+            return
+        }
+
+        albumShufflePickerPresented = true
+    }
+
+    private func resolvedSmartAlbumContainerIDForAlbumShuffle(from draft: FamilyDraft) -> String {
+        let fallbackAlbumID = "smartPhoto.album"
+
+        guard
+            let manifestFileName = draft.imageSmartPhoto?.shuffleManifestFileName?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !manifestFileName.isEmpty,
+            let manifest = SmartPhotoShuffleManifestStore.load(fileName: manifestFileName)
+        else {
+            return fallbackAlbumID
+        }
+
+        let rawSourceID = manifest.sourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if rawSourceID.isEmpty {
+            return fallbackAlbumID
+        }
+
+        return rawSourceID
     }
 
     var actionsSection: some View {
