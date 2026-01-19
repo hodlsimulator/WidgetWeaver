@@ -40,10 +40,21 @@ extension ContentView {
     var editorVisibleToolIDs: [EditorToolID] {
         _ = editorToolCapabilitiesDidChangeTick
 
+        var tools: [EditorToolID]
         if FeatureFlags.contextAwareEditorToolSuiteEnabled {
-            return EditorToolRegistry.visibleTools(for: editorToolContext)
+            tools = EditorToolRegistry.visibleTools(for: editorToolContext)
+        } else {
+            tools = EditorToolRegistry.legacyVisibleTools(for: editorToolContext)
         }
-        return EditorToolRegistry.legacyVisibleTools(for: editorToolContext)
+
+        // Photo-first Poster widgets intentionally hide the generic Style tool, since most
+        // of its controls are not applicable to photo-backed rendering (padding, corner radius,
+        // background, accent). This keeps the editor focused on photo and caption controls.
+        if editorToolContext.template == .poster {
+            tools.removeAll(where: { $0 == .style })
+        }
+
+        return tools
     }
 
     func setCurrentFamilyDraft(_ newValue: FamilyDraft) {

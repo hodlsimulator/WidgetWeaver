@@ -76,20 +76,24 @@ extension ContentView {
                     }
                 }
 
-                HStack {
-                    Text("Height")
-                    Slider(value: binding(\.imageHeight), in: 40...240, step: 1)
-                    Text("\(Int(currentFamilyDraft().imageHeight))")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                if !isPoster {
+                    HStack {
+                        Text("Height")
+                        Slider(value: binding(\.imageHeight), in: 40...240, step: 1)
+                        Text("\(Int(currentFamilyDraft().imageHeight))")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                HStack {
-                    Text("Corner radius")
-                    Slider(value: binding(\.imageCornerRadius), in: 0...44, step: 1)
-                    Text("\(Int(currentFamilyDraft().imageCornerRadius))")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                if !isPoster || d.imageContentMode == .fit {
+                    HStack {
+                        Text("Corner radius")
+                        Slider(value: binding(\.imageCornerRadius), in: 0...44, step: 1)
+                        Text("\(Int(currentFamilyDraft().imageCornerRadius))")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Button(role: .destructive) {
