@@ -11,7 +11,7 @@ import Foundation
 /// AppIntent-facing colour scheme selector for the standalone Clock (Icon) widget.
 ///
 /// This type is intentionally widget-extension-only to avoid AppIntent type name collisions with the main app target.
-enum WidgetWeaverClockWidgetColourScheme: String, AppEnum, CaseIterable, Sendable {
+public enum WidgetWeaverClockWidgetColourScheme: String, AppEnum, CaseIterable, Sendable {
     case classic
     case ocean
     case mint
@@ -20,9 +20,9 @@ enum WidgetWeaverClockWidgetColourScheme: String, AppEnum, CaseIterable, Sendabl
     case ember
     case graphite
 
-    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Clock Colour Scheme" }
+    public static var typeDisplayRepresentation: TypeDisplayRepresentation { "Clock Colour Scheme" }
 
-    static var caseDisplayRepresentations: [WidgetWeaverClockWidgetColourScheme: DisplayRepresentation] {
+    public static var caseDisplayRepresentations: [WidgetWeaverClockWidgetColourScheme: DisplayRepresentation] {
         [
             .classic: "Classic",
             .ocean: "Ocean",

@@ -10,18 +10,18 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
-    static var title: LocalizedStringResource { "Clock" }
-    static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
+    public static var title: LocalizedStringResource { "Clock" }
+    public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
     @Parameter(title: "Colour Scheme", default: .classic)
-    var colourScheme: WidgetWeaverClockWidgetColourScheme
+    public var colourScheme: WidgetWeaverClockWidgetColourScheme
 
-    static var parameterSummary: some ParameterSummary {
+    public static var parameterSummary: some ParameterSummary {
         Summary("Colour Scheme: \(\.$colourScheme)")
     }
 
-    init() {}
+    public init() {}
 }
 
 enum WidgetWeaverClockTickMode: Int {
@@ -37,13 +37,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    // The clock relies on WidgetKit timeline entries to force periodic view reconstruction.
-    // Some hosts can suppress view-level time updates after a while; if the timeline is too short,
-    // the widget can "run out" of entries and appear frozen.
-    //
-    // Keep a multi-hour horizon and ask WidgetKit to reload at the end.
-    // This also provides slack if reloads are delayed.
-    static let maxEntriesPerTimeline: Int = 241 // ~4 hours of minute entries + an immediate `now` entry.
+    static let maxEntriesPerTimeline: Int = 241
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -52,7 +46,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     func placeholder(in context: Context) -> Entry {
         let now = Date()
-
         return Entry(
             date: now,
             tickMode: .secondsSweep,
@@ -64,7 +57,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     func snapshot(for configuration: Intent, in context: Context) async -> Entry {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
-
         return Entry(
             date: now,
             tickMode: .secondsSweep,
@@ -89,7 +81,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry uses `now` so configuration edits mid-minute cannot be treated as “same entry”.
         entries.append(
             Entry(
                 date: now,
@@ -138,8 +129,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     }
 }
 
-// MARK: - Instrumentation (App Group)
-
 private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
     private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
@@ -166,6 +155,11 @@ private enum WWClockInstrumentation {
     }
 }
 
+private struct WWClockWidgetViewID: Hashable {
+    let date: Date
+    let scheme: Int
+}
+
 struct WidgetWeaverHomeScreenClockWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.homeScreenClock
 
@@ -175,10 +169,8 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Important: key by entry.date to prevent WidgetKit snapshot caching getting “stuck”
-            // (can manifest as a black tile on the Home Screen while previews look fine).
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
+                .id(WWClockWidgetViewID(date: entry.date, scheme: entry.colourScheme.rawValue))
                 .transaction { transaction in
                     transaction.animation = nil
                 }
