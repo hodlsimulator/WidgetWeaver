@@ -66,6 +66,7 @@ final class WidgetWeaverProManager: ObservableObject {
     @Published private(set) var ownedProducts: Set<String> = []
     @Published private(set) var latestTransaction: StoreKit.Transaction?
     @Published private(set) var errorMessage: String = ""
+    @Published private(set) var statusMessage: String = ""
     @Published private(set) var isProUnlocked: Bool = WidgetWeaverEntitlements.isProUnlocked
 
     private let proProductIDs: Set<String> = [
@@ -103,6 +104,9 @@ final class WidgetWeaverProManager: ObservableObject {
             self.ownedProducts = owned
             self.latestTransaction = latest
             self.isProUnlocked = unlocked
+            if unlocked {
+                self.statusMessage = ""
+            }
         }
     }
 
@@ -115,6 +119,7 @@ final class WidgetWeaverProManager: ObservableObject {
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
+                self.statusMessage = "Store error: \(error.localizedDescription)"
             }
         }
     }
@@ -129,17 +134,27 @@ final class WidgetWeaverProManager: ObservableObject {
                 case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlementFromStoreKit()
+                    await MainActor.run {
+                        self.statusMessage = "Purchase completed."
+                    }
 
                 case .unverified:
                     await MainActor.run {
                         self.errorMessage = "Purchase could not be verified."
+                        self.statusMessage = "Purchase could not be verified."
                     }
                 }
 
             case .userCancelled:
+                await MainActor.run {
+                    self.statusMessage = "Purchase cancelled."
+                }
                 break
 
             case .pending:
+                await MainActor.run {
+                    self.statusMessage = "Purchase pending."
+                }
                 break
 
             @unknown default:
@@ -148,6 +163,7 @@ final class WidgetWeaverProManager: ObservableObject {
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
+                self.statusMessage = "Purchase error: \(error.localizedDescription)"
             }
         }
     }
@@ -156,9 +172,13 @@ final class WidgetWeaverProManager: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlementFromStoreKit()
+            await MainActor.run {
+                self.statusMessage = self.isProUnlocked ? "Restore completed." : "No Pro purchase found."
+            }
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
+                self.statusMessage = "Restore error: \(error.localizedDescription)"
             }
         }
     }
@@ -757,6 +777,8 @@ private struct WidgetWeaverMonospaceTextView: View {
 
 enum Keyboard {
     static func dismiss() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        Task { @MainActor in
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
     }
 }
