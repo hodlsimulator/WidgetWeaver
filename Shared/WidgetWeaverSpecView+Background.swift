@@ -58,10 +58,15 @@ extension WidgetWeaverSpecView {
         if let uiImage = loadedPosterImage {
             Color(uiColor: .systemBackground)
 
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .clipped()
+            let contentMode = (spec.image?.contentMode ?? .fill)
+            if contentMode == .fit {
+                posterMatteFitBackdrop(uiImage: uiImage, cornerRadius: CGFloat(spec.image?.cornerRadius ?? 16))
+            } else {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipped()
+            }
 
             Rectangle()
                 .fill(style.backgroundOverlay.shapeStyle(accent: accent))
@@ -123,6 +128,51 @@ extension WidgetWeaverSpecView {
                 .multilineTextAlignment(.center)
         }
         .padding(14)
+    }
+
+    /// Poster variant used when the image content mode is `.fit`.
+    /// This produces a framed/matte look without changing the spec schema.
+    @ViewBuilder
+    private func posterMatteFitBackdrop(uiImage: UIImage, cornerRadius: CGFloat) -> some View {
+        let outerPadding: CGFloat = {
+            switch family {
+            case .systemSmall:
+                return 10
+            case .systemMedium:
+                return 14
+            case .systemLarge:
+                return 16
+            default:
+                return 14
+            }
+        }()
+
+        let mattePadding: CGFloat = max(10, outerPadding * 0.85)
+        let matteCorner = cornerRadius + mattePadding
+
+        ZStack {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .clipped()
+                .blur(radius: 28)
+                .overlay(Color.black.opacity(0.25))
+
+            RoundedRectangle(cornerRadius: matteCorner, style: .continuous)
+                .fill(Color.white.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: matteCorner, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.20), radius: 18, x: 0, y: 10)
+                .padding(outerPadding)
+
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .padding(outerPadding + mattePadding)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
 
     /// Weather uses a lot of `.ultraThinMaterial`. In WidgetKit, materials take their blur source from the

@@ -317,9 +317,17 @@ private struct SmartPhotoShuffleSchedule: Sendable {
         // Don't bother scheduling rotations until something is actually prepared.
         guard manifest.entries.contains(where: { $0.isPrepared }) else { return nil }
 
-        guard let next = manifest.nextChangeDateFrom(now: now) else { return nil }
+        let minimumRotationMinutes: Int = 15
+        let rotationMinutes = max(minimumRotationMinutes, manifest.rotationIntervalMinutes)
+        let intervalSeconds = TimeInterval(rotationMinutes) * 60.0
 
-        let intervalSeconds = TimeInterval(manifest.rotationIntervalMinutes) * 60.0
+        let next: Date = {
+            if manifest.rotationIntervalMinutes < minimumRotationMinutes {
+                return now.addingTimeInterval(intervalSeconds)
+            }
+            return manifest.nextChangeDateFrom(now: now) ?? now.addingTimeInterval(intervalSeconds)
+        }()
+
         return SmartPhotoShuffleSchedule(intervalSeconds: intervalSeconds, nextChangeDate: next)
     }
 }
