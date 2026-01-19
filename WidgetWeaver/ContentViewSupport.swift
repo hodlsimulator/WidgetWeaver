@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 import StoreKit
+import UIKit
 
 struct WidgetWorkflowHelpView: View {
     var body: some View {
@@ -65,47 +66,43 @@ final class WidgetWeaverProManager: ObservableObject {
     @Published private(set) var ownedProducts: Set<String> = []
     @Published private(set) var latestTransaction: StoreKit.Transaction?
     @Published private(set) var errorMessage: String = ""
+    @Published private(set) var isProUnlocked: Bool = WidgetWeaverEntitlements.isProUnlocked
 
     private let proProductIDs: Set<String> = [
         "widgetweaver.pro.lifetime"
     ]
 
     init() {
-        Task { await refreshEntitlementFromStoreKitIfNeeded() }
-    }
-
-    func refreshEntitlementFromStoreKitIfNeeded() async {
-        if WidgetWeaverEntitlements.isProUnlocked {
-            await refreshEntitlementFromStoreKit()
-        }
+        Task { await refreshEntitlementFromStoreKit() }
     }
 
     func refreshEntitlementFromStoreKit() async {
-        do {
-            var owned: Set<String> = []
-            var latest: StoreKit.Transaction?
+        var owned: Set<String> = []
+        var latest: StoreKit.Transaction?
 
-            for await result in StoreKit.Transaction.currentEntitlements {
-                switch result {
-                case .verified(let transaction):
-                    if proProductIDs.contains(transaction.productID) {
-                        owned.insert(transaction.productID)
-                        latest = transaction
-                    }
-
-                case .unverified:
-                    break
+        for await result in StoreKit.Transaction.currentEntitlements {
+            switch result {
+            case .verified(let transaction):
+                if proProductIDs.contains(transaction.productID) {
+                    owned.insert(transaction.productID)
+                    latest = transaction
                 }
-            }
 
-            await MainActor.run {
-                self.ownedProducts = owned
-                self.latestTransaction = latest
+            case .unverified:
+                break
             }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-            }
+        }
+
+        let unlocked = !owned.isEmpty
+        let previous = WidgetWeaverEntitlements.isProUnlocked
+        if unlocked != previous {
+            WidgetWeaverEntitlements.setProUnlocked(unlocked)
+        }
+
+        await MainActor.run {
+            self.ownedProducts = owned
+            self.latestTransaction = latest
+            self.isProUnlocked = unlocked
         }
     }
 
@@ -132,9 +129,6 @@ final class WidgetWeaverProManager: ObservableObject {
                 case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlementFromStoreKit()
-                    await MainActor.run {
-                        WidgetWeaverEntitlements.setProUnlocked(true)
-                    }
 
                 case .unverified:
                     await MainActor.run {
@@ -162,10 +156,6 @@ final class WidgetWeaverProManager: ObservableObject {
         do {
             try await AppStore.sync()
             await refreshEntitlementFromStoreKit()
-            await MainActor.run {
-                let unlocked = !ownedProducts.isEmpty
-                WidgetWeaverEntitlements.setProUnlocked(unlocked)
-            }
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
@@ -173,6 +163,7 @@ final class WidgetWeaverProManager: ObservableObject {
         }
     }
 }
+
 
 struct WidgetWeaverProView: View {
     @ObservedObject var manager: WidgetWeaverProManager
@@ -759,5 +750,13 @@ private struct WidgetWeaverMonospaceTextView: View {
             }
         }
         .background(Color(uiColor: .systemBackground))
+    }
+}
+
+// MARK: - Keyboard
+
+enum Keyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }

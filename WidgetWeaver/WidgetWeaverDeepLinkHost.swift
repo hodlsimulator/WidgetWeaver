@@ -62,27 +62,32 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
             }
             .sheet(item: $activeDeepLink) { deepLink in
                 NavigationStack {
-                    switch deepLink {
-                    case .noiseMachine:
-                        NoiseMachineView()
-
-                    case .pawPulseLatestCat:
-                        PawPulseLatestCatDetailView()
-
-                    case .pawPulseSettings:
-                        PawPulseSettingsView()
-
-                    case .clock:
-                        WidgetWeaverClockDeepLinkView()
-                    }
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Close") { activeDeepLink = nil }
+                    deepLinkDestination(deepLink)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button("Close") { activeDeepLink = nil }
+                            }
                         }
-                    }
                 }
             }
+    }
+
+    @ViewBuilder
+    private func deepLinkDestination(_ deepLink: WidgetWeaverDeepLink) -> some View {
+        switch deepLink {
+        case .noiseMachine:
+            NoiseMachineView()
+
+        case .pawPulseLatestCat:
+            PawPulseLatestCatDetailView()
+
+        case .pawPulseSettings:
+            PawPulseSettingsView()
+
+        case .clock:
+            WidgetWeaverClockDeepLinkView()
+        }
     }
 }
 
