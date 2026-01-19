@@ -10,7 +10,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
+public struct WidgetWeaverHomeScreenClockConfigurationIntent: AppIntent, WidgetConfigurationIntent {
     public static var title: LocalizedStringResource { "Clock" }
     public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
 
@@ -36,11 +36,6 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
-private struct WWClockRootID: Hashable {
-    let entryDate: Date
-    let schemeRaw: Int
-}
-
 private enum WWClockTimelineConfig {
     // Multi-hour minute timeline to avoid the host “running out” of entries.
     static let maxEntriesPerTimeline: Int = 241
@@ -48,9 +43,10 @@ private enum WWClockTimelineConfig {
 
 private enum WWClockConfigReload {
     // Stored in the App Group so it survives widget process restarts.
-    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v3"
+    private static let lastSchemeRawKey = "widgetweaver.clockWidget.scheme.lastRaw.v4"
+    private static let lastReloadRefKey = "widgetweaver.clockWidget.scheme.lastReloadRef.v1"
 
-    static func requestReloadIfNeeded(scheme: WidgetWeaverClockColourScheme) async {
+    static func requestReloadIfNeeded(scheme: WidgetWeaverClockColourScheme, now: Date) async {
         let defaults = AppGroup.userDefaults
 
         let previousRaw = defaults.object(forKey: lastSchemeRawKey) as? Int
@@ -58,7 +54,16 @@ private enum WWClockConfigReload {
             return
         }
 
+        // Throttle: if WidgetKit calls snapshot multiple times in quick succession, avoid thrashing.
+        let nowRef = now.timeIntervalSinceReferenceDate
+        let lastReloadRef = defaults.double(forKey: lastReloadRefKey)
+        if lastReloadRef > 0, (nowRef - lastReloadRef) < 1.0 {
+            defaults.set(scheme.rawValue, forKey: lastSchemeRawKey)
+            return
+        }
+
         defaults.set(scheme.rawValue, forKey: lastSchemeRawKey)
+        defaults.set(nowRef, forKey: lastReloadRefKey)
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.homeScreenClock)
@@ -85,9 +90,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
 
-        // The Edit Widget UI frequently uses snapshot() paths; ensuring a reload here keeps the
-        // Home Screen instance in sync even when timeline() is not immediately re-requested.
-        await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme)
+        // Keep reload requests out of preview contexts to avoid reintroducing black tiles.
+        if !context.isPreview {
+            await WWClockConfigReload.requestReloadIfNeeded(scheme: scheme, now: now)
+        }
 
         return Entry(
             date: now,
@@ -113,6 +119,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
+        // Immediate entry uses `now` so configuration edits mid-minute cannot be treated as “same entry”.
         entries.append(
             Entry(
                 date: now,
@@ -198,13 +205,9 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            let rootID = WWClockRootID(
-                entryDate: entry.date,
-                schemeRaw: entry.colourScheme.rawValue
-            )
-
+            // Per README: keep this exactly entry.date to avoid WidgetKit stale/black snapshots.
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(rootID)
+                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
