@@ -64,13 +64,13 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
                 NavigationStack {
                     switch deepLink {
                     case .noiseMachine:
-                        WidgetWeaverNoiseMachineView()
+                        NoiseMachineView()
 
                     case .pawPulseLatestCat:
-                        WidgetWeaverPawPulseLatestCatView()
+                        PawPulseLatestCatDetailView()
 
                     case .pawPulseSettings:
-                        WidgetWeaverPawPulseSettingsView()
+                        PawPulseSettingsView()
 
                     case .clock:
                         WidgetWeaverClockDeepLinkView()

@@ -63,7 +63,7 @@ struct WidgetWorkflowHelpView: View {
 final class WidgetWeaverProManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var ownedProducts: Set<String> = []
-    @Published private(set) var latestTransaction: Transaction?
+    @Published private(set) var latestTransaction: StoreKit.Transaction?
     @Published private(set) var errorMessage: String = ""
 
     private let proProductIDs: Set<String> = [
@@ -83,9 +83,9 @@ final class WidgetWeaverProManager: ObservableObject {
     func refreshEntitlementFromStoreKit() async {
         do {
             var owned: Set<String> = []
-            var latest: Transaction?
+            var latest: StoreKit.Transaction?
 
-            for await result in Transaction.currentEntitlements {
+            for await result in StoreKit.Transaction.currentEntitlements {
                 switch result {
                 case .verified(let transaction):
                     if proProductIDs.contains(transaction.productID) {
@@ -321,16 +321,16 @@ struct WidgetWeaverDesignInspectorView: View {
                     Menu {
                         Button {
                             statusMessage = "Reloading variables…"
-                            WidgetWeaverVariableStore.shared.invalidateCache()
-                            statusMessage = "Reloaded variables."
+                            WidgetCenter.shared.reloadAllTimelines()
+                            statusMessage = "Requested widget refresh."
                         } label: {
                             Label("Reload variables", systemImage: "arrow.clockwise")
                         }
 
                         Button {
                             statusMessage = "Reloading designs…"
-                            WidgetSpecStore.shared.invalidateCache()
-                            statusMessage = "Reloaded designs."
+                            WidgetSpecStore.shared.reloadWidgets()
+                            statusMessage = "Requested widget refresh."
                         } label: {
                             Label("Reload designs", systemImage: "arrow.clockwise")
                         }
@@ -360,7 +360,6 @@ struct WidgetWeaverDesignInspectorView: View {
 
             LabeledContent("Template", value: spec.layout.template.displayName)
 
-            LabeledContent("Created", value: spec.normalised().createdAt.formatted(date: .abbreviated, time: .standard))
             LabeledContent("Updated", value: spec.normalised().updatedAt.formatted(date: .abbreviated, time: .standard))
 
             let hasMatched = (spec.normalised().matchedSet != nil)
