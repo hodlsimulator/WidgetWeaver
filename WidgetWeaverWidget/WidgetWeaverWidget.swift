@@ -151,6 +151,16 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let now = Date()
 
         let familySpec = spec.resolved(for: context.family)
+
+        // Clock (Icon) designs are time-dependent and previously used the generic minute-level
+        // timeline builder (up to 240 distinct entries). WidgetKit may pre-render a large portion
+        // of the timeline ahead-of-time; for the clock face this can exceed WidgetKit's
+        // time/memory budget and it will fall back to a placeholder. Keep the timeline shallow
+        // and re-query frequently.
+        if familySpec.layout.template == .clockIcon {
+            return makeClockIconMinuteTimeline(now: now, family: context.family, spec: spec)
+        }
+
         let shuffleSchedule = SmartPhotoShuffleSchedule.load(for: familySpec, now: now)
 
         // Poster-only shuffle: schedule entries exactly at rotation boundaries.
@@ -200,7 +210,6 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             if d <= now {
                 d = now.addingTimeInterval(interval)
             }
-            if abs(d.timeIntervalSince(now)) < 0.5 { d = d.addingTimeInterval(interval) }
 
             while entries.count < desiredEntries {
                 entries.append(Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: false))
@@ -322,6 +331,26 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             return loaded
         }
         return WidgetSpecStore.shared.loadDefault()
+    }
+
+    private func makeClockIconMinuteTimeline(now: Date, family: WidgetFamily, spec: WidgetSpec) -> Timeline<Entry> {
+        let minuteAnchor = Self.floorToMinute(now)
+        let nextMinuteBoundary = minuteAnchor.addingTimeInterval(60.0)
+
+        let entries: [Entry] = [
+            // Immediate entry uses `now` so edits mid-minute can render quickly.
+            Entry(date: now, family: family, spec: spec, isWidgetKitPreview: false),
+            // End the timeline at the next minute boundary so WidgetKit re-requests frequently.
+            Entry(date: nextMinuteBoundary, family: family, spec: spec, isWidgetKitPreview: false)
+        ]
+
+        return Timeline(entries: entries, policy: .atEnd)
+    }
+
+    private static func floorToMinute(_ date: Date) -> Date {
+        let t = date.timeIntervalSinceReferenceDate
+        let floored = floor(t / 60.0) * 60.0
+        return Date(timeIntervalSinceReferenceDate: floored)
     }
 }
 
