@@ -229,7 +229,7 @@ Key implementation files:
 
 ### Current approach
 
-- **Provider timeline (budget-safe):** the provider publishes minute-boundary WidgetKit timeline entries (typically ~120 minutes precomputed per timeline). This bounds provider work and ensures the widget updates even if the view-level heartbeat is suppressed.
+- **Provider timeline (budget-safe):** the provider publishes minute-boundary WidgetKit timeline entries with a deliberately short horizon (now + next minute boundary). This bounds provider work, avoids colour scheme changes getting “stuck” behind a long cached timeline on iOS 26, and ensures the widget updates even if the view-level heartbeat is suppressed.
 - **Minute-accurate hands (view-level heartbeat):** the live view does not rely on WidgetKit delivering the *next* minute entry exactly on time. Instead it uses an invisible, time-aware `ProgressView(timerInterval:)` as a lightweight heartbeat so SwiftUI re-evaluates the view frequently while still avoiding high-frequency WidgetKit reloads.
 - **Heartbeat interval:** the heartbeat is a **60-second** interval anchored to the **current minute** and keyed by that minute anchor. Long timer intervals (e.g. multi-hour ranges) can be updated too infrequently by iOS, which reintroduces “late” minute ticks.
 - **Live vs pre-render:** when the widget is live on the Home Screen, hour/minute are derived from the wall clock (`Date()`). When WidgetKit is pre-rendering future entries (timeline caching), hour/minute are derived from the pinned entry date (`WidgetWeaverRenderClock.now`) for deterministic snapshots.
@@ -249,6 +249,64 @@ Clock diagnostics are written via `WWClockDebugLog` and must never be able to de
 - **Clearing logs:** `clear()` deletes the file and drops any legacy `UserDefaults` key (no migration), so an old oversized log cannot reintroduce timing issues.
 
 If the minute tick ever “goes slow again”, the first sanity check is: clear the clock log and confirm logging isn’t accidentally spamming writes from the widget.
+
+
+### Troubleshooting (iOS 26): colour scheme + black tile regressions
+
+#### Clock colour scheme does not change on the Home Screen (but previews look correct)
+
+Symptoms:
+
+- Changing the clock widget’s colour scheme updates the in-app preview / widget gallery preview.
+- The live Home Screen widget keeps the previous scheme (sometimes indefinitely).
+
+Why this happens:
+
+- On iOS 26, WidgetKit can keep rendering from an already-generated clock timeline and not request a fresh timeline immediately after a configuration edit.
+- The Edit Widget UI can drive updates via `snapshot(for:)` without forcing `timeline(for:)` to be re-run, so the preview looks right while the Home Screen instance stays on the old timeline.
+
+Fix (safe, does not require WidgetCenter reload calls):
+
+- Keep the clock timeline intentionally short so WidgetKit is forced to re-request it frequently.
+- In `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`, reduce the clock timeline horizon to “now + next minute boundary”, for example:
+  - `WWClockTimelineConfig.maxEntriesPerTimeline = 2`
+  - produce entries for `now` and `nextMinuteBoundary`
+  - return the timeline with `.policy = .atEnd`
+
+Expected behaviour:
+
+- After editing the scheme on the Home Screen, the live widget should pick up the new scheme by the next minute boundary (worst-case just under 60 seconds).
+
+Do not “fix” this by calling `WidgetCenter.shared.reloadTimelines(...)` / `reloadAllTimelines()` from inside the widget provider. On iOS 26 this can easily reintroduce the black tile issue described below.
+
+#### Clock widget renders as a solid black tile on the Home Screen
+
+Symptoms:
+
+- The clock widget appears as a black tile on the Home Screen.
+- Previews may still render correctly.
+
+Common causes in this codebase:
+
+- Doing heavy or blocking work during widget rendering or timeline generation (especially debug logging that writes synchronously, or ballooning logs in `UserDefaults`).
+- Triggering WidgetKit reload loops by calling `WidgetCenter.shared.reloadTimelines(...)` / `reloadAllTimelines()` from within the widget extension/provider.
+- App Group access failing inside the widget extension due to entitlements/suite/container issues.
+- Snapshot/identity regressions (removing `.id(entry.date)` from the widget configuration closure).
+
+Fix checklist:
+
+- Avoid WidgetCenter reload calls from inside widget providers. Reloads should be triggered from the app after a user edit, not from `snapshot(for:)` / `timeline(for:)`.
+- Keep `WWClockDebugLog` budget-safe: file-backed, capped, and best-effort/asynchronous. Never store huge logs in `UserDefaults`, and never call `UserDefaults.synchronize()` from the widget.
+- Verify App Group entitlements are present for both the app target and the widget extension (same group identifier), and make App Group access non-fatal inside the extension.
+- Keep the widget tree keyed by the entry date:
+
+        .id(entry.date)
+
+Recovery while testing:
+
+- Remove the widget from the Home Screen, rebuild/reinstall, then add the widget again.
+- If the tile remains black, check the device logs for widget extension crashes (Console.app on macOS, filter for the widget bundle identifier).
+
 
 ### 🚨 Do not break these invariants (easy to regress)
 
