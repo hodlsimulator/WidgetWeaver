@@ -355,6 +355,11 @@ struct WidgetWeaverDesignInspectorView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    private var restrictToSmallOnly: Bool {
+        let familySpec = spec.resolved(for: family)
+        return familySpec.layout.template == .clockIcon
+    }
+
     init(spec: WidgetSpec, initialFamily: WidgetFamily = .systemSmall) {
         self.spec = spec
         _family = State(initialValue: initialFamily)
@@ -385,6 +390,15 @@ struct WidgetWeaverDesignInspectorView: View {
                     Button("Close") { dismiss() }
                 }
             }
+            .onAppear {
+                clampFamilyIfNeeded()
+            }
+        }
+    }
+
+    private func clampFamilyIfNeeded() {
+        if restrictToSmallOnly, family != .systemSmall {
+            family = .systemSmall
         }
     }
 
@@ -409,11 +423,16 @@ struct WidgetWeaverDesignInspectorView: View {
         Section {
             Picker("Preview size", selection: $family) {
                 Text("Small").tag(WidgetFamily.systemSmall)
-                Text("Medium").tag(WidgetFamily.systemMedium)
-                Text("Large").tag(WidgetFamily.systemLarge)
+                if !restrictToSmallOnly {
+                    Text("Medium").tag(WidgetFamily.systemMedium)
+                    Text("Large").tag(WidgetFamily.systemLarge)
+                }
             }
             .pickerStyle(.segmented)
             .controlSize(.small)
+            .onChange(of: family) { _, _ in
+                clampFamilyIfNeeded()
+            }
 
             let resolved = resolvedSpec(for: family)
 

@@ -62,10 +62,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         return Entry(
             date: now,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: scheme,
-            isWidgetKitPreview: true
+            isWidgetKitPreview: context.isPreview
         )
     }
 
@@ -75,7 +75,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 
-        return makeMinuteTimeline(now: now, colourScheme: scheme, isWidgetKitPreview: context.isPreview)
+        // Always publish a live (non-preview) entry for Home Screen rendering.
+        // Some iOS widget-hosting paths can treat freshly-added widgets as “preview” for longer than expected.
+        // If we key live rendering off `context.isPreview`, those instances can get stuck in the low-budget face.
+        return makeMinuteTimeline(now: now, colourScheme: scheme, isWidgetKitPreview: false)
     }
 
     private func makeMinuteTimeline(
