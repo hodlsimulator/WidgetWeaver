@@ -190,30 +190,54 @@ public struct WidgetWeaverWeatherSnapshot: Codable, Hashable, Sendable {
 
         let minuteBase = cal.dateInterval(of: .minute, for: now)?.start ?? now
 
+        @inline(__always)
+        func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
+
+        @inline(__always)
+        func smoothstep(_ edge0: Double, _ edge1: Double, _ x: Double) -> Double {
+            if edge0 == edge1 { return 0.0 }
+            let t = clamp01((x - edge0) / (edge1 - edge0))
+            return t * t * (3.0 - 2.0 * t)
+        }
+
+        @inline(__always)
+        func gaussian(_ x: Double, mu: Double, sigma: Double) -> Double {
+            if sigma <= 0.0 { return 0.0 }
+            let z = (x - mu) / sigma
+            return exp(-0.5 * z * z)
+        }
+
+        // Deterministic preview curve: rain starts in ~9 minutes, peaks around the middle of the hour,
+        // then dissipates. Uses minute-level variation to avoid blocky step plateaus in previews.
+        let startM = 9.0
+        let peakM = 34.0
+        let endM = 53.0
+
         let minute: [WidgetWeaverWeatherMinutePoint] = (0..<60).compactMap { i in
             guard let d = cal.date(byAdding: .minute, value: i, to: minuteBase) else { return nil }
 
-            // A simple "rain comes and goes" pattern so previews show the nowcast chart.
-            let intensity: Double
-            let chance: Double
+            let t = Double(i)
 
-            switch i {
-            case 0..<10:
+            // 0 -> 1 over ~5 minutes.
+            let gateIn = smoothstep(startM - 2.0, startM + 3.0, t)
+
+            // 1 -> 0 over ~5 minutes.
+            let gateOut = 1.0 - smoothstep(endM - 3.0, endM + 2.0, t)
+
+            let gate = clamp01(gateIn * gateOut)
+
+            // Broad hump with gentle deterministic wiggle so the line reads more like real data.
+            let hump = gaussian(t, mu: peakM, sigma: 9.0)
+            let wiggle = 0.06 * sin(t * 0.90) + 0.04 * sin(t * 0.23 + 1.40)
+
+            var intensity = max(0.0, (0.12 + 1.55 * hump) * gate * (1.0 + wiggle))
+            var chance = clamp01((0.10 + 0.85 * hump) * gate + 0.05)
+
+            // Hard clamp before/after to avoid accidental “early drizzle” affecting the headline.
+            if t < startM {
                 intensity = 0.0
                 chance = 0.08
-            case 10..<20:
-                intensity = 0.25
-                chance = 0.35
-            case 20..<35:
-                intensity = 0.90
-                chance = 0.75
-            case 35..<45:
-                intensity = 1.60
-                chance = 0.85
-            case 45..<55:
-                intensity = 0.55
-                chance = 0.55
-            default:
+            } else if t > endM + 1.0 {
                 intensity = 0.0
                 chance = 0.15
             }
