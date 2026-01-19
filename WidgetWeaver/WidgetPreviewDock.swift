@@ -42,6 +42,21 @@ struct WidgetPreviewDock: View {
     @State private var frozenSpec: WidgetSpec? = nil
     @State private var pendingTask: Task<Void, Never>? = nil
 
+    private var restrictToSmallOnly: Bool {
+        let n = spec.normalised()
+
+        // The clock widget template is small-only.
+        // Matched-set variants are intentionally ignored here so mixed templates can still be previewed.
+        return n.layout.template == .clockIcon
+    }
+
+    private var allowedFamilies: [WidgetFamily] {
+        if restrictToSmallOnly {
+            return [.systemSmall]
+        }
+        return [.systemSmall, .systemMedium, .systemLarge]
+    }
+
     var body: some View {
         Group {
             switch presentation {
@@ -51,7 +66,10 @@ struct WidgetPreviewDock: View {
                 dockCard
             }
         }
-        .onAppear { ensureSpecStateInitialised() }
+        .onAppear {
+            ensureSpecStateInitialised()
+            clampFamilyIfNeeded()
+        }
         .onChange(of: spec) { _, newValue in
             handleIncomingSpecChange(newValue)
         }
@@ -130,8 +148,10 @@ struct WidgetPreviewDock: View {
 
                 Picker("Size", selection: $family) {
                     Text("Small").tag(WidgetFamily.systemSmall)
-                    Text("Medium").tag(WidgetFamily.systemMedium)
-                    Text("Large").tag(WidgetFamily.systemLarge)
+                    if !restrictToSmallOnly {
+                        Text("Medium").tag(WidgetFamily.systemMedium)
+                        Text("Large").tag(WidgetFamily.systemLarge)
+                    }
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
@@ -242,15 +262,18 @@ struct WidgetPreviewDock: View {
     }
 
     private var familyMenu: some View {
+        let isSingleFamily = (allowedFamilies.count <= 1)
         Menu {
             Button { family = .systemSmall } label: {
                 Label("Small", systemImage: "square")
             }
-            Button { family = .systemMedium } label: {
-                Label("Medium", systemImage: "rectangle")
-            }
-            Button { family = .systemLarge } label: {
-                Label("Large", systemImage: "rectangle.portrait")
+            if !restrictToSmallOnly {
+                Button { family = .systemMedium } label: {
+                    Label("Medium", systemImage: "rectangle")
+                }
+                Button { family = .systemLarge } label: {
+                    Label("Large", systemImage: "rectangle.portrait")
+                }
             }
         } label: {
             Text(familyAbbreviation)
@@ -261,6 +284,7 @@ struct WidgetPreviewDock: View {
                 .background(.ultraThinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(isSingleFamily)
     }
 
     private var dragGesture: some Gesture {
@@ -344,12 +368,14 @@ struct WidgetPreviewDock: View {
 
     private func handleIncomingSpecChange(_ newValue: WidgetSpec) {
         ensureSpecStateInitialised()
+        clampFamilyIfNeeded()
         guard liveEnabled else { return }
         scheduleDebouncedUpdate(to: newValue)
     }
 
     private func handleLiveToggleChange(_ enabled: Bool) {
         ensureSpecStateInitialised()
+        clampFamilyIfNeeded()
 
         pendingTask?.cancel()
         pendingTask = nil
@@ -375,5 +401,10 @@ struct WidgetPreviewDock: View {
                 displayedSpec = newSpec
             }
         }
+    }
+
+    private func clampFamilyIfNeeded() {
+        guard !allowedFamilies.contains(family) else { return }
+        family = allowedFamilies.first ?? .systemSmall
     }
 }

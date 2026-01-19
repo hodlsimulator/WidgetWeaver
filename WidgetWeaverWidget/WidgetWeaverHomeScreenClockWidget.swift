@@ -34,6 +34,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
     let colourScheme: WidgetWeaverClockColourScheme
+    let isWidgetKitPreview: Bool
 }
 
 private enum WWClockTimelineConfig {
@@ -50,9 +51,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         return Entry(
             date: now,
-            tickMode: .secondsSweep,
-            tickSeconds: 0.0,
-            colourScheme: .classic
+            tickMode: .minuteOnly,
+            tickSeconds: 60.0,
+            colourScheme: .classic,
+            isWidgetKitPreview: true
         )
     }
 
@@ -62,9 +64,10 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         return Entry(
             date: now,
-            tickMode: .secondsSweep,
-            tickSeconds: 0.0,
-            colourScheme: scheme
+            tickMode: .minuteOnly,
+            tickSeconds: 60.0,
+            colourScheme: scheme,
+            isWidgetKitPreview: true
         )
     }
 
@@ -74,10 +77,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
 
-        return makeMinuteTimeline(now: now, colourScheme: scheme)
+        return makeMinuteTimeline(now: now, colourScheme: scheme, isWidgetKitPreview: context.isPreview)
     }
 
-    private func makeMinuteTimeline(now: Date, colourScheme: WidgetWeaverClockColourScheme) -> Timeline<Entry> {
+    private func makeMinuteTimeline(
+        now: Date,
+        colourScheme: WidgetWeaverClockColourScheme,
+        isWidgetKitPreview: Bool
+    ) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
         let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
@@ -90,7 +97,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                 date: now,
                 tickMode: .secondsSweep,
                 tickSeconds: 0.0,
-                colourScheme: colourScheme
+                colourScheme: colourScheme,
+                isWidgetKitPreview: isWidgetKitPreview
             )
         )
 
@@ -102,7 +110,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                     date: nextMinuteBoundary,
                     tickMode: .secondsSweep,
                     tickSeconds: 0.0,
-                    colourScheme: colourScheme
+                    colourScheme: colourScheme,
+                    isWidgetKitPreview: isWidgetKitPreview
                 )
             )
         }
@@ -195,12 +204,21 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: colorScheme
         )
 
-        WidgetWeaverClockWidgetLiveView(
-            palette: palette,
-            entryDate: entry.date,
-            tickMode: entry.tickMode,
-            tickSeconds: entry.tickSeconds
-        )
+        Group {
+            if entry.isWidgetKitPreview {
+                WidgetWeaverClockWidgetStaticPreviewFace(
+                    palette: palette,
+                    date: entry.date
+                )
+            } else {
+                WidgetWeaverClockWidgetLiveView(
+                    palette: palette,
+                    entryDate: entry.date,
+                    tickMode: entry.tickMode,
+                    tickSeconds: entry.tickSeconds
+                )
+            }
+        }
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
@@ -215,5 +233,111 @@ private struct WidgetWeaverHomeScreenClockView: View {
                 .accessibilityHidden(true)
         }
         #endif
+    }
+}
+
+private struct WidgetWeaverClockWidgetStaticPreviewFace: View {
+    let palette: WidgetWeaverClockPalette
+    let date: Date
+
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let dialSize = side * 0.86
+            let radius = dialSize * 0.5
+            let px = WWClock.px(scale: displayScale)
+
+            let angles = clockAngles(for: date)
+
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [palette.dialCenter, palette.dialEdge]),
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: radius
+                        )
+                    )
+
+                // Subtle edge to keep the dial readable against bright schemes.
+                Circle()
+                    .strokeBorder(palette.separatorRing.opacity(0.45), lineWidth: max(px, 0.8))
+
+                // Hour hand
+                hand(
+                    width: dialSize * 0.085,
+                    length: dialSize * 0.26,
+                    angleDegrees: angles.hour,
+                    baseOffset: dialSize * 0.13
+                )
+
+                // Minute hand
+                hand(
+                    width: dialSize * 0.065,
+                    length: dialSize * 0.36,
+                    angleDegrees: angles.minute,
+                    baseOffset: dialSize * 0.18
+                )
+
+                // Second hand (thin, high-contrast)
+                RoundedRectangle(cornerRadius: dialSize * 0.01, style: .continuous)
+                    .fill(palette.accent)
+                    .frame(width: max(px, dialSize * 0.018), height: dialSize * 0.42)
+                    .offset(y: -dialSize * 0.21)
+                    .rotationEffect(.degrees(angles.second))
+
+                // Hub
+                Circle()
+                    .fill(palette.hubBase)
+                    .frame(width: dialSize * 0.10, height: dialSize * 0.10)
+
+                Circle()
+                    .fill(palette.accent)
+                    .frame(width: dialSize * 0.034, height: dialSize * 0.034)
+            }
+            .frame(width: dialSize, height: dialSize)
+            .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
+        }
+    }
+
+    private func hand(width: CGFloat, length: CGFloat, angleDegrees: Double, baseOffset: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+            .fill(
+                LinearGradient(
+                    gradient: Gradient(colors: [palette.handLight, palette.handMid, palette.handDark]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
+                    .strokeBorder(palette.handEdge.opacity(0.35), lineWidth: max(WWClock.px(scale: displayScale), 0.7))
+            }
+            .frame(width: width, height: length)
+            .offset(y: -baseOffset)
+            .rotationEffect(.degrees(angleDegrees))
+    }
+
+    private struct Angles {
+        let hour: Double
+        let minute: Double
+        let second: Double
+    }
+
+    private func clockAngles(for date: Date) -> Angles {
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.hour, .minute, .second], from: date)
+        let h = Double((comps.hour ?? 0) % 12)
+        let m = Double(comps.minute ?? 0)
+        let s = Double(comps.second ?? 0)
+
+        let hour = (h + (m / 60.0)) / 12.0 * 360.0
+        let minute = (m / 60.0) * 360.0
+        let second = (s / 60.0) * 360.0
+
+        return Angles(hour: hour, minute: minute, second: second)
     }
 }
