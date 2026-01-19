@@ -169,10 +169,27 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
            !usesActivity
         {
             let interval = shuffleSchedule.intervalSeconds
+
+            // Guardrail:
+            // WidgetKit may pre-render a large portion of the timeline. For fast shuffle intervals
+            // (notably the 2-minute testing option), keep the number of future rotations extremely small
+            // so we do not decode a long run of distinct images ahead-of-time.
             let targetHorizon: TimeInterval = 60 * 30 // 30 minutes
 
             // 3–6 entries total (now + 2–5 future rotation boundaries).
-            let desiredEntries = max(3, min(6, Int((targetHorizon / interval).rounded(.down)) + 3))
+            let baseDesiredEntries = max(3, min(6, Int((targetHorizon / interval).rounded(.down)) + 3))
+
+            let desiredEntries: Int = {
+                if interval <= 60 * 5 {
+                    // Fast testing: now + 3 rotation boundaries.
+                    return min(baseDesiredEntries, 4)
+                }
+                if interval <= 60 * 15 {
+                    // Still fast: now + 4 rotation boundaries.
+                    return min(baseDesiredEntries, 5)
+                }
+                return baseDesiredEntries
+            }()
 
             var entries: [Entry] = []
             entries.reserveCapacity(desiredEntries)
@@ -232,8 +249,15 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         // Buffer enough future entries so the widget doesn't "run out" if WidgetKit delays reloads.
         let maxEntries: Int = {
-            if let shuffleSchedule, shuffleSchedule.intervalSeconds < (15 * 60) {
-                return 32
+            if let shuffleSchedule {
+                // Guardrail for fast shuffle intervals: keep the future timeline shallow so WidgetKit
+                // cannot pre-render a long sequence of distinct photos (budget storm / placeholder fallback).
+                if shuffleSchedule.intervalSeconds <= 60 * 5 {
+                    return 10
+                }
+                if shuffleSchedule.intervalSeconds <= 60 * 15 {
+                    return 16
+                }
             }
             return 240
         }()
@@ -317,16 +341,10 @@ private struct SmartPhotoShuffleSchedule: Sendable {
         // Don't bother scheduling rotations until something is actually prepared.
         guard manifest.entries.contains(where: { $0.isPrepared }) else { return nil }
 
-        let minimumRotationMinutes: Int = 15
-        let rotationMinutes = max(minimumRotationMinutes, manifest.rotationIntervalMinutes)
-        let intervalSeconds = TimeInterval(rotationMinutes) * 60.0
+        let intervalMinutes = manifest.rotationIntervalMinutes
+        let intervalSeconds = TimeInterval(intervalMinutes) * 60.0
 
-        let next: Date = {
-            if manifest.rotationIntervalMinutes < minimumRotationMinutes {
-                return now.addingTimeInterval(intervalSeconds)
-            }
-            return manifest.nextChangeDateFrom(now: now) ?? now.addingTimeInterval(intervalSeconds)
-        }()
+        let next = manifest.nextChangeDateFrom(now: now) ?? now.addingTimeInterval(intervalSeconds)
 
         return SmartPhotoShuffleSchedule(intervalSeconds: intervalSeconds, nextChangeDate: next)
     }
