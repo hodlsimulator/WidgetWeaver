@@ -337,14 +337,19 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         let minuteAnchor = Self.floorToMinute(now)
         let nextMinuteBoundary = minuteAnchor.addingTimeInterval(60.0)
 
+        // Keep the timeline deliberately shallow.
+        // WidgetKit can pre-render a large portion of the timeline; for clock faces this can
+        // exceed the rendering budget and the system will fall back to a placeholder.
+        //
+        // We still ask WidgetKit to reload soon so the widget refresh path remains healthy.
         let entries: [Entry] = [
             // Immediate entry uses `now` so edits mid-minute can render quickly.
-            Entry(date: now, family: family, spec: spec, isWidgetKitPreview: false),
-            // End the timeline at the next minute boundary so WidgetKit re-requests frequently.
-            Entry(date: nextMinuteBoundary, family: family, spec: spec, isWidgetKitPreview: false)
+            Entry(date: now, family: family, spec: spec, isWidgetKitPreview: false)
         ]
 
-        return Timeline(entries: entries, policy: .atEnd)
+        // Reload shortly after the next minute boundary.
+        let reload = nextMinuteBoundary.addingTimeInterval(1.0)
+        return Timeline(entries: entries, policy: .after(reload))
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
@@ -380,6 +385,133 @@ private struct SmartPhotoShuffleSchedule: Sendable {
     }
 }
 
+// MARK: - Clock design host (main widget)
+
+private struct WidgetWeaverClockIconDesignWidgetView: View {
+    let spec: WidgetSpec
+    let family: WidgetFamily
+    let entryDate: Date
+    let isLowBudget: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if family != .systemSmall {
+            clockUnsupportedSize
+        } else {
+            let scheme = Self.scheme(for: spec)
+            let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+
+            Group {
+                if isLowBudget {
+                    WWMainClockStaticFace(
+                        palette: palette,
+                        date: entryDate,
+                        showsSecondsHand: false
+                    )
+                } else {
+                    WidgetWeaverClockWidgetLiveView(
+                        palette: palette,
+                        entryDate: entryDate,
+                        tickMode: .secondsSweep,
+                        tickSeconds: 0.0
+                    )
+                }
+            }
+            .wwWidgetContainerBackground {
+                WidgetWeaverClockBackgroundView(palette: palette)
+            }
+            .clipShape(ContainerRelativeShape())
+        }
+    }
+
+    private var clockUnsupportedSize: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Clock", systemImage: "clock")
+                .font(.headline)
+
+            Text("Clock designs are available in Small widgets only.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(12)
+        .wwWidgetContainerBackground {
+            Color(.secondarySystemGroupedBackground)
+        }
+        .clipShape(ContainerRelativeShape())
+    }
+
+    private static func scheme(for spec: WidgetSpec) -> WidgetWeaverClockColourScheme {
+        let theme = (spec.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch theme {
+        case "ocean":
+            return .ocean
+        case "graphite":
+            return .graphite
+        default:
+            return .classic
+        }
+    }
+}
+
+private struct WWMainClockStaticFace: View {
+    let palette: WidgetWeaverClockPalette
+    let date: Date
+    let showsSecondsHand: Bool
+
+    var body: some View {
+        let angles = WWMainClockAngles(date: date)
+
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: angles.hour,
+            minuteAngle: angles.minute,
+            secondAngle: angles.second,
+            showsSecondHand: showsSecondsHand,
+            showsMinuteHand: true,
+            showsHandShadows: false,
+            showsGlows: false,
+            showsCentreHub: true,
+            handsOpacity: 1.0
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+    }
+}
+
+private struct WWMainClockAngles {
+    let hour: Angle
+    let minute: Angle
+    let second: Angle
+
+    init(date: Date) {
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+
+        let hour24 = Double(comps.hour ?? 0)
+        let minuteInt = Double(comps.minute ?? 0)
+        let secondInt = Double(comps.second ?? 0)
+        let nano = Double(comps.nanosecond ?? 0)
+
+        let sec = secondInt + (nano / 1_000_000_000.0)
+        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
+
+        let hourDeg = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
+        let minuteDeg = (minuteInt + sec / 60.0) * 6.0
+        let secondDeg = sec * 6.0
+
+        self.hour = .degrees(hourDeg)
+        self.minute = .degrees(minuteDeg)
+        self.second = .degrees(secondDeg)
+    }
+}
+
 // MARK: - Main Design Widget
 
 struct WidgetWeaverWidget: Widget {
@@ -393,10 +525,23 @@ struct WidgetWeaverWidget: Widget {
         ) { entry in
             let liveSpec = WidgetSpecStore.shared.load(id: entry.spec.id) ?? entry.spec
 
-            WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget, now: entry.date)
-                .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
-                .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
-                .id(entry.date)
+            let familySpec = liveSpec.resolved(for: entry.family)
+
+            Group {
+                if familySpec.layout.template == .clockIcon {
+                    WidgetWeaverClockIconDesignWidgetView(
+                        spec: familySpec,
+                        family: entry.family,
+                        entryDate: entry.date,
+                        isLowBudget: entry.isWidgetKitPreview
+                    )
+                } else {
+                    WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget, now: entry.date)
+                        .environment(\.wwLowGraphicsBudget, entry.isWidgetKitPreview)
+                        .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
+                }
+            }
+            .id(entry.date)
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")
