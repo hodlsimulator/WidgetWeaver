@@ -200,6 +200,7 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
             if d <= now {
                 d = now.addingTimeInterval(interval)
             }
+            if abs(d.timeIntervalSince(now)) < 0.5 { d = d.addingTimeInterval(interval) }
 
             while entries.count < desiredEntries {
                 entries.append(Entry(date: d, family: context.family, spec: spec, isWidgetKitPreview: false))
