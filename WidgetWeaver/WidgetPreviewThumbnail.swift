@@ -22,6 +22,12 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
     @Published private(set) var weatherFingerprint: String = "0000000000000000"
     @Published private(set) var smartPhotoShuffleFingerprint: String = "0000000000000000"
 
+    // Used to ensure cache warming uses the correct dependency fingerprints.
+    // Fingerprints are computed asynchronously, so callers can await the first completed compute.
+    private var initialComputeDone: Bool = false
+    private var initialComputeWaiters: [CheckedContinuation<Void, Never>] = []
+
+
     private let userDefaults: UserDefaults
     private var observer: NSObjectProtocol?
     private var recomputeTask: Task<Void, Never>?
@@ -56,6 +62,25 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
             return "\(variablesFingerprint).\(smartPhotoShuffleFingerprint)"
         }
         return variablesFingerprint
+    }
+
+    func waitForInitialCompute() async {
+        if initialComputeDone { return }
+
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            initialComputeWaiters.append(cont)
+        }
+    }
+
+    private func finishInitialComputeIfNeeded() {
+        guard !initialComputeDone else { return }
+        initialComputeDone = true
+
+        let waiters = initialComputeWaiters
+        initialComputeWaiters.removeAll()
+        for w in waiters {
+            w.resume()
+        }
     }
 
     private func scheduleRecompute(delayNanoseconds: UInt64) {
@@ -103,6 +128,8 @@ final class WidgetPreviewThumbnailDependencies: ObservableObject {
             if self.smartPhotoShuffleFingerprint != shuffle {
                 self.smartPhotoShuffleFingerprint = shuffle
             }
+
+            self.finishInitialComputeIfNeeded()
         }
     }
 
@@ -528,6 +555,8 @@ extension WidgetPreviewThumbnail {
         displayScale: CGFloat
     ) async {
         guard #available(iOS 16.0, *) else { return }
+
+        await WidgetPreviewThumbnailDependencies.shared.waitForInitialCompute()
 
         let rendererScale = min(displayScale, 2.0)
 
