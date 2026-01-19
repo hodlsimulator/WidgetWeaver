@@ -11,6 +11,17 @@ import UIKit
 import WidgetKit
 
 extension ContentView {
+    private enum AlbumShuffleQuickStartGate: Hashable {
+        case choosePhoto
+        case prepareSmartPhoto
+        case allowAccess
+        case openSettings
+        case chooseAlbum
+        case changeAlbum
+        case preparing
+        case tryAgain
+    }
+
     var imageSection: some View {
         let d = currentFamilyDraft()
         let currentImageFileName = d.imageFileName
@@ -27,12 +38,10 @@ extension ContentView {
             }
 
             if isPoster {
-                Button {
-                    Task { await quickStartAlbumShuffleFromImageSection() }
-                } label: {
-                    Label("Shuffle from an album…", systemImage: "shuffle")
-                }
-                .disabled(importInProgress)
+                let gate = albumShuffleQuickStartGate(draft: d, hasImage: hasImage)
+
+                albumShuffleQuickStartRow(gate: gate)
+                    .disabled(importInProgress)
             }
 
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
@@ -86,6 +95,91 @@ extension ContentView {
             }
         } header: {
             sectionHeader("Image")
+        }
+    }
+
+    private func albumShuffleQuickStartGate(draft: FamilyDraft, hasImage: Bool) -> AlbumShuffleQuickStartGate {
+        if importInProgress {
+            return .preparing
+        }
+
+        if !hasImage {
+            return .choosePhoto
+        }
+
+        if draft.imageSmartPhoto == nil {
+            return .prepareSmartPhoto
+        }
+
+        let photoAccess = editorToolContext.photoLibraryAccess
+        if !photoAccess.allowsReadWrite {
+            if photoAccess.isRequestable {
+                return .allowAccess
+            }
+            return .openSettings
+        }
+
+        let manifestFileName = (draft.imageSmartPhoto?.shuffleManifestFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if manifestFileName.isEmpty {
+            return .chooseAlbum
+        }
+
+        return .changeAlbum
+    }
+
+    @ViewBuilder
+    private func albumShuffleQuickStartRow(gate: AlbumShuffleQuickStartGate) -> some View {
+        if gate == .openSettings, let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+            Link(destination: settingsURL) {
+                albumShuffleQuickStartRowLabel(gate: gate)
+            }
+        } else {
+            Button {
+                Task { await quickStartAlbumShuffleFromImageSection() }
+            } label: {
+                albumShuffleQuickStartRowLabel(gate: gate)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func albumShuffleQuickStartRowLabel(gate: AlbumShuffleQuickStartGate) -> some View {
+        HStack(spacing: 10) {
+            Label("Shuffle from an album…", systemImage: "shuffle")
+
+            Spacer(minLength: 0)
+
+            if gate == .preparing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Text(albumShuffleQuickStartGateLabel(gate))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func albumShuffleQuickStartGateLabel(_ gate: AlbumShuffleQuickStartGate) -> String {
+        switch gate {
+        case .choosePhoto:
+            return "Choose photo"
+        case .prepareSmartPhoto:
+            return "Prepare"
+        case .allowAccess:
+            return "Allow access"
+        case .openSettings:
+            return "Open Settings"
+        case .chooseAlbum:
+            return "Choose album"
+        case .changeAlbum:
+            return "Change album"
+        case .preparing:
+            return "Preparing…"
+        case .tryAgain:
+            return "Try again"
         }
     }
 

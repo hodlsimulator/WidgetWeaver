@@ -161,7 +161,7 @@ struct EditorUnavailableState: Hashable, Sendable {
     ) -> EditorUnavailableState? {
         guard !photoAccess.allowsReadWrite else { return nil }
 
-        let message = "Album Shuffle uses the Photo Library and is hidden until Photos access is granted."
+        let message = "Album Shuffle requires Photos access to browse albums and build a shuffle list."
 
         let cta: EditorUnavailableCTA? = {
             if photoAccess.isRequestable {
