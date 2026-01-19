@@ -40,8 +40,19 @@ extension ContentView {
             if isPoster {
                 let gate = albumShuffleQuickStartGate(draft: d, hasImage: hasImage)
 
-                albumShuffleQuickStartRow(gate: gate)
-                    .disabled(importInProgress)
+                VStack(alignment: .leading, spacing: 4) {
+                    albumShuffleQuickStartRow(gate: gate)
+                        .disabled(importInProgress)
+
+                    if albumShuffleQuickStartFailureSpecID == selectedSpecID,
+                       let message = albumShuffleQuickStartFailureMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !message.isEmpty
+                    {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
@@ -99,16 +110,23 @@ extension ContentView {
     }
 
     private func albumShuffleQuickStartGate(draft: FamilyDraft, hasImage: Bool) -> AlbumShuffleQuickStartGate {
-        if importInProgress {
+        if albumShuffleQuickStartInProgress {
             return .preparing
         }
+
+        let hasFailureForCurrentSpec: Bool = {
+            guard albumShuffleQuickStartFailureSpecID == selectedSpecID else { return false }
+            let msg = (albumShuffleQuickStartFailureMessage ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !msg.isEmpty
+        }()
 
         if !hasImage {
             return .choosePhoto
         }
 
         if draft.imageSmartPhoto == nil {
-            return .prepareSmartPhoto
+            return hasFailureForCurrentSpec ? .tryAgain : .prepareSmartPhoto
         }
 
         let photoAccess = editorToolContext.photoLibraryAccess
@@ -122,11 +140,18 @@ extension ContentView {
         let manifestFileName = (draft.imageSmartPhoto?.shuffleManifestFileName ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if manifestFileName.isEmpty {
-            return .chooseAlbum
+        let baseGate: AlbumShuffleQuickStartGate = manifestFileName.isEmpty ? .chooseAlbum : .changeAlbum
+
+        if hasFailureForCurrentSpec {
+            switch baseGate {
+            case .chooseAlbum, .changeAlbum:
+                return .tryAgain
+            default:
+                break
+            }
         }
 
-        return .changeAlbum
+        return baseGate
     }
 
     @ViewBuilder
@@ -229,9 +254,17 @@ extension ContentView {
     @MainActor
     func quickStartAlbumShuffleFromImageSection() async {
         guard !importInProgress else { return }
+        guard !albumShuffleQuickStartInProgress else { return }
+
+        // Clear any previous error so the row state reflects the next attempt.
+        albumShuffleQuickStartFailureMessage = nil
+        albumShuffleQuickStartFailureSpecID = nil
 
         if activeSheet != nil {
-            saveStatusMessage = "Close the current sheet to set up Album Shuffle."
+            let msg = "Close the current sheet to set up Album Shuffle."
+            saveStatusMessage = msg
+            albumShuffleQuickStartFailureMessage = msg
+            albumShuffleQuickStartFailureSpecID = selectedSpecID
             return
         }
 
@@ -245,24 +278,43 @@ extension ContentView {
             return
         }
 
+        albumShuffleQuickStartInProgress = true
         importInProgress = true
-        defer { importInProgress = false }
+        defer {
+            importInProgress = false
+            albumShuffleQuickStartInProgress = false
+        }
 
         if draft.imageSmartPhoto == nil {
             await regenerateSmartPhotoRenders()
         }
 
         guard currentFamilyDraft().imageSmartPhoto != nil else {
-            saveStatusMessage = "Smart Photo could not be prepared."
+            let msg = resolvedAlbumShuffleSmartPhotoFailureMessage()
+            saveStatusMessage = msg
+            albumShuffleQuickStartFailureMessage = msg
+            albumShuffleQuickStartFailureSpecID = selectedSpecID
             return
         }
 
         if !EditorPhotoLibraryAccess.current().allowsReadWrite {
+            saveStatusMessage = "Requesting Photos access…"
             let granted = await SmartPhotoAlbumShuffleControlsEngine.ensurePhotoAccess()
             EditorToolRegistry.capabilitiesDidChange(reason: .photoLibraryAccessChanged)
 
             if !granted {
-                saveStatusMessage = "Photos access not granted."
+                let access = EditorPhotoLibraryAccess.current()
+                let msg: String
+                if access.isBlockedInSettings {
+                    msg = "Photos access is off.\nEnable access in Settings to choose an album."
+                } else if access.isRequestable {
+                    msg = "Photos access is required to choose an album."
+                } else {
+                    msg = "Photos access is not available."
+                }
+                saveStatusMessage = msg
+                albumShuffleQuickStartFailureMessage = msg
+                albumShuffleQuickStartFailureSpecID = selectedSpecID
                 return
             }
         }
@@ -273,11 +325,27 @@ extension ContentView {
         await Task.yield()
 
         if activeSheet != nil {
-            saveStatusMessage = "Close the current sheet to continue Album Shuffle setup."
+            let msg = "Close the current sheet to continue Album Shuffle setup."
+            saveStatusMessage = msg
+            albumShuffleQuickStartFailureMessage = msg
+            albumShuffleQuickStartFailureSpecID = selectedSpecID
             return
         }
 
         albumShufflePickerPresented = true
+    }
+
+    private func resolvedAlbumShuffleSmartPhotoFailureMessage() -> String {
+        let msg = saveStatusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !msg.isEmpty {
+            let lower = msg.lowercased()
+            if lower.hasPrefix("regeneration failed") { return msg }
+            if lower.contains("not found") { return msg }
+            if lower.contains("missing") { return msg }
+            if lower.contains("no photo") { return msg }
+        }
+
+        return "Smart Photo could not be prepared.\nTry replacing the photo, then try again."
     }
 
     private func resolvedSmartAlbumContainerIDForAlbumShuffle(from draft: FamilyDraft) -> String {

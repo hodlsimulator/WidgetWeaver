@@ -36,6 +36,12 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let colourScheme: WidgetWeaverClockColourScheme
 }
 
+private enum WWClockTimelineConfig {
+    // Keep this short so configuration changes cannot remain “stuck” behind a long cached timeline.
+    // This stays minute-based (budget-safe) and ensures the provider is re-queried frequently.
+    static let maxEntriesPerTimeline: Int = 2 // now + next minute boundary
+}
+
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverHomeScreenClockConfigurationIntent
@@ -44,8 +50,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         return Entry(
             date: now,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: .classic
         )
     }
@@ -56,8 +62,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         return Entry(
             date: now,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: scheme
         )
     }
@@ -75,14 +81,31 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let minuteAnchorNow = Self.floorToMinute(now)
         let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
-        // Single entry + .after avoids “future” entries that WidgetKit may pre-render and cache.
-        // We still refresh at the next minute boundary so the clock stays accurate.
-        let entry = Entry(
-            date: now,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
-            colourScheme: colourScheme
+        var entries: [Entry] = []
+        entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
+
+        // Immediate entry uses `now` so edits mid-minute have a chance to render quickly.
+        entries.append(
+            Entry(
+                date: now,
+                tickMode: .secondsSweep,
+                tickSeconds: 0.0,
+                colourScheme: colourScheme
+            )
         )
+
+        // Single future entry ends the timeline at the next minute boundary, so WidgetKit re-requests
+        // the timeline regularly and picks up configuration changes without explicit reload calls.
+        if entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
+            entries.append(
+                Entry(
+                    date: nextMinuteBoundary,
+                    tickMode: .secondsSweep,
+                    tickSeconds: 0.0,
+                    colourScheme: colourScheme
+                )
+            )
+        }
 
         WWClockDebugLog.appendLazy(
             category: "clock",
@@ -94,12 +117,13 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             let anchorRef = Int(minuteAnchorNow.timeIntervalSinceReferenceDate.rounded())
             let nextRef = Int(nextMinuteBoundary.timeIntervalSinceReferenceDate.rounded())
 
-            let entryRef = Int(entry.date.timeIntervalSinceReferenceDate.rounded())
+            let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
+            let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
 
-            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=1 entryRef=\(entryRef) policy=after"
+            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
         }
 
-        return Timeline(entries: [entry], policy: .after(nextMinuteBoundary))
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
@@ -171,26 +195,12 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: colorScheme
         )
 
-        GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            let padding = size * 0.12
-
-            let angles = WWClockStaticAngles(date: entry.date)
-
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: angles.hour,
-                minuteAngle: angles.minute,
-                secondAngle: angles.second,
-                showsSecondHand: false,
-                showsMinuteHand: true,
-                showsHandShadows: true,
-                showsGlows: true,
-                showsCentreHub: true
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(padding)
-        }
+        WidgetWeaverClockWidgetLiveView(
+            palette: palette,
+            entryDate: entry.date,
+            tickMode: entry.tickMode,
+            tickSeconds: entry.tickSeconds
+        )
         .wwWidgetContainerBackground {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
@@ -205,32 +215,5 @@ private struct WidgetWeaverHomeScreenClockView: View {
                 .accessibilityHidden(true)
         }
         #endif
-    }
-}
-
-private struct WWClockStaticAngles {
-    let hour: Angle
-    let minute: Angle
-    let second: Angle
-
-    init(date: Date) {
-        let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-
-        let hour24 = Double(comps.hour ?? 0)
-        let minuteInt = Double(comps.minute ?? 0)
-        let secondInt = Double(comps.second ?? 0)
-        let nano = Double(comps.nanosecond ?? 0)
-
-        let seconds = secondInt + (nano / 1_000_000_000.0)
-        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
-
-        let hourProgress = (hour12 + (minuteInt / 60.0) + (seconds / 3_600.0)) / 12.0
-        let minuteProgress = (minuteInt + (seconds / 60.0)) / 60.0
-        let secondProgress = seconds / 60.0
-
-        self.hour = .degrees(hourProgress * 360.0)
-        self.minute = .degrees(minuteProgress * 360.0)
-        self.second = .degrees(secondProgress * 360.0)
     }
 }

@@ -53,6 +53,9 @@ struct ContentView: View {
     @State private var editorFocusRestorationStack: EditorFocusRestorationStack = .init()
 
     @State var albumShufflePickerPresented: Bool = false
+    @State var albumShuffleQuickStartInProgress: Bool = false
+    @State var albumShuffleQuickStartFailureMessage: String? = nil
+    @State var albumShuffleQuickStartFailureSpecID: UUID? = nil
     @State var photoPickerPresented: Bool = false
     @State var pendingAutoPresentPhotoPickerSpecID: UUID? = nil
     @State private var previousVisibleToolIDs: [EditorToolID] = []
@@ -594,6 +597,53 @@ struct ContentView: View {
                         selectedTab = .editor
                     } label: {
                         Label("New design", systemImage: "plus")
+                    }
+
+                    Button {
+                        duplicateCurrentDesign()
+                    } label: {
+                        Label("Duplicate", systemImage: "doc.on.doc")
+                    }
+
+                    Divider()
+
+                    Button {
+                        showImportPicker = true
+                    } label: {
+                        Label("Import designs", systemImage: "square.and.arrow.down")
+                    }
+
+                    ShareLink(item: sharePackageForCurrentDesign(), preview: SharePreview("WidgetWeaver Design")) {
+                        Label("Share current design", systemImage: "square.and.arrow.up")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete current", systemImage: "trash")
+                    }
+                    .disabled(savedSpecs.count <= 1)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Menu")
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        createNewDesign()
+                        selectedTab = .editor
+                    } label: {
+                        Label("New design", systemImage: "plus")
+                    }
+
+                    Button {
+                        duplicateCurrentDesign()
+                    } label: {
+                        Label("Duplicate", systemImage: "doc.on.doc")
                     }
                 } label: {
                     Image(systemName: "plus.circle")
