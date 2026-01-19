@@ -38,9 +38,7 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
 }
 
 private enum WWClockTimelineConfig {
-    // Keep this short so configuration changes cannot remain “stuck” behind a long cached timeline.
-    // This stays minute-based (budget-safe) and ensures the provider is re-queried frequently.
-    static let maxEntriesPerTimeline: Int = 2 // now + next minute boundary
+    static let maxEntriesPerTimeline: Int = 2
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
@@ -91,7 +89,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         var entries: [Entry] = []
         entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
 
-        // Immediate entry uses `now` so edits mid-minute have a chance to render quickly.
         entries.append(
             Entry(
                 date: now,
@@ -102,8 +99,6 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             )
         )
 
-        // Single future entry ends the timeline at the next minute boundary, so WidgetKit re-requests
-        // the timeline regularly and picks up configuration changes without explicit reload calls.
         if entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
             entries.append(
                 Entry(
@@ -179,7 +174,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             intent: WidgetWeaverHomeScreenClockConfigurationIntent.self,
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
-            // Keep keyed by the entry date to avoid stale/black snapshots on Home Screen.
             WidgetWeaverHomeScreenClockView(entry: entry)
                 .id(entry.date)
                 .transaction { transaction in
@@ -206,7 +200,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
 
         Group {
             if entry.isWidgetKitPreview {
-                WidgetWeaverClockWidgetStaticPreviewFace(
+                WidgetWeaverClockLowBudgetFace(
                     palette: palette,
                     date: entry.date
                 )
@@ -236,108 +230,52 @@ private struct WidgetWeaverHomeScreenClockView: View {
     }
 }
 
-private struct WidgetWeaverClockWidgetStaticPreviewFace: View {
+private struct WidgetWeaverClockLowBudgetFace: View {
     let palette: WidgetWeaverClockPalette
     let date: Date
 
-    @Environment(\.displayScale) private var displayScale
-
     var body: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            let dialSize = side * 0.86
-            let radius = dialSize * 0.5
-            let px = WWClock.px(scale: displayScale)
+        let angles = WWClockLowBudgetAngles(date: date)
 
-            let angles = clockAngles(for: date)
-
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(colors: [palette.dialCenter, palette.dialEdge]),
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: radius
-                        )
-                    )
-
-                // Subtle edge to keep the dial readable against bright schemes.
-                Circle()
-                    .strokeBorder(palette.separatorRing.opacity(0.45), lineWidth: max(px, 0.8))
-
-                // Hour hand
-                hand(
-                    width: dialSize * 0.085,
-                    length: dialSize * 0.26,
-                    angleDegrees: angles.hour,
-                    baseOffset: dialSize * 0.13
-                )
-
-                // Minute hand
-                hand(
-                    width: dialSize * 0.065,
-                    length: dialSize * 0.36,
-                    angleDegrees: angles.minute,
-                    baseOffset: dialSize * 0.18
-                )
-
-                // Second hand (thin, high-contrast)
-                RoundedRectangle(cornerRadius: dialSize * 0.01, style: .continuous)
-                    .fill(palette.accent)
-                    .frame(width: max(px, dialSize * 0.018), height: dialSize * 0.42)
-                    .offset(y: -dialSize * 0.21)
-                    .rotationEffect(.degrees(angles.second))
-
-                // Hub
-                Circle()
-                    .fill(palette.hubBase)
-                    .frame(width: dialSize * 0.10, height: dialSize * 0.10)
-
-                Circle()
-                    .fill(palette.accent)
-                    .frame(width: dialSize * 0.034, height: dialSize * 0.034)
-            }
-            .frame(width: dialSize, height: dialSize)
-            .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
+        WidgetWeaverClockIconView(
+            palette: palette,
+            hourAngle: angles.hour,
+            minuteAngle: angles.minute,
+            secondAngle: .degrees(0),
+            showsSecondHand: false,
+            showsMinuteHand: true,
+            showsHandShadows: false,
+            showsGlows: false,
+            showsCentreHub: true,
+            handsOpacity: 1.0
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .transaction { transaction in
+            transaction.animation = nil
         }
     }
+}
 
-    private func hand(width: CGFloat, length: CGFloat, angleDegrees: Double, baseOffset: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
-            .fill(
-                LinearGradient(
-                    gradient: Gradient(colors: [palette.handLight, palette.handMid, palette.handDark]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: width * 0.5, style: .continuous)
-                    .strokeBorder(palette.handEdge.opacity(0.35), lineWidth: max(WWClock.px(scale: displayScale), 0.7))
-            }
-            .frame(width: width, height: length)
-            .offset(y: -baseOffset)
-            .rotationEffect(.degrees(angleDegrees))
-    }
+private struct WWClockLowBudgetAngles {
+    let hour: Angle
+    let minute: Angle
 
-    private struct Angles {
-        let hour: Double
-        let minute: Double
-        let second: Double
-    }
-
-    private func clockAngles(for date: Date) -> Angles {
+    init(date: Date) {
         let cal = Calendar.autoupdatingCurrent
-        let comps = cal.dateComponents([.hour, .minute, .second], from: date)
-        let h = Double((comps.hour ?? 0) % 12)
-        let m = Double(comps.minute ?? 0)
-        let s = Double(comps.second ?? 0)
+        let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
 
-        let hour = (h + (m / 60.0)) / 12.0 * 360.0
-        let minute = (m / 60.0) * 360.0
-        let second = (s / 60.0) * 360.0
+        let hour24 = Double(comps.hour ?? 0)
+        let minuteInt = Double(comps.minute ?? 0)
+        let secondInt = Double(comps.second ?? 0)
+        let nano = Double(comps.nanosecond ?? 0)
 
-        return Angles(hour: hour, minute: minute, second: second)
+        let sec = secondInt + (nano / 1_000_000_000.0)
+        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
+
+        let hourDeg = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
+        let minuteDeg = (minuteInt + sec / 60.0) * 6.0
+
+        self.hour = .degrees(hourDeg)
+        self.minute = .degrees(minuteDeg)
     }
 }

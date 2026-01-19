@@ -35,6 +35,10 @@ struct WidgetWeaverAboutView: View {
 
     @State private var isListScrolling = false
     @State var statusMessage: String = ""
+    @State private var isPreheatingThumbnails: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
 
     private var navTitle: String {
         switch mode {
@@ -79,7 +83,8 @@ struct WidgetWeaverAboutView: View {
                 }
             }
             .listStyle(.plain)
-            .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
+            // Keep per-row raster rendering off the critical scroll path; rely on cache.
+            .environment(\.wwThumbnailRenderingEnabled, !isListScrolling && !isPreheatingThumbnails)
             .scrollIndicators(.hidden)
             .scrollContentBackground(.hidden)
             .scrollDismissesKeyboard(.immediately)
@@ -88,9 +93,76 @@ struct WidgetWeaverAboutView: View {
             .onScrollPhaseChange { _, newPhase in
                 isListScrolling = newPhase.isScrolling
             }
+            .task(id: thumbnailPreheatTaskID) {
+                await preheatExploreThumbnails()
+            }
         }
         .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(mode == .explore ? .large : .inline)
+    }
+
+    private var thumbnailPreheatTaskID: String {
+        let modeKey: String = {
+            switch mode {
+            case .explore:
+                return "explore"
+            case .more:
+                return "more"
+            }
+        }()
+
+        let schemeKey = (colorScheme == .dark) ? "dark" : "light"
+        let scaleKey = Int((displayScale * 100).rounded())
+        return "\(modeKey)|\(schemeKey)|\(scaleKey)"
+    }
+
+    private func preheatExploreThumbnails() async {
+        guard !isPreheatingThumbnails else { return }
+        isPreheatingThumbnails = true
+        defer { isPreheatingThumbnails = false }
+
+        // Ensure the view finishes its first layout pass before raster work begins.
+        await Task.yield()
+
+        if Task.isCancelled { return }
+
+        let templates = orderedTemplatesForThumbnailPreheat()
+
+        let clockIDs = Set(Self.clockTemplates.map(\.id))
+        let clockSpecs = templates.filter { clockIDs.contains($0.id) }.map(\.spec)
+        let otherSpecs = templates.filter { !clockIDs.contains($0.id) }.map(\.spec)
+
+        // Clock templates show a raster fallback while scrolling.
+        await WidgetPreviewThumbnail.preheat(
+            specs: clockSpecs,
+            families: [.systemSmall],
+            colorScheme: colorScheme,
+            displayScale: displayScale
+        )
+
+        // Most templates show S/M/L previews.
+        await WidgetPreviewThumbnail.preheat(
+            specs: otherSpecs,
+            families: [.systemSmall, .systemMedium, .systemLarge],
+            colorScheme: colorScheme,
+            displayScale: displayScale
+        )
+    }
+
+    private func orderedTemplatesForThumbnailPreheat() -> [WidgetWeaverAboutTemplate] {
+        var templates: [WidgetWeaverAboutTemplate] = []
+
+        // Match the on-screen order so above-the-fold previews appear first.
+        templates.append(Self.featuredPhotoTemplate)
+        templates.append(Self.featuredWeatherTemplate)
+        templates.append(contentsOf: Self.clockTemplates)
+        templates.append(Self.featuredCalendarTemplate)
+        templates.append(Self.featuredStepsTemplate)
+        templates.append(contentsOf: Self.starterTemplates)
+        templates.append(contentsOf: Self.proTemplates)
+
+        var seen = Set<UUID>()
+        return templates.filter { seen.insert($0.spec.id).inserted }
     }
 
     private var exploreMoreSection: some View {
@@ -348,7 +420,12 @@ extension WidgetWeaverAboutView {
                                 let accent = template.spec.style.accent.swiftUIColor
 
                                 WidgetWeaverAboutPreviewLabeled(familyLabel: template.subtitle, accent: accent) {
-                                    WidgetPreviewThumbnail(spec: template.spec, family: .systemSmall, height: 86, renderingStyle: .live)
+                                    WidgetPreviewThumbnail(
+                                        spec: template.spec,
+                                        family: .systemSmall,
+                                        height: 86,
+                                        renderingStyle: (isListScrolling || isPreheatingThumbnails) ? .rasterCached : .live
+                                    )
                                 }
                             }
                         }

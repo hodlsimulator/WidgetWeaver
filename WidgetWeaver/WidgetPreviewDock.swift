@@ -43,11 +43,8 @@ struct WidgetPreviewDock: View {
     @State private var pendingTask: Task<Void, Never>? = nil
 
     private var restrictToSmallOnly: Bool {
-        let n = spec.normalised()
-
-        // The clock widget template is small-only.
-        // Matched-set variants are intentionally ignored here so mixed templates can still be previewed.
-        return n.layout.template == .clockIcon
+        let familySpec = spec.resolved(for: family)
+        return familySpec.layout.template == .clockIcon
     }
 
     private var allowedFamilies: [WidgetFamily] {
@@ -72,6 +69,9 @@ struct WidgetPreviewDock: View {
         }
         .onChange(of: spec) { _, newValue in
             handleIncomingSpecChange(newValue)
+        }
+        .onChange(of: family) { _, _ in
+            clampFamilyIfNeeded()
         }
         .onChange(of: liveEnabled) { _, newValue in
             handleLiveToggleChange(newValue)
@@ -263,7 +263,8 @@ struct WidgetPreviewDock: View {
 
     private var familyMenu: some View {
         let isSingleFamily = (allowedFamilies.count <= 1)
-        Menu {
+
+        return Menu {
             Button { family = .systemSmall } label: {
                 Label("Small", systemImage: "square")
             }
@@ -318,12 +319,7 @@ struct WidgetPreviewDock: View {
         case .dock:
             if verticalSizeClass == .compact { return 150 }
 
-            // Small and Medium occupy the same Home Screen row height.
-            // Using the same preview height avoids the preview changing depth between S/M.
             if family == .systemLarge { return 260 }
-
-            // Medium is typically width-limited in the dock. Lowering this height reduces
-            // wasted vertical space without making the widget itself smaller.
             return 200
         }
     }
@@ -366,6 +362,16 @@ struct WidgetPreviewDock: View {
         }
     }
 
+    private func clampFamilyIfNeeded() {
+        guard allowedFamilies.contains(family) else {
+            family = allowedFamilies.first ?? .systemSmall
+            return
+        }
+        if restrictToSmallOnly, family != .systemSmall {
+            family = .systemSmall
+        }
+    }
+
     private func handleIncomingSpecChange(_ newValue: WidgetSpec) {
         ensureSpecStateInitialised()
         clampFamilyIfNeeded()
@@ -401,10 +407,5 @@ struct WidgetPreviewDock: View {
                 displayedSpec = newSpec
             }
         }
-    }
-
-    private func clampFamilyIfNeeded() {
-        guard !allowedFamilies.contains(family) else { return }
-        family = allowedFamilies.first ?? .systemSmall
     }
 }
