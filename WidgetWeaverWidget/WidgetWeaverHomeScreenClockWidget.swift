@@ -11,8 +11,11 @@ import SwiftUI
 import WidgetKit
 
 public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfigurationIntent {
-    public static var title: LocalizedStringResource { "Clock" }
-    public static var description: IntentDescription { IntentDescription("Configure the clock widget.") }
+    public static var title: LocalizedStringResource { "Clock (Quick)" }
+
+    public static var description: IntentDescription {
+        IntentDescription("Configure Clock (Quick). For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget.")
+    }
 
     @Parameter(title: "Colour Scheme", default: .classic)
     public var colourScheme: WidgetWeaverClockWidgetColourScheme
@@ -77,7 +80,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         // Always publish a live (non-preview) entry for Home Screen rendering.
         // Some iOS widget-hosting paths can treat freshly-added widgets as “preview” for longer than expected.
-        // If we key live rendering off `context.isPreview`, those instances can get stuck in the low-budget face.
+        // If live rendering is keyed off `context.isPreview`, those instances can get stuck in the low-budget face.
         return makeMinuteTimeline(now: now, colourScheme: scheme, isWidgetKitPreview: false)
     }
 
@@ -183,8 +186,8 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                     transaction.animation = nil
                 }
         }
-        .configurationDisplayName("Clock (Icon)")
-        .description("A small analogue clock.")
+        .configurationDisplayName("Clock (Quick)")
+        .description("A small analogue clock with fast setup. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }

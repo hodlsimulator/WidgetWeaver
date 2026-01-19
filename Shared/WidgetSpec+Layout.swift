@@ -159,7 +159,16 @@ public enum LayoutTemplateToken: String, Codable, CaseIterable, Hashable, Identi
         case .weather: return "Weather"
         case .nextUpCalendar: return "Next Up (Calendar)"
         case .reminders: return "Reminders"
-        case .clockIcon: return "Clock (Icon)"
+        case .clockIcon: return "Clock (Designer)"
+        }
+    }
+
+    public var isClock: Bool {
+        switch self {
+        case .clockIcon:
+            return true
+        default:
+            return false
         }
     }
 }

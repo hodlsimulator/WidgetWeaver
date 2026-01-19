@@ -7,36 +7,47 @@
 
 import Foundation
 import SwiftUI
-import UIKit
-import StoreKit
 import WidgetKit
-
-// MARK: - Widget workflow help
+import StoreKit
 
 struct WidgetWorkflowHelpView: View {
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text("Widgets update when the saved design changes and WidgetKit reloads timelines.")
+                    Text("WidgetWeaver has one Clock experience with two placement paths. Choose the path that matches the intent.")
+                        .foregroundStyle(.secondary)
+
+                    Text("Clock (Quick): add a standalone clock from the widget gallery. Fast to set up, with a compact, safe configuration.")
+                        .foregroundStyle(.secondary)
+
+                    Text("Clock (Designer): create a clock Design in the app, then add a WidgetWeaver widget and choose that Design in Edit Widget → Design. This path supports deeper customisation and stays consistent with other WidgetWeaver templates.")
+                        .foregroundStyle(.secondary)
+
+                    Text("If uncertain, start with Clock (Quick).")
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Which clock should I use?")
+                }
+
+                Section {
+                    Text("Widgets are snapshots. iOS refreshes them on its own schedule.")
+                        .foregroundStyle(.secondary)
+                    Text("WidgetWeaver also reloads widgets when you save a Design.")
                         .foregroundStyle(.secondary)
                 } header: {
                     Text("How widgets update")
                 }
 
                 Section {
-                    Text("Each widget instance can follow \"Default (App)\" or a specific saved design.")
-                        .foregroundStyle(.secondary)
-                    Text("To change this: long-press the widget → Edit Widget → Design.")
+                    Text("To change a widget, long-press it → Edit Widget → choose a Design.")
                         .foregroundStyle(.secondary)
                 } header: {
                     Text("Design selection")
                 }
 
                 Section {
-                    Text("Try \"Refresh Widgets\" in the app, then wait a moment.")
-                        .foregroundStyle(.secondary)
-                    Text("If it still doesn’t update, reselect the Design in Edit Widget.\nRemoving and re-adding the widget is only needed after major schema changes.")
+                    Text("If a widget doesn’t change, open WidgetWeaver and tap Refresh Widgets in More.")
                         .foregroundStyle(.secondary)
                 } header: {
                     Text("If a widget doesn’t change")
@@ -48,82 +59,70 @@ struct WidgetWorkflowHelpView: View {
     }
 }
 
-// MARK: - Editor background
-
-struct EditorBackground: View {
-    var body: some View {
-        ZStack {
-            Color(uiColor: .secondarySystemGroupedBackground)
-                .ignoresSafeArea()
-
-            RadialGradient(
-                colors: [Color.accentColor.opacity(0.22), Color.clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 640
-            )
-            .ignoresSafeArea()
-
-            RadialGradient(
-                colors: [Color.accentColor.opacity(0.10), Color.clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 760
-            )
-            .ignoresSafeArea()
-        }
-    }
-}
-
-enum Keyboard {
-    static func dismiss() {
-        Task { @MainActor in
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil,
-                from: nil,
-                for: nil
-            )
-        }
-    }
-}
-
-// MARK: - Pro (StoreKit 2) (Milestone 8)
-
 @MainActor
 final class WidgetWeaverProManager: ObservableObject {
-    static let productID = "com.conornolan.widgetweaver.pro"
+    @Published private(set) var products: [Product] = []
+    @Published private(set) var ownedProducts: Set<String> = []
+    @Published private(set) var latestTransaction: Transaction?
+    @Published private(set) var errorMessage: String = ""
 
-    @Published private(set) var isProUnlocked: Bool = WidgetWeaverEntitlements.isProUnlocked
-    @Published private(set) var product: Product?
-    @Published private(set) var isBusy: Bool = false
-    @Published var statusMessage: String = ""
-
-    private var updatesTask: Task<Void, Never>?
+    private let proProductIDs: Set<String> = [
+        "widgetweaver.pro.lifetime"
+    ]
 
     init() {
-        updatesTask = Task { await observeTransactionUpdates() }
-        Task { await refresh() }
+        Task { await refreshEntitlementFromStoreKitIfNeeded() }
     }
 
-    deinit {
-        updatesTask?.cancel()
-    }
-
-    func refresh() async {
-        await loadProduct()
-        await refreshEntitlementFromStoreKitIfNeeded()
-    }
-
-    func purchasePro() async {
-        guard let product else {
-            statusMessage = "Product info unavailable."
-            return
+    func refreshEntitlementFromStoreKitIfNeeded() async {
+        if WidgetWeaverEntitlements.isProUnlocked {
+            await refreshEntitlementFromStoreKit()
         }
+    }
 
-        isBusy = true
-        defer { isBusy = false }
+    func refreshEntitlementFromStoreKit() async {
+        do {
+            var owned: Set<String> = []
+            var latest: Transaction?
 
+            for await result in Transaction.currentEntitlements {
+                switch result {
+                case .verified(let transaction):
+                    if proProductIDs.contains(transaction.productID) {
+                        owned.insert(transaction.productID)
+                        latest = transaction
+                    }
+
+                case .unverified:
+                    break
+                }
+            }
+
+            await MainActor.run {
+                self.ownedProducts = owned
+                self.latestTransaction = latest
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func loadProducts() async {
+        do {
+            let products = try await Product.products(for: Array(proProductIDs))
+            await MainActor.run {
+                self.products = products.sorted(by: { $0.displayName < $1.displayName })
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func purchase(_ product: Product) async {
         do {
             let result = try await product.purchase()
 
@@ -131,112 +130,52 @@ final class WidgetWeaverProManager: ObservableObject {
             case .success(let verification):
                 switch verification {
                 case .verified(let transaction):
-                    WidgetWeaverEntitlements.setProUnlocked(true)
-                    isProUnlocked = true
-                    statusMessage = "Pro unlocked."
                     await transaction.finish()
+                    await refreshEntitlementFromStoreKit()
+                    await MainActor.run {
+                        WidgetWeaverEntitlements.setProUnlocked(true)
+                    }
 
                 case .unverified:
-                    statusMessage = "Purchase could not be verified."
+                    await MainActor.run {
+                        self.errorMessage = "Purchase could not be verified."
+                    }
                 }
 
             case .userCancelled:
-                statusMessage = "Purchase cancelled."
+                break
 
             case .pending:
-                statusMessage = "Purchase pending."
+                break
 
             @unknown default:
-                statusMessage = "Purchase did not complete."
-            }
-        } catch {
-            statusMessage = "Purchase failed: \(error.localizedDescription)"
-        }
-    }
-
-    func restorePurchases() async {
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            try await AppStore.sync()
-            await refreshEntitlementFromStoreKitIfNeeded()
-            statusMessage = isProUnlocked ? "Purchases restored." : "No purchases found."
-        } catch {
-            statusMessage = "Restore failed: \(error.localizedDescription)"
-        }
-    }
-    
-    func syncFromLocalEntitlements(status: String? = nil) {
-        isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
-        if let status { statusMessage = status }
-    }
-
-    private func loadProduct() async {
-        do {
-            let products = try await Product.products(for: [Self.productID])
-            product = products.first
-        } catch {
-            statusMessage = "Store unavailable: \(error.localizedDescription)"
-        }
-    }
-
-    private func refreshEntitlementFromStoreKitIfNeeded() async {
-        if WidgetWeaverEntitlements.isProUnlocked {
-            isProUnlocked = true
-            return
-        }
-
-        var found = false
-        for await entitlement in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = entitlement else { continue }
-            if transaction.productID == Self.productID {
-                found = true
                 break
             }
-        }
-
-        if found {
-            WidgetWeaverEntitlements.setProUnlocked(true)
-            isProUnlocked = true
-        } else {
-            isProUnlocked = WidgetWeaverEntitlements.isProUnlocked
-        }
-    }
-
-    private func observeTransactionUpdates() async {
-        for await update in Transaction.updates {
-            guard case .verified(let transaction) = update else { continue }
-
-            if transaction.productID == Self.productID {
-                WidgetWeaverEntitlements.setProUnlocked(true)
-                isProUnlocked = true
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
             }
-
-            await transaction.finish()
         }
     }
-}
 
-private struct ProFeatureRow: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: "checkmark.seal.fill")
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    func restore() async {
+        do {
+            try await AppStore.sync()
+            await refreshEntitlementFromStoreKit()
+            await MainActor.run {
+                let unlocked = !ownedProducts.isEmpty
+                WidgetWeaverEntitlements.setProUnlocked(unlocked)
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = error.localizedDescription
+            }
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
 struct WidgetWeaverProView: View {
     @ObservedObject var manager: WidgetWeaverProManager
-
-    @State private var showInternalTools: Bool = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -244,124 +183,117 @@ struct WidgetWeaverProView: View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if manager.isProUnlocked {
-                            Label("WidgetWeaver Pro is unlocked.", systemImage: "checkmark.seal.fill")
-                            Text("Matched sets, variables, and unlimited designs are enabled.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Label("WidgetWeaver Pro", systemImage: "crown.fill")
-                            Text("Unlock matched sets, variables, and unlimited designs.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 7) {
-                        showInternalTools.toggle()
-                    }
-                } header: {
-                    Text("Status")
-                }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("WidgetWeaver Pro")
+                            .font(.title2.weight(.semibold))
 
-                Section {
-                    ProFeatureRow(
-                        title: "Unlimited designs",
-                        subtitle: "Free tier is limited to \(WidgetWeaverEntitlements.maxFreeDesigns) saved designs."
-                    )
-                    ProFeatureRow(
-                        title: "Matched sets",
-                        subtitle: "Per-size overrides for Small/Medium/Large while sharing style and typography."
-                    )
-                    ProFeatureRow(
-                        title: "Variables + Shortcuts",
-                        subtitle: "Use {{key}} templates plus App Intents actions to update widget values."
-                    )
-                } header: {
-                    Text("What Pro unlocks")
-                }
-
-                Section {
-                    if manager.isProUnlocked {
-                        Button { dismiss() } label: {
-                            Label("Done", systemImage: "checkmark")
-                        }
-                    } else {
-                        Button {
-                            Task { await manager.purchasePro() }
-                        } label: {
-                            let price = manager.product?.displayPrice ?? "…"
-                            Label("Unlock Pro (\(price))", systemImage: "crown.fill")
-                        }
-                        .disabled(manager.isBusy || manager.product == nil)
-
-                        Button {
-                            Task { await manager.restorePurchases() }
-                        } label: {
-                            Label("Restore Purchases", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(manager.isBusy)
-                    }
-
-                    if !manager.statusMessage.isEmpty {
-                        Text(manager.statusMessage)
-                            .font(.caption)
+                        Text("Unlock Pro templates, unlimited designs, and more advanced features.")
                             .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section {
+                    if manager.products.isEmpty {
+                        ProgressView()
+                            .task {
+                                await manager.loadProducts()
+                            }
+                    } else {
+                        ForEach(manager.products, id: \.id) { product in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(product.displayName)
+                                            .font(.headline)
+                                        Text(product.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer(minLength: 0)
+
+                                    Text(product.displayPrice)
+                                        .font(.headline)
+                                }
+
+                                Button {
+                                    Task { await manager.purchase(product) }
+                                } label: {
+                                    Text("Purchase")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(manager.ownedProducts.contains(product.id))
+                            }
+                            .padding(.vertical, 4)
+                        }
                     }
                 } header: {
                     Text("Purchase")
+                } footer: {
+                    if !manager.errorMessage.isEmpty {
+                        Text(manager.errorMessage)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                if showInternalTools {
-                    Section {
-                        Button {
-                            WidgetWeaverEntitlements.setProUnlocked(true)
-                            manager.syncFromLocalEntitlements(status: "Pro unlocked (internal).")
-                        } label: {
-                            Label("Unlock Pro (Internal)", systemImage: "wand.and.stars")
-                        }
+                Section {
+                    Button("Restore Purchases") {
+                        Task { await manager.restore() }
+                    }
+                } header: {
+                    Text("Restore")
+                }
 
-                        Button(role: .destructive) {
-                            WidgetWeaverEntitlements.setProUnlocked(false)
-                            manager.syncFromLocalEntitlements(status: "Pro reset (internal).")
-                        } label: {
-                            Label("Reset Pro flag (Internal)", systemImage: "xmark.seal")
+                if WidgetWeaverEntitlements.isProUnlocked {
+                    Section {
+                        Text("Pro is unlocked on this device.")
+                            .foregroundStyle(.secondary)
+
+                        if let tx = manager.latestTransaction {
+                            Text("Latest transaction: \(tx.id)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     } header: {
-                        Text("Internal Testing")
+                        Text("Status")
                     }
                 }
             }
             .navigationTitle("Pro")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
                 }
             }
-            .task { await manager.refresh() }
         }
     }
 }
 
-// MARK: - Inspector
 
+// MARK: - Preview
+
+#Preview {
+    WidgetWeaverProView(manager: WidgetWeaverProManager())
+}
+
+
+// MARK: - Design Inspector
+
+@MainActor
 struct WidgetWeaverDesignInspectorView: View {
     let spec: WidgetSpec
+    let initialFamily: WidgetFamily
 
     @State private var family: WidgetFamily
     @State private var statusMessage: String = ""
+    @State private var restrictToSmallOnly: Bool = false
 
-    @Environment(\.dismiss) private var dismiss
-
-    private var restrictToSmallOnly: Bool {
-        let familySpec = spec.resolved(for: family)
-        return familySpec.layout.template == .clockIcon
-    }
-
-    init(spec: WidgetSpec, initialFamily: WidgetFamily = .systemSmall) {
+    init(spec: WidgetSpec, initialFamily: WidgetFamily) {
         self.spec = spec
+        self.initialFamily = initialFamily
         _family = State(initialValue: initialFamily)
     }
 
@@ -378,7 +310,6 @@ struct WidgetWeaverDesignInspectorView: View {
                 if !statusMessage.isEmpty {
                     Section {
                         Text(statusMessage)
-                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -387,10 +318,30 @@ struct WidgetWeaverDesignInspectorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Close") { dismiss() }
+                    Menu {
+                        Button {
+                            statusMessage = "Reloading variables…"
+                            WidgetWeaverVariableStore.shared.invalidateCache()
+                            statusMessage = "Reloaded variables."
+                        } label: {
+                            Label("Reload variables", systemImage: "arrow.clockwise")
+                        }
+
+                        Button {
+                            statusMessage = "Reloading designs…"
+                            WidgetSpecStore.shared.invalidateCache()
+                            statusMessage = "Reloaded designs."
+                        } label: {
+                            Label("Reload designs", systemImage: "arrow.clockwise")
+                        }
+
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
             }
             .onAppear {
+                restrictToSmallOnly = spec.layout.template.isClock
                 clampFamilyIfNeeded()
             }
         }
@@ -404,12 +355,12 @@ struct WidgetWeaverDesignInspectorView: View {
 
     private var overviewSection: some View {
         Section {
-            LabeledContent("Name", value: spec.normalised().name)
             LabeledContent("ID", value: spec.id.uuidString)
-                .font(.caption)
-                .textSelection(.enabled)
+            LabeledContent("Name", value: spec.name)
 
-            LabeledContent("Schema version", value: "\(spec.normalised().version)")
+            LabeledContent("Template", value: spec.layout.template.displayName)
+
+            LabeledContent("Created", value: spec.normalised().createdAt.formatted(date: .abbreviated, time: .standard))
             LabeledContent("Updated", value: spec.normalised().updatedAt.formatted(date: .abbreviated, time: .standard))
 
             let hasMatched = (spec.normalised().matchedSet != nil)

@@ -83,7 +83,6 @@ struct WidgetWeaverAboutView: View {
                 }
             }
             .listStyle(.plain)
-            // Keep per-row raster rendering off the critical scroll path; rely on cache.
             .environment(\.wwThumbnailRenderingEnabled, !isListScrolling && !isPreheatingThumbnails)
             .scrollIndicators(.hidden)
             .scrollContentBackground(.hidden)
@@ -121,7 +120,6 @@ struct WidgetWeaverAboutView: View {
         isPreheatingThumbnails = true
         defer { isPreheatingThumbnails = false }
 
-        // Ensure the view finishes its first layout pass before raster work begins.
         await Task.yield()
 
         if Task.isCancelled { return }
@@ -132,7 +130,6 @@ struct WidgetWeaverAboutView: View {
         let clockSpecs = templates.filter { clockIDs.contains($0.id) }.map(\.spec)
         let otherSpecs = templates.filter { !clockIDs.contains($0.id) }.map(\.spec)
 
-        // Clock templates show a raster fallback while scrolling.
         await WidgetPreviewThumbnail.preheat(
             specs: clockSpecs,
             families: [.systemSmall],
@@ -140,7 +137,6 @@ struct WidgetWeaverAboutView: View {
             displayScale: displayScale
         )
 
-        // Most templates show S/M/L previews.
         await WidgetPreviewThumbnail.preheat(
             specs: otherSpecs,
             families: [.systemSmall, .systemMedium, .systemLarge],
@@ -152,7 +148,6 @@ struct WidgetWeaverAboutView: View {
     private func orderedTemplatesForThumbnailPreheat() -> [WidgetWeaverAboutTemplate] {
         var templates: [WidgetWeaverAboutTemplate] = []
 
-        // Match the on-screen order so above-the-fold previews appear first.
         templates.append(Self.featuredPhotoTemplate)
         templates.append(Self.featuredWeatherTemplate)
         templates.append(contentsOf: Self.clockTemplates)
@@ -438,7 +433,7 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Add one of these Clock templates to your Library.",
+                        "Add one of these Clock (Designer) templates to your Library.",
                         "Open it in the Editor and use Clock theme (Layout tool) to switch Classic / Ocean / Graphite.",
                         "Add a WidgetWeaver widget to your Home Screen to see it live.",
                     ])
@@ -451,8 +446,8 @@ extension WidgetWeaverAboutView {
 
                     Text(
                         """
-                        Note: WidgetWeaver also ships a separate “Clock (Icon)” Home Screen widget.
-                        The templates above are Designs that work with the main WidgetWeaver widget.
+                        Note: WidgetWeaver also ships a separate “Clock (Quick)” Home Screen widget.
+                        The templates above are Clock (Designer) Designs that work with the main WidgetWeaver widget.
                         """
                     )
                     .font(.caption2)
@@ -472,33 +467,33 @@ extension WidgetWeaverAboutView {
     static let clockTemplates: [WidgetWeaverAboutTemplate] = [
         WidgetWeaverAboutTemplate(
             id: "starter-clock-classic",
-            title: "Clock",
+            title: "Clock (Designer)",
             subtitle: "Classic",
             description: "Analogue clock design (Classic theme).",
             tags: ["Clock"],
             requiresPro: false,
             triggersCalendarPermission: false,
-            spec: specClockTemplate(name: "Clock (Classic)", theme: "classic", accent: .orange)
+            spec: specClockTemplate(name: "Clock (Designer — Classic)", theme: "classic", accent: .orange)
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-clock-ocean",
-            title: "Clock",
+            title: "Clock (Designer)",
             subtitle: "Ocean",
             description: "Analogue clock design (Ocean theme).",
             tags: ["Clock"],
             requiresPro: false,
             triggersCalendarPermission: false,
-            spec: specClockTemplate(name: "Clock (Ocean)", theme: "ocean", accent: .blue)
+            spec: specClockTemplate(name: "Clock (Designer — Ocean)", theme: "ocean", accent: .blue)
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-clock-graphite",
-            title: "Clock",
+            title: "Clock (Designer)",
             subtitle: "Graphite",
             description: "Analogue clock design (Graphite theme).",
             tags: ["Clock"],
             requiresPro: false,
             triggersCalendarPermission: false,
-            spec: specClockTemplate(name: "Clock (Graphite)", theme: "graphite", accent: .gray)
+            spec: specClockTemplate(name: "Clock (Designer — Graphite)", theme: "graphite", accent: .gray)
         ),
     ]
 
