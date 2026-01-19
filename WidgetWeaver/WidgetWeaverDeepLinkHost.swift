@@ -13,21 +13,24 @@ enum WidgetWeaverDeepLink: String, Identifiable {
     case pawPulseLatestCat
     case pawPulseSettings
     case clock
+    case remindersAccess
 
     var id: String { rawValue }
 
     static func from(url: URL) -> WidgetWeaverDeepLink? {
-        guard url.scheme == "widgetweaver" else { return nil }
+        guard let scheme = url.scheme?.lowercased(), scheme == "widgetweaver" else { return nil }
 
         // Support either host or first path segment.
         let host = (url.host ?? "").lowercased()
+        let pathSegments = url.pathComponents.dropFirst().map { $0.lowercased() }
+        let first = pathSegments.first ?? ""
+        let second = pathSegments.dropFirst().first ?? ""
 
         if host == "noisemachine" || host == "noise-machine" {
             return .noiseMachine
         }
 
         if host == "pawpulse" || host == "paw-pulse" {
-            let first = url.pathComponents.dropFirst().first?.lowercased() ?? ""
             if first == "settings" {
                 return .pawPulseSettings
             }
@@ -38,10 +41,29 @@ enum WidgetWeaverDeepLink: String, Identifiable {
             return .clock
         }
 
+        // Reminders: widgetweaver://reminders/access
+        if host == "reminders" || host == "reminders-access" || host == "reminders-permissions" || host == "reminderssettings" {
+            if first.isEmpty || first == "access" || first == "permissions" || first == "request" || first == "request-access" || first == "settings" {
+                return .remindersAccess
+            }
+            return .remindersAccess
+        }
+
         // Path-based variants: widgetweaver://open/clock etc.
-        let first = url.pathComponents.dropFirst().first?.lowercased() ?? ""
         if first == "clock" {
             return .clock
+        }
+
+        if first == "reminders" {
+            // widgetweaver://open/reminders/access
+            if second.isEmpty || second == "access" || second == "permissions" || second == "request" || second == "request-access" || second == "settings" {
+                return .remindersAccess
+            }
+            return .remindersAccess
+        }
+
+        if first == "reminders-access" || first == "reminders-permissions" || first == "reminderssettings" {
+            return .remindersAccess
         }
 
         return nil
@@ -61,14 +83,20 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
                 }
             }
             .sheet(item: $activeDeepLink) { deepLink in
-                NavigationStack {
-                    deepLinkDestination(deepLink)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button("Close") { activeDeepLink = nil }
+                switch deepLink {
+                case .remindersAccess:
+                    WidgetWeaverRemindersSettingsView(onClose: { activeDeepLink = nil })
+
+                case .noiseMachine, .pawPulseLatestCat, .pawPulseSettings, .clock:
+                    NavigationStack {
+                        deepLinkDestination(deepLink)
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button("Close") { activeDeepLink = nil }
+                                }
                             }
-                        }
+                    }
                 }
             }
     }
@@ -87,6 +115,9 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
 
         case .clock:
             WidgetWeaverClockDeepLinkView()
+
+        case .remindersAccess:
+            WidgetWeaverRemindersSettingsView(onClose: { activeDeepLink = nil })
         }
     }
 }

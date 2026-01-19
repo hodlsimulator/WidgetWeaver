@@ -41,8 +41,10 @@ public struct WidgetWeaverRemindersTemplateView: View {
         let lastAction = store.loadLastAction()
         let config = (spec.remindersConfig ?? .default).normalised()
 
-        return VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
-            headerRow()
+        let content = VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
+            if !spec.name.isEmpty {
+                headerRow()
+            }
 
             VStack(alignment: layout.alignment.alignment, spacing: 10) {
                 if let snapshot {
@@ -67,7 +69,6 @@ public struct WidgetWeaverRemindersTemplateView: View {
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
                     }
-
 
                     if model.isEmpty {
                         if let lastError {
@@ -96,6 +97,13 @@ public struct WidgetWeaverRemindersTemplateView: View {
                 accentBar()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.alignment.swiftUIAlignment)
+
+        if context == .widget {
+            content.widgetURL(Self.remindersTapTargetURL(snapshot: snapshot, lastError: lastError))
+        } else {
+            content
+        }
     }
 
     // MARK: - Header + chrome
@@ -118,6 +126,27 @@ public struct WidgetWeaverRemindersTemplateView: View {
             .fill(accent)
             .frame(height: 5)
             .opacity(0.9)
+    }
+
+    // MARK: - Widget tap behaviour
+
+    private static let remindersAccessDeepLinkURL: URL = URL(string: "widgetweaver://reminders/access")!
+
+    private static func remindersTapTargetURL(snapshot: WidgetWeaverRemindersSnapshot?, lastError: WidgetWeaverRemindersDiagnostics?) -> URL? {
+        if snapshot == nil {
+            return remindersAccessDeepLinkURL
+        }
+
+        guard let kind = lastError?.kind else {
+            return nil
+        }
+
+        switch kind {
+        case .notAuthorised, .writeOnly, .denied, .restricted:
+            return remindersAccessDeepLinkURL
+        case .ok, .error:
+            return nil
+        }
     }
 
     // MARK: - Model
@@ -616,7 +645,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
             .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize(horizontal: false, vertical: context != .widget)
     }
 
     private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics) -> some View {
@@ -646,7 +675,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
                 .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: context != .widget)
 
             Text(lastError.at.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption2)
@@ -676,7 +705,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
                 .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: false, vertical: context != .widget)
 
             Text(lastAction.at.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption2)
@@ -686,20 +715,55 @@ public struct WidgetWeaverRemindersTemplateView: View {
     }
 
     private func remindersPlaceholder() -> some View {
-        VStack(alignment: layout.alignment.alignment, spacing: 10) {
+        let titles: [String] = [
+            "Buy milk",
+            "Reply to email",
+            "Book dentist",
+        ]
+
+        let maxRows: Int = {
+            switch family {
+            case .systemSmall:
+                return 1
+            case .systemMedium:
+                return 2
+            case .systemLarge:
+                return 3
+            case .systemExtraLarge:
+                return 4
+            case .accessoryRectangular:
+                return 1
+            default:
+                return 2
+            }
+        }()
+
+        let blockSpacing: CGFloat = {
+            switch family {
+            case .systemSmall, .systemMedium:
+                return 8
+            default:
+                return 10
+            }
+        }()
+
+        let rowSpacing: CGFloat = (family == .systemSmall) ? 6 : 8
+
+        let visibleTitles = Array(titles.prefix(maxRows))
+
+        return VStack(alignment: layout.alignment.alignment, spacing: blockSpacing) {
             modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
 
             Text("No snapshot yet.\nOpen WidgetWeaver to enable Reminders access and refresh.")
                 .font(style.secondaryTextStyle.font(fallback: .caption2))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(family == .systemSmall ? 2 : 3)
 
-            VStack(alignment: .leading, spacing: 8) {
-                placeholderReminderRow(title: "Buy milk")
-                placeholderReminderRow(title: "Reply to email")
-                placeholderReminderRow(title: "Book dentist")
+            VStack(alignment: .leading, spacing: rowSpacing) {
+                ForEach(visibleTitles, id: \.self) { title in
+                    placeholderReminderRow(title: title)
+                }
             }
             .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
             .opacity(0.85)
