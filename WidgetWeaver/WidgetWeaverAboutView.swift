@@ -62,6 +62,8 @@ struct WidgetWeaverAboutView: View {
                 featuredCalendarSection
                 featuredStepsSection
 
+                remindersSmartStackSection
+
                 noiseMachineSection
 
                 starterTemplatesSection

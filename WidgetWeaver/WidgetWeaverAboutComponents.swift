@@ -64,6 +64,10 @@ struct WidgetWeaverAboutTemplateRow: View {
         template.spec.style.accent.swiftUIColor
     }
 
+    private var smartStackGroupAccent: Color {
+        .orange
+    }
+
     private var remindersSmartStackIndex: Int? {
         switch template.id {
         case "starter-reminders-today":
@@ -85,6 +89,14 @@ struct WidgetWeaverAboutTemplateRow: View {
 
     private var isRemindersSmartStackTemplate: Bool {
         remindersSmartStackIndex != nil
+    }
+
+    private var cardAccent: Color {
+        isRemindersSmartStackTemplate ? smartStackGroupAccent : templateAccent
+    }
+
+    private var cardTint: Color {
+        isRemindersSmartStackTemplate ? smartStackGroupAccent : templateAccent
     }
 
     private var showsSmartStackBadge: Bool {
@@ -143,7 +155,7 @@ struct WidgetWeaverAboutTemplateRow: View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(templateAccent)
+                .foregroundStyle(cardAccent)
 
             Text(text)
                 .font(.caption2.weight(.semibold))
@@ -153,7 +165,7 @@ struct WidgetWeaverAboutTemplateRow: View {
     }
 
     var body: some View {
-        WidgetWeaverAboutCard(accent: templateAccent) {
+        WidgetWeaverAboutCard(accent: cardAccent) {
             VStack(alignment: .leading, spacing: 12) {
                 if showsRemindersSmartStackGroupIntro {
                     remindersSmartStackGroupLabel(
@@ -182,7 +194,7 @@ struct WidgetWeaverAboutTemplateRow: View {
                 }
             }
         }
-        .tint(templateAccent)
+        .tint(cardTint)
         .wwAboutListRow()
         .padding(.bottom, showsRemindersSmartStackGroupOutro ? 12 : 0)
         .sheet(isPresented: $remindersGuidePresented) {

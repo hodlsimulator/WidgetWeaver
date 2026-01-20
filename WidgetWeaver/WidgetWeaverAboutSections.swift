@@ -550,37 +550,131 @@ extension WidgetWeaverAboutView {
         }
     }
 
+        // MARK: - Reminders Smart Stack kit
+
+        @ViewBuilder
+        var remindersSmartStackSection: some View {
+            if WidgetWeaverFeatureFlags.remindersTemplateEnabled {
+                Section {
+                    remindersSmartStackKitIntroRow
+
+                    ForEach(remindersSmartStackTemplates) { template in
+                        WidgetWeaverAboutTemplateRow(
+                            template: template,
+                            isProUnlocked: proManager.isProUnlocked,
+                            onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
+                            onShowPro: onShowPro
+                        )
+                    }
+                } header: {
+                    WidgetWeaverAboutSectionHeader("Smart Stack Kit", systemImage: "square.stack.3d.up.fill", accent: .orange)
+                } footer: {
+                    Text("These 6 templates are designed to be stacked together. Add them to your Library, then build a Smart Stack on the Home Screen.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        private var remindersSmartStackTemplates: [WidgetWeaverAboutTemplate] {
+            let desiredIDs = [
+                "starter-reminders-today",
+                "starter-reminders-overdue",
+                "starter-reminders-soon",
+                "starter-reminders-priority",
+                "starter-reminders-focus",
+                "starter-reminders-list",
+            ]
+
+            let byID = Dictionary(uniqueKeysWithValues: Self.starterTemplates.map { ($0.id, $0) })
+            return desiredIDs.compactMap { byID[$0] }
+        }
+
+        private var remindersSmartStackKitIntroRow: some View {
+            WidgetWeaverAboutCard(accent: .orange) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.orange.opacity(0.16))
+
+                            Circle()
+                                .strokeBorder(Color.orange.opacity(0.26), lineWidth: 1)
+
+                            Image(systemName: "square.stack.3d.up.fill")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.orange)
+                        }
+                        .frame(width: 28, height: 28)
+                        .padding(.top, 1)
+                        .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("Reminders Smart Stack")
+                                    .font(.headline)
+
+                                WidgetWeaverAboutBadge("6 designs", accent: .orange)
+                            }
+
+                            Text("Six Reminders templates designed to be used together in one Smart Stack. Swipe to switch between Today, Overdue, Soon, Priority, Focus, and Lists.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            remindersSmartStackKitAddAllButton
+                            remindersSmartStackKitGuideButton
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            remindersSmartStackKitAddAllButton
+                            remindersSmartStackKitGuideButton
+                        }
+                    }
+                }
+            }
+            .tint(.orange)
+            .wwAboutListRow()
+        }
+
+        private var remindersSmartStackKitAddAllButton: some View {
+            Button {
+                handleAddRemindersSmartStackKit()
+            } label: {
+                Label("Add all 6", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+
+        private var remindersSmartStackKitGuideButton: some View {
+            Button {
+                onShowRemindersSmartStackGuide()
+            } label: {
+                Label("Guide", systemImage: "book.fill")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+
     // MARK: - Starter templates
 
     var starterTemplatesSection: some View {
         let remindersEnabled = WidgetWeaverFeatureFlags.remindersTemplateEnabled
         let templates = Self.starterTemplates.filter { template in
             if remindersEnabled {
-                return template.id != "starter-list"
+                    return template.id != "starter-list" && !template.id.hasPrefix("starter-reminders-")
             }
             return !template.id.hasPrefix("starter-reminders-")
         }
 
-        let firstRemindersIndex = templates.firstIndex(where: { $0.id.hasPrefix("starter-reminders-") })
-        let templatesBeforeReminders = firstRemindersIndex.map { Array(templates[..<$0]) } ?? templates
-        let templatesFromReminders = firstRemindersIndex.map { Array(templates[$0...]) } ?? []
-        let showsRemindersCallout = remindersEnabled && firstRemindersIndex != nil
-
-        return Section {
-            ForEach(templatesBeforeReminders) { template in
-                WidgetWeaverAboutTemplateRow(
-                    template: template,
-                    isProUnlocked: proManager.isProUnlocked,
-                    onAdd: { makeDefault in handleAdd(template: template, makeDefault: makeDefault) },
-                    onShowPro: onShowPro
-                )
-            }
-
-            if showsRemindersCallout {
-                remindersSmartStackCalloutRow
-            }
-
-            ForEach(templatesFromReminders) { template in
+            return Section {
+                ForEach(templates) { template in
                 WidgetWeaverAboutTemplateRow(
                     template: template,
                     isProUnlocked: proManager.isProUnlocked,
@@ -595,49 +689,6 @@ extension WidgetWeaverAboutView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private var remindersSmartStackCalloutRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(.orange.opacity(0.15))
-
-                Circle()
-                    .strokeBorder(.orange.opacity(0.25), lineWidth: 1)
-
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.orange)
-            }
-            .frame(width: 28, height: 28)
-            .padding(.top, 1)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Tip: These 6 are designed to be used together in a Smart Stack.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    handleAddRemindersSmartStackKit()
-                } label: {
-                    Label("Add all 6", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
-        )
-        .wwAboutListRow()
     }
 
     // MARK: - Pro templates
