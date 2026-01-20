@@ -152,6 +152,13 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         let familySpec = spec.resolved(for: context.family)
 
+        if let idString = configuration.design?.id,
+           let designID = UUID(uuidString: idString),
+           familySpec.layout.template == .clockIcon
+        {
+            WidgetWeaverClockDesignerMetrics.recordAppliedIfNeeded(designID: designID, now: now)
+        }
+
         // Clock (Icon) designs are time-dependent and previously used the generic minute-level
         // timeline builder (up to 240 distinct entries). WidgetKit may pre-render a large portion
         // of the timeline ahead-of-time; for the clock face this can exceed WidgetKit's
@@ -396,33 +403,36 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        if family != .systemSmall {
-            clockUnsupportedSize
-        } else {
-            let scheme = Self.scheme(for: spec)
-            let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+        Group {
+            if family != .systemSmall {
+                clockUnsupportedSize
+            } else {
+                let scheme = Self.scheme(for: spec)
+                let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
 
-            Group {
-                if isLowBudget {
-                    WWMainClockStaticFace(
-                        palette: palette,
-                        date: entryDate,
-                        showsSecondsHand: true
-                    )
-                } else {
-                    WidgetWeaverClockWidgetLiveView(
-                        palette: palette,
-                        entryDate: entryDate,
-                        tickMode: .secondsSweep,
-                        tickSeconds: 0.0
-                    )
+                Group {
+                    if isLowBudget {
+                        WWMainClockStaticFace(
+                            palette: palette,
+                            date: entryDate,
+                            showsSecondsHand: true
+                        )
+                    } else {
+                        WidgetWeaverClockWidgetLiveView(
+                            palette: palette,
+                            entryDate: entryDate,
+                            tickMode: .secondsSweep,
+                            tickSeconds: 0.0
+                        )
+                    }
                 }
+                .wwWidgetContainerBackground {
+                    WidgetWeaverClockBackgroundView(palette: palette)
+                }
+                .clipShape(ContainerRelativeShape())
             }
-            .wwWidgetContainerBackground {
-                WidgetWeaverClockBackgroundView(palette: palette)
-            }
-            .clipShape(ContainerRelativeShape())
         }
+        .widgetURL(URL(string: "widgetweaver://clock"))
     }
 
     private var clockUnsupportedSize: some View {

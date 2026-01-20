@@ -229,6 +229,7 @@ private enum WWClockDesignerFunnelMetrics {
     private static let createLastKey = "widgetweaver.clockDesigner.create.last"
     private static let createLastSourceKey = "widgetweaver.clockDesigner.create.last.source"
     private static let createLastThemeKey = "widgetweaver.clockDesigner.create.last.theme"
+    private static let createLastDesignIDKey = "widgetweaver.clockDesigner.create.last.designID"
 
     static func recordOpened(now: Date = Date()) {
         let defaults = AppGroup.userDefaults
@@ -244,11 +245,12 @@ private enum WWClockDesignerFunnelMetrics {
         defaults.set(defaults.integer(forKey: createTappedCountKey) + 1, forKey: createTappedCountKey)
     }
 
-    static func recordCreateSucceeded(source: WWClockDesignerCreateSource, theme: WidgetWeaverClockDesignerTheme, now: Date = Date()) {
+    static func recordCreateSucceeded(source: WWClockDesignerCreateSource, theme: WidgetWeaverClockDesignerTheme, designID: UUID, now: Date = Date()) {
         let defaults = AppGroup.userDefaults
         defaults.set(now, forKey: createLastKey)
         defaults.set(source.rawValue, forKey: createLastSourceKey)
         defaults.set(theme.rawValue, forKey: createLastThemeKey)
+        defaults.set(designID.uuidString, forKey: createLastDesignIDKey)
         defaults.set(defaults.integer(forKey: createSucceededCountKey) + 1, forKey: createSucceededCountKey)
     }
 }
@@ -382,7 +384,9 @@ private struct WidgetWeaverClockDeepLinkView: View {
 
         WidgetSpecStore.shared.save(spec.normalised(), makeDefault: false)
 
-        WWClockDesignerFunnelMetrics.recordCreateSucceeded(source: source, theme: theme)
+        WidgetWeaverClockDesignerMetrics.recordCreatedDesignID(spec.id)
+
+        WWClockDesignerFunnelMetrics.recordCreateSucceeded(source: source, theme: theme, designID: spec.id)
 
         statusMessage = "Created \(name). Find it in Library to edit, then apply it to a WidgetWeaver widget."
     }

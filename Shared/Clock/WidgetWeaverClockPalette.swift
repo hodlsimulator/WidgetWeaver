@@ -69,7 +69,7 @@ struct WidgetWeaverClockPalette {
             // Use high-contrast, clearly-distinct accents so scheme changes are obvious
             // both in-widget and in the in-app preview.
             case .classic: return WWClock.colour(0xFF9F0A)   // system-like orange
-            case .ocean: return WWClock.colour(0x0A84FF)     // system-like blue
+            case .ocean: return WWClock.colour(0x339CFF)     // lighter blue (Ocean)
             case .mint: return WWClock.colour(0x34C759)      // system-like green
             case .orchid: return WWClock.colour(0xAF52DE)    // system-like purple
             case .sunset: return WWClock.colour(0xFF2D55)    // system-like pink

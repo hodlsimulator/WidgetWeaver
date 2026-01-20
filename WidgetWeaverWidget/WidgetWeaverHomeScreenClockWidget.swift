@@ -249,6 +249,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
             WidgetWeaverClockBackgroundView(palette: palette)
         }
         .clipShape(ContainerRelativeShape())
+        .widgetURL(URL(string: "widgetweaver://clock"))
         #if DEBUG
         .overlay(alignment: .topLeading) {
             Text("scheme=\(entry.colourScheme.rawValue)")
