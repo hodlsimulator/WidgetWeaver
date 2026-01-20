@@ -17,7 +17,7 @@ struct WidgetWeaverNoiseMachineWidget: Widget {
         }
         .configurationDisplayName("Noise Machine")
         .description("Control the Noise Machine without opening the app.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 
     struct Entry: TimelineEntry {
@@ -57,6 +57,7 @@ private final class NoiseMachineWidgetLiveState: ObservableObject {
 private struct NoiseMachineWidgetView: View {
     let entry: WidgetWeaverNoiseMachineWidget.Entry
 
+    @Environment(\.widgetFamily) private var family
     @StateObject private var liveState = NoiseMachineWidgetLiveState()
 
     /// Keep a lightweight, in-memory copy of the last-known state.
@@ -71,9 +72,12 @@ private struct NoiseMachineWidgetView: View {
     @State private var optimisticWasPlaying: Bool? = nil
     @State private var optimisticToken: UInt64 = 0
 
+    @State private var resumeOnLaunchEnabled: Bool
+
     init(entry: WidgetWeaverNoiseMachineWidget.Entry) {
         self.entry = entry
         _renderedState = State(initialValue: entry.state.sanitised())
+        _resumeOnLaunchEnabled = State(initialValue: NoiseMixStore.shared.isResumeOnLaunchEnabled())
     }
 
     private var displayState: NoiseMixState {
@@ -86,6 +90,7 @@ private struct NoiseMachineWidgetView: View {
 
     private func refreshFromStore() {
         renderedState = NoiseMixStore.shared.loadLastMix().sanitised()
+        resumeOnLaunchEnabled = NoiseMixStore.shared.isResumeOnLaunchEnabled()
     }
 
     private func scheduleOptimisticReconcile(desiredWasPlaying: Bool, token: UInt64) {
@@ -99,7 +104,7 @@ private struct NoiseMachineWidgetView: View {
                 1_000_000_000,
                 1_600_000_000,
                 2_400_000_000,
-                3_200_000_000,
+                3_200_000_000
             ]
 
             for ns in delays {
@@ -147,9 +152,13 @@ private struct NoiseMachineWidgetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            layers(slots: slots)
+        Group {
+            switch family {
+            case .systemLarge:
+                largeLayout(slots: slots)
+            default:
+                compactLayout(slots: slots)
+            }
         }
         .containerBackground(.fill.tertiary, for: .widget)
         .padding(12)
@@ -164,6 +173,26 @@ private struct NoiseMachineWidgetView: View {
         }
     }
 
+    // MARK: - Layouts
+
+    private func compactLayout(slots: [NoiseSlotState]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            layerRow(slots: slots)
+        }
+    }
+
+    private func largeLayout(slots: [NoiseSlotState]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            masterVolumeRow
+            layerGrid(slots: slots)
+            footer
+        }
+    }
+
+    // MARK: - Header / Footer
+
     private var header: some View {
         let isPlaying = displayState.wasPlaying
 
@@ -175,6 +204,7 @@ private struct NoiseMachineWidgetView: View {
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Pause noise machine")
                 .simultaneousGesture(TapGesture().onEnded {
                     setOptimisticWasPlaying(false)
                 })
@@ -185,6 +215,7 @@ private struct NoiseMachineWidgetView: View {
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Play noise machine")
                 .simultaneousGesture(TapGesture().onEnded {
                     setOptimisticWasPlaying(true)
                 })
@@ -196,6 +227,7 @@ private struct NoiseMachineWidgetView: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.bordered)
+            .accessibilityLabel("Stop noise machine")
             .simultaneousGesture(TapGesture().onEnded {
                 setOptimisticWasPlaying(false)
             })
@@ -209,15 +241,74 @@ private struct NoiseMachineWidgetView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
         }
     }
 
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Text(resumeOnLaunchEnabled ? "Resume: On" : "Resume: Off")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 4) {
+                Text("Updated")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(displayState.updatedAt, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Volume
+
+    private var masterVolumeRow: some View {
+        let pct = percentageString(displayState.masterVolume)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Master")
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 0)
+                Text(pct)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: Double(clamped01(displayState.masterVolume)))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Master volume")
+        .accessibilityValue(pct)
+    }
+
+    // MARK: - Layers
+
     @ViewBuilder
-    private func layers(slots: [NoiseSlotState]) -> some View {
+    private func layerRow(slots: [NoiseSlotState]) -> some View {
         HStack(spacing: 8) {
             ForEach(0..<NoiseMixState.slotCount, id: \.self) { idx in
                 let slot = slots.indices.contains(idx) ? slots[idx] : .default
                 layerButton(index: idx, isEnabled: slot.enabled)
+            }
+        }
+    }
+
+    private func layerGrid(slots: [NoiseSlotState]) -> some View {
+        let columns: [GridItem] = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
+
+        return LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(0..<NoiseMixState.slotCount, id: \.self) { idx in
+                let slot = slots.indices.contains(idx) ? slots[idx] : .default
+                layerTile(index: idx, slot: slot)
             }
         }
     }
@@ -231,6 +322,8 @@ private struct NoiseMachineWidgetView: View {
                     .frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Layer \(index + 1)")
+            .accessibilityValue("On")
         } else {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
                 Text("\(index + 1)")
@@ -238,6 +331,80 @@ private struct NoiseMachineWidgetView: View {
                     .frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.bordered)
+            .accessibilityLabel("Layer \(index + 1)")
+            .accessibilityValue("Off")
         }
+    }
+
+    private func layerTile(index: Int, slot: NoiseSlotState) -> some View {
+        let isEnabled = slot.enabled
+        let pct = percentageString(slot.volume)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            if isEnabled {
+                Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
+                    HStack(spacing: 8) {
+                        Text("Layer \(index + 1)")
+                            .font(.caption.weight(.semibold))
+
+                        Spacer(minLength: 0)
+
+                        Text("On")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Layer \(index + 1)")
+                .accessibilityValue("On")
+            } else {
+                Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
+                    HStack(spacing: 8) {
+                        Text("Layer \(index + 1)")
+                            .font(.caption.weight(.semibold))
+
+                        Spacer(minLength: 0)
+
+                        Text("Off")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Layer \(index + 1)")
+                .accessibilityValue("Off")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Volume")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text(pct)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                ProgressView(value: Double(clamped01(slot.volume)))
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Layer \(index + 1) volume")
+            .accessibilityValue(pct)
+        }
+        .padding(10)
+        .background(.quaternary, in: shape)
+    }
+
+    // MARK: - Formatting
+
+    private func clamped01(_ v: Float) -> Float {
+        min(1, max(0, v))
+    }
+
+    private func percentageString(_ v: Float) -> String {
+        let pct = Int((clamped01(v) * 100).rounded())
+        return "\(pct)%"
     }
 }
