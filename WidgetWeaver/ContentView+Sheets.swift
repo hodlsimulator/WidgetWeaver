@@ -41,7 +41,7 @@ extension ContentView {
     func sheetContent(_ sheet: ActiveSheet) -> AnyView {
         switch sheet {
         case .widgetHelp:
-            return AnyView(WidgetWorkflowHelpView())
+            return AnyView(WidgetWeaverHelpView())
 
         case .pro:
             return AnyView(WidgetWeaverProView(manager: proManager))
