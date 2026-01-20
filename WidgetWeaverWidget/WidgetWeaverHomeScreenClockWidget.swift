@@ -15,14 +15,14 @@ public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfiguratio
 
     public static var description: IntentDescription {
         IntentDescription(
-            "Configure Clock (Quick) (Small). Choose a colour scheme and optional seconds hand. For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget."
+            "Configure Clock (Quick) (Small). Choose a colour scheme and toggle the seconds hand (on by default). For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget."
         )
     }
 
     @Parameter(title: "Colour Scheme", default: .classic)
     public var colourScheme: WidgetWeaverClockWidgetColourScheme
 
-    @Parameter(title: "Seconds Hand", default: false)
+    @Parameter(title: "Seconds Hand", default: true)
     public var secondsHandEnabled: Bool
 
     public static var parameterSummary: some ParameterSummary {
@@ -57,8 +57,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         return Entry(
             date: now,
-            tickMode: .minuteOnly,
-            tickSeconds: 60.0,
+            tickMode: .secondsSweep,
+            tickSeconds: 0.0,
             colourScheme: .classic,
             isWidgetKitPreview: true
         )
@@ -212,7 +212,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                 }
         }
         .configurationDisplayName("Clock (Quick)")
-        .description("A standalone analogue clock (Small only) with fast setup. Choose a colour scheme and optional seconds hand. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
+        .description("A standalone analogue clock (Small only) with fast setup. Choose a colour scheme and toggle the seconds hand (on by default). For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }

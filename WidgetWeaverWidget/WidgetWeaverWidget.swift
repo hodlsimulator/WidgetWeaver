@@ -407,7 +407,7 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
                     WWMainClockStaticFace(
                         palette: palette,
                         date: entryDate,
-                        showsSecondsHand: false
+                        showsSecondsHand: true
                     )
                 } else {
                     WidgetWeaverClockWidgetLiveView(
