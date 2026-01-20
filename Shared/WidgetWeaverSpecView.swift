@@ -465,6 +465,7 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
             .font(font)
             .foregroundStyle(foreground)
             .lineLimit(lineLimit)
+            .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 2)
     }
 
     private var wantsGlassCaptionStrip: Bool {
@@ -494,33 +495,54 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         wantsTopAnchoredCaption ? .bottom : .top
     }
 
-    @ViewBuilder
-    private var posterCaptionBackdrop: some View {
+    private var backdropGradientStops: [Gradient.Stop] {
         if wantsGlassCaptionStrip {
-            posterGlassCaptionBackdrop
-        } else {
-            posterGradientCaptionBackdrop
+            return [
+                .init(color: Color.black.opacity(0.45), location: 0.00),
+                .init(color: Color.black.opacity(0.28), location: 0.22),
+                .init(color: Color.black.opacity(0.12), location: 0.55),
+                .init(color: Color.black.opacity(0.04), location: 0.80),
+                .init(color: Color.clear, location: 1.00),
+            ]
         }
+
+        return [
+            .init(color: Color.black.opacity(0.70), location: 0.00),
+            .init(color: Color.black.opacity(0.45), location: 0.22),
+            .init(color: Color.black.opacity(0.20), location: 0.55),
+            .init(color: Color.black.opacity(0.06), location: 0.80),
+            .init(color: Color.clear, location: 1.00),
+        ]
     }
 
     @ViewBuilder
-    private var posterGradientCaptionBackdrop: some View {
+    private var posterBackdropScrim: some View {
         Rectangle()
             .fill(
                 LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.55),
-                        Color.black.opacity(0.10),
-                        Color.clear,
-                    ],
+                    gradient: Gradient(stops: backdropGradientStops),
                     startPoint: captionBackdropStartPoint,
                     endPoint: captionBackdropEndPoint
                 )
             )
     }
 
+    private var glassStripFadeMask: some View {
+        let stops: [Gradient.Stop] = [
+            .init(color: Color.white, location: 0.00),
+            .init(color: Color.white, location: 0.82),
+            .init(color: Color.clear, location: 1.00),
+        ]
+
+        return LinearGradient(
+            gradient: Gradient(stops: stops),
+            startPoint: captionBackdropStartPoint,
+            endPoint: captionBackdropEndPoint
+        )
+    }
+
     @ViewBuilder
-    private var posterGlassCaptionBackdrop: some View {
+    private var glassStripBackground: some View {
         ZStack {
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -528,11 +550,12 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
             Rectangle()
                 .fill(
                     LinearGradient(
-                        colors: [
-                            Color.black.opacity(0.30),
-                            Color.black.opacity(0.10),
-                            Color.clear,
-                        ],
+                        gradient: Gradient(stops: [
+                            .init(color: Color.black.opacity(0.28), location: 0.00),
+                            .init(color: Color.black.opacity(0.18), location: 0.40),
+                            .init(color: Color.black.opacity(0.06), location: 0.75),
+                            .init(color: Color.clear, location: 1.00),
+                        ]),
                         startPoint: captionBackdropStartPoint,
                         endPoint: captionBackdropEndPoint
                     )
@@ -540,15 +563,30 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         }
         .overlay(
             Rectangle()
-                .fill(Color.white.opacity(0.10))
+                .fill(Color.white.opacity(0.12))
                 .frame(height: 1),
             alignment: wantsTopAnchoredCaption ? .bottom : .top
         )
+        .mask(glassStripFadeMask)
     }
 
     private func overlayBody(spec: WidgetSpec) -> some View {
-        ZStack(alignment: wantsTopAnchoredCaption ? .topLeading : .bottomLeading) {
-            captionPanel(spec: spec)
+        ZStack {
+            posterBackdropScrim
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+                if wantsTopAnchoredCaption {
+                    captionPanel(spec: spec)
+                    Spacer(minLength: 0)
+                } else {
+                    Spacer(minLength: 0)
+                    captionPanel(spec: spec)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -560,6 +598,7 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
                     .font(style.nameTextStyle.font(fallback: .caption))
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
+                    .shadow(color: Color.black.opacity(0.35), radius: 8, x: 0, y: 2)
             }
 
             if !spec.primaryText.isEmpty {
@@ -583,10 +622,10 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         .padding(style.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            posterCaptionBackdrop
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if wantsGlassCaptionStrip {
+                glassStripBackground
+            }
         }
-        .compositingGroup()
     }
 
     private func maxDate(_ a: Date, _ b: Date) -> Date {
