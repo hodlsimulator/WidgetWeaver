@@ -14,16 +14,20 @@ struct SmartPhotoCropEditorView: View {
     let targetPixels: PixelSize
     let initialCropRect: NormalisedRect
     let initialStraightenDegrees: Double
+    let initialRotationQuarterTurns: Int
     let autoCropRect: NormalisedRect?
     let focus: Binding<EditorFocusSnapshot>?
     let onResetToAuto: (() async -> Void)?
-    let onApply: (NormalisedRect, Double) async -> Void
+    let onApply: (NormalisedRect, Double, Int) async -> Void
 
     @State private var masterImage: UIImage?
+    @State private var previewImage: UIImage?
+
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
-    @State private var isStraightenEditing: Bool = false
+    @State private var rotationQuarterTurns: Int
 
+    @State private var isStraightenEditing: Bool = false
     @State private var nudgeStepPixels: Int = 1
 
     @State private var isApplying: Bool = false
@@ -31,7 +35,6 @@ struct SmartPhotoCropEditorView: View {
 
     @State private var dragStartRect: NormalisedRect?
     @State private var pinchStartRect: NormalisedRect?
-
     @State private var isPinching: Bool = false
 
     @State private var isPrecisionDragActive: Bool = false
@@ -39,13 +42,14 @@ struct SmartPhotoCropEditorView: View {
 
     @State private var previousFocusSnapshot: EditorFocusSnapshot?
 
-    // Debug overlay (Batch E)
-    @AppStorage("widgetweaver.smartphoto.debugOverlay.enabled")
-    private var debugOverlayEnabled: Bool = false
+    @State private var isUpdatingPreview: Bool = false
+    @State private var previewRequestID: Int = 0
 
-    @State private var debugDetection: SmartPhotoDebugDetection?
-    @State private var isDetecting: Bool = false
+#if DEBUG
+    @State private var debugOverlayEnabled: Bool = false
+    @State private var debugDetection: SmartPhotoDetection?
     @State private var debugStatusMessage: String = ""
+#endif
 
     @Environment(\.dismiss) private var dismiss
 
@@ -55,16 +59,20 @@ struct SmartPhotoCropEditorView: View {
         targetPixels: PixelSize,
         initialCropRect: NormalisedRect,
         initialStraightenDegrees: Double = 0,
+        initialRotationQuarterTurns: Int = 0,
         autoCropRect: NormalisedRect? = nil,
         focus: Binding<EditorFocusSnapshot>? = nil,
         onResetToAuto: (() async -> Void)? = nil,
-        onApply: @escaping (NormalisedRect, Double) async -> Void
+        onApply: @escaping (NormalisedRect, Double, Int) async -> Void
     ) {
+        let normalisedInitialRotation = SmartPhotoCropMath.normalisedRotationQuarterTurns(initialRotationQuarterTurns)
+
         self.family = family
         self.masterFileName = masterFileName
-        self.targetPixels = targetPixels.normalised()
+        self.targetPixels = targetPixels
         self.initialCropRect = initialCropRect.normalised()
         self.initialStraightenDegrees = Self.normalisedStraightenDegrees(initialStraightenDegrees)
+        self.initialRotationQuarterTurns = normalisedInitialRotation
         self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
         self.onResetToAuto = onResetToAuto
@@ -72,24 +80,40 @@ struct SmartPhotoCropEditorView: View {
 
         _cropRect = State(initialValue: initialCropRect.normalised())
         _straightenDegrees = State(initialValue: Self.normalisedStraightenDegrees(initialStraightenDegrees))
+        _rotationQuarterTurns = State(initialValue: normalisedInitialRotation)
     }
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black
+                .ignoresSafeArea()
 
-            if let masterImage {
-                cropCanvas(masterImage: masterImage)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
+            if let displayImage = previewImage {
+                let masterPixels = SmartPhotoCropMath.pixelSize(of: displayImage)
+                let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixels.width, height: masterPixels.height)
+                let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
+                let rectAspect = targetAspect / masterAspect
+
+                VStack(spacing: 0) {
+                    cropCanvas(masterImage: displayImage)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    cropControls(masterPixels: masterPixels, rectAspect: rectAspect)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .padding(.bottom, 12)
+                }
             } else if !loadErrorMessage.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.yellow)
-
+                        .font(.system(size: 44))
+                        .foregroundColor(.yellow)
                     Text(loadErrorMessage)
-                        .foregroundStyle(.white)
+                        .font(.callout)
+                        .foregroundColor(.white.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
                 }
@@ -99,500 +123,467 @@ struct SmartPhotoCropEditorView: View {
             }
 
             if isApplying {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-
-                    Text("Applying crop…")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.9))
+                    Text("Applying…")
+                        .foregroundColor(.white.opacity(0.9))
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(18)
+                .background(.black.opacity(0.6))
+                .cornerRadius(14)
+            } else if isUpdatingPreview {
+                VStack {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(.top, 12)
+                    Spacer()
+                }
             }
         }
-        .navigationTitle("Fix framing (\(family.label))")
+        .navigationTitle("Fix framing (\(family.uiName))")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            pushFocusIfNeeded()
-        }
-        .onDisappear {
-            restoreFocusIfNeeded()
-        }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
                     .disabled(isApplying)
             }
-
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Apply") { applyAndDismissIfPossible() }
-                    .disabled(isApplying || masterImage == nil)
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Apply") {
+                    Task { await applyAndDismissIfPossible() }
+                }
+                .disabled(isApplying || previewImage == nil)
             }
 
-            ToolbarItemGroup(placement: .bottomBar) {
-                Button("Reset") {
-                    cropRect = initialCropRect.normalised()
-                    straightenDegrees = initialStraightenDegrees
-                }
-                    .disabled(isApplying || masterImage == nil)
-
-                if autoCropRect != nil {
-                    Button("Reset to Auto") { resetToAutoAndDismissIfPossible() }
-                        .disabled(isApplying)
-                }
-            }
-
-            #if DEBUG
-            ToolbarItem(placement: .topBarTrailing) {
+#if DEBUG
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Toggle("Debug overlay", isOn: $debugOverlayEnabled)
-
-                    Button("Re-run detection") {
-                        runDebugDetection(force: true)
+                    Toggle(isOn: $debugOverlayEnabled) {
+                        Text("Debug crop overlay")
                     }
-                    .disabled(masterImage == nil || isApplying || isDetecting)
-
-                    if isDetecting {
-                        Text("Detecting…")
-                    } else if !debugStatusMessage.isEmpty {
-                        Text(debugStatusMessage)
-                    } else if debugOverlayEnabled, let d = debugDetection {
-                        Text("Chosen: \(d.chosenKind.label)")
+                    Button("Force refresh detection") {
+                        Task { await runDebugDetection(force: true) }
                     }
                 } label: {
-                    Image(systemName: debugOverlayEnabled ? "ladybug.fill" : "ladybug")
-                        .symbolRenderingMode(.hierarchical)
+                    Image(systemName: "ladybug")
                 }
-                .disabled(masterImage == nil)
             }
-            #endif
+#endif
+        }
+        .onAppear {
+            previousFocusSnapshot = focus?.wrappedValue
+            focus?.wrappedValue = .smartPhotoManualFraming(
+                masterFileName: masterFileName,
+                family: family
+            )
+        }
+        .onDisappear {
+            if let prev = previousFocusSnapshot {
+                focus?.wrappedValue = prev
+            }
         }
         .task {
-            if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
         }
+#if DEBUG
         .task(id: debugOverlayEnabled) {
             if debugOverlayEnabled {
-                runDebugDetection(force: false)
+                await runDebugDetection(force: false)
             } else {
+                debugDetection = nil
                 debugStatusMessage = ""
             }
         }
+#endif
     }
 
     private func loadMasterImage() {
-        let img = AppGroup.loadUIImage(fileName: masterFileName)
-        if let img {
-            masterImage = img
+        let loaded = AppGroup.loadUIImage(fileName: masterFileName)
+        if let loaded {
+            masterImage = loaded
             loadErrorMessage = ""
-            return
-        }
-
-        loadErrorMessage = "Smart master image was not found on disk."
-    }
-
-    private func applyAndDismissIfPossible() {
-        guard !isApplying else { return }
-        guard masterImage != nil else { return }
-
-        isApplying = true
-
-        let rectToApply = cropRect.normalised()
-        Task {
-            let degreesToApply = Self.normalisedStraightenDegrees(straightenDegrees)
-            await onApply(rectToApply, degreesToApply)
-            await MainActor.run {
-                isApplying = false
-                dismiss()
-            }
+            refreshPreviewImage(master: loaded, quarterTurns: rotationQuarterTurns)
+        } else {
+            masterImage = nil
+            previewImage = nil
+            loadErrorMessage = "Failed to load image: \(masterFileName)"
         }
     }
 
-    private func resetToAutoAndDismissIfPossible() {
-        guard !isApplying else { return }
-        guard let auto = autoCropRect?.normalised() else { return }
+    private func refreshPreviewImage(master: UIImage, quarterTurns: Int) {
+        let requestID = previewRequestID + 1
+        previewRequestID = requestID
+        isUpdatingPreview = true
 
-        if let onResetToAuto {
-            isApplying = true
-            Task {
-                await onResetToAuto()
-                await MainActor.run {
-                    isApplying = false
-                    dismiss()
-                }
-            }
-            return
-        }
-
-        cropRect = auto
-        straightenDegrees = 0
-    }
-
-    private func pushFocusIfNeeded() {
-        guard let focus else { return }
-
-        if previousFocusSnapshot == nil {
-            previousFocusSnapshot = focus.wrappedValue
-        }
-
-        focus.wrappedValue = .singleNonAlbumElement(id: "smartPhotoCrop")
-    }
-
-    private func restoreFocusIfNeeded() {
-        guard let focus else { return }
-        guard let previous = previousFocusSnapshot else { return }
-        defer { previousFocusSnapshot = nil }
-
-        if focus.wrappedValue.focus == .element(id: "smartPhotoCrop") {
-            focus.wrappedValue = previous
-        }
-    }
-
-    private func runDebugDetection(force: Bool) {
-        guard debugOverlayEnabled else { return }
-        guard !isDetecting else { return }
-        if debugDetection != nil, !force { return }
-
-        guard let masterData = AppGroup.readImageData(fileName: masterFileName) else {
-            debugDetection = nil
-            debugStatusMessage = "Master file missing."
-            return
-        }
-
-        isDetecting = true
-        debugStatusMessage = "Detecting…"
+        let turns = SmartPhotoCropMath.normalisedRotationQuarterTurns(quarterTurns)
 
         Task.detached(priority: .userInitiated) {
-            let detection = SmartPhotoDebugDetector.detect(masterData: masterData)
-
+            let rotated = SmartPhotoManualCropRenderer.previewImage(master: master, rotationQuarterTurns: turns)
             await MainActor.run {
-                isDetecting = false
-
-                guard debugOverlayEnabled else {
-                    debugDetection = nil
-                    debugStatusMessage = ""
-                    return
-                }
-
-                debugDetection = detection
-                debugStatusMessage = (detection == nil) ? "No detections." : ""
+                guard requestID == previewRequestID else { return }
+                previewImage = rotated
+                rotationQuarterTurns = turns
+                isUpdatingPreview = false
             }
         }
     }
 
-    @ViewBuilder
+    private func setTransform(
+        rotationQuarterTurns newQuarterTurns: Int,
+        cropRect newCropRect: NormalisedRect,
+        straightenDegrees newStraightenDegrees: Double
+    ) {
+        let safeTurns = SmartPhotoCropMath.normalisedRotationQuarterTurns(newQuarterTurns)
+        let safeCrop = newCropRect.normalised()
+        let safeStraighten = Self.normalisedStraightenDegrees(newStraightenDegrees)
+
+        guard let masterImage else {
+            rotationQuarterTurns = safeTurns
+            cropRect = safeCrop
+            straightenDegrees = safeStraighten
+            return
+        }
+
+        let requestID = previewRequestID + 1
+        previewRequestID = requestID
+        isUpdatingPreview = true
+
+        Task.detached(priority: .userInitiated) {
+            let rotated = SmartPhotoManualCropRenderer.previewImage(master: masterImage, rotationQuarterTurns: safeTurns)
+            await MainActor.run {
+                guard requestID == previewRequestID else { return }
+                previewImage = rotated
+                rotationQuarterTurns = safeTurns
+                cropRect = safeCrop
+                straightenDegrees = safeStraighten
+                isUpdatingPreview = false
+            }
+        }
+    }
+
+    private func rotate90(clockwise: Bool) {
+        guard !isApplying else { return }
+        guard let masterImage else { return }
+
+        let fromTurns = rotationQuarterTurns
+        let toTurns = SmartPhotoCropMath.normalisedRotationQuarterTurns(fromTurns + (clockwise ? 1 : -1))
+
+        let originalPixels = SmartPhotoCropMath.pixelSize(of: masterImage)
+        let oldRectAspect = SmartPhotoCropMath.rectAspect(originalMasterPixels: originalPixels, quarterTurns: fromTurns, targetPixels: targetPixels)
+        let newRectAspect = SmartPhotoCropMath.rectAspect(originalMasterPixels: originalPixels, quarterTurns: toTurns, targetPixels: targetPixels)
+
+        let rotatedCrop = SmartPhotoCropMath.rotatedCropRectForQuarterTurn(
+            current: cropRect,
+            clockwise: clockwise,
+            oldRectAspect: oldRectAspect,
+            newRectAspect: newRectAspect
+        )
+
+        setTransform(rotationQuarterTurns: toTurns, cropRect: rotatedCrop, straightenDegrees: straightenDegrees)
+    }
+
+    private func resetToInitial() {
+        setTransform(
+            rotationQuarterTurns: initialRotationQuarterTurns,
+            cropRect: initialCropRect,
+            straightenDegrees: initialStraightenDegrees
+        )
+    }
+
+    private func applyAndDismissIfPossible() async {
+        guard !isApplying else { return }
+        guard previewImage != nil else { return }
+
+        isApplying = true
+        defer { isApplying = false }
+
+        let safeRect = cropRect.normalised()
+        let safeDegrees = Self.normalisedStraightenDegrees(straightenDegrees)
+        let safeTurns = SmartPhotoCropMath.normalisedRotationQuarterTurns(rotationQuarterTurns)
+
+        await onApply(safeRect, safeDegrees, safeTurns)
+        dismiss()
+    }
+
+    private func resetToAutoAndDismissIfPossible() async {
+        guard !isApplying else { return }
+
+        if let onResetToAuto {
+            await onResetToAuto()
+            dismiss()
+        } else if let autoCropRect {
+            setTransform(rotationQuarterTurns: 0, cropRect: autoCropRect, straightenDegrees: 0)
+        }
+    }
+
     private func cropCanvas(masterImage: UIImage) -> some View {
         GeometryReader { geo in
             let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
             let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
-
             let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
-            let normalisedRectAspect = targetAspect / masterAspect
+            let rectAspect = targetAspect / masterAspect
 
-            let displayRect = SmartPhotoCropMath.aspectFitRect(container: geo.size, imageAspect: masterAspect)
-
-            let cropFrame = CGRect(
-                x: displayRect.minX + CGFloat(cropRect.x) * displayRect.width,
-                y: displayRect.minY + CGFloat(cropRect.y) * displayRect.height,
-                width: CGFloat(cropRect.width) * displayRect.width,
-                height: CGFloat(cropRect.height) * displayRect.height
+            let bounds = geo.size
+            let displayRect = SmartPhotoCropMath.aspectFitRect(
+                containerSize: bounds,
+                imageAspect: masterAspect,
+                padding: 0
             )
 
-            let contentRect = CGRect(origin: .zero, size: displayRect.size)
-            let showGrid = isStraightenEditing || abs(straightenDegrees) > 0.01
+            let cropFrame = CGRect(
+                x: displayRect.origin.x + CGFloat(cropRect.x) * displayRect.size.width,
+                y: displayRect.origin.y + CGFloat(cropRect.y) * displayRect.size.height,
+                width: CGFloat(cropRect.width) * displayRect.size.width,
+                height: CGFloat(cropRect.height) * displayRect.size.height
+            )
+
+            let dragGesture = DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    guard !isApplying else { return }
+                    guard !isPinching else { return }
+
+                    if dragStartRect == nil {
+                        dragStartRect = cropRect
+                    }
+                    guard let start = dragStartRect else { return }
+
+                    let dx = Double(value.translation.width / displayRect.size.width)
+                    let dy = Double(value.translation.height / displayRect.size.height)
+
+                    let proposed = NormalisedRect(
+                        x: start.x + dx,
+                        y: start.y + dy,
+                        width: start.width,
+                        height: start.height
+                    )
+                    cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
+                }
+                .onEnded { _ in
+                    dragStartRect = nil
+                }
+
+            let magnifyGesture = MagnificationGesture()
+                .onChanged { scale in
+                    guard !isApplying else { return }
+                    if pinchStartRect == nil {
+                        pinchStartRect = cropRect
+                        isPinching = true
+                    }
+                    guard let start = pinchStartRect else { return }
+
+                    let proposedWidth = start.width * Double(scale)
+                    let newWidth = SmartPhotoCropMath.clampWidth(proposedWidth, rectAspect: rectAspect)
+                    let newHeight = newWidth / rectAspect
+
+                    let cx = start.x + start.width / 2
+                    let cy = start.y + start.height / 2
+
+                    let proposed = NormalisedRect(
+                        x: cx - newWidth / 2,
+                        y: cy - newHeight / 2,
+                        width: newWidth,
+                        height: newHeight
+                    )
+                    cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
+                }
+                .onEnded { _ in
+                    pinchStartRect = nil
+                    isPinching = false
+                }
+
+            let precisionDragGesture = DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    guard !isApplying else { return }
+                    guard isPrecisionDragActive else { return }
+
+                    if precisionStartRect == nil {
+                        precisionStartRect = cropRect
+                    }
+                    guard let start = precisionStartRect else { return }
+
+                    let dx = Double(value.translation.width / displayRect.size.width)
+                    let dy = Double(value.translation.height / displayRect.size.height)
+
+                    let proposed = NormalisedRect(
+                        x: start.x + dx,
+                        y: start.y + dy,
+                        width: start.width,
+                        height: start.height
+                    )
+                    cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
+                }
+                .onEnded { _ in
+                    precisionStartRect = nil
+                    isPrecisionDragActive = false
+                }
 
             ZStack {
-                ZStack {
-                    Image(uiImage: masterImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: displayRect.width, height: displayRect.height)
+                Image(uiImage: masterImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: displayRect.width, height: displayRect.height)
+                    .rotationEffect(.degrees(straightenDegrees))
+                    .position(x: displayRect.midX, y: displayRect.midY)
 
-                    if debugOverlayEnabled, let debugDetection {
-                        SmartPhotoDebugOverlayView(
-                            displayRect: contentRect,
-                            detection: debugDetection
-                        )
-                    }
+                Path { path in
+                    path.addRect(displayRect)
+                    path.addRect(cropFrame)
                 }
-                .rotationEffect(.degrees(straightenDegrees))
-                .frame(width: displayRect.width, height: displayRect.height)
-                .position(x: displayRect.midX, y: displayRect.midY)
-                .clipped()
+                .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
+                .allowsHitTesting(false)
 
-                Path { p in
-                    p.addRect(displayRect)
-                    p.addRect(cropFrame)
-                }
-                .fill(.black.opacity(0.55), style: FillStyle(eoFill: true))
-
-                if showGrid {
-                    StraightenGridOverlay(rect: displayRect, divisions: 3)
+                if isStraightenEditing {
+                    StraightenGridOverlay(rect: displayRect, divisions: 12)
                         .allowsHitTesting(false)
                 }
 
-                if showGrid {
-                    CropThirdsGridOverlay(frame: cropFrame, divisions: 3)
-                        .allowsHitTesting(false)
-                }
+                CropThirdsGridOverlay(frame: cropFrame, divisions: 3)
+                    .allowsHitTesting(false)
 
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(.white.opacity(0.95), lineWidth: 2)
-                    .frame(width: cropFrame.width, height: cropFrame.height)
-                    .position(x: cropFrame.midX, y: cropFrame.midY)
-                    .shadow(radius: 1.5)
-
-                let dragGesture = DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard !isApplying else { return }
-                        if isPrecisionDragActive { return }
-                        if isPinching { return }
-
-                        if dragStartRect == nil { dragStartRect = cropRect }
-                        guard let start = dragStartRect else { return }
-
-                        let dx = Double(value.translation.width / max(1.0, displayRect.width))
-                        let dy = Double(value.translation.height / max(1.0, displayRect.height))
-
-                        let proposed = NormalisedRect(
-                            x: start.x + dx,
-                            y: start.y + dy,
-                            width: start.width,
-                            height: start.height
-                        )
-
-                        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
-                    }
-                    .onEnded { _ in
-                        dragStartRect = nil
-                    }
-
-                let precisionGesture = LongPressGesture(minimumDuration: 0.25, maximumDistance: 12)
-                    .sequenced(before: DragGesture(minimumDistance: 0))
-                    .onChanged { value in
-                        guard !isApplying else { return }
-                        if isPinching { return }
-
-                        switch value {
-                        case .first(true):
-                            break
-
-                        case .second(true, nil):
-                            if !isPrecisionDragActive {
-                                isPrecisionDragActive = true
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }
-
-                            if precisionStartRect == nil { precisionStartRect = cropRect }
-
-                        case .second(true, let drag?):
-                            if !isPrecisionDragActive {
-                                isPrecisionDragActive = true
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }
-
-                            if precisionStartRect == nil { precisionStartRect = cropRect }
-                            guard let start = precisionStartRect else { return }
-
-                            let precisionFactor = 0.05
-                            let dx = Double(drag.translation.width / max(1.0, displayRect.width)) * precisionFactor
-                            let dy = Double(drag.translation.height / max(1.0, displayRect.height)) * precisionFactor
-
-                            let proposed = NormalisedRect(
-                                x: start.x + dx,
-                                y: start.y + dy,
-                                width: start.width,
-                                height: start.height
-                            )
-
-                            cropRect = SmartPhotoCropMath.pixelSnappedRect(
-                                proposed,
-                                masterPixels: masterPixelSize,
-                                rectAspect: normalisedRectAspect
-                            )
-
-                        default:
-                            break
-                        }
-                    }
-                    .onEnded { _ in
-                        precisionStartRect = nil
-                        isPrecisionDragActive = false
-                    }
-
-                let magnifyGesture = MagnificationGesture()
-                    .onChanged { value in
-                        guard !isApplying else { return }
-                        if isPrecisionDragActive { return }
-
-                        if !isPinching {
-                            isPinching = true
-                            dragStartRect = nil
-                        }
-
-                        if pinchStartRect == nil { pinchStartRect = cropRect }
-                        guard let start = pinchStartRect else { return }
-
-                        let scale = max(0.2, min(5.0, Double(value)))
-                        let proposedWidth = start.width / scale
-
-                        let centerX = start.x + (start.width / 2.0)
-                        let centerY = start.y + (start.height / 2.0)
-
-                        let w = SmartPhotoCropMath.clampWidth(proposedWidth, rectAspect: normalisedRectAspect)
-                        let h = w / max(0.0001, normalisedRectAspect)
-
-                        let proposed = NormalisedRect(
-                            x: centerX - (w / 2.0),
-                            y: centerY - (h / 2.0),
-                            width: w,
-                            height: h
-                        )
-
-                        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
-                    }
-                    .onEnded { _ in
-                        pinchStartRect = nil
-                        isPinching = false
-                    }
-
-                let doubleTapGesture = SpatialTapGesture(count: 2)
-                    .onEnded { value in
-                        guard !isApplying else { return }
-
-                        let anchor = CGPoint(
-                            x: value.location.x / max(1.0, displayRect.width),
-                            y: value.location.y / max(1.0, displayRect.height)
-                        )
-
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
-                            cropRect = SmartPhotoCropMath.toggleZoomRect(
-                                current: cropRect,
-                                rectAspect: normalisedRectAspect,
-                                anchor: anchor
-                            )
-                        }
-                    }
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .path(in: cropFrame)
+                    .stroke(Color.white, lineWidth: 2)
+                    .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+                    .allowsHitTesting(false)
 
                 Rectangle()
-                    .fill(.clear)
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
                     .frame(width: displayRect.width, height: displayRect.height)
                     .position(x: displayRect.midX, y: displayRect.midY)
-                    .contentShape(Rectangle())
                     .gesture(dragGesture)
-                    .simultaneousGesture(precisionGesture)
                     .simultaneousGesture(magnifyGesture)
-                    .simultaneousGesture(doubleTapGesture)
-
-                if debugOverlayEnabled {
-                    SmartPhotoDebugHUDView(
-                        isDetecting: isDetecting,
-                        status: debugStatusMessage,
-                        detection: debugDetection
+                    .simultaneousGesture(precisionDragGesture)
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.25)
+                            .onEnded { _ in
+                                isPrecisionDragActive = true
+                                precisionStartRect = cropRect
+                            }
                     )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, 10)
+                    .simultaneousGesture(
+                        TapGesture(count: 2)
+                            .onEnded {
+                                toggleZoomRect(rectAspect: rectAspect)
+                            }
+                    )
+
+#if DEBUG
+                if debugOverlayEnabled, rotationQuarterTurns == 0, let det = debugDetection {
+                    SmartPhotoDebugOverlayView(
+                        displayRect: displayRect,
+                        detection: det
+                    )
+                    .allowsHitTesting(false)
                 }
 
-                cropControls(
-                    masterPixels: masterPixelSize,
-                    rectAspect: normalisedRectAspect
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 10)
+                if debugOverlayEnabled, rotationQuarterTurns == 0 {
+                    debugHUD(displayRect: displayRect)
+                }
+#endif
             }
         }
     }
 
-
-
-    private static func normalisedStraightenDegrees(_ degrees: Double) -> Double {
-        let clamped = degrees.clamped(to: -45...45)
-        if abs(clamped) < 0.0001 { return 0 }
-        return clamped
-    }
-
     private func cropControls(masterPixels: PixelSize, rectAspect: Double) -> some View {
-        let zoomStepPixels = max(1, nudgeStepPixels * 10)
+        let step = nudgeStepPixels
 
         func nudge(dxPixels: Int, dyPixels: Int) {
             guard !isApplying else { return }
 
-            let stepX = Double(dxPixels) / Double(max(1, masterPixels.width))
-            let stepY = Double(dyPixels) / Double(max(1, masterPixels.height))
+            let dx = Double(dxPixels) / Double(max(1, masterPixels.width))
+            let dy = Double(dyPixels) / Double(max(1, masterPixels.height))
 
             let proposed = NormalisedRect(
-                x: cropRect.x + stepX,
-                y: cropRect.y + stepY,
+                x: cropRect.x + dx,
+                y: cropRect.y + dy,
                 width: cropRect.width,
                 height: cropRect.height
             )
-
-            cropRect = SmartPhotoCropMath.pixelSnappedRect(
-                proposed,
-                masterPixels: masterPixels,
-                rectAspect: rectAspect
-            )
+            cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
         }
 
         func zoom(deltaPixels: Int) {
             guard !isApplying else { return }
 
-            let deltaW = Double(deltaPixels) / Double(max(1, masterPixels.width))
-            let proposedWidth = cropRect.width + deltaW
+            let delta = Double(deltaPixels) / Double(max(1, masterPixels.width))
+            let newWidth = SmartPhotoCropMath.clampWidth(cropRect.width + delta, rectAspect: rectAspect)
+            let newHeight = newWidth / rectAspect
 
-            let centerX = cropRect.x + (cropRect.width / 2.0)
-            let centerY = cropRect.y + (cropRect.height / 2.0)
-
-            let w = SmartPhotoCropMath.clampWidth(proposedWidth, rectAspect: rectAspect)
-            let h = w / max(0.0001, rectAspect)
+            let cx = cropRect.x + cropRect.width / 2
+            let cy = cropRect.y + cropRect.height / 2
 
             let proposed = NormalisedRect(
-                x: centerX - (w / 2.0),
-                y: centerY - (h / 2.0),
-                width: w,
-                height: h
+                x: cx - newWidth / 2,
+                y: cy - newHeight / 2,
+                width: newWidth,
+                height: newHeight
             )
-
-            cropRect = SmartPhotoCropMath.pixelSnappedRect(
-                proposed,
-                masterPixels: masterPixels,
-                rectAspect: rectAspect
-            )
+            cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
         }
 
         func recenter() {
             guard !isApplying else { return }
-
-            let w = cropRect.width
-            let h = cropRect.height
-
-            let proposed = NormalisedRect(
-                x: 0.5 - (w / 2.0),
-                y: 0.5 - (h / 2.0),
-                width: w,
-                height: h
-            )
-
-            cropRect = SmartPhotoCropMath.pixelSnappedRect(
-                proposed,
-                masterPixels: masterPixels,
+            cropRect = SmartPhotoCropMath.clampRect(
+                NormalisedRect(
+                    x: (1.0 - cropRect.width) / 2.0,
+                    y: (1.0 - cropRect.height) / 2.0,
+                    width: cropRect.width,
+                    height: cropRect.height
+                ),
                 rectAspect: rectAspect
             )
         }
 
-        return VStack(spacing: 10) {
-            Text("\(family.label) • \(targetPixels.width)×\(targetPixels.height) px")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.95))
+        let canResetToAuto = (autoCropRect != nil) || (onResetToAuto != nil)
+        let rotationLabel = SmartPhotoCropMath.rotationLabel(forQuarterTurns: rotationQuarterTurns)
 
+        return VStack(spacing: 12) {
             HStack(spacing: 10) {
+                Button("Reset") {
+                    resetToInitial()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview)
+
+                if canResetToAuto {
+                    Button("Reset to Auto") {
+                        Task { await resetToAutoAndDismissIfPossible() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isApplying || isUpdatingPreview)
+                }
+
+                Spacer()
+
+                Button {
+                    rotate90(clockwise: false)
+                } label: {
+                    Image(systemName: "rotate.left")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview)
+
+                Button {
+                    rotate90(clockwise: true)
+                } label: {
+                    Image(systemName: "rotate.right")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview)
+            }
+
+            Text("\(family.uiName) • \(targetPixels.width)×\(targetPixels.height) px • \(rotationLabel)")
+                .font(.headline)
+                .foregroundColor(.white.opacity(0.95))
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            HStack(spacing: 12) {
                 Text("Straighten")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.9))
 
                 Slider(
                     value: $straightenDegrees,
@@ -602,165 +593,205 @@ struct SmartPhotoCropEditorView: View {
                         isStraightenEditing = editing
                     }
                 )
-                .disabled(isApplying)
+                .disabled(isApplying || isUpdatingPreview)
 
-                Text("\(straightenDegrees, specifier: "%+.1f")°")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(width: 58, alignment: .trailing)
+                Text(String(format: "%+.1f°", straightenDegrees))
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 54, alignment: .trailing)
 
                 Button {
-                    guard !isApplying else { return }
                     straightenDegrees = 0
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.95))
-                .padding(.horizontal, 4)
-                .accessibilityLabel("Reset straighten")
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview || abs(straightenDegrees) < 0.01)
             }
 
-            HStack(spacing: 10) {
+            HStack {
                 Text("Nudge")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer()
                 Picker("Step", selection: $nudgeStepPixels) {
                     Text("1 px").tag(1)
                     Text("5 px").tag(5)
                     Text("10 px").tag(10)
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
+                .frame(width: 220)
+                .disabled(isApplying || isUpdatingPreview)
+            }
 
-                Spacer(minLength: 8)
+            HStack {
+                Spacer()
 
                 Button {
-                    zoom(deltaPixels: zoomStepPixels)
+                    zoom(deltaPixels: 12)
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 36, height: 32)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white.opacity(0.85))
-                .disabled(isApplying)
-                .accessibilityLabel("Zoom out")
+                .disabled(isApplying || isUpdatingPreview)
 
                 Button {
-                    zoom(deltaPixels: -zoomStepPixels)
+                    zoom(deltaPixels: -12)
                 } label: {
                     Image(systemName: "plus.magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 36, height: 32)
                 }
                 .buttonStyle(.bordered)
-                .tint(.white.opacity(0.85))
-                .disabled(isApplying)
-                .accessibilityLabel("Zoom in")
+                .disabled(isApplying || isUpdatingPreview)
+
+                Spacer()
             }
 
-            VStack(spacing: 6) {
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                    nudgeButton(systemName: "arrow.up") {
-                        nudge(dxPixels: 0, dyPixels: -nudgeStepPixels)
-                    }
-                    Spacer(minLength: 0)
+            VStack(spacing: 10) {
+                Button {
+                    nudge(dxPixels: 0, dyPixels: -step)
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .frame(width: 44, height: 44)
                 }
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview)
 
-                HStack(spacing: 8) {
-                    nudgeButton(systemName: "arrow.left") {
-                        nudge(dxPixels: -nudgeStepPixels, dyPixels: 0)
+                HStack(spacing: 10) {
+                    Button {
+                        nudge(dxPixels: -step, dyPixels: 0)
+                    } label: {
+                        Image(systemName: "arrow.left")
+                            .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.bordered)
+                    .disabled(isApplying || isUpdatingPreview)
 
-                    nudgeButton(systemName: "dot.scope") {
+                    Button {
                         recenter()
+                    } label: {
+                        Image(systemName: "scope")
+                            .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("Centre")
+                    .buttonStyle(.bordered)
+                    .disabled(isApplying || isUpdatingPreview)
 
-                    nudgeButton(systemName: "arrow.right") {
-                        nudge(dxPixels: nudgeStepPixels, dyPixels: 0)
+                    Button {
+                        nudge(dxPixels: step, dyPixels: 0)
+                    } label: {
+                        Image(systemName: "arrow.right")
+                            .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.bordered)
+                    .disabled(isApplying || isUpdatingPreview)
                 }
 
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                    nudgeButton(systemName: "arrow.down") {
-                        nudge(dxPixels: 0, dyPixels: nudgeStepPixels)
-                    }
-                    Spacer(minLength: 0)
+                Button {
+                    nudge(dxPixels: 0, dyPixels: step)
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .frame(width: 44, height: 44)
                 }
+                .buttonStyle(.bordered)
+                .disabled(isApplying || isUpdatingPreview)
             }
 
-            Text("Drag to move. Pinch to zoom. Double-tap to zoom. Press and hold, then drag for fine moves.")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.8))
+            Text("Drag to move. Pinch to resize crop. Double-tap toggles zoom. Press and hold, then drag for fine moves.")
+                .font(.footnote)
+                .foregroundColor(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
+                .padding(.top, 2)
         }
+        .padding(.vertical, 12)
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .background(.black.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .cornerRadius(16)
     }
 
-    private func nudgeButton(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 14, weight: .semibold))
-                .frame(width: 44, height: 34)
+    private func toggleZoomRect(rectAspect: Double) {
+        let maxWidth = min(1.0, rectAspect)
+        let currentWidth = cropRect.width
+        let nearlyFull = abs(currentWidth - maxWidth) < 0.02
+
+        let targetWidth = nearlyFull ? SmartPhotoCropMath.clampWidth(maxWidth * 0.5, rectAspect: rectAspect) : maxWidth
+        let targetHeight = targetWidth / rectAspect
+
+        let cx = cropRect.x + cropRect.width / 2
+        let cy = cropRect.y + cropRect.height / 2
+
+        let proposed = NormalisedRect(
+            x: cx - targetWidth / 2,
+            y: cy - targetHeight / 2,
+            width: targetWidth,
+            height: targetHeight
+        )
+        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
+    }
+
+    private static func normalisedStraightenDegrees(_ degrees: Double) -> Double {
+        if let normalised = SmartPhotoManualCropRenderer.normalisedStraightenDegrees(degrees) {
+            return normalised
         }
-        .buttonStyle(.bordered)
-        .tint(.white.opacity(0.85))
-        .disabled(isApplying)
+        return 0
     }
 
-    private struct StraightenGridOverlay: View {
-        let rect: CGRect
-        let divisions: Int
+#if DEBUG
+    private func debugHUD(displayRect: CGRect) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Debug overlay enabled")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.white)
 
-        var body: some View {
-            Path { p in
-                guard divisions >= 2 else { return }
+            Text(debugStatusMessage)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.85))
+        }
+        .padding(10)
+        .background(.black.opacity(0.55))
+        .cornerRadius(10)
+        .frame(maxWidth: displayRect.width, alignment: .leading)
+        .position(x: displayRect.minX + 10 + 140, y: displayRect.minY + 22)
+        .allowsHitTesting(false)
+    }
 
-                for i in 1..<divisions {
-                    let t = CGFloat(i) / CGFloat(divisions)
-
-                    let x = rect.minX + t * rect.width
-                    p.move(to: CGPoint(x: x, y: rect.minY))
-                    p.addLine(to: CGPoint(x: x, y: rect.maxY))
-
-                    let y = rect.minY + t * rect.height
-                    p.move(to: CGPoint(x: rect.minX, y: y))
-                    p.addLine(to: CGPoint(x: rect.maxX, y: y))
-                }
+    private func runDebugDetection(force: Bool) async {
+        guard debugOverlayEnabled else { return }
+        guard rotationQuarterTurns == 0 else {
+            await MainActor.run {
+                debugDetection = nil
+                debugStatusMessage = "Rotation is active; debug overlay is hidden."
             }
-            .stroke(.white.opacity(0.35), lineWidth: 1)
+            return
         }
-    }
 
-    private struct CropThirdsGridOverlay: View {
-        let frame: CGRect
-        let divisions: Int
+        if !force, debugDetection != nil {
+            return
+        }
 
-        var body: some View {
-            Path { p in
-                guard divisions >= 2 else { return }
+        await MainActor.run {
+            debugStatusMessage = "Running detection…"
+        }
 
-                for i in 1..<divisions {
-                    let t = CGFloat(i) / CGFloat(divisions)
-
-                    let x = frame.minX + t * frame.width
-                    p.move(to: CGPoint(x: x, y: frame.minY))
-                    p.addLine(to: CGPoint(x: x, y: frame.maxY))
-
-                    let y = frame.minY + t * frame.height
-                    p.move(to: CGPoint(x: frame.minX, y: y))
-                    p.addLine(to: CGPoint(x: frame.maxX, y: y))
-                }
+        guard let masterImage else {
+            await MainActor.run {
+                debugStatusMessage = "No image loaded."
+                debugDetection = nil
             }
-            .stroke(.white.opacity(0.45), lineWidth: 1)
+            return
+        }
+
+        let result = await Task.detached(priority: .userInitiated) { () -> SmartPhotoDetection? in
+            let detector = SmartPhotoDetector()
+            return detector.detect(in: masterImage)
+        }.value
+
+        await MainActor.run {
+            debugDetection = result
+            if result == nil {
+                debugStatusMessage = "Detection failed."
+            } else {
+                debugStatusMessage = "Detection ready."
+            }
         }
     }
+#endif
 }

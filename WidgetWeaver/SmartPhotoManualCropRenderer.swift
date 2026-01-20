@@ -29,10 +29,28 @@ enum SmartPhotoManualCropRenderer {
         return clamped
     }
 
+    static func normalisedRotationQuarterTurns(_ quarterTurns: Int) -> Int? {
+        let normalised = normalisedQuarterTurns(quarterTurns)
+        if normalised == 0 { return nil }
+        return normalised
+    }
+
+    static func previewImage(master: UIImage, rotationQuarterTurns: Int) -> UIImage {
+        let base = normalisedOrientation(master)
+        guard let sourceCg = base.cgImage else { return base }
+
+        let turns = normalisedQuarterTurns(rotationQuarterTurns)
+        guard turns != 0 else { return base }
+
+        let rotated = rotateCGImageQuarterTurns(sourceCg, quarterTurns: turns) ?? sourceCg
+        return UIImage(cgImage: rotated, scale: 1, orientation: .up)
+    }
+
     static func render(
         master: UIImage,
         cropRect: NormalisedRect,
         straightenDegrees: Double,
+        rotationQuarterTurns: Int,
         targetPixels: PixelSize
     ) -> UIImage {
         let safeCrop = cropRect.normalised()
@@ -41,15 +59,18 @@ enum SmartPhotoManualCropRenderer {
         let base = normalisedOrientation(master)
         guard let sourceCg = base.cgImage else { return base }
 
-        let rotatedCg: CGImage
+        let turns = normalisedQuarterTurns(rotationQuarterTurns)
+        let baseRotatedCg = rotateCGImageQuarterTurns(sourceCg, quarterTurns: turns) ?? sourceCg
+
+        let straightenedCg: CGImage
         if abs(straightenDegrees) < 0.0001 {
-            rotatedCg = sourceCg
+            straightenedCg = baseRotatedCg
         } else {
-            rotatedCg = rotateCGImageWithinBounds(sourceCg, degrees: straightenDegrees) ?? sourceCg
+            straightenedCg = rotateCGImageWithinBounds(baseRotatedCg, degrees: straightenDegrees) ?? baseRotatedCg
         }
 
-        let w = rotatedCg.width
-        let h = rotatedCg.height
+        let w = straightenedCg.width
+        let h = straightenedCg.height
 
         let cropPixels = CGRect(
             x: CGFloat(safeCrop.x) * CGFloat(w),
@@ -60,7 +81,7 @@ enum SmartPhotoManualCropRenderer {
         .integral
         .intersection(CGRect(x: 0, y: 0, width: w, height: h))
 
-        let cropped = rotatedCg.cropping(to: cropPixels) ?? rotatedCg
+        let cropped = straightenedCg.cropping(to: cropPixels) ?? straightenedCg
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -102,6 +123,12 @@ enum SmartPhotoManualCropRenderer {
         return data
     }
 
+    private static func normalisedQuarterTurns(_ quarterTurns: Int) -> Int {
+        let m = quarterTurns % 4
+        if m < 0 { return m + 4 }
+        return m
+    }
+
     private static func normalisedOrientation(_ image: UIImage) -> UIImage {
         if image.imageOrientation == .up { return image }
         guard let cg = image.cgImage else { return image }
@@ -117,6 +144,50 @@ enum SmartPhotoManualCropRenderer {
         return renderer.image { _ in
             image.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
         }
+    }
+
+    private static func rotateCGImageQuarterTurns(_ cgImage: CGImage, quarterTurns: Int) -> CGImage? {
+        let turns = normalisedQuarterTurns(quarterTurns)
+        guard turns != 0 else { return cgImage }
+
+        let w = cgImage.width
+        let h = cgImage.height
+
+        let outW = (turns % 2 == 0) ? w : h
+        let outH = (turns % 2 == 0) ? h : w
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: outW, height: outH), format: format)
+        let img = renderer.image { ctx in
+            ctx.cgContext.interpolationQuality = .high
+            UIColor.black.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: outW, height: outH))
+
+            switch turns {
+            case 1:
+                // 90° clockwise
+                ctx.cgContext.translateBy(x: CGFloat(outW), y: 0)
+                ctx.cgContext.rotate(by: CGFloat.pi / 2.0)
+            case 2:
+                // 180°
+                ctx.cgContext.translateBy(x: CGFloat(outW), y: CGFloat(outH))
+                ctx.cgContext.rotate(by: CGFloat.pi)
+            case 3:
+                // 90° counter-clockwise
+                ctx.cgContext.translateBy(x: 0, y: CGFloat(outH))
+                ctx.cgContext.rotate(by: -CGFloat.pi / 2.0)
+            default:
+                break
+            }
+
+            let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+            source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+
+        return img.cgImage
     }
 
     private static func rotateCGImageWithinBounds(_ cgImage: CGImage, degrees: Double) -> CGImage? {
