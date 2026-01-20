@@ -90,17 +90,35 @@ public struct SmartPhotoVariantSpec: Codable, Hashable, Sendable {
     public var cropRect: NormalisedRect
     public var pixelSize: PixelSize
 
-    public init(renderFileName: String, cropRect: NormalisedRect, pixelSize: PixelSize) {
+    /// Optional straightening angle applied before cropping (degrees).
+    /// Nil (or effectively zero) means no straightening.
+    public var straightenDegrees: Double?
+
+    public init(
+        renderFileName: String,
+        cropRect: NormalisedRect,
+        pixelSize: PixelSize,
+        straightenDegrees: Double? = nil
+    ) {
         self.renderFileName = renderFileName
         self.cropRect = cropRect
         self.pixelSize = pixelSize
+        self.straightenDegrees = straightenDegrees
     }
 
     public func normalised() -> SmartPhotoVariantSpec {
-        SmartPhotoVariantSpec(
+        let normalisedDegrees: Double? = {
+            guard let d = straightenDegrees else { return nil }
+            let clamped = d.clamped(to: -45...45)
+            if abs(clamped) < 0.0001 { return nil }
+            return clamped
+        }()
+
+        return SmartPhotoVariantSpec(
             renderFileName: SmartPhotoSpec.sanitisedFileName(renderFileName),
             cropRect: cropRect.normalised(),
-            pixelSize: pixelSize.normalised()
+            pixelSize: pixelSize.normalised(),
+            straightenDegrees: normalisedDegrees
         )
     }
 }

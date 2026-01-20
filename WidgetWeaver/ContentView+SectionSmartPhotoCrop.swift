@@ -7,6 +7,7 @@
 
 import SwiftUI
 import WidgetKit
+import UIKit
 
 extension ContentView {
     func smartPhotoCropSection(focus: Binding<EditorFocusSnapshot>) -> some View {
@@ -41,16 +42,17 @@ extension ContentView {
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
-                        onApplyCrop: { entryID, fam, cropRect in
-                            await applyManualSmartCropForShuffleEntry(
+                        onApplyCrop: { entryID, fam, cropRect, straightenDegrees in
+                            await applyManualSmartCropForShuffleEntryWithStraighten(
                                 manifestFileName: manifestFileName,
                                 entryID: entryID,
                                 family: fam,
-                                cropRect: cropRect
+                                cropRect: cropRect,
+                                straightenDegrees: straightenDegrees
                             )
                         },
                         onResetToAuto: { entryID, fam in
-                            await resetManualSmartCropForShuffleEntry(
+                            await resetManualSmartCropForShuffleEntryWithStraighten(
                                 manifestFileName: manifestFileName,
                                 entryID: entryID,
                                 family: fam
@@ -71,8 +73,12 @@ extension ContentView {
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
-                        onApplyCrop: { fam, cropRect in
-                            await applyManualSmartCrop(family: fam, cropRect: cropRect)
+                        onApplyCrop: { fam, cropRect, straightenDegrees in
+                            await applyManualSmartCropWithStraighten(
+                                family: fam,
+                                cropRect: cropRect,
+                                straightenDegrees: straightenDegrees
+                            )
                         }
                     )
                 }
@@ -103,6 +109,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
         var masterFileName: String
         var targetPixels: PixelSize
         var initialCropRect: NormalisedRect
+        var initialStraightenDegrees: Double
 
         var id: String { family.rawValue }
     }
@@ -112,7 +119,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
     let isBusy: Bool
 
     let onSelectFamily: (EditingFamily) -> Void
-    let onApplyCrop: (EditingFamily, NormalisedRect) async -> Void
+    let onApplyCrop: (EditingFamily, NormalisedRect, Double) async -> Void
 
     @State private var activeCropRoute: CropRoute?
     @State private var showOtherSizes: Bool = false
@@ -139,11 +146,12 @@ private struct SmartPhotoSingleFramingEditorView: View {
                     masterFileName: route.masterFileName,
                     targetPixels: route.targetPixels,
                     initialCropRect: route.initialCropRect,
+                    initialStraightenDegrees: route.initialStraightenDegrees,
                     autoCropRect: nil,
                     focus: nil,
                     onResetToAuto: nil,
-                    onApply: { rect in
-                        await onApplyCrop(route.family, rect)
+                    onApply: { rect, straightenDegrees in
+                        await onApplyCrop(route.family, rect, straightenDegrees)
                     }
                 )
                 .id("cropSheet-single-\(route.family.rawValue)")
@@ -185,7 +193,8 @@ private struct SmartPhotoSingleFramingEditorView: View {
             family: family,
             masterFileName: master,
             targetPixels: variant.pixelSize.normalised(),
-            initialCropRect: variant.cropRect.normalised()
+            initialCropRect: variant.cropRect.normalised(),
+            initialStraightenDegrees: variant.straightenDegrees ?? 0
         )
     }
 
@@ -223,6 +232,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         var masterFileName: String
         var targetPixels: PixelSize
         var initialCropRect: NormalisedRect
+        var initialStraightenDegrees: Double
         var autoCropRect: NormalisedRect?
 
         var id: String { "\(entryID)-\(family.rawValue)" }
@@ -235,7 +245,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     let isBusy: Bool
 
     let onSelectFamily: (EditingFamily) -> Void
-    let onApplyCrop: (String, EditingFamily, NormalisedRect) async -> Void
+    let onApplyCrop: (String, EditingFamily, NormalisedRect, Double) async -> Void
     let onResetToAuto: (String, EditingFamily) async -> Void
     let onMakeCurrent: (String) async -> Void
 
@@ -311,13 +321,14 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                     masterFileName: route.masterFileName,
                     targetPixels: route.targetPixels,
                     initialCropRect: route.initialCropRect,
+                    initialStraightenDegrees: route.initialStraightenDegrees,
                     autoCropRect: route.autoCropRect,
                     focus: nil,
                     onResetToAuto: {
                         await onResetToAuto(route.entryID, route.family)
                     },
-                    onApply: { rect in
-                        await onApplyCrop(route.entryID, route.family, rect)
+                    onApply: { rect, straightenDegrees in
+                        await onApplyCrop(route.entryID, route.family, rect, straightenDegrees)
                     }
                 )
                 .id("cropSheet-\(route.entryID)-\(route.family.rawValue)")
@@ -525,6 +536,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines),
             targetPixels: targetPixels(for: family),
             initialCropRect: initialCropRect(for: family, entry: entry),
+            initialStraightenDegrees: initialStraightenDegrees(for: family, entry: entry),
             autoCropRect: autoCropRect(for: family, entry: entry)
         )
     }
@@ -744,6 +756,20 @@ private struct SmartPhotoShuffleFramingEditorView: View {
         }
     }
 
+
+    private func initialStraightenDegrees(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> Double {
+        let fallback: Double = 0
+
+        switch family {
+        case .small:
+            return entry.smallManualStraightenDegrees ?? fallback
+        case .medium:
+            return entry.mediumManualStraightenDegrees ?? fallback
+        case .large:
+            return entry.largeManualStraightenDegrees ?? fallback
+        }
+    }
+
     private func initialCropRect(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> NormalisedRect {
         let fallback = NormalisedRect(x: 0, y: 0, width: 1, height: 1)
 
@@ -754,6 +780,414 @@ private struct SmartPhotoShuffleFramingEditorView: View {
             return (entry.mediumManualCropRect ?? entry.mediumAutoCropRect ?? fallback).normalised()
         case .large:
             return (entry.largeManualCropRect ?? entry.largeAutoCropRect ?? fallback).normalised()
+        }
+    }
+}
+
+
+// MARK: - Manual framing: straightening + fine controls
+
+extension ContentView {
+    func applyManualSmartCropWithStraighten(
+        family: EditingFamily,
+        cropRect: NormalisedRect,
+        straightenDegrees: Double
+    ) async {
+        let newCrop = cropRect.normalised()
+        let straighten = SmartPhotoManualCropRenderer.normalisedStraightenDegrees(straightenDegrees)
+
+        var d = currentFamilyDraft()
+        guard var smart = d.imageSmartPhoto else {
+            saveStatusMessage = "Smart Photo data missing."
+            return
+        }
+
+        let existingVariant: SmartPhotoVariantSpec
+        switch family {
+        case .small:
+            existingVariant = smart.small
+        case .medium:
+            existingVariant = smart.medium
+        case .large:
+            existingVariant = smart.large
+        }
+
+        let masterFileName = smart.masterFileName
+        let targetPixels = existingVariant.pixelSize.normalised()
+
+        guard let masterURL = AppGroup.containerURL?.appendingPathComponent(masterFileName) else {
+            saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
+            return
+        }
+
+        let masterData: Data
+        do {
+            masterData = try Data(contentsOf: masterURL)
+        } catch {
+            saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
+            return
+        }
+
+        Task.detached(priority: .userInitiated) {
+            do {
+                guard let masterImage = UIImage(data: masterData) else {
+                    throw SmartPhotoManualTransformError.masterDecodeFailed
+                }
+
+                let rendered = SmartPhotoManualCropRenderer.render(
+                    master: masterImage,
+                    cropRect: newCrop,
+                    straightenDegrees: straighten ?? 0,
+                    targetPixels: targetPixels
+                )
+
+                let jpeg = try SmartPhotoManualCropRenderer.encodeJPEG(
+                    image: rendered,
+                    quality: 0.92
+                )
+
+                let newRenderFileName = "smart_\(UUID().uuidString).jpg"
+                guard let renderURL = AppGroup.containerURL?.appendingPathComponent(newRenderFileName) else {
+                    throw SmartPhotoManualTransformError.renderWriteFailed
+                }
+
+                try jpeg.write(to: renderURL, options: .atomic)
+
+                if let oldURL = AppGroup.containerURL?.appendingPathComponent(existingVariant.renderFileName) {
+                    try? FileManager.default.removeItem(at: oldURL)
+                }
+
+                await MainActor.run {
+                    var updated = existingVariant
+                    updated.cropRect = newCrop
+                    updated.renderFileName = newRenderFileName
+                    updated.straightenDegrees = straighten
+
+                    switch family {
+                    case .small:
+                        smart.small = updated
+                    case .medium:
+                        smart.medium = updated
+                    case .large:
+                        smart.large = updated
+                    }
+
+                    smart.preparedAt = Date()
+                    smart = smart.normalised()
+
+                    d.imageSmartPhoto = smart
+                    if family == .medium {
+                        d.imageFileName = newRenderFileName
+                    }
+
+                    setCurrentFamilyDraft(d)
+                    saveStatusMessage = "Updated \(family.label) framing (draft only).\nSave to update widgets."
+                }
+            } catch {
+                await MainActor.run {
+                    saveStatusMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func applyManualSmartCropForShuffleEntryWithStraighten(
+        manifestFileName: String,
+        entryID: String,
+        family: EditingFamily,
+        cropRect: NormalisedRect,
+        straightenDegrees: Double
+    ) async {
+        let newCrop = cropRect.normalised()
+        let straighten = SmartPhotoManualCropRenderer.normalisedStraightenDegrees(straightenDegrees)
+
+        let store = SmartPhotoShuffleManifestStore(manifestFileName: manifestFileName)
+
+        guard var manifest = store.load() else {
+            saveStatusMessage = "Shuffle manifest could not be loaded."
+            return
+        }
+
+        guard var entry = manifest.entries.first(where: { $0.id == entryID }) else {
+            saveStatusMessage = "Shuffle entry not found."
+            return
+        }
+
+        guard entry.isPrepared else {
+            saveStatusMessage = "This photo has not been prepared yet."
+            return
+        }
+
+        guard let masterFileName = entry.sourceImageFileName else {
+            saveStatusMessage = "Source image is missing for this shuffled photo.\nRe-prepare this album shuffle set to enable manual framing."
+            return
+        }
+
+        guard let masterURL = AppGroup.containerURL?.appendingPathComponent(masterFileName) else {
+            saveStatusMessage = "Source image file not found on disk.\nRe-prepare this album shuffle set to enable manual framing."
+            return
+        }
+
+        let masterData: Data
+        do {
+            masterData = try Data(contentsOf: masterURL)
+        } catch {
+            saveStatusMessage = "Source image file not found on disk.\nRe-prepare this album shuffle set to enable manual framing."
+            return
+        }
+
+        let oldManualFileName: String?
+        let targetPixels: PixelSize
+
+        switch family {
+        case .small:
+            oldManualFileName = entry.smallManualFileName
+            targetPixels = entry.smallPixelSize
+        case .medium:
+            oldManualFileName = entry.mediumManualFileName
+            targetPixels = entry.mediumPixelSize
+        case .large:
+            oldManualFileName = entry.largeManualFileName
+            targetPixels = entry.largePixelSize
+        }
+
+        Task.detached(priority: .userInitiated) {
+            do {
+                guard let masterImage = UIImage(data: masterData) else {
+                    throw SmartPhotoManualTransformError.masterDecodeFailed
+                }
+
+                let rendered = SmartPhotoManualCropRenderer.render(
+                    master: masterImage,
+                    cropRect: newCrop,
+                    straightenDegrees: straighten ?? 0,
+                    targetPixels: targetPixels.normalised()
+                )
+
+                let jpeg = try SmartPhotoManualCropRenderer.encodeJPEG(
+                    image: rendered,
+                    quality: 0.92
+                )
+
+                let newRenderFileName = "smartshuffle_\(UUID().uuidString).jpg"
+                guard let renderURL = AppGroup.containerURL?.appendingPathComponent(newRenderFileName) else {
+                    throw SmartPhotoManualTransformError.renderWriteFailed
+                }
+
+                try jpeg.write(to: renderURL, options: .atomic)
+
+                if let old = oldManualFileName,
+                   let oldURL = AppGroup.containerURL?.appendingPathComponent(old)
+                {
+                    try? FileManager.default.removeItem(at: oldURL)
+                }
+
+                await MainActor.run {
+                    var updated = entry
+
+                    switch family {
+                    case .small:
+                        updated.smallManualFileName = newRenderFileName
+                        updated.smallManualCropRect = newCrop
+                        updated.smallManualStraightenDegrees = straighten
+                    case .medium:
+                        updated.mediumManualFileName = newRenderFileName
+                        updated.mediumManualCropRect = newCrop
+                        updated.mediumManualStraightenDegrees = straighten
+                    case .large:
+                        updated.largeManualFileName = newRenderFileName
+                        updated.largeManualCropRect = newCrop
+                        updated.largeManualStraightenDegrees = straighten
+                    }
+
+                    if let idx = manifest.entries.firstIndex(where: { $0.id == entryID }) {
+                        manifest.entries[idx] = updated
+                    }
+
+                    store.save(manifest)
+                    saveStatusMessage = "Updated \(family.label) framing."
+                }
+            } catch {
+                await MainActor.run {
+                    saveStatusMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func resetManualSmartCropForShuffleEntryWithStraighten(
+        manifestFileName: String,
+        entryID: String,
+        family: EditingFamily
+    ) async {
+        let store = SmartPhotoShuffleManifestStore(manifestFileName: manifestFileName)
+
+        guard var manifest = store.load() else {
+            saveStatusMessage = "Shuffle manifest could not be loaded."
+            return
+        }
+
+        guard let idx = manifest.entries.firstIndex(where: { $0.id == entryID }) else {
+            saveStatusMessage = "Shuffle entry not found."
+            return
+        }
+
+        var entry = manifest.entries[idx]
+
+        let oldManualFileName: String?
+        switch family {
+        case .small:
+            oldManualFileName = entry.smallManualFileName
+            entry.smallManualFileName = nil
+            entry.smallManualCropRect = nil
+            entry.smallManualStraightenDegrees = nil
+        case .medium:
+            oldManualFileName = entry.mediumManualFileName
+            entry.mediumManualFileName = nil
+            entry.mediumManualCropRect = nil
+            entry.mediumManualStraightenDegrees = nil
+        case .large:
+            oldManualFileName = entry.largeManualFileName
+            entry.largeManualFileName = nil
+            entry.largeManualCropRect = nil
+            entry.largeManualStraightenDegrees = nil
+        }
+
+        manifest.entries[idx] = entry
+        store.save(manifest)
+
+        if let old = oldManualFileName,
+           let url = AppGroup.containerURL?.appendingPathComponent(old)
+        {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        saveStatusMessage = "Reset \(family.label) framing to auto."
+    }
+}
+
+private enum SmartPhotoManualTransformError: LocalizedError {
+    case masterDecodeFailed
+    case renderWriteFailed
+    case jpegEncodeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .masterDecodeFailed:
+            return "Could not decode the source image."
+        case .renderWriteFailed:
+            return "Could not write the rendered image."
+        case .jpegEncodeFailed:
+            return "Could not encode the rendered image."
+        }
+    }
+}
+
+private enum SmartPhotoManualCropRenderer {
+    static func normalisedStraightenDegrees(_ degrees: Double) -> Double? {
+        let clamped = degrees.clamped(to: -45...45)
+        if abs(clamped) < 0.0001 { return nil }
+        return clamped
+    }
+
+    static func render(
+        master: UIImage,
+        cropRect: NormalisedRect,
+        straightenDegrees: Double,
+        targetPixels: PixelSize
+    ) -> UIImage {
+        let base = master.ww_normalisedOrientation()
+        guard let sourceCg = base.cgImage else { return base }
+
+        let rotatedCg: CGImage
+        if abs(straightenDegrees) < 0.0001 {
+            rotatedCg = sourceCg
+        } else {
+            rotatedCg = rotateCGImageWithinBounds(sourceCg, degrees: straightenDegrees) ?? sourceCg
+        }
+
+        let w = rotatedCg.width
+        let h = rotatedCg.height
+
+        let cropPixels = CGRect(
+            x: CGFloat(cropRect.x) * CGFloat(w),
+            y: CGFloat(cropRect.y) * CGFloat(h),
+            width: CGFloat(cropRect.width) * CGFloat(w),
+            height: CGFloat(cropRect.height) * CGFloat(h)
+        )
+        .integral
+        .intersection(CGRect(x: 0, y: 0, width: w, height: h))
+
+        let cropped = rotatedCg.cropping(to: cropPixels) ?? rotatedCg
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let targetSize = CGSize(width: targetPixels.width, height: targetPixels.height)
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+
+        return renderer.image { ctx in
+            ctx.cgContext.interpolationQuality = .high
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: targetSize))
+
+            ctx.cgContext.draw(cropped, in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
+    static func encodeJPEG(image: UIImage, quality: CGFloat) throws -> Data {
+        let q = max(0.1, min(0.95, quality))
+
+        guard let data = image.jpegData(compressionQuality: q), !data.isEmpty else {
+            throw SmartPhotoManualTransformError.jpegEncodeFailed
+        }
+
+        return data
+    }
+
+    private static func rotateCGImageWithinBounds(_ cgImage: CGImage, degrees: Double) -> CGImage? {
+        let radians = CGFloat(degrees * Double.pi / 180.0)
+        let w = cgImage.width
+        let h = cgImage.height
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)
+        let img = renderer.image { ctx in
+            ctx.cgContext.interpolationQuality = .high
+            UIColor.black.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+
+            ctx.cgContext.translateBy(x: CGFloat(w) / 2.0, y: CGFloat(h) / 2.0)
+            ctx.cgContext.rotate(by: radians)
+            ctx.cgContext.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+
+            ctx.cgContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+
+        return img.cgImage
+    }
+}
+
+private extension UIImage {
+    func ww_normalisedOrientation() -> UIImage {
+        guard imageOrientation != .up else { return self }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let sizePixels = CGSize(
+            width: (size.width * scale).rounded(),
+            height: (size.height * scale).rounded()
+        )
+
+        let renderer = UIGraphicsImageRenderer(size: sizePixels, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: sizePixels))
         }
     }
 }

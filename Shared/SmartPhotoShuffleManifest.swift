@@ -46,6 +46,12 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
         public var mediumManualCropRect: NormalisedRect?
         public var largeManualCropRect: NormalisedRect?
 
+        /// Optional straightening angles applied before cropping (degrees).
+        /// Nil (or effectively zero) means no straightening.
+        public var smallManualStraightenDegrees: Double?
+        public var mediumManualStraightenDegrees: Double?
+        public var largeManualStraightenDegrees: Double?
+
         public var preparedAt: Date?
         public var flags: [String]
 
@@ -67,6 +73,9 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
             smallManualCropRect: NormalisedRect? = nil,
             mediumManualCropRect: NormalisedRect? = nil,
             largeManualCropRect: NormalisedRect? = nil,
+            smallManualStraightenDegrees: Double? = nil,
+            mediumManualStraightenDegrees: Double? = nil,
+            largeManualStraightenDegrees: Double? = nil,
             preparedAt: Date? = nil,
             flags: [String] = [],
             score: Double? = nil
@@ -85,6 +94,9 @@ public struct SmartPhotoShuffleManifest: Codable, Hashable, Sendable {
             self.smallManualCropRect = smallManualCropRect
             self.mediumManualCropRect = mediumManualCropRect
             self.largeManualCropRect = largeManualCropRect
+            self.smallManualStraightenDegrees = smallManualStraightenDegrees
+            self.mediumManualStraightenDegrees = mediumManualStraightenDegrees
+            self.largeManualStraightenDegrees = largeManualStraightenDegrees
             self.preparedAt = preparedAt
             self.flags = flags
             self.score = score
