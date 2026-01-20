@@ -345,139 +345,147 @@ struct SmartPhotoCropEditorView: View {
                     .position(x: cropFrame.midX, y: cropFrame.midY)
                     .shadow(radius: 1.5)
 
+                let dragGesture = DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard !isApplying else { return }
+                        if isPrecisionDragActive { return }
+                        if isPinching { return }
+
+                        if dragStartRect == nil { dragStartRect = cropRect }
+                        guard let start = dragStartRect else { return }
+
+                        let dx = Double(value.translation.width / max(1.0, displayRect.width))
+                        let dy = Double(value.translation.height / max(1.0, displayRect.height))
+
+                        let proposed = NormalisedRect(
+                            x: start.x + dx,
+                            y: start.y + dy,
+                            width: start.width,
+                            height: start.height
+                        )
+
+                        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
+                    }
+                    .onEnded { _ in
+                        dragStartRect = nil
+                    }
+
+                let precisionGesture = LongPressGesture(minimumDuration: 0.25, maximumDistance: 12)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .onChanged { value in
+                        guard !isApplying else { return }
+                        if isPinching { return }
+
+                        switch value {
+                        case .first(true):
+                            break
+
+                        case .second(true, nil):
+                            if !isPrecisionDragActive {
+                                isPrecisionDragActive = true
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+
+                            if precisionStartRect == nil { precisionStartRect = cropRect }
+
+                        case .second(true, let drag?):
+                            if !isPrecisionDragActive {
+                                isPrecisionDragActive = true
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+
+                            if precisionStartRect == nil { precisionStartRect = cropRect }
+                            guard let start = precisionStartRect else { return }
+
+                            let precisionFactor = 0.05
+                            let dx = Double(drag.translation.width / max(1.0, displayRect.width)) * precisionFactor
+                            let dy = Double(drag.translation.height / max(1.0, displayRect.height)) * precisionFactor
+
+                            let proposed = NormalisedRect(
+                                x: start.x + dx,
+                                y: start.y + dy,
+                                width: start.width,
+                                height: start.height
+                            )
+
+                            cropRect = SmartPhotoCropMath.pixelSnappedRect(
+                                proposed,
+                                masterPixels: masterPixelSize,
+                                rectAspect: normalisedRectAspect
+                            )
+
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { _ in
+                        precisionStartRect = nil
+                        isPrecisionDragActive = false
+                    }
+
+                let magnifyGesture = MagnificationGesture()
+                    .onChanged { value in
+                        guard !isApplying else { return }
+                        if isPrecisionDragActive { return }
+
+                        if !isPinching {
+                            isPinching = true
+                            dragStartRect = nil
+                        }
+
+                        if pinchStartRect == nil { pinchStartRect = cropRect }
+                        guard let start = pinchStartRect else { return }
+
+                        let scale = max(0.2, min(5.0, Double(value)))
+                        let proposedWidth = start.width / scale
+
+                        let centerX = start.x + (start.width / 2.0)
+                        let centerY = start.y + (start.height / 2.0)
+
+                        let w = SmartPhotoCropMath.clampWidth(proposedWidth, rectAspect: normalisedRectAspect)
+                        let h = w / max(0.0001, normalisedRectAspect)
+
+                        let proposed = NormalisedRect(
+                            x: centerX - (w / 2.0),
+                            y: centerY - (h / 2.0),
+                            width: w,
+                            height: h
+                        )
+
+                        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
+                    }
+                    .onEnded { _ in
+                        pinchStartRect = nil
+                        isPinching = false
+                    }
+
+                let doubleTapGesture = SpatialTapGesture(count: 2)
+                    .onEnded { value in
+                        guard !isApplying else { return }
+
+                        let anchor = CGPoint(
+                            x: value.location.x / max(1.0, displayRect.width),
+                            y: value.location.y / max(1.0, displayRect.height)
+                        )
+
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                            cropRect = SmartPhotoCropMath.toggleZoomRect(
+                                current: cropRect,
+                                rectAspect: normalisedRectAspect,
+                                anchor: anchor
+                            )
+                        }
+                    }
+
                 Rectangle()
                     .fill(.clear)
                     .frame(width: displayRect.width, height: displayRect.height)
                     .position(x: displayRect.midX, y: displayRect.midY)
                     .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        LongPressGesture(minimumDuration: 0.25, maximumDistance: 12)
-                            .sequenced(before: DragGesture(minimumDistance: 0))
-                            .onChanged { value in
-                                guard !isApplying else { return }
-                                if isPinching { return }
-
-                                switch value {
-                                case .first(true):
-                                    break
-
-                                case .second(true, let drag?):
-                                    if !isPrecisionDragActive {
-                                        isPrecisionDragActive = true
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    }
-
-                                    if precisionStartRect == nil { precisionStartRect = cropRect }
-                                    guard let start = precisionStartRect else { return }
-
-                                    let precisionFactor = 0.05
-                                    let dx = Double(drag.translation.width / max(1.0, displayRect.width)) * precisionFactor
-                                    let dy = Double(drag.translation.height / max(1.0, displayRect.height)) * precisionFactor
-
-                                    let proposed = NormalisedRect(
-                                        x: start.x + dx,
-                                        y: start.y + dy,
-                                        width: start.width,
-                                        height: start.height
-                                    )
-
-                                    cropRect = SmartPhotoCropMath.pixelSnappedRect(
-                                        proposed,
-                                        masterPixels: masterPixelSize,
-                                        rectAspect: normalisedRectAspect
-                                    )
-
-                                default:
-                                    break
-                                }
-                            }
-                            .onEnded { _ in
-                                precisionStartRect = nil
-                                isPrecisionDragActive = false
-                            }
-                    )
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                guard !isApplying else { return }
-                                if isPrecisionDragActive { return }
-                                if isPinching { return }
-
-                                if dragStartRect == nil { dragStartRect = cropRect }
-                                guard let start = dragStartRect else { return }
-
-                                let dx = Double(value.translation.width / max(1.0, displayRect.width))
-                                let dy = Double(value.translation.height / max(1.0, displayRect.height))
-
-                                let proposed = NormalisedRect(
-                                    x: start.x + dx,
-                                    y: start.y + dy,
-                                    width: start.width,
-                                    height: start.height
-                                )
-
-                                cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
-                            }
-                            .onEnded { _ in
-                                dragStartRect = nil
-                            }
-                    )
-                    .highPriorityGesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                guard !isApplying else { return }
-                                if isPrecisionDragActive { return }
-
-                                if !isPinching {
-                                    isPinching = true
-                                    dragStartRect = nil
-                                }
-
-                                if pinchStartRect == nil { pinchStartRect = cropRect }
-                                guard let start = pinchStartRect else { return }
-
-                                let scale = max(0.2, min(5.0, Double(value)))
-                                let proposedWidth = start.width / scale
-
-                                let centerX = start.x + (start.width / 2.0)
-                                let centerY = start.y + (start.height / 2.0)
-
-                                let w = SmartPhotoCropMath.clampWidth(proposedWidth, rectAspect: normalisedRectAspect)
-                                let h = w / max(0.0001, normalisedRectAspect)
-
-                                let proposed = NormalisedRect(
-                                    x: centerX - (w / 2.0),
-                                    y: centerY - (h / 2.0),
-                                    width: w,
-                                    height: h
-                                )
-
-                                cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: normalisedRectAspect)
-                            }
-                            .onEnded { _ in
-                                pinchStartRect = nil
-                                isPinching = false
-                            }
-                    )
-                    .simultaneousGesture(
-                        SpatialTapGesture(count: 2)
-                            .onEnded { value in
-                                guard !isApplying else { return }
-
-                                let anchor = CGPoint(
-                                    x: value.location.x / max(1.0, displayRect.width),
-                                    y: value.location.y / max(1.0, displayRect.height)
-                                )
-
-                                withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
-                                    cropRect = SmartPhotoCropMath.toggleZoomRect(
-                                        current: cropRect,
-                                        rectAspect: normalisedRectAspect,
-                                        anchor: anchor
-                                    )
-                                }
-                            }
-                    )
+                    .gesture(dragGesture)
+                    .simultaneousGesture(precisionGesture)
+                    .simultaneousGesture(magnifyGesture)
+                    .simultaneousGesture(doubleTapGesture)
 
                 if debugOverlayEnabled {
                     SmartPhotoDebugHUDView(
