@@ -14,14 +14,19 @@ public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfiguratio
     public static var title: LocalizedStringResource { "Clock (Quick)" }
 
     public static var description: IntentDescription {
-        IntentDescription("Configure Clock (Quick) (Small). For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget.")
+        IntentDescription(
+            "Configure Clock (Quick) (Small). Choose a colour scheme and optional seconds hand. For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget."
+        )
     }
 
     @Parameter(title: "Colour Scheme", default: .classic)
     public var colourScheme: WidgetWeaverClockWidgetColourScheme
 
+    @Parameter(title: "Seconds Hand", default: false)
+    public var secondsHandEnabled: Bool
+
     public static var parameterSummary: some ParameterSummary {
-        Summary("Colour Scheme: \(\.$colourScheme)")
+        Summary("Colour Scheme: \(\.$colourScheme), Seconds Hand: \(\.$secondsHandEnabled)")
     }
 
     public init() {}
@@ -63,10 +68,13 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
 
+        let tickMode: WidgetWeaverClockTickMode = configuration.secondsHandEnabled ? .secondsSweep : .minuteOnly
+        let tickSeconds: TimeInterval = configuration.secondsHandEnabled ? 0.0 : 60.0
+
         return Entry(
             date: now,
-            tickMode: .secondsSweep,
-            tickSeconds: 0.0,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
             colourScheme: scheme,
             isWidgetKitPreview: context.isPreview
         )
@@ -76,17 +84,32 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         let scheme = configuration.colourScheme.paletteScheme
 
-        WWClockInstrumentation.recordTimelineBuild(now: now, scheme: scheme)
+        let tickMode: WidgetWeaverClockTickMode = configuration.secondsHandEnabled ? .secondsSweep : .minuteOnly
+        let tickSeconds: TimeInterval = configuration.secondsHandEnabled ? 0.0 : 60.0
+
+        WWClockInstrumentation.recordTimelineBuild(
+            now: now,
+            scheme: scheme,
+            secondsHandEnabled: configuration.secondsHandEnabled
+        )
 
         // Always publish a live (non-preview) entry for Home Screen rendering.
         // Some iOS widget-hosting paths can treat freshly-added widgets as “preview” for longer than expected.
         // If live rendering is keyed off `context.isPreview`, those instances can get stuck in the low-budget face.
-        return makeMinuteTimeline(now: now, colourScheme: scheme, isWidgetKitPreview: false)
+        return makeMinuteTimeline(
+            now: now,
+            colourScheme: scheme,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
+            isWidgetKitPreview: false
+        )
     }
 
     private func makeMinuteTimeline(
         now: Date,
         colourScheme: WidgetWeaverClockColourScheme,
+        tickMode: WidgetWeaverClockTickMode,
+        tickSeconds: TimeInterval,
         isWidgetKitPreview: Bool
     ) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
@@ -98,8 +121,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         entries.append(
             Entry(
                 date: now,
-                tickMode: .secondsSweep,
-                tickSeconds: 0.0,
+                tickMode: tickMode,
+                tickSeconds: tickSeconds,
                 colourScheme: colourScheme,
                 isWidgetKitPreview: isWidgetKitPreview
             )
@@ -109,8 +132,8 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             entries.append(
                 Entry(
                     date: nextMinuteBoundary,
-                    tickMode: .secondsSweep,
-                    tickSeconds: 0.0,
+                    tickMode: tickMode,
+                    tickSeconds: tickSeconds,
                     colourScheme: colourScheme,
                     isWidgetKitPreview: isWidgetKitPreview
                 )
@@ -130,7 +153,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
             let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
 
-            return "provider.timeline scheme=\(colourScheme.rawValue) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
+            return "provider.timeline scheme=\(colourScheme.rawValue) mode=\(tickMode) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -148,12 +171,14 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
     private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
+    private static let secondsKey = "widgetweaver.clock.timelineBuild.secondsHandEnabled"
     private static let countPrefix = "widgetweaver.clock.timelineBuild.count."
 
-    static func recordTimelineBuild(now: Date, scheme: WidgetWeaverClockColourScheme) {
+    static func recordTimelineBuild(now: Date, scheme: WidgetWeaverClockColourScheme, secondsHandEnabled: Bool) {
         let defaults = AppGroup.userDefaults
         defaults.set(now, forKey: lastKey)
         defaults.set(scheme.rawValue, forKey: schemeKey)
+        defaults.set(secondsHandEnabled, forKey: secondsKey)
 
         let dayKey = Self.dayKey(for: now)
         let countKey = countPrefix + dayKey
@@ -187,7 +212,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                 }
         }
         .configurationDisplayName("Clock (Quick)")
-        .description("A standalone analogue clock (Small only) with fast setup. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
+        .description("A standalone analogue clock (Small only) with fast setup. Choose a colour scheme and optional seconds hand. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
@@ -208,7 +233,8 @@ private struct WidgetWeaverHomeScreenClockView: View {
             if entry.isWidgetKitPreview {
                 WidgetWeaverClockLowBudgetFace(
                     palette: palette,
-                    date: entry.date
+                    date: entry.date,
+                    showsSecondHand: (entry.tickMode == .secondsSweep)
                 )
             } else {
                 WidgetWeaverClockWidgetLiveView(
@@ -239,6 +265,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
 private struct WidgetWeaverClockLowBudgetFace: View {
     let palette: WidgetWeaverClockPalette
     let date: Date
+    let showsSecondHand: Bool
 
     var body: some View {
         let angles = WWClockLowBudgetAngles(date: date)
@@ -247,8 +274,8 @@ private struct WidgetWeaverClockLowBudgetFace: View {
             palette: palette,
             hourAngle: angles.hour,
             minuteAngle: angles.minute,
-            secondAngle: .degrees(0),
-            showsSecondHand: false,
+            secondAngle: angles.second,
+            showsSecondHand: showsSecondHand,
             showsMinuteHand: true,
             showsHandShadows: false,
             showsGlows: false,
@@ -265,6 +292,7 @@ private struct WidgetWeaverClockLowBudgetFace: View {
 private struct WWClockLowBudgetAngles {
     let hour: Angle
     let minute: Angle
+    let second: Angle
 
     init(date: Date) {
         let cal = Calendar.autoupdatingCurrent
@@ -280,8 +308,10 @@ private struct WWClockLowBudgetAngles {
 
         let hourDeg = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
         let minuteDeg = (minuteInt + sec / 60.0) * 6.0
+        let secondDeg = sec * 6.0
 
         self.hour = .degrees(hourDeg)
         self.minute = .degrees(minuteDeg)
+        self.second = .degrees(secondDeg)
     }
 }

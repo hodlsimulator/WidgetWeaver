@@ -152,8 +152,110 @@ private enum WidgetWeaverClockDesignerTheme: String, CaseIterable, Identifiable 
     }
 }
 
+private enum WWClockDesignerCreateSource: String {
+    case manual
+    case upgradeFromQuick
+}
+
+private struct WWClockQuickConfigurationSnapshot {
+    let lastTimelineBuildAt: Date
+    let scheme: WidgetWeaverClockColourScheme
+    let secondsHandEnabled: Bool
+}
+
+private extension WidgetWeaverClockColourScheme {
+    var displayName: String {
+        switch self {
+        case .classic: return "Classic"
+        case .ocean: return "Ocean"
+        case .mint: return "Mint"
+        case .orchid: return "Orchid"
+        case .sunset: return "Sunset"
+        case .ember: return "Ember"
+        case .graphite: return "Graphite"
+        }
+    }
+
+    var mappedDesignerTheme: WidgetWeaverClockDesignerTheme {
+        switch self {
+        case .ocean:
+            return .ocean
+        case .graphite:
+            return .graphite
+        default:
+            return .classic
+        }
+    }
+
+    var requiresThemeNote: Bool {
+        switch self {
+        case .classic, .ocean, .graphite:
+            return false
+        default:
+            return true
+        }
+    }
+}
+
+private enum WWClockQuickConfigurationReader {
+    private static let lastKey = "widgetweaver.clock.timelineBuild.last"
+    private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
+    private static let secondsKey = "widgetweaver.clock.timelineBuild.secondsHandEnabled"
+
+    static func load() -> WWClockQuickConfigurationSnapshot? {
+        let defaults = AppGroup.userDefaults
+
+        guard let last = defaults.object(forKey: lastKey) as? Date else { return nil }
+        guard let schemeRaw = defaults.object(forKey: schemeKey) as? Int else { return nil }
+        guard let scheme = WidgetWeaverClockColourScheme(rawValue: schemeRaw) else { return nil }
+
+        let seconds = defaults.object(forKey: secondsKey) as? Bool ?? false
+
+        return WWClockQuickConfigurationSnapshot(
+            lastTimelineBuildAt: last,
+            scheme: scheme,
+            secondsHandEnabled: seconds
+        )
+    }
+}
+
+private enum WWClockDesignerFunnelMetrics {
+    private static let openedCountKey = "widgetweaver.clockDesigner.funnel.opened.count"
+    private static let openedLastKey = "widgetweaver.clockDesigner.funnel.opened.last"
+
+    private static let createTappedCountKey = "widgetweaver.clockDesigner.create.tapped.count"
+    private static let createSucceededCountKey = "widgetweaver.clockDesigner.create.succeeded.count"
+
+    private static let createLastKey = "widgetweaver.clockDesigner.create.last"
+    private static let createLastSourceKey = "widgetweaver.clockDesigner.create.last.source"
+    private static let createLastThemeKey = "widgetweaver.clockDesigner.create.last.theme"
+
+    static func recordOpened(now: Date = Date()) {
+        let defaults = AppGroup.userDefaults
+        defaults.set(now, forKey: openedLastKey)
+        defaults.set(defaults.integer(forKey: openedCountKey) + 1, forKey: openedCountKey)
+    }
+
+    static func recordCreateTapped(source: WWClockDesignerCreateSource, theme: WidgetWeaverClockDesignerTheme, now: Date = Date()) {
+        let defaults = AppGroup.userDefaults
+        defaults.set(now, forKey: createLastKey)
+        defaults.set(source.rawValue, forKey: createLastSourceKey)
+        defaults.set(theme.rawValue, forKey: createLastThemeKey)
+        defaults.set(defaults.integer(forKey: createTappedCountKey) + 1, forKey: createTappedCountKey)
+    }
+
+    static func recordCreateSucceeded(source: WWClockDesignerCreateSource, theme: WidgetWeaverClockDesignerTheme, now: Date = Date()) {
+        let defaults = AppGroup.userDefaults
+        defaults.set(now, forKey: createLastKey)
+        defaults.set(source.rawValue, forKey: createLastSourceKey)
+        defaults.set(theme.rawValue, forKey: createLastThemeKey)
+        defaults.set(defaults.integer(forKey: createSucceededCountKey) + 1, forKey: createSucceededCountKey)
+    }
+}
+
 private struct WidgetWeaverClockDeepLinkView: View {
     @State private var theme: WidgetWeaverClockDesignerTheme = .classic
+    @State private var quickSnapshot: WWClockQuickConfigurationSnapshot?
     @State private var statusMessage: String = ""
 
     var body: some View {
@@ -168,6 +270,44 @@ private struct WidgetWeaverClockDeepLinkView: View {
                 Text("Two ways to place Clock")
             }
 
+            if let quickSnapshot {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Detected last Clock (Quick) settings:")
+                            .foregroundStyle(.secondary)
+
+                        Text("Colour scheme: \(quickSnapshot.scheme.displayName)")
+
+                        Text("Seconds hand: \(quickSnapshot.secondsHandEnabled ? "On" : "Off")")
+
+                        Text("Last updated: \(quickSnapshot.lastTimelineBuildAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if quickSnapshot.scheme.requiresThemeNote {
+                            Text("Designer clocks currently support Classic, Ocean, and Graphite. \"\(quickSnapshot.scheme.displayName)\" maps to Classic as the closest match.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Button {
+                            createDesignerClock(
+                                theme: quickSnapshot.scheme.mappedDesignerTheme,
+                                nameQualifier: quickSnapshot.scheme.displayName,
+                                source: .upgradeFromQuick
+                            )
+                        } label: {
+                            Label("Upgrade to Clock (Designer)", systemImage: "arrow.up.right.circle.fill")
+                        }
+                    }
+                } header: {
+                    Text("Upgrade from Clock (Quick)")
+                } footer: {
+                    Text("The new design is saved into the Library. Add a WidgetWeaver widget, then choose the design in Edit Widget → Design.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Picker("Theme", selection: $theme) {
                     ForEach(WidgetWeaverClockDesignerTheme.allCases) { theme in
@@ -176,7 +316,7 @@ private struct WidgetWeaverClockDeepLinkView: View {
                 }
 
                 Button {
-                    createDesignerClock(theme: theme)
+                    createDesignerClock(theme: theme, nameQualifier: nil, source: .manual)
                 } label: {
                     Label("Create Clock (Designer) design", systemImage: "plus.circle.fill")
                 }
@@ -196,10 +336,33 @@ private struct WidgetWeaverClockDeepLinkView: View {
         }
         .navigationTitle("Clock")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            WWClockDesignerFunnelMetrics.recordOpened()
+
+            let snap = WWClockQuickConfigurationReader.load()
+            quickSnapshot = snap
+
+            if let snap {
+                theme = snap.scheme.mappedDesignerTheme
+            }
+        }
     }
 
-    private func createDesignerClock(theme: WidgetWeaverClockDesignerTheme) {
-        let baseName = "Clock (Designer — \(theme.displayName))"
+    private func createDesignerClock(
+        theme: WidgetWeaverClockDesignerTheme,
+        nameQualifier: String?,
+        source: WWClockDesignerCreateSource
+    ) {
+        WWClockDesignerFunnelMetrics.recordCreateTapped(source: source, theme: theme)
+
+        let qualifier = (nameQualifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName: String = {
+            if qualifier.isEmpty {
+                return "Clock (Designer — \(theme.displayName))"
+            }
+            return "Clock (Designer — \(theme.displayName), \(qualifier))"
+        }()
+
         let name = makeUniqueDesignName(base: baseName)
 
         var spec = WidgetSpec.defaultSpec()
@@ -218,6 +381,8 @@ private struct WidgetWeaverClockDeepLinkView: View {
         spec.clockConfig = WidgetWeaverClockDesignConfig(theme: theme.rawValue)
 
         WidgetSpecStore.shared.save(spec.normalised(), makeDefault: false)
+
+        WWClockDesignerFunnelMetrics.recordCreateSucceeded(source: source, theme: theme)
 
         statusMessage = "Created \(name). Find it in Library to edit, then apply it to a WidgetWeaver widget."
     }
