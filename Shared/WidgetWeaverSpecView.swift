@@ -505,15 +505,18 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
 
     @ViewBuilder
     private var posterGradientCaptionBackdrop: some View {
-        LinearGradient(
-            colors: [
-                Color.black.opacity(0.55),
-                Color.black.opacity(0.10),
-                Color.clear,
-            ],
-            startPoint: captionBackdropStartPoint,
-            endPoint: captionBackdropEndPoint
-        )
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.black.opacity(0.55),
+                        Color.black.opacity(0.10),
+                        Color.clear,
+                    ],
+                    startPoint: captionBackdropStartPoint,
+                    endPoint: captionBackdropEndPoint
+                )
+            )
     }
 
     @ViewBuilder
@@ -522,15 +525,18 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
             Rectangle()
                 .fill(.ultraThinMaterial)
 
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.30),
-                    Color.black.opacity(0.10),
-                    Color.clear,
-                ],
-                startPoint: captionBackdropStartPoint,
-                endPoint: captionBackdropEndPoint
-            )
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.30),
+                            Color.black.opacity(0.10),
+                            Color.clear,
+                        ],
+                        startPoint: captionBackdropStartPoint,
+                        endPoint: captionBackdropEndPoint
+                    )
+                )
         }
         .overlay(
             Rectangle()
@@ -578,7 +584,9 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             posterCaptionBackdrop
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .compositingGroup()
     }
 
     private func maxDate(_ a: Date, _ b: Date) -> Date {
