@@ -27,10 +27,6 @@ extension ContentView {
 
         let templateTokens: [LayoutTemplateToken] = {
             var tokens = LayoutTemplateToken.allCases.filter { token in
-                // Hide Clock (Icon) by default so it can't be accidentally chosen.
-                // If a clock design is already selected (eg. imported), include it so the picker has a matching tag.
-                if token == .clockIcon { return currentTemplate == .clockIcon }
-
                 // Reminders is feature-flag gated.
                 return remindersEnabled || token != .reminders
             }
@@ -40,9 +36,7 @@ extension ContentView {
             if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
                 tokens.append(.reminders)
             }
-            if currentTemplate == .clockIcon, !tokens.contains(.clockIcon) {
-                tokens.append(.clockIcon)
-            }
+
             return tokens
         }()
 
@@ -517,18 +511,11 @@ extension ContentView {
 
         let templateTokens: [LayoutTemplateToken] = {
             var tokens = LayoutTemplateToken.allCases.filter { token in
-                // Hide Clock (Icon) by default so it can't be accidentally chosen.
-                // If a clock design is already selected (eg. imported), include it so the picker has a matching tag.
-                if token == .clockIcon { return currentTemplate == .clockIcon }
-
                 // Reminders is feature-flag gated.
                 return remindersEnabled || token != .reminders
             }
             if !remindersEnabled, currentTemplate == .reminders, !tokens.contains(.reminders) {
                 tokens.append(.reminders)
-            }
-            if currentTemplate == .clockIcon, !tokens.contains(.clockIcon) {
-                tokens.append(.clockIcon)
             }
             return tokens
         }()

@@ -159,7 +159,7 @@ private struct WidgetWeaverClockDeepLinkView: View {
     var body: some View {
         List {
             Section {
-                Text("Clock (Quick) is a dedicated Home Screen widget for a fast add with minimal configuration.")
+                Text("Clock (Quick) is a dedicated Home Screen (Small) widget for a fast add with minimal configuration.")
                     .foregroundStyle(.secondary)
 
                 Text("Clock (Designer) is a Design template inside WidgetWeaver, intended for deep customisation and consistent styling.")

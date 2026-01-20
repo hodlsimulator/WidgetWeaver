@@ -260,7 +260,7 @@ extension WidgetWeaverAboutView {
         }
     }
 
-    // MARK: - Featured Clock (Home Screen)
+    // MARK: - Featured Clock (Quick) (Home Screen)
 
     var featuredClockSection: some View {
         Section {
@@ -268,26 +268,26 @@ extension WidgetWeaverAboutView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Clock (Icon)")
+                            Text("Clock (Quick)")
                                 .font(.headline)
                             Text("Analogue • Home Screen (Small)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-
+                        
                         Spacer(minLength: 0)
-
+                        
                         Button { onShowWidgetHelp() } label: {
                             Label("How to add", systemImage: "plus.circle.fill")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-
-                    Text("A standalone analogue clock widget. This is separate from Designs, the Library, and the Editor.")
+                    
+                    Text("A standalone analogue clock widget (Home Screen, Small). Fast to set up with minimal configuration. For deep customisation, use Clock (Designer) inside the WidgetWeaver widget.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-
+                    
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             WidgetWeaverAboutPreviewLabeled(familyLabel: "Classic", accent: .orange) {
@@ -302,15 +302,15 @@ extension WidgetWeaverAboutView {
                         }
                         .padding(.vertical, 2)
                     }
-
+                    
                     Divider()
-
+                    
                     Text("Setup")
                         .font(.subheadline.weight(.semibold))
-
+                    
                     WidgetWeaverAboutBulletList(items: [
                         "On the Home Screen: long-press → Edit Home Screen → “+”.",
-                        "Search “WidgetWeaver” → add Clock (Icon) (Small).",
+                        "Search “WidgetWeaver” → add Clock (Quick) (Small).",
                         "Long-press the clock → Edit Widget → choose a colour scheme.",
                     ])
                 }
@@ -320,7 +320,7 @@ extension WidgetWeaverAboutView {
         } header: {
             WidgetWeaverAboutSectionHeader("Clock", systemImage: "clock", accent: .orange)
         } footer: {
-            Text("Clock (Icon) is a separate widget kind and can’t be added to your Design library like templates.")
+            Text("Clock (Quick) is a separate widget kind and can’t be added to your Design library like templates. For deep customisation, create a Clock (Designer) design in the app.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -12,6 +12,8 @@ import StoreKit
 import UIKit
 
 struct WidgetWorkflowHelpView: View {
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         NavigationStack {
             List {
@@ -19,11 +21,20 @@ struct WidgetWorkflowHelpView: View {
                     Text("WidgetWeaver has one Clock experience with two placement paths. Choose the path that matches the intent.")
                         .foregroundStyle(.secondary)
 
-                    Text("Clock (Quick): add a standalone clock from the widget gallery. Fast to set up, with a compact, safe configuration.")
+                    Text("Clock (Quick): add a standalone clock from the widget gallery (Home Screen, Small). Fast to set up, with a compact, safe configuration.")
                         .foregroundStyle(.secondary)
 
                     Text("Clock (Designer): create a clock Design in the app, then add a WidgetWeaver widget and choose that Design in Edit Widget → Design. This path supports deeper customisation and stays consistent with other WidgetWeaver templates.")
                         .foregroundStyle(.secondary)
+
+                    Button {
+                        guard let url = URL(string: "widgetweaver://clock") else { return }
+                        openURL(url)
+                    } label: {
+                        Label("Create Clock (Designer) design", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
 
                     Text("If uncertain, start with Clock (Quick).")
                         .foregroundStyle(.secondary)

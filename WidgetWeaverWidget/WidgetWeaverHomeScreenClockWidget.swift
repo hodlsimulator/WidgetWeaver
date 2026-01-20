@@ -14,7 +14,7 @@ public struct WidgetWeaverHomeScreenClockConfigurationIntent: WidgetConfiguratio
     public static var title: LocalizedStringResource { "Clock (Quick)" }
 
     public static var description: IntentDescription {
-        IntentDescription("Configure Clock (Quick). For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget.")
+        IntentDescription("Configure Clock (Quick) (Small). For deep customisation, create a Clock (Designer) design in the app and apply it to a WidgetWeaver widget.")
     }
 
     @Parameter(title: "Colour Scheme", default: .classic)
@@ -187,7 +187,7 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
                 }
         }
         .configurationDisplayName("Clock (Quick)")
-        .description("A small analogue clock with fast setup. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
+        .description("A standalone analogue clock (Small only) with fast setup. For deep customisation, use Clock (Designer) in a WidgetWeaver widget.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
