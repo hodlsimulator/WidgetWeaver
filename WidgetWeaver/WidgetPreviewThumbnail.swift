@@ -310,11 +310,16 @@ struct WidgetPreviewThumbnail: View {
         case .live:
             WidgetPreviewLiveThumbnail(spec: spec, family: family, height: height)
         case .rasterCached:
-            if #available(iOS 16.0, *) {
-                renderedBody(renderImmediately: false)
-            } else {
-                legacyLiveBody
-            }
+            rasterCachedBody()
+        }
+    }
+
+    @ViewBuilder
+    private func rasterCachedBody() -> some View {
+        if #available(iOS 16.0, *) {
+            renderedBody(renderImmediately: false)
+        } else {
+            legacyLiveBody
         }
     }
 
