@@ -74,7 +74,8 @@ enum SmartPhotoManualCropRenderer {
             UIColor.black.setFill()
             ctx.fill(CGRect(origin: .zero, size: targetSize))
 
-            ctx.cgContext.draw(cropped, in: CGRect(origin: .zero, size: targetSize))
+            let croppedImage = UIImage(cgImage: cropped, scale: 1, orientation: .up)
+            croppedImage.draw(in: CGRect(origin: .zero, size: targetSize))
         }
     }
 
@@ -137,7 +138,8 @@ enum SmartPhotoManualCropRenderer {
             ctx.cgContext.rotate(by: radians)
             ctx.cgContext.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
 
-            ctx.cgContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+            let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+            source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
         }
 
         return img.cgImage
