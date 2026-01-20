@@ -380,13 +380,13 @@ struct WidgetWeaverAboutTemplateRow: View {
 
 // MARK: - Preview framing
 
-struct WidgetWeaverAboutPreviewFrame<Content: View>: View {
+struct WidgetWeaverAboutPreviewFrame: View {
     let accent: Color
-    let content: Content
+    private let content: AnyView
 
-    init(accent: Color, @ViewBuilder content: () -> Content) {
+    init<Content: View>(accent: Color, @ViewBuilder content: () -> Content) {
         self.accent = accent
-        self.content = content()
+        self.content = AnyView(content())
     }
 
     var body: some View {
@@ -399,10 +399,16 @@ struct WidgetWeaverAboutPreviewFrame<Content: View>: View {
     }
 }
 
-struct WidgetWeaverAboutPreviewLabeled<Content: View>: View {
+struct WidgetWeaverAboutPreviewLabeled: View {
     let familyLabel: String
     let accent: Color
-    @ViewBuilder var content: Content
+    private let content: AnyView
+
+    init<Content: View>(familyLabel: String, accent: Color, @ViewBuilder content: () -> Content) {
+        self.familyLabel = familyLabel
+        self.accent = accent
+        self.content = AnyView(content())
+    }
 
     var body: some View {
         VStack(alignment: .center, spacing: 6) {

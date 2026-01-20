@@ -143,15 +143,15 @@ struct WidgetWeaverAboutSectionHeader: View {
     }
 }
 
-struct WidgetWeaverAboutCard<Content: View>: View {
+struct WidgetWeaverAboutCard: View {
     let accent: Color
-    let content: Content
+    private let content: AnyView
 
     @Environment(\.colorScheme) private var colorScheme
 
-    init(accent: Color, @ViewBuilder content: () -> Content) {
+    init<Content: View>(accent: Color, @ViewBuilder content: () -> Content) {
         self.accent = accent
-        self.content = content()
+        self.content = AnyView(content())
     }
 
     @ViewBuilder
