@@ -298,6 +298,11 @@
 			path = Clock;
 			sourceTree = "<group>";
 		};
+		E15047522F1F22010047863A /* Docs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Docs;
+			sourceTree = "<group>";
+		};
 		E16011732F19618B00A3B10B /* Scripts */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Scripts;
@@ -388,6 +393,7 @@
 		E186766E2EF227C20098B095 = {
 			isa = PBXGroup;
 			children = (
+				E15047522F1F22010047863A /* Docs */,
 				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E18676942EF232180098B095 /* WidgetWeaverWidget */,
@@ -512,6 +518,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				E15047332F1CA2760047863A /* Clock */,
+				E15047522F1F22010047863A /* Docs */,
 				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E1E878082F0787DD00C9AA14 /* Tools */,
