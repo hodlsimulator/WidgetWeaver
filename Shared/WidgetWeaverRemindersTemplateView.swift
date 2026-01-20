@@ -754,19 +754,61 @@ public struct WidgetWeaverRemindersTemplateView: View {
         return VStack(alignment: layout.alignment.alignment, spacing: blockSpacing) {
             modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
 
-            Text("No snapshot yet.\nOpen WidgetWeaver to enable Reminders access and refresh.")
-                .font(style.secondaryTextStyle.font(fallback: .caption2))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                .lineLimit(family == .systemSmall ? 2 : 3)
+            if family == .systemMedium {
+                Text("No snapshot yet.")
+                    .font(style.secondaryTextStyle.font(fallback: .caption2))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
 
-            VStack(alignment: .leading, spacing: rowSpacing) {
-                ForEach(visibleTitles, id: \.self) { title in
-                    placeholderReminderRow(title: title)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: rowSpacing) {
+                        ForEach(visibleTitles, id: \.self) { title in
+                            placeholderReminderRowCompact(title: title)
+                        }
+                    }
+                    .opacity(0.85)
+
+                    Text("Open WidgetWeaver to enable Reminders access and refresh.")
+                        .font(style.secondaryTextStyle.font(fallback: .caption2))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
                 }
+            } else {
+                Text("No snapshot yet.\nOpen WidgetWeaver to enable Reminders access and refresh.")
+                    .font(style.secondaryTextStyle.font(fallback: .caption2))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                    .lineLimit(family == .systemSmall ? 2 : 3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+
+                VStack(alignment: .leading, spacing: rowSpacing) {
+                    ForEach(visibleTitles, id: \.self) { title in
+                        placeholderReminderRow(title: title)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+                .opacity(0.85)
             }
-            .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-            .opacity(0.85)
+        }
+    }
+
+    private func placeholderReminderRowCompact(title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(accent)
+                .opacity(0.9)
+
+            Text(title)
+                .font(style.secondaryTextStyle.font(fallback: .caption))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
         }
     }
 
