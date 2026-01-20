@@ -489,7 +489,7 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                             .swipeActions(edge: .trailing, allowsFullSwipe: savedSpecs.count > 1) {
                                 Button(role: .destructive) {
-                                    deleteDesignFromLibrary(spec)
+                                    deleteDesignFromLibraryImmediately(spec)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -706,10 +706,16 @@ struct ContentView: View {
         selectedTab = .editor
     }
 
-    private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
+    private func deleteDesignFromLibraryImmediately(_ spec: WidgetSpec) {
         selectedSpecID = spec.id
         applySpec(spec)
         deleteCurrentDesign()
+    }
+
+    private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        showDeleteConfirmation = true
     }
 
     private var editorRoot: some View {
