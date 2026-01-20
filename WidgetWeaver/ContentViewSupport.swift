@@ -70,7 +70,7 @@ final class WidgetWeaverProManager: ObservableObject {
     @Published private(set) var isProUnlocked: Bool = WidgetWeaverEntitlements.isProUnlocked
 
     private let proProductIDs: Set<String> = [
-        "widgetweaver.pro.lifetime"
+        "com.conornolan.widgetweaver.pro"
     ]
 
     init() {
@@ -94,8 +94,8 @@ final class WidgetWeaverProManager: ObservableObject {
             }
         }
 
-        let unlocked = !owned.isEmpty
         let previous = WidgetWeaverEntitlements.isProUnlocked
+        let unlocked = !owned.isEmpty || previous
         if unlocked != previous {
             WidgetWeaverEntitlements.setProUnlocked(unlocked)
         }
