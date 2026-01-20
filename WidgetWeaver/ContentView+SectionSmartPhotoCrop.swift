@@ -802,31 +802,34 @@ extension ContentView {
             return
         }
 
-        let existingVariant: SmartPhotoVariantSpec
-        switch family {
-        case .small:
-            existingVariant = smart.small
-        case .medium:
-            existingVariant = smart.medium
-        case .large:
-            existingVariant = smart.large
+        guard let existingVariant: SmartPhotoVariantSpec = {
+            switch family {
+            case .small:
+                return smart.small
+            case .medium:
+                return smart.medium
+            case .large:
+                return smart.large
+            }
+        }() else {
+            saveStatusMessage = "Smart Photo data missing for \(family.label).\nTry “Regenerate smart renders”."
+            return
         }
 
-        let masterFileName = smart.masterFileName
+        let masterFileName = smart.masterFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !masterFileName.isEmpty else {
+            saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
+            return
+        }
+
         let targetPixels = existingVariant.pixelSize.normalised()
 
-        guard let masterURL = AppGroup.containerURL?.appendingPathComponent(masterFileName) else {
+        guard let masterData = AppGroup.readImageData(fileName: masterFileName) else {
             saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
             return
         }
 
-        let masterData: Data
-        do {
-            masterData = try Data(contentsOf: masterURL)
-        } catch {
-            saveStatusMessage = "Smart master file missing.\nTry “Regenerate smart renders”."
-            return
-        }
+        let oldRenderFileName = existingVariant.renderFileName
 
         Task.detached(priority: .userInitiated) {
             do {
@@ -846,16 +849,11 @@ extension ContentView {
                     quality: 0.92
                 )
 
-                let newRenderFileName = "smart_\(UUID().uuidString).jpg"
-                guard let renderURL = AppGroup.containerURL?.appendingPathComponent(newRenderFileName) else {
-                    throw SmartPhotoManualTransformError.renderWriteFailed
-                }
+                let newRenderFileName = AppGroup.createImageFileName(prefix: "smart-manual", ext: "jpg")
+                try AppGroup.writeImageData(jpeg, fileName: newRenderFileName)
 
-                try jpeg.write(to: renderURL, options: .atomic)
-
-                if let oldURL = AppGroup.containerURL?.appendingPathComponent(existingVariant.renderFileName) {
-                    try? FileManager.default.removeItem(at: oldURL)
-                }
+                let oldURL = AppGroup.imageFileURL(fileName: oldRenderFileName)
+                try? FileManager.default.removeItem(at: oldURL)
 
                 await MainActor.run {
                     var updated = existingVariant
@@ -901,55 +899,65 @@ extension ContentView {
         let newCrop = cropRect.normalised()
         let straighten = SmartPhotoManualCropRenderer.normalisedStraightenDegrees(straightenDegrees)
 
-        let store = SmartPhotoShuffleManifestStore(manifestFileName: manifestFileName)
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else {
+            saveStatusMessage = "Shuffle manifest file name is missing."
+            return
+        }
 
-        guard var manifest = store.load() else {
+        guard let loaded = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
             saveStatusMessage = "Shuffle manifest could not be loaded."
             return
         }
 
-        guard var entry = manifest.entries.first(where: { $0.id == entryID }) else {
+        guard let idx = loaded.entries.firstIndex(where: { $0.id == entryID }) else {
             saveStatusMessage = "Shuffle entry not found."
             return
         }
+
+        let entry = loaded.entries[idx]
 
         guard entry.isPrepared else {
             saveStatusMessage = "This photo has not been prepared yet."
             return
         }
 
-        guard let masterFileName = entry.sourceImageFileName else {
+        let masterFileName = (entry.sourceFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !masterFileName.isEmpty else {
             saveStatusMessage = "Source image is missing for this shuffled photo.\nRe-prepare this album shuffle set to enable manual framing."
             return
         }
 
-        guard let masterURL = AppGroup.containerURL?.appendingPathComponent(masterFileName) else {
+        guard let masterData = AppGroup.readImageData(fileName: masterFileName) else {
             saveStatusMessage = "Source image file not found on disk.\nRe-prepare this album shuffle set to enable manual framing."
             return
         }
 
-        let masterData: Data
-        do {
-            masterData = try Data(contentsOf: masterURL)
-        } catch {
-            saveStatusMessage = "Source image file not found on disk.\nRe-prepare this album shuffle set to enable manual framing."
-            return
+        let targets = await MainActor.run { SmartPhotoRenderTargets.forCurrentDevice() }
+
+        let targetPixels: PixelSize
+        switch family {
+        case .small:
+            targetPixels = targets.small
+        case .medium:
+            targetPixels = targets.medium
+        case .large:
+            targetPixels = targets.large
         }
 
         let oldManualFileName: String?
-        let targetPixels: PixelSize
-
         switch family {
         case .small:
-            oldManualFileName = entry.smallManualFileName
-            targetPixels = entry.smallPixelSize
+            oldManualFileName = entry.smallManualFile
         case .medium:
-            oldManualFileName = entry.mediumManualFileName
-            targetPixels = entry.mediumPixelSize
+            oldManualFileName = entry.mediumManualFile
         case .large:
-            oldManualFileName = entry.largeManualFileName
-            targetPixels = entry.largePixelSize
+            oldManualFileName = entry.largeManualFile
         }
+
+        let initialManifest = loaded
 
         Task.detached(priority: .userInitiated) {
             do {
@@ -969,42 +977,37 @@ extension ContentView {
                     quality: 0.92
                 )
 
-                let newRenderFileName = "smartshuffle_\(UUID().uuidString).jpg"
-                guard let renderURL = AppGroup.containerURL?.appendingPathComponent(newRenderFileName) else {
-                    throw SmartPhotoManualTransformError.renderWriteFailed
+                let newRenderFileName = AppGroup.createImageFileName(prefix: "smartshuffle-manual", ext: "jpg")
+                try AppGroup.writeImageData(jpeg, fileName: newRenderFileName)
+
+                if let old = oldManualFileName {
+                    let url = AppGroup.imageFileURL(fileName: old)
+                    try? FileManager.default.removeItem(at: url)
                 }
 
-                try jpeg.write(to: renderURL, options: .atomic)
+                var manifest = initialManifest
+                var updatedEntry = entry
 
-                if let old = oldManualFileName,
-                   let oldURL = AppGroup.containerURL?.appendingPathComponent(old)
-                {
-                    try? FileManager.default.removeItem(at: oldURL)
+                switch family {
+                case .small:
+                    updatedEntry.smallManualFile = newRenderFileName
+                    updatedEntry.smallManualCropRect = newCrop
+                    updatedEntry.smallManualStraightenDegrees = straighten
+                case .medium:
+                    updatedEntry.mediumManualFile = newRenderFileName
+                    updatedEntry.mediumManualCropRect = newCrop
+                    updatedEntry.mediumManualStraightenDegrees = straighten
+                case .large:
+                    updatedEntry.largeManualFile = newRenderFileName
+                    updatedEntry.largeManualCropRect = newCrop
+                    updatedEntry.largeManualStraightenDegrees = straighten
                 }
+
+                manifest.entries[idx] = updatedEntry
+
+                try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
 
                 await MainActor.run {
-                    var updated = entry
-
-                    switch family {
-                    case .small:
-                        updated.smallManualFileName = newRenderFileName
-                        updated.smallManualCropRect = newCrop
-                        updated.smallManualStraightenDegrees = straighten
-                    case .medium:
-                        updated.mediumManualFileName = newRenderFileName
-                        updated.mediumManualCropRect = newCrop
-                        updated.mediumManualStraightenDegrees = straighten
-                    case .large:
-                        updated.largeManualFileName = newRenderFileName
-                        updated.largeManualCropRect = newCrop
-                        updated.largeManualStraightenDegrees = straighten
-                    }
-
-                    if let idx = manifest.entries.firstIndex(where: { $0.id == entryID }) {
-                        manifest.entries[idx] = updated
-                    }
-
-                    store.save(manifest)
                     saveStatusMessage = "Updated \(family.label) framing."
                 }
             } catch {
@@ -1020,9 +1023,13 @@ extension ContentView {
         entryID: String,
         family: EditingFamily
     ) async {
-        let store = SmartPhotoShuffleManifestStore(manifestFileName: manifestFileName)
+        let mf = manifestFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mf.isEmpty else {
+            saveStatusMessage = "Shuffle manifest file name is missing."
+            return
+        }
 
-        guard var manifest = store.load() else {
+        guard var manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else {
             saveStatusMessage = "Shuffle manifest could not be loaded."
             return
         }
@@ -1037,28 +1044,33 @@ extension ContentView {
         let oldManualFileName: String?
         switch family {
         case .small:
-            oldManualFileName = entry.smallManualFileName
-            entry.smallManualFileName = nil
+            oldManualFileName = entry.smallManualFile
+            entry.smallManualFile = nil
             entry.smallManualCropRect = nil
             entry.smallManualStraightenDegrees = nil
         case .medium:
-            oldManualFileName = entry.mediumManualFileName
-            entry.mediumManualFileName = nil
+            oldManualFileName = entry.mediumManualFile
+            entry.mediumManualFile = nil
             entry.mediumManualCropRect = nil
             entry.mediumManualStraightenDegrees = nil
         case .large:
-            oldManualFileName = entry.largeManualFileName
-            entry.largeManualFileName = nil
+            oldManualFileName = entry.largeManualFile
+            entry.largeManualFile = nil
             entry.largeManualCropRect = nil
             entry.largeManualStraightenDegrees = nil
         }
 
         manifest.entries[idx] = entry
-        store.save(manifest)
 
-        if let old = oldManualFileName,
-           let url = AppGroup.containerURL?.appendingPathComponent(old)
-        {
+        do {
+            try SmartPhotoShuffleManifestStore.save(manifest, fileName: mf)
+        } catch {
+            saveStatusMessage = "Could not save the shuffle manifest."
+            return
+        }
+
+        if let old = oldManualFileName {
+            let url = AppGroup.imageFileURL(fileName: old)
             try? FileManager.default.removeItem(at: url)
         }
 
