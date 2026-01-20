@@ -12,8 +12,20 @@ import SwiftUI
 // MARK: - Monetisation / Pro
 
 enum WidgetWeaverProHiddenUnlockGate {
-    static func isEnabled() -> Bool {
-        true
+    static func initialIsEnabled() -> Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    static func isEnabled(environmentRaw: String) -> Bool {
+        #if DEBUG
+        return true
+        #else
+        return environmentRaw.lowercased() == "sandbox"
+        #endif
     }
 }
 
@@ -36,8 +48,13 @@ final class WidgetWeaverProManager: ObservableObject {
 
     private var transactionUpdatesTask: Task<Void, Never>?
 
+    private var hiddenUnlockTapCount: Int = 0
+    private var hiddenUnlockLastTapAt: Date = .distantPast
+    private let hiddenUnlockRequiredTapCount: Int = 7
+    private let hiddenUnlockTimeoutSeconds: TimeInterval = 2.0
+
     init() {
-        isHiddenUnlockEnabled = WidgetWeaverProHiddenUnlockGate.isEnabled()
+        isHiddenUnlockEnabled = WidgetWeaverProHiddenUnlockGate.initialIsEnabled()
         startTransactionUpdatesListenerIfNeeded()
         Task { await refreshEntitlementFromStoreKit() }
         Task { await refreshStoreEnvironment() }
@@ -152,6 +169,22 @@ final class WidgetWeaverProManager: ObservableObject {
         }
     }
 
+    func registerHiddenUnlockTap() {
+        guard isHiddenUnlockEnabled, !isProUnlocked else { return }
+
+        let now = Date()
+        if now.timeIntervalSince(hiddenUnlockLastTapAt) > hiddenUnlockTimeoutSeconds {
+            hiddenUnlockTapCount = 0
+        }
+        hiddenUnlockLastTapAt = now
+        hiddenUnlockTapCount += 1
+
+        if hiddenUnlockTapCount >= hiddenUnlockRequiredTapCount {
+            hiddenUnlockTapCount = 0
+            unlockProFromHiddenMechanism()
+        }
+    }
+
     func unlockProFromHiddenMechanism() {
         guard isHiddenUnlockEnabled else {
             statusMessage = "Hidden unlock is unavailable in this build."
@@ -194,53 +227,19 @@ final class WidgetWeaverProManager: ObservableObject {
         do {
             let verificationResult = try await AppTransaction.shared
 
+            let envRaw: String
             switch verificationResult {
             case .verified(let appTransaction):
-                storeEnvironmentLabel = appTransaction.environment.rawValue
+                envRaw = appTransaction.environment.rawValue
             case .unverified(let appTransaction, _):
-                storeEnvironmentLabel = appTransaction.environment.rawValue
+                envRaw = appTransaction.environment.rawValue
             }
+
+            storeEnvironmentLabel = envRaw
+            isHiddenUnlockEnabled = WidgetWeaverProHiddenUnlockGate.isEnabled(environmentRaw: envRaw)
         } catch {
             storeEnvironmentLabel = "Unknown"
-        }
-
-        isHiddenUnlockEnabled = WidgetWeaverProHiddenUnlockGate.isEnabled()
-    }
-}
-
-private struct WidgetWeaverStatusBarTapUnlockOverlay: View {
-    @ObservedObject var manager: WidgetWeaverProManager
-
-    @State private var tapCount: Int = 0
-    @State private var lastTapAt: Date = .distantPast
-
-    private let requiredTapCount: Int = 7
-    private let timeoutSeconds: TimeInterval = 2.0
-
-    var body: some View {
-        GeometryReader { proxy in
-            Color.clear
-                .frame(height: max(0, proxy.safeAreaInsets.top))
-                .frame(maxWidth: .infinity, alignment: .top)
-                .contentShape(Rectangle())
-                .onTapGesture { handleTap() }
-                .allowsHitTesting(manager.isHiddenUnlockEnabled && !manager.isProUnlocked)
-                .accessibilityHidden(true)
-        }
-        .ignoresSafeArea(edges: .top)
-    }
-
-    private func handleTap() {
-        let now = Date()
-        if now.timeIntervalSince(lastTapAt) > timeoutSeconds {
-            tapCount = 0
-        }
-        lastTapAt = now
-        tapCount += 1
-
-        if tapCount >= requiredTapCount {
-            tapCount = 0
-            manager.unlockProFromHiddenMechanism()
+            isHiddenUnlockEnabled = WidgetWeaverProHiddenUnlockGate.initialIsEnabled()
         }
     }
 }
@@ -332,6 +331,8 @@ struct WidgetWeaverProView: View {
                 Section {
                     LabeledContent("Pro", value: manager.isProUnlocked ? "Unlocked" : "Locked")
                     LabeledContent("Store environment", value: manager.storeEnvironmentLabel)
+                        .contentShape(Rectangle())
+                        .onTapGesture { manager.registerHiddenUnlockTap() }
 
                     if let tx = manager.latestTransaction {
                         Text("Latest transaction: \(tx.id)")
@@ -354,9 +355,6 @@ struct WidgetWeaverProView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }
                 }
-            }
-            .overlay(alignment: .top) {
-                WidgetWeaverStatusBarTapUnlockOverlay(manager: manager)
             }
             .task {
                 await manager.refreshEntitlementFromStoreKit()
