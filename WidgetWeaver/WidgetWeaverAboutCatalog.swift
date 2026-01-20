@@ -262,7 +262,7 @@ extension WidgetWeaverAboutView {
     ///
     /// Featured templates already appear above as large cards, so they’re excluded here to avoid duplicates.
     static let starterTemplates: [WidgetWeaverAboutTemplate] = deduplicatedTemplates(
-        starterTemplatesAll.filter { !featuredTemplateIDs.contains($0.id) }
+        starterTemplatesAll.filter { !featuredTemplateIDs.contains($0.id) && $0.id != "starter-reading" }
     )
 
     static let proTemplates: [WidgetWeaverAboutTemplate] = [
@@ -293,7 +293,7 @@ extension WidgetWeaverAboutView {
         "Create a quote widget with a warm gradient background and a subtle icon.",
         "Design a checklist widget with an accent bar and a tidy stacked layout.",
         "Build a countdown widget in a bold hero style with an accent glow.",
-        "Make a reading progress widget that feels calm and minimal, using indigo.",
+        "Make a calm progress widget that feels minimal, using an indigo accent.",
     ]
 
     static let patchIdeas: [String] = [

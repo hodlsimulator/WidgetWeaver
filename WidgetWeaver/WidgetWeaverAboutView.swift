@@ -62,14 +62,14 @@ struct WidgetWeaverAboutView: View {
                 featuredCalendarSection
                 featuredStepsSection
 
+                noiseMachineSection
+
                 starterTemplatesSection
                 proTemplatesSection
 
                 if mode == .more {
                     capabilitiesSection
                     interactiveButtonsSection
-
-                    noiseMachineSection
 
                     variablesSection
                     aiSection
