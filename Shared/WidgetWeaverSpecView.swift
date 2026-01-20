@@ -224,6 +224,7 @@ public struct WidgetWeaverSpecView: View {
                 layout: layout,
                 style: style
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -472,7 +473,11 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
         // Reuse an existing style knob (no schema change).
         // When the background overlay token is Subtle Material, treat the poster caption overlay as a
         // frosted glass strip.
-        return style.backgroundOverlay == .subtleMaterial
+        guard style.backgroundOverlay == .subtleMaterial else { return false }
+
+        // Be conservative: only treat this as an opt-in when the full-screen overlay is effectively off.
+        // This keeps existing posters stable when Subtle Material is used as a global overlay.
+        return style.backgroundOverlayOpacity <= 0.0001
     }
 
     private var wantsTopAnchoredCaption: Bool {
@@ -536,15 +541,10 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
     }
 
     private func overlayBody(spec: WidgetSpec) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if wantsTopAnchoredCaption {
-                captionPanel(spec: spec)
-                Spacer(minLength: 0)
-            } else {
-                Spacer(minLength: 0)
-                captionPanel(spec: spec)
-            }
+        ZStack(alignment: wantsTopAnchoredCaption ? .topLeading : .bottomLeading) {
+            captionPanel(spec: spec)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func captionPanel(spec: WidgetSpec) -> some View {
