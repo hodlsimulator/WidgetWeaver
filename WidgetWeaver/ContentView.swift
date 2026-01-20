@@ -709,7 +709,7 @@ struct ContentView: View {
     private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
         selectedSpecID = spec.id
         applySpec(spec)
-        showDeleteConfirmation = true
+        deleteCurrentDesign()
     }
 
     private var editorRoot: some View {
