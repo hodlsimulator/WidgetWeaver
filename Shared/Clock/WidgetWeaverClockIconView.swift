@@ -114,7 +114,7 @@ struct WidgetWeaverClockIconView: View {
             let numeralsSize = WWClock.pixel(R * 0.32, scale: displayScale)
 
             let hourLength = WWClock.pixel(
-                WWClock.clamp(R * 0.50, min: R * 0.46, max: R * 0.54),
+                WWClock.clamp(R * 0.52, min: R * 0.48, max: R * 0.56),
                 scale: displayScale
             )
             let hourWidth = WWClock.pixel(

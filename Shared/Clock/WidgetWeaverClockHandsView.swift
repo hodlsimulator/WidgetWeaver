@@ -35,13 +35,26 @@ struct WidgetWeaverClockHandShadowsView: View {
         let hourLiftY = CGFloat(-cos(hourTheta)) * hourWedgeLift
         let hourWedgeOffsetY = (-hourWedgeLength / 2.0) + hourLiftY
 
-        let hourShadowBlur = max(px, hourWidth * 0.055)
-        let hourShadowOffset = max(px, hourWidth * 0.055)
+        let hourShadowBlur = max(px, hourWidth * 0.065)
+        let hourShadowOffset = max(px, hourWidth * 0.060)
+
+        let stemWidth = max(px, hourWidth * 0.40)
+        let stemCorner = stemWidth * 0.42
 
         let minuteShadowBlur = max(px, minuteWidth * 0.050)
         let minuteShadowOffset = max(px, minuteWidth * 0.050)
 
         ZStack {
+            // Hour stem shadow (helps separate the stem from the dial and hub).
+            RoundedRectangle(cornerRadius: stemCorner, style: .continuous)
+                .fill(palette.handShadow.opacity(0.42))
+                .frame(width: stemWidth, height: hourStemLength)
+                .rotationEffect(hourAngle, anchor: .bottom)
+                .offset(y: -hourStemLength / 2.0)
+                .offset(x: hourShadowOffset, y: hourShadowOffset)
+                .blur(radius: hourShadowBlur)
+
+            // Hour wedge shadow.
             WidgetWeaverClockHourWedgeShape()
                 .fill(palette.handShadow.opacity(0.55))
                 .frame(width: hourWidth, height: hourWedgeLength)
@@ -88,7 +101,7 @@ struct WidgetWeaverClockHandsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Hour stem + lifted wedge (keep the original silhouette, but expose a dark stem).
+        // Hour stem + lifted wedge (keep the original silhouette, but expose a brighter stem).
         let hourStemLength = hourLength * 0.20
         let hourWedgeLift = max(0, hourStemLength - (px * 2.0))
         let hourWedgeLength = max(1, hourLength - hourWedgeLift)
@@ -98,7 +111,7 @@ struct WidgetWeaverClockHandsView: View {
         let hourLiftY = CGFloat(-cos(hourTheta)) * hourWedgeLift
         let hourWedgeOffsetY = (-hourWedgeLength / 2.0) + hourLiftY
 
-        let stemWidth = max(px, hourWidth * 0.34)
+        let stemWidth = max(px, hourWidth * 0.40)
         let stemCorner = stemWidth * 0.42
 
         // Screen-space metal field (consistent light direction).
@@ -113,21 +126,31 @@ struct WidgetWeaverClockHandsView: View {
         )
         .frame(width: dialDiameter, height: dialDiameter)
 
+        let stemMetal = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.handLight.opacity(0.92), location: 0.00),
+                .init(color: palette.handMid.opacity(0.92), location: 0.52),
+                .init(color: palette.handDark.opacity(0.96), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
         ZStack {
-            // MARK: Hour hand stem (dark, understated)
+            // MARK: Hour hand stem (more visible, with centre ridge highlight)
             ZStack {
                 let stemShape = RoundedRectangle(cornerRadius: stemCorner, style: .continuous)
 
                 stemShape
-                    .fill(palette.separatorRing.opacity(0.98))
+                    .fill(stemMetal)
 
                 stemShape
                     .fill(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.10), location: 0.00),
-                                .init(color: Color.clear, location: 0.55),
-                                .init(color: Color.black.opacity(0.26), location: 1.00)
+                                .init(color: Color.white.opacity(0.12), location: 0.00),
+                                .init(color: Color.clear, location: 0.52),
+                                .init(color: Color.black.opacity(0.22), location: 1.00)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -135,18 +158,45 @@ struct WidgetWeaverClockHandsView: View {
                     )
                     .blendMode(.overlay)
 
-                stemShape
-                    .strokeBorder(Color.black.opacity(0.42), lineWidth: max(px, stemWidth * 0.13))
+                // Thin ridge highlight line (slightly biased to the lit side).
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: Color.white.opacity(0.55), location: 0.00),
+                                .init(color: Color.white.opacity(0.22), location: 0.32),
+                                .init(color: Color.white.opacity(0.00), location: 1.00)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: max(px, stemWidth * 0.18), height: hourStemLength)
+                    .offset(x: -stemWidth * 0.06)
+                    .blur(radius: max(px, stemWidth * 0.06))
+                    .blendMode(.screen)
+                    .mask(stemShape)
+
+                // Subtle opposing plane darkening.
+                Rectangle()
+                    .fill(Color.black.opacity(0.16))
+                    .frame(width: max(px, stemWidth * 0.16), height: hourStemLength)
+                    .offset(x: stemWidth * 0.12)
+                    .blendMode(.multiply)
+                    .mask(stemShape)
 
                 stemShape
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: max(px, stemWidth * 0.10))
+                    .strokeBorder(Color.black.opacity(0.34), lineWidth: max(px, stemWidth * 0.12))
+
+                stemShape
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: max(px, stemWidth * 0.10))
                     .blendMode(.screen)
             }
             .frame(width: stemWidth, height: hourStemLength)
             .rotationEffect(hourAngle, anchor: .bottom)
             .offset(y: -hourStemLength / 2.0)
 
-            // MARK: Hour hand (original wedge, subtly rounded corners)
+            // MARK: Hour hand (original wedge, slightly more rounded corners + centre ridge)
             metalField
                 .mask(
                     WidgetWeaverClockHourWedgeShape()
@@ -155,12 +205,23 @@ struct WidgetWeaverClockHandsView: View {
                         .offset(x: hourLiftX, y: hourWedgeOffsetY)
                 )
                 .overlay(
-                    // Bright ridge highlight (tight).
+                    // Specular ridge line (narrow highlight).
                     Rectangle()
-                        .fill(Color.white.opacity(0.30))
-                        .frame(width: max(px, hourWidth * 0.16), height: hourWedgeLength)
-                        .offset(x: -hourWidth * 0.12 + hourLiftX, y: hourWedgeOffsetY)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: Color.white.opacity(0.62), location: 0.00),
+                                    .init(color: Color.white.opacity(0.28), location: 0.30),
+                                    .init(color: Color.white.opacity(0.00), location: 1.00)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: max(px, hourWidth * 0.085), height: hourWedgeLength)
+                        .offset(x: -hourWidth * 0.06 + hourLiftX, y: hourWedgeOffsetY)
                         .rotationEffect(hourAngle)
+                        .blur(radius: max(px, hourWidth * 0.020))
                         .blendMode(.screen)
                         .mask(
                             WidgetWeaverClockHourWedgeShape()
@@ -173,8 +234,8 @@ struct WidgetWeaverClockHandsView: View {
                     // Dark underside plane (tight).
                     Rectangle()
                         .fill(Color.black.opacity(0.22))
-                        .frame(width: max(px, hourWidth * 0.22), height: hourWedgeLength)
-                        .offset(x: hourWidth * 0.16 + hourLiftX, y: hourWedgeOffsetY)
+                        .frame(width: max(px, hourWidth * 0.24), height: hourWedgeLength)
+                        .offset(x: hourWidth * 0.18 + hourLiftX, y: hourWedgeOffsetY)
                         .rotationEffect(hourAngle)
                         .blendMode(.multiply)
                         .mask(
@@ -357,8 +418,8 @@ struct WidgetWeaverClockHourWedgeShape: Shape {
         let b = CGPoint(x: rect.midX, y: rect.minY)
         let c = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
 
-        // Subtle rounding only.
-        let cornerRadius = max(1, min(min(w, h) * 0.055, w * 0.09))
+        // Slightly more rounding to match the icon mock.
+        let cornerRadius = max(1, min(min(w, h) * 0.075, w * 0.11))
 
         func length(_ v: CGPoint) -> CGFloat {
             sqrt(v.x * v.x + v.y * v.y)
