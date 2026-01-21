@@ -21,12 +21,36 @@ struct WidgetWeaverClockHandShadowsView: View {
 
     let hourLength: CGFloat
     let hourWidth: CGFloat
-    let hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic
+    let hourHandStyle: WidgetWeaverClockHourHandStyle
 
     let minuteLength: CGFloat
     let minuteWidth: CGFloat
 
     let scale: CGFloat
+
+    init(
+        palette: WidgetWeaverClockPalette,
+        dialDiameter: CGFloat,
+        hourAngle: Angle,
+        minuteAngle: Angle,
+        hourLength: CGFloat,
+        hourWidth: CGFloat,
+        hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic,
+        minuteLength: CGFloat,
+        minuteWidth: CGFloat,
+        scale: CGFloat
+    ) {
+        self.palette = palette
+        self.dialDiameter = dialDiameter
+        self.hourAngle = hourAngle
+        self.minuteAngle = minuteAngle
+        self.hourLength = hourLength
+        self.hourWidth = hourWidth
+        self.hourHandStyle = hourHandStyle
+        self.minuteLength = minuteLength
+        self.minuteWidth = minuteWidth
+        self.scale = scale
+    }
 
     var body: some View {
         let px = WWClock.px(scale: scale)
@@ -104,7 +128,7 @@ struct WidgetWeaverClockHandsView: View {
 
     let hourLength: CGFloat
     let hourWidth: CGFloat
-    let hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic
+    let hourHandStyle: WidgetWeaverClockHourHandStyle
 
     let minuteLength: CGFloat
     let minuteWidth: CGFloat
@@ -114,6 +138,38 @@ struct WidgetWeaverClockHandsView: View {
     let secondTipSide: CGFloat
 
     let scale: CGFloat
+
+    init(
+        palette: WidgetWeaverClockPalette,
+        dialDiameter: CGFloat,
+        hourAngle: Angle,
+        minuteAngle: Angle,
+        secondAngle: Angle,
+        hourLength: CGFloat,
+        hourWidth: CGFloat,
+        hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic,
+        minuteLength: CGFloat,
+        minuteWidth: CGFloat,
+        secondLength: CGFloat,
+        secondWidth: CGFloat,
+        secondTipSide: CGFloat,
+        scale: CGFloat
+    ) {
+        self.palette = palette
+        self.dialDiameter = dialDiameter
+        self.hourAngle = hourAngle
+        self.minuteAngle = minuteAngle
+        self.secondAngle = secondAngle
+        self.hourLength = hourLength
+        self.hourWidth = hourWidth
+        self.hourHandStyle = hourHandStyle
+        self.minuteLength = minuteLength
+        self.minuteWidth = minuteWidth
+        self.secondLength = secondLength
+        self.secondWidth = secondWidth
+        self.secondTipSide = secondTipSide
+        self.scale = scale
+    }
 
     var body: some View {
         let px = WWClock.px(scale: scale)
