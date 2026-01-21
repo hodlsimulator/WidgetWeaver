@@ -56,7 +56,10 @@ enum SmartPhotoCropRotationPreview {
     }
 
     static func rotateRectCW(_ rect: NormalisedRect) -> NormalisedRect {
-        let center = CGPoint(x: rect.x + (rect.width / 2.0), y: rect.y + (rect.height / 2.0))
+        let center = CGPoint(
+            x: CGFloat(rect.x + (rect.width / 2.0)),
+            y: CGFloat(rect.y + (rect.height / 2.0))
+        )
         let newCenter = rotatePointCW(center)
 
         let proposed = NormalisedRect(
@@ -70,7 +73,10 @@ enum SmartPhotoCropRotationPreview {
     }
 
     static func rotateRectCCW(_ rect: NormalisedRect) -> NormalisedRect {
-        let center = CGPoint(x: rect.x + (rect.width / 2.0), y: rect.y + (rect.height / 2.0))
+        let center = CGPoint(
+            x: CGFloat(rect.x + (rect.width / 2.0)),
+            y: CGFloat(rect.y + (rect.height / 2.0))
+        )
         let newCenter = rotatePointCCW(center)
 
         let proposed = NormalisedRect(
@@ -90,7 +96,10 @@ enum SmartPhotoCropRotationPreview {
         let w = sqrt(area * a)
         let h = w / a
 
-        let center = CGPoint(x: rect.x + (rect.width / 2.0), y: rect.y + (rect.height / 2.0))
+        let center = CGPoint(
+            x: CGFloat(rect.x + (rect.width / 2.0)),
+            y: CGFloat(rect.y + (rect.height / 2.0))
+        )
         let newCenter = rotatePointCW(center)
 
         let proposed = NormalisedRect(
@@ -110,7 +119,10 @@ enum SmartPhotoCropRotationPreview {
         let w = sqrt(area * a)
         let h = w / a
 
-        let center = CGPoint(x: rect.x + (rect.width / 2.0), y: rect.y + (rect.height / 2.0))
+        let center = CGPoint(
+            x: CGFloat(rect.x + (rect.width / 2.0)),
+            y: CGFloat(rect.y + (rect.height / 2.0))
+        )
         let newCenter = rotatePointCCW(center)
 
         let proposed = NormalisedRect(
