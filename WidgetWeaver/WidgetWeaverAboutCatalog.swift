@@ -229,9 +229,9 @@ extension WidgetWeaverAboutView {
         WidgetWeaverAboutTemplate(
             id: "starter-activity",
             title: "Activity",
-            subtitle: "Steps + more (Health)",
-            description: "A multi-metric Activity widget powered by built-in __activity_* keys.\nEnable Activity access in the app first.",
-            tags: ["Activity", "Health", "Snapshot"],
+            subtitle: "Today + distance",
+            description: "An Activity widget using built-in __activity_* keys.\nEnable Health access in the app first.",
+            tags: ["Activity", "Health", "Calories"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specActivity()
@@ -239,9 +239,9 @@ extension WidgetWeaverAboutView {
         WidgetWeaverAboutTemplate(
             id: "starter-weather",
             title: "Weather",
-            subtitle: "Rain-first nowcast",
-            description: "Rain-first Weather template with a blue accent, glass panels, and an hourly strip.",
-            tags: ["Rain", "Nowcast", "Hourly"],
+            subtitle: "Forecast",
+            description: "A native Weather widget that reads from the app’s cached forecast.\nEnable Location access in the app first.",
+            tags: ["Weather", "Forecast", "Native"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specWeather()
@@ -249,9 +249,9 @@ extension WidgetWeaverAboutView {
         WidgetWeaverAboutTemplate(
             id: "starter-calendar-nextup",
             title: "Next Up",
-            subtitle: "Calendar events",
-            description: "Upcoming events from Apple Calendar (on-device).\nRequires Calendar permission.",
-            tags: ["Next Up", "Events", "On-device"],
+            subtitle: "Calendar",
+            description: "A native Calendar widget for upcoming events.\nEnable Calendar access in the app first.",
+            tags: ["Calendar", "Upcoming", "Native"],
             requiresPro: false,
             triggersCalendarPermission: true,
             spec: specNextUpCalendar()
@@ -420,8 +420,8 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundGlowEnabled = false
 
         spec.style.nameTextStyle = .caption2
-        spec.style.primaryTextStyle = .title2
-        spec.style.secondaryTextStyle = .subheadline
+        spec.style.primaryTextStyle = .title
+        spec.style.secondaryTextStyle = .caption
 
         return spec.normalised()
     }
@@ -429,8 +429,8 @@ extension WidgetWeaverAboutView {
     static func specPhotoQuote() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Photo Quote"
-        spec.primaryText = "Make it simple."
-        spec.secondaryText = "Do the next right thing."
+        spec.primaryText = "Stay curious."
+        spec.secondaryText = "Tap to edit"
         spec.symbol = nil
 
         spec.layout.template = .poster
@@ -440,16 +440,16 @@ extension WidgetWeaverAboutView {
         spec.layout.primaryLineLimitSmall = 2
         spec.layout.primaryLineLimit = 3
         spec.layout.secondaryLineLimitSmall = 1
-        spec.layout.secondaryLineLimit = 2
+        spec.layout.secondaryLineLimit = 1
 
-        spec.style.accent = .purple
+        spec.style.accent = .yellow
         spec.style.background = .subtleMaterial
-        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlay = .subtleMaterial
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
 
         spec.style.nameTextStyle = .caption2
-        spec.style.primaryTextStyle = .title3
+        spec.style.primaryTextStyle = .title2
         spec.style.secondaryTextStyle = .caption
 
         return spec.normalised()
@@ -458,17 +458,17 @@ extension WidgetWeaverAboutView {
     static func specFocus() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Focus"
-        spec.primaryText = "Today’s focus"
-        spec.secondaryText = "One thing that matters."
+        spec.primaryText = "One thing"
+        spec.secondaryText = "Tap to edit"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
         spec.style.accent = .teal
-        spec.style.background = .radialGlow
+        spec.style.background = .plain
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.12
         spec.style.backgroundGlowEnabled = true
         spec.symbol = SymbolSpec(
-            name: "scope",
+            name: "sparkles",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -481,17 +481,17 @@ extension WidgetWeaverAboutView {
     static func specCountdown() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Countdown"
-        spec.primaryText = "7 days"
-        spec.secondaryText = "Until the big day."
+        spec.primaryText = "In {{__days_until|7}} days"
+        spec.secondaryText = "Tap to edit"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
-        spec.style.accent = .purple
+        spec.style.accent = .pink
         spec.style.background = .accentGlow
         spec.style.backgroundOverlay = .sunset
         spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = true
         spec.symbol = SymbolSpec(
-            name: "timer",
+            name: "hourglass",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -504,17 +504,17 @@ extension WidgetWeaverAboutView {
     static func specQuote() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Quote"
-        spec.primaryText = "Make it simple."
-        spec.secondaryText = "Do the next right thing."
+        spec.primaryText = "Do the next right thing."
+        spec.secondaryText = "Tap to edit"
         spec.layout.template = .classic
-        spec.layout.showsAccentBar = false
-        spec.style.accent = .pink
-        spec.style.background = .sunset
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
+        spec.layout.showsAccentBar = true
+        spec.style.accent = .orange
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.12
         spec.style.backgroundGlowEnabled = false
         spec.symbol = SymbolSpec(
-            name: "quote.opening",
+            name: "quote.bubble.fill",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -527,14 +527,14 @@ extension WidgetWeaverAboutView {
     static func specList() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "List"
-        spec.primaryText = "Shopping"
-        spec.secondaryText = "• Milk\n• Eggs\n• Coffee"
+        spec.primaryText = "• Item one\n• Item two\n• Item three"
+        spec.secondaryText = "Tap to edit"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
         spec.style.accent = .green
-        spec.style.background = .sunset
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.22
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = false
         spec.symbol = SymbolSpec(
             name: "checklist",
@@ -550,17 +550,17 @@ extension WidgetWeaverAboutView {
     static func specReading() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Reading"
-        spec.primaryText = "12 / 30 pages"
-        spec.secondaryText = "Tonight: 20 mins"
-        spec.layout.template = .classic
-        spec.layout.showsAccentBar = false
+        spec.primaryText = "Reading"
+        spec.secondaryText = "{{pages_read|0}} / {{pages_goal|10}} pages"
+        spec.layout.template = .hero
+        spec.layout.showsAccentBar = true
         spec.style.accent = .indigo
         spec.style.background = .radialGlow
-        spec.style.backgroundOverlay = .sunset
-        spec.style.backgroundOverlayOpacity = 0.08
+        spec.style.backgroundOverlay = .plain
+        spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = true
         spec.symbol = SymbolSpec(
-            name: "book.closed",
+            name: "book.fill",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -573,11 +573,13 @@ extension WidgetWeaverAboutView {
     static func specSteps() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Steps"
-        spec.primaryText = "{{__steps_today|--|number:0}}"
-        spec.secondaryText = "Goal {{__steps_goal_today|--|number:0}} • {{__steps_today_fraction|0|percent:0}}"
+        spec.primaryText = "{{__steps_today|--|number:0}} steps"
+        spec.secondaryText = "{{__steps_goal_percent|--|number:0}}% • {{__steps_distance_km|--}} km\n{{__steps_active_energy_kcal|--|number:0}} kcal"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
-        spec.style.accent = .green
+        spec.layout.secondaryLineLimitSmall = 2
+        spec.layout.secondaryLineLimit = 2
+        spec.style.accent = .blue
         spec.style.background = .radialGlow
         spec.style.backgroundOverlay = .plain
         spec.style.backgroundOverlayOpacity = 0
@@ -596,7 +598,7 @@ extension WidgetWeaverAboutView {
     static func specActivity() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Activity"
-        spec.primaryText = "{{__activity_steps_today|--|number:0}}"
+        spec.primaryText = "{{__activity_active_minutes_today|--|number:0}} min active"
         spec.secondaryText = "{{__activity_distance_km|--}} • {{__activity_flights_today|--|number:0}} flights\n{{__activity_active_energy_kcal|--|number:0}} kcal"
         spec.layout.template = .hero
         spec.layout.showsAccentBar = true
@@ -648,108 +650,6 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundOverlayOpacity = 0
         spec.style.backgroundGlowEnabled = false
         spec.symbol = nil
-        return spec.normalised()
-    }
-
-    static func specRemindersToday() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 1 — Today"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = true
-        spec.style.accent = .blue
-        spec.style.background = .plain
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.16
-        spec.style.backgroundGlowEnabled = false
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .today, presentation: .dense)
-        return spec.normalised()
-    }
-
-    static func specRemindersOverdue() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 2 — Overdue"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = true
-        spec.style.accent = .red
-        spec.style.background = .plain
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.14
-        spec.style.backgroundGlowEnabled = false
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .overdue, presentation: .dense)
-        return spec.normalised()
-    }
-
-    static func specRemindersSoon() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 3 — Soon"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = true
-        spec.style.accent = .orange
-        spec.style.background = .plain
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.14
-        spec.style.backgroundGlowEnabled = false
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .soon, presentation: .dense, soonWindowMinutes: 360)
-        return spec.normalised()
-    }
-
-    static func specRemindersPriority() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 4 — Priority"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = true
-        spec.style.accent = .yellow
-        spec.style.background = .plain
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.12
-        spec.style.backgroundGlowEnabled = false
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .flagged, presentation: .dense)
-        return spec.normalised()
-    }
-
-    static func specRemindersFocus() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 5 — Focus"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = false
-        spec.style.accent = .purple
-        spec.style.background = .radialGlow
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
-        spec.style.backgroundGlowEnabled = true
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .focus, presentation: .focus)
-        return spec.normalised()
-    }
-
-    static func specRemindersLists() -> WidgetSpec {
-        var spec = WidgetSpec.defaultSpec()
-        spec.name = "Reminders 6 — Lists"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .reminders
-        spec.layout.showsAccentBar = true
-        spec.style.accent = .green
-        spec.style.background = .plain
-        spec.style.backgroundOverlay = .radialGlow
-        spec.style.backgroundOverlayOpacity = 0.14
-        spec.style.backgroundGlowEnabled = false
-        spec.symbol = nil
-        spec.remindersConfig = WidgetWeaverRemindersConfig(mode: .list, presentation: .dense)
         return spec.normalised()
     }
 
