@@ -297,8 +297,7 @@ public struct WidgetWeaverSpecView: View {
                 ZStack {
                     WidgetWeaverClockBackgroundView(palette: palette)
 
-                    WidgetWeaverClockFaceView(
-                        face: clockConfig.faceToken,
+                    WidgetWeaverClockIconView(
                         palette: palette,
                         hourAngle: hourAngle,
                         minuteAngle: minuteAngle,
@@ -363,36 +362,27 @@ private struct WidgetWeaverPosterCaptionOverlayView: View {
     let style: StyleSpec
 
     var body: some View {
-        if shouldTick {
-            tickingOverlay
-        } else {
-            overlayBody(spec: staticSpec)
-        }
-    }
-
-    private var shouldTick: Bool {
-        guard !lowGraphicsBudget else { return false }
-        guard templateSpec.usesTimeDependentRendering() else { return false }
-
-        switch context {
-        case .widget:
-            return false
-        case .simulator:
-            return true
-        case .preview:
-            return false
-        }
+        tickingOverlay
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var tickingOverlay: some View {
         switch context {
         case .widget:
-            // WidgetKit can pre-render future timeline entries.
-            // Use the entry date as a lower bound so future entries remain distinct.
+            // WidgetKit: opt in to a lightweight view-level heartbeat in the final rendered view,
+            // but keep pre-rendered snapshots deterministic.
             //
-            // TimelineView(.periodic) is not reliably honoured on the Home Screen.
-            // Instead, use a time-aware ProgressView(timerInterval:) as a lightweight heartbeat.
+            // Approach:
+            // - If WidgetKit is pre-rendering a future timeline entry, treat `entryDate` as the "now"
+            //   and do not tick.
+            // - Otherwise, tick at minute granularity, with `entryDate` as a lower bound so each
+            //   timeline entry remains distinct.
+            //
+            // Implementation detail:
+            // - Use a hidden `ProgressView(timerInterval:)` as the minute heartbeat. This avoids
+            //   triggering body recomputation every second.
+            //
             // This forces SwiftUI to re-evaluate the overlay at minute granularity while leaving
             // the (expensive) poster image background untouched.
             let entryNow = Self.floorToMinute(entryDate)
