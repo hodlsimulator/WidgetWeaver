@@ -55,6 +55,13 @@ enum SmartPhotoCropRotationPreview {
         )
     }
 
+    private static func rotatePoint180(_ point: CGPoint) -> CGPoint {
+        CGPoint(
+            x: CGFloat(clamp01(1.0 - Double(point.x))),
+            y: CGFloat(clamp01(1.0 - Double(point.y)))
+        )
+    }
+
     static func rotateRectCW(_ rect: NormalisedRect) -> NormalisedRect {
         let center = CGPoint(
             x: CGFloat(rect.x + (rect.width / 2.0)),
@@ -84,6 +91,59 @@ enum SmartPhotoCropRotationPreview {
             y: Double(newCenter.y) - (rect.width / 2.0),
             width: rect.height,
             height: rect.width
+        )
+
+        return clampedToUnitRect(proposed)
+    }
+
+    static func remapCropRect(
+        _ rect: NormalisedRect,
+        fromQuarterTurns: Int,
+        toQuarterTurns: Int,
+        targetRectAspect: Double
+    ) -> NormalisedRect {
+        let from = normalisedQuarterTurns(fromQuarterTurns)
+        let to = normalisedQuarterTurns(toQuarterTurns)
+        let delta = (to - from + 4) % 4
+        return remapCropRect(rect, deltaQuarterTurns: delta, targetRectAspect: targetRectAspect)
+    }
+
+    static func remapCropRect(
+        _ rect: NormalisedRect,
+        deltaQuarterTurns: Int,
+        targetRectAspect: Double
+    ) -> NormalisedRect {
+        switch normalisedQuarterTurns(deltaQuarterTurns) {
+        case 1:
+            return remapCropRectCW(rect, targetRectAspect: targetRectAspect)
+        case 2:
+            return remapCropRect180(rect, targetRectAspect: targetRectAspect)
+        case 3:
+            return remapCropRectCCW(rect, targetRectAspect: targetRectAspect)
+        default:
+            return rect
+        }
+    }
+
+    private static func remapCropRect180(_ rect: NormalisedRect, targetRectAspect: Double) -> NormalisedRect {
+        let a = max(0.0001, targetRectAspect)
+        let area = rect.width * rect.height
+
+        var w = sqrt(area * a)
+        w = SmartPhotoCropMath.clampWidth(w, rectAspect: a)
+        let h = w / a
+
+        let center = CGPoint(
+            x: CGFloat(rect.x + (rect.width / 2.0)),
+            y: CGFloat(rect.y + (rect.height / 2.0))
+        )
+        let newCenter = rotatePoint180(center)
+
+        let proposed = NormalisedRect(
+            x: Double(newCenter.x) - (w / 2.0),
+            y: Double(newCenter.y) - (h / 2.0),
+            width: w,
+            height: h
         )
 
         return clampedToUnitRect(proposed)

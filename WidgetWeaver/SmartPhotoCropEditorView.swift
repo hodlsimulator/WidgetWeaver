@@ -217,12 +217,7 @@ struct SmartPhotoCropEditorView: View {
         let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
         let rectAspect = targetAspect / displayAspect
 
-        let delta = (t - oldTurns + 4) % 4
-        let proposed =
-            (delta == 1) ? SmartPhotoCropRotationPreview.remapCropRectCW(oldRect, targetRectAspect: rectAspect)
-            : (delta == 3) ? SmartPhotoCropRotationPreview.remapCropRectCCW(oldRect, targetRectAspect: rectAspect)
-            : oldRect
-
+        let proposed = SmartPhotoCropRotationPreview.remapCropRect(oldRect, fromQuarterTurns: oldTurns, toQuarterTurns: t, targetRectAspect: rectAspect)
         cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
     }
 
