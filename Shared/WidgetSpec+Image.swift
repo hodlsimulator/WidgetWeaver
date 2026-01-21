@@ -94,16 +94,22 @@ public struct SmartPhotoVariantSpec: Codable, Hashable, Sendable {
     /// Nil (or effectively zero) means no straightening.
     public var straightenDegrees: Double?
 
+    /// Optional quarter-turn rotation (0/90/180/270 degrees) applied before straightening + cropping.
+    /// Nil (or effectively zero) means no quarter-turn rotation.
+    public var rotationQuarterTurns: Int?
+
     public init(
         renderFileName: String,
         cropRect: NormalisedRect,
         pixelSize: PixelSize,
-        straightenDegrees: Double? = nil
+        straightenDegrees: Double? = nil,
+        rotationQuarterTurns: Int? = nil
     ) {
         self.renderFileName = renderFileName
         self.cropRect = cropRect
         self.pixelSize = pixelSize
         self.straightenDegrees = straightenDegrees
+        self.rotationQuarterTurns = rotationQuarterTurns
     }
 
     public func normalised() -> SmartPhotoVariantSpec {
@@ -114,11 +120,20 @@ public struct SmartPhotoVariantSpec: Codable, Hashable, Sendable {
             return clamped
         }()
 
+        let normalisedQuarterTurns: Int? = {
+            guard let raw = rotationQuarterTurns else { return nil }
+            let m = raw % 4
+            let t = (m + 4) % 4
+            if t == 0 { return nil }
+            return t
+        }()
+
         return SmartPhotoVariantSpec(
             renderFileName: SmartPhotoSpec.sanitisedFileName(renderFileName),
             cropRect: cropRect.normalised(),
             pixelSize: pixelSize.normalised(),
-            straightenDegrees: normalisedDegrees
+            straightenDegrees: normalisedDegrees,
+            rotationQuarterTurns: normalisedQuarterTurns
         )
     }
 }
