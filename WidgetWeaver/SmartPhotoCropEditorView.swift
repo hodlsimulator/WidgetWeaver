@@ -454,7 +454,7 @@ struct SmartPhotoCropEditorView: View {
                         guard let start = pinchStartRect else { return }
 
                         let scale = max(0.2, min(5.0, Double(value)))
-                        let proposedWidth = start.width / scale
+                        let proposedWidth = start.width * scale
 
                         let centerX = start.x + (start.width / 2.0)
                         let centerY = start.y + (start.height / 2.0)
