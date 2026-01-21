@@ -33,6 +33,7 @@ enum SmartPhotoManualCropRenderer {
         master: UIImage,
         cropRect: NormalisedRect,
         straightenDegrees: Double,
+        rotationQuarterTurns: Int = 0,
         targetPixels: PixelSize
     ) -> UIImage {
         let safeCrop = cropRect.normalised()
@@ -41,11 +42,14 @@ enum SmartPhotoManualCropRenderer {
         let base = normalisedOrientation(master)
         guard let sourceCg = base.cgImage else { return base }
 
+        let t = normalisedQuarterTurns(rotationQuarterTurns)
+        let quarterTurnedCg = (t == 0) ? sourceCg : (rotateCGImageQuarterTurns(sourceCg, quarterTurns: t) ?? sourceCg)
+
         let rotatedCg: CGImage
         if abs(straightenDegrees) < 0.0001 {
-            rotatedCg = sourceCg
+            rotatedCg = quarterTurnedCg
         } else {
-            rotatedCg = rotateCGImageWithinBounds(sourceCg, degrees: straightenDegrees) ?? sourceCg
+            rotatedCg = rotateCGImageWithinBounds(quarterTurnedCg, degrees: straightenDegrees) ?? quarterTurnedCg
         }
 
         let w = rotatedCg.width
@@ -137,6 +141,44 @@ enum SmartPhotoManualCropRenderer {
             ctx.cgContext.translateBy(x: CGFloat(w) / 2.0, y: CGFloat(h) / 2.0)
             ctx.cgContext.rotate(by: radians)
             ctx.cgContext.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+
+            let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+            source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+
+        return img.cgImage
+    }
+
+    private static func normalisedQuarterTurns(_ quarterTurns: Int) -> Int {
+        let t = quarterTurns % 4
+        return (t + 4) % 4
+    }
+
+    private static func rotateCGImageQuarterTurns(_ cgImage: CGImage, quarterTurns: Int) -> CGImage? {
+        let t = normalisedQuarterTurns(quarterTurns)
+        guard t != 0 else { return cgImage }
+
+        let w = cgImage.width
+        let h = cgImage.height
+
+        let targetSize: CGSize = (t % 2 == 0)
+            ? CGSize(width: w, height: h)
+            : CGSize(width: h, height: w)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let img = renderer.image { ctx in
+            ctx.cgContext.interpolationQuality = .high
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: targetSize))
+
+            let c = ctx.cgContext
+            c.translateBy(x: targetSize.width / 2.0, y: targetSize.height / 2.0)
+            c.rotate(by: CGFloat(t) * (.pi / 2.0))
+            c.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
 
             let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
             source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
