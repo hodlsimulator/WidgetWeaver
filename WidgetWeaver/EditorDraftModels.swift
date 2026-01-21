@@ -229,9 +229,8 @@ struct FamilyDraft: Hashable {
             ? trimmedPrimary
             : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
 
-        // Step 5A: Draft carries face, but spec persistence remains unchanged until Step 5C.
         let clockConfig: WidgetWeaverClockDesignConfig? = layout.template == .clockIcon
-            ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw)
+            ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw)
             : nil
 
         return WidgetSpec(

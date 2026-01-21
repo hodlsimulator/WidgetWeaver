@@ -214,6 +214,28 @@ extension ContentView {
             return baseDraft.clockThemeRaw
         }
 
+        func clockFaceRawForSpec() -> String {
+            if matchedSetEnabled {
+                let current = currentFamilyDraft()
+                if current.template == .clockIcon {
+                    return WidgetWeaverClockFaceToken.canonical(from: current.clockFaceRaw).rawValue
+                }
+
+                if matchedDrafts.medium.template == .clockIcon {
+                    return WidgetWeaverClockFaceToken.canonical(from: matchedDrafts.medium.clockFaceRaw).rawValue
+                }
+                if matchedDrafts.small.template == .clockIcon {
+                    return WidgetWeaverClockFaceToken.canonical(from: matchedDrafts.small.clockFaceRaw).rawValue
+                }
+                if matchedDrafts.large.template == .clockIcon {
+                    return WidgetWeaverClockFaceToken.canonical(from: matchedDrafts.large.clockFaceRaw).rawValue
+                }
+
+                return WidgetWeaverClockDesignConfig.defaultFace
+            }
+            return WidgetWeaverClockFaceToken.canonical(from: baseDraft.clockFaceRaw).rawValue
+        }
+
         func overridePrimaryTextForSpecialTemplates(_ spec: inout WidgetSpec, source: FamilyDraft) {
             let trimmedPrimary = source.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -263,7 +285,7 @@ extension ContentView {
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.matchedSet = matched
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
-            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec()) : nil
+            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec(), face: clockFaceRawForSpec()) : nil
             return out.normalised()
 
         } else {
@@ -277,7 +299,7 @@ extension ContentView {
 
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
-            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec()) : nil
+            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec(), face: clockFaceRawForSpec()) : nil
             return out.normalised()
         }
     }
