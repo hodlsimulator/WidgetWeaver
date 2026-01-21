@@ -19,28 +19,43 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
 
     public static let defaultTheme: String = "classic"
 
-    public var theme: String
+    public static let supportedFaces: Set<String> = [
+        WidgetWeaverClockFaceToken.ceramic.rawValue,
+        WidgetWeaverClockFaceToken.icon.rawValue
+    ]
 
-    public init(theme: String = Self.defaultTheme) {
+    public static let defaultFace: String = WidgetWeaverClockFaceToken.ceramic.rawValue
+
+    public var theme: String
+    public var face: String
+
+    public init(theme: String = Self.defaultTheme, face: String = Self.defaultFace) {
         self.theme = theme
+        self.face = face
         self = self.normalised()
     }
 
     public static var `default`: WidgetWeaverClockDesignConfig {
-        WidgetWeaverClockDesignConfig(theme: Self.defaultTheme)
+        WidgetWeaverClockDesignConfig(theme: Self.defaultTheme, face: Self.defaultFace)
     }
 
     public func normalised() -> WidgetWeaverClockDesignConfig {
         var c = self
 
-        let cleaned = c.theme
+        let cleanedTheme = c.theme
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
-        if Self.supportedThemes.contains(cleaned) {
-            c.theme = cleaned
+        if Self.supportedThemes.contains(cleanedTheme) {
+            c.theme = cleanedTheme
         } else {
             c.theme = Self.defaultTheme
+        }
+
+        c.face = WidgetWeaverClockFaceToken.canonical(from: c.face).rawValue
+
+        if !Self.supportedFaces.contains(c.face) {
+            c.face = Self.defaultFace
         }
 
         return c
@@ -48,19 +63,23 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case theme
+        case face
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let theme = (try? c.decode(String.self, forKey: .theme)) ?? Self.defaultTheme
-        self.init(theme: theme)
+        let face = (try? c.decode(String.self, forKey: .face)) ?? Self.defaultFace
+        self.init(theme: theme, face: face)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(theme, forKey: .theme)
+        try c.encode(face, forKey: .face)
     }
 }
+
 
 // MARK: - Clock (Designer) funnel metrics (App Group)
 
