@@ -3,7 +3,7 @@
 //  WidgetWeaver
 //
 //  Created by . . on 1/4/26.
-//ssx
+//
 
 import SwiftUI
 import UIKit
@@ -202,6 +202,7 @@ struct SmartPhotoCropEditorView: View {
     }
 
     private func setRotationQuarterTurns(_ newValue: Int) {
+        let (oldTurns, oldRect) = (rotationQuarterTurns, cropRect)
         let t = SmartPhotoCropRotationPreview.normalisedQuarterTurns(newValue)
         rotationQuarterTurns = t
         guard let masterImage else {
@@ -215,7 +216,14 @@ struct SmartPhotoCropEditorView: View {
         let displayAspect = SmartPhotoCropMath.safeAspect(width: displayPixels.width, height: displayPixels.height)
         let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
         let rectAspect = targetAspect / displayAspect
-        cropRect = SmartPhotoCropMath.clampRect(cropRect, rectAspect: rectAspect)
+
+        let delta = (t - oldTurns + 4) % 4
+        let proposed =
+            (delta == 1) ? SmartPhotoCropRotationPreview.remapCropRectCW(oldRect, targetRectAspect: rectAspect)
+            : (delta == 3) ? SmartPhotoCropRotationPreview.remapCropRectCCW(oldRect, targetRectAspect: rectAspect)
+            : oldRect
+
+        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
     }
 
     private func applyAndDismissIfPossible() {
