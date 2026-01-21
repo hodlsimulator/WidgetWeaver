@@ -93,7 +93,8 @@ enum SmartPhotoCropRotationPreview {
         let a = max(0.0001, targetRectAspect)
         let area = rect.width * rect.height
 
-        let w = sqrt(area * a)
+        var w = sqrt(area * a)
+        w = SmartPhotoCropMath.clampWidth(w, rectAspect: a)
         let h = w / a
 
         let center = CGPoint(
@@ -116,7 +117,8 @@ enum SmartPhotoCropRotationPreview {
         let a = max(0.0001, targetRectAspect)
         let area = rect.width * rect.height
 
-        let w = sqrt(area * a)
+        var w = sqrt(area * a)
+        w = SmartPhotoCropMath.clampWidth(w, rectAspect: a)
         let h = w / a
 
         let center = CGPoint(
