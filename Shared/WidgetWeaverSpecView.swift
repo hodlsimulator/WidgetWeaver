@@ -247,9 +247,8 @@ public struct WidgetWeaverSpecView: View {
     }
 
     private func clockIconTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
-        let theme = (spec.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let clockConfig = (spec.clockConfig ?? WidgetWeaverClockDesignConfig.default).normalised()
+        let theme = clockConfig.theme
 
         let scheme: WidgetWeaverClockColourScheme = {
             switch theme {
@@ -298,7 +297,8 @@ public struct WidgetWeaverSpecView: View {
                 ZStack {
                     WidgetWeaverClockBackgroundView(palette: palette)
 
-                    WidgetWeaverClockIconView(
+                    WidgetWeaverClockFaceView(
+                        face: clockConfig.faceToken,
                         palette: palette,
                         hourAngle: hourAngle,
                         minuteAngle: minuteAngle,
