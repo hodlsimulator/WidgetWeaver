@@ -10,6 +10,7 @@ import SwiftUI
 import WidgetKit
 
 struct WidgetWeaverClockWidgetLiveView: View {
+    let face: WidgetWeaverClockFaceToken? = nil
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
@@ -32,6 +33,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             WWClockRenderBody(
+                face: face,
                 palette: palette,
                 entryDate: entryDate,
                 tickMode: tickMode,
@@ -56,6 +58,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 // MARK: - Render body
 
 fileprivate struct WWClockRenderBody: View {
+    let face: WidgetWeaverClockFaceToken?
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
@@ -191,18 +194,34 @@ fileprivate struct WWClockRenderBody: View {
                     .accessibilityHidden(true)
             }
 
-            WidgetWeaverClockIconView(
-                palette: palette,
-                hourAngle: hourAngle,
-                minuteAngle: minuteAngle,
-                secondAngle: .degrees(0),
-                showsSecondHand: false,
-                showsMinuteHand: !showsMinuteHandGlyph,
-                showsHandShadows: false,
-                showsGlows: false,
-                showsCentreHub: false,
-                handsOpacity: handsOpacity
-            )
+            if let face = face {
+                WidgetWeaverClockFaceView(
+                    face: face,
+                    palette: palette,
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: .degrees(0),
+                    showsSecondHand: false,
+                    showsMinuteHand: !showsMinuteHandGlyph,
+                    showsHandShadows: false,
+                    showsGlows: false,
+                    showsCentreHub: false,
+                    handsOpacity: handsOpacity
+                )
+            } else {
+                WidgetWeaverClockIconView(
+                    palette: palette,
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: .degrees(0),
+                    showsSecondHand: false,
+                    showsMinuteHand: !showsMinuteHandGlyph,
+                    showsHandShadows: false,
+                    showsGlows: false,
+                    showsCentreHub: false,
+                    handsOpacity: handsOpacity
+                )
+            }
             .transition(.identity)
             .transaction { transaction in
                 transaction.animation = nil

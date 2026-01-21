@@ -408,17 +408,20 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
                 clockUnsupportedSize
             } else {
                 let scheme = Self.scheme(for: spec)
+                let face = (spec.clockConfig ?? WidgetWeaverClockDesignConfig.default).faceToken
                 let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
 
                 Group {
                     if isLowBudget {
                         WWMainClockStaticFace(
+                            face: face,
                             palette: palette,
                             date: entryDate,
                             showsSecondsHand: true
                         )
                     } else {
                         WidgetWeaverClockWidgetLiveView(
+                            face: face,
                             palette: palette,
                             entryDate: entryDate,
                             tickMode: .secondsSweep,
@@ -469,6 +472,7 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
 }
 
 private struct WWMainClockStaticFace: View {
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let date: Date
     let showsSecondsHand: Bool
@@ -476,7 +480,8 @@ private struct WWMainClockStaticFace: View {
     var body: some View {
         let angles = WWMainClockAngles(date: date)
 
-        WidgetWeaverClockIconView(
+        WidgetWeaverClockFaceView(
+            face: face,
             palette: palette,
             hourAngle: angles.hour,
             minuteAngle: angles.minute,
