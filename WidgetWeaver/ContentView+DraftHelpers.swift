@@ -67,6 +67,10 @@ extension ContentView {
             v.imageSmartPhoto = nil
         }
 
+        if v.template == .clockIcon {
+            v.clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: v.clockFaceRaw).rawValue
+        }
+
         if matchedSetEnabled {
             matchedDrafts[editingFamily] = v
 

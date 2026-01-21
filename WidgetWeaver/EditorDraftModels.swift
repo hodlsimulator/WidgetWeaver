@@ -126,6 +126,7 @@ struct FamilyDraft: Hashable {
 
     // Clock
     var clockThemeRaw: String
+    var clockFaceRaw: String
 
     static var defaultDraft: FamilyDraft { FamilyDraft(from: WidgetSpec.defaultSpec()) }
 
@@ -177,8 +178,10 @@ struct FamilyDraft: Hashable {
 
         if s.layout.template == .clockIcon {
             self.clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
+            self.clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: s.clockConfig?.face).rawValue
         } else {
             self.clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
+            self.clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
         }
     }
 
@@ -226,6 +229,7 @@ struct FamilyDraft: Hashable {
             ? trimmedPrimary
             : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
 
+        // Step 5A: Draft carries face, but spec persistence remains unchanged until Step 5C.
         let clockConfig: WidgetWeaverClockDesignConfig? = layout.template == .clockIcon
             ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw)
             : nil
@@ -338,8 +342,10 @@ struct FamilyDraft: Hashable {
 
         if s.layout.template == .clockIcon {
             clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
+            clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: s.clockConfig?.face).rawValue
         } else {
             clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
+            clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
         }
     }
 }
