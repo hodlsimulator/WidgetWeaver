@@ -76,6 +76,7 @@ extension ContentView {
 
             if v.template == .clockIcon {
                 propagateClockThemeToAllClockDrafts(rawTheme: v.clockThemeRaw)
+                propagateClockFaceToAllClockDrafts(rawFace: v.clockFaceRaw)
             }
         } else {
             baseDraft = v
@@ -97,6 +98,20 @@ extension ContentView {
         }
         if matchedDrafts.large.template == .clockIcon {
             matchedDrafts.large.clockThemeRaw = canonical
+        }
+    }
+
+    private func propagateClockFaceToAllClockDrafts(rawFace: String) {
+        let canonical = WidgetWeaverClockFaceToken.canonical(from: rawFace).rawValue
+
+        if matchedDrafts.small.template == .clockIcon {
+            matchedDrafts.small.clockFaceRaw = canonical
+        }
+        if matchedDrafts.medium.template == .clockIcon {
+            matchedDrafts.medium.clockFaceRaw = canonical
+        }
+        if matchedDrafts.large.template == .clockIcon {
+            matchedDrafts.large.clockFaceRaw = canonical
         }
     }
 
