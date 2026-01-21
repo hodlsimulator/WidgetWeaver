@@ -347,7 +347,7 @@ struct SmartPhotoCropEditorView: View {
                 .fill(.black.opacity(0.55), style: FillStyle(eoFill: true))
 
                 if showGrid {
-                    StraightenGridOverlay(rect: displayRect, divisions: 3)
+                    StraightenGridOverlay(rect: displayRect, divisions: isStraightenEditing ? 10 : 3)
                         .allowsHitTesting(false)
                 }
 
