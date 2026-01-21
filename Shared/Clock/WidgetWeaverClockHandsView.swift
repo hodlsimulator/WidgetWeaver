@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+enum WidgetWeaverClockHourHandStyle: String, Sendable {
+    case ceramic
+    case icon
+}
+
 struct WidgetWeaverClockHandShadowsView: View {
     let palette: WidgetWeaverClockPalette
     let dialDiameter: CGFloat
@@ -16,6 +21,7 @@ struct WidgetWeaverClockHandShadowsView: View {
 
     let hourLength: CGFloat
     let hourWidth: CGFloat
+    let hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic
 
     let minuteLength: CGFloat
     let minuteWidth: CGFloat
@@ -55,13 +61,23 @@ struct WidgetWeaverClockHandShadowsView: View {
                 .blur(radius: hourShadowBlur)
 
             // Hour wedge shadow.
-            WidgetWeaverClockHourWedgeShape()
-                .fill(palette.handShadow.opacity(0.55))
-                .frame(width: hourWidth, height: hourWedgeLength)
-                .rotationEffect(hourAngle, anchor: .bottom)
-                .offset(x: hourLiftX, y: hourWedgeOffsetY)
-                .offset(x: hourShadowOffset, y: hourShadowOffset)
-                .blur(radius: hourShadowBlur)
+            if hourHandStyle == .icon {
+                WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
+                    .fill(palette.handShadow.opacity(0.52))
+                    .frame(width: hourWidth, height: hourWedgeLength)
+                    .rotationEffect(hourAngle, anchor: .bottom)
+                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    .offset(x: hourShadowOffset, y: hourShadowOffset)
+                    .blur(radius: hourShadowBlur)
+            } else {
+                WidgetWeaverClockHourWedgeShape()
+                    .fill(palette.handShadow.opacity(0.55))
+                    .frame(width: hourWidth, height: hourWedgeLength)
+                    .rotationEffect(hourAngle, anchor: .bottom)
+                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    .offset(x: hourShadowOffset, y: hourShadowOffset)
+                    .blur(radius: hourShadowBlur)
+            }
 
             if minuteLength > 0.0 && minuteWidth > 0.0 {
                 WidgetWeaverClockMinuteNeedleShape()
@@ -88,6 +104,7 @@ struct WidgetWeaverClockHandsView: View {
 
     let hourLength: CGFloat
     let hourWidth: CGFloat
+    let hourHandStyle: WidgetWeaverClockHourHandStyle = .ceramic
 
     let minuteLength: CGFloat
     let minuteWidth: CGFloat
@@ -126,39 +143,14 @@ struct WidgetWeaverClockHandsView: View {
         )
         .frame(width: dialDiameter, height: dialDiameter)
 
-        let stemMetal = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: palette.handLight.opacity(0.92), location: 0.00),
-                .init(color: palette.handMid.opacity(0.92), location: 0.52),
-                .init(color: palette.handDark.opacity(0.96), location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-
         ZStack {
-            // MARK: Hour hand stem (more visible, with centre ridge highlight)
+            // MARK: Hour stem
             ZStack {
                 let stemShape = RoundedRectangle(cornerRadius: stemCorner, style: .continuous)
 
-                stemShape
-                    .fill(stemMetal)
+                metalField.mask(stemShape)
 
-                stemShape
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.12), location: 0.00),
-                                .init(color: Color.clear, location: 0.52),
-                                .init(color: Color.black.opacity(0.22), location: 1.00)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.overlay)
-
-                // Thin ridge highlight line (slightly biased to the lit side).
+                // Centre ridge highlight.
                 Rectangle()
                     .fill(
                         LinearGradient(
@@ -196,62 +188,123 @@ struct WidgetWeaverClockHandsView: View {
             .rotationEffect(hourAngle, anchor: .bottom)
             .offset(y: -hourStemLength / 2.0)
 
-            // MARK: Hour hand (original wedge, slightly more rounded corners + centre ridge)
-            metalField
-                .mask(
-                    WidgetWeaverClockHourWedgeShape()
-                        .frame(width: hourWidth, height: hourWedgeLength)
-                        .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(x: hourLiftX, y: hourWedgeOffsetY)
-                )
-                .overlay(
-                    // Specular ridge line (narrow highlight).
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: Color.white.opacity(0.62), location: 0.00),
-                                    .init(color: Color.white.opacity(0.28), location: 0.30),
-                                    .init(color: Color.white.opacity(0.00), location: 1.00)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
+            // MARK: Hour hand
+            if hourHandStyle == .icon {
+                // MARK: Hour hand (icon tapered variant)
+                metalField
+                    .mask(
+                        WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
+                            .frame(width: hourWidth, height: hourWedgeLength)
+                            .rotationEffect(hourAngle, anchor: .bottom)
+                            .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    )
+                    .overlay(
+                        // Specular ridge line (narrow highlight).
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: Color.white.opacity(0.62), location: 0.00),
+                                        .init(color: Color.white.opacity(0.28), location: 0.30),
+                                        .init(color: Color.white.opacity(0.00), location: 1.00)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
-                        .frame(width: max(px, hourWidth * 0.085), height: hourWedgeLength)
-                        .offset(x: -hourWidth * 0.06 + hourLiftX, y: hourWedgeOffsetY)
-                        .rotationEffect(hourAngle)
-                        .blur(radius: max(px, hourWidth * 0.020))
-                        .blendMode(.screen)
-                        .mask(
-                            WidgetWeaverClockHourWedgeShape()
-                                .frame(width: hourWidth, height: hourWedgeLength)
-                                .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(x: hourLiftX, y: hourWedgeOffsetY)
-                        )
-                )
-                .overlay(
-                    // Dark underside plane (tight).
-                    Rectangle()
-                        .fill(Color.black.opacity(0.22))
-                        .frame(width: max(px, hourWidth * 0.24), height: hourWedgeLength)
-                        .offset(x: hourWidth * 0.18 + hourLiftX, y: hourWedgeOffsetY)
-                        .rotationEffect(hourAngle)
-                        .blendMode(.multiply)
-                        .mask(
-                            WidgetWeaverClockHourWedgeShape()
-                                .frame(width: hourWidth, height: hourWedgeLength)
-                                .rotationEffect(hourAngle, anchor: .bottom)
-                                .offset(x: hourLiftX, y: hourWedgeOffsetY)
-                        )
-                )
-                .overlay(
-                    WidgetWeaverClockHourWedgeShape()
-                        .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
-                        .frame(width: hourWidth, height: hourWedgeLength)
-                        .rotationEffect(hourAngle, anchor: .bottom)
-                        .offset(x: hourLiftX, y: hourWedgeOffsetY)
-                )
+                            .frame(width: max(px, hourWidth * 0.078), height: hourWedgeLength)
+                            .offset(x: -hourWidth * 0.05 + hourLiftX, y: hourWedgeOffsetY)
+                            .rotationEffect(hourAngle)
+                            .blur(radius: max(px, hourWidth * 0.018))
+                            .blendMode(.screen)
+                            .mask(
+                                WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
+                                    .frame(width: hourWidth, height: hourWedgeLength)
+                                    .rotationEffect(hourAngle, anchor: .bottom)
+                                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                            )
+                    )
+                    .overlay(
+                        // Dark underside plane (tight).
+                        Rectangle()
+                            .fill(Color.black.opacity(0.20))
+                            .frame(width: max(px, hourWidth * 0.22), height: hourWedgeLength)
+                            .offset(x: hourWidth * 0.16 + hourLiftX, y: hourWedgeOffsetY)
+                            .rotationEffect(hourAngle)
+                            .blendMode(.multiply)
+                            .mask(
+                                WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
+                                    .frame(width: hourWidth, height: hourWedgeLength)
+                                    .rotationEffect(hourAngle, anchor: .bottom)
+                                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                            )
+                    )
+                    .overlay(
+                        WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
+                            .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
+                            .frame(width: hourWidth, height: hourWedgeLength)
+                            .rotationEffect(hourAngle, anchor: .bottom)
+                            .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    )
+            } else {
+                // MARK: Hour hand (original wedge, slightly more rounded corners + centre ridge)
+                metalField
+                    .mask(
+                        WidgetWeaverClockHourWedgeShape()
+                            .frame(width: hourWidth, height: hourWedgeLength)
+                            .rotationEffect(hourAngle, anchor: .bottom)
+                            .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    )
+                    .overlay(
+                        // Specular ridge line (narrow highlight).
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: Color.white.opacity(0.62), location: 0.00),
+                                        .init(color: Color.white.opacity(0.28), location: 0.30),
+                                        .init(color: Color.white.opacity(0.00), location: 1.00)
+                                    ]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: max(px, hourWidth * 0.085), height: hourWedgeLength)
+                            .offset(x: -hourWidth * 0.06 + hourLiftX, y: hourWedgeOffsetY)
+                            .rotationEffect(hourAngle)
+                            .blur(radius: max(px, hourWidth * 0.020))
+                            .blendMode(.screen)
+                            .mask(
+                                WidgetWeaverClockHourWedgeShape()
+                                    .frame(width: hourWidth, height: hourWedgeLength)
+                                    .rotationEffect(hourAngle, anchor: .bottom)
+                                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                            )
+                    )
+                    .overlay(
+                        // Dark underside plane (tight).
+                        Rectangle()
+                            .fill(Color.black.opacity(0.22))
+                            .frame(width: max(px, hourWidth * 0.24), height: hourWedgeLength)
+                            .offset(x: hourWidth * 0.18 + hourLiftX, y: hourWedgeOffsetY)
+                            .rotationEffect(hourAngle)
+                            .blendMode(.multiply)
+                            .mask(
+                                WidgetWeaverClockHourWedgeShape()
+                                    .frame(width: hourWidth, height: hourWedgeLength)
+                                    .rotationEffect(hourAngle, anchor: .bottom)
+                                    .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                            )
+                    )
+                    .overlay(
+                        WidgetWeaverClockHourWedgeShape()
+                            .stroke(palette.handEdge, lineWidth: max(px, hourWidth * 0.045))
+                            .frame(width: hourWidth, height: hourWedgeLength)
+                            .rotationEffect(hourAngle, anchor: .bottom)
+                            .offset(x: hourLiftX, y: hourWedgeOffsetY)
+                    )
+            }
+
 
             if minuteLength > 0.0 && minuteWidth > 0.0 {
                 // MARK: Minute hand (reduced glow, keep crisp metal definition)
@@ -300,14 +353,14 @@ struct WidgetWeaverClockHandsView: View {
                                     gradient: Gradient(stops: [
                                         .init(color: palette.accent.opacity(0.00), location: 0.00),
                                         .init(color: palette.accent.opacity(0.06), location: 0.45),
-                                        .init(color: palette.accent.opacity(0.55), location: 1.00)
+                                        .init(color: palette.accent.opacity(0.00), location: 1.00)
                                     ]),
-                                    startPoint: .bottom,
-                                    endPoint: .top
+                                    startPoint: .top,
+                                    endPoint: .bottom
                                 )
                             )
-                            .frame(width: max(px, minuteWidth * 0.08), height: minuteLength)
-                            .offset(x: minuteWidth * 0.34, y: -minuteLength / 2.0)
+                            .frame(width: max(px, minuteWidth * 0.12), height: minuteLength)
+                            .offset(x: minuteWidth * 0.20, y: -minuteLength / 2.0)
                             .rotationEffect(minuteAngle)
                             .blendMode(.screen)
                             .mask(
@@ -318,30 +371,16 @@ struct WidgetWeaverClockHandsView: View {
                             )
                     )
                     .overlay(
-                        // Crisp tip highlight (no blob).
-                        Ellipse()
-                            .fill(Color.white.opacity(0.28))
-                            .frame(width: minuteWidth * 0.70, height: minuteWidth * 0.55)
-                            .offset(x: -minuteWidth * 0.06, y: -minuteLength * 0.48)
-                            .mask(
-                                WidgetWeaverClockMinuteNeedleShape()
-                                    .frame(width: minuteWidth, height: minuteLength)
-                                    .rotationEffect(minuteAngle, anchor: .bottom)
-                                    .offset(y: -minuteLength / 2.0)
-                            )
-                            .blendMode(.screen)
-                    )
-                    .overlay(
                         WidgetWeaverClockMinuteNeedleShape()
-                            .stroke(palette.handEdge, lineWidth: max(px, minuteWidth * 0.075))
+                            .stroke(palette.handEdge, lineWidth: max(px, minuteWidth * 0.042))
                             .frame(width: minuteWidth, height: minuteLength)
                             .rotationEffect(minuteAngle, anchor: .bottom)
                             .offset(y: -minuteLength / 2.0)
                     )
             }
 
-            if secondLength > 0.0 && secondWidth > 0.0 {
-                // MARK: Second hand (thin, straight, reduced dominance + terminal square)
+            if secondLength > 0.0 && secondWidth > 0.0 && secondTipSide > 0.0 {
+                // MARK: Second hand (kept crisp; glow handled elsewhere)
                 WidgetWeaverClockSecondHandView(
                     colour: palette.accent,
                     width: secondWidth,
@@ -357,55 +396,6 @@ struct WidgetWeaverClockHandsView: View {
     }
 }
 
-struct WidgetWeaverClockCentreHubView: View {
-    let palette: WidgetWeaverClockPalette
-    let baseRadius: CGFloat
-    let capRadius: CGFloat
-    let scale: CGFloat
-
-    var body: some View {
-        let px = WWClock.px(scale: scale)
-
-        let baseD = baseRadius * 2.0
-        let capD = capRadius * 2.0
-
-        ZStack {
-            Circle()
-                .fill(palette.hubBase)
-                .frame(width: baseD, height: baseD)
-                .shadow(color: palette.hubShadow, radius: baseRadius * 0.22, x: baseRadius * 0.10, y: baseRadius * 0.14)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.hubCapLight, location: 0.00),
-                            .init(color: palette.hubCapMid, location: 0.58),
-                            .init(color: palette.hubCapDark, location: 1.00)
-                        ]),
-                        center: .topLeading,
-                        startRadius: 0,
-                        endRadius: capRadius * 1.20
-                    )
-                )
-                .frame(width: capD, height: capD)
-                // Tiny shadow under cap to separate from base disc.
-                .shadow(color: Color.black.opacity(0.20), radius: max(px, capRadius * 0.10), x: px, y: px)
-                // Tight specular highlight biased upper-left.
-                .overlay(
-                    Circle()
-                        .fill(Color.white.opacity(0.22))
-                        .frame(width: capD * 0.44, height: capD * 0.44)
-                        .offset(x: -capRadius * 0.18, y: -capRadius * 0.22)
-                        .blur(radius: max(px, capRadius * 0.09))
-                        .blendMode(.screen)
-                )
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: - Shapes
 
 struct WidgetWeaverClockHourWedgeShape: Shape {
@@ -413,50 +403,45 @@ struct WidgetWeaverClockHourWedgeShape: Shape {
         let w = rect.width
         let h = rect.height
 
-        let baseInset = w * 0.035
-        let a = CGPoint(x: rect.minX + baseInset, y: rect.maxY)
-        let b = CGPoint(x: rect.midX, y: rect.minY)
-        let c = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
+        let baseHalf = w * 0.50
+        let tipHalf = w * 0.30
+        let shoulderY = rect.minY + h * 0.18
 
-        // Slightly more rounding to match the icon mock.
-        let cornerRadius = max(1, min(min(w, h) * 0.075, w * 0.11))
+        let points: [CGPoint] = [
+            CGPoint(x: rect.midX - baseHalf, y: rect.maxY),
+            CGPoint(x: rect.midX - tipHalf, y: shoulderY),
+            CGPoint(x: rect.midX, y: rect.minY),
+            CGPoint(x: rect.midX + tipHalf, y: shoulderY),
+            CGPoint(x: rect.midX + baseHalf, y: rect.maxY)
+        ]
 
-        func length(_ v: CGPoint) -> CGFloat {
-            sqrt(v.x * v.x + v.y * v.y)
+        let cornerRadius = w * 0.12
+
+        func add(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: a.x + b.x, y: a.y + b.y) }
+        func sub(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: a.x - b.x, y: a.y - b.y) }
+        func mul(_ v: CGPoint, _ s: CGFloat) -> CGPoint { CGPoint(x: v.x * s, y: v.y * s) }
+
+        func norm(_ v: CGPoint) -> CGPoint {
+            let d = max(0.00001, sqrt(v.x * v.x + v.y * v.y))
+            return CGPoint(x: v.x / d, y: v.y / d)
         }
 
-        func normalised(_ v: CGPoint) -> CGPoint {
-            let l = max(0.0001, length(v))
-            return CGPoint(x: v.x / l, y: v.y / l)
+        func dist(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            let dx = a.x - b.x
+            let dy = a.y - b.y
+            return sqrt(dx * dx + dy * dy)
         }
-
-        func add(_ p: CGPoint, _ v: CGPoint) -> CGPoint {
-            CGPoint(x: p.x + v.x, y: p.y + v.y)
-        }
-
-        func sub(_ p: CGPoint, _ q: CGPoint) -> CGPoint {
-            CGPoint(x: p.x - q.x, y: p.y - q.y)
-        }
-
-        func mul(_ v: CGPoint, _ s: CGFloat) -> CGPoint {
-            CGPoint(x: v.x * s, y: v.y * s)
-        }
-
-        func dist(_ p: CGPoint, _ q: CGPoint) -> CGFloat {
-            length(sub(p, q))
-        }
-
-        let points = [a, b, c]
 
         var path = Path()
+        let n = points.count
 
-        for i in 0..<points.count {
-            let prev = points[(i - 1 + points.count) % points.count]
+        for i in 0..<n {
+            let prev = points[(i - 1 + n) % n]
             let cur = points[i]
-            let next = points[(i + 1) % points.count]
+            let next = points[(i + 1) % n]
 
-            let v1 = normalised(sub(prev, cur))
-            let v2 = normalised(sub(next, cur))
+            let v1 = norm(sub(prev, cur))
+            let v2 = norm(sub(next, cur))
 
             let r1 = dist(cur, prev) * 0.5
             let r2 = dist(cur, next) * 0.5
@@ -476,6 +461,41 @@ struct WidgetWeaverClockHourWedgeShape: Shape {
 
         path.closeSubpath()
         return path
+    }
+}
+
+struct WidgetWeaverClockHourTaperedShape: InsettableShape {
+    var tipWidthFraction: CGFloat
+    var insetAmount: CGFloat = 0.0
+
+    func inset(by amount: CGFloat) -> some InsettableShape {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let insetRect = rect.insetBy(dx: insetAmount, dy: insetAmount)
+
+        let w = insetRect.width
+
+        let clampedTipFraction = WWClock.clamp(tipWidthFraction, min: 0.05, max: 0.98)
+        let tipWidth = w * clampedTipFraction
+        let tipLeft = insetRect.minX + (w - tipWidth) * 0.5
+        let tipRight = tipLeft + tipWidth
+
+        let bottomLeft = CGPoint(x: insetRect.minX, y: insetRect.maxY)
+        let bottomRight = CGPoint(x: insetRect.maxX, y: insetRect.maxY)
+        let topLeft = CGPoint(x: tipLeft, y: insetRect.minY)
+        let topRight = CGPoint(x: tipRight, y: insetRect.minY)
+
+        var p = Path()
+        p.move(to: bottomLeft)
+        p.addLine(to: topLeft)
+        p.addLine(to: topRight)
+        p.addLine(to: bottomRight)
+        p.closeSubpath()
+        return p
     }
 }
 
@@ -523,18 +543,20 @@ struct WidgetWeaverClockSecondHandView: View {
                 .frame(width: width, height: length)
                 .offset(y: -length / 2.0)
 
+            // Outer edge (slightly brighter).
             Rectangle()
-                .fill(colour.opacity(0.82))
+                .fill(colour.opacity(0.90))
+                .frame(width: max(px, width * 0.46), height: length)
+                .offset(x: -width * 0.20, y: -length / 2.0)
+                .blendMode(.screen)
+
+            // Tiny tip square (sharp).
+            RoundedRectangle(cornerRadius: max(px, tipSide * 0.18), style: .continuous)
+                .fill(colour)
                 .frame(width: tipSide, height: tipSide)
-                .offset(y: -length)
+                .offset(y: -(length - tipSide / 2.0))
         }
-        .overlay(
-            Rectangle()
-                .strokeBorder(Color.black.opacity(0.10), lineWidth: max(px, width * 0.14))
-                .frame(width: tipSide, height: tipSide)
-                .offset(y: -length)
-        )
-        .rotationEffect(angle)
+        .rotationEffect(angle, anchor: .center)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

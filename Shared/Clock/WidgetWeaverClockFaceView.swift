@@ -8,9 +8,6 @@
 import SwiftUI
 
 /// Central router for selecting a clock face renderer from a `WidgetWeaverClockFaceToken`.
-///
-/// For now, `.icon` intentionally maps to the shipped renderer so builds remain stable until the
-/// new visuals land.
 struct WidgetWeaverClockFaceView: View {
     let face: WidgetWeaverClockFaceToken
 
@@ -71,8 +68,7 @@ struct WidgetWeaverClockFaceView: View {
             )
 
         case .icon:
-            // Temporary mapping to keep builds green until Icon visuals exist.
-            WidgetWeaverClockIconView(
+            WidgetWeaverClockIconFaceView(
                 palette: palette,
                 hourAngle: hourAngle,
                 minuteAngle: minuteAngle,
