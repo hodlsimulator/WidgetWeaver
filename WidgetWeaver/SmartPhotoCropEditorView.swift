@@ -112,6 +112,23 @@ struct SmartPhotoCropEditorView: View {
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let masterImage {
+                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
+                let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
+
+                let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
+                let normalisedRectAspect = targetAspect / masterAspect
+
+                cropControls(
+                    masterPixels: masterPixelSize,
+                    rectAspect: normalisedRectAspect
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
         }
         .navigationTitle("Fix framing (\(family.label))")
         .navigationBarTitleDisplayMode(.inline)
@@ -496,18 +513,9 @@ struct SmartPhotoCropEditorView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.top, 10)
                 }
-
-                cropControls(
-                    masterPixels: masterPixelSize,
-                    rectAspect: normalisedRectAspect
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 10)
             }
         }
     }
-
-
 
     private static func normalisedStraightenDegrees(_ degrees: Double) -> Double {
         let clamped = degrees.clamped(to: -45...45)
