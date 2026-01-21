@@ -54,6 +54,7 @@ enum SmartPhotoManualCropRenderer {
 
         let w = rotatedCg.width
         let h = rotatedCg.height
+        let imageBounds = CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h))
 
         let cropPixels = CGRect(
             x: CGFloat(safeCrop.x) * CGFloat(w),
@@ -62,7 +63,7 @@ enum SmartPhotoManualCropRenderer {
             height: CGFloat(safeCrop.height) * CGFloat(h)
         )
         .integral
-        .intersection(CGRect(x: 0, y: 0, width: w, height: h))
+        .intersection(imageBounds)
 
         let cropped = rotatedCg.cropping(to: cropPixels) ?? rotatedCg
 
@@ -70,7 +71,7 @@ enum SmartPhotoManualCropRenderer {
         format.scale = 1
         format.opaque = true
 
-        let targetSize = CGSize(width: safeTarget.width, height: safeTarget.height)
+        let targetSize = CGSize(width: CGFloat(safeTarget.width), height: CGFloat(safeTarget.height))
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
 
         return renderer.image { ctx in
@@ -112,14 +113,15 @@ enum SmartPhotoManualCropRenderer {
 
         let w = cg.width
         let h = cg.height
+        let size = CGSize(width: CGFloat(w), height: CGFloat(h))
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
 
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         return renderer.image { _ in
-            image.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
 
@@ -127,23 +129,24 @@ enum SmartPhotoManualCropRenderer {
         let radians = CGFloat(degrees * Double.pi / 180.0)
         let w = cgImage.width
         let h = cgImage.height
+        let size = CGSize(width: CGFloat(w), height: CGFloat(h))
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
 
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let img = renderer.image { ctx in
             ctx.cgContext.interpolationQuality = .high
             UIColor.black.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.fill(CGRect(origin: .zero, size: size))
 
-            ctx.cgContext.translateBy(x: CGFloat(w) / 2.0, y: CGFloat(h) / 2.0)
+            ctx.cgContext.translateBy(x: size.width / 2.0, y: size.height / 2.0)
             ctx.cgContext.rotate(by: radians)
-            ctx.cgContext.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+            ctx.cgContext.translateBy(x: -size.width / 2.0, y: -size.height / 2.0)
 
             let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
-            source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+            source.draw(in: CGRect(origin: .zero, size: size))
         }
 
         return img.cgImage
@@ -160,10 +163,8 @@ enum SmartPhotoManualCropRenderer {
 
         let w = cgImage.width
         let h = cgImage.height
-
-        let targetSize: CGSize = (t % 2 == 0)
-            ? CGSize(width: w, height: h)
-            : CGSize(width: h, height: w)
+        let sourceSize = CGSize(width: CGFloat(w), height: CGFloat(h))
+        let targetSize: CGSize = (t % 2 == 0) ? sourceSize : CGSize(width: sourceSize.height, height: sourceSize.width)
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -178,10 +179,10 @@ enum SmartPhotoManualCropRenderer {
             let c = ctx.cgContext
             c.translateBy(x: targetSize.width / 2.0, y: targetSize.height / 2.0)
             c.rotate(by: CGFloat(t) * (.pi / 2.0))
-            c.translateBy(x: -CGFloat(w) / 2.0, y: -CGFloat(h) / 2.0)
+            c.translateBy(x: -sourceSize.width / 2.0, y: -sourceSize.height / 2.0)
 
             let source = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
-            source.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+            source.draw(in: CGRect(origin: .zero, size: sourceSize))
         }
 
         return img.cgImage
