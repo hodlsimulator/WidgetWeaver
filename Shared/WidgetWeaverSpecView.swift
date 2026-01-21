@@ -297,7 +297,8 @@ public struct WidgetWeaverSpecView: View {
                 ZStack {
                     WidgetWeaverClockBackgroundView(palette: palette)
 
-                    WidgetWeaverClockIconView(
+                    WidgetWeaverClockFaceView(
+                        face: clockConfig.faceToken,
                         palette: palette,
                         hourAngle: hourAngle,
                         minuteAngle: minuteAngle,
