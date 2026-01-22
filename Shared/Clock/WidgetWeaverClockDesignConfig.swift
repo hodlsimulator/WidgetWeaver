@@ -25,13 +25,9 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
     ]
 
     /// Default face for newly created Clock (Designer) configurations.
-    ///
-    /// The primary product clock uses the Icon face (12 numerals).
     public static let defaultFace: String = WidgetWeaverClockFaceToken.icon.rawValue
 
-    /// Legacy default face used for older saved designs where `face` was not persisted.
-    ///
-    /// This preserves the prior Ceramic appearance for existing users.
+    /// Legacy default face used when older saved designs do not persist `face`.
     public static let legacyDefaultFace: String = WidgetWeaverClockFaceToken.ceramic.rawValue
 
     public var theme: String

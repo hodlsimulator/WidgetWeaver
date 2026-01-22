@@ -92,6 +92,7 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
 
     public func normalised() -> WidgetSpec {
         var s = self
+        let incomingVersion = s.version
         s.version = max(WidgetSpec.currentVersion, s.version)
 
         let trimmedName = s.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -159,7 +160,19 @@ public struct WidgetSpec: Codable, Hashable, Identifiable {
             || s.matchedSet?.large?.layout.template == .clockIcon
 
         if usesClockTemplate {
-            s.clockConfig = (s.clockConfig ?? WidgetWeaverClockDesignConfig.default).normalised()
+            if let cc = s.clockConfig {
+                s.clockConfig = cc.normalised()
+            } else {
+                // Clock config was introduced in WidgetSpec version 8. Earlier versions implicitly
+                // represent the legacy Ceramic face.
+                let clockConfigIntroducedVersion = 8
+
+                if incomingVersion < clockConfigIntroducedVersion {
+                    s.clockConfig = WidgetWeaverClockDesignConfig.legacyDefault.normalised()
+                } else {
+                    s.clockConfig = WidgetWeaverClockDesignConfig.default.normalised()
+                }
+            }
         } else if let cc = s.clockConfig {
             s.clockConfig = cc.normalised()
         }
