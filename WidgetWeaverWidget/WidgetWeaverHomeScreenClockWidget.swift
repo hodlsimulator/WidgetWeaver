@@ -37,6 +37,12 @@ enum WidgetWeaverClockTickMode: Int {
     case secondsSweep = 1
 }
 
+enum WidgetWeaverHomeScreenClockEntrySource: String {
+    case placeholder
+    case snapshot
+    case timeline
+}
+
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
     let face: WidgetWeaverClockFaceToken
@@ -44,6 +50,9 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let tickSeconds: TimeInterval
     let colourScheme: WidgetWeaverClockColourScheme
     let isWidgetKitPreview: Bool
+
+    let entrySource: WidgetWeaverHomeScreenClockEntrySource
+    let providerContextIsPreview: Bool
 }
 
 private enum WWClockTimelineConfig {
@@ -66,7 +75,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             tickMode: .secondsSweep,
             tickSeconds: 0.0,
             colourScheme: .classic,
-            isWidgetKitPreview: true
+            isWidgetKitPreview: true,
+            entrySource: .placeholder,
+            providerContextIsPreview: context.isPreview
         )
     }
 
@@ -83,7 +94,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             tickMode: tickMode,
             tickSeconds: tickSeconds,
             colourScheme: scheme,
-            isWidgetKitPreview: context.isPreview
+            isWidgetKitPreview: context.isPreview,
+            entrySource: .snapshot,
+            providerContextIsPreview: context.isPreview
         )
     }
 
@@ -109,7 +122,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             colourScheme: scheme,
             tickMode: tickMode,
             tickSeconds: tickSeconds,
-            isWidgetKitPreview: false
+            isWidgetKitPreview: false,
+            entrySource: .timeline,
+            providerContextIsPreview: context.isPreview
         )
     }
 
@@ -119,7 +134,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         colourScheme: WidgetWeaverClockColourScheme,
         tickMode: WidgetWeaverClockTickMode,
         tickSeconds: TimeInterval,
-        isWidgetKitPreview: Bool
+        isWidgetKitPreview: Bool,
+        entrySource: WidgetWeaverHomeScreenClockEntrySource,
+        providerContextIsPreview: Bool
     ) -> Timeline<Entry> {
         let minuteAnchorNow = Self.floorToMinute(now)
         let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
@@ -134,7 +151,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                 tickMode: tickMode,
                 tickSeconds: tickSeconds,
                 colourScheme: colourScheme,
-                isWidgetKitPreview: isWidgetKitPreview
+                isWidgetKitPreview: isWidgetKitPreview,
+                entrySource: entrySource,
+                providerContextIsPreview: providerContextIsPreview
             )
         )
 
@@ -146,7 +165,9 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
                     tickMode: tickMode,
                     tickSeconds: tickSeconds,
                     colourScheme: colourScheme,
-                    isWidgetKitPreview: isWidgetKitPreview
+                    isWidgetKitPreview: isWidgetKitPreview,
+                    entrySource: entrySource,
+                    providerContextIsPreview: providerContextIsPreview
                 )
             )
         }
@@ -267,16 +288,41 @@ private struct WidgetWeaverHomeScreenClockView: View {
         .widgetURL(URL(string: "widgetweaver://clock"))
         #if DEBUG
         .overlay(alignment: .topLeading) {
-            Text("scheme=\(entry.colourScheme.rawValue)")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary.opacity(0.65))
-                .padding(6)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            WWQuickClockPreviewRefreshAuditOverlay(entry: entry)
         }
         #endif
     }
 }
+
+#if DEBUG
+private struct WWQuickClockPreviewRefreshAuditOverlay: View {
+    let entry: WidgetWeaverHomeScreenClockEntry
+
+    var body: some View {
+        let now = Date()
+        let ageSeconds = Int((now.timeIntervalSince(entry.date)).rounded())
+
+        let ctxPrev = entry.providerContextIsPreview ? "1" : "0"
+        let entryPrev = entry.isWidgetKitPreview ? "1" : "0"
+        let path = entry.isWidgetKitPreview ? "lowBudget" : "live"
+
+        let tickLabel: String = (entry.tickMode == .secondsSweep) ? "seconds" : "minute"
+
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Clock(Q) src=\(entry.entrySource.rawValue) ctxPrev=\(ctxPrev) entryPrev=\(entryPrev) path=\(path)")
+            Text("scheme=\(entry.colourScheme.rawValue) tick=\(tickLabel) age=\(ageSeconds)s")
+        }
+        .font(.system(size: 9, weight: .regular, design: .monospaced))
+        .foregroundStyle(Color.white.opacity(0.95))
+        .padding(6)
+        .background(Color.black.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(6)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+#endif
 
 private struct WidgetWeaverClockLowBudgetFace: View {
     let face: WidgetWeaverClockFaceToken
@@ -285,6 +331,24 @@ private struct WidgetWeaverClockLowBudgetFace: View {
     let showsSecondHand: Bool
 
     var body: some View {
+        let wallNow = Date()
+        let baseDate = Self.choosePreviewDate(entryDate: date, wallNow: wallNow)
+
+        if showsSecondHand {
+            if #available(iOS 15.0, *) {
+                TimelineView(.periodic(from: baseDate, by: 1.0)) { context in
+                    clockView(date: context.date)
+                }
+            } else {
+                clockView(date: baseDate)
+            }
+        } else {
+            clockView(date: baseDate)
+        }
+    }
+
+    @ViewBuilder
+    private func clockView(date: Date) -> some View {
         let angles = WWClockLowBudgetAngles(date: date)
 
         WidgetWeaverClockFaceView(
@@ -304,6 +368,12 @@ private struct WidgetWeaverClockLowBudgetFace: View {
         .transaction { transaction in
             transaction.animation = nil
         }
+    }
+
+    private static func choosePreviewDate(entryDate: Date, wallNow: Date) -> Date {
+        let delta = abs(wallNow.timeIntervalSince(entryDate))
+        if delta > 5.0 { return wallNow }
+        return entryDate
     }
 }
 
