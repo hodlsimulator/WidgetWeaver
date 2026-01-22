@@ -80,43 +80,36 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
 
-            let dotRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.922, min: R * 0.910, max: R * 0.930),
+            let tickRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.95, min: R * 0.93, max: R * 0.96),
                 scale: displayScale
             )
-            let dotDiameter = WWClock.pixel(
-                WWClock.clamp(R * 0.013, min: R * 0.011, max: R * 0.014),
+            let majorTickLength = WWClock.pixel(
+                WWClock.clamp(R * 0.14, min: R * 0.12, max: R * 0.16),
                 scale: displayScale
             )
-
-            let batonCentreRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.815, min: R * 0.780, max: R * 0.830),
-                scale: displayScale
-            )
-            let batonLength = WWClock.pixel(
-                WWClock.clamp(R * 0.155, min: R * 0.135, max: R * 0.170),
-                scale: displayScale
-            )
-            let batonWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
-                scale: displayScale
-            )
-            let capLength = WWClock.pixel(
-                WWClock.clamp(R * 0.026, min: R * 0.020, max: R * 0.030),
+            let minorTickLength = WWClock.pixel(
+                WWClock.clamp(R * 0.07, min: R * 0.055, max: R * 0.085),
                 scale: displayScale
             )
 
-            let pipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.020, min: R * 0.018, max: R * 0.024),
+            let majorTickWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.028, min: R * 0.020, max: R * 0.034),
                 scale: displayScale
             )
-            let pipRadius = dotRadius
+            let minorTickWidth = WWClock.pixel(
+                WWClock.clamp(R * 0.009, min: R * 0.006, max: R * 0.012),
+                scale: displayScale
+            )
 
             let numeralsRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.70, min: R * 0.66, max: R * 0.74),
+                WWClock.clamp(R * 0.78, min: R * 0.74, max: R * 0.82),
                 scale: displayScale
             )
-            let numeralsSize = WWClock.pixel(R * 0.32, scale: displayScale)
+            let numeralsSize = WWClock.pixel(
+                WWClock.clamp(R * 0.24, min: R * 0.22, max: R * 0.26),
+                scale: displayScale
+            )
 
             let hourLength = WWClock.pixel(
                 WWClock.clamp(R * 0.52, min: R * 0.48, max: R * 0.56),
@@ -174,32 +167,17 @@ struct WidgetWeaverClockIconFaceView: View {
                         scale: displayScale
                     )
 
-                    WidgetWeaverClockMinuteDotsView(
-                        count: 60,
-                        radius: dotRadius,
-                        dotDiameter: dotDiameter,
-                        dotColour: palette.minuteDot,
-                        scale: displayScale
-                    )
-
-                    WidgetWeaverClockHourIndicesView(
+                    WidgetWeaverClockMinuteTickMarksView(
                         palette: palette,
-                        dialDiameter: dialDiameter,
-                        centreRadius: batonCentreRadius,
-                        length: batonLength,
-                        width: batonWidth,
-                        capLength: capLength,
-                        capColour: palette.accent,
+                        radius: tickRadius,
+                        majorLength: majorTickLength,
+                        minorLength: minorTickLength,
+                        majorWidth: majorTickWidth,
+                        minorWidth: minorTickWidth,
                         scale: displayScale
                     )
 
-                    WidgetWeaverClockCardinalPipsView(
-                        pipColour: palette.accent,
-                        side: pipSide,
-                        radius: pipRadius
-                    )
-
-                    WidgetWeaverClockNumeralsView(
+                    WidgetWeaverClockTwelveNumeralsView(
                         palette: palette,
                         radius: numeralsRadius,
                         fontSize: numeralsSize,
@@ -233,28 +211,18 @@ struct WidgetWeaverClockIconFaceView: View {
                             hourHandStyle: .icon,
                             minuteLength: usedMinuteLength,
                             minuteWidth: usedMinuteWidth,
-                            secondLength: usedSecondLength,
-                            secondWidth: usedSecondWidth,
-                            secondTipSide: usedSecondTipSide,
+                            secondLength: 0.0,
+                            secondWidth: 0.0,
+                            secondTipSide: 0.0,
                             scale: displayScale
                         )
 
-                        if showsGlows {
-                            WidgetWeaverClockGlowsOverlayView(
-                                palette: palette,
-                                hourCapCentreRadius: batonCentreRadius,
-                                batonLength: batonLength,
-                                batonWidth: batonWidth,
-                                capLength: capLength,
-                                pipSide: pipSide,
-                                pipRadius: pipRadius,
-                                minuteAngle: minuteAngle,
-                                minuteLength: usedMinuteLength,
-                                minuteWidth: usedMinuteWidth,
-                                secondAngle: secondAngle,
-                                secondLength: usedSecondLength,
-                                secondWidth: usedSecondWidth,
-                                secondTipSide: usedSecondTipSide,
+                        if usedSecondLength > 0.0 && usedSecondWidth > 0.0 {
+                            WidgetWeaverClockIconSecondHandView(
+                                angle: secondAngle,
+                                length: usedSecondLength,
+                                width: usedSecondWidth,
+                                tipSide: usedSecondTipSide,
                                 scale: displayScale
                             )
                         }
@@ -285,6 +253,41 @@ struct WidgetWeaverClockIconFaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
         }
+    }
+}
+
+
+private struct WidgetWeaverClockIconSecondHandView: View {
+    let angle: Angle
+    let length: CGFloat
+    let width: CGFloat
+    let tipSide: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+        let red = WWClock.colour(0xF53842, alpha: 1.0)
+
+        ZStack {
+            Rectangle()
+                .fill(red.opacity(0.92))
+                .frame(width: width, height: length)
+                .offset(y: -length / 2.0)
+
+            Rectangle()
+                .fill(red)
+                .frame(width: tipSide, height: tipSide)
+                .offset(y: -length)
+        }
+        .overlay(
+            Rectangle()
+                .strokeBorder(Color.black.opacity(0.12), lineWidth: max(px, width * 0.14))
+                .frame(width: tipSide, height: tipSide)
+                .offset(y: -length)
+        )
+        .rotationEffect(angle)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -340,181 +343,201 @@ private struct WidgetWeaverClockIconFaceDialFaceView: View {
                                 .init(color: palette.dialVignette.opacity(0.78), location: 1.0)
                             ]),
                             center: .center,
-                            startRadius: radius * 0.86,
+                            startRadius: radius * 0.62,
                             endRadius: radius
                         )
                     )
                     .blendMode(.multiply)
             )
-            // Broad highlight biased upper-left (kept smooth to avoid WidgetKit seams).
-            .overlay(
-                Ellipse()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: palette.dialDomeHighlight.opacity(0.78), location: 0.0),
-                                .init(color: Color.clear, location: 1.0)
-                            ]),
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: radius * 1.10
-                        )
-                    )
-                    .frame(width: radius * 2.10, height: radius * 1.62)
-                    .offset(x: -radius * 0.22, y: -radius * 0.26)
-                    .blendMode(.screen)
-                    .opacity(0.72)
-                    .mask(Circle())
-            )
-            // Thin inner highlight ring (improves edge definition at small sizes).
+            // Specular highlight arc near top-right.
             .overlay(
                 Circle()
-                    .inset(by: max(px, occlusionWidth * 0.52))
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: max(px, occlusionWidth * 0.22))
-                    .blendMode(.screen)
-            )
-            // Ring D: occlusion separator.
-            .overlay(
-                Circle()
-                    .strokeBorder(
+                    .trim(from: 0.05, to: 0.44)
+                    .stroke(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: palette.separatorRing.opacity(0.62), location: 0.0),
-                                .init(color: palette.separatorRing.opacity(0.96), location: 1.0)
+                                .init(color: Color.white.opacity(0.00), location: 0.0),
+                                .init(color: Color.white.opacity(0.10), location: 0.55),
+                                .init(color: Color.white.opacity(0.22), location: 1.0)
                             ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                            startPoint: .leading,
+                            endPoint: .trailing
                         ),
-                        lineWidth: occlusionWidth
+                        style: StrokeStyle(lineWidth: max(px, radius * 0.020), lineCap: .round)
                     )
+                    .rotationEffect(.degrees(-18))
+                    .blur(radius: max(px, radius * 0.010))
+                    .blendMode(.screen)
+            )
+            // Inner separator ring / occlusion
+            .overlay(
+                Circle()
+                    .strokeBorder(palette.separatorRing, lineWidth: occlusionWidth)
+                    .blur(radius: max(px, occlusionWidth * 0.18))
+                    .blendMode(.overlay)
+            )
+            .overlay(
+                Circle()
+                    .strokeBorder(Color.black.opacity(0.36), lineWidth: max(px, occlusionWidth * 0.20))
+                    .blur(radius: max(px, occlusionWidth * 0.10))
+                    .blendMode(.multiply)
+            )
+            // Subtle grain / noise impression (no actual noise texture to keep WidgetKit-safe).
+            .overlay(
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: Color.white.opacity(0.016), location: 0.0),
+                        .init(color: Color.black.opacity(0.018), location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .blendMode(.overlay)
+                .opacity(0.55)
             )
     }
 }
 
 private struct WidgetWeaverClockIconFaceBezelView: View {
     let palette: WidgetWeaverClockPalette
-
-    // Outer metal diameter (outer edge of bezel)
     let outerDiameter: CGFloat
-
-    // Ring widths (A/B/C)
-    let ringA: CGFloat   // outer rim highlight
-    let ringB: CGFloat   // main metal body
-    let ringC: CGFloat   // inner bevel ridge
-
+    let ringA: CGFloat
+    let ringB: CGFloat
+    let ringC: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let outerA = outerDiameter
-        let outerB = max(1, outerA - (ringA * 2.0))
-        let outerC = max(1, outerA - ((ringA + ringB) * 2.0))
+        let outerR = outerDiameter / 2.0
+        let dialR = outerR - ringA - ringB - ringC
 
-        let outerBR = outerB * 0.5
-        let innerBR = max(0.0, outerBR - ringB)
-        let innerFractionB = (outerBR > 0) ? (innerBR / outerBR) : 0.01
+        let ringAInner = outerR - ringA
+        let ringBInner = ringAInner - ringB
+        let ringCInner = ringBInner - ringC
+
+        // Slightly “cooler” metal range than the shipped face.
+        let metalHi = WWClock.colour(0xF6FAFF, alpha: 1.0)
+        let metalMid = WWClock.colour(0xD6DEEA, alpha: 1.0)
+        let metalLo = WWClock.colour(0x9AA8BA, alpha: 1.0)
+
+        let ringAStroke = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: metalHi, location: 0.00),
+                .init(color: metalMid, location: 0.55),
+                .init(color: metalLo, location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let ringBStroke = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: metalHi.opacity(0.80), location: 0.00),
+                .init(color: metalMid.opacity(0.95), location: 0.48),
+                .init(color: metalLo.opacity(0.90), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let ringCStroke = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: metalHi.opacity(0.85), location: 0.00),
+                .init(color: metalMid.opacity(0.95), location: 0.55),
+                .init(color: metalLo.opacity(0.90), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        // Outer rim: subtle shadow and highlight to separate from background.
+        let outerShadow = Color.black.opacity(0.32)
+        let outerHighlight = Color.white.opacity(0.20)
 
         ZStack {
-            // B) Main metal body: brighter inner chamfer, darker outer edge.
-            WWIconClockAnnulus(innerRadiusFraction: innerFractionB)
-                .fill(
-                    RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.bezelBright.opacity(0.92), location: 0.00),
-                            .init(color: palette.bezelMid.opacity(0.78), location: 0.52),
-                            .init(color: palette.bezelDark.opacity(0.94), location: 1.00)
-                        ]),
-                        center: .center,
-                        startRadius: innerBR,
-                        endRadius: outerBR
-                    ),
-                    style: FillStyle(eoFill: true, antialiased: true)
-                )
-                .frame(width: outerB, height: outerB)
-
-            // B) Specular sweep (slightly more contrast than the shipped face).
-            WWIconClockAnnulus(innerRadiusFraction: innerFractionB)
-                .fill(
-                    AngularGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.bezelBright.opacity(0.92), location: 0.000),
-                            .init(color: palette.bezelBright.opacity(0.92), location: 0.050),
-                            .init(color: palette.bezelMid.opacity(0.34), location: 0.160),
-                            .init(color: palette.bezelDark.opacity(0.18), location: 0.420),
-                            .init(color: palette.bezelDark.opacity(0.74), location: 0.710),
-                            .init(color: palette.bezelMid.opacity(0.22), location: 0.880),
-                            .init(color: palette.bezelBright.opacity(0.56), location: 1.000)
-                        ]),
-                        center: .center,
-                        angle: .degrees(-135)
-                    ),
-                    style: FillStyle(eoFill: true, antialiased: true)
-                )
-                .frame(width: outerB, height: outerB)
-                .blendMode(.overlay)
-
-            // A) Outer rim highlight (tight).
+            // Outer diameter clip
             Circle()
-                .strokeBorder(
-                    AngularGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.bezelBright.opacity(0.00), location: 0.000),
-                            .init(color: palette.bezelBright.opacity(0.00), location: 0.780),
-                            .init(color: palette.bezelBright.opacity(0.62), location: 0.860),
-                            .init(color: palette.bezelBright.opacity(0.84), location: 0.915),
-                            .init(color: palette.bezelBright.opacity(0.00), location: 1.000)
-                        ]),
-                        center: .center,
-                        angle: .degrees(-135)
-                    ),
-                    lineWidth: ringA
-                )
-                .frame(width: outerA, height: outerA)
-                .blendMode(.screen)
-
-            // C) Inner bevel ridge: crisp line + tight shadow.
-            Circle()
-                .strokeBorder(
-                    LinearGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: palette.bezelBright.opacity(0.70), location: 0.00),
-                            .init(color: palette.bezelMid.opacity(0.64), location: 0.55),
-                            .init(color: palette.bezelDark.opacity(0.88), location: 1.00)
-                        ]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: ringC
-                )
-                .frame(width: outerC, height: outerC)
+                .fill(Color.clear)
+                .frame(width: outerDiameter, height: outerDiameter)
                 .overlay(
                     Circle()
-                        .strokeBorder(
-                            Color.black.opacity(0.22),
-                            lineWidth: max(px, ringC * 0.42)
-                        )
-                        .frame(width: outerC, height: outerC)
+                        .strokeBorder(outerShadow, lineWidth: max(px, ringA * 0.65))
+                        .blur(radius: max(px, ringA * 0.30))
+                        .offset(x: 0, y: max(px, ringA * 0.22))
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(outerHighlight, lineWidth: max(px, ringA * 0.55))
+                        .blur(radius: max(px, ringA * 0.25))
+                        .offset(x: 0, y: -max(px, ringA * 0.18))
+                        .blendMode(.screen)
+                )
+
+            // Ring A
+            Circle()
+                .strokeBorder(ringAStroke, lineWidth: ringA)
+                .frame(width: (ringAInner + outerR) * 2.0, height: (ringAInner + outerR) * 2.0)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.black.opacity(0.10), lineWidth: max(px, ringA * 0.18))
+                        .frame(width: (ringAInner + outerR) * 2.0, height: (ringAInner + outerR) * 2.0)
+                        .blur(radius: max(px, ringA * 0.12))
                         .blendMode(.multiply)
                 )
+
+            // Ring B
+            Circle()
+                .strokeBorder(ringBStroke, lineWidth: ringB)
+                .frame(width: (ringBInner + ringAInner) * 2.0, height: (ringBInner + ringAInner) * 2.0)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: max(px, ringB * 0.22))
+                        .frame(width: (ringBInner + ringAInner) * 2.0, height: (ringBInner + ringAInner) * 2.0)
+                        .blur(radius: max(px, ringB * 0.14))
+                        .blendMode(.screen)
+                )
+
+            // Ring C
+            Circle()
+                .strokeBorder(ringCStroke, lineWidth: ringC)
+                .frame(width: (ringCInner + ringBInner) * 2.0, height: (ringCInner + ringBInner) * 2.0)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.black.opacity(0.14), lineWidth: max(px, ringC * 0.20))
+                        .frame(width: (ringCInner + ringBInner) * 2.0, height: (ringCInner + ringBInner) * 2.0)
+                        .blur(radius: max(px, ringC * 0.12))
+                        .blendMode(.multiply)
+                )
+
+            // Inner edge shadow where metal meets dial.
+            Circle()
+                .strokeBorder(Color.black.opacity(0.30), lineWidth: max(px, dialR * 0.014))
+                .frame(width: dialR * 2.0, height: dialR * 2.0)
+                .blur(radius: max(px, dialR * 0.008))
+                .blendMode(.multiply)
+
+            // A small top-right specular highlight on the bezel, similar to icon.
+            Circle()
+                .trim(from: 0.10, to: 0.26)
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: Color.white.opacity(0.00), location: 0.0),
+                            .init(color: Color.white.opacity(0.18), location: 0.70),
+                            .init(color: Color.white.opacity(0.34), location: 1.0)
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: max(px, ringA * 0.85), lineCap: .round)
+                )
+                .rotationEffect(.degrees(-10))
+                .blur(radius: max(px, ringA * 0.25))
+                .blendMode(.screen)
         }
-        .shadow(color: Color.black.opacity(0.32), radius: px * 1.6, x: 0, y: px * 1.1)
+        .frame(width: outerDiameter, height: outerDiameter)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-private struct WWIconClockAnnulus: Shape {
-    var innerRadiusFraction: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let r = min(rect.width, rect.height) * 0.5
-        let innerR = r * innerRadiusFraction
-        let c = CGPoint(x: rect.midX, y: rect.midY)
-
-        var p = Path()
-        p.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2.0, height: r * 2.0))
-        p.addEllipse(in: CGRect(x: c.x - innerR, y: c.y - innerR, width: innerR * 2.0, height: innerR * 2.0))
-        return p
     }
 }

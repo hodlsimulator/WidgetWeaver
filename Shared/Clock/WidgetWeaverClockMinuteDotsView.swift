@@ -38,3 +38,60 @@ struct WidgetWeaverClockMinuteDotsView: View {
         .accessibilityHidden(true)
     }
 }
+
+/// Renders 60 tick marks (minor) with 12 major hour ticks.
+///
+/// Layout convention:
+/// - `radius` represents the outer edge of each tick.
+/// - Tick bodies extend inwards by their respective lengths.
+struct WidgetWeaverClockMinuteTickMarksView: View {
+    let palette: WidgetWeaverClockPalette
+    let radius: CGFloat
+
+    let majorLength: CGFloat
+    let minorLength: CGFloat
+
+    let majorWidth: CGFloat
+    let minorWidth: CGFloat
+
+    let scale: CGFloat
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+
+        let majorFill = palette.minuteDot.opacity(0.95)
+        let minorFill = palette.minuteDot.opacity(0.70)
+
+        let majorShadowRadius = max(px, majorWidth * 0.55)
+        let majorShadowY = max(px, majorWidth * 0.28)
+
+        let minorShadowRadius = max(px, minorWidth * 1.25)
+        let minorShadowY = max(px, minorWidth * 0.85)
+
+        ZStack {
+            ForEach(0..<60, id: \.self) { idx in
+                let isMajor = (idx % 5 == 0)
+                let length = isMajor ? majorLength : minorLength
+                let width = isMajor ? majorWidth : minorWidth
+
+                let yOffset = -(radius - (length / 2.0))
+                let corner = width * 0.40
+
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(isMajor ? majorFill : minorFill)
+                    .frame(width: width, height: length)
+                    .shadow(
+                        color: Color.black.opacity(isMajor ? 0.32 : 0.20),
+                        radius: isMajor ? majorShadowRadius : minorShadowRadius,
+                        x: 0,
+                        y: isMajor ? majorShadowY : minorShadowY
+                    )
+                    .offset(y: yOffset)
+                    .rotationEffect(.degrees(Double(idx) * 6.0))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .drawingGroup()
+    }
+}

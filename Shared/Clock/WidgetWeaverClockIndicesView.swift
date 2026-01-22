@@ -130,36 +130,15 @@ struct WidgetWeaverClockCardinalPipsView: View {
     }
 }
 
-struct WidgetWeaverClockNumeralsView: View {
+private struct WidgetWeaverClockNumeralGlyphView: View {
     let palette: WidgetWeaverClockPalette
-    let radius: CGFloat
+    let text: String
     let fontSize: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        ZStack {
-            numeral("12", px: px)
-                .offset(x: 0, y: -radius)
-
-            numeral("3", px: px)
-                .offset(x: radius, y: 0)
-
-            numeral("6", px: px)
-                .offset(x: 0, y: radius)
-
-            numeral("9", px: px)
-                .offset(x: -radius, y: 0)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        // If WidgetKit is applying placeholder redaction, force these to render normally.
-        .unredacted()
-    }
-
-    @ViewBuilder
-    private func numeral(_ text: String, px: CGFloat) -> some View {
         let face = Text(text)
             .font(.system(size: fontSize, weight: .bold, design: .default))
             .fixedSize()
@@ -174,7 +153,7 @@ struct WidgetWeaverClockNumeralsView: View {
             endPoint: .bottomTrailing
         )
 
-        ZStack {
+        return ZStack {
             // Small depth shadow so it reads embossed, not floating.
             face
                 .foregroundStyle(palette.numeralDark.opacity(0.42))
@@ -205,5 +184,59 @@ struct WidgetWeaverClockNumeralsView: View {
             x: 0,
             y: max(px, fontSize * 0.020)
         )
+    }
+}
+
+struct WidgetWeaverClockNumeralsView: View {
+    let palette: WidgetWeaverClockPalette
+    let radius: CGFloat
+    let fontSize: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        ZStack {
+            WidgetWeaverClockNumeralGlyphView(palette: palette, text: "12", fontSize: fontSize, scale: scale)
+                .offset(x: 0, y: -radius)
+
+            WidgetWeaverClockNumeralGlyphView(palette: palette, text: "3", fontSize: fontSize, scale: scale)
+                .offset(x: radius, y: 0)
+
+            WidgetWeaverClockNumeralGlyphView(palette: palette, text: "6", fontSize: fontSize, scale: scale)
+                .offset(x: 0, y: radius)
+
+            WidgetWeaverClockNumeralGlyphView(palette: palette, text: "9", fontSize: fontSize, scale: scale)
+                .offset(x: -radius, y: 0)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        // If WidgetKit is applying placeholder redaction, force these to render normally.
+        .unredacted()
+    }
+}
+
+struct WidgetWeaverClockTwelveNumeralsView: View {
+    let palette: WidgetWeaverClockPalette
+    let radius: CGFloat
+    let fontSize: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        ZStack {
+            ForEach(1..<13, id: \.self) { n in
+                WidgetWeaverClockNumeralGlyphView(
+                    palette: palette,
+                    text: String(n),
+                    fontSize: fontSize,
+                    scale: scale
+                )
+                .rotationEffect(.degrees(Double(n) * 30.0))
+                .offset(y: -radius)
+                .rotationEffect(.degrees(-Double(n) * 30.0))
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        // If WidgetKit is applying placeholder redaction, force these to render normally.
+        .unredacted()
     }
 }
