@@ -12,15 +12,20 @@ import Foundation
 /// This type is intentionally stable and string-backed so persisted configurations can remain
 /// forward-compatible.
 public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable, Sendable {
-    /// The current shipped face. Treated as the default until other variants are implemented.
+    /// Legacy face (4 numerals).
+    ///
+    /// This remains the backwards-compatibility default when a saved design does not
+    /// explicitly persist a face.
     case ceramic
 
-    /// The new "Icon" face.
+    /// Primary face (12 numerals).
+    ///
+    /// This is the default for newly created clock designs.
     case icon
 
     /// Returns the canonical face token for a raw persisted string.
     ///
-    /// Unknown, missing, or empty inputs fall back to `.ceramic`.
+    /// Unknown, missing, or empty inputs fall back to `.ceramic` to preserve legacy designs.
     public static func canonical(from raw: String?) -> WidgetWeaverClockFaceToken {
         guard let raw else { return .ceramic }
 

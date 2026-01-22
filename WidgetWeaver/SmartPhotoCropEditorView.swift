@@ -25,6 +25,7 @@ struct SmartPhotoCropEditorView: View {
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
+    @State private var straightenDenseGridOpacity: Double = 0
 
     @State private var nudgeStepPixels: Int = 1
 
@@ -183,6 +184,12 @@ struct SmartPhotoCropEditorView: View {
             if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
         }
+        .task(id: isStraightenEditing) { @MainActor in
+            if isStraightenEditing { straightenDenseGridOpacity = 1; return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
+        }
         .task(id: debugOverlayEnabled) {
             if debugOverlayEnabled {
                 runDebugDetection(force: false)
@@ -321,7 +328,7 @@ struct SmartPhotoCropEditorView: View {
             )
 
             let contentRect = CGRect(origin: .zero, size: displayRect.size)
-            let showGrid = isStraightenEditing || abs(straightenDegrees) > 0.01
+            let showGrid = isStraightenEditing || straightenDenseGridOpacity > 0.001 || abs(straightenDegrees) > 0.01
 
             ZStack {
                 ZStack {
@@ -349,13 +356,13 @@ struct SmartPhotoCropEditorView: View {
                 .fill(.black.opacity(0.55), style: FillStyle(eoFill: true))
 
                 if showGrid {
-                    StraightenGridOverlay(rect: displayRect, divisions: isStraightenEditing ? 10 : 3)
-                        .allowsHitTesting(false)
-                }
-
-                if showGrid {
-                    CropThirdsGridOverlay(frame: cropFrame, divisions: 3)
-                        .allowsHitTesting(false)
+                    Group {
+                        StraightenGridOverlay(rect: displayRect, divisions: 3).opacity(abs(straightenDegrees) > 0.01 && !isStraightenEditing ? 1.0 : 0.0)
+                        StraightenGridOverlay(rect: displayRect, divisions: 10).opacity((isStraightenEditing || abs(straightenDegrees) > 0.01) ? straightenDenseGridOpacity : 1.0)
+                        CropThirdsGridOverlay(frame: cropFrame, divisions: 3)
+                    }
+                    .opacity((isStraightenEditing || abs(straightenDegrees) > 0.01) ? 1.0 : straightenDenseGridOpacity)
+                    .allowsHitTesting(false)
                 }
 
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -624,7 +631,7 @@ struct SmartPhotoCropEditorView: View {
                     in: -15...15,
                     step: 0.1,
                     onEditingChanged: { editing in
-                        isStraightenEditing = editing
+                        isStraightenEditing = editing; if editing { straightenDenseGridOpacity = 1 }
                     }
                 )
                 .disabled(isApplying)

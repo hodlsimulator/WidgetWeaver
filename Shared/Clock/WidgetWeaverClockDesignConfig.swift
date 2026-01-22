@@ -24,7 +24,15 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
         WidgetWeaverClockFaceToken.icon.rawValue
     ]
 
-    public static let defaultFace: String = WidgetWeaverClockFaceToken.ceramic.rawValue
+    /// Default face for newly created Clock (Designer) configurations.
+    ///
+    /// The primary product clock uses the Icon face (12 numerals).
+    public static let defaultFace: String = WidgetWeaverClockFaceToken.icon.rawValue
+
+    /// Legacy default face used for older saved designs where `face` was not persisted.
+    ///
+    /// This preserves the prior Ceramic appearance for existing users.
+    public static let legacyDefaultFace: String = WidgetWeaverClockFaceToken.ceramic.rawValue
 
     public var theme: String
     public var face: String
@@ -37,6 +45,10 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
 
     public static var `default`: WidgetWeaverClockDesignConfig {
         WidgetWeaverClockDesignConfig(theme: Self.defaultTheme, face: Self.defaultFace)
+    }
+
+    public static var legacyDefault: WidgetWeaverClockDesignConfig {
+        WidgetWeaverClockDesignConfig(theme: Self.defaultTheme, face: Self.legacyDefaultFace)
     }
 
     public func normalised() -> WidgetWeaverClockDesignConfig {
@@ -69,7 +81,7 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let theme = (try? c.decode(String.self, forKey: .theme)) ?? Self.defaultTheme
-        let face = (try? c.decode(String.self, forKey: .face)) ?? Self.defaultFace
+        let face = (try? c.decodeIfPresent(String.self, forKey: .face)) ?? Self.legacyDefaultFace
         self.init(theme: theme, face: face)
     }
 
