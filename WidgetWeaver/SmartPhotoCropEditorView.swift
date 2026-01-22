@@ -4,7 +4,7 @@
 //
 //  Created by . . on 1/4/26.
 //
-    
+ 
 import SwiftUI
 import UIKit
 
@@ -55,7 +55,7 @@ struct SmartPhotoCropEditorView: View {
         targetPixels: PixelSize,
         initialCropRect: NormalisedRect,
         initialStraightenDegrees: Double = 0,
-        initialRotationQuarterTurns: Int = 0,
+        initialRotationQuarterTurns _: Int = 0,
         autoCropRect: NormalisedRect? = nil,
         focus: Binding<EditorFocusSnapshot>? = nil,
         onResetToAuto: (() async -> Void)? = nil,
@@ -66,7 +66,6 @@ struct SmartPhotoCropEditorView: View {
         self.targetPixels = targetPixels.normalised()
         self.initialCropRect = initialCropRect.normalised()
         self.initialStraightenDegrees = Self.normalisedStraightenDegrees(initialStraightenDegrees)
-        let _ = initialRotationQuarterTurns
         self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
         self.onResetToAuto = onResetToAuto
