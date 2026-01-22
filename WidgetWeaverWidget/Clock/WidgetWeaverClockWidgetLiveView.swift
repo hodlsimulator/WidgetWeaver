@@ -47,7 +47,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             WWClockRenderBody(
-                face: face,
+                face: face ?? .ceramic,
                 palette: palette,
                 entryDate: entryDate,
                 tickMode: tickMode,
@@ -72,7 +72,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
 // MARK: - Render body
 
 fileprivate struct WWClockRenderBody: View {
-    let face: WidgetWeaverClockFaceToken?
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
@@ -193,7 +193,7 @@ fileprivate struct WWClockRenderBody: View {
                 minInterval: balloon ? 0.0 : 15.0,
                 now: wallNow
             ) {
-                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) minuteGlyph=\(showsMinuteHandGlyph ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs) sig=\(wallSignatureSeconds) jump=\(recentlyJumped ? 1 : 0)"
+                "render build=\(WidgetWeaverClockWidgetLiveView.buildLabel) face=\(face.rawValue) ctxRef=\(ctxRef) wallRef=\(wallRef) leadMs=\(leadMs) live=\(isPrerender ? 0 : 1) handsRef=\(handsRef) handsHM=\(handsH):\(handsM) liveS=\(liveS) hDeg=\(hDeg) mDeg=\(mDeg) mode=\(tickMode) sec=\(showSeconds ? 1 : 0) minuteGlyph=\(showsMinuteHandGlyph ? 1 : 0) redact=\(redactLabel) rm=\(reduceMotion ? 1 : 0) balloon=\(balloon ? 1 : 0) lagMs=\(lagMs) sig=\(wallSignatureSeconds) jump=\(recentlyJumped ? 1 : 0)"
             }
 
             return ()
@@ -208,36 +208,19 @@ fileprivate struct WWClockRenderBody: View {
                     .accessibilityHidden(true)
             }
 
-            Group {
-                if let face = face {
-                    WidgetWeaverClockFaceView(
-                        face: face,
-                        palette: palette,
-                        hourAngle: hourAngle,
-                        minuteAngle: minuteAngle,
-                        secondAngle: .degrees(0),
-                        showsSecondHand: false,
-                        showsMinuteHand: !showsMinuteHandGlyph,
-                        showsHandShadows: false,
-                        showsGlows: false,
-                        showsCentreHub: false,
-                        handsOpacity: handsOpacity
-                    )
-                } else {
-                    WidgetWeaverClockIconView(
-                        palette: palette,
-                        hourAngle: hourAngle,
-                        minuteAngle: minuteAngle,
-                        secondAngle: .degrees(0),
-                        showsSecondHand: false,
-                        showsMinuteHand: !showsMinuteHandGlyph,
-                        showsHandShadows: false,
-                        showsGlows: false,
-                        showsCentreHub: false,
-                        handsOpacity: handsOpacity
-                    )
-                }
-            }
+            WidgetWeaverClockFaceView(
+                face: face,
+                palette: palette,
+                hourAngle: hourAngle,
+                minuteAngle: minuteAngle,
+                secondAngle: .degrees(0),
+                showsSecondHand: false,
+                showsMinuteHand: !showsMinuteHandGlyph,
+                showsHandShadows: false,
+                showsGlows: false,
+                showsCentreHub: false,
+                handsOpacity: handsOpacity
+            )
             .transaction { transaction in
                 transaction.animation = nil
             }
@@ -365,7 +348,7 @@ private struct WWClockDynamicHandID: Hashable {
 }
 
 private struct WWClockSecondsAndHubOverlay: View {
-    let face: WidgetWeaverClockFaceToken?
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let showsMinuteHand: Bool
     let minuteTimerRange: ClosedRange<Date>
