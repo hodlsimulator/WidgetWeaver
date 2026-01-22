@@ -124,258 +124,183 @@ Smart Photos are “widget-safe photo experiences” that can be prepared in-app
 
 ### Why Vision stays out of the widget
 
-Widgets have tight CPU/memory budgets and timeline generation limits. Vision and asset prep must be done in the app so widget rendering stays deterministic and fast.
+Widgets have tight CPU/memory/time budgets and can be killed aggressively. Running Vision in widgets is a reliability and performance risk.
 
-**Note:** per-family loading is currently wired into the pipeline but not fully adopted everywhere. Some hosts will show the Medium render until they adopt family-aware loading.
+The correct approach is:
 
+- do heavy work in the app
+- persist results in the App Group
+- render deterministically in the widget
 
 ---
 
 ## Photo widgets (Poster templates)
 
-Poster templates are photo-backed widgets. They render a prepared image as a full-bleed background, optionally with an overlay.
+Photo templates are “simple photo-backed widgets” that can either use:
+
+- a single chosen photo
+- a Smart Photos source (shuffle / rotate / curated)
 
 ### Variants
 
-1) **Single photo**
-- Full-bleed photo with no text overlay.
-- Intended for a “photo frame” style widget.
-- Backed by the poster template with `posterOverlayMode = .none`.
+Poster templates include multiple variants in the catalogue:
 
-2) **Photo + caption**
-- Photo background with a caption block at the bottom (with a gradient fade for legibility).
-- Caption text comes from `WidgetSpec.name`, `primaryText`, and optional `secondaryText`.
+- “Poster” (basic)
+- “Poster + Caption”
+- “Poster + Glass Caption”
+- “Poster + Top Caption”
+- “Poster + Glass Top Caption”
 
-3) **Photo Clock**
-- Uses the same caption overlay, but the caption contains time variables (for example `{{__time}}`).
-- Needs minute-accurate updates on the Home Screen.
+The variants differ in presentation and defaults, but share the same underlying rendering system.
 
 ### How photos are sourced (widget-safe)
 
-A poster can render:
+Photo widgets never do heavy work in the widget process.
 
-- a single chosen photo (`spec.image.fileName`), or
-- a Smart Photos shuffle manifest (`spec.image.smartPhoto.shuffleManifestFileName`) for rotation.
-
-Widgets must never run Vision, ranking, or asset preparation. They only load prepared artefacts from the App Group and render deterministically.
-
-Key implementation files:
-
-- Background render: `Shared/WidgetWeaverSpecView+Background.swift` (`posterBackdrop`)
-- Overlay render: `Shared/WidgetWeaverSpecView.swift` (`posterTemplate`, `WidgetWeaverPosterCaptionOverlayView`)
-- Smart Photo widget render helpers: `WidgetWeaverWidget/SmartPhoto/*`
-- Shuffle manifest + scheduling: `WidgetWeaver/SmartPhotoPipeline/*` + `WidgetWeaver/SmartPhotoShuffleManifestStore.swift`
+- The app prepares images and writes them to the App Group images directory.
+- The widget reads the pre-rendered files and renders them.
+- For Smart Photos, the app writes a manifest describing which image is “current” for the widget at a given time.
 
 ### Timeline behaviour (rotation vs time)
 
-- Posters that only rotate photos (no time-dependent variables) schedule timeline entries at rotation boundaries (plus a small horizon), then ask WidgetKit to reload again soon.
-- Posters that include time-dependent variables (Photo Clock) must update at minute boundaries.
+Photo widgets rely on WidgetKit timelines for the “current” entry date, but do not assume per-second delivery.
+
+- Simple photo widgets can use long timelines (hourly/daily) because content does not need to update frequently.
+- Smart Photos rotation chooses a schedule based on rotation settings (e.g. hourly/daily) and writes a manifest so the widget always has a deterministic “current” image.
 
 ### Known issue: Photo Clock minutes frozen / wrong time on the Home Screen
 
-Symptoms:
+If a photo template includes clock variables (like `{{time}}`) or a “Photo Clock” overlay:
 
-- Works in the in-app widget preview but the Home Screen widget shows the wrong time.
-- Launching from Xcode (or opening the app) makes it jump to the correct time once, then it stops again.
+- The preview can look correct while the Home Screen looks “stuck”.
+- This is usually caused by resolving “now” incorrectly (using `Date()` instead of the timeline entry date), or by Home Screen snapshot caching.
 
-Root cause:
+If the photo clock minutes are frozen:
 
-- Time variables were being resolved using a wall-clock `Date()` (or other non-entry clock) during render rather than the WidgetKit `TimelineEntry.date`, and/or the view relied on a view-level timer that the Home Screen host can suppress.
-- With WidgetKit pre-rendering/caching, future timeline entries can end up with “baked” time strings.
+- confirm the render path is using the entry date provided by WidgetKit
+- confirm the widget tree keys against the entry date (avoid cached snapshot reuse)
+- confirm time zone offsets are not being double-applied
 
-Fix (keep these in place):
+Relevant files:
 
-1) **Drive time-dependent posters via the WidgetKit timeline**
+- Variable resolution: `Shared/WidgetSpec+VariableResolutionNow.swift`
+- Photo clock render path: `Shared/WidgetWeaverSpecView+TemplatePhotoClock.swift`
+- Widget timeline entry plumbing: `WidgetWeaverWidget/*Provider*`
 
-If `spec.usesTimeDependentRendering()` is true (e.g. Photo Clock), generate a timeline with minute entries.
-
-2) **Align to minute boundaries**
-
-Avoid minute schedules like `21:26:37 → 21:27:37`. Use a minute-aligned base for the repeating schedule.
-
-3) **Resolve variables using the timeline entry date**
-
-Pass the timeline entry’s date down into the shared render tree and resolve variables against that date.
-
-- `WidgetWeaverSpecView` carries a `renderDate` and resolves variables using:
-
-        let resolved = familySpec.resolvingVariables(now: renderDate)
-
-- The widget configuration passes `entry.date` as that `renderDate`:
-
-        WidgetWeaverSpecView(spec: liveSpec, family: entry.family, context: .widget, now: entry.date)
-
-4) **Key the widget view by the entry date**
-
-This reduces the odds of WidgetKit keeping a stale cached snapshot on the Home Screen:
-
-        .id(entry.date)
-
-Recovery when testing:
-
-- Remove and re-add the widget to drop cached renders.
-- If it still looks stuck, rebuild + reinstall to ensure the widget extension has been updated.
+The Home Screen is the only render target that matters for correctness; previews are not sufficient proof.
 
 ---
 
 ## Featured — Clock (Home Screen)
 
-WidgetWeaver includes a Small Home Screen clock widget (`WidgetWeaverHomeScreenClockWidgetV156`) with a configurable colour scheme, minute ticks, and a ticking seconds hand.
-
-Key implementation files:
-
-- Provider + widget entry point: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
-- Live view (hands rendering): `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
+WidgetWeaver includes a Home Screen clock widget designed to look and feel like a high-quality clock app icon, while remaining widget-safe.
 
 ### Current approach
 
-- **Provider timeline (budget-safe):** the provider publishes minute-boundary WidgetKit timeline entries with a deliberately short horizon (now + next minute boundary). This bounds provider work, avoids colour scheme changes getting “stuck” behind a long cached timeline on iOS 26, and ensures the widget updates even if the view-level heartbeat is suppressed.
-- **Minute-accurate hands (view-level heartbeat):** the live view does not rely on WidgetKit delivering the *next* minute entry exactly on time. Instead it uses an invisible, time-aware `ProgressView(timerInterval:)` as a lightweight heartbeat so SwiftUI re-evaluates the view frequently while still avoiding high-frequency WidgetKit reloads.
-- **Heartbeat interval:** the heartbeat is a **60-second** interval anchored to the **current minute** and keyed by that minute anchor. Long timer intervals (e.g. multi-hour ranges) can be updated too infrequently by iOS, which reintroduces “late” minute ticks.
-- **Live vs pre-render:** when the widget is live on the Home Screen, hour/minute are derived from the wall clock (`Date()`). When WidgetKit is pre-rendering future entries (timeline caching), hour/minute are derived from the pinned entry date (`WidgetWeaverRenderClock.now`) for deterministic snapshots.
-- **Hours / minutes (tick-style):** the hour and minute hands are snapped to the minute boundary (`floorToMinute(renderNow)`) to avoid drift between updates.
-- **Seconds (ticking, no sweep):** rendered using the **glyphs method**:
-  - A custom font (`WWClockSecondHand-Regular.ttf`) contains a pre-drawn seconds hand glyph at the corresponding angle.
-  - The widget view uses `Text(timerInterval: timerRange, countsDown: false)` updating once per second and the font turns it into the correct hand.
-  - A small spillover window past `:59` avoids a brief freeze if the next minute entry arrives slightly late.
+Clock rendering aims for:
+
+- correct time on the Home Screen
+- predictable updates after customisation changes
+- stable rendering across families and modes
+- no expensive work at draw time
+
+Clock rendering must remain deterministic and budget-safe.
+
+Key areas:
+
+- Clock model: `Shared/Clock/*`
+- Clock widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+- Live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
 
 ### Clock logs (budget-safe)
 
-Clock diagnostics are written via `WWClockDebugLog` and must never be able to delay rendering:
+Clock logging must be:
 
-- **Storage:** file-backed in the App Group container (`WidgetWeaverClockDebugLog.txt`), not a giant `[String]` in `UserDefaults`.
-- **Hard cap:** pruned to a small fixed size (currently 256 KB) and only the most recent lines are shown in the in-app viewer.
-- **Write path:** best-effort and asynchronous; never call `UserDefaults.synchronize()` from a widget and never do “log every frame” in the extension. Under Swift 6, avoid capturing a mutable `var` into `DispatchQueue.async` closures (build a `let` line first).
-- **Clearing logs:** `clear()` deletes the file and drops any legacy `UserDefaults` key (no migration), so an old oversized log cannot reintroduce timing issues.
+- budget-safe (no spam)
+- usable from Home Screen logs
+- targeted (only log what proves correctness)
 
-If the minute tick ever “goes slow again”, the first sanity check is: clear the clock log and confirm logging isn’t accidentally spamming writes from the widget.
+If the clock seems wrong, prefer logs that prove:
 
+- entry date
+- derived components
+- local time zone
+- rendering phase (snapshot vs live)
 
 ### Troubleshooting (iOS 26): colour scheme + black tile regressions
+
+iOS 26 widget rendering can cache aggressively, and can also surface transient “black tile” behaviours after certain theme changes.
 
 #### Clock colour scheme does not change on the Home Screen (but previews look correct)
 
 Symptoms:
 
-- Changing the clock widget’s colour scheme updates the in-app preview / widget gallery preview.
-- The live Home Screen widget keeps the previous scheme (sometimes indefinitely).
+- Editor preview shows the updated palette.
+- Widget gallery preview shows the updated palette.
+- Home Screen widget stays on an older palette.
 
-Why this happens:
+Likely causes:
 
-- On iOS 26, WidgetKit can keep rendering from an already-generated clock timeline and not request a fresh timeline immediately after a configuration edit.
-- The Edit Widget UI can drive updates via `snapshot(for:)` without forcing `timeline(for:)` to be re-run, so the preview looks right while the Home Screen instance stays on the old timeline.
+- cached Home Screen snapshot
+- widget tree not keyed against the entry date
+- palette changes not invalidating the view identity
 
-Fix (safe, does not require WidgetCenter reload calls):
+Checklist:
 
-- Keep the clock timeline intentionally short so WidgetKit is forced to re-request it frequently.
-- In `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`, reduce the clock timeline horizon to “now + next minute boundary”, for example:
-  - `WWClockTimelineConfig.maxEntriesPerTimeline = 2`
-  - produce entries for `now` and `nextMinuteBoundary`
-  - return the timeline with `.policy = .atEnd`
-
-Expected behaviour:
-
-- After editing the scheme on the Home Screen, the live widget should pick up the new scheme by the next minute boundary (worst-case just under 60 seconds).
-
-Do not “fix” this by calling `WidgetCenter.shared.reloadTimelines(...)` / `reloadAllTimelines()` from inside the widget provider. On iOS 26 this can easily reintroduce the black tile issue described below.
+- ensure `.id(entry.date)` (or equivalent stable entry-key) exists at the root of the widget view
+- ensure palette is part of the view identity (avoid global cached palette state)
+- remove and re-add the widget after major style changes
 
 #### Clock widget renders as a solid black tile on the Home Screen
 
 Symptoms:
 
-- The clock widget appears as a black tile on the Home Screen.
-- Previews may still render correctly.
+- On add, the widget appears as a black tile.
+- Opening the app may fix it, or it may persist.
 
-Common causes in this codebase:
+Likely causes:
 
-- Doing heavy or blocking work during widget rendering or timeline generation (especially debug logging that writes synchronously, or ballooning logs in `UserDefaults`).
-- Triggering WidgetKit reload loops by calling `WidgetCenter.shared.reloadTimelines(...)` / `reloadAllTimelines()` from within the widget extension/provider.
-- App Group access failing inside the widget extension due to entitlements/suite/container issues.
-- Snapshot/identity regressions (removing `.id(entry.date)` from the widget configuration closure).
+- view recursion (WidgetKit snapshot mode can surface this as black)
+- invalid view identity causing cached broken snapshot reuse
+- unsupported SwiftUI effects in widget context (masking / complex blending / infinite geometry loops)
 
-Fix checklist:
+Checklist:
 
-- Avoid WidgetCenter reload calls from inside widget providers. Reloads should be triggered from the app after a user edit, not from `snapshot(for:)` / `timeline(for:)`.
-- Keep `WWClockDebugLog` budget-safe: file-backed, capped, and best-effort/asynchronous. Never store huge logs in `UserDefaults`, and never call `UserDefaults.synchronize()` from the widget.
-- Verify App Group entitlements are present for both the app target and the widget extension (same group identifier), and make App Group access non-fatal inside the extension.
-- Keep the widget tree keyed by the entry date:
-
-        .id(entry.date)
-
-Recovery while testing:
-
-- Remove the widget from the Home Screen, rebuild/reinstall, then add the widget again.
-- If the tile remains black, check the device logs for widget extension crashes (Console.app on macOS, filter for the widget bundle identifier).
-
+- verify there is no infinite view recursion
+- avoid complex masked text effects in widget context
+- keep gradients subtle and avoid heavy compositing where possible
+- bump widget kind only as a last resort (cache flush)
 
 ### 🚨 Do not break these invariants (easy to regress)
 
-If the clock looks fine in the widget gallery preview but is wrong on the Home Screen, these are the repeat offenders.
-
 #### 1) Minute hand can look “slow” if the view only advances when WidgetKit applies the next entry (or render work blocks)
 
-WidgetKit delivery of minute-boundary entries is best-effort. A `:16:00` entry can arrive a few seconds late on the Home Screen. If hour/minute only change when the next entry is applied, the minute tick visibly lags behind real time.
+A smooth-looking minute hand can still be wrong if the Home Screen does not advance the view at the expected cadence.
 
-Separately: expensive work inside the widget render path (most often debug logging) can delay the render enough that the minute tick appears late.
+When validating minute accuracy:
 
-Fix / rule:
-
-- Keep the **view-level heartbeat** via an invisible `ProgressView(timerInterval:)` anchored to the current minute:
-
-        let minuteAnchor = floorToMinute(Date())
-        ProgressView(timerInterval: minuteAnchor...minuteAnchor.addingTimeInterval(60), countsDown: false)
-            .id(minuteAnchor)
-            .opacity(0.001)
-
-- Keep the **pre-render check** so live renders use the wall clock and pre-rendered renders stay deterministic:
-
-        let sysNow = Date()
-        let ctxNow = WidgetWeaverRenderClock.now   // pinned to the timeline entry date
-
-        let sysMinuteAnchor = floorToMinute(sysNow)
-        let ctxMinuteAnchor = floorToMinute(ctxNow)
-
-        // If ctxNow is far ahead of sysNow (or has already rolled into the next minute), WidgetKit is pre-rendering.
-        let isPrerender = (ctxNow.timeIntervalSince(sysNow) > 5.0) || (ctxMinuteAnchor > sysMinuteAnchor)
-
-        // Hour/minute angles MUST use renderNow (live = wall clock, pre-render = entry date).
-        let renderNow = isPrerender ? ctxNow : sysNow
-
-- Keep widget diagnostics cheap (see “Clock logs” above).
-
-Do NOT “fix” minute accuracy by switching to 1-second WidgetKit timeline entries. The design is intentionally budget-safe.
+- ensure the minute boundary tick is close to real time
+- do not accept “looks smooth” as proof
+- confirm entry times and render times with logs
 
 #### 2) Home Screen can cache a stale snapshot unless the widget tree is entry-keyed
 
-During iteration (especially after many edits / reinstalls), WidgetKit can keep an archived snapshot and stop applying timeline advances to the rendered view.
+The Home Screen can reuse a cached render even when the timeline advances.
 
-Typical symptoms:
+To reduce this:
 
-- minute hand appears frozen,
-- the widget tile can go black for a while after adding to the Home Screen,
-- preview looks fine but Home Screen is wrong.
-
-Fix / rule:
-
-- Keep the Home Screen clock widget keyed by the timeline entry date in the widget configuration closure:
-
-        AppIntentConfiguration(...) { entry in
-            WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
-        }
-
-- Inside the live view, keep minute-keyed identity for the hands (`.id(handsNow)`) and minute-keyed identity for the heartbeat (`.id(minuteAnchor)`), so Home Screen caching has fewer ways to “stick”.
+- ensure the widget root view keys against the entry date
+- avoid global static caches without explicit entry scoping
+- avoid hidden state that does not change across entries
 
 #### 3) Proving minute accuracy (debug)
 
-In DEBUG builds, the widget emits a `minuteTick` line once per live minute:
+Prove minute correctness by logging:
 
-- `lagMs`: milliseconds between the exact minute boundary and when the view ticked.
-- `ok=1`: within tolerance (currently ±250 ms).
-
-Example:
-
-    2026-01-14T02:05:00.012Z [clock] [com.conornolan.WidgetWeaver.WidgetWeaverWidget] minuteTick hm=2:05 handsRef=... lagMs=12 ok=1 ...
+- entry date
+- derived hour/min/sec
+- local time zone
+- render phase (live vs snapshot)
 
 If only pre-render output appears (large `ctx-sys` lead, or `live=0` in older log formats), those entries are from WidgetKit timeline caching and won’t prove live ticking.
 
@@ -448,6 +373,43 @@ The flag defaults to enabled when unset, but can be overridden per-device via th
 
 If the template/settings show on one device but not another, check for an explicit override on the missing device (reset/remove the key).
 
+## Feature flags and compilation conditions
+
+WidgetWeaver uses a small set of shared feature flags (stored in the App Group) to keep the shipped surface area tight while still allowing internal experimentation.
+
+Runtime flags live in `Shared/WidgetWeaverFeatureFlags.swift` and are read by both the app and widget extension.
+
+Current flags:
+
+- Reminders template: `WidgetWeaverFeatureFlags.remindersTemplateEnabled` (App Group key: `widgetweaver.feature.template.reminders.enabled`). Default: enabled.
+- Clipboard Actions: `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled.
+- PawPulse: `WidgetWeaverFeatureFlags.pawPulseEnabled` (App Group key: `widgetweaver.feature.pawpulse.enabled`). Default: disabled.
+
+### PawPulse gating
+
+PawPulse (“Latest Cat”) is treated as a future feature. There are two independent gates:
+
+1) Widget registration (compile-time). The PawPulse widget is only included in the widget bundle when the widget extension target has the `PAWPULSE` compilation condition set. Without this, it will not appear in the Home Screen “Add Widget” gallery.
+
+2) Background work (runtime). Even when compiled in, PawPulse background refresh scheduling only occurs when `WidgetWeaverFeatureFlags.pawPulseEnabled` is `true`. If iOS delivers a previously scheduled task while the flag is off, the task handler completes immediately and does not reschedule.
+
+Important: avoid runtime `if` statements inside `@WidgetBundleBuilder`. They can trigger opaque compiler failures. Prefer `#if` compilation conditions for gating widget registration.
+
+To enable PawPulse for internal builds:
+
+- In Xcode: select the `WidgetWeaverWidget` target → Build Settings → Active Compilation Conditions → add `PAWPULSE` (typically Debug only).
+- Ensure the runtime flag is enabled (App Group default is off). In DEBUG builds, the simplest approach is to temporarily call `WidgetWeaverFeatureFlags.setPawPulseEnabled(true)` on launch.
+
+If PawPulse appears in the widget gallery after disabling it, the Home Screen can be showing cached extension metadata. The fastest reset is usually to delete the app (removes the widget extension), reinstall, then run once.
+
+### Clipboard Actions and Contacts
+
+The “Action Inbox” (Clipboard Actions) widget + intents are intentionally scoped to avoid a Contacts permission prompt.
+
+- The clipboard inbox and auto-detect intents can store text, export receipt CSV, create calendar events, and create reminders.
+- The `.contact` route is hard-disabled in the auto-detect intent (it returns a disabled status rather than creating a contact).
+- Clipboard Actions surfaces are runtime gated (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off).
+
 ---
 
 ## Featured — Noise Machine
@@ -466,7 +428,6 @@ The full mix is stored as a single **Last Mix** record in the App Group so:
 
 - the widget can reflect the current state instantly
 - the app can **resume immediately on relaunch** (optional)
-
 
 Noise Machine generates audio procedurally (no bundled audio files) and runs on `AVAudioEngine`.
 It requests `AVAudioSession` category `.playback` with `.mixWithOthers` and falls back to plain `.playback` if needed.

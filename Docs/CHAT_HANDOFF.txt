@@ -23,8 +23,8 @@ Current roadmap priorities (pre-freeze)
 5) Reduce surface area and permission footprint (do not break existing widgets):
    - Hide “Reading” from Explore / starter surfaces.
    - Remove the “Photo Quote” template from Explore / starter surfaces.
-   - Hide Screen Actions / Clipboard Actions from Explore and first-run paths (avoid Contacts permission).
-   - Hide PawPulse / “Latest Cat” (cat adoption) from Explore and first-run paths (future feature).
+   - Hide Screen Actions / Clipboard Actions from Explore and first-run paths. Contacts creation is hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt.
+   - Keep PawPulse / “Latest Cat” (cat adoption) out of shipped surfaces. The widget is compile-time gated (no gallery presence unless `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off).
 
 Defer
 - Weather: later (post-ship) unless it is already rock-solid; can be hidden/experimental.
@@ -44,11 +44,19 @@ Key repo pointers
 Feature removal / hiding pointers
 - “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
 - “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
-- Screen Actions / Clipboard Actions widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift, WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift
-- PawPulse / “Latest Cat”: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift, Shared/PawPulseLatestCatDetailView.swift
+- Screen Actions / Clipboard Actions:
+  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift
+  - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled)
+  - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`clipboardActionsEnabled`, default off)
+- PawPulse / “Latest Cat”:
+  - Widget registration gate: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (`#if PAWPULSE`)
+  - Widget: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift
+  - App views/settings: Shared/PawPulseLatestCatDetailView.swift, Shared/PawPulseSettingsView.swift
+  - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`pawPulseEnabled`, default off)
+  - Background tasks: Shared/PawPulseBackgroundTasks.swift (runtime gated)
 
 Non-negotiables
 - Do not run heavy work in widgets.
 - Do not introduce WidgetCenter reload loops from widget providers.
 - Do not break existing user widgets when removing templates from Explore.
-- Do not ship a build that requests Contacts permission (scope cut: hide/remove Screen Actions first).
+- Do not ship a build that requests Contacts permission (scope cut: keep Screen Actions surfaces hidden; contact creation remains disabled in the auto-detect app intent).
