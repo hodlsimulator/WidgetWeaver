@@ -39,6 +39,7 @@ enum WidgetWeaverClockTickMode: Int {
 
 struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let date: Date
+    let face: WidgetWeaverClockFaceToken
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
     let colourScheme: WidgetWeaverClockColourScheme
@@ -49,6 +50,10 @@ private enum WWClockTimelineConfig {
     static let maxEntriesPerTimeline: Int = 2
 }
 
+private enum WWQuickClockDefaults {
+    static let face: WidgetWeaverClockFaceToken = .icon
+}
+
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
     typealias Entry = WidgetWeaverHomeScreenClockEntry
     typealias Intent = WidgetWeaverHomeScreenClockConfigurationIntent
@@ -57,6 +62,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let now = Date()
         return Entry(
             date: now,
+            face: WWQuickClockDefaults.face,
             tickMode: .secondsSweep,
             tickSeconds: 0.0,
             colourScheme: .classic,
@@ -73,6 +79,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
         return Entry(
             date: now,
+            face: WWQuickClockDefaults.face,
             tickMode: tickMode,
             tickSeconds: tickSeconds,
             colourScheme: scheme,
@@ -98,6 +105,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         // If live rendering is keyed off `context.isPreview`, those instances can get stuck in the low-budget face.
         return makeMinuteTimeline(
             now: now,
+            face: WWQuickClockDefaults.face,
             colourScheme: scheme,
             tickMode: tickMode,
             tickSeconds: tickSeconds,
@@ -107,6 +115,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
 
     private func makeMinuteTimeline(
         now: Date,
+        face: WidgetWeaverClockFaceToken,
         colourScheme: WidgetWeaverClockColourScheme,
         tickMode: WidgetWeaverClockTickMode,
         tickSeconds: TimeInterval,
@@ -121,6 +130,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         entries.append(
             Entry(
                 date: now,
+                face: face,
                 tickMode: tickMode,
                 tickSeconds: tickSeconds,
                 colourScheme: colourScheme,
@@ -132,6 +142,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             entries.append(
                 Entry(
                     date: nextMinuteBoundary,
+                    face: face,
                     tickMode: tickMode,
                     tickSeconds: tickSeconds,
                     colourScheme: colourScheme,
@@ -153,7 +164,7 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
             let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
 
-            return "provider.timeline scheme=\(colourScheme.rawValue) mode=\(tickMode) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
+            return "provider.timeline face=\(face.rawValue) scheme=\(colourScheme.rawValue) mode=\(tickMode) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
         }
 
         return Timeline(entries: entries, policy: .atEnd)
@@ -229,15 +240,19 @@ private struct WidgetWeaverHomeScreenClockView: View {
             mode: colorScheme
         )
 
+        let face = entry.face
+
         Group {
             if entry.isWidgetKitPreview {
                 WidgetWeaverClockLowBudgetFace(
+                    face: face,
                     palette: palette,
                     date: entry.date,
                     showsSecondHand: (entry.tickMode == .secondsSweep)
                 )
             } else {
                 WidgetWeaverClockWidgetLiveView(
+                    face: face,
                     palette: palette,
                     entryDate: entry.date,
                     tickMode: entry.tickMode,
@@ -264,6 +279,7 @@ private struct WidgetWeaverHomeScreenClockView: View {
 }
 
 private struct WidgetWeaverClockLowBudgetFace: View {
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let date: Date
     let showsSecondHand: Bool
@@ -272,7 +288,7 @@ private struct WidgetWeaverClockLowBudgetFace: View {
         let angles = WWClockLowBudgetAngles(date: date)
 
         WidgetWeaverClockFaceView(
-            face: .ceramic,
+            face: face,
             palette: palette,
             hourAngle: angles.hour,
             minuteAngle: angles.minute,
