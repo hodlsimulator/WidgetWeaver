@@ -4,7 +4,7 @@
 //
 //  Created by . . on 1/4/26.
 //
- 
+
 import SwiftUI
 import UIKit
 
@@ -20,6 +20,8 @@ struct SmartPhotoCropEditorView: View {
     let onApply: (NormalisedRect, Double, Int) async -> Void
 
     @State private var masterImage: UIImage?
+    @State private var previewRotationQuarterTurns: Int = 0
+    @State private var previewImage: UIImage?
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
@@ -79,7 +81,7 @@ struct SmartPhotoCropEditorView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let masterImage {
-                cropCanvas(masterImage: masterImage)
+                cropCanvas(masterImage: previewImage ?? masterImage)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
             } else if !loadErrorMessage.isEmpty {
@@ -112,7 +114,7 @@ struct SmartPhotoCropEditorView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let masterImage {
-                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
+                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: previewImage ?? masterImage)
                 let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
                 let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
                 let normalisedRectAspect = targetAspect / masterAspect
@@ -139,12 +141,14 @@ struct SmartPhotoCropEditorView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Apply") { applyAndDismissIfPossible() }
-                    .disabled(isApplying || masterImage == nil)
+                    .disabled(isApplying || masterImage == nil || previewRotationQuarterTurns != 0)
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Reset") {
                     cropRect = initialCropRect.normalised()
                     straightenDegrees = initialStraightenDegrees
+                    previewRotationQuarterTurns = 0
+                    previewImage = nil
                 }
                     .disabled(isApplying || masterImage == nil)
                 if autoCropRect != nil {
@@ -192,6 +196,8 @@ struct SmartPhotoCropEditorView: View {
         let img = AppGroup.loadUIImage(fileName: masterFileName)
         if let img {
             masterImage = img
+            previewRotationQuarterTurns = 0
+            previewImage = nil
             loadErrorMessage = ""
             return
         }
@@ -201,6 +207,7 @@ struct SmartPhotoCropEditorView: View {
     private func applyAndDismissIfPossible() {
         guard !isApplying else { return }
         guard masterImage != nil else { return }
+        guard previewRotationQuarterTurns == 0 else { return }
         isApplying = true
         let rectToApply = cropRect.normalised()
         Task {
@@ -229,6 +236,8 @@ struct SmartPhotoCropEditorView: View {
         }
         cropRect = auto
         straightenDegrees = 0
+        previewRotationQuarterTurns = 0
+        previewImage = nil
     }
 
     private func pushFocusIfNeeded() {
@@ -246,6 +255,24 @@ struct SmartPhotoCropEditorView: View {
         if focus.wrappedValue.focus == .element(id: "smartPhotoCrop") {
             focus.wrappedValue = previous
         }
+    }
+
+    private func rotatePreview(deltaQuarterTurns: Int) {
+        guard !isApplying else { return }
+        guard let masterImage else { return }
+        let from = SmartPhotoCropRotationPreview.normalisedQuarterTurns(previewRotationQuarterTurns)
+        let to = SmartPhotoCropRotationPreview.normalisedQuarterTurns(from + deltaQuarterTurns)
+        guard from != to else { return }
+        let px = SmartPhotoCropMath.pixelSize(of: masterImage)
+        let masterAspect = SmartPhotoCropMath.safeAspect(width: px.width, height: px.height)
+        let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
+        let rotatedAspect = (to % 2 == 0) ? masterAspect : (1.0 / masterAspect)
+        let rectAspect = targetAspect / rotatedAspect
+        cropRect = SmartPhotoCropRotationPreview.remapCropRect(cropRect.normalised(), fromQuarterTurns: from, toQuarterTurns: to, targetRectAspect: rectAspect)
+        previewRotationQuarterTurns = to
+        previewImage = (to == 0) ? nil : SmartPhotoCropRotationPreview.rotatedPreviewImage(masterImage, quarterTurns: to)
+        dragStartRect = nil; pinchStartRect = nil; precisionStartRect = nil
+        isPinching = false; isPrecisionDragActive = false
     }
 
     private func runDebugDetection(force: Bool) {
@@ -303,7 +330,7 @@ struct SmartPhotoCropEditorView: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: displayRect.width, height: displayRect.height)
 
-                    if debugOverlayEnabled, let debugDetection {
+                    if debugOverlayEnabled, previewRotationQuarterTurns == 0, let debugDetection {
                         SmartPhotoDebugOverlayView(
                             displayRect: contentRect,
                             detection: debugDetection
@@ -479,7 +506,7 @@ struct SmartPhotoCropEditorView: View {
                     .simultaneousGesture(magnifyGesture)
                     .simultaneousGesture(doubleTapGesture)
 
-                if debugOverlayEnabled {
+                if debugOverlayEnabled, previewRotationQuarterTurns == 0 {
                     SmartPhotoDebugHUDView(
                         isDetecting: isDetecting,
                         status: debugStatusMessage,
@@ -571,6 +598,21 @@ struct SmartPhotoCropEditorView: View {
             Text("\(family.label) • \(targetPixels.width)×\(targetPixels.height) px")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.95))
+            HStack(spacing: 10) {
+                Text("Rotate").font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
+                Button { rotatePreview(deltaQuarterTurns: -1) } label: { Image(systemName: "rotate.left") }
+                    .buttonStyle(.plain).foregroundStyle(.white.opacity(0.95))
+                Button { rotatePreview(deltaQuarterTurns: 1) } label: { Image(systemName: "rotate.right") }
+                    .buttonStyle(.plain).foregroundStyle(.white.opacity(0.95))
+                Text("\(SmartPhotoCropRotationPreview.normalisedQuarterTurns(previewRotationQuarterTurns) * 90)°")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.white.opacity(0.9)).frame(width: 58, alignment: .trailing)
+                Spacer(minLength: 0)
+                if previewRotationQuarterTurns != 0 {
+                    Text("Rotate back to apply").font(.caption2).foregroundStyle(.white.opacity(0.8))
+                }
+            }
+            .disabled(isApplying || masterImage == nil)
+
 
             HStack(spacing: 10) {
                 Text("Straighten")
