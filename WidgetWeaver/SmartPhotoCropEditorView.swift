@@ -7,7 +7,6 @@
 
 import SwiftUI
 import UIKit
-
 struct SmartPhotoCropEditorView: View {
     let family: EditingFamily
     let masterFileName: String
@@ -18,19 +17,18 @@ struct SmartPhotoCropEditorView: View {
     let focus: Binding<EditorFocusSnapshot>?
     let onResetToAuto: (() async -> Void)?
     let onApply: (NormalisedRect, Double, Int) async -> Void
-
     @State private var masterImage: UIImage?
     @State private var previewRotationQuarterTurns: Int = 0
     @State private var previewImage: UIImage?
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
+    @GestureState private var isStraightenHolding: Bool = false
     @State private var straightenDenseGridOpacity: Double = 0
     @State private var straightenInteractionToken: Int = 0
     @State private var nudgeStepPixels: Int = 1
     @State private var isApplying: Bool = false
     @State private var loadErrorMessage: String = ""
-
     @State private var dragStartRect: NormalisedRect?
     @State private var pinchStartRect: NormalisedRect?
 
@@ -184,12 +182,14 @@ struct SmartPhotoCropEditorView: View {
             loadMasterImage()
         }
         .onChange(of: straightenDegrees) { straightenInteractionToken &+= 1 }
+        .onChange(of: isStraightenHolding) { straightenInteractionToken &+= 1 }
         .task(id: straightenInteractionToken) { @MainActor in
             guard straightenInteractionToken > 0 else { return }
             straightenDenseGridOpacity = 1
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            while isStraightenHolding && !Task.isCancelled { try? await Task.sleep(nanoseconds: 50_000_000) }
             guard !Task.isCancelled else { return }
-            guard !isStraightenEditing else { return }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled && !isStraightenHolding else { return }
             withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
         }
         .task(id: debugOverlayEnabled) {
@@ -636,6 +636,7 @@ struct SmartPhotoCropEditorView: View {
                     }
                 )
                 .disabled(isApplying)
+                .simultaneousGesture(DragGesture(minimumDistance: 0).updating($isStraightenHolding) { _, state, _ in state = true })
 
                 Text("\(straightenDegrees, specifier: "%+.1f")°")
                     .font(.caption2.monospacedDigit())
