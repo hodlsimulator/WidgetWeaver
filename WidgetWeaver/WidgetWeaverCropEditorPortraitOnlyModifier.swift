@@ -14,64 +14,58 @@ struct WidgetWeaverCropEditorPortraitOnlyModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear {
-                guard shouldLockOnThisDevice else { return }
-                guard !isLocked else { return }
-                isLocked = true
-
                 Task { @MainActor in
+                    guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+                    guard !isLocked else { return }
+                    isLocked = true
                     WidgetWeaverInterfaceOrientationLock.lockToPortrait()
                 }
             }
             .onDisappear {
-                guard shouldLockOnThisDevice else { return }
-                guard isLocked else { return }
-                isLocked = false
-
                 Task { @MainActor in
+                    guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+                    guard isLocked else { return }
+                    isLocked = false
                     WidgetWeaverInterfaceOrientationLock.restoreDefault()
                 }
             }
-    }
-
-    private var shouldLockOnThisDevice: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
     }
 }
 
 @MainActor
 enum WidgetWeaverInterfaceOrientationLock {
+    private static var overrideMask: UIInterfaceOrientationMask?
+
+    static var currentMask: UIInterfaceOrientationMask {
+        overrideMask ?? defaultSupportedMask()
+    }
+
     static func lockToPortrait() {
+        overrideMask = .portrait
         apply(.portrait)
     }
 
     static func restoreDefault() {
+        overrideMask = nil
         apply(defaultSupportedMask())
     }
 
     private static func apply(_ mask: UIInterfaceOrientationMask) {
         guard let scene = activeWindowScene() else { return }
 
-        if #available(iOS 16.0, *) {
-            let preferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask)
-            scene.requestGeometryUpdate(preferences) { _ in }
-        }
+        let preferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: mask)
+        scene.requestGeometryUpdate(preferences) { _ in }
 
         scene.windows.first(where: { $0.isKeyWindow })?
             .rootViewController?
             .setNeedsUpdateOfSupportedInterfaceOrientations()
-
-        if #unavailable(iOS 16.0) {
-            UIViewController.attemptRotationToDeviceOrientation()
-        }
     }
 
     private static func activeWindowScene() -> UIWindowScene? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-
         if let active = scenes.first(where: { $0.activationState == .foregroundActive }) {
             return active
         }
-
         return scenes.first
     }
 

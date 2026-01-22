@@ -6,9 +6,23 @@
 //
 
 import SwiftUI
+import UIKit
+
+@MainActor
+final class WidgetWeaverAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        WidgetWeaverInterfaceOrientationLock.currentMask
+    }
+}
 
 @main
 struct WidgetWeaverApp: App {
+    @UIApplicationDelegateAdaptor(WidgetWeaverAppDelegate.self)
+    private var appDelegate
+
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
