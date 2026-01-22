@@ -189,6 +189,7 @@ struct SmartPhotoCropEditorView: View {
             straightenDenseGridOpacity = 1
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
+            guard !isStraightenEditing else { return }
             withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
         }
         .task(id: debugOverlayEnabled) {
