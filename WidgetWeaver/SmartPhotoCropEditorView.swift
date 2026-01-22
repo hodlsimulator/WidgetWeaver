@@ -183,13 +183,12 @@ struct SmartPhotoCropEditorView: View {
             if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
         }
-        .onChange(of: straightenDegrees) { if !isStraightenEditing { straightenInteractionToken &+= 1 } }
+        .onChange(of: straightenDegrees) { straightenInteractionToken &+= 1 }
         .task(id: straightenInteractionToken) { @MainActor in
             guard straightenInteractionToken > 0 else { return }
             straightenDenseGridOpacity = 1
-            if isStraightenEditing { return }
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, !isStraightenEditing else { return }
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
         }
         .task(id: debugOverlayEnabled) {
@@ -360,7 +359,7 @@ struct SmartPhotoCropEditorView: View {
                 if showGrid {
                     Group {
                         StraightenGridOverlay(rect: displayRect, divisions: 3).opacity(abs(straightenDegrees) > 0.01 && !isStraightenEditing ? 1.0 : 0.0)
-                        StraightenGridOverlay(rect: displayRect, divisions: 10).opacity((isStraightenEditing || abs(straightenDegrees) > 0.01) ? straightenDenseGridOpacity : 1.0)
+                        StraightenGridOverlay(rect: displayRect, divisions: 10).opacity(straightenDenseGridOpacity)
                         CropThirdsGridOverlay(frame: cropFrame, divisions: 3)
                     }
                     .opacity((isStraightenEditing || abs(straightenDegrees) > 0.01) ? 1.0 : straightenDenseGridOpacity)
