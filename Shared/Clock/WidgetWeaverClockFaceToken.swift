@@ -42,4 +42,14 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
             return "Icon"
         }
     }
+
+    /// Short descriptor that makes the visual difference obvious in pickers.
+    public var numeralsDescriptor: String {
+        switch self {
+        case .ceramic:
+            return "4 numerals"
+        case .icon:
+            return "12 numerals"
+        }
+    }
 }

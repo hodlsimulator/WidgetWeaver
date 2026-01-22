@@ -476,6 +476,12 @@ private struct WidgetWeaverClockFaceSelector: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
+            Text("Choose the dial style. This can be changed later.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
+
             HStack(spacing: 12) {
                 WidgetWeaverClockFaceSelectorCard(
                     token: .ceramic,
@@ -513,16 +519,22 @@ private struct WidgetWeaverClockFaceSelectorCard: View {
                 WidgetWeaverClockFaceSelectorClockPreview(face: token, palette: palette)
                     .frame(height: 92)
 
-                HStack(spacing: 6) {
-                    Text(token.displayName)
-                        .font(.caption2.weight(.semibold))
+                VStack(spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(token.displayName)
+                            .font(.caption2.weight(.semibold))
 
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .imageScale(.small)
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .imageScale(.small)
+                        }
                     }
+                    .foregroundStyle(.primary)
+
+                    Text(token.numeralsDescriptor)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity)
             }
             .padding(12)
@@ -542,7 +554,7 @@ private struct WidgetWeaverClockFaceSelectorCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("Editor.Clock.FaceCard.\(token.rawValue)")
-        .accessibilityLabel(token.displayName)
+        .accessibilityLabel("\(token.displayName), \(token.numeralsDescriptor)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

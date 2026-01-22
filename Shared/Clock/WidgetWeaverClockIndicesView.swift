@@ -5,6 +5,7 @@
 //  Created by . . on 12/25/25.
 //
 
+import Foundation
 import SwiftUI
 
 struct WidgetWeaverClockHourIndicesView: View {
@@ -220,18 +221,32 @@ struct WidgetWeaverClockTwelveNumeralsView: View {
     let fontSize: CGFloat
     let scale: CGFloat
 
+    private func text(for numeral: Int) -> String {
+        numeral == 12 ? "12" : String(numeral)
+    }
+
+    private func offset(for numeral: Int) -> (x: CGFloat, y: CGFloat) {
+        let stepDegrees = Double(numeral % 12) * 30.0
+        let radians = stepDegrees * Double.pi / 180.0
+
+        let x = radius * CGFloat(sin(radians))
+        let y = -radius * CGFloat(cos(radians))
+
+        return (x, y)
+    }
+
     var body: some View {
         ZStack {
-            ForEach(1..<13, id: \.self) { n in
+            ForEach(1..<13, id: \.self) { numeral in
+                let p = offset(for: numeral)
+
                 WidgetWeaverClockNumeralGlyphView(
                     palette: palette,
-                    text: String(n),
+                    text: text(for: numeral),
                     fontSize: fontSize,
                     scale: scale
                 )
-                .rotationEffect(.degrees(Double(n) * 30.0))
-                .offset(y: -radius)
-                .rotationEffect(.degrees(-Double(n) * 30.0))
+                .offset(x: p.x, y: p.y)
             }
         }
         .allowsHitTesting(false)
