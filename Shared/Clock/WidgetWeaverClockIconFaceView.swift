@@ -57,7 +57,7 @@ struct WidgetWeaverClockIconFaceView: View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
 
-            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
+            let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
             let metalThicknessRatio: CGFloat = 0.062
@@ -300,20 +300,13 @@ private struct WidgetWeaverClockIconFaceDialFaceView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        Circle()
+        // The Icon face dial is intentionally a uniform fill (no vignette).
+        // A subtle separator stroke provides edge definition without darkening the dial field.
+        return Circle()
             .fill(palette.iconDialFill)
-            // Inner separator ring / occlusion
             .overlay(
                 Circle()
-                    .strokeBorder(palette.separatorRing, lineWidth: occlusionWidth)
-                    .blur(radius: max(px, occlusionWidth * 0.18))
-                    .blendMode(.overlay)
-            )
-            .overlay(
-                Circle()
-                    .strokeBorder(Color.black.opacity(0.28), lineWidth: max(px, occlusionWidth * 0.20))
-                    .blur(radius: max(px, occlusionWidth * 0.10))
-                    .blendMode(.multiply)
+                    .strokeBorder(palette.separatorRing.opacity(0.22), lineWidth: max(px, occlusionWidth * 0.25))
             )
     }
 }
@@ -329,12 +322,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let outerR = outerDiameter / 2.0
-        let dialR = outerR - ringA - ringB - ringC
-
-        let ringAInner = outerR - ringA
-        let ringBInner = ringAInner - ringB
-        let ringCInner = ringBInner - ringC
+        let outerA = outerDiameter
+        let ringAInner = max(1, outerA - (ringA * 2.0))
+        let ringBInner = max(1, outerA - ((ringA + ringB) * 2.0))
 
         // Slightly “cooler” metal range than the shipped face.
         let metalHi = WWClock.colour(0xF6FAFF, alpha: 1.0)
@@ -384,28 +374,33 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
         )
 
         let ringAShadow = max(px, ringA * 0.60)
-        let ringBShadow = max(px, ringB * 0.95)
-        let ringCShadow = max(px, ringC * 1.10)
+        let ringBShadow = max(px, ringB * 0.85)
+        let ringCShadow = max(px, ringC * 1.05)
 
         ZStack {
+            // A) Outer metal rim.
             Circle()
-                .stroke(ringAStroke, lineWidth: ringA)
+                .strokeBorder(ringAStroke, lineWidth: ringA)
+                .frame(width: outerA, height: outerA)
                 .shadow(color: Color.black.opacity(0.20), radius: ringAShadow, x: 0, y: ringAShadow * 0.45)
 
+            // A) Inner rim definition stroke.
             Circle()
-                .stroke(ringAInnerStroke, lineWidth: max(px, ringA * 0.22))
-                .frame(width: ringAInner * 2.0, height: ringAInner * 2.0)
+                .strokeBorder(ringAInnerStroke, lineWidth: max(px, ringA * 0.22))
+                .frame(width: ringAInner, height: ringAInner)
                 .blendMode(.overlay)
 
+            // B) Matte ring (ring only; never fill the dial field).
             Circle()
-                .fill(ringBFill)
-                .frame(width: ringBInner * 2.0, height: ringBInner * 2.0)
-                .shadow(color: Color.black.opacity(0.55), radius: ringBShadow, x: 0, y: ringBShadow * 0.60)
+                .strokeBorder(ringBFill, lineWidth: ringB)
+                .frame(width: ringAInner, height: ringAInner)
+                .shadow(color: Color.black.opacity(0.32), radius: ringBShadow, x: 0, y: ringBShadow * 0.40)
 
+            // C) Inner metal ring right before the dial.
             Circle()
-                .stroke(ringCStroke, lineWidth: ringC)
-                .frame(width: ringCInner * 2.0, height: ringCInner * 2.0)
-                .shadow(color: Color.black.opacity(0.30), radius: ringCShadow, x: 0, y: ringCShadow * 0.55)
+                .strokeBorder(ringCStroke, lineWidth: ringC)
+                .frame(width: ringBInner, height: ringBInner)
+                .shadow(color: Color.black.opacity(0.22), radius: ringCShadow, x: 0, y: ringCShadow * 0.38)
 
             // Outer gloss (subtle).
             Circle()
@@ -425,25 +420,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
                 .rotationEffect(.degrees(-14))
                 .blur(radius: max(px, ringA * 0.12))
                 .blendMode(.screen)
-                .frame(width: outerR * 2.0, height: outerR * 2.0)
-
-            // Inner occlusion towards dial.
-            Circle()
-                .fill(
-                    RadialGradient(
-                        gradient: Gradient(stops: [
-                            .init(color: Color.black.opacity(0.00), location: 0.60),
-                            .init(color: Color.black.opacity(0.44), location: 1.00)
-                        ]),
-                        center: .center,
-                        startRadius: dialR * 0.60,
-                        endRadius: dialR
-                    )
-                )
-                .frame(width: dialR * 2.0, height: dialR * 2.0)
-                .blendMode(.multiply)
-                .opacity(0.65)
+                .frame(width: outerA, height: outerA)
         }
+        .frame(width: outerA, height: outerA)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

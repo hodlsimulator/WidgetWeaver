@@ -8,6 +8,17 @@
 import SwiftUI
 
 enum WWClock {
+
+    /// Outer bezel diameter as a proportion of the square container side.
+    ///
+    /// This value defines the consistent visual inset for clock faces in widget and preview contexts.
+    static let outerBezelInsetScale: CGFloat = 0.925
+
+    @inline(__always)
+    static func outerBezelDiameter(containerSide: CGFloat, scale: CGFloat) -> CGFloat {
+        pixel(containerSide * outerBezelInsetScale, scale: scale)
+    }
+
     @inline(__always)
     static func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
         Swift.min(Swift.max(value, min), max)

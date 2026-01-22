@@ -52,7 +52,7 @@ struct WidgetWeaverClockIconView: View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
 
-            let outerDiameter = WWClock.pixel(s * 0.925, scale: displayScale)
+            let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
             let metalThicknessRatio: CGFloat = 0.062

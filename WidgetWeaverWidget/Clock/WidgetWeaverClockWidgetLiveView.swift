@@ -243,6 +243,7 @@ fileprivate struct WWClockRenderBody: View {
             }
 
             WWClockSecondsAndHubOverlay(
+                face: face,
                 palette: palette,
                 showsMinuteHand: showsMinuteHandGlyph,
                 minuteTimerRange: minuteTimerRange,
@@ -364,6 +365,7 @@ private struct WWClockDynamicHandID: Hashable {
 }
 
 private struct WWClockSecondsAndHubOverlay: View {
+    let face: WidgetWeaverClockFaceToken?
     let palette: WidgetWeaverClockPalette
     let showsMinuteHand: Bool
     let minuteTimerRange: ClosedRange<Date>
@@ -379,6 +381,8 @@ private struct WWClockSecondsAndHubOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
+
+            let secondHandColour: Color = (face == .icon) ? palette.iconSecondHand : palette.accent
 
             let minuteID = WWClockDynamicHandID(
                 anchorRef: Int(minuteTimerRange.lowerBound.timeIntervalSinceReferenceDate.rounded()),
@@ -408,6 +412,7 @@ private struct WWClockSecondsAndHubOverlay: View {
                 if showsSeconds {
                     WWClockSecondHandGlyphView(
                         palette: palette,
+                        colour: secondHandColour,
                         timerRange: timerRange,
                         diameter: layout.dialDiameter
                     )
@@ -487,6 +492,7 @@ private struct WWClockMinuteHandGlyphView: View {
 
 private struct WWClockSecondHandGlyphView: View {
     let palette: WidgetWeaverClockPalette
+    let colour: Color
     let timerRange: ClosedRange<Date>
     let diameter: CGFloat
 
@@ -494,13 +500,13 @@ private struct WWClockSecondHandGlyphView: View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
             .font(WWClockSecondHandFont.font(size: diameter))
-            .foregroundStyle(palette.accent)
+            .foregroundStyle(colour)
             .unredacted()
             .lineLimit(1)
             .multilineTextAlignment(.center)
             .frame(width: diameter, height: diameter, alignment: .center)
             .shadow(color: palette.handShadow, radius: diameter * 0.012, x: 0, y: diameter * 0.006)
-            .shadow(color: palette.accent.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
+            .shadow(color: colour.opacity(0.35), radius: diameter * 0.018, x: 0, y: 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .transaction { transaction in
@@ -517,7 +523,7 @@ private struct WWClockDialLayout {
     init(size: CGSize, scale: CGFloat) {
         let s = min(size.width, size.height)
 
-        let outerDiameter = WWClock.pixel(s * 0.925, scale: scale)
+        let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: scale)
         let outerRadius = outerDiameter * 0.5
 
         let metalThicknessRatio: CGFloat = 0.062
