@@ -8,15 +8,22 @@
 import UIKit
 
 enum SmartPhotoCropMath {
-    private static let clampEpsilon: Double = 1.0e-9
+    private static let clampEpsilon: Double = 1.0e-6
+    private static let minimumRectAspect: Double = 0.0001
+    private static let minimumWidthFraction: Double = 0.08
 
     private static func sanitise(_ value: Double, fallback: Double) -> Double {
         guard value.isFinite else { return fallback }
         return value
     }
 
+    private static func safeRectAspect(_ rectAspect: Double) -> Double {
+        let a = sanitise(rectAspect, fallback: 1.0)
+        return max(minimumRectAspect, a)
+    }
+
     static func pixelSnappedRect(_ rect: NormalisedRect, masterPixels: PixelSize, rectAspect: Double) -> NormalisedRect {
-        let a = max(0.0001, rectAspect)
+        let a = safeRectAspect(rectAspect)
         var r = clampRect(rect, rectAspect: a)
 
         let stepX = 1.0 / Double(max(1, masterPixels.width))
@@ -41,10 +48,10 @@ enum SmartPhotoCropMath {
     }
 
     static func toggleZoomRect(current: NormalisedRect, rectAspect: Double, anchor: CGPoint) -> NormalisedRect {
-        let a = max(0.0001, rectAspect)
+        let a = safeRectAspect(rectAspect)
 
         let maxW = min(1.0, a)
-        let minW = min(maxW, 0.08)
+        let minW = min(maxW, minimumWidthFraction)
 
         let zoomedOutThreshold = maxW * 0.92
         let targetW: Double
@@ -107,29 +114,56 @@ enum SmartPhotoCropMath {
     }
 
     static func clampWidth(_ proposedWidth: Double, rectAspect: Double) -> Double {
-        let a = max(0.0001, rectAspect)
+        let a = safeRectAspect(rectAspect)
         let maxWidth = min(1.0, a)
-        let minWidth = min(maxWidth, 0.08)
+        let minWidth = min(maxWidth, minimumWidthFraction)
 
         let w = sanitise(proposedWidth, fallback: maxWidth)
-        return min(maxWidth, max(minWidth, w))
+        let clamped = min(maxWidth, max(minWidth, w))
+
+        if abs(clamped - minWidth) <= clampEpsilon { return minWidth }
+        if abs(clamped - maxWidth) <= clampEpsilon { return maxWidth }
+        return clamped
     }
 
     static func clampRect(_ rect: NormalisedRect, rectAspect: Double) -> NormalisedRect {
-        let a = max(0.0001, rectAspect)
+        let a = safeRectAspect(rectAspect)
 
         let xIn = sanitise(rect.x, fallback: 0.0)
         let yIn = sanitise(rect.y, fallback: 0.0)
         let wIn = sanitise(rect.width, fallback: min(1.0, a))
 
-        let w = clampWidth(wIn, rectAspect: a)
-        let h = w / a
+        var w = clampWidth(wIn, rectAspect: a)
+        var h = w / a
+
+        if !h.isFinite || h <= 0.0 {
+            h = 1.0
+            w = min(1.0, a)
+        }
+
+        if h > 1.0 {
+            h = 1.0
+            w = min(1.0, a)
+        }
 
         var x = xIn
         var y = yIn
 
-        let maxX = 1.0 - w
-        let maxY = 1.0 - h
+        let maxX = max(0.0, 1.0 - w)
+        let maxY = max(0.0, 1.0 - h)
+
+        x = min(max(0.0, x), maxX)
+        y = min(max(0.0, y), maxY)
+
+        let right = x + w
+        if right > 1.0 {
+            x = max(0.0, x - (right - 1.0))
+        }
+
+        let bottom = y + h
+        if bottom > 1.0 {
+            y = max(0.0, y - (bottom - 1.0))
+        }
 
         x = min(max(0.0, x), maxX)
         y = min(max(0.0, y), maxY)
@@ -139,6 +173,6 @@ enum SmartPhotoCropMath {
         if abs(maxX - x) <= clampEpsilon { x = maxX }
         if abs(maxY - y) <= clampEpsilon { y = maxY }
 
-        return NormalisedRect(x: x, y: y, width: w, height: h).normalised()
+        return NormalisedRect(x: x, y: y, width: w, height: h)
     }
 }
