@@ -271,7 +271,8 @@ private struct WidgetWeaverClockLowBudgetFace: View {
     var body: some View {
         let angles = WWClockLowBudgetAngles(date: date)
 
-        WidgetWeaverClockIconView(
+        WidgetWeaverClockFaceView(
+            face: .ceramic,
             palette: palette,
             hourAngle: angles.hour,
             minuteAngle: angles.minute,

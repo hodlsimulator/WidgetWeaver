@@ -9,6 +9,7 @@ import SwiftUI
 import Foundation
 
 struct WidgetWeaverClockLiveView: View {
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
 
     /// Used only as a deterministic anchor for WidgetKit pre-rendering.
@@ -27,7 +28,12 @@ struct WidgetWeaverClockLiveView: View {
     @State private var debugPulse: Double = 0
     #endif
 
-    init(palette: WidgetWeaverClockPalette, startDate: Date) {
+    init(
+        face: WidgetWeaverClockFaceToken = .ceramic,
+        palette: WidgetWeaverClockPalette,
+        startDate: Date
+    ) {
+        self.face = face
         self.palette = palette
         self.startDate = startDate
         _baseDate = State(initialValue: startDate)
@@ -41,7 +47,8 @@ struct WidgetWeaverClockLiveView: View {
         let secondAngle = Angle.degrees(baseAngles.second + secPhase * 360.0)
 
         ZStack(alignment: .bottomTrailing) {
-            WidgetWeaverClockIconView(
+            WidgetWeaverClockFaceView(
+                face: face,
                 palette: palette,
                 hourAngle: hourAngle,
                 minuteAngle: minuteAngle,
