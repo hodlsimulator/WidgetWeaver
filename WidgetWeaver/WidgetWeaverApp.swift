@@ -27,10 +27,15 @@ struct WidgetWeaverApp: App {
 
     init() {
         AppGroup.ensureImagesDirectoryExists()
-        PawPulseCache.ensureDirectoryExists()
+
+        if WidgetWeaverFeatureFlags.pawPulseEnabled {
+            PawPulseCache.ensureDirectoryExists()
+        }
 
         PawPulseBackgroundTasks.register()
-        PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
+        if WidgetWeaverFeatureFlags.pawPulseEnabled {
+            PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
+        }
 
         Task {
             await NoiseMachineController.shared.bootstrapOnLaunch()

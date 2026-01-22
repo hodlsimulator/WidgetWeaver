@@ -15,7 +15,11 @@ import Foundation
 public enum WidgetWeaverFeatureFlags {
     private enum Keys {
         static let remindersTemplateEnabled = "widgetweaver.feature.template.reminders.enabled"
+        static let clipboardActionsEnabled = "widgetweaver.feature.clipboardActions.enabled"
+        static let pawPulseEnabled = "widgetweaver.feature.pawpulse.enabled"
     }
+
+    // MARK: - Templates
 
     /// Reminders template visibility.
     ///
@@ -35,5 +39,45 @@ public enum WidgetWeaverFeatureFlags {
 
     public static func resetRemindersTemplateEnabledOverride() {
         AppGroup.userDefaults.removeObject(forKey: Keys.remindersTemplateEnabled)
+    }
+
+    // MARK: - Clipboard Actions (Screen Actions scope cut)
+
+    /// Clipboard Actions widget + related automation surfaces.
+    ///
+    /// Default is `false` to keep the shipping surface area minimal unless explicitly enabled.
+    public static var clipboardActionsEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.clipboardActionsEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setClipboardActionsEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.clipboardActionsEnabled)
+    }
+
+    public static func resetClipboardActionsEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.clipboardActionsEnabled)
+    }
+
+    // MARK: - PawPulse (future feature)
+
+    /// PawPulse adoption feed surfaces (future feature).
+    ///
+    /// Default is `false` so fresh installs do not run background refresh work.
+    public static var pawPulseEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.pawPulseEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setPawPulseEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.pawPulseEnabled)
+    }
+
+    public static func resetPawPulseEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.pawPulseEnabled)
     }
 }

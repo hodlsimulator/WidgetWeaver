@@ -6,11 +6,8 @@
 //
 
 import AppIntents
-import Contacts
-import EventKit
 import Foundation
 import ScreenActionsCore
-import WidgetKit
 
 private enum WWClipboardIntentHelpers {
     static func clean(_ text: String) -> String {
@@ -122,13 +119,11 @@ struct WidgetWeaverAutoDetectFromTextIntent: AppIntent {
                 return .result(dialog: "CSV exported.")
 
             case .contact:
-                let detected = ScreenActionsCore.ContactParser.detect(in: cleaned)
-                let id = try await ScreenActionsCore.ContactsService.save(contact: detected)
                 WidgetWeaverClipboardInboxStore.setLastAction(
-                    kind: "auto-contact",
-                    message: "Contact saved. (\(id))"
+                    kind: "auto-contact-disabled",
+                    message: "Contact creation is disabled."
                 )
-                return .result(dialog: "Contact saved.")
+                return .result(dialog: "Contact creation is disabled.")
 
             case .event:
                 let range = ScreenActionsCore.DateParser.firstDateRange(in: cleaned) ?? WWClipboardIntentHelpers.defaultDateRange()

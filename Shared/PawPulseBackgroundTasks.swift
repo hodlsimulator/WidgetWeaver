@@ -17,11 +17,18 @@ public enum PawPulseBackgroundTasks {
                 task.setTaskCompleted(success: false)
                 return
             }
+
+            guard WidgetWeaverFeatureFlags.pawPulseEnabled else {
+                appRefreshTask.setTaskCompleted(success: true)
+                return
+            }
+
             handle(appRefreshTask)
         }
     }
 
     public static func scheduleNextEarliest(minutesFromNow: Int = 30) {
+        guard WidgetWeaverFeatureFlags.pawPulseEnabled else { return }
         guard PawPulseSettingsStore.resolvedBaseURL() != nil else { return }
 
         let request = BGAppRefreshTaskRequest(identifier: refreshTaskIdentifier)
@@ -35,6 +42,11 @@ public enum PawPulseBackgroundTasks {
     }
 
     private static func handle(_ bgTask: BGAppRefreshTask) {
+        guard WidgetWeaverFeatureFlags.pawPulseEnabled else {
+            bgTask.setTaskCompleted(success: true)
+            return
+        }
+
         scheduleNextEarliest(minutesFromNow: 30)
 
         let completer = BGTaskCompleter(bgTask)
