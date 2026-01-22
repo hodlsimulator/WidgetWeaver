@@ -8,6 +8,13 @@
 import UIKit
 
 enum SmartPhotoCropMath {
+    private static let clampEpsilon: Double = 1.0e-9
+
+    private static func sanitise(_ value: Double, fallback: Double) -> Double {
+        guard value.isFinite else { return fallback }
+        return value
+    }
+
     static func pixelSnappedRect(_ rect: NormalisedRect, masterPixels: PixelSize, rectAspect: Double) -> NormalisedRect {
         let a = max(0.0001, rectAspect)
         var r = clampRect(rect, rectAspect: a)
@@ -15,8 +22,19 @@ enum SmartPhotoCropMath {
         let stepX = 1.0 / Double(max(1, masterPixels.width))
         let stepY = 1.0 / Double(max(1, masterPixels.height))
 
-        let snappedX = (r.x / stepX).rounded() * stepX
-        let snappedY = (r.y / stepY).rounded() * stepY
+        var snappedX = (r.x / stepX).rounded() * stepX
+        var snappedY = (r.y / stepY).rounded() * stepY
+
+        // Edge pinning avoids jitter when the rect is already at, or extremely near, the bounds.
+        let maxX = 1.0 - r.width
+        let maxY = 1.0 - r.height
+        let halfStepX = stepX / 2.0
+        let halfStepY = stepY / 2.0
+
+        if abs(r.x) <= halfStepX { snappedX = 0.0 }
+        if abs(r.y) <= halfStepY { snappedY = 0.0 }
+        if abs(r.x - maxX) <= halfStepX { snappedX = maxX }
+        if abs(r.y - maxY) <= halfStepY { snappedY = maxY }
 
         r = NormalisedRect(x: snappedX, y: snappedY, width: r.width, height: r.height)
         return clampRect(r, rectAspect: a)
@@ -93,20 +111,33 @@ enum SmartPhotoCropMath {
         let maxWidth = min(1.0, a)
         let minWidth = min(maxWidth, 0.08)
 
-        return min(maxWidth, max(minWidth, proposedWidth))
+        let w = sanitise(proposedWidth, fallback: maxWidth)
+        return min(maxWidth, max(minWidth, w))
     }
 
     static func clampRect(_ rect: NormalisedRect, rectAspect: Double) -> NormalisedRect {
         let a = max(0.0001, rectAspect)
 
-        let w = clampWidth(rect.width, rectAspect: a)
+        let xIn = sanitise(rect.x, fallback: 0.0)
+        let yIn = sanitise(rect.y, fallback: 0.0)
+        let wIn = sanitise(rect.width, fallback: min(1.0, a))
+
+        let w = clampWidth(wIn, rectAspect: a)
         let h = w / a
 
-        var x = rect.x
-        var y = rect.y
+        var x = xIn
+        var y = yIn
 
-        x = min(max(0.0, x), 1.0 - w)
-        y = min(max(0.0, y), 1.0 - h)
+        let maxX = 1.0 - w
+        let maxY = 1.0 - h
+
+        x = min(max(0.0, x), maxX)
+        y = min(max(0.0, y), maxY)
+
+        if abs(x) <= clampEpsilon { x = 0.0 }
+        if abs(y) <= clampEpsilon { y = 0.0 }
+        if abs(maxX - x) <= clampEpsilon { x = maxX }
+        if abs(maxY - y) <= clampEpsilon { y = maxY }
 
         return NormalisedRect(x: x, y: y, width: w, height: h).normalised()
     }
