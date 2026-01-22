@@ -260,13 +260,11 @@ extension ContentView {
             }()
 
             Section {
-                Picker("Template", selection: binding(\.template)) {
-                    ForEach(templateTokens) { token in
-                        Text(token.displayName)
-                            .tag(token)
-                            .disabled(token == .reminders && !remindersEnabled)
-                    }
-                }
+                WidgetWeaverClockFaceSelector(
+                    clockFaceRaw: binding(\.clockFaceRaw),
+                    clockThemeRaw: currentFamilyDraft().clockThemeRaw
+                )
+                .accessibilityIdentifier("Editor.Clock.FaceSelector")
 
                 Picker("Clock theme", selection: binding(\.clockThemeRaw)) {
                     Text("Classic").tag("classic")
@@ -275,6 +273,14 @@ extension ContentView {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("Editor.Clock.ThemePicker")
+
+                Picker("Template", selection: binding(\.template)) {
+                    ForEach(templateTokens) { token in
+                        Text(token.displayName)
+                            .tag(token)
+                            .disabled(token == .reminders && !remindersEnabled)
+                    }
+                }
 
                 Text("Clock designs do not use layout controls like accent bars or line limits.")
                     .font(.caption)
@@ -434,4 +440,150 @@ extension ContentView {
         }
     }
 #endif
+}
+
+private struct WidgetWeaverClockFaceSelector: View {
+    @Binding var clockFaceRaw: String
+    let clockThemeRaw: String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selectedToken: WidgetWeaverClockFaceToken {
+        WidgetWeaverClockFaceToken.canonical(from: clockFaceRaw)
+    }
+
+    private var palette: WidgetWeaverClockPalette {
+        let config = WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: selectedToken.rawValue)
+
+        let scheme: WidgetWeaverClockColourScheme = {
+            switch config.theme {
+            case "ocean":
+                return .ocean
+            case "graphite":
+                return .graphite
+            default:
+                return .classic
+            }
+        }()
+
+        return WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Face")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 12) {
+                WidgetWeaverClockFaceSelectorCard(
+                    token: .ceramic,
+                    isSelected: selectedToken == .ceramic,
+                    palette: palette,
+                    action: {
+                        clockFaceRaw = WidgetWeaverClockFaceToken.ceramic.rawValue
+                    }
+                )
+
+                WidgetWeaverClockFaceSelectorCard(
+                    token: .icon,
+                    isSelected: selectedToken == .icon,
+                    palette: palette,
+                    action: {
+                        clockFaceRaw = WidgetWeaverClockFaceToken.icon.rawValue
+                    }
+                )
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct WidgetWeaverClockFaceSelectorCard: View {
+    let token: WidgetWeaverClockFaceToken
+    let isSelected: Bool
+    let palette: WidgetWeaverClockPalette
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                WidgetWeaverClockFaceSelectorClockPreview(face: token, palette: palette)
+                    .frame(height: 92)
+
+                HStack(spacing: 6) {
+                    Text(token.displayName)
+                        .font(.caption2.weight(.semibold))
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .imageScale(.small)
+                    }
+                }
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.thinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? Color.accentColor.opacity(0.85) : Color.secondary.opacity(0.25),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("Editor.Clock.FaceCard.\(token.rawValue)")
+        .accessibilityLabel(token.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct WidgetWeaverClockFaceSelectorClockPreview: View {
+    let face: WidgetWeaverClockFaceToken
+    let palette: WidgetWeaverClockPalette
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+
+            ZStack {
+                WidgetWeaverClockBackgroundView(palette: palette)
+
+                WidgetWeaverClockFaceView(
+                    face: face,
+                    palette: palette,
+                    hourAngle: .degrees(310.0),
+                    minuteAngle: .degrees(120.0),
+                    secondAngle: .degrees(200.0),
+                    showsSecondHand: true,
+                    showsMinuteHand: true,
+                    showsHandShadows: true,
+                    showsGlows: true,
+                    showsCentreHub: true,
+                    handsOpacity: 1.0
+                )
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+            }
+            .frame(width: side, height: side)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityHidden(true)
+    }
 }
