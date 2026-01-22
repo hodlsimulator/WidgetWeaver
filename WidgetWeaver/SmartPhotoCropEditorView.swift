@@ -615,7 +615,7 @@ struct SmartPhotoCropEditorView: View {
                     Text("10 px").tag(10)
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
+                .frame(maxWidth: 220).environment(\.colorScheme, .dark)
 
                 Spacer(minLength: 8)
 
