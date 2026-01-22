@@ -73,7 +73,7 @@ extension ContentView {
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
-                        onApplyCrop: { fam, cropRect, straightenDegrees in
+                        onApplyCrop: { fam, cropRect, straightenDegrees, _ in
                             await applyManualSmartCropWithStraighten(
                                 family: fam,
                                 cropRect: cropRect,
@@ -110,6 +110,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
         var targetPixels: PixelSize
         var initialCropRect: NormalisedRect
         var initialStraightenDegrees: Double
+        var initialRotationQuarterTurns: Int
 
         var id: String { family.rawValue }
     }
@@ -119,7 +120,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
     let isBusy: Bool
 
     let onSelectFamily: (EditingFamily) -> Void
-    let onApplyCrop: (EditingFamily, NormalisedRect, Double) async -> Void
+    let onApplyCrop: (EditingFamily, NormalisedRect, Double, Int) async -> Void
 
     @State private var activeCropRoute: CropRoute?
     @State private var showOtherSizes: Bool = false
@@ -147,11 +148,12 @@ private struct SmartPhotoSingleFramingEditorView: View {
                     targetPixels: route.targetPixels,
                     initialCropRect: route.initialCropRect,
                     initialStraightenDegrees: route.initialStraightenDegrees,
+                    initialRotationQuarterTurns: route.initialRotationQuarterTurns,
                     autoCropRect: nil,
                     focus: nil,
                     onResetToAuto: nil,
-                    onApply: { rect, straightenDegrees in
-                        await onApplyCrop(route.family, rect, straightenDegrees)
+                    onApply: { rect, straightenDegrees, rotationQuarterTurns in
+                        await onApplyCrop(route.family, rect, straightenDegrees, rotationQuarterTurns)
                     }
                 )
                 .id("cropSheet-single-\(route.family.rawValue)")
@@ -195,7 +197,8 @@ private struct SmartPhotoSingleFramingEditorView: View {
             masterFileName: master,
             targetPixels: variant.pixelSize.normalised(),
             initialCropRect: variant.cropRect.normalised(),
-            initialStraightenDegrees: variant.straightenDegrees ?? 0
+            initialStraightenDegrees: variant.straightenDegrees ?? 0,
+            initialRotationQuarterTurns: variant.rotationQuarterTurns ?? 0
         )
     }
 
@@ -328,7 +331,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                     onResetToAuto: {
                         await onResetToAuto(route.entryID, route.family)
                     },
-                    onApply: { rect, straightenDegrees in
+                    onApply: { rect, straightenDegrees, _ in
                         await onApplyCrop(route.entryID, route.family, rect, straightenDegrees)
                     }
                 )

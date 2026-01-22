@@ -14,16 +14,17 @@ struct SmartPhotoCropEditorView: View {
     let targetPixels: PixelSize
     let initialCropRect: NormalisedRect
     let initialStraightenDegrees: Double
+    let initialRotationQuarterTurns: Int
     let autoCropRect: NormalisedRect?
     let focus: Binding<EditorFocusSnapshot>?
     let onResetToAuto: (() async -> Void)?
-    let onApply: (NormalisedRect, Double) async -> Void
+    let onApply: (NormalisedRect, Double, Int) async -> Void
 
     @State private var masterImage: UIImage?
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
-    @State private var rotationQuarterTurns: Int = 0
+    @State private var rotationQuarterTurns: Int
     @State private var rotatedPreviewImage: UIImage?
 
     @State private var nudgeStepPixels: Int = 1
@@ -57,16 +58,18 @@ struct SmartPhotoCropEditorView: View {
         targetPixels: PixelSize,
         initialCropRect: NormalisedRect,
         initialStraightenDegrees: Double = 0,
+        initialRotationQuarterTurns: Int = 0,
         autoCropRect: NormalisedRect? = nil,
         focus: Binding<EditorFocusSnapshot>? = nil,
         onResetToAuto: (() async -> Void)? = nil,
-        onApply: @escaping (NormalisedRect, Double) async -> Void
+        onApply: @escaping (NormalisedRect, Double, Int) async -> Void
     ) {
         self.family = family
         self.masterFileName = masterFileName
         self.targetPixels = targetPixels.normalised()
         self.initialCropRect = initialCropRect.normalised()
         self.initialStraightenDegrees = Self.normalisedStraightenDegrees(initialStraightenDegrees)
+        self.initialRotationQuarterTurns = SmartPhotoCropRotationPreview.normalisedQuarterTurns(initialRotationQuarterTurns)
         self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
         self.onResetToAuto = onResetToAuto
@@ -74,6 +77,7 @@ struct SmartPhotoCropEditorView: View {
 
         _cropRect = State(initialValue: initialCropRect.normalised())
         _straightenDegrees = State(initialValue: Self.normalisedStraightenDegrees(initialStraightenDegrees))
+        _rotationQuarterTurns = State(initialValue: self.initialRotationQuarterTurns)
     }
 
     var body: some View {
@@ -145,7 +149,7 @@ struct SmartPhotoCropEditorView: View {
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Reset") {
-                    setRotationQuarterTurns(0)
+                    setRotationQuarterTurns(initialRotationQuarterTurns)
                     cropRect = initialCropRect.normalised()
                     straightenDegrees = initialStraightenDegrees
                 }
@@ -196,6 +200,7 @@ struct SmartPhotoCropEditorView: View {
         if let img {
             masterImage = img
             loadErrorMessage = ""
+            if rotationQuarterTurns != 0 { setRotationQuarterTurns(rotationQuarterTurns) }
             return
         }
         loadErrorMessage = "Smart master image was not found on disk."
@@ -229,7 +234,7 @@ struct SmartPhotoCropEditorView: View {
         let rectToApply = cropRect.normalised()
         Task {
             let degreesToApply = Self.normalisedStraightenDegrees(straightenDegrees)
-            await onApply(rectToApply, degreesToApply)
+            await onApply(rectToApply, degreesToApply, rotationQuarterTurns)
             await MainActor.run {
                 isApplying = false
                 dismiss()
