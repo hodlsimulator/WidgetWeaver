@@ -14,6 +14,7 @@ struct WidgetWeaverCropEditorPortraitOnlyModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear {
+                guard shouldLockOnThisDevice else { return }
                 guard !isLocked else { return }
                 isLocked = true
 
@@ -22,6 +23,7 @@ struct WidgetWeaverCropEditorPortraitOnlyModifier: ViewModifier {
                 }
             }
             .onDisappear {
+                guard shouldLockOnThisDevice else { return }
                 guard isLocked else { return }
                 isLocked = false
 
@@ -29,6 +31,10 @@ struct WidgetWeaverCropEditorPortraitOnlyModifier: ViewModifier {
                     WidgetWeaverInterfaceOrientationLock.restoreDefault()
                 }
             }
+    }
+
+    private var shouldLockOnThisDevice: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
     }
 }
 
