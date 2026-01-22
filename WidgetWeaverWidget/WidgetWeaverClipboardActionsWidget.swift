@@ -15,10 +15,19 @@ public struct WidgetWeaverClipboardActionsWidget: Widget {
 
     public var body: some WidgetConfiguration {
         StaticConfiguration(kind: WidgetWeaverWidgetKinds.clipboardActions, provider: Provider()) { entry in
-            WidgetWeaverActionInboxStatusView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
-                // Makes the widget itself useful: tap anywhere (not a button) to run the shortcut.
-                .widgetURL(ActionInboxShortcuts.runURL)
+            let enabled = WidgetWeaverFeatureFlags.clipboardActionsEnabled
+            let url = enabled ? ActionInboxShortcuts.runAppURL : ActionInboxShortcuts.openAppURL
+
+            Group {
+                if enabled {
+                    WidgetWeaverActionInboxStatusView(entry: entry)
+                } else {
+                    WidgetWeaverClipboardActionsDisabledView()
+                }
+            }
+            .containerBackground(.fill.tertiary, for: .widget)
+            // Background tap is mapped to a sensible action (Run when enabled, Open when disabled).
+            .widgetURL(url)
         }
         .configurationDisplayName("Action Inbox")
         .description("Shows the last text sent to WidgetWeaver and a suggested action.")
@@ -57,13 +66,19 @@ extension WidgetWeaverClipboardActionsWidget {
             )
         }
 
+        private func snapshot(for context: Context) -> WidgetWeaverClipboardInboxSnapshot {
+            if context.isPreview { return placeholder(in: context).snapshot }
+            guard WidgetWeaverFeatureFlags.clipboardActionsEnabled else { return WidgetWeaverClipboardInboxSnapshot() }
+            return WidgetWeaverClipboardInboxStore.load()
+        }
+
         func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-            let snap = context.isPreview ? placeholder(in: context).snapshot : WidgetWeaverClipboardInboxStore.load()
+            let snap = snapshot(for: context)
             completion(Entry(date: Date(), snapshot: snap))
         }
 
         func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-            let snap = context.isPreview ? placeholder(in: context).snapshot : WidgetWeaverClipboardInboxStore.load()
+            let snap = snapshot(for: context)
             let now = Date()
             completion(Timeline(entries: [Entry(date: now, snapshot: snap)], policy: .after(now.addingTimeInterval(60 * 60))))
         }
@@ -73,10 +88,10 @@ extension WidgetWeaverClipboardActionsWidget {
 // MARK: - Shortcuts links
 
 private enum ActionInboxShortcuts {
-    /// Shortcut name to run from the widget background tap + Run button.
+    /// Shortcut name to run from the widget Run button (and background tap when enabled).
     static let runShortcutName: String = "WW AutoDetect"
 
-    static var runURL: URL {
+    static var runAppURL: URL {
         let encoded = runShortcutName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? runShortcutName
         return URL(string: "shortcuts://run-shortcut?name=\(encoded)")!
     }
@@ -85,6 +100,54 @@ private enum ActionInboxShortcuts {
 }
 
 // MARK: - View
+
+private struct WidgetWeaverClipboardActionsDisabledView: View {
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.slash")
+                    .font(.headline)
+
+                Text("Action Inbox")
+                    .font(.headline)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+
+            Text("Hidden by default.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Text(detailText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(family == .systemMedium ? 3 : 2)
+
+            Spacer(minLength: 0)
+
+            if family == .systemMedium {
+                HStack(spacing: 10) {
+                    Link(destination: ActionInboxShortcuts.openAppURL) {
+                        Label("Open", systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Spacer(minLength: 0)
+                }
+                .labelStyle(.iconOnly)
+            }
+        }
+        .padding()
+    }
+
+    private var detailText: String {
+        "Enable Clipboard Actions in Feature Flags to use this widget."
+    }
+}
 
 private struct ActionInboxModel {
     var isEmpty: Bool
@@ -119,199 +182,158 @@ private struct WidgetWeaverActionInboxStatusView: View {
                 ViewThatFits(in: .vertical) {
                     full(model: model)
                     compact(model: model)
-                    minimal(model: model)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
-
-    // MARK: - Layout variants (ViewThatFits)
 
     private func full(model: ActionInboxModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             header(model: model)
-
-            VStack(alignment: .leading, spacing: 8) {
-                titleRow(model: model)
-
-                if let preview = previewText(lines: model.lines, maxLines: family == .systemSmall ? 3 : 5) {
-                    Text(preview)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(family == .systemSmall ? 3 : 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if let detail = model.detailLine, !detail.isEmpty {
-                    infoRow(systemImage: "info.circle", text: detail)
-                }
-
-                if let msg = model.lastActionMessage, !msg.isEmpty {
-                    lastActionRow(message: msg, at: model.lastActionAt)
-                }
-
-                if family == .systemMedium, let file = model.exportedFileName, !file.isEmpty {
-                    infoRow(systemImage: "doc.text", text: "Last export: \(file)")
-                }
-            }
-
-            Spacer(minLength: 0)
-
+            content(model: model, maxLines: family == .systemSmall ? 4 : 6)
+            footer(model: model)
             controls(model: model)
         }
+        .padding()
     }
 
     private func compact(model: ActionInboxModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header(model: model)
-
-            VStack(alignment: .leading, spacing: 8) {
-                titleRow(model: model)
-
-                if let preview = previewText(lines: model.lines, maxLines: family == .systemSmall ? 2 : 3) {
-                    Text(preview)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(family == .systemSmall ? 2 : 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if let detail = model.detailLine, !detail.isEmpty {
-                    infoRow(systemImage: "info.circle", text: detail)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            controls(model: model)
-        }
-    }
-
-    private func minimal(model: ActionInboxModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header(model: model)
-            titleRow(model: model)
+            content(model: model, maxLines: family == .systemSmall ? 2 : 3)
             Spacer(minLength: 0)
             controls(model: model)
         }
+        .padding()
     }
 
     private func emptyFull(model: ActionInboxModel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header(model: model)
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.fill")
+                    .font(.headline)
+                Text("Action Inbox")
+                    .font(.headline)
+                Spacer(minLength: 0)
+            }
 
-            Text("No text yet")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.9)
-
-            Text("Tap the widget (or Run) to execute “\(ActionInboxShortcuts.runShortcutName)” and send clipboard text here.")
+            Text("Send text into WidgetWeaver, then run AutoDetect.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(family == .systemSmall ? 3 : 4)
 
             Spacer(minLength: 0)
 
             controls(model: model)
         }
+        .padding()
     }
 
     private func emptyCompact(model: ActionInboxModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header(model: model)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.fill")
+                    .font(.headline)
+                Text("Action Inbox")
+                    .font(.headline)
+                Spacer(minLength: 0)
+            }
 
-            Text("No text yet")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-
-            Text("Tap to run “\(ActionInboxShortcuts.runShortcutName)”.")
+            Text("No text yet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
 
             Spacer(minLength: 0)
 
             controls(model: model)
         }
+        .padding()
     }
 
-    // MARK: - Building blocks
-
     private func header(model: ActionInboxModel) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tray.full")
-                .font(.headline)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.title)
+                    .font(.headline)
+                    .lineLimit(1)
 
-            Text("Action Inbox")
-                .font(.headline)
-                .lineLimit(1)
+                if let kind = model.kind {
+                    kindPill(kind: kind)
+                } else {
+                    Text("No suggestion")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Spacer(minLength: 0)
 
             if let capturedAt = model.capturedAt {
                 Text(capturedAt, style: .time)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func titleRow(model: ActionInboxModel) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(model.title)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-            Spacer(minLength: 0)
-
-            if let kind = model.kind {
-                kindPill(kind: kind)
-            }
-        }
-    }
-
-    private func infoRow(systemImage: String, text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func lastActionRow(message: String, at: Date?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            Text(message)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-
-            if let at {
-                Text(at, style: .time)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
     }
 
+    private func content(model: ActionInboxModel, maxLines: Int) -> some View {
+        let preview = previewText(lines: model.lines, maxLines: maxLines) ?? "—"
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(preview)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(maxLines)
+
+            if let detail = model.detailLine {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let exported = model.exportedFileName {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(exported)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+    }
+
+    private func footer(model: ActionInboxModel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "checkmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                let message = (model.lastActionMessage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                Text(message.isEmpty ? "No actions yet." : message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if let at = model.lastActionAt {
+                    Text(at, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private func controls(model: ActionInboxModel) -> some View {
         HStack(spacing: 10) {
-            Link(destination: ActionInboxShortcuts.runURL) {
+            Link(destination: ActionInboxShortcuts.runAppURL) {
                 Label("Run", systemImage: "bolt.fill")
             }
             .buttonStyle(.borderedProminent)
@@ -418,67 +440,30 @@ private struct WidgetWeaverActionInboxStatusView: View {
         return lines.prefix(maxLines).joined(separator: "\n")
     }
 
-    private func buildDetailLine(text: String, kind: ScreenActionKind, dateRange: ScreenActionsCore.DetectedDateRange?) -> String? {
+    private func buildDetailLine(text: String, kind: ScreenActionKind?, dateRange: ScreenActionsCore.DetectedDateRange?) -> String? {
         switch kind {
-        case .event:
-            let r = dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: text)
-            guard let r else { return "When: No date detected" }
-            return "When: \(formatDateRange(start: r.start, end: r.end))"
-
         case .reminder:
-            let due = (dateRange ?? ScreenActionsCore.DateParser.firstDateRange(in: text))?.start
-            guard let due else { return "Due: No date detected" }
-            return "Due: \(formatDateTime(due))"
+            return "Reminder suggestion"
+
+        case .event:
+            if let range = dateRange {
+                let start = range.start
+                let end = range.end
+                let df = DateFormatter()
+                df.dateStyle = .medium
+                df.timeStyle = .short
+                return "\(df.string(from: start)) → \(df.string(from: end))"
+            }
+            return "Event suggestion"
 
         case .contact:
-            let c = ScreenActionsCore.ContactParser.detect(in: text)
-            var parts: [String] = []
-            if !c.emails.isEmpty { parts.append(countString(c.emails.count, singular: "email")) }
-            if !c.phones.isEmpty { parts.append(countString(c.phones.count, singular: "phone")) }
-            if c.postalAddress != nil { parts.append("address") }
-            return parts.isEmpty ? "No contact fields detected" : parts.joined(separator: " · ")
+            return "Contact suggestion"
 
         case .receipt:
-            let lines = text
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            return "\(lines.count) lines"
+            return "Receipt suggestion"
+
+        case .none:
+            return nil
         }
-    }
-
-    private func countString(_ count: Int, singular: String) -> String {
-        count == 1 ? "1 \(singular)" : "\(count) \(singular)s"
-    }
-
-    private func formatDateRange(start: Date, end: Date) -> String {
-        let dayFormatter = DateFormatter()
-        dayFormatter.locale = .current
-        dayFormatter.timeZone = .current
-        dayFormatter.dateStyle = .medium
-        dayFormatter.timeStyle = .none
-        dayFormatter.doesRelativeDateFormatting = true
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.locale = .current
-        timeFormatter.timeZone = .current
-        timeFormatter.dateStyle = .none
-        timeFormatter.timeStyle = .short
-
-        let day = dayFormatter.string(from: start)
-        let startTime = timeFormatter.string(from: start)
-        let endTime = timeFormatter.string(from: end)
-
-        return "\(day) \(startTime)–\(endTime)"
-    }
-
-    private func formatDateTime(_ date: Date) -> String {
-        let df = DateFormatter()
-        df.locale = .current
-        df.timeZone = .current
-        df.dateStyle = .medium
-        df.timeStyle = .short
-        df.doesRelativeDateFormatting = true
-        return df.string(from: date)
     }
 }

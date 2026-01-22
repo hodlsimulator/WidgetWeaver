@@ -8,6 +8,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension UTType {
+    static var widgetWeaverDesign: UTType {
+        UTType(exportedAs: "com.conornolan.widgetweaver.design", conformingTo: .json)
+    }
+}
+
 extension ContentView {
 
     // MARK: - Share package (Transferable)
@@ -17,7 +23,7 @@ extension ContentView {
         let data: Data
 
         static var transferRepresentation: some TransferRepresentation {
-            FileRepresentation(contentType: .json) { package in
+            FileRepresentation(contentType: .widgetWeaverDesign) { package in
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent(package.fileName)
                 try package.data.write(to: url, options: [.atomic])
                 return SentTransferredFile(url)
@@ -28,13 +34,13 @@ extension ContentView {
         }
 
         static var importableTypes: [UTType] {
-            [.json, .data]
+            [.widgetWeaverDesign, .json]
         }
 
         static func suggestedFileName(prefix: String, suffix: String) -> String {
             let safePrefix = sanitise(prefix)
             let date = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-            return "\(safePrefix)-\(suffix)-\(date).json"
+            return "\(safePrefix)-\(suffix)-\(date).wwdesign"
         }
 
         private static func sanitise(_ raw: String) -> String {
