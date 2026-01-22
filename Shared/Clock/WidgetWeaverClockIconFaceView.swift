@@ -10,8 +10,8 @@ import SwiftUI
 /// Clock face renderer for Face = "icon".
 ///
 /// Notes:
-/// - Geometry is matched to the shipped renderer so layout remains stable.
-/// - Only the dial/bezel treatment and hour hand styling are face-specific.
+/// - Uses 12 numerals + 60 tick marks to remain clearly distinct from the Ceramic face.
+/// - Layout constants are tuned for widget-size legibility (tick hierarchy, numeral radius, hand weights).
 struct WidgetWeaverClockIconFaceView: View {
     let palette: WidgetWeaverClockPalette
 
@@ -85,16 +85,16 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
             let majorTickLength = WWClock.pixel(
-                WWClock.clamp(R * 0.14, min: R * 0.12, max: R * 0.16),
+                WWClock.clamp(R * 0.115, min: R * 0.095, max: R * 0.135),
                 scale: displayScale
             )
             let minorTickLength = WWClock.pixel(
-                WWClock.clamp(R * 0.07, min: R * 0.055, max: R * 0.085),
+                WWClock.clamp(R * 0.062, min: R * 0.050, max: R * 0.075),
                 scale: displayScale
             )
 
             let majorTickWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.028, min: R * 0.020, max: R * 0.034),
+                WWClock.clamp(R * 0.024, min: R * 0.018, max: R * 0.030),
                 scale: displayScale
             )
             let minorTickWidth = WWClock.pixel(
@@ -103,7 +103,7 @@ struct WidgetWeaverClockIconFaceView: View {
             )
 
             let numeralsRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.78, min: R * 0.74, max: R * 0.82),
+                WWClock.clamp(R * 0.75, min: R * 0.71, max: R * 0.79),
                 scale: displayScale
             )
             let numeralsSize = WWClock.pixel(
@@ -125,7 +125,7 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.038),
+                WWClock.clamp(R * 0.046, min: R * 0.040, max: R * 0.052),
                 scale: displayScale
             )
 
@@ -138,19 +138,12 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
             let secondTipSide = WWClock.pixel(
-                WWClock.clamp(R * 0.014, min: R * 0.012, max: R * 0.016),
+                WWClock.clamp(R * 0.016, min: R * 0.012, max: R * 0.020),
                 scale: displayScale
             )
 
-            let usedMinuteLength: CGFloat = showsMinuteHand ? minuteLength : 0.0
-            let usedMinuteWidth: CGFloat = showsMinuteHand ? minuteWidth : 0.0
-
-            let usedSecondLength: CGFloat = showsSecondHand ? secondLength : 0.0
-            let usedSecondWidth: CGFloat = showsSecondHand ? secondWidth : 0.0
-            let usedSecondTipSide: CGFloat = showsSecondHand ? secondTipSide : 0.0
-
             let hubBaseRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.040),
                 scale: displayScale
             )
             let hubCapRadius = WWClock.pixel(
@@ -162,7 +155,6 @@ struct WidgetWeaverClockIconFaceView: View {
                 ZStack {
                     WidgetWeaverClockIconFaceDialFaceView(
                         palette: palette,
-                        radius: R,
                         occlusionWidth: occlusionWidth,
                         scale: displayScale
                     )
@@ -184,7 +176,14 @@ struct WidgetWeaverClockIconFaceView: View {
                         scale: displayScale
                     )
 
-                    Group {
+                    ZStack {
+                        let usedSecondLength = showsSecondHand ? secondLength : 0.0
+                        let usedSecondWidth = showsSecondHand ? secondWidth : 0.0
+                        let usedSecondTipSide = showsSecondHand ? secondTipSide : 0.0
+
+                        let usedMinuteLength = showsMinuteHand ? minuteLength : 0.0
+                        let usedMinuteWidth = showsMinuteHand ? minuteWidth : 0.0
+
                         if showsHandShadows {
                             WidgetWeaverClockHandShadowsView(
                                 palette: palette,
@@ -219,6 +218,7 @@ struct WidgetWeaverClockIconFaceView: View {
 
                         if usedSecondLength > 0.0 && usedSecondWidth > 0.0 {
                             WidgetWeaverClockIconSecondHandView(
+                                colour: palette.iconSecondHand,
                                 angle: secondAngle,
                                 length: usedSecondLength,
                                 width: usedSecondWidth,
@@ -256,8 +256,8 @@ struct WidgetWeaverClockIconFaceView: View {
     }
 }
 
-
 private struct WidgetWeaverClockIconSecondHandView: View {
+    let colour: Color
     let angle: Angle
     let length: CGFloat
     let width: CGFloat
@@ -266,16 +266,15 @@ private struct WidgetWeaverClockIconSecondHandView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-        let red = WWClock.colour(0xF53842, alpha: 1.0)
 
         ZStack {
             Rectangle()
-                .fill(red.opacity(0.92))
+                .fill(colour.opacity(0.92))
                 .frame(width: width, height: length)
                 .offset(y: -length / 2.0)
 
             Rectangle()
-                .fill(red)
+                .fill(colour)
                 .frame(width: tipSide, height: tipSide)
                 .offset(y: -length)
         }
@@ -295,80 +294,14 @@ private struct WidgetWeaverClockIconSecondHandView: View {
 
 private struct WidgetWeaverClockIconFaceDialFaceView: View {
     let palette: WidgetWeaverClockPalette
-    let radius: CGFloat
     let occlusionWidth: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let dialTintTop = WWClock.colour(0x2E4764, alpha: 0.22)
-        let dialTintBottom = WWClock.colour(0x0B0F15, alpha: 0.00)
-
         Circle()
-            .fill(
-                RadialGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: palette.dialCenter, location: 0.00),
-                        .init(color: palette.dialMid, location: 0.82),
-                        .init(color: palette.dialEdge, location: 1.00)
-                    ]),
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: radius
-                )
-            )
-            // Cool tint so the dial reads more “icon-like” (subtle, non-scheme-dependent).
-            .overlay(
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: dialTintTop, location: 0.00),
-                                .init(color: dialTintBottom, location: 1.00)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.overlay)
-            )
-            // Perimeter vignette (slightly stronger than the shipped face).
-            .overlay(
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.clear, location: 0.0),
-                                .init(color: palette.dialVignette.opacity(0.78), location: 1.0)
-                            ]),
-                            center: .center,
-                            startRadius: radius * 0.62,
-                            endRadius: radius
-                        )
-                    )
-                    .blendMode(.multiply)
-            )
-            // Specular highlight arc near top-right.
-            .overlay(
-                Circle()
-                    .trim(from: 0.05, to: 0.44)
-                    .stroke(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: Color.white.opacity(0.00), location: 0.0),
-                                .init(color: Color.white.opacity(0.10), location: 0.55),
-                                .init(color: Color.white.opacity(0.22), location: 1.0)
-                            ]),
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        style: StrokeStyle(lineWidth: max(px, radius * 0.020), lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-18))
-                    .blur(radius: max(px, radius * 0.010))
-                    .blendMode(.screen)
-            )
+            .fill(palette.iconDialFill)
             // Inner separator ring / occlusion
             .overlay(
                 Circle()
@@ -378,22 +311,9 @@ private struct WidgetWeaverClockIconFaceDialFaceView: View {
             )
             .overlay(
                 Circle()
-                    .strokeBorder(Color.black.opacity(0.36), lineWidth: max(px, occlusionWidth * 0.20))
+                    .strokeBorder(Color.black.opacity(0.28), lineWidth: max(px, occlusionWidth * 0.20))
                     .blur(radius: max(px, occlusionWidth * 0.10))
                     .blendMode(.multiply)
-            )
-            // Subtle grain / noise impression (no actual noise texture to keep WidgetKit-safe).
-            .overlay(
-                LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.016), location: 0.0),
-                        .init(color: Color.black.opacity(0.018), location: 1.0)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .blendMode(.overlay)
-                .opacity(0.55)
             )
     }
 }
@@ -431,112 +351,99 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
             endPoint: .bottomTrailing
         )
 
-        let ringBStroke = LinearGradient(
+        let ringAInnerStroke = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: metalHi.opacity(0.80), location: 0.00),
-                .init(color: metalMid.opacity(0.95), location: 0.48),
-                .init(color: metalLo.opacity(0.90), location: 1.00)
+                .init(color: Color.white.opacity(0.18), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.62),
+                .init(color: Color.black.opacity(0.18), location: 1.00)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+
+        // Deep matte ring B.
+        let ringBFill = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x0A0E14, alpha: 1.0), location: 0.00),
+                .init(color: WWClock.colour(0x0B0F15, alpha: 1.0), location: 0.60),
+                .init(color: WWClock.colour(0x05080C, alpha: 1.0), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
+        // Thin inner metal ring C.
         let ringCStroke = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: metalHi.opacity(0.85), location: 0.00),
-                .init(color: metalMid.opacity(0.95), location: 0.55),
-                .init(color: metalLo.opacity(0.90), location: 1.00)
+                .init(color: Color.white.opacity(0.22), location: 0.00),
+                .init(color: Color.white.opacity(0.06), location: 0.50),
+                .init(color: Color.black.opacity(0.22), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
-        // Outer rim: subtle shadow and highlight to separate from background.
-        let outerShadow = Color.black.opacity(0.32)
-        let outerHighlight = Color.white.opacity(0.20)
+        let ringAShadow = max(px, ringA * 0.60)
+        let ringBShadow = max(px, ringB * 0.95)
+        let ringCShadow = max(px, ringC * 1.10)
 
         ZStack {
-            // Outer diameter clip
             Circle()
-                .fill(Color.clear)
-                .frame(width: outerDiameter, height: outerDiameter)
-                .overlay(
-                    Circle()
-                        .strokeBorder(outerShadow, lineWidth: max(px, ringA * 0.65))
-                        .blur(radius: max(px, ringA * 0.30))
-                        .offset(x: 0, y: max(px, ringA * 0.22))
-                )
-                .overlay(
-                    Circle()
-                        .strokeBorder(outerHighlight, lineWidth: max(px, ringA * 0.55))
-                        .blur(radius: max(px, ringA * 0.25))
-                        .offset(x: 0, y: -max(px, ringA * 0.18))
-                        .blendMode(.screen)
-                )
+                .stroke(ringAStroke, lineWidth: ringA)
+                .shadow(color: Color.black.opacity(0.20), radius: ringAShadow, x: 0, y: ringAShadow * 0.45)
 
-            // Ring A
             Circle()
-                .strokeBorder(ringAStroke, lineWidth: ringA)
-                .frame(width: (ringAInner + outerR) * 2.0, height: (ringAInner + outerR) * 2.0)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(0.10), lineWidth: max(px, ringA * 0.18))
-                        .frame(width: (ringAInner + outerR) * 2.0, height: (ringAInner + outerR) * 2.0)
-                        .blur(radius: max(px, ringA * 0.12))
-                        .blendMode(.multiply)
-                )
+                .stroke(ringAInnerStroke, lineWidth: max(px, ringA * 0.22))
+                .frame(width: ringAInner * 2.0, height: ringAInner * 2.0)
+                .blendMode(.overlay)
 
-            // Ring B
             Circle()
-                .strokeBorder(ringBStroke, lineWidth: ringB)
-                .frame(width: (ringBInner + ringAInner) * 2.0, height: (ringBInner + ringAInner) * 2.0)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.16), lineWidth: max(px, ringB * 0.22))
-                        .frame(width: (ringBInner + ringAInner) * 2.0, height: (ringBInner + ringAInner) * 2.0)
-                        .blur(radius: max(px, ringB * 0.14))
-                        .blendMode(.screen)
-                )
+                .fill(ringBFill)
+                .frame(width: ringBInner * 2.0, height: ringBInner * 2.0)
+                .shadow(color: Color.black.opacity(0.55), radius: ringBShadow, x: 0, y: ringBShadow * 0.60)
 
-            // Ring C
             Circle()
-                .strokeBorder(ringCStroke, lineWidth: ringC)
-                .frame(width: (ringCInner + ringBInner) * 2.0, height: (ringCInner + ringBInner) * 2.0)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(0.14), lineWidth: max(px, ringC * 0.20))
-                        .frame(width: (ringCInner + ringBInner) * 2.0, height: (ringCInner + ringBInner) * 2.0)
-                        .blur(radius: max(px, ringC * 0.12))
-                        .blendMode(.multiply)
-                )
+                .stroke(ringCStroke, lineWidth: ringC)
+                .frame(width: ringCInner * 2.0, height: ringCInner * 2.0)
+                .shadow(color: Color.black.opacity(0.30), radius: ringCShadow, x: 0, y: ringCShadow * 0.55)
 
-            // Inner edge shadow where metal meets dial.
+            // Outer gloss (subtle).
             Circle()
-                .strokeBorder(Color.black.opacity(0.30), lineWidth: max(px, dialR * 0.014))
-                .frame(width: dialR * 2.0, height: dialR * 2.0)
-                .blur(radius: max(px, dialR * 0.008))
-                .blendMode(.multiply)
-
-            // A small top-right specular highlight on the bezel, similar to icon.
-            Circle()
-                .trim(from: 0.10, to: 0.26)
+                .trim(from: 0.06, to: 0.42)
                 .stroke(
                     LinearGradient(
                         gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(0.00), location: 0.0),
-                            .init(color: Color.white.opacity(0.18), location: 0.70),
-                            .init(color: Color.white.opacity(0.34), location: 1.0)
+                            .init(color: Color.white.opacity(0.00), location: 0.00),
+                            .init(color: Color.white.opacity(0.08), location: 0.55),
+                            .init(color: Color.white.opacity(0.16), location: 1.00)
                         ]),
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
-                    style: StrokeStyle(lineWidth: max(px, ringA * 0.85), lineCap: .round)
+                    style: StrokeStyle(lineWidth: max(px, ringA * 0.26), lineCap: .round)
                 )
-                .rotationEffect(.degrees(-10))
-                .blur(radius: max(px, ringA * 0.25))
+                .rotationEffect(.degrees(-14))
+                .blur(radius: max(px, ringA * 0.12))
                 .blendMode(.screen)
+                .frame(width: outerR * 2.0, height: outerR * 2.0)
+
+            // Inner occlusion towards dial.
+            Circle()
+                .fill(
+                    RadialGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: Color.black.opacity(0.00), location: 0.60),
+                            .init(color: Color.black.opacity(0.44), location: 1.00)
+                        ]),
+                        center: .center,
+                        startRadius: dialR * 0.60,
+                        endRadius: dialR
+                    )
+                )
+                .frame(width: dialR * 2.0, height: dialR * 2.0)
+                .blendMode(.multiply)
+                .opacity(0.65)
         }
-        .frame(width: outerDiameter, height: outerDiameter)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

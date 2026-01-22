@@ -29,6 +29,12 @@ struct WidgetWeaverClockPalette {
     let dialVignette: Color
     let dialDomeHighlight: Color
 
+    // Icon face dial (uniform fill)
+    let iconDialFill: Color
+
+    // Icon face seconds hand (baseline)
+    let iconSecondHand: Color
+
     // Tracks / markers
     let minuteDot: Color
 
@@ -99,6 +105,12 @@ struct WidgetWeaverClockPalette {
         let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.22)
         let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.040)
 
+        // Icon face dial: a calmer, flatter slate-blue field.
+        let iconDialFill: Color = isDark ? WWClock.colour(0x22364B, alpha: 1.0) : WWClock.colour(0x2A4158, alpha: 1.0)
+
+        // Icon face baseline seconds hand colour (red).
+        let iconSecondHand: Color = WWClock.colour(0xF53842, alpha: 1.0)
+
         // Minute dots: more visible, uniform.
         let minuteDot: Color = WWClock.colour(0xD0DBEE, alpha: 0.80)
 
@@ -146,6 +158,8 @@ struct WidgetWeaverClockPalette {
             dialEdge: dialEdge,
             dialVignette: dialVignette,
             dialDomeHighlight: dialDomeHighlight,
+            iconDialFill: iconDialFill,
+            iconSecondHand: iconSecondHand,
             minuteDot: minuteDot,
             batonBright: batonBright,
             batonMid: batonMid,

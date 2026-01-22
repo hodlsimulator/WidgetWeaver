@@ -59,14 +59,14 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let majorFill = palette.minuteDot.opacity(0.95)
-        let minorFill = palette.minuteDot.opacity(0.70)
+        let majorFill = palette.minuteDot.opacity(0.88)
+        let minorFill = palette.minuteDot.opacity(0.62)
 
-        let majorShadowRadius = max(px, majorWidth * 0.55)
-        let majorShadowY = max(px, majorWidth * 0.28)
+        let majorShadowRadius = max(px, majorWidth * 0.46)
+        let majorShadowY = max(px, majorWidth * 0.22)
 
-        let minorShadowRadius = max(px, minorWidth * 1.25)
-        let minorShadowY = max(px, minorWidth * 0.85)
+        let minorShadowRadius = max(px, minorWidth * 1.05)
+        let minorShadowY = max(px, minorWidth * 0.70)
 
         ZStack {
             ForEach(0..<60, id: \.self) { idx in
@@ -81,7 +81,7 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
                     .fill(isMajor ? majorFill : minorFill)
                     .frame(width: width, height: length)
                     .shadow(
-                        color: Color.black.opacity(isMajor ? 0.32 : 0.20),
+                        color: Color.black.opacity(isMajor ? 0.22 : 0.14),
                         radius: isMajor ? majorShadowRadius : minorShadowRadius,
                         x: 0,
                         y: isMajor ? majorShadowY : minorShadowY
