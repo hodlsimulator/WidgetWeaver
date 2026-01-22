@@ -4,7 +4,7 @@
 //
 //  Created by . . on 1/4/26.
 //
-
+    
 import SwiftUI
 import UIKit
 
@@ -14,7 +14,6 @@ struct SmartPhotoCropEditorView: View {
     let targetPixels: PixelSize
     let initialCropRect: NormalisedRect
     let initialStraightenDegrees: Double
-    let initialRotationQuarterTurns: Int
     let autoCropRect: NormalisedRect?
     let focus: Binding<EditorFocusSnapshot>?
     let onResetToAuto: (() async -> Void)?
@@ -24,8 +23,6 @@ struct SmartPhotoCropEditorView: View {
     @State private var cropRect: NormalisedRect
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
-    @State private var rotationQuarterTurns: Int
-    @State private var rotatedPreviewImage: UIImage?
 
     @State private var nudgeStepPixels: Int = 1
 
@@ -69,7 +66,7 @@ struct SmartPhotoCropEditorView: View {
         self.targetPixels = targetPixels.normalised()
         self.initialCropRect = initialCropRect.normalised()
         self.initialStraightenDegrees = Self.normalisedStraightenDegrees(initialStraightenDegrees)
-        self.initialRotationQuarterTurns = SmartPhotoCropRotationPreview.normalisedQuarterTurns(initialRotationQuarterTurns)
+        let _ = initialRotationQuarterTurns
         self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
         self.onResetToAuto = onResetToAuto
@@ -77,7 +74,6 @@ struct SmartPhotoCropEditorView: View {
 
         _cropRect = State(initialValue: initialCropRect.normalised())
         _straightenDegrees = State(initialValue: Self.normalisedStraightenDegrees(initialStraightenDegrees))
-        _rotationQuarterTurns = State(initialValue: self.initialRotationQuarterTurns)
     }
 
     var body: some View {
@@ -117,13 +113,12 @@ struct SmartPhotoCropEditorView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let masterImage {
-                let displayImage = rotatedPreviewImage ?? masterImage
-                let displayPixelSize = SmartPhotoCropMath.pixelSize(of: displayImage)
-                let displayAspect = SmartPhotoCropMath.safeAspect(width: displayPixelSize.width, height: displayPixelSize.height)
+                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
+                let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
                 let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
-                let normalisedRectAspect = targetAspect / displayAspect
+                let normalisedRectAspect = targetAspect / masterAspect
                 cropControls(
-                    masterPixels: displayPixelSize,
+                    masterPixels: masterPixelSize,
                     rectAspect: normalisedRectAspect
                 )
                 .padding(.horizontal, 12)
@@ -145,11 +140,10 @@ struct SmartPhotoCropEditorView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Apply") { applyAndDismissIfPossible() }
-                    .disabled(isApplying || masterImage == nil || rotationQuarterTurns != 0)
+                    .disabled(isApplying || masterImage == nil)
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Reset") {
-                    setRotationQuarterTurns(initialRotationQuarterTurns)
                     cropRect = initialCropRect.normalised()
                     straightenDegrees = initialStraightenDegrees
                 }
@@ -200,41 +194,19 @@ struct SmartPhotoCropEditorView: View {
         if let img {
             masterImage = img
             loadErrorMessage = ""
-            if rotationQuarterTurns != 0 { setRotationQuarterTurns(rotationQuarterTurns) }
             return
         }
         loadErrorMessage = "Smart master image was not found on disk."
     }
 
-    private func setRotationQuarterTurns(_ newValue: Int) {
-        let (oldTurns, oldRect) = (rotationQuarterTurns, cropRect)
-        let t = SmartPhotoCropRotationPreview.normalisedQuarterTurns(newValue)
-        rotationQuarterTurns = t
-        guard let masterImage else {
-            rotatedPreviewImage = nil
-            return
-        }
-        rotatedPreviewImage = (t == 0) ? nil : SmartPhotoCropRotationPreview.rotatedPreviewImage(masterImage, quarterTurns: t)
-
-        let displayImage = rotatedPreviewImage ?? masterImage
-        let displayPixels = SmartPhotoCropMath.pixelSize(of: displayImage)
-        let displayAspect = SmartPhotoCropMath.safeAspect(width: displayPixels.width, height: displayPixels.height)
-        let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
-        let rectAspect = targetAspect / displayAspect
-
-        let proposed = SmartPhotoCropRotationPreview.remapCropRect(oldRect, fromQuarterTurns: oldTurns, toQuarterTurns: t, targetRectAspect: rectAspect)
-        cropRect = SmartPhotoCropMath.clampRect(proposed, rectAspect: rectAspect)
-    }
-
     private func applyAndDismissIfPossible() {
         guard !isApplying else { return }
         guard masterImage != nil else { return }
-        guard rotationQuarterTurns == 0 else { return }
         isApplying = true
         let rectToApply = cropRect.normalised()
         Task {
             let degreesToApply = Self.normalisedStraightenDegrees(straightenDegrees)
-            await onApply(rectToApply, degreesToApply, rotationQuarterTurns)
+            await onApply(rectToApply, degreesToApply, 0)
             await MainActor.run {
                 isApplying = false
                 dismiss()
@@ -256,8 +228,6 @@ struct SmartPhotoCropEditorView: View {
             }
             return
         }
-
-        setRotationQuarterTurns(0)
         cropRect = auto
         straightenDegrees = 0
     }
@@ -311,8 +281,7 @@ struct SmartPhotoCropEditorView: View {
     @ViewBuilder
     private func cropCanvas(masterImage: UIImage) -> some View {
         GeometryReader { geo in
-            let displayImage = rotatedPreviewImage ?? masterImage
-            let masterPixelSize = SmartPhotoCropMath.pixelSize(of: displayImage)
+            let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
             let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
             let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
             let normalisedRectAspect = targetAspect / masterAspect
@@ -330,7 +299,7 @@ struct SmartPhotoCropEditorView: View {
 
             ZStack {
                 ZStack {
-                    Image(uiImage: displayImage)
+                    Image(uiImage: masterImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: displayRect.width, height: displayRect.height)
@@ -603,24 +572,6 @@ struct SmartPhotoCropEditorView: View {
             Text("\(family.label) • \(targetPixels.width)×\(targetPixels.height) px")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.95))
-
-            HStack(spacing: 10) {
-                Text("Rotate")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-
-                nudgeButton(systemName: "rotate.left") {
-                    setRotationQuarterTurns(rotationQuarterTurns + 3)
-                }
-                .accessibilityLabel("Rotate left")
-
-                nudgeButton(systemName: "rotate.right") {
-                    setRotationQuarterTurns(rotationQuarterTurns + 1)
-                }
-                .accessibilityLabel("Rotate right")
-
-                Spacer(minLength: 0)
-            }
 
             HStack(spacing: 10) {
                 Text("Straighten")
