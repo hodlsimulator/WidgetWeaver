@@ -10,6 +10,7 @@ import SwiftUI
 
 @main
 struct WidgetWeaverWidgetBundle: WidgetBundle {
+    @WidgetBundleBuilder
     var body: some Widget {
         WidgetWeaverWidget()
         WidgetWeaverHomeScreenClockWidget()
@@ -18,7 +19,11 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         WidgetWeaverLockScreenWeatherWidget()
         WidgetWeaverLockScreenStepsWidget()
         WidgetWeaverLockScreenActivityWidget()
+
+        #if PAWPULSE
         WidgetWeaverPawPulseLatestCatWidget()
+        #endif
+
         WidgetWeaverNoiseMachineWidget()
         WidgetWeaverClipboardActionsWidget()
 
