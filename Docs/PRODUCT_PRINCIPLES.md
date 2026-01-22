@@ -1,6 +1,6 @@
 # Product principles
 
-Last updated: 2026-01-20
+Last updated: 2026-01-22
 
 WidgetWeaver’s differentiation is not “more widgets”. It is a repeatable workflow for building widget-safe experiences quickly, without the UI collapsing under its own feature weight.
 
@@ -19,26 +19,25 @@ Rules:
 
 - Tool availability is derived from the current `EditorToolContext` (focus, selection descriptor, capabilities, mode).
 - If a tool is not relevant, it is not shown. If it is relevant but unavailable, it is shown as unavailable with a concrete reason and a direct action where possible.
-- Focus changes must tear down tool-specific state to avoid dangling edits and stale UI.
-- Context changes must be stable and deterministic (no flicker, no “tool roulette”).
+- Focus changes must tear down tool-specific state to avoid “dangling” modals, selections, and partial edits.
 
-## 3) Widgets are deterministic and budget-safe
+## 3) The Explore catalogue is curated, not exhaustive
 
-- The widget extension never runs heavy work (Vision, ranking, photo preparation, large decoding loops).
-- The app performs heavy preparation and stores widget-safe artefacts in the App Group.
-- Widget rendering is pure: read shared state, resolve variables for the timeline entry date, render.
+- Explore should showcase a small set of high-quality templates that represent the product.
+- Each visible template should have a clear “why would someone keep this on their Home Screen?” story.
+- Breadth that increases permissions, complexity, or App Review risk should be hidden or deferred until it has a strong narrative and polish.
 
-## 4) The edit loop must stay fast
+## 4) Widgets are deterministic and budget-safe
 
-- Explore → Remix → Preview → Save is the core workflow.
+- Widgets do not run heavy work (Vision, ranking, network-heavy fetch, large I/O) at render time.
+- Anything expensive happens in the app and is cached for widget consumption (App Group).
+- Widgets render from shared state and timeline entries only.
+
+## 5) The editor never lies about Home Screen behaviour
+
 - The in-app preview must match Home Screen behaviour as closely as possible, but Home Screen correctness wins.
-- Every “save” triggers an obvious feedback signal and a predictable widget refresh path.
-
-## 5) Photos are a flagship capability
-
-- “Smart Photos” is not a gallery picker; it is a widget-safe photo experience.
-- Any photo feature must answer: how is it prepared in-app, stored safely, and rendered cheaply?
-- Cropping and per-family renders must be consistent across templates.
+- Any known preview mismatch must be documented in-app (or avoided by design).
+- Every “save” triggers the right update signals so Home Screen refresh is predictable.
 
 ## 6) Clock behaviour is correctness-first
 
@@ -69,3 +68,16 @@ Rules:
 - AI features must be optional, reviewable, and reversible.
 - AI output should generate real widget specs / tool configurations, not opaque state.
 - Prefer on-device and privacy-preserving approaches; do not block shipping on AI.
+
+## 11) Permissions are earned and minimised
+
+- Do not request permissions “up front”.
+- Ask only at the point the user has chosen a template or tool that clearly benefits from the permission.
+- Each permission prompt must have a clear in-product explanation of what changes when access is granted or denied.
+- Avoid shipping with a wide permission footprint. If a feature requires a new permission (especially Contacts), it must justify itself as a flagship experience; otherwise it is hidden/deferred.
+
+## 12) Release builds must be reproducible and boring
+
+- A clean checkout should build without local-path package dependencies.
+- Repository artefacts and backup files do not ship in targets.
+- If a dependency is optional (for example, a feature is hidden/deferred), remove it from the shipping build to reduce risk.

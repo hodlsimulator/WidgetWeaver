@@ -1,5 +1,5 @@
 WidgetWeaver – chat handoff (copy/paste)
-Last updated: 2026-01-20
+Last updated: 2026-01-22
 
 Product
 - WidgetWeaver is an iOS 26+ app that builds and previews real WidgetKit widgets via an Explore (template catalogue) + context-aware editor workflow.
@@ -7,19 +7,24 @@ Product
 
 Strategic intent
 - “Super complex, super simple”: powerful capabilities under the hood, but progressive disclosure in the UI.
+- Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-20.
+- Today: 2026-01-22.
 - Feature freeze: 2026-01-31 (stop adding features).
 - Polish: 2026-02-01 to 2026-02-14.
-- Target ship: ~2026-02-14 to 2026-02-16.
+- Target ship: 2026-02-14 to 2026-02-16.
 
 Current roadmap priorities (pre-freeze)
 1) Photos: make Smart Photos + poster/photo widgets feel flagship (fast, reliable, good defaults).
 2) Clock: Home Screen correctness and predictable customisation updates.
 3) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
 4) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys.
-5) Reduce surface area: remove “Reading” from Explore/catalogue surfaces, but do not break existing user widgets.
+5) Reduce surface area and permission footprint (do not break existing widgets):
+   - Hide “Reading” from Explore / starter surfaces.
+   - Remove the “Photo Quote” template from Explore / starter surfaces.
+   - Hide Screen Actions / Clipboard Actions from Explore and first-run paths (avoid Contacts permission).
+   - Hide PawPulse / “Latest Cat” (cat adoption) from Explore and first-run paths (future feature).
 
 Defer
 - Weather: later (post-ship) unless it is already rock-solid; can be hidden/experimental.
@@ -36,8 +41,14 @@ Key repo pointers
 - Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift
 - Variables UI: WidgetWeaver/WidgetWeaverVariablesView.swift (and related sheets)
 
+Feature removal / hiding pointers
+- “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
+- “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
+- Screen Actions / Clipboard Actions widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift, WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift
+- PawPulse / “Latest Cat”: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift, Shared/PawPulseLatestCatDetailView.swift
+
 Non-negotiables
 - Do not run heavy work in widgets.
 - Do not introduce WidgetCenter reload loops from widget providers.
 - Do not break existing user widgets when removing templates from Explore.
-
+- Do not ship a build that requests Contacts permission (scope cut: hide/remove Screen Actions first).

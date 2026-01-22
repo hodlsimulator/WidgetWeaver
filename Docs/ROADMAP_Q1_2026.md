@@ -1,13 +1,20 @@
 # WidgetWeaver roadmap (Q1 2026)
 
-Last updated: 2026-01-20
+Last updated: 2026-01-22
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
 
-We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap focuses on making Photos + Clock feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and removing the Reading template from the surface area (without breaking existing user widgets).
+We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap concentrates on making Photos + Clock feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
 
-Weather and AI are strategically important, but will not block the mid-February ship. Weather is scheduled for a post-ship iteration. AI work starts as an R&D track after ship, with small, reviewable assistive wins rather than a single large “magic” feature.
+Surface-area reductions for the Feb ship are explicit:
+
+- Remove “Reading” from Explore/catalogue surfaces (without breaking existing user widgets).
+- Remove the “Photo Quote” template from Explore/catalogue surfaces.
+- Hide Screen Actions / Clipboard Actions entirely for this ship so the app does not need Contacts permission.
+- Hide PawPulse / “Latest Cat” (cat adoption) entirely for this ship; treat it as future work.
+
+Weather and AI are strategically important, but will not block the mid-February ship. Weather is scheduled for a post-ship iteration (and may stay hidden/experimental until it has a clear pipeline + permissions story). AI work starts as an R&D track after ship, with small, reviewable assistive wins rather than a single large “magic” feature.
 
 ## Dates and milestones
 
@@ -43,82 +50,77 @@ By feature freeze (P0/P1):
   - Clear status and recovery for Smart Photos prep (progress + error messages that explain what to do).
 
 - P1: Photo template upgrades (limited scope)
-  - At least one new “poster” variant that demonstrates the platform (for example: Photo + subtle caption, or Photo + single stat line).
-  - Keep the number of new variants small; prioritise polish and defaults.
+  - At most 1–2 scoped “poster” variants that demonstrate the platform.
+  - Avoid expanding into many near-duplicate templates.
 
 Acceptance criteria:
 
 - Creating a photo widget from Explore to Home Screen takes < 60 seconds with no confusing dead ends.
-- Smart Photos rotation does not cause blank tiles and does not require “remove and re-add” in normal usage.
+- Edits visibly apply to the Home Screen within 60 seconds (worst case) and do not blank the widget.
+- Smart Photos failures are actionable (permission, storage, retry) and do not leave widgets in broken state.
 
-Key areas (for engineers):
+Key areas:
 
-- Smart Photo pipeline: `WidgetWeaver/SmartPhotoPipeline/*`
+- Smart Photos pipeline: `WidgetWeaver/SmartPhotoPipeline/*`
 - Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
-- Widget render helpers: `WidgetWeaverWidget/SmartPhoto/*`
 - Poster background/overlay: `Shared/WidgetWeaverSpecView+Background.swift`, `Shared/WidgetWeaverSpecView.swift`
 
-## Theme B: Clock (flagship)
+## Theme B: Clock (flagship correctness)
 
 Goal: The clock must be trustworthy on the Home Screen and customisable without regressions.
 
 By feature freeze (P0/P1):
 
 - P0: Home Screen ticking correctness
-  - Verify minute accuracy and “no slow minute hand” behaviour across several hours of Home Screen time.
-  - Guard against the black tile regressions (logging, reload loops, heavy work).
+  - Verify minute hand ticks correctly across several hours of Home Screen time.
+  - Guard against the black tile regression when adding/re-adding.
 
-- P1: Clock customisation improvements (bounded)
-  - Improve discoverability of style options that already exist (colour schemes, ticks, hands).
-  - Ensure edits apply to the Home Screen within a predictable window (worst case: next minute boundary).
-
-- P1: Photo Clock integration
-  - Ensure poster templates using time variables resolve against `TimelineEntry.date`.
+- P1: Customisation stability
+  - Styling changes apply predictably.
+  - No “frozen minute” strings; time variables resolve against timeline entry dates.
 
 Acceptance criteria:
 
-- Clock widget updates on the Home Screen at minute boundaries without visible lag.
-- Editing a clock option in the widget configuration UI visibly applies to the Home Screen within 60 seconds.
+- Clock widget updates on the Home Screen at minute boundaries without visible lag or drift.
+- Clock customisation UI visibly applies to the Home Screen within 60 seconds.
 
 Key areas:
 
-- Widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+- Home Screen clock widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
 - Live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
-- Shared render: `Shared/WidgetWeaverSpecView.swift`
 
-## Theme C: Noise Machine (promote and expand)
+## Theme C: Noise Machine (daily use)
 
-Goal: Noise Machine becomes a “daily” interactive widget: fast, responsive, and better featured than a basic play/pause tile.
+Goal: Noise Machine feels instant, stable, and trustworthy (interaction-first).
 
 By feature freeze (P0/P1):
 
-- P0: Responsiveness under host delays
-  - Confirm the optimistic UI and reconciliation behaves correctly on cold start and after device reboot.
-  - Avoid user confusion between Playing / Paused / Stopped.
+- P0: Responsiveness and cold-start stability
+  - First tap after cold start updates UI immediately; reconcile state safely.
+  - No “stuck playing” or “stuck stopped” states after host delays.
 
-- P1: Quality and capability upgrades (choose 1–2 only)
-  - Option A: Add a third family (Large) with richer controls.
-  - Option B: Add preset mixes and a “Quick switch” action.
-  - Option C: Add per-layer intensity nudges (very small set of discrete steps; avoid a complex slider UI before ship).
+- P1: 1–2 scoped improvements only
+  - Example options: clearer state labels; small control refinements; better defaults.
+  - Avoid feature sprawl.
 
 Acceptance criteria:
 
-- First tap after cold start visibly changes state immediately.
-- Widget state is consistent with in-app state within a few seconds, without requiring a timeline reload.
+- The first user interaction always gives immediate visible feedback.
+- Audio state is consistent across app, widget, and system state.
 
 Key areas:
 
-- Widget: `WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift`
-- App Group store and notifications: `Shared/*` (Noise mix state/store)
+- Noise Machine widget: `WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift`
 
-## Theme D: Variables (make them accessible)
+## Theme D: Variables (discoverability + insertion)
 
-Goal: Variables are a core primitive for “complex but simple” widgets. They should be easy to discover, insert, and validate.
+Goal: Make variables discoverable and easy to insert at the moment they are useful.
 
 By feature freeze (P0/P1):
 
-- P1: Variable insertion UX
-  - Provide a lightweight in-context picker when editing text fields that support variables.
+- P0: Discoverability
+  - At least one obvious entry point in the editor.
+  - Lightweight in-context picker when editing text fields that support variables.
   - Show examples (including fallback syntax) and allow one-tap insertion.
 
 - P1: Built-in keys surfaced
@@ -138,27 +140,37 @@ Key areas:
 - Variable resolution: `Shared/WidgetSpec+Utilities.swift`, `Shared/WidgetSpec+VariableResolutionNow.swift`
 - Variables UI: `WidgetWeaver/WidgetWeaverVariablesView.swift` (and related sheets)
 
-## Theme E: Remove the Reading widget (reduce surface area)
+## Theme E: Reduce surface area and permission footprint (pre-freeze)
 
-Goal: Reduce catalogue complexity and maintenance load by removing the Reading template from new surfaces, while avoiding breaking existing user widgets.
+Goal: Reduce catalogue complexity and App Review risk by removing or hiding non-flagship features, while avoiding breaking existing user widgets.
 
 By feature freeze (P0/P1):
 
-- P0: Deprecate and hide
+- P0: Deprecate and hide (Explore / catalogue / starter surfaces)
   - Remove “Reading” from Explore / About catalogue and any “starter templates” surfaces.
-  - Keep rendering support for any existing saved widgets that already use the spec.
+  - Remove “Photo Quote” from Explore / About catalogue and any “starter templates” surfaces.
+  - Hide Screen Actions / Clipboard Actions entirely (do not surface as a template or feature).
+  - Hide PawPulse / “Latest Cat” entirely (future feature).
+
+- P0: Permission containment
+  - Do not ship a build that requests Contacts permission.
+  - If a feature would require Contacts permission, it is automatically out-of-scope for Feb.
 
 - P1: Replacement narrative
-  - If “Reading” was showcasing progress, ensure the catalogue still has at least one “progress / goal” example via variables or another existing template.
+  - Ensure the catalogue still has at least one “progress / goal” example (variables or an existing template) after Reading and Quote removal.
 
 Acceptance criteria:
 
 - No user’s existing widget breaks after update.
-- New users cannot create a Reading widget from Explore.
+- New users cannot create Reading, Photo Quote, Screen Actions, or PawPulse widgets from Explore.
+- The app does not request Contacts permission during normal use, onboarding, or template browsing.
 
 Key areas:
 
 - Catalogue templates: `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
+- “Photo Quote” spec helper: `Shared/WidgetSpec+Utilities.swift`
+- Screen Actions / Clipboard Actions widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
+- PawPulse / “Latest Cat”: `WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift`, `Shared/PawPulseLatestCatDetailView.swift`
 
 ## Theme F: Weather (later)
 
@@ -188,18 +200,42 @@ Constraints:
 R&D milestones (Feb–Mar 2026):
 
 - “Command palette” style assistant that generates or edits a widget spec draft.
-- Context-aware suggestions (for example: “You are editing a photo poster; suggest caption treatments”).
+- Context-aware suggestions (for example: “A photo poster is being edited; suggest caption treatments”).
 - Optional text generation for captions with safe templates.
+
+## Theme H: Shipping readiness (reproducible builds + repo hygiene)
+
+Goal: Reduce last-minute integration risk by ensuring the repo builds cleanly from a fresh checkout and does not contain shipping artefacts.
+
+By feature freeze (P0/P1):
+
+- P0: Dependency hygiene
+  - Remove any local-path Swift Package references from the Xcode project.
+  - If Screen Actions is hidden/removed for Feb, remove its dependencies (for example, ScreenActionsCore) from the shipping build.
+
+- P0: Repository cleanliness
+  - Remove stray backup files (for example, `*.bak`) from the repo and from build targets.
+  - Ensure only intended resources are embedded.
+
+- P1: Regression safety
+  - Add a minimal “widget determinism” regression suite (snapshot inputs → stable outputs where feasible).
+  - Add migration/persistence tests for App Group compatibility (no data loss).
+
+Acceptance criteria:
+
+- A clean checkout builds on another machine without manual path fixes.
+- Release builds contain no unintended files and do not request Contacts permission.
 
 ## Work plan: now to feature freeze (2026-01-20 → 2026-01-31)
 
 Order of operations (minimise rework):
 
 1) P0 reliability: clock correctness, photo rendering correctness, no black tiles.
-2) Remove Reading from surfaces (deprecation, not breaking).
-3) Variables discoverability improvements.
-4) Noise Machine uplift (choose 1–2 scoped upgrades).
-5) Photo template upgrades (small number).
+2) Reduce surface area: hide Reading, Photo Quote, Screen Actions, and PawPulse from Explore (deprecation, not breaking).
+3) Build reproducibility: remove local-path dependencies; remove repo artefacts from targets.
+4) Variables discoverability improvements.
+5) Noise Machine uplift (choose 1–2 scoped upgrades).
+6) Photo template upgrades (small number).
 
 Suggested weekly cadence:
 
@@ -212,7 +248,7 @@ Suggested weekly cadence:
 - No new features.
 - Focus: UX clarity, defaults, performance, accessibility, crash/telemetry hygiene, App Store readiness, and test hardening.
 
-See `docs/RELEASE_PLAN_2026-02.md` for the detailed checklist.
+See `Docs/RELEASE_PLAN_2026-02.md` for the detailed checklist.
 
 ## Iceberg backlog (not committed for the Feb ship)
 
@@ -220,6 +256,8 @@ This list is intentionally broad; it is where “super complex but super simple�
 
 - Weather (full pipeline and widgets)
 - AI-assisted spec authoring and edits (reviewable)
+- Action-based utilities (if reintroduced, must be coherent and permission-justified)
+- PawPulse / adoption experience (requires product narrative and polish)
 - More interactive widgets (buttons, toggles, counters) as a cohesive system
 - Theming and style presets across templates
 - Sharing: export/import widget specs
