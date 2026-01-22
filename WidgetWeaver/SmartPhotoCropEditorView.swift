@@ -26,9 +26,8 @@ struct SmartPhotoCropEditorView: View {
     @State private var straightenDegrees: Double
     @State private var isStraightenEditing: Bool = false
     @State private var straightenDenseGridOpacity: Double = 0
-
+    @State private var straightenInteractionToken: Int = 0
     @State private var nudgeStepPixels: Int = 1
-
     @State private var isApplying: Bool = false
     @State private var loadErrorMessage: String = ""
 
@@ -184,10 +183,13 @@ struct SmartPhotoCropEditorView: View {
             if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
         }
-        .task(id: isStraightenEditing) { @MainActor in
-            if isStraightenEditing { straightenDenseGridOpacity = 1; return }
+        .onChange(of: straightenDegrees) { if !isStraightenEditing { straightenInteractionToken &+= 1 } }
+        .task(id: straightenInteractionToken) { @MainActor in
+            guard straightenInteractionToken > 0 else { return }
+            straightenDenseGridOpacity = 1
+            if isStraightenEditing { return }
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !isStraightenEditing else { return }
             withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
         }
         .task(id: debugOverlayEnabled) {
@@ -620,7 +622,6 @@ struct SmartPhotoCropEditorView: View {
             }
             .disabled(isApplying || masterImage == nil)
 
-
             HStack(spacing: 10) {
                 Text("Straighten")
                     .font(.caption2.weight(.semibold))
@@ -631,7 +632,7 @@ struct SmartPhotoCropEditorView: View {
                     in: -15...15,
                     step: 0.1,
                     onEditingChanged: { editing in
-                        isStraightenEditing = editing; if editing { straightenDenseGridOpacity = 1 }
+                        isStraightenEditing = editing; if editing { straightenDenseGridOpacity = 1 }; straightenInteractionToken &+= 1
                     }
                 )
                 .disabled(isApplying)
