@@ -85,7 +85,7 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
             let majorTickLength = WWClock.pixel(
-                WWClock.clamp(R * 0.088, min: R * 0.075, max: R * 0.105),
+                WWClock.clamp(R * 0.080, min: R * 0.068, max: R * 0.095),
                 scale: displayScale
             )
             let minorTickLength = WWClock.pixel(
@@ -94,7 +94,7 @@ struct WidgetWeaverClockIconFaceView: View {
             )
 
             let majorTickWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.020, min: R * 0.016, max: R * 0.024),
+                WWClock.clamp(R * 0.023, min: R * 0.019, max: R * 0.026),
                 scale: displayScale
             )
             let minorTickWidth = WWClock.pixel(
