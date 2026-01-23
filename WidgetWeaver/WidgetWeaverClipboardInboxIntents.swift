@@ -69,6 +69,11 @@ struct WidgetWeaverSetClipboardInboxIntent: AppIntent {
             return .result(dialog: "Text was empty.")
         }
 
+        guard WidgetWeaverFeatureFlags.clipboardActionsEnabled else {
+            WidgetWeaverClipboardInboxStore.setLastAction(kind: "disabled", message: "Clipboard Actions are disabled.")
+            return .result(dialog: "Clipboard Actions are disabled.")
+        }
+
         WidgetWeaverClipboardInboxStore.saveInboxText(cleaned, capturedAt: Date())
         WidgetWeaverClipboardInboxStore.setLastAction(kind: "inbox", message: "Inbox updated.")
 
@@ -101,6 +106,11 @@ struct WidgetWeaverAutoDetectFromTextIntent: AppIntent {
         let cleaned = WWClipboardIntentHelpers.clean(text)
         guard !cleaned.isEmpty else {
             return .result(dialog: "Text was empty.")
+        }
+
+        guard WidgetWeaverFeatureFlags.clipboardActionsEnabled else {
+            WidgetWeaverClipboardInboxStore.setLastAction(kind: "disabled", message: "Clipboard Actions are disabled.")
+            return .result(dialog: "Clipboard Actions are disabled.")
         }
 
         WidgetWeaverClipboardInboxStore.saveInboxText(cleaned, capturedAt: Date())

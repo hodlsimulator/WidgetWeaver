@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import WidgetKit
 
 extension ContentView {
     var toolbarMenu: some View {
@@ -110,6 +111,36 @@ extension ContentView {
                     set: { newValue in
                         WidgetWeaverFeatureFlags.setRemindersTemplateEnabled(newValue)
                         EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                    }
+                )
+            )
+
+            Toggle(
+                "Debug: enable Clipboard Actions",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.clipboardActionsEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setClipboardActionsEnabled(newValue)
+                        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.clipboardActions)
+                    }
+                )
+            )
+
+            Toggle(
+                "Debug: enable PawPulse",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.pawPulseEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setPawPulseEnabled(newValue)
+
+                        if newValue {
+                            PawPulseCache.ensureDirectoryExists()
+                            PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
+                        } else {
+                            PawPulseBackgroundTasks.cancelPending()
+                        }
+
+                        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.pawPulseLatestCat)
                     }
                 )
             )

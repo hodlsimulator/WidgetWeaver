@@ -27,9 +27,19 @@ public enum PawPulseBackgroundTasks {
         }
     }
 
+    public static func cancelPending() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: refreshTaskIdentifier)
+    }
+
     public static func scheduleNextEarliest(minutesFromNow: Int = 30) {
         guard WidgetWeaverFeatureFlags.pawPulseEnabled else { return }
-        guard PawPulseSettingsStore.resolvedBaseURL() != nil else { return }
+
+        guard PawPulseSettingsStore.resolvedBaseURL() != nil else {
+            cancelPending()
+            return
+        }
+
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: refreshTaskIdentifier)
 
         let request = BGAppRefreshTaskRequest(identifier: refreshTaskIdentifier)
         request.earliestBeginDate = Date().addingTimeInterval(TimeInterval(max(15, minutesFromNow)) * 60.0)
