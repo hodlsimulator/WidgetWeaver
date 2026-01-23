@@ -316,6 +316,7 @@ private struct WWQuickClockPreviewRefreshAuditOverlay: View {
         .foregroundStyle(Color.white.opacity(0.95))
         .padding(6)
         .background(Color.black.opacity(0.55))
+        .unredacted()
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .padding(6)
         .allowsHitTesting(false)
@@ -332,7 +333,7 @@ private struct WidgetWeaverClockLowBudgetFace: View {
 
     var body: some View {
         let wallNow = Date()
-        let baseDate = Self.choosePreviewDate(entryDate: date, wallNow: wallNow)
+        let baseDate = Self.choosePreviewDate(entryDate: date, wallNow: wallNow, showsSecondHand: showsSecondHand)
 
         if showsSecondHand {
             if #available(iOS 15.0, *) {
@@ -370,7 +371,14 @@ private struct WidgetWeaverClockLowBudgetFace: View {
         }
     }
 
-    private static func choosePreviewDate(entryDate: Date, wallNow: Date) -> Date {
+    private static func choosePreviewDate(entryDate: Date, wallNow: Date, showsSecondHand: Bool) -> Date {
+        // In constrained WidgetKit preview hosts (gallery / add flow), per-second refresh may not be honoured.
+        // When the seconds hand is visible, prefer the wall clock at render time to avoid “pinned to 12” artefacts
+        // if WidgetKit supplies a minute-anchored entry date (e.g., the next minute boundary).
+        if showsSecondHand { return wallNow }
+
+        // For minute-only clocks, preserve the entry date where it is plausibly “now”, but fall back to the wall
+        // clock if WidgetKit is serving a stale entry.
         let delta = abs(wallNow.timeIntervalSince(entryDate))
         if delta > 5.0 { return wallNow }
         return entryDate
