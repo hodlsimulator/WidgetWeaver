@@ -74,8 +74,14 @@ extension NoiseMachineController {
             log("AVAudioSession interruption ended (shouldResume=\(opts.contains(.shouldResume)))", level: .warning)
 
             isSessionActive = false
-            if currentState.wasPlaying, opts.contains(.shouldResume) {
-                await startEngineIfNeeded(requestID: playbackRequestID)
+
+            if currentState.wasPlaying {
+                if opts.contains(.shouldResume) {
+                    await startEngineIfNeeded(requestID: playbackRequestID)
+                } else {
+                    log("Interruption ended without resume; marking playback as paused", level: .warning)
+                    await pause(savePolicy: .immediate)
+                }
             }
 
         @unknown default:

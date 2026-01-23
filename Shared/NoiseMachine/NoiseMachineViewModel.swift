@@ -17,10 +17,37 @@ final class NoiseMachineViewModel: ObservableObject {
 
     private let store = NoiseMixStore.shared
 
+    private var darwinToken: DarwinNotificationToken?
+    private var lastExternalRefreshUptime: TimeInterval = 0
+    private let externalRefreshCoalesceSeconds: TimeInterval = 0.08
+
     init() {
         let loaded = store.loadLastMix()
         self.state = loaded
         self.resumeOnLaunch = store.isResumeOnLaunchEnabled()
+
+        darwinToken = DarwinNotificationToken(name: AppGroupDarwinNotifications.noiseMachineStateDidChange) { [weak self] in
+            self?.handleExternalStateChange()
+        }
+    }
+
+    private func handleExternalStateChange() {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastExternalRefreshUptime < externalRefreshCoalesceSeconds {
+            return
+        }
+        lastExternalRefreshUptime = now
+
+        let newState = store.loadLastMix()
+        let newResumeOnLaunch = store.isResumeOnLaunchEnabled()
+
+        if state != newState {
+            state = newState
+        }
+
+        if resumeOnLaunch != newResumeOnLaunch {
+            resumeOnLaunch = newResumeOnLaunch
+        }
     }
 
     private func reloadNoiseMachineWidget() {
@@ -88,6 +115,10 @@ final class NoiseMachineViewModel: ObservableObject {
 
     func togglePlayPause() {
         NoiseMachineDebugLogStore.shared.append(.info, "UI togglePlayPause")
+
+        state.wasPlaying.toggle()
+        state.updatedAt = Date()
+
         Task {
             await NoiseMachineController.shared.togglePlayPause()
             state = await NoiseMachineController.shared.currentMixState()
@@ -98,6 +129,10 @@ final class NoiseMachineViewModel: ObservableObject {
 
     func stop() {
         NoiseMachineDebugLogStore.shared.append(.info, "UI stop")
+
+        state.wasPlaying = false
+        state.updatedAt = Date()
+
         Task {
             await NoiseMachineController.shared.stop()
             state = await NoiseMachineController.shared.currentMixState()
