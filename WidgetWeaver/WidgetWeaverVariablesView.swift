@@ -215,6 +215,12 @@ struct WidgetWeaverVariablesView: View {
                 .animation(.easeInOut(duration: 0.2), value: tryItCopied)
             }
             .padding(.vertical, 4)
+
+            NavigationLink {
+                WidgetWeaverBuiltInKeysView(tryItInput: $tryItInput)
+            } label: {
+                Label("Browse built-in keys", systemImage: "curlybraces.square")
+            }
         } header: {
             Text("Try it")
         } footer: {
