@@ -41,6 +41,23 @@ public struct WidgetWeaverRemindersTemplateView: View {
         let lastAction = store.loadLastAction()
         let config = (spec.remindersConfig ?? .default).normalised()
 
+        let now = Date()
+        let lastUpdatedAt = store.loadLastUpdatedAt()
+        let gate = InteractivityGate(
+            lastErrorKind: lastError?.kind,
+            lastUpdatedAt: lastUpdatedAt,
+            snapshotGeneratedAt: snapshot?.generatedAt,
+            now: now
+        )
+
+        let widgetTapURL: URL? = {
+            guard context == .widget else { return nil }
+            if gate.canCompleteFromWidget == false {
+                return Self.remindersAccessDeepLinkURL
+            }
+            return Self.remindersTapTargetURL(snapshot: snapshot, lastError: lastError)
+        }()
+
         let content = VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
             if !spec.name.isEmpty {
                 headerRow()
@@ -48,15 +65,6 @@ public struct WidgetWeaverRemindersTemplateView: View {
 
             VStack(alignment: layout.alignment.alignment, spacing: 10) {
                 if let snapshot {
-                    let now = Date()
-                    let lastUpdatedAt = store.loadLastUpdatedAt()
-                    let gate = InteractivityGate(
-                        lastErrorKind: lastError?.kind,
-                        lastUpdatedAt: lastUpdatedAt,
-                        snapshotGeneratedAt: snapshot.generatedAt,
-                        now: now
-                    )
-
                     let model = Self.makeModel(snapshot: snapshot, config: config, now: now)
 
                     modeHeader(title: config.mode.displayName, progress: model.progress, showProgressBadge: config.showProgressBadge)
@@ -100,7 +108,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout.alignment.swiftUIAlignment)
 
         if context == .widget {
-            content.widgetURL(Self.remindersTapTargetURL(snapshot: snapshot, lastError: lastError))
+            content.widgetURL(widgetTapURL)
         } else {
             content
         }
@@ -151,422 +159,192 @@ public struct WidgetWeaverRemindersTemplateView: View {
 
     // MARK: - Model
 
-    private struct RenderSection: Identifiable, Hashable {
-        var id: String
-        var title: String
-        var subtitle: String?
-        var items: [WidgetWeaverReminderItem]
-    }
-
-    private struct Model {
-        var items: [WidgetWeaverReminderItem]
-        var sections: [RenderSection]
-        var usesSections: Bool
+    private struct Model: Sendable {
         var progress: (done: Int, total: Int)?
-
+        var primaryItems: [WidgetWeaverReminderItem]
+        var sections: [WidgetWeaverRemindersSection]
         var isEmpty: Bool {
-            if usesSections {
-                return sections.allSatisfy { $0.items.isEmpty }
-            }
-            return items.isEmpty
+            if !sections.isEmpty { return sections.allSatisfy { $0.itemIDs.isEmpty } }
+            return primaryItems.isEmpty
         }
     }
 
     private static func makeModel(snapshot: WidgetWeaverRemindersSnapshot, config: WidgetWeaverRemindersConfig, now: Date) -> Model {
-        let includeCompletedForProgress = Self.remindersItems(snapshot: snapshot, config: config, now: now, includeCompleted: true, applyFocusMode: false)
-        let done = includeCompletedForProgress.filter { $0.isCompleted }.count
-        let total = includeCompletedForProgress.count
+        let items = snapshot.items
+
+        let itemsByID: [String: WidgetWeaverReminderItem] = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+
+        let filtered: [WidgetWeaverReminderItem] = items.filter { item in
+            if config.hideCompleted, item.isCompleted { return false }
+
+            switch config.mode {
+            case .today:
+                return isDueTodayOrStartedToday(item: item, config: config, now: now)
+            case .overdue:
+                return isOverdue(item: item, now: now)
+            case .soon:
+                return isDueSoon(item: item, now: now, windowMinutes: config.soonWindowMinutes)
+            case .flagged:
+                return item.isFlagged
+            case .focus:
+                return true
+            case .list:
+                if config.selectedListIDs.isEmpty { return true }
+                return config.selectedListIDs.contains(item.listID)
+            }
+        }
+
+        let doneCount = filtered.filter { $0.isCompleted }.count
+        let totalCount = filtered.count
 
         let progress: (done: Int, total: Int)? = {
-            guard total > 0 else { return nil }
-            return (done: done, total: total)
+            if config.mode == .focus || config.mode == .list || config.mode == .flagged {
+                return nil
+            }
+            if totalCount <= 0 { return nil }
+            return (doneCount, totalCount)
         }()
 
-        let items = Self.remindersItems(snapshot: snapshot, config: config, now: now, includeCompleted: !config.hideCompleted, applyFocusMode: true)
-        let sections = Self.remindersSections(snapshot: snapshot, config: config, now: now, includeCompleted: !config.hideCompleted)
-        let usesSections = (config.presentation == .sectioned) && !sections.isEmpty
-
-        return Model(items: items, sections: sections, usesSections: usesSections, progress: progress)
-    }
-
-    private static func remindersSections(
-        snapshot: WidgetWeaverRemindersSnapshot,
-        config: WidgetWeaverRemindersConfig,
-        now: Date,
-        includeCompleted: Bool
-    ) -> [RenderSection] {
-        guard let modeSnapshot = snapshot.modes.first(where: { $0.mode == config.mode }) else { return [] }
-        guard !modeSnapshot.sections.isEmpty else { return [] }
-
-        let byID = snapshot.itemsByID
-        let allowedListIDs: Set<String> = Set(config.selectedListIDs)
-
-        func listPass(_ item: WidgetWeaverReminderItem) -> Bool {
-            if allowedListIDs.isEmpty { return true }
-            return allowedListIDs.contains(item.listID)
-        }
-
-        func completionPass(_ item: WidgetWeaverReminderItem) -> Bool {
-            if includeCompleted { return true }
-            return !item.isCompleted
-        }
-
-        let predicate = Self.modePredicate(config: config, now: now)
-
-        return modeSnapshot.sections.enumerated().compactMap { idx, section in
-            let sectionID: String = {
-                let trimmed = section.id.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return trimmed }
-
-                let title = section.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !title.isEmpty { return "\(config.mode.rawValue).title.\(title)" }
-
-                return "\(config.mode.rawValue).idx.\(idx)"
-            }()
-
-            let items = section.itemIDs
-                .compactMap { byID[$0] }
-                .filter(listPass)
-                .filter(completionPass)
-                .filter(predicate)
-
-            guard !items.isEmpty else { return nil }
-
-            return RenderSection(
-                id: sectionID,
-                title: section.title,
-                subtitle: section.subtitle,
-                items: items
-            )
-        }
-    }
-
-    private static func remindersItems(
-        snapshot: WidgetWeaverRemindersSnapshot,
-        config: WidgetWeaverRemindersConfig,
-        now: Date,
-        includeCompleted: Bool,
-        applyFocusMode: Bool
-    ) -> [WidgetWeaverReminderItem] {
-        func compareGeneral(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
-            let da = a.dueDate ?? a.startDate ?? Date.distantFuture
-            let db = b.dueDate ?? b.startDate ?? Date.distantFuture
-
-            if da != db { return da < db }
-
-            let titleComp = a.title.localizedCaseInsensitiveCompare(b.title)
-            if titleComp != .orderedSame { return titleComp == .orderedAscending }
-
-            return a.id < b.id
-        }
-
-        func compareList(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
-            let listComp = a.listTitle.localizedCaseInsensitiveCompare(b.listTitle)
-            if listComp != .orderedSame { return listComp == .orderedAscending }
-            return compareGeneral(a, b)
-        }
-
-        let byID = snapshot.itemsByID
-        let modeSnapshot = snapshot.modes.first(where: { $0.mode == config.mode })
-        let hasPrecomputedOrdering = (modeSnapshot != nil) && !(modeSnapshot?.itemIDs.isEmpty ?? true)
-
-        var candidates: [WidgetWeaverReminderItem]
-        if let modeSnapshot, !modeSnapshot.itemIDs.isEmpty {
-            candidates = modeSnapshot.itemIDs.compactMap { byID[$0] }
-        } else {
-            candidates = snapshot.items
-        }
-
-        if !config.selectedListIDs.isEmpty {
-            let allowed = Set(config.selectedListIDs)
-            candidates = candidates.filter { allowed.contains($0.listID) }
-        }
-
-        if !includeCompleted {
-            candidates = candidates.filter { !$0.isCompleted }
-        }
-
-        let predicate = Self.modePredicate(config: config, now: now)
-        let filtered = candidates.filter(predicate)
-
-        if hasPrecomputedOrdering {
-            if applyFocusMode, config.mode == .focus {
-                if let first = filtered.first { return [first] }
-                return []
+        // Precomputed mode snapshots can supply section structures or dense lists.
+        if let modeSnapshot = snapshot.modes.first(where: { $0.mode == config.mode }) {
+            if !modeSnapshot.sections.isEmpty {
+                let sections = modeSnapshot.sections
+                return Model(progress: progress, primaryItems: [], sections: sections)
             }
-            return filtered
-        }
 
-        let sorted: [WidgetWeaverReminderItem] = {
-            switch config.mode {
-            case .list:
-                return filtered.sorted(by: compareList)
-            default:
-                return filtered.sorted(by: compareGeneral)
+            if !modeSnapshot.itemIDs.isEmpty {
+                let ids = modeSnapshot.itemIDs
+                let primary = ids.compactMap { itemsByID[$0] }.filter { filtered.contains($0) }
+                return Model(progress: progress, primaryItems: primary, sections: [])
             }
-        }()
-
-        if applyFocusMode, config.mode == .focus {
-            if let first = sorted.first { return [first] }
-            return []
         }
 
-        return sorted
+        // Fallback: compute list for presentation.
+        let sorted: [WidgetWeaverReminderItem] = sortItems(filtered, now: now)
+
+        switch config.presentation {
+        case .dense, .focus:
+            return Model(progress: progress, primaryItems: Array(sorted.prefix(12)), sections: [])
+
+        case .sectioned:
+            let sections = buildSections(sorted)
+            return Model(progress: progress, primaryItems: [], sections: sections)
+        }
     }
 
-    private static func modePredicate(config: WidgetWeaverRemindersConfig, now: Date) -> (WidgetWeaverReminderItem) -> Bool {
-        let cal = Calendar.current
+    private static func sortItems(_ items: [WidgetWeaverReminderItem], now: Date) -> [WidgetWeaverReminderItem] {
+        items.sorted { a, b in
+            let ad = a.dueDate ?? Date.distantFuture
+            let bd = b.dueDate ?? Date.distantFuture
+            if ad != bd { return ad < bd }
+
+            if a.isFlagged != b.isFlagged { return a.isFlagged && !b.isFlagged }
+
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+    }
+
+    private static func buildSections(_ items: [WidgetWeaverReminderItem]) -> [WidgetWeaverRemindersSection] {
+        let grouped = Dictionary(grouping: items, by: { $0.listTitle })
+        let sortedKeys = grouped.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+        return sortedKeys.map { key in
+            let listItems = grouped[key] ?? []
+            let ids = listItems.map { $0.id }
+            return WidgetWeaverRemindersSection(id: key, title: key, subtitle: nil, itemIDs: ids)
+        }
+    }
+
+    private static func isDueTodayOrStartedToday(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, now: Date) -> Bool {
+        let cal = Calendar.autoupdatingCurrent
+        let startOfDay = cal.startOfDay(for: now)
+        guard let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay) else {
+            return false
+        }
+
+        if let due = item.dueDate {
+            if due >= startOfDay && due < endOfDay {
+                return true
+            }
+        }
+
+        if config.includeStartDatesInToday, let start = item.startDate {
+            if start >= startOfDay && start < endOfDay {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isOverdue(item: WidgetWeaverReminderItem, now: Date) -> Bool {
+        guard let due = item.dueDate else { return false }
+
+        let cal = Calendar.autoupdatingCurrent
         let startOfToday = cal.startOfDay(for: now)
-        let endOfToday = cal.date(byAdding: .day, value: 1, to: startOfToday) ?? now
 
-        switch config.mode {
-        case .today:
-            return { item in
-                let dueIsToday: Bool = {
-                    guard let due = item.dueDate else { return false }
-                    return due >= startOfToday && due < endOfToday
-                }()
-
-                if dueIsToday {
-                    return true
-                }
-
-                guard config.includeStartDatesInToday else {
-                    return false
-                }
-
-                guard let start = item.startDate else {
-                    return false
-                }
-
-                return start >= startOfToday && start < endOfToday
-            }
-
-        case .overdue:
-            return { item in
-                guard let due = item.dueDate else { return false }
-                return due < startOfToday
-            }
-
-        case .soon:
-            let windowSeconds = TimeInterval(config.soonWindowMinutes * 60)
-            let end = now.addingTimeInterval(windowSeconds)
-            return { item in
-                guard let due = item.dueDate else { return false }
-                return due >= now && due <= end
-            }
-
-        case .flagged:
-            return { $0.isFlagged }
-
-        case .focus:
-            return { _ in true }
-
-        case .list:
-            return { _ in true }
-        }
-    }
-
-    // MARK: - Mode header + progress
-
-    @ViewBuilder
-    private func modeHeader(title: String, progress: (done: Int, total: Int)?, showProgressBadge: Bool) -> some View {
-        let titleView = Text(title)
-            .font(style.primaryTextStyle.font(fallback: .headline))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-
-        let shouldShowBadge = showProgressBadge && (progress?.total ?? 0) > 0
-
-        if layout.alignment == .centre {
-            VStack(spacing: 4) {
-                titleView
-
-                if shouldShowBadge, let progress {
-                    remindersProgressPill(done: progress.done, total: progress.total)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-        } else {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                titleView
-
-                Spacer(minLength: 0)
-
-                if shouldShowBadge, let progress {
-                    remindersProgressPill(done: progress.done, total: progress.total)
-                }
-            }
-        }
-    }
-
-    private func remindersProgressPill(done: Int, total: Int) -> some View {
-        let shape = Capsule(style: .continuous)
-
-        return Text("\(done)/\(total)")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background { shape.fill(accent.opacity(0.16)) }
-            .overlay { shape.strokeBorder(accent.opacity(0.28), lineWidth: 1) }
-            .accessibilityLabel("\(done) of \(total) complete")
-    }
-
-    // MARK: - Content
-
-    @ViewBuilder
-    private func remindersContent(model: Model, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        if model.usesSections {
-            remindersSectionedRows(sections: model.sections, config: config, gate: gate)
-        } else {
-            remindersDenseRows(items: model.items, config: config, gate: gate)
-        }
-    }
-
-    private func remindersDenseRows(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
-        let limited = Array(items.prefix(maxRows))
-
-        return VStack(alignment: .leading, spacing: 8) {
-            ForEach(limited) { item in
-                remindersRow(item: item, config: config, gate: gate)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-        .opacity(0.92)
-    }
-
-    private func remindersSectionedRows(sections: [RenderSection], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let maxRows = remindersMaxRows(for: family, presentation: config.presentation)
-
-        var remaining = maxRows
-        let visibleSections: [RenderSection] = sections.compactMap { section in
-            guard remaining > 0 else { return nil }
-            let visible = Array(section.items.prefix(remaining))
-            remaining -= visible.count
-
-            guard !visible.isEmpty else { return nil }
-
-            return RenderSection(
-                id: section.id,
-                title: section.title,
-                subtitle: section.subtitle,
-                items: visible
-            )
+        // Treat due dates without a time as overdue only after the day has passed.
+        if !item.dueHasTime {
+            return due < startOfToday
         }
 
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(visibleSections) { section in
-                VStack(alignment: .leading, spacing: 6) {
-                    if !section.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || section.subtitle != nil {
-                        remindersSectionHeader(title: section.title, subtitle: section.subtitle)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(section.items) { item in
-                            remindersRow(item: item, config: config, gate: gate)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-        .opacity(0.92)
+        return due < now
     }
 
-    private func remindersSectionHeader(title: String, subtitle: String?) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(title)
-                    .font(style.secondaryTextStyle.font(fallback: .caption2).weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            if let subtitle, !subtitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary.opacity(0.9))
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private static func isDueSoon(item: WidgetWeaverReminderItem, now: Date, windowMinutes: Int) -> Bool {
+        guard let due = item.dueDate else { return false }
+        let windowSeconds = TimeInterval(max(0, windowMinutes)) * 60.0
+        let limit = now.addingTimeInterval(windowSeconds)
+        return due >= now && due <= limit
     }
 
-    private func remindersMaxRows(for family: WidgetFamily, presentation: WidgetWeaverRemindersPresentation) -> Int {
-        if presentation == .focus { return 1 }
+    // MARK: - Interactivity gate (stale snapshot protection)
 
-        switch family {
-        case .systemSmall:
-            return 3
-        case .systemMedium:
-            return 5
-        case .systemLarge:
-            return 8
-        case .systemExtraLarge:
-            return 10
-        case .accessoryRectangular:
-            return 2
-        default:
-            return 3
-        }
-    }
-
-    // MARK: - Interactivity gating (Phase 5.2.3)
-
-    private struct InteractivityGate {
+    private struct InteractivityGate: Sendable {
         var canCompleteFromWidget: Bool
         var statusLine: String?
-
-        private static let hardStaleSeconds: TimeInterval = 60 * 60 * 24
 
         init(
             lastErrorKind: WidgetWeaverRemindersDiagnostics.Kind?,
             lastUpdatedAt: Date?,
             snapshotGeneratedAt: Date?,
-            now: Date = Date()
+            now: Date
         ) {
-            let effectiveUpdatedAt = lastUpdatedAt ?? snapshotGeneratedAt
+            let hardStaleSeconds: TimeInterval = 60 * 60 * 24
 
             let permissionBlocked: Bool = {
                 guard let kind = lastErrorKind else { return false }
                 switch kind {
-                case .ok:
-                    return false
                 case .notAuthorised, .writeOnly, .denied, .restricted:
                     return true
-                case .error:
+                case .ok, .error:
                     return false
                 }
             }()
 
+            let effectiveUpdatedAt = lastUpdatedAt ?? snapshotGeneratedAt
+
             if permissionBlocked {
                 self.canCompleteFromWidget = false
-                self.statusLine = "Taps disabled: Reminders access not granted."
+                self.statusLine = "Taps disabled: Reminders access not granted. Tap to open Reminders settings."
                 return
             }
 
-            // Snapshot presence is required for reliable completion UI in the widget.
             guard let effectiveUpdatedAt else {
                 self.canCompleteFromWidget = false
-                self.statusLine = "Taps disabled: No snapshot yet. Open the app to refresh."
+                self.statusLine = "Taps disabled: No snapshot yet. Tap to open Reminders settings."
                 return
             }
 
-            let isHardStale = now.timeIntervalSince(effectiveUpdatedAt) > Self.hardStaleSeconds
-            if isHardStale {
+            if now.timeIntervalSince(effectiveUpdatedAt) > hardStaleSeconds {
                 self.canCompleteFromWidget = false
-                self.statusLine = "Taps disabled: Snapshot is out of date. Open the app to refresh."
+                self.statusLine = "Taps disabled: Snapshot is out of date. Tap to open Reminders settings."
                 return
             }
 
-            // If the last known state is a generic refresh error, pessimistically disable completion
-            // until the app refreshes the snapshot successfully.
             if lastErrorKind == .error {
                 self.canCompleteFromWidget = false
-                self.statusLine = "Taps disabled: Reminders are unavailable. Open the app to refresh."
+                self.statusLine = "Taps disabled: Reminders are unavailable. Tap to open Reminders settings."
                 return
             }
 
@@ -575,102 +353,236 @@ public struct WidgetWeaverRemindersTemplateView: View {
         }
     }
 
-    // MARK: - Row
+    // MARK: - Header
+
+    @ViewBuilder
+    func modeHeader(title: String, progress: (done: Int, total: Int)?, showProgressBadge: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(style.primaryTextStyle.font(fallback: .headline))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            if showProgressBadge, let progress {
+                let done = max(0, progress.done)
+                let total = max(0, progress.total)
+                if total > 0 {
+                    Text("\(done)/\(total)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 7)
+                        .background(.thinMaterial, in: Capsule())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
+
+    // MARK: - Content rendering
+
+    @ViewBuilder
+    private func remindersContent(model: Model, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        switch config.presentation {
+        case .dense:
+            remindersDenseList(items: model.primaryItems, config: config, gate: gate)
+        case .focus:
+            remindersFocusList(items: model.primaryItems, config: config, gate: gate)
+        case .sectioned:
+            remindersSectionedList(sections: model.sections, snapshot: WidgetWeaverRemindersStore.shared.loadSnapshot(), config: config, gate: gate)
+        }
+    }
+
+    private func remindersDenseList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        let maxRows: Int = {
+            switch family {
+            case .systemSmall:
+                return 2
+            case .systemMedium:
+                return 4
+            case .systemLarge:
+                return 8
+            default:
+                return 4
+            }
+        }()
+
+        let visible = Array(items.prefix(maxRows))
+
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(visible, id: \.id) { item in
+                remindersRow(item: item, config: config, gate: gate)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
+
+    private func remindersFocusList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        let visible = Array(items.prefix(3))
+
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(visible, id: \.id) { item in
+                remindersRow(item: item, config: config, gate: gate)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
+
+    private func remindersSectionedList(
+        sections: [WidgetWeaverRemindersSection],
+        snapshot: WidgetWeaverRemindersSnapshot?,
+        config: WidgetWeaverRemindersConfig,
+        gate: InteractivityGate
+    ) -> some View {
+        let itemsByID = snapshot?.itemsByID ?? [:]
+
+        let maxSectionCount: Int = {
+            switch family {
+            case .systemSmall:
+                return 1
+            case .systemMedium:
+                return 2
+            case .systemLarge:
+                return 4
+            default:
+                return 2
+            }
+        }()
+
+        let visibleSections = Array(sections.prefix(maxSectionCount))
+
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(visibleSections, id: \.id) { section in
+                let title = section.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !title.isEmpty {
+                    Text(title)
+                        .font(style.secondaryTextStyle.font(fallback: .caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                let maxRows: Int = (family == .systemSmall) ? 2 : 3
+                let visibleIDs = Array(section.itemIDs.prefix(maxRows))
+                let visibleItems = visibleIDs.compactMap { itemsByID[$0] }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(visibleItems, id: \.id) { item in
+                        remindersRow(item: item, config: config, gate: gate)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
 
     @ViewBuilder
     private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let cleanedID = item.id.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        let isInteractive = (context == .widget) && !item.isCompleted && !cleanedID.isEmpty && gate.canCompleteFromWidget
+        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeTitle = title.isEmpty ? "Untitled" : title
 
-        let row = HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+        let showsDue = (item.dueDate != nil) && (config.showDueTimes || !item.dueHasTime)
+
+        let timeText: String? = {
+            guard let due = item.dueDate else { return nil }
+            if item.dueHasTime, config.showDueTimes {
+                return due.formatted(date: .omitted, time: .shortened)
+            }
+            return due.formatted(date: .abbreviated, time: .omitted)
+        }()
+
+        if context == .widget, gate.canCompleteFromWidget, !item.isCompleted {
+            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: item.id)) {
+                rowBody(title: safeTitle, showsDue: showsDue, timeText: timeText, isFlagged: item.isFlagged)
+            }
+            .buttonStyle(.plain)
+        } else {
+            rowBody(title: safeTitle, showsDue: showsDue, timeText: timeText, isFlagged: item.isFlagged)
+        }
+    }
+
+    private func rowBody(title: String, showsDue: Bool, timeText: String?, isFlagged: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(accent)
                 .opacity(0.9)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(style.secondaryTextStyle.font(fallback: .caption))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(style.secondaryTextStyle.font(fallback: .caption))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-                if let dueText = remindersDueText(for: item, showDueTimes: config.showDueTimes) {
-                    Text(dueText)
+                    if isFlagged {
+                        Image(systemName: "flag.fill")
+                            .font(.caption2)
+                            .foregroundStyle(accent)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                if showsDue, let timeText {
+                    Text(timeText)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-
-        if isInteractive {
-            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: cleanedID)) {
-                row
-            }
-            .buttonStyle(.plain)
-        } else {
-            row
         }
     }
 
-    private func remindersDueText(for item: WidgetWeaverReminderItem, showDueTimes: Bool) -> String? {
-        guard let dueDate = item.dueDate else { return nil }
-        if showDueTimes && item.dueHasTime {
-            return dueDate.formatted(date: .abbreviated, time: .shortened)
-        }
-        return dueDate.formatted(date: .abbreviated, time: .omitted)
-    }
-
-    // MARK: - Footer + states
-
-    @ViewBuilder
-    private func remindersFooter(lastAction: WidgetWeaverRemindersActionDiagnostics?, lastUpdatedAt: Date?) -> some View {
-        if let lastAction {
-            remindersActionBody(lastAction: lastAction)
-        } else if let updatedAt = lastUpdatedAt {
-            Text("Updated \(updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
+    // MARK: - Empty/error/footer
 
     private func emptyBody(text: String) -> some View {
         Text(text)
             .font(style.secondaryTextStyle.font(fallback: .caption2))
             .foregroundStyle(.secondary)
             .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: context != .widget)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
+
+    private func remindersFooter(lastAction: WidgetWeaverRemindersActionDiagnostics?, lastUpdatedAt: Date?) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 6) {
+            if let lastAction {
+                remindersActionBody(lastAction: lastAction)
+            }
+
+            if let lastUpdatedAt {
+                Text("Updated \(lastUpdatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+            }
+        }
+        .padding(.top, 2)
     }
 
     private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics) -> some View {
-        let kindText: String = {
-            switch lastError.kind {
-            case .ok:
-                return "OK"
-            case .notAuthorised:
-                return "Not authorised"
-            case .writeOnly:
-                return "Write-only"
-            case .denied:
-                return "Denied"
-            case .restricted:
-                return "Restricted"
-            case .error:
-                return "Error"
-            }
-        }()
-
         let message = lastError.message.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeMessage = message.isEmpty ? "No details." : message
 
+        let displayMessage: String = {
+            switch lastError.kind {
+            case .ok:
+                return safeMessage
+            case .notAuthorised, .denied, .restricted:
+                return "Reminders access not granted."
+            case .writeOnly:
+                return "Reminders access is write-only."
+            case .error:
+                return "Reminders unavailable: \(safeMessage)"
+            }
+        }()
+
         return VStack(alignment: layout.alignment.alignment, spacing: 6) {
-            Text("\(kindText): \(safeMessage)")
+            Text(displayMessage)
                 .font(style.secondaryTextStyle.font(fallback: .caption2))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
@@ -711,120 +623,6 @@ public struct WidgetWeaverRemindersTemplateView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-        }
-    }
-
-    private func remindersPlaceholder() -> some View {
-        let titles: [String] = [
-            "Buy milk",
-            "Reply to email",
-            "Book dentist",
-        ]
-
-        let maxRows: Int = {
-            switch family {
-            case .systemSmall:
-                return 1
-            case .systemMedium:
-                return 2
-            case .systemLarge:
-                return 3
-            case .systemExtraLarge:
-                return 4
-            case .accessoryRectangular:
-                return 1
-            default:
-                return 2
-            }
-        }()
-
-        let blockSpacing: CGFloat = {
-            switch family {
-            case .systemSmall, .systemMedium:
-                return 8
-            default:
-                return 10
-            }
-        }()
-
-        let rowSpacing: CGFloat = (family == .systemSmall) ? 6 : 8
-
-        let visibleTitles = Array(titles.prefix(maxRows))
-
-        return VStack(alignment: layout.alignment.alignment, spacing: blockSpacing) {
-            modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
-
-            if family == .systemMedium {
-                Text("No snapshot yet.")
-                    .font(style.secondaryTextStyle.font(fallback: .caption2))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: rowSpacing) {
-                        ForEach(visibleTitles, id: \.self) { title in
-                            placeholderReminderRowCompact(title: title)
-                        }
-                    }
-                    .opacity(0.85)
-
-                    Text("Open WidgetWeaver to enable Reminders access and refresh.")
-                        .font(style.secondaryTextStyle.font(fallback: .caption2))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-                }
-            } else {
-                Text("No snapshot yet.\nOpen WidgetWeaver to enable Reminders access and refresh.")
-                    .font(style.secondaryTextStyle.font(fallback: .caption2))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                    .lineLimit(family == .systemSmall ? 2 : 3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-
-                VStack(alignment: .leading, spacing: rowSpacing) {
-                    ForEach(visibleTitles, id: \.self) { title in
-                        placeholderReminderRow(title: title)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-                .opacity(0.85)
-            }
-        }
-    }
-
-    private func placeholderReminderRowCompact(title: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "circle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(accent)
-                .opacity(0.9)
-
-            Text(title)
-                .font(style.secondaryTextStyle.font(fallback: .caption))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-        }
-    }
-
-    private func placeholderReminderRow(title: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "circle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(accent)
-                .opacity(0.9)
-
-            Text(title)
-                .font(style.secondaryTextStyle.font(fallback: .caption))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
         }
     }
 }

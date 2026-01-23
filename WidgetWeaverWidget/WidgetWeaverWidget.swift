@@ -152,6 +152,13 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
 
         let familySpec = spec.resolved(for: context.family)
 
+        let usesReminders = (familySpec.layout.template == .reminders)
+        if usesReminders {
+            Task.detached(priority: .utility) {
+                _ = await WidgetWeaverRemindersEngine.shared.refreshSnapshotCache(force: false, policy: .default)
+            }
+        }
+
         if let idString = configuration.design?.id,
            let designID = UUID(uuidString: idString),
            familySpec.layout.template == .clockIcon
@@ -253,6 +260,12 @@ struct WidgetWeaverProvider: AppIntentTimelineProvider {
         if usesActivity {
             refreshSeconds = min(refreshSeconds, max(60, WidgetWeaverActivityStore.shared.recommendedRefreshIntervalSeconds()))
         }
+
+        if usesReminders {
+            // Keep interactive Reminders widgets within WidgetKit’s freshness window.
+            refreshSeconds = min(refreshSeconds, 60 * 15)
+        }
+
         // Align to minute boundaries for clock-like text, but still include an immediate `now` entry
         // so design edits can refresh within the current minute.
         let alignedBase: Date = {
