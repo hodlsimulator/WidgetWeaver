@@ -200,12 +200,122 @@ enum SmartPhotoCropMath {
     }
 
     static func straightenConstrainedRect(_ rect: NormalisedRect, rectAspect: Double, imageAspect: Double, straightenDegrees: Double) -> NormalisedRect {
-        let base = clampRect(rect, rectAspect: rectAspect)
+        let a = safeRectAspect(rectAspect)
+        let base = clampRect(rect, rectAspect: a)
+
         let degrees = sanitise(straightenDegrees, fallback: 0.0)
         if abs(degrees) < 0.01 { return base }
-        let radians = abs(degrees) * Double.pi / 180.0
-        let safeBounds = straightenSafeBounds(imageAspect: imageAspect, radians: radians)
-        return clampRect(base, rectAspect: rectAspect, within: safeBounds)
+
+        let radians = degrees * Double.pi / 180.0
+        return constrainRectToRotatedImage(base, rectAspect: a, imageAspect: imageAspect, radians: radians)
+    }
+
+    private static func constrainRectToRotatedImage(_ rect: NormalisedRect, rectAspect: Double, imageAspect: Double, radians: Double) -> NormalisedRect {
+        let a = safeRectAspect(rectAspect)
+        let aspect = max(minimumRectAspect, abs(sanitise(imageAspect, fallback: 1.0)))
+        let theta = sanitise(radians, fallback: 0.0)
+        if abs(theta) < 1.0e-8 { return rect }
+
+        let cosT = cos(theta)
+        let sinT = sin(theta)
+        let cosA = abs(cosT)
+        let sinA = abs(sinT)
+
+        // Maximum width that can fit inside the rotated image for this crop aspect.
+        // The crop rect is axis-aligned; the image content is rotated by `theta`.
+        let maxWidthUnrotated = min(1.0, a)
+        let denomX = (aspect * cosA) + (sinA / a)
+        let denomY = (aspect * sinA) + (cosA / a)
+
+        let wMaxFromX = aspect / max(clampEpsilon, denomX)
+        let wMaxFromY = 1.0 / max(clampEpsilon, denomY)
+        let wMax = max(minimumRectAspect, min(maxWidthUnrotated, min(wMaxFromX, wMaxFromY)))
+
+        let w = min(rect.width, wMax)
+        let h = w / a
+
+        let halfW = w / 2.0
+        let halfH = h / 2.0
+
+        // Image bounds in centred coordinates: x ∈ [-A, A], y ∈ [-B, B].
+        let A = aspect / 2.0
+        let B = 0.5
+
+        // Half sizes of the crop rect in centred image coordinates.
+        let hx = (w * aspect) / 2.0
+        let hy = h / 2.0
+
+        // Feasible centre region in inverse-rotated coordinates.
+        let M = (hx * cosA) + (hy * sinA)
+        let N = (hx * sinA) + (hy * cosA)
+
+        let uMin = -A + M
+        let uMax = A - M
+        let vMin = -B + N
+        let vMax = B - N
+
+        // Current centre from the incoming (unconstrained-for-straighten) rect.
+        let centreXN = rect.x + (rect.width / 2.0)
+        let centreYN = rect.y + (rect.height / 2.0)
+        let cx = (centreXN - 0.5) * aspect
+        let cy = (centreYN - 0.5)
+
+        // Transform centre to inverse-rotated coordinates.
+        var u = (cx * cosT) + (cy * sinT)
+        var v = (-cx * sinT) + (cy * cosT)
+
+        if uMin <= uMax {
+            u = min(max(uMin, u), uMax)
+        } else {
+            u = 0.0
+        }
+
+        if vMin <= vMax {
+            v = min(max(vMin, v), vMax)
+        } else {
+            v = 0.0
+        }
+
+        // Rotate back to centred coordinates.
+        let cx2 = (u * cosT) - (v * sinT)
+        let cy2 = (u * sinT) + (v * cosT)
+
+        let centreX2 = (cx2 / aspect) + 0.5
+        let centreY2 = cy2 + 0.5
+
+        var x = centreX2 - halfW
+        var y = centreY2 - halfH
+
+        let maxX = max(0.0, 1.0 - w)
+        let maxY = max(0.0, 1.0 - h)
+
+        x = min(max(0.0, x), maxX)
+        y = min(max(0.0, y), maxY)
+
+        if abs(x) <= clampEpsilon { x = 0.0 }
+        if abs(y) <= clampEpsilon { y = 0.0 }
+        if abs(maxX - x) <= clampEpsilon { x = maxX }
+        if abs(maxY - y) <= clampEpsilon { y = maxY }
+
+        #if DEBUG
+        // Corner validation: inverse-rotate each corner and confirm it stays inside the unrotated image bounds.
+        let corners = [
+            (x, y),
+            (x + w, y),
+            (x, y + h),
+            (x + w, y + h)
+        ]
+        for (rx, ry) in corners {
+            let px = (rx - 0.5) * aspect
+            let py = (ry - 0.5)
+            let ix = (px * cosT) + (py * sinT)
+            let iy = (-px * sinT) + (py * cosT)
+            assert(abs(ix) <= A + 1.0e-6)
+            assert(abs(iy) <= B + 1.0e-6)
+        }
+        #endif
+
+        return NormalisedRect(x: x, y: y, width: w, height: h)
     }
 
     static func straightenSafeBounds(imageAspect: Double, radians: Double) -> NormalisedRect {
