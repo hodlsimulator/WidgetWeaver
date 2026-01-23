@@ -542,6 +542,17 @@ private struct WWMainClockAngles {
 
 // MARK: - Main Design Widget
 
+private enum WidgetWeaverWidgetRootViewID {
+    static func value(template: LayoutTemplateToken, entry: WidgetWeaverEntry) -> AnyHashable {
+        // Avoid forcing a full view re-mount on minute-level clock timeline updates.
+        // The clock face is self-driven (timer glyphs) so remounting shows up as a visible blink.
+        if template == .clockIcon {
+            return AnyHashable(entry.spec.id)
+        }
+        return AnyHashable(entry.date)
+    }
+}
+
 struct WidgetWeaverWidget: Widget {
     let kind: String = WidgetWeaverWidgetKinds.main
 
@@ -569,7 +580,10 @@ struct WidgetWeaverWidget: Widget {
                         .environment(\.wwThumbnailRenderingEnabled, !entry.isWidgetKitPreview)
                 }
             }
-            .id(entry.date)
+            .id(WidgetWeaverWidgetRootViewID.value(template: familySpec.layout.template, entry: entry))
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
         .configurationDisplayName("WidgetWeaver")
         .description("A widget built from your saved WidgetWeaver designs.")
