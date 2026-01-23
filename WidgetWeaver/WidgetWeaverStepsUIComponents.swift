@@ -184,6 +184,44 @@ struct StepsRing: View {
     }
 }
 
+
+
+// MARK: - Insights
+
+struct StepsInsightsBarCompact: View {
+    let analytics: WidgetWeaverStepsAnalytics
+
+    var body: some View {
+        HStack(spacing: 10) {
+            StepsInsightPill(title: "Streak", value: "\(analytics.currentStreakDays)d")
+            StepsInsightPill(title: "Avg 7", value: wwFormatSteps(Int(analytics.averageSteps(days: 7).rounded())))
+            StepsInsightPill(title: "Avg 30", value: wwFormatSteps(Int(analytics.averageSteps(days: 30).rounded())))
+        }
+    }
+}
+
+struct StepsInsightPill: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(value)
+                .font(.system(.subheadline, design: .rounded).weight(.bold))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 // MARK: - Formatting helpers
 
 func wwFormatSteps(_ n: Int) -> String {

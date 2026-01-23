@@ -27,6 +27,7 @@ struct WidgetWeaverStepsSettingsView: View {
 
     @State private var isRefreshing: Bool = false
     @State private var snapshot: WidgetWeaverStepsSnapshot?
+    @State private var history: WidgetWeaverStepsHistorySnapshot?
     @State private var access: WidgetWeaverStepsAccess = .unknown
     @State private var lastError: String?
     @State private var statusMessage: String?
@@ -55,6 +56,16 @@ struct WidgetWeaverStepsSettingsView: View {
     }
     private var todayPercent: Int { Int((todayFraction * 100.0).rounded()) }
 
+    private var stepsAnalytics: WidgetWeaverStepsAnalytics? {
+        guard let history else { return nil }
+        return WidgetWeaverStepsAnalytics(
+            history: history,
+            schedule: schedule,
+            streakRule: streakRule
+        )
+    }
+
+
     var body: some View {
         List {
             Section {
@@ -66,6 +77,35 @@ struct WidgetWeaverStepsSettingsView: View {
                     access: access,
                     fetchedAt: snapshot?.fetchedAt
                 )
+            }
+
+
+            Section("Insights") {
+                if let analytics = stepsAnalytics {
+                    StepsInsightsBarCompact(analytics: analytics)
+
+                    if let best = analytics.bestDay {
+                        Text("Best day: \(wwDateMedium(best.dayStart)) • \(wwFormatSteps(best.steps)) steps")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let fetchedAt = history?.fetchedAt {
+                        Text("History updated \(wwDateMedium(fetchedAt)) at \(wwTimeShort(fetchedAt))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No history snapshot yet. Refresh Steps to build streak + average metrics.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Open History for a full breakdown.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Activity (steps + more)") {
@@ -233,6 +273,33 @@ struct WidgetWeaverStepsSettingsView: View {
                     }
                 }
             }
+
+            Section("Template variables") {
+                Text("Use these built-in keys in any widget text:")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(verbatim: "__steps_today")
+                    Text(verbatim: "__steps_goal_today")
+                    Text(verbatim: "__steps_today_percent")
+                    Text(verbatim: "__steps_streak")
+                    Text(verbatim: "__steps_avg_7")
+                    Text(verbatim: "__steps_avg_30")
+                    Text(verbatim: "__steps_best_day")
+                    Text(verbatim: "__steps_best_day_date")
+                    Text(verbatim: "__steps_updated_iso")
+                    Text(verbatim: "__steps_access")
+                }
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+                Text("History-derived keys (streak, averages, best day) require a cached history snapshot.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
         }
         .navigationTitle("Steps")
         .navigationBarTitleDisplayMode(.inline)
@@ -251,6 +318,7 @@ struct WidgetWeaverStepsSettingsView: View {
     private func load() async {
         let store = WidgetWeaverStepsStore.shared
         snapshot = store.snapshotForToday()
+        history = store.loadHistory()
         access = store.loadLastAccess()
         lastError = store.loadLastError()
 
@@ -289,6 +357,10 @@ struct WidgetWeaverStepsSettingsView: View {
         let stepsResult = await WidgetWeaverStepsEngine.shared.updateIfNeeded(force: force)
         snapshot = stepsResult.snapshot
         access = stepsResult.access
+
+        let updatedHistory = await WidgetWeaverStepsEngine.shared.updateHistoryFromBeginningIfNeeded(force: force)
+        history = updatedHistory ?? WidgetWeaverStepsStore.shared.loadHistory()
+
         lastError = WidgetWeaverStepsStore.shared.loadLastError()
 
         let activityResult = await WidgetWeaverActivityEngine.shared.updateIfNeeded(force: force)
