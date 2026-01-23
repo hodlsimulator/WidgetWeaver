@@ -55,8 +55,13 @@ struct WidgetWeaverHomeScreenClockEntry: TimelineEntry {
     let providerContextIsPreview: Bool
 }
 
-private enum WWClockTimelineConfig {
-    static let maxEntriesPerTimeline: Int = 2
+private enum WWQuickClockTimelineConfig {
+    // Reload shortly after the next minute boundary.
+    //
+    // A small minimum delay avoids near-immediate reloads when the widget is added close to a
+    // minute boundary (some hosting paths can make that look like rapid churn).
+    static let reloadSlackSeconds: TimeInterval = 1.0
+    static let minReloadDelaySeconds: TimeInterval = 10.0
 }
 
 private enum WWQuickClockDefaults {
@@ -141,36 +146,22 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
         let minuteAnchorNow = Self.floorToMinute(now)
         let nextMinuteBoundary = minuteAnchorNow.addingTimeInterval(60.0)
 
-        var entries: [Entry] = []
-        entries.reserveCapacity(WWClockTimelineConfig.maxEntriesPerTimeline)
+        // Minute-level entry replacement only.
+        // Seconds movement remains within-entry (timer-glyph driven), not via the widget timeline.
+        let idealReload = nextMinuteBoundary.addingTimeInterval(WWQuickClockTimelineConfig.reloadSlackSeconds)
+        let minReload = now.addingTimeInterval(WWQuickClockTimelineConfig.minReloadDelaySeconds)
+        let reload = (idealReload < minReload) ? minReload : idealReload
 
-        entries.append(
-            Entry(
-                date: now,
-                face: face,
-                tickMode: tickMode,
-                tickSeconds: tickSeconds,
-                colourScheme: colourScheme,
-                isWidgetKitPreview: isWidgetKitPreview,
-                entrySource: entrySource,
-                providerContextIsPreview: providerContextIsPreview
-            )
+        let entry = Entry(
+            date: now,
+            face: face,
+            tickMode: tickMode,
+            tickSeconds: tickSeconds,
+            colourScheme: colourScheme,
+            isWidgetKitPreview: isWidgetKitPreview,
+            entrySource: entrySource,
+            providerContextIsPreview: providerContextIsPreview
         )
-
-        if entries.count < WWClockTimelineConfig.maxEntriesPerTimeline {
-            entries.append(
-                Entry(
-                    date: nextMinuteBoundary,
-                    face: face,
-                    tickMode: tickMode,
-                    tickSeconds: tickSeconds,
-                    colourScheme: colourScheme,
-                    isWidgetKitPreview: isWidgetKitPreview,
-                    entrySource: entrySource,
-                    providerContextIsPreview: providerContextIsPreview
-                )
-            )
-        }
 
         WWClockDebugLog.appendLazy(
             category: "clock",
@@ -181,14 +172,15 @@ struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {
             let nowRef = Int(now.timeIntervalSinceReferenceDate.rounded())
             let anchorRef = Int(minuteAnchorNow.timeIntervalSinceReferenceDate.rounded())
             let nextRef = Int(nextMinuteBoundary.timeIntervalSinceReferenceDate.rounded())
+            let reloadRef = Int(reload.timeIntervalSinceReferenceDate.rounded())
 
-            let firstRef = Int((entries.first?.date ?? now).timeIntervalSinceReferenceDate.rounded())
-            let lastRef = Int((entries.last?.date ?? now).timeIntervalSinceReferenceDate.rounded())
+            let entryRef = Int(entry.date.timeIntervalSinceReferenceDate.rounded())
+            let reloadDelayMs = Int((reload.timeIntervalSince(now) * 1000.0).rounded())
 
-            return "provider.timeline face=\(face.rawValue) scheme=\(colourScheme.rawValue) mode=\(tickMode) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entries=\(entries.count) firstRef=\(firstRef) lastRef=\(lastRef) policy=atEnd"
+            return "provider.timeline face=\(face.rawValue) scheme=\(colourScheme.rawValue) mode=\(tickMode) nowRef=\(nowRef) anchorRef=\(anchorRef) nextRef=\(nextRef) entryRef=\(entryRef) reloadRef=\(reloadRef) reloadDelayMs=\(reloadDelayMs) policy=after"
         }
 
-        return Timeline(entries: entries, policy: .atEnd)
+        return Timeline(entries: [entry], policy: .after(reload))
     }
 
     private static func floorToMinute(_ date: Date) -> Date {
@@ -204,10 +196,18 @@ private enum WWClockInstrumentation {
     private static let lastKey = "widgetweaver.clock.timelineBuild.last"
     private static let schemeKey = "widgetweaver.clock.timelineBuild.scheme"
     private static let secondsKey = "widgetweaver.clock.timelineBuild.secondsHandEnabled"
+    private static let deltaSecondsKey = "widgetweaver.clock.timelineBuild.deltaSeconds"
     private static let countPrefix = "widgetweaver.clock.timelineBuild.count."
 
     static func recordTimelineBuild(now: Date, scheme: WidgetWeaverClockColourScheme, secondsHandEnabled: Bool) {
         let defaults = AppGroup.userDefaults
+
+        let prev = defaults.object(forKey: lastKey) as? Date
+        if let prev {
+            let delta = now.timeIntervalSince(prev)
+            defaults.set(delta, forKey: deltaSecondsKey)
+        }
+
         defaults.set(now, forKey: lastKey)
         defaults.set(scheme.rawValue, forKey: schemeKey)
         defaults.set(secondsHandEnabled, forKey: secondsKey)
