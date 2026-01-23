@@ -107,16 +107,6 @@ extension WidgetWeaverAboutView {
             spec: specPhotoQuote()
         ),
         WidgetWeaverAboutTemplate(
-            id: "starter-focus",
-            title: "Focus",
-            subtitle: "Daily priority",
-            description: "A calm “one thing” widget with a warm gradient and a soft accent glow.",
-            tags: ["Daily", "Focus", "Glow"],
-            requiresPro: false,
-            triggersCalendarPermission: false,
-            spec: specFocus()
-        ),
-        WidgetWeaverAboutTemplate(
             id: "starter-countdown",
             title: "Countdown",
             subtitle: "Timebox / deadline",
@@ -125,16 +115,6 @@ extension WidgetWeaverAboutView {
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specCountdown()
-        ),
-        WidgetWeaverAboutTemplate(
-            id: "starter-quote",
-            title: "Quote",
-            subtitle: "Motivation",
-            description: "A simple quote layout with a sunset gradient and a clean typography stack.",
-            tags: ["Quote", "Motivation", "Gradient"],
-            requiresPro: false,
-            triggersCalendarPermission: false,
-            spec: specQuote()
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-list",
