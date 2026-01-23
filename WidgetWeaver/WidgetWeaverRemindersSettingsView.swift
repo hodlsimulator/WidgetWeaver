@@ -300,6 +300,31 @@ struct WidgetWeaverRemindersSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
 
+                    if let lastAction = snapshotDebug.lastAction {
+                        Text("Last action: \(lastAction.kind.rawValue) — \(lastAction.message)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Last action at: \(lastAction.at.formatted(date: .abbreviated, time: .standard))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if snapshotDebug.refreshLastAttemptAt != nil || snapshotDebug.refreshNextAllowedAt != nil || snapshotDebug.refreshConsecutiveFailureCount > 0 {
+                        RemindersRefreshThrottleStatusView(
+                            lastAttemptAt: snapshotDebug.refreshLastAttemptAt,
+                            nextAllowedAt: snapshotDebug.refreshNextAllowedAt,
+                            consecutiveFailures: snapshotDebug.refreshConsecutiveFailureCount
+                        )
+                    }
+
+                    if snapshotDebug.lastAction != nil {
+                        Button("Clear last action") {
+                            snapshotDebug.clearLastAction()
+                        }
+                    }
+
                     Button {
                         snapshotDebug.refreshSnapshotFromRemindersEngine()
                     } label: {
@@ -345,21 +370,6 @@ struct WidgetWeaverRemindersSettingsView: View {
                     #endif
                 }
 
-                #if DEBUG
-                Section("Debug: write snapshot (DEBUG)") {
-                    Text("Writes a deterministic sample snapshot so widgets can be tested without Reminders access.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button(role: .destructive) {
-                        snapshotDebug.writeDebugSampleSnapshot()
-                    } label: {
-                        Text("Write debug sample snapshot")
-                    }
-                }
-                #endif
-
                 Section {
                     if let onClose {
                         Button {
@@ -395,6 +405,46 @@ struct WidgetWeaverRemindersSettingsView: View {
                 listSelection.loadLists()
             }
         }
+    }
+}
+
+private struct RemindersRefreshThrottleStatusView: View {
+    let lastAttemptAt: Date?
+    let nextAllowedAt: Date?
+    let consecutiveFailures: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Refresh throttling")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Text("Last attempt: \(lastAttemptAt?.formatted(date: .abbreviated, time: .standard) ?? "—")")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            TimelineView(.periodic(from: Date(), by: 1.0)) { context in
+                let now = context.date
+
+                Group {
+                    if let nextAllowedAt {
+                        if nextAllowedAt <= now {
+                            Text("Next allowed: now")
+                        } else {
+                            let remainingSeconds = Int(max(0, nextAllowedAt.timeIntervalSince(now)).rounded(.up))
+                            Text("Next allowed: \(nextAllowedAt.formatted(date: .abbreviated, time: .standard)) (in \(remainingSeconds)s)")
+                        }
+                    } else {
+                        Text("Next allowed: —")
+                    }
+
+                    Text("Consecutive failures: \(max(0, consecutiveFailures))")
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -686,6 +736,11 @@ private final class RemindersSnapshotDebugModel: ObservableObject {
     @Published private(set) var snapshot: WidgetWeaverRemindersSnapshot?
     @Published private(set) var lastUpdatedAt: Date?
     @Published private(set) var lastError: WidgetWeaverRemindersDiagnostics?
+    @Published private(set) var lastAction: WidgetWeaverRemindersActionDiagnostics?
+
+    @Published private(set) var refreshLastAttemptAt: Date?
+    @Published private(set) var refreshNextAllowedAt: Date?
+    @Published private(set) var refreshConsecutiveFailureCount: Int = 0
 
     @Published private(set) var isWriting: Bool = false
 
@@ -695,6 +750,11 @@ private final class RemindersSnapshotDebugModel: ObservableObject {
         snapshot = store.loadSnapshot()
         lastUpdatedAt = store.loadLastUpdatedAt()
         lastError = store.loadLastError()
+        lastAction = store.loadLastAction()
+
+        refreshLastAttemptAt = store.loadRefreshLastAttemptAt()
+        refreshNextAllowedAt = store.loadRefreshNextAllowedAt()
+        refreshConsecutiveFailureCount = store.loadRefreshConsecutiveFailureCount()
     }
 
     func refreshSnapshotFromRemindersEngine(maxItems: Int = 250, force: Bool = false) {
@@ -711,6 +771,11 @@ private final class RemindersSnapshotDebugModel: ObservableObject {
 
     func clearRefreshThrottleState() {
         store.clearRefreshThrottleState()
+        refreshFromStore()
+    }
+
+    func clearLastAction() {
+        store.clearLastAction()
         refreshFromStore()
     }
 
