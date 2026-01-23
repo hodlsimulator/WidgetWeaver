@@ -218,6 +218,12 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         }
     }
 
+    public func clearAttribution() {
+        defaults.removeObject(forKey: Keys.attributionData)
+        UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+        notifyWidgetsWeatherUpdated()
+    }
+
     public func attributionLegalURL() -> URL? {
         loadAttribution()?.legalPageURL
     }
@@ -347,4 +353,23 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         defaults.removeObject(forKey: Keys.lastError)
         UserDefaults.standard.removeObject(forKey: Keys.lastError)
     }
+
+    // MARK: Reset
+
+    public func resetAll() {
+        defaults.removeObject(forKey: Keys.locationData)
+        defaults.removeObject(forKey: Keys.snapshotData)
+        defaults.removeObject(forKey: Keys.unitPreference)
+        defaults.removeObject(forKey: Keys.attributionData)
+        defaults.removeObject(forKey: Keys.lastError)
+
+        UserDefaults.standard.removeObject(forKey: Keys.locationData)
+        UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+        UserDefaults.standard.removeObject(forKey: Keys.unitPreference)
+        UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+        UserDefaults.standard.removeObject(forKey: Keys.lastError)
+
+        notifyWidgetsWeatherUpdated()
+    }
+
 }

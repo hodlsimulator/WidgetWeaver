@@ -261,6 +261,7 @@
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				.gitignore,
 				Info.plist,
 			);
 			target = E18676772EF227C30098B095 /* WidgetWeaver */;

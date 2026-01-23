@@ -25,6 +25,8 @@ struct WidgetWeaverWeatherSettingsView: View {
     @State private var snapshot: WidgetWeaverWeatherSnapshot? = WidgetWeaverWeatherStore.shared.loadSnapshot()
     @State private var unitPreference: WidgetWeaverWeatherUnitPreference = WidgetWeaverWeatherStore.shared.loadUnitPreference()
 
+    @State private var lastError: String? = WidgetWeaverWeatherStore.shared.loadLastError()
+
     @State private var locationAuthStatus: CLAuthorizationStatus = CLLocationManager().authorizationStatus
 
     private let store = WidgetWeaverWeatherStore.shared
@@ -184,6 +186,36 @@ struct WidgetWeaverWeatherSettingsView: View {
                 }
             }
 
+            Section("Diagnostics") {
+                if let lastError {
+                    Text(lastError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("No stored errors.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(role: .destructive) {
+                    store.clearLastError()
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Clear last error", systemImage: "trash")
+                }
+                .disabled(lastError == nil)
+
+                Button(role: .destructive) {
+                    store.resetAll()
+                    query = ""
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Reset Weather", systemImage: "arrow.counterclockwise")
+                }
+            }
+
             if let statusText {
                 Section {
                     Text(statusText)
@@ -231,6 +263,7 @@ struct WidgetWeaverWeatherSettingsView: View {
         savedLocation = store.loadLocation()
         snapshot = store.loadSnapshot()
         unitPreference = store.loadUnitPreference()
+        lastError = store.loadLastError()
     }
 
     private func reloadWidgets() {

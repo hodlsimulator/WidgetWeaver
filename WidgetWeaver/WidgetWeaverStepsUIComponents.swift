@@ -7,6 +7,7 @@
 //  Extracted from WidgetWeaverStepsSettingsView.swift to share UI primitives + formatting helpers.
 //
 
+import Foundation
 import SwiftUI
 
 // MARK: - Today card + ring
@@ -225,24 +226,13 @@ struct StepsInsightPill: View {
 // MARK: - Formatting helpers
 
 func wwFormatSteps(_ n: Int) -> String {
-    let nf = NumberFormatter()
-    nf.numberStyle = .decimal
-    nf.usesGroupingSeparator = true
-    return nf.string(from: NSNumber(value: n)) ?? "\(n)"
+    max(0, n).formatted(.number)
 }
-
 
 func wwFormatDistanceKM(_ meters: Double) -> String {
     let km = max(0, meters) / 1000.0
-
-    let nf = NumberFormatter()
-    nf.numberStyle = .decimal
-    nf.usesGroupingSeparator = true
-    nf.minimumFractionDigits = 0
-    nf.maximumFractionDigits = 1
-
-    let s = nf.string(from: NSNumber(value: km)) ?? String(format: "%.1f", km)
-    return "\(s) km"
+    let value = km.formatted(.number.precision(.fractionLength(0...1)))
+    return "\(value) km"
 }
 
 func wwFormatKcal(_ kcal: Double) -> String {
@@ -251,27 +241,13 @@ func wwFormatKcal(_ kcal: Double) -> String {
 }
 
 func wwDateMedium(_ d: Date) -> String {
-    let df = DateFormatter()
-    df.locale = Locale.autoupdatingCurrent
-    df.timeZone = Calendar.autoupdatingCurrent.timeZone
-    df.dateStyle = .medium
-    df.timeStyle = .none
-    return df.string(from: d)
+    d.formatted(date: .abbreviated, time: .omitted)
 }
 
 func wwMonthTitle(_ d: Date) -> String {
-    let df = DateFormatter()
-    df.locale = Locale.autoupdatingCurrent
-    df.timeZone = Calendar.autoupdatingCurrent.timeZone
-    df.dateFormat = "LLLL yyyy"
-    return df.string(from: d)
+    d.formatted(.dateTime.month(.wide).year())
 }
 
 func wwTimeShort(_ d: Date) -> String {
-    let df = DateFormatter()
-    df.locale = Locale.autoupdatingCurrent
-    df.timeZone = Calendar.autoupdatingCurrent.timeZone
-    df.dateStyle = .none
-    df.timeStyle = .short
-    return df.string(from: d)
+    d.formatted(date: .omitted, time: .shortened)
 }
