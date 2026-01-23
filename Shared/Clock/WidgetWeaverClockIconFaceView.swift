@@ -103,7 +103,7 @@ struct WidgetWeaverClockIconFaceView: View {
             )
 
             let numeralsRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.75, min: R * 0.71, max: R * 0.79),
+                WWClock.clamp(R * 0.73, min: R * 0.69, max: R * 0.77),
                 scale: displayScale
             )
             let numeralsSize = WWClock.pixel(
