@@ -61,6 +61,22 @@ extension ContentView {
             }
         }()
 
+        let safeOldRenderFileName = SmartPhotoSpec.sanitisedFileName(oldRenderFileName)
+
+        let shouldDeleteOldRenderFile: Bool = {
+            guard !safeOldRenderFileName.isEmpty else { return false }
+
+            // Manual crop updates are draft-only until Save. Avoid deleting any image file that is
+            // still referenced by a saved design so Revert stays reliable.
+            for spec in store.loadAll() {
+                if spec.allReferencedImageFileNames().contains(safeOldRenderFileName) {
+                    return false
+                }
+            }
+
+            return true
+        }()
+
         do {
             try await Task.detached(priority: .userInitiated) {
                 guard let masterImage = UIImage(data: masterData) else {
@@ -82,8 +98,8 @@ extension ContentView {
 
                 try AppGroup.writeImageData(jpeg, fileName: newRenderFileName)
 
-                if !oldRenderFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    AppGroup.deleteImage(fileName: oldRenderFileName)
+                if shouldDeleteOldRenderFile {
+                    AppGroup.deleteImage(fileName: safeOldRenderFileName)
                 }
             }.value
 
