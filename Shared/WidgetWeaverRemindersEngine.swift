@@ -94,6 +94,20 @@ public enum WidgetWeaverRemindersEngineError: Error, LocalizedError, Sendable {
 public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
     public static let shared = WidgetWeaverRemindersEngine()
 
+    // MARK: - List summaries (Phase 6)
+
+    public struct ReminderListSummary: Identifiable, Hashable, Sendable {
+        public let id: String
+        public let title: String
+        public let sourceTitle: String?
+
+        public init(id: String, title: String, sourceTitle: String?) {
+            self.id = id
+            self.title = title
+            self.sourceTitle = sourceTitle
+        }
+    }
+
     private let eventStore: EKEventStore
     private var inFlightRefresh: Task<WidgetWeaverRemindersDiagnostics, Never>?
 
@@ -122,6 +136,16 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
             return .fullAccess
         @unknown default:
             return .error
+        }
+    }
+
+    public func requestAccessIfNeeded() async -> Bool {
+        let result = await requestFullAccessIfNeeded()
+        switch result {
+        case .granted:
+            return true
+        case .denied, .writeOnly, .restricted, .notDetermined, .error:
+            return false
         }
     }
 
@@ -225,6 +249,42 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
         }
     }
 
+    // MARK: - Lists (Phase 6)
+
+    public func fetchReminderLists() async throws -> [ReminderListSummary] {
+        try requireFullAccess()
+
+        let calendars = eventStore.calendars(for: .reminder)
+
+        var out: [ReminderListSummary] = []
+        out.reserveCapacity(calendars.count)
+
+        for cal in calendars {
+            let rawTitle = cal.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            let title = rawTitle.isEmpty ? "Untitled" : rawTitle
+
+            let rawSourceTitle = cal.source.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            let sourceTitle: String? = rawSourceTitle.isEmpty ? nil : rawSourceTitle
+
+            out.append(ReminderListSummary(id: cal.calendarIdentifier, title: title, sourceTitle: sourceTitle))
+        }
+
+        out.sort { a, b in
+            let sa = a.sourceTitle ?? ""
+            let sb = b.sourceTitle ?? ""
+            if sa != sb {
+                return sa.localizedCaseInsensitiveCompare(sb) == .orderedAscending
+            }
+
+            if a.title != b.title {
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
+
+            return a.id < b.id
+        }
+
+        return out
+    }
 
     // MARK: - Snapshot generation (Phase 3.2)
 
@@ -470,7 +530,6 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
             WidgetWeaverRemindersModeSnapshot(mode: .list, itemIDs: listSorted.map { $0.id }),
         ]
     }
-
 
     // MARK: - Fetching
 
