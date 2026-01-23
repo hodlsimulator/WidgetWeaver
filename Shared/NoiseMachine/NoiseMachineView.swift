@@ -33,6 +33,7 @@ struct NoiseMachineView: View {
         .onDisappear {
             presentationTracker?.setVisible(false)
             logModel.stop()
+            model.onDisappear()
         }
     }
 

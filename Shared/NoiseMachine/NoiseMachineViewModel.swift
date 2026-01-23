@@ -65,6 +65,12 @@ final class NoiseMachineViewModel: ObservableObject {
         }
     }
 
+    func onDisappear() {
+        Task {
+            await NoiseMachineController.shared.flushPersistence()
+        }
+    }
+
     func refreshFromStore() {
         state = store.loadLastMix()
         resumeOnLaunch = store.isResumeOnLaunchEnabled()
@@ -144,8 +150,10 @@ final class NoiseMachineViewModel: ObservableObject {
     func setMasterVolume(_ volume: Float, commit: Bool) {
         state.masterVolume = volume
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setMasterVolume(volume, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setMasterVolume(volume, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
@@ -168,8 +176,10 @@ final class NoiseMachineViewModel: ObservableObject {
         guard state.slots.indices.contains(index) else { return }
         state.slots[index].volume = volume
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setSlotVolume(index, volume: volume, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setSlotVolume(index, volume: volume, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
@@ -180,8 +190,10 @@ final class NoiseMachineViewModel: ObservableObject {
         guard state.slots.indices.contains(index) else { return }
         state.slots[index].colour = colour
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setSlotColour(index, colour: colour, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setSlotColour(index, colour: colour, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
@@ -192,8 +204,10 @@ final class NoiseMachineViewModel: ObservableObject {
         guard state.slots.indices.contains(index) else { return }
         state.slots[index].lowCutHz = hz
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setSlotLowCut(index, hz: hz, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setSlotLowCut(index, hz: hz, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
@@ -204,8 +218,10 @@ final class NoiseMachineViewModel: ObservableObject {
         guard state.slots.indices.contains(index) else { return }
         state.slots[index].highCutHz = hz
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setSlotHighCut(index, hz: hz, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setSlotHighCut(index, hz: hz, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
@@ -216,8 +232,10 @@ final class NoiseMachineViewModel: ObservableObject {
         guard state.slots.indices.contains(index) else { return }
         state.slots[index].eq = eq
 
+        state.updatedAt = Date()
+
         Task {
-            await NoiseMachineController.shared.setSlotEQ(index, eq: eq, savePolicy: commit ? .immediate : .none)
+            await NoiseMachineController.shared.setSlotEQ(index, eq: eq, savePolicy: commit ? .immediate : .throttled)
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
