@@ -124,8 +124,11 @@ struct WidgetWeaverClockIconFaceView: View {
                 WWClock.clamp(R * 0.84, min: R * 0.80, max: R * 0.86),
                 scale: displayScale
             )
+
+            // Minute hand thickness is intentionally tuned to clear display-scale quantisation
+            // at Home Screen small-widget size.
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.060, min: R * 0.052, max: R * 0.068),
+                WWClock.clamp(R * 0.073, min: R * 0.064, max: R * 0.082),
                 scale: displayScale
             )
 
