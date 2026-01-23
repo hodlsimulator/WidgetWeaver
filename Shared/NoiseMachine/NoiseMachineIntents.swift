@@ -175,3 +175,37 @@ public struct ToggleSlotIntent: AudioPlaybackIntent {
         return .result()
     }
 }
+
+/// Toggle "Resume on launch" for the Noise Machine.
+///
+/// This writes to the shared App Group store so the app and widget stay in sync.
+public struct ToggleResumeOnLaunchIntent: AppIntent {
+    public static var title: LocalizedStringResource { "Toggle Resume on Launch" }
+    public static var description: IntentDescription {
+        IntentDescription("Enable or disable automatic resume on app launch for the Noise Machine.")
+    }
+
+    public static var openAppWhenRun: Bool { false }
+
+    public init() {}
+
+    public func perform() async throws -> some IntentResult {
+        let origin = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+
+        let store = NoiseMixStore.shared
+        let enabled = !store.isResumeOnLaunchEnabled()
+        store.setResumeOnLaunchEnabled(enabled)
+
+        NoiseMachineDebugLogStore.shared.append(
+            NoiseMachineLogLevel.info,
+            "Intent ToggleResumeOnLaunch enabled=\(enabled)",
+            origin: origin
+        )
+
+        await MainActor.run {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.noiseMachine)
+        }
+
+        return .result()
+    }
+}

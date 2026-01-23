@@ -72,6 +72,9 @@ private struct NoiseMachineWidgetView: View {
     @State private var optimisticWasPlaying: Bool? = nil
     @State private var optimisticToken: UInt64 = 0
 
+    @State private var optimisticResumeOnLaunchEnabled: Bool? = nil
+    @State private var optimisticResumeToken: UInt64 = 0
+
     @State private var resumeOnLaunchEnabled: Bool
 
     init(entry: WidgetWeaverNoiseMachineWidget.Entry) {
@@ -88,26 +91,31 @@ private struct NoiseMachineWidgetView: View {
         return s
     }
 
+    private var displayResumeOnLaunchEnabled: Bool {
+        optimisticResumeOnLaunchEnabled ?? resumeOnLaunchEnabled
+    }
+
     private func refreshFromStore() {
         renderedState = NoiseMixStore.shared.loadLastMix().sanitised()
         resumeOnLaunchEnabled = NoiseMixStore.shared.isResumeOnLaunchEnabled()
     }
 
+    private static let optimisticReconcileDelays: [UInt64] = [
+        150_000_000,
+        300_000_000,
+        600_000_000,
+        1_000_000_000,
+        1_600_000_000,
+        2_400_000_000,
+        3_200_000_000
+    ]
+
     private func scheduleOptimisticReconcile(desiredWasPlaying: Bool, token: UInt64) {
         Task { @MainActor in
             // Poll with backoff so the first tap after a cold start can still feel instant, even if
             // the App Intent takes a few seconds to start and persist the new state.
-            let delays: [UInt64] = [
-                150_000_000,
-                300_000_000,
-                600_000_000,
-                1_000_000_000,
-                1_600_000_000,
-                2_400_000_000,
-                3_200_000_000
-            ]
 
-            for ns in delays {
+            for ns in Self.optimisticReconcileDelays {
                 try? await Task.sleep(nanoseconds: ns)
                 if optimisticToken != token { return }
 
@@ -137,6 +145,37 @@ private struct NoiseMachineWidgetView: View {
         renderedState.updatedAt = Date()
 
         scheduleOptimisticReconcile(desiredWasPlaying: playing, token: token)
+    }
+
+    private func scheduleResumeOptimisticReconcile(desiredEnabled: Bool, token: UInt64) {
+        Task { @MainActor in
+            for ns in Self.optimisticReconcileDelays {
+                try? await Task.sleep(nanoseconds: ns)
+                if optimisticResumeToken != token { return }
+
+                refreshFromStore()
+
+                if resumeOnLaunchEnabled == desiredEnabled {
+                    optimisticResumeOnLaunchEnabled = nil
+                    return
+                }
+            }
+
+            if optimisticResumeToken == token {
+                optimisticResumeOnLaunchEnabled = nil
+                refreshFromStore()
+            }
+        }
+    }
+
+    private func setOptimisticResumeOnLaunchEnabled(_ enabled: Bool) {
+        optimisticResumeToken &+= 1
+        let token = optimisticResumeToken
+
+        optimisticResumeOnLaunchEnabled = enabled
+        resumeOnLaunchEnabled = enabled
+
+        scheduleResumeOptimisticReconcile(desiredEnabled: enabled, token: token)
     }
 
     private var slots: [NoiseSlotState] {
@@ -170,6 +209,7 @@ private struct NoiseMachineWidgetView: View {
             // A confirmed cross-process update should win over optimistic UI.
             refreshFromStore()
             optimisticWasPlaying = nil
+            optimisticResumeOnLaunchEnabled = nil
         }
     }
 
@@ -247,9 +287,18 @@ private struct NoiseMachineWidgetView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Text(resumeOnLaunchEnabled ? "Resume: On" : "Resume: Off")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Button(intent: ToggleResumeOnLaunchIntent()) {
+                Text(displayResumeOnLaunchEnabled ? "Resume: On" : "Resume: Off")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel("Resume on launch")
+            .accessibilityValue(displayResumeOnLaunchEnabled ? "On" : "Off")
+            .simultaneousGesture(TapGesture().onEnded {
+                setOptimisticResumeOnLaunchEnabled(!displayResumeOnLaunchEnabled)
+            })
 
             Spacer(minLength: 0)
 
@@ -261,8 +310,8 @@ private struct NoiseMachineWidgetView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Volume
