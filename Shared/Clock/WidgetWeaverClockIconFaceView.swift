@@ -125,7 +125,7 @@ struct WidgetWeaverClockIconFaceView: View {
                 scale: displayScale
             )
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.046, min: R * 0.040, max: R * 0.052),
+                WWClock.clamp(R * 0.060, min: R * 0.052, max: R * 0.068),
                 scale: displayScale
             )
 
