@@ -285,7 +285,7 @@ The Reminders template and its editor settings menu entry are gated by a shared 
 - `WidgetWeaverFeatureFlags.remindersTemplateEnabled`
 - App Group key: `widgetweaver.feature.template.reminders.enabled`
 
-The flag defaults to enabled when unset, but can be overridden per-device via the App Group store (DEBUG builds include a toolbar toggle).
+The flag defaults to enabled when unset, but can be overridden per-device via the App Group store (DEBUG builds include a toolbar toggle in the main toolbar menu).
 
 If the template/settings show on one device but not another, check for an explicit override on the missing device (reset/remove the key).
 
@@ -301,20 +301,32 @@ Current flags:
 - Clipboard Actions: `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled (the widget renders a “Hidden by default” state and opens the app on tap when disabled).
 - PawPulse: `WidgetWeaverFeatureFlags.pawPulseEnabled` (App Group key: `widgetweaver.feature.pawpulse.enabled`). Default: disabled.
 
+### DEBUG feature flag toggles
+
+In DEBUG builds, the main toolbar menu (ellipsis button) includes toggles for the runtime feature flags. This allows internal testing to enable/disable features per-device without code changes.
+
+- “Debug: enable Reminders template” updates editor tool availability immediately.
+- “Debug: enable Clipboard Actions” toggles the runtime gate and reloads the Action Inbox widget timeline.
+- “Debug: enable PawPulse” toggles the runtime gate, ensures the cache directory exists, schedules (or cancels) the next background refresh request, and reloads the PawPulse widget timeline.
+
+These toggles write to the App Group store, so the state is shared between the app and widgets but is not synced across devices.
+
 ### PawPulse gating
 
 PawPulse (“Latest Cat”) is treated as a future feature. There are two independent gates:
 
 1) Widget registration (compile-time). The PawPulse widget is only included in the widget bundle when the widget extension target has the `PAWPULSE` compilation condition set. Without this, it will not appear in the Home Screen “Add Widget” gallery.
 
-2) Background work (runtime). Even when compiled in, PawPulse background refresh scheduling only occurs when `WidgetWeaverFeatureFlags.pawPulseEnabled` is `true`. If iOS delivers a previously scheduled task while the flag is off, the task handler completes immediately and does not reschedule.
+2) Background work (runtime). Even when compiled in, PawPulse background refresh scheduling only occurs when `WidgetWeaverFeatureFlags.pawPulseEnabled` is `true` and a base URL is configured. If the flag is off, or the base URL is missing, any pending refresh request is cancelled. If iOS delivers a previously scheduled task while the flag is off, the task handler completes immediately and does not reschedule.
 
 Important: avoid runtime `if` statements inside `@WidgetBundleBuilder`. They can trigger opaque compiler failures. Prefer `#if` compilation conditions for gating widget registration.
 
 To enable PawPulse for internal builds:
 
 - In Xcode: select the `WidgetWeaverWidget` target → Build Settings → Active Compilation Conditions → add `PAWPULSE` (typically Debug only).
-- Ensure the runtime flag is enabled (App Group default is off). In DEBUG builds, the simplest approach is to temporarily call `WidgetWeaverFeatureFlags.setPawPulseEnabled(true)` on launch.
+- Ensure the runtime flag is enabled (App Group default is off). In DEBUG builds, use the toolbar toggle “Debug: enable PawPulse” (it sets the flag, ensures the cache directory exists, schedules the next refresh request, and reloads widget timelines).
+
+For non-DEBUG automation (or if the toolbar toggle is unavailable), enabling the flag by calling `WidgetWeaverFeatureFlags.setPawPulseEnabled(true)` on launch is also acceptable.
 
 If PawPulse appears in the widget gallery after disabling it, the Home Screen can be showing cached extension metadata. The fastest reset is usually to delete the app (removes the widget extension), reinstall, then run once.
 
@@ -325,6 +337,7 @@ The “Action Inbox” (Clipboard Actions) widget + intents are intentionally sc
 - The clipboard inbox and auto-detect intents can store text, export receipt CSV, create calendar events, and create reminders.
 - The `.contact` route is hard-disabled in the auto-detect intent (it returns a disabled status rather than creating a contact).
 - Clipboard Actions surfaces are runtime gated (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off).
+- The AppIntents (`WidgetWeaverSetClipboardInboxIntent`, `WidgetWeaverAutoDetectFromTextIntent`) are hard-gated behind `WidgetWeaverFeatureFlags.clipboardActionsEnabled`. When the flag is off, they return “Clipboard Actions are disabled.” and only update the widget status store (no Calendar/Reminders writes).
 - When the flag is off, the widget intentionally renders a disabled state (“Hidden by default”), returns an empty snapshot, and maps taps to opening the app rather than running the Shortcut.
 - The widget remains registered in the extension; runtime gating keeps the shipped surface stable while preventing accidental actions/permission prompts.
 

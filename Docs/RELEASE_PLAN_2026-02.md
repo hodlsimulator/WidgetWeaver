@@ -37,7 +37,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] Removing templates from Explore does not break existing user widgets:
   - [ ] “Reading”
   - [ ] “Photo Quote”
-  - [ ] Screen Actions / Clipboard Actions (default hidden; `clipboardActionsEnabled` default off; widget renders “Hidden by default” and opens the app on tap; auto-detect does not create contacts; no Contacts permission prompt)
+  - [ ] Screen Actions / Clipboard Actions (default hidden; `clipboardActionsEnabled` default off; widget renders “Hidden by default” and opens the app on tap; AppIntents return disabled when the flag is off; auto-detect does not create contacts; no Contacts permission prompt)
   - [ ] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined)
 
 ### Gate C: Performance and stability
@@ -52,6 +52,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] No unintended repo artefacts (for example, `*.bak`) are included in build targets.
 - [ ] The app does not request Contacts permission in onboarding or normal use (auto-detect contact creation remains disabled).
   - [ ] Confirm `WidgetWeaverAutoDetectFromTextIntent` does not import Contacts and returns a disabled status for `.contact`.
+  - [ ] Confirm Clipboard Actions AppIntents return “Clipboard Actions are disabled.” when `clipboardActionsEnabled` is off (no Calendar/Reminders writes; no permission prompts from Shortcuts).
 
 ## 4) Polish checklist
 
@@ -88,6 +89,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] Confirm no Contacts permission prompt appears in normal flows.
 - [ ] Confirm design export/import works via Share Sheet and Files (`.wwdesign` files are offered and can be opened).
 - [ ] Confirm the Action Inbox widget renders a disabled state when `clipboardActionsEnabled` is off (no inbox text shown; tapping opens the app).
+- [ ] Confirm Clipboard Actions AppIntents return “Clipboard Actions are disabled.” when `clipboardActionsEnabled` is off (no Calendar/Reminders permission prompts).
 
 ## 5) Release notes (draft)
 
