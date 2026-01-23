@@ -399,21 +399,6 @@ public struct WidgetWeaverRemindersTemplateView: View {
         }
     }
 
-    private func remindersPlaceholder() -> some View {
-        VStack(alignment: layout.alignment.alignment, spacing: 10) {
-            modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
-
-            Text("Loading reminders…")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-
-            Spacer(minLength: 0)
-        }
-    }
-
     private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics) -> some View {
         VStack(alignment: layout.alignment.alignment, spacing: 8) {
             Text(lastError.message)

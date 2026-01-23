@@ -188,41 +188,43 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
         }
 
         do {
-            let reminder = try await fetchReminderByIdentifier(cleaned)
-            guard let reminder else {
-                return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Reminder not found.")
+            try requireFullAccess()
+
+            // Fast path: direct lookup by identifier.
+            if let item = eventStore.calendarItem(withIdentifier: cleaned) as? EKReminder {
+                item.isCompleted = true
+                try eventStore.save(item, commit: true)
+
+                let title = item.title ?? "Untitled"
+                return WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title).")
             }
-
-            reminder.isCompleted = true
-            try eventStore.save(reminder, commit: true)
-
-            let title = reminder.title ?? "Untitled"
-            return WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title).")
         } catch {
             return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Failed to complete reminder: \(error.localizedDescription)")
         }
-    }
 
-    private func fetchReminderByIdentifier(_ identifier: String) async throws -> EKReminder? {
-        try requireFullAccess()
+        // Fallback: full fetch and complete within the EventKit callback to avoid sending EKReminder across
+        // a concurrency boundary (EKReminder is not Sendable).
+        return await withCheckedContinuation { (cont: CheckedContinuation<WidgetWeaverRemindersActionDiagnostics, Never>) in
+            let predicate = self.eventStore.predicateForReminders(in: self.eventStore.calendars(for: .reminder))
+            self.eventStore.fetchReminders(matching: predicate) { rs in
+                guard let reminder = rs?.first(where: { $0.calendarItemIdentifier == cleaned }) else {
+                    cont.resume(returning: WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Reminder not found."))
+                    return
+                }
 
-        // Best effort: EventKit can directly fetch by identifier, but it returns an EKCalendarItem?
-        // Use `calendarItem(withIdentifier:)` and cast to EKReminder.
-        if let item = eventStore.calendarItem(withIdentifier: identifier) {
-            return item as? EKReminder
-        }
+                reminder.isCompleted = true
 
-        // Fallback: full fetch and filter.
-        let predicate = eventStore.predicateForReminders(in: eventStore.calendars(for: .reminder))
-
-        let reminders = await withCheckedContinuation { (cont: CheckedContinuation<[EKReminder], Never>) in
-            eventStore.fetchReminders(matching: predicate) { rs in
-                cont.resume(returning: rs ?? [])
+                do {
+                    try self.eventStore.save(reminder, commit: true)
+                    let title = reminder.title ?? "Untitled"
+                    cont.resume(returning: WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title)."))
+                } catch {
+                    cont.resume(returning: WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Failed to complete reminder: \(error.localizedDescription)"))
+                }
             }
         }
-
-        return reminders.first(where: { $0.calendarItemIdentifier == identifier })
     }
+
 
     // MARK: - Snapshot generation (Phase 3.2)
 
@@ -530,7 +532,7 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
         let cal = Calendar.current
         let start = cal.startOfDay(for: now)
         guard let end = cal.date(byAdding: .day, value: 1, to: start) else {
-            throw EngineError.failedToComputeDateWindow
+            throw WidgetWeaverRemindersEngineError.failedToComputeDateWindow
         }
 
         return try await fetchIncompleteReminders(
