@@ -75,6 +75,12 @@ private struct NoiseMachineWidgetView: View {
     @State private var optimisticResumeOnLaunchEnabled: Bool? = nil
     @State private var optimisticResumeToken: UInt64 = 0
 
+    /// Layer toggles can lag behind taps for the same reason as play/pause. Keep per-layer
+    /// optimistic enables so the UI responds instantly, then reconcile to App Group state.
+    @State private var optimisticSlotEnabled: [Int: Bool] = [:]
+    @State private var optimisticSlotTokens: [Int: UInt64] = [:]
+    @State private var optimisticSlotTokenSeed: UInt64 = 0
+
     @State private var resumeOnLaunchEnabled: Bool
 
     init(entry: WidgetWeaverNoiseMachineWidget.Entry) {
@@ -87,6 +93,11 @@ private struct NoiseMachineWidgetView: View {
         var s = renderedState
         if let optimisticWasPlaying {
             s.wasPlaying = optimisticWasPlaying
+        }
+        for (idx, enabled) in optimisticSlotEnabled {
+            if s.slots.indices.contains(idx) {
+                s.slots[idx].enabled = enabled
+            }
         }
         return s
     }
@@ -178,6 +189,51 @@ private struct NoiseMachineWidgetView: View {
         scheduleResumeOptimisticReconcile(desiredEnabled: enabled, token: token)
     }
 
+    private func scheduleSlotOptimisticReconcile(index: Int, desiredEnabled: Bool, token: UInt64) {
+        Task { @MainActor in
+            for ns in Self.optimisticReconcileDelays {
+                try? await Task.sleep(nanoseconds: ns)
+                if optimisticSlotTokens[index] != token { return }
+
+                refreshFromStore()
+
+                if renderedState.slots.indices.contains(index), renderedState.slots[index].enabled == desiredEnabled {
+                    optimisticSlotEnabled.removeValue(forKey: index)
+                    optimisticSlotTokens.removeValue(forKey: index)
+                    return
+                }
+            }
+
+            if optimisticSlotTokens[index] == token {
+                optimisticSlotEnabled.removeValue(forKey: index)
+                optimisticSlotTokens.removeValue(forKey: index)
+                refreshFromStore()
+            }
+        }
+    }
+
+    private func setOptimisticSlotEnabled(index: Int, enabled: Bool) {
+        guard (0..<NoiseMixState.slotCount).contains(index) else { return }
+
+        optimisticSlotTokenSeed &+= 1
+        let token = optimisticSlotTokenSeed
+
+        optimisticSlotTokens[index] = token
+        optimisticSlotEnabled[index] = enabled
+
+        if renderedState.slots.indices.contains(index) {
+            renderedState.slots[index].enabled = enabled
+            renderedState.updatedAt = Date()
+        }
+
+        scheduleSlotOptimisticReconcile(index: index, desiredEnabled: enabled, token: token)
+    }
+
+    private func toggleOptimisticSlot(index: Int) {
+        guard displayState.slots.indices.contains(index) else { return }
+        setOptimisticSlotEnabled(index: index, enabled: !displayState.slots[index].enabled)
+    }
+
     private var slots: [NoiseSlotState] {
         let s = displayState
 
@@ -210,6 +266,9 @@ private struct NoiseMachineWidgetView: View {
             refreshFromStore()
             optimisticWasPlaying = nil
             optimisticResumeOnLaunchEnabled = nil
+            optimisticSlotEnabled = [:]
+            optimisticSlotTokens = [:]
+            optimisticSlotTokenSeed = 0
         }
     }
 
@@ -373,6 +432,9 @@ private struct NoiseMachineWidgetView: View {
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Layer \(index + 1)")
             .accessibilityValue("On")
+            .simultaneousGesture(TapGesture().onEnded {
+                toggleOptimisticSlot(index: index)
+            })
         } else {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
                 Text("\(index + 1)")
@@ -382,6 +444,9 @@ private struct NoiseMachineWidgetView: View {
             .buttonStyle(.bordered)
             .accessibilityLabel("Layer \(index + 1)")
             .accessibilityValue("Off")
+            .simultaneousGesture(TapGesture().onEnded {
+                toggleOptimisticSlot(index: index)
+            })
         }
     }
 
@@ -407,6 +472,9 @@ private struct NoiseMachineWidgetView: View {
                 .buttonStyle(.borderedProminent)
                 .accessibilityLabel("Layer \(index + 1)")
                 .accessibilityValue("On")
+                .simultaneousGesture(TapGesture().onEnded {
+                    toggleOptimisticSlot(index: index)
+                })
             } else {
                 Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
                     HStack(spacing: 8) {
@@ -423,6 +491,9 @@ private struct NoiseMachineWidgetView: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Layer \(index + 1)")
                 .accessibilityValue("Off")
+                .simultaneousGesture(TapGesture().onEnded {
+                    toggleOptimisticSlot(index: index)
+                })
             }
 
             VStack(alignment: .leading, spacing: 6) {
