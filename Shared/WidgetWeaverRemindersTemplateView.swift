@@ -256,6 +256,12 @@ public struct WidgetWeaverRemindersTemplateView: View {
     }
 
     private static func isDueTodayOrStartedToday(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, now: Date) -> Bool {
+        // The Reminders app's "Today" view includes overdue items. This also ensures recurring
+        // reminders that have not yet advanced their due date are still visible.
+        if isOverdue(item: item, now: now) {
+            return true
+        }
+
         let cal = Calendar.autoupdatingCurrent
         let startOfDay = cal.startOfDay(for: now)
         guard let endOfDay = cal.date(byAdding: .day, value: 1, to: startOfDay) else {
