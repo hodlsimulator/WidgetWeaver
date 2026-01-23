@@ -61,6 +61,8 @@
             <string>WidgetWeaver Design</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
             <key>LSItemContentTypes</key>
             <array>
                 <string>com.conornolan.widgetweaver.design</string>
