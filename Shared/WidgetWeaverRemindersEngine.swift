@@ -40,30 +40,59 @@ public struct WidgetWeaverRemindersRefreshPolicy: Sendable {
 public enum WidgetWeaverRemindersEngineAccessResult: Sendable {
     case granted
     case denied
-    case restricted
     case writeOnly
+    case restricted
+    case notDetermined
+    case error(String)
 }
 
-public actor WidgetWeaverRemindersEngine {
-    public static let shared = WidgetWeaverRemindersEngine()
+public enum WidgetWeaverRemindersEngineAccessKind: String, Sendable {
+    case notDetermined
+    case denied
+    case restricted
+    case writeOnly
+    case fullAccess
+    case error
+}
 
-    public enum EngineError: Error {
-        case notAuthorised
-        case writeOnlyAccess
-        case failedToComputeDateWindow
-    }
+public enum WidgetWeaverRemindersEngineRequiredAccess: String, Sendable {
+    case fullAccess
+}
 
-    public struct ReminderListSummary: Identifiable, Sendable, Hashable {
-        public let id: String
-        public let title: String
-        public let sourceTitle: String?
+public enum WidgetWeaverRemindersEngineError: Error, LocalizedError, Sendable {
+    case notAuthorised
+    case writeOnly
+    case denied
+    case restricted
+    case failedToComputeDateWindow
+    case missingIdentifier
+    case failedToFindReminder
+    case saveFailed
 
-        public init(id: String, title: String, sourceTitle: String?) {
-            self.id = id
-            self.title = title
-            self.sourceTitle = sourceTitle
+    public var errorDescription: String? {
+        switch self {
+        case .notAuthorised:
+            return "Reminders access has not been granted."
+        case .writeOnly:
+            return "Reminders access is write-only. Full access is required."
+        case .denied:
+            return "Reminders access is denied."
+        case .restricted:
+            return "Reminders access is restricted."
+        case .failedToComputeDateWindow:
+            return "Failed to compute the requested due-date window."
+        case .missingIdentifier:
+            return "Missing reminder identifier."
+        case .failedToFindReminder:
+            return "Failed to find the requested reminder."
+        case .saveFailed:
+            return "Failed to save the reminder."
         }
     }
+}
+
+public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
+    public static let shared = WidgetWeaverRemindersEngine()
 
     private let eventStore: EKEventStore
     private var inFlightRefresh: Task<WidgetWeaverRemindersDiagnostics, Never>?
@@ -72,134 +101,127 @@ public actor WidgetWeaverRemindersEngine {
         self.eventStore = eventStore
     }
 
+    // MARK: - Authorisation
+
     public static func authorisationStatus() -> EKAuthorizationStatus {
         EKEventStore.authorizationStatus(for: .reminder)
     }
 
-    // MARK: - Access
-
-    @discardableResult
-    public func requestAccessIfNeeded() async -> WidgetWeaverRemindersEngineAccessResult {
-        let status = Self.authorisationStatus()
-
+    public static func accessKind() -> WidgetWeaverRemindersEngineAccessKind {
+        let status = authorisationStatus()
         switch status {
-        case .fullAccess:
-            return .granted
+        case .notDetermined:
+            return .notDetermined
         case .denied:
             return .denied
         case .restricted:
             return .restricted
         case .writeOnly:
             return .writeOnly
-        case .notDetermined:
-            do {
-                _ = try await eventStore.requestFullAccessToReminders()
-            } catch {
-                // If request throws (rare), treat as denied-ish.
-                return .denied
-            }
-
-            let after = Self.authorisationStatus()
-            if after == .fullAccess { return .granted }
-            if after == .writeOnly { return .writeOnly }
-            if after == .restricted { return .restricted }
-            return .denied
+        case .fullAccess:
+            return .fullAccess
         @unknown default:
+            return .error
+        }
+    }
+
+    public func requestFullAccessIfNeeded() async -> WidgetWeaverRemindersEngineAccessResult {
+        let status = Self.authorisationStatus()
+
+        if status == .fullAccess {
+            return .granted
+        }
+
+        if status == .denied {
             return .denied
+        }
+
+        if status == .restricted {
+            return .restricted
+        }
+
+        if status == .writeOnly {
+            return .writeOnly
+        }
+
+        guard status == .notDetermined else {
+            return .error("Unknown status: \(status)")
+        }
+
+        do {
+            let granted = try await eventStore.requestFullAccessToReminders()
+            return granted ? .granted : .denied
+        } catch {
+            return .error(error.localizedDescription)
         }
     }
 
     private func requireFullAccess() throws {
         let status = Self.authorisationStatus()
-        guard status == .fullAccess else {
-            if status == .writeOnly { throw EngineError.writeOnlyAccess }
-            throw EngineError.notAuthorised
+        switch status {
+        case .fullAccess:
+            return
+        case .notDetermined:
+            throw WidgetWeaverRemindersEngineError.notAuthorised
+        case .writeOnly:
+            throw WidgetWeaverRemindersEngineError.writeOnly
+        case .denied:
+            throw WidgetWeaverRemindersEngineError.denied
+        case .restricted:
+            throw WidgetWeaverRemindersEngineError.restricted
+        @unknown default:
+            throw WidgetWeaverRemindersEngineError.notAuthorised
         }
     }
 
-    // MARK: - Lists
+    // MARK: - Completion (Phase 5)
 
-    public func fetchReminderLists() throws -> [ReminderListSummary] {
-        try requireFullAccess()
-
-        let calendars = eventStore.calendars(for: .reminder)
-
-        let out = calendars.map { cal in
-            let title = cal.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            let cleanedTitle = title.isEmpty ? "Untitled" : title
-
-            let sourceTitle: String? = {
-                let source = cal.source.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                if source.isEmpty { return nil }
-                return source
-            }()
-
-            return ReminderListSummary(
-                id: cal.calendarIdentifier,
-                title: cleanedTitle,
-                sourceTitle: sourceTitle
-            )
-        }
-        .sorted { a, b in
-            let sa = a.sourceTitle ?? ""
-            let sb = b.sourceTitle ?? ""
-            if sa != sb {
-                return sa.localizedCaseInsensitiveCompare(sb) == .orderedAscending
-            }
-            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-        }
-
-        return out
-    }
-
-    // MARK: - Completion
-
-    /// Completes a specific reminder by calendar item identifier.
-    ///
-    /// Notes:
-    /// - This is used by the production widget intent (Phase 5.1).
-    /// - This does not prompt for permission (AppIntents must not prompt).
     public func completeReminder(identifier: String) async -> WidgetWeaverRemindersActionDiagnostics {
-        let cleanedID = identifier.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        guard !cleanedID.isEmpty else {
-            return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Missing reminder ID.")
+        let cleaned = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Missing reminder identifier.")
         }
 
         let status = Self.authorisationStatus()
         guard status == .fullAccess else {
-            return WidgetWeaverRemindersActionDiagnostics(
-                kind: .error,
-                message: "Reminders Full Access is not granted (status=\(status)). Open WidgetWeaver → Reminders and request Full Access."
-            )
+            return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Reminders Full Access not granted.")
         }
-
-        guard let reminder = eventStore.calendarItem(withIdentifier: cleanedID) as? EKReminder else {
-            return WidgetWeaverRemindersActionDiagnostics(
-                kind: .error,
-                message: "Reminder not found (or not readable). It may have been deleted, or the snapshot is stale."
-            )
-        }
-
-        let rawTitle = (reminder.title ?? "").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        let title = rawTitle.isEmpty ? "Untitled" : rawTitle
-
-        if reminder.isCompleted {
-            return WidgetWeaverRemindersActionDiagnostics(kind: .noop, message: "Already completed: \(title).")
-        }
-
-        reminder.isCompleted = true
-        reminder.completionDate = Date()
 
         do {
+            let reminder = try await fetchReminderByIdentifier(cleaned)
+            guard let reminder else {
+                return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Reminder not found.")
+            }
+
+            reminder.isCompleted = true
             try eventStore.save(reminder, commit: true)
+
+            let title = reminder.title ?? "Untitled"
+            return WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title).")
         } catch {
-            return WidgetWeaverRemindersActionDiagnostics(
-                kind: .error,
-                message: "Failed to complete reminder: \(error.localizedDescription)"
-            )
+            return WidgetWeaverRemindersActionDiagnostics(kind: .error, message: "Failed to complete reminder: \(error.localizedDescription)")
+        }
+    }
+
+    private func fetchReminderByIdentifier(_ identifier: String) async throws -> EKReminder? {
+        try requireFullAccess()
+
+        // Best effort: EventKit can directly fetch by identifier, but it returns an EKCalendarItem?
+        // Use `calendarItem(withIdentifier:)` and cast to EKReminder.
+        if let item = eventStore.calendarItem(withIdentifier: identifier) {
+            return item as? EKReminder
         }
 
-        return WidgetWeaverRemindersActionDiagnostics(kind: .completed, message: "Completed: \(title).")
+        // Fallback: full fetch and filter.
+        let predicate = eventStore.predicateForReminders(in: eventStore.calendars(for: .reminder))
+
+        let reminders = await withCheckedContinuation { (cont: CheckedContinuation<[EKReminder], Never>) in
+            eventStore.fetchReminders(matching: predicate) { rs in
+                cont.resume(returning: rs ?? [])
+            }
+        }
+
+        return reminders.first(where: { $0.calendarItemIdentifier == identifier })
     }
 
     // MARK: - Snapshot generation (Phase 3.2)
@@ -567,6 +589,8 @@ public actor WidgetWeaverRemindersEngine {
                     let startDate = startComponents.flatMap { calendar.date(from: $0) }
                     let startHasTime = Self.componentsHaveTime(startComponents)
 
+                    let isRecurring = !(r.recurrenceRules?.isEmpty ?? true)
+
                     let rawListTitle = r.calendar.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                     let listTitle = rawListTitle.isEmpty ? "Untitled" : rawListTitle
 
@@ -580,6 +604,7 @@ public actor WidgetWeaverRemindersEngine {
                             startHasTime: startHasTime,
                             isCompleted: r.isCompleted,
                             isFlagged: Self.isFlaggedApproximation(priority: r.priority),
+                            isRecurring: isRecurring,
                             listID: r.calendar.calendarIdentifier,
                             listTitle: listTitle
                         )

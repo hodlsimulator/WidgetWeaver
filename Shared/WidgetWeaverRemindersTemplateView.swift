@@ -256,9 +256,10 @@ public struct WidgetWeaverRemindersTemplateView: View {
     }
 
     private static func isDueTodayOrStartedToday(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, now: Date) -> Bool {
-        // The Reminders app's "Today" view includes overdue items. This also ensures recurring
-        // reminders that have not yet advanced their due date are still visible.
-        if isOverdue(item: item, now: now) {
+        // Recurring reminders can remain "stuck" with a past due date until they are completed.
+        // Include only those in Today so routine items remain visible, without pulling all overdue
+        // one-off reminders into the Today widget.
+        if item.isRecurring, isOverdue(item: item, now: now) {
             return true
         }
 
@@ -378,257 +379,173 @@ public struct WidgetWeaverRemindersTemplateView: View {
                     Text("\(done)/\(total)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, 2)
-                        .padding(.horizontal, 7)
-                        .background(.thinMaterial, in: Capsule())
+                        .lineLimit(1)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
     }
 
-    // MARK: - Content rendering
+    // MARK: - Reminders content
 
-    @ViewBuilder
     private func remindersContent(model: Model, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        switch config.presentation {
-        case .dense:
-            remindersDenseList(items: model.primaryItems, config: config, gate: gate)
-        case .focus:
-            remindersFocusList(items: model.primaryItems, config: config, gate: gate)
-        case .sectioned:
-            remindersSectionedList(sections: model.sections, snapshot: WidgetWeaverRemindersStore.shared.loadSnapshot(), config: config, gate: gate)
-        }
-    }
-
-    private func remindersDenseList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let maxRows: Int = {
-            switch family {
-            case .systemSmall:
-                return 2
-            case .systemMedium:
-                return 4
-            case .systemLarge:
-                return 8
-            default:
-                return 4
-            }
-        }()
-
-        let visible = Array(items.prefix(maxRows))
-
-        return VStack(alignment: .leading, spacing: 8) {
-            ForEach(visible, id: \.id) { item in
-                remindersRow(item: item, config: config, gate: gate)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-    }
-
-    private func remindersFocusList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let visible = Array(items.prefix(3))
-
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(visible, id: \.id) { item in
-                remindersRow(item: item, config: config, gate: gate)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-    }
-
-    private func remindersSectionedList(
-        sections: [WidgetWeaverRemindersSection],
-        snapshot: WidgetWeaverRemindersSnapshot?,
-        config: WidgetWeaverRemindersConfig,
-        gate: InteractivityGate
-    ) -> some View {
-        let itemsByID = snapshot?.itemsByID ?? [:]
-
-        let maxSectionCount: Int = {
-            switch family {
-            case .systemSmall:
-                return 1
-            case .systemMedium:
-                return 2
-            case .systemLarge:
-                return 4
-            default:
-                return 2
-            }
-        }()
-
-        let visibleSections = Array(sections.prefix(maxSectionCount))
-
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(visibleSections, id: \.id) { section in
-                let title = section.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !title.isEmpty {
-                    Text(title)
-                        .font(style.secondaryTextStyle.font(fallback: .caption))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                let maxRows: Int = (family == .systemSmall) ? 2 : 3
-                let visibleIDs = Array(section.itemIDs.prefix(maxRows))
-                let visibleItems = visibleIDs.compactMap { itemsByID[$0] }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(visibleItems, id: \.id) { item in
-                        remindersRow(item: item, config: config, gate: gate)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
-    }
-
-    @ViewBuilder
-    private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeTitle = title.isEmpty ? "Untitled" : title
-
-        let showsDue = (item.dueDate != nil) && (config.showDueTimes || !item.dueHasTime)
-
-        let timeText: String? = {
-            guard let due = item.dueDate else { return nil }
-            if item.dueHasTime, config.showDueTimes {
-                return due.formatted(date: .omitted, time: .shortened)
-            }
-            return due.formatted(date: .abbreviated, time: .omitted)
-        }()
-
-        if context == .widget, gate.canCompleteFromWidget, !item.isCompleted {
-            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: item.id)) {
-                rowBody(title: safeTitle, showsDue: showsDue, timeText: timeText, isFlagged: item.isFlagged)
-            }
-            .buttonStyle(.plain)
-        } else {
-            rowBody(title: safeTitle, showsDue: showsDue, timeText: timeText, isFlagged: item.isFlagged)
-        }
-    }
-
-    private func rowBody(title: String, showsDue: Bool, timeText: String?, isFlagged: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "circle")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(accent)
-                .opacity(0.9)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(style.secondaryTextStyle.font(fallback: .caption))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    if isFlagged {
-                        Image(systemName: "flag.fill")
-                            .font(.caption2)
-                            .foregroundStyle(accent)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                if showsDue, let timeText {
-                    Text(timeText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+        Group {
+            if !model.sections.isEmpty {
+                remindersSectionedList(sections: model.sections, config: config, gate: gate)
+            } else if config.presentation == .focus {
+                remindersFocusList(items: model.primaryItems, config: config, gate: gate)
+            } else {
+                remindersDenseList(items: model.primaryItems, config: config, gate: gate)
             }
         }
     }
 
-    // MARK: - Empty/error/footer
+    private func remindersPlaceholder() -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 10) {
+            modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
 
-    private func emptyBody(text: String) -> some View {
-        Text(text)
-            .font(style.secondaryTextStyle.font(fallback: .caption2))
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+            Text("Loading reminders…")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 8) {
+            Text(lastError.message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func remindersActionBody(lastAction: WidgetWeaverRemindersActionDiagnostics) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 8) {
+            Text(lastAction.message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+        }
     }
 
     private func remindersFooter(lastAction: WidgetWeaverRemindersActionDiagnostics?, lastUpdatedAt: Date?) -> some View {
-        VStack(alignment: layout.alignment.alignment, spacing: 6) {
-            if let lastAction {
-                remindersActionBody(lastAction: lastAction)
+        VStack(alignment: layout.alignment.alignment, spacing: 4) {
+            if let lastAction, lastAction.kind != .none {
+                Text(lastAction.message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
             }
 
             if let lastUpdatedAt {
-                Text("Updated \(lastUpdatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("Updated \(RelativeDateTimeFormatter().localizedString(for: lastUpdatedAt, relativeTo: Date()))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
             }
         }
-        .padding(.top, 2)
     }
 
-    private func remindersErrorBody(lastError: WidgetWeaverRemindersDiagnostics) -> some View {
-        let message = lastError.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeMessage = message.isEmpty ? "No details." : message
-
-        let displayMessage: String = {
-            switch lastError.kind {
-            case .ok:
-                return safeMessage
-            case .notAuthorised, .denied, .restricted:
-                return "Reminders access not granted."
-            case .writeOnly:
-                return "Reminders access is write-only."
-            case .error:
-                return "Reminders unavailable: \(safeMessage)"
-            }
-        }()
-
-        return VStack(alignment: layout.alignment.alignment, spacing: 6) {
-            Text(displayMessage)
-                .font(style.secondaryTextStyle.font(fallback: .caption2))
+    private func emptyBody(text: String) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 8) {
+            Text(text)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
                 .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: context != .widget)
+                .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
 
-            Text(lastError.at.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            Spacer(minLength: 0)
         }
     }
 
-    private func remindersActionBody(lastAction: WidgetWeaverRemindersActionDiagnostics) -> some View {
-        let message = lastAction.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeMessage = message.isEmpty ? "No details." : message
-
-        let displayMessage: String = {
-            switch lastAction.kind {
-            case .completed:
-                return safeMessage
-            case .noop:
-                return "No action: \(safeMessage)"
-            case .error:
-                return "Action failed: \(safeMessage)"
+    private func remindersDenseList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 6) {
+            ForEach(items.prefix(8)) { item in
+                remindersRow(item: item, config: config, gate: gate)
             }
-        }()
+        }
+    }
 
-        return VStack(alignment: layout.alignment.alignment, spacing: 6) {
-            Text(displayMessage)
-                .font(style.secondaryTextStyle.font(fallback: .caption2))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(layout.alignment == .centre ? .center : .leading)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: context != .widget)
+    private func remindersFocusList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        VStack(alignment: layout.alignment.alignment, spacing: 10) {
+            ForEach(items.prefix(4)) { item in
+                remindersRow(item: item, config: config, gate: gate, isFocus: true)
+            }
+        }
+    }
 
-            Text(lastAction.at.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+    private func remindersSectionedList(sections: [WidgetWeaverRemindersSection], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        let store = WidgetWeaverRemindersStore.shared
+        let snapshot = store.loadSnapshot()
+        let itemsByID = snapshot?.itemsByID ?? [:]
+
+        return VStack(alignment: layout.alignment.alignment, spacing: 10) {
+            ForEach(sections.prefix(3)) { section in
+                VStack(alignment: layout.alignment.alignment, spacing: 6) {
+                    HStack {
+                        Text(section.title)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+
+                    ForEach(section.itemIDs.prefix(3), id: \.self) { id in
+                        if let item = itemsByID[id] {
+                            remindersRow(item: item, config: config, gate: gate)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Row
+
+    @ViewBuilder
+    private func remindersRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, gate: InteractivityGate, isFocus: Bool = false) -> some View {
+        let row = HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                .font(isFocus ? .headline : .subheadline)
+                .foregroundStyle(item.isCompleted ? .secondary : .primary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(isFocus ? .headline : .subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(isFocus ? 2 : 1)
+
+                if config.showDueTimes, let due = item.dueDate, item.dueHasTime {
+                    Text(due.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+
+        if context == .widget, gate.canCompleteFromWidget {
+            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: item.id)) {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            row
         }
     }
 }

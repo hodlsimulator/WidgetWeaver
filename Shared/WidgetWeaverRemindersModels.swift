@@ -27,6 +27,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
 
     public var isCompleted: Bool
     public var isFlagged: Bool
+    public var isRecurring: Bool
 
     public var listID: String
     public var listTitle: String
@@ -40,6 +41,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         startHasTime: Bool = false,
         isCompleted: Bool = false,
         isFlagged: Bool = false,
+        isRecurring: Bool = false,
         listID: String,
         listTitle: String
     ) {
@@ -51,6 +53,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         self.startHasTime = startHasTime
         self.isCompleted = isCompleted
         self.isFlagged = isFlagged
+        self.isRecurring = isRecurring
         self.listID = listID
         self.listTitle = listTitle
 
@@ -84,6 +87,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         case startHasTime
         case isCompleted
         case isFlagged
+        case isRecurring
         case listID
         case listTitle
     }
@@ -102,6 +106,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
 
         let isCompleted = (try? c.decode(Bool.self, forKey: .isCompleted)) ?? false
         let isFlagged = (try? c.decode(Bool.self, forKey: .isFlagged)) ?? false
+        let isRecurring = (try? c.decode(Bool.self, forKey: .isRecurring)) ?? false
 
         let listID = (try? c.decode(String.self, forKey: .listID)) ?? ""
         let listTitle = (try? c.decode(String.self, forKey: .listTitle)) ?? ""
@@ -115,6 +120,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
             startHasTime: startHasTime,
             isCompleted: isCompleted,
             isFlagged: isFlagged,
+            isRecurring: isRecurring,
             listID: listID,
             listTitle: listTitle
         )
@@ -130,6 +136,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         try c.encode(startHasTime, forKey: .startHasTime)
         try c.encode(isCompleted, forKey: .isCompleted)
         try c.encode(isFlagged, forKey: .isFlagged)
+        try c.encode(isRecurring, forKey: .isRecurring)
         try c.encode(listID, forKey: .listID)
         try c.encode(listTitle, forKey: .listTitle)
     }
@@ -219,10 +226,12 @@ public struct WidgetWeaverRemindersSection: Codable, Hashable, Identifiable, Sen
         s.id = s.id.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let trimmedTitle = s.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        s.title = trimmedTitle.isEmpty ? "" : trimmedTitle
+        s.title = trimmedTitle.isEmpty ? "Untitled" : trimmedTitle
 
-        let trimmedSubtitle = s.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        s.subtitle = (trimmedSubtitle?.isEmpty ?? true) ? nil : trimmedSubtitle
+        if let subtitle = s.subtitle {
+            let trimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            s.subtitle = trimmed.isEmpty ? nil : trimmed
+        }
 
         s.itemIDs = s.itemIDs
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -258,18 +267,24 @@ public struct WidgetWeaverRemindersSection: Codable, Hashable, Identifiable, Sen
     }
 }
 
-/// Compact diagnostics payload intended for widgets.
+// MARK: - Diagnostics models
+
+/// Snapshot-level diagnostics for the Reminders engine.
 ///
-/// This is stored separately from the snapshot so widgets can render a helpful state even when
-/// no snapshot exists (first run, permission denied, etc.).
+/// Used to communicate:
+/// - Permission states (denied, restricted, write-only).
+/// - Fetch errors / decode errors / unexpected failures.
+/// - Success messages (optional).
 public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
-    public enum Kind: String, Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
         case ok
         case notAuthorised
         case writeOnly
         case denied
         case restricted
         case error
+
+        public var id: String { rawValue }
     }
 
     public var kind: Kind
@@ -278,7 +293,7 @@ public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
 
     public init(kind: Kind, message: String, at: Date = Date()) {
         self.kind = kind
-        self.message = String(message.prefix(240))
+        self.message = message
         self.at = at
 
         self = self.normalised()
@@ -286,8 +301,10 @@ public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
 
     public func normalised() -> WidgetWeaverRemindersDiagnostics {
         var d = self
-        let trimmed = d.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        d.message = trimmed.isEmpty ? "" : String(trimmed.prefix(240))
+        d.message = d.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if d.message.isEmpty {
+            d.message = "Unknown Reminders state."
+        }
         return d
     }
 
@@ -300,7 +317,9 @@ public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
-        let kind = (try? c.decode(Kind.self, forKey: .kind)) ?? .error
+        let kindRaw = (try? c.decode(String.self, forKey: .kind)) ?? Kind.error.rawValue
+        let kind = Kind(rawValue: kindRaw) ?? .error
+
         let message = (try? c.decode(String.self, forKey: .message)) ?? ""
         let at = (try? c.decode(Date.self, forKey: .at)) ?? Date()
 
@@ -315,16 +334,14 @@ public struct WidgetWeaverRemindersDiagnostics: Codable, Hashable, Sendable {
     }
 }
 
-/// Diagnostics captured after an interactive widget action (Phase 5).
-///
-/// This is intentionally separate from snapshot diagnostics:
-/// - Snapshot diagnostics describe *refresh* outcomes.
-/// - Action diagnostics describe a *user-triggered action* (e.g. completing a reminder).
+/// Last-action diagnostics for widget interactions (complete taps).
 public struct WidgetWeaverRemindersActionDiagnostics: Codable, Hashable, Sendable {
-    public enum Kind: String, Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+        case none
         case completed
-        case noop
         case error
+
+        public var id: String { rawValue }
     }
 
     public var kind: Kind
@@ -333,7 +350,7 @@ public struct WidgetWeaverRemindersActionDiagnostics: Codable, Hashable, Sendabl
 
     public init(kind: Kind, message: String, at: Date = Date()) {
         self.kind = kind
-        self.message = String(message.prefix(240))
+        self.message = message
         self.at = at
 
         self = self.normalised()
@@ -341,8 +358,10 @@ public struct WidgetWeaverRemindersActionDiagnostics: Codable, Hashable, Sendabl
 
     public func normalised() -> WidgetWeaverRemindersActionDiagnostics {
         var d = self
-        let trimmed = d.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        d.message = trimmed.isEmpty ? "" : String(trimmed.prefix(240))
+        d.message = d.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if d.message.isEmpty {
+            d.message = "No action recorded."
+        }
         return d
     }
 
@@ -355,7 +374,9 @@ public struct WidgetWeaverRemindersActionDiagnostics: Codable, Hashable, Sendabl
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
-        let kind = (try? c.decode(Kind.self, forKey: .kind)) ?? .error
+        let kindRaw = (try? c.decode(String.self, forKey: .kind)) ?? Kind.error.rawValue
+        let kind = Kind(rawValue: kindRaw) ?? .error
+
         let message = (try? c.decode(String.self, forKey: .message)) ?? ""
         let at = (try? c.decode(Date.self, forKey: .at)) ?? Date()
 
