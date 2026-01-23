@@ -32,7 +32,7 @@ enum SmartPhotoCropMath {
         var snappedX = (r.x / stepX).rounded() * stepX
         var snappedY = (r.y / stepY).rounded() * stepY
 
-        // Edge pinning avoids jitter when the rect is already at, or extremely near, the bounds.
+        // Edge pinning reduces jitter when the rect is already at, or extremely near, the bounds.
         let maxX = 1.0 - r.width
         let maxY = 1.0 - r.height
         let halfStepX = stepX / 2.0
@@ -42,6 +42,9 @@ enum SmartPhotoCropMath {
         if abs(r.y) <= halfStepY { snappedY = 0.0 }
         if abs(r.x - maxX) <= halfStepX { snappedX = maxX }
         if abs(r.y - maxY) <= halfStepY { snappedY = maxY }
+
+        snappedX = min(max(0.0, snappedX), maxX)
+        snappedY = min(max(0.0, snappedY), maxY)
 
         r = NormalisedRect(x: snappedX, y: snappedY, width: r.width, height: r.height)
         return clampRect(r, rectAspect: a)
@@ -131,23 +134,39 @@ enum SmartPhotoCropMath {
 
         let xIn = sanitise(rect.x, fallback: 0.0)
         let yIn = sanitise(rect.y, fallback: 0.0)
-        let wIn = sanitise(rect.width, fallback: min(1.0, a))
 
-        var w = clampWidth(wIn, rectAspect: a)
+        let maxWidth = min(1.0, a)
+        let wInFallback = maxWidth
+
+        let wCandidate: Double = {
+            if rect.width.isFinite, rect.width > 0.0 { return rect.width }
+            if rect.height.isFinite, rect.height > 0.0 { return rect.height * a }
+            return wInFallback
+        }()
+
+        var w = clampWidth(wCandidate, rectAspect: a)
         var h = w / a
 
         if !h.isFinite || h <= 0.0 {
-            h = 1.0
-            w = min(1.0, a)
+            w = maxWidth
+            h = w / a
         }
 
-        if h > 1.0 {
-            h = 1.0
-            w = min(1.0, a)
-        }
+        let inputWForCentre: Double = {
+            if rect.width.isFinite, rect.width > 0.0 { return rect.width }
+            return w
+        }()
 
-        var x = xIn
-        var y = yIn
+        let inputHForCentre: Double = {
+            if rect.height.isFinite, rect.height > 0.0 { return rect.height }
+            return inputWForCentre / a
+        }()
+
+        let cx = xIn + (inputWForCentre / 2.0)
+        let cy = yIn + (inputHForCentre / 2.0)
+
+        var x = cx - (w / 2.0)
+        var y = cy - (h / 2.0)
 
         let maxX = max(0.0, 1.0 - w)
         let maxY = max(0.0, 1.0 - h)
@@ -155,15 +174,9 @@ enum SmartPhotoCropMath {
         x = min(max(0.0, x), maxX)
         y = min(max(0.0, y), maxY)
 
-        let right = x + w
-        if right > 1.0 {
-            x = max(0.0, x - (right - 1.0))
-        }
-
-        let bottom = y + h
-        if bottom > 1.0 {
-            y = max(0.0, y - (bottom - 1.0))
-        }
+        // Right/bottom edge pinning protects against floating point drift after clamping.
+        if x + w > 1.0 { x = max(0.0, 1.0 - w) }
+        if y + h > 1.0 { y = max(0.0, 1.0 - h) }
 
         x = min(max(0.0, x), maxX)
         y = min(max(0.0, y), maxY)
@@ -172,6 +185,16 @@ enum SmartPhotoCropMath {
         if abs(y) <= clampEpsilon { y = 0.0 }
         if abs(maxX - x) <= clampEpsilon { x = maxX }
         if abs(maxY - y) <= clampEpsilon { y = maxY }
+
+        #if DEBUG
+        let minWidth = min(maxWidth, minimumWidthFraction)
+        assert(w.isFinite && h.isFinite && x.isFinite && y.isFinite)
+        assert(w >= minWidth - clampEpsilon && w <= maxWidth + clampEpsilon)
+        assert(h > 0.0 && h <= 1.0 + clampEpsilon)
+        assert(x >= -clampEpsilon && y >= -clampEpsilon)
+        assert(x + w <= 1.0 + clampEpsilon)
+        assert(y + h <= 1.0 + clampEpsilon)
+        #endif
 
         return NormalisedRect(x: x, y: y, width: w, height: h)
     }
