@@ -1,16 +1,17 @@
 WidgetWeaver – chat handoff (copy/paste)
-Last updated: 2026-01-22
+Last updated: 2026-01-23
 
 Product
 - WidgetWeaver is an iOS 26+ app that builds and previews real WidgetKit widgets via an Explore (template catalogue) + context-aware editor workflow.
 - Widgets must be deterministic and budget-safe; heavy work (Vision, ranking, photo prep) happens in the app; widgets render from App Group state.
+- Sharing/export uses a `.wwdesign` design package file type (JSON under the hood) for backup and exchange.
 
 Strategic intent
 - “Super complex, super simple”: powerful capabilities under the hood, but progressive disclosure in the UI.
 - Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-22.
+- Today: 2026-01-23.
 - Feature freeze: 2026-01-31 (stop adding features).
 - Polish: 2026-02-01 to 2026-02-14.
 - Target ship: 2026-02-14 to 2026-02-16.
@@ -31,6 +32,8 @@ Defer
 - AI: post-ship R&D track; small, reviewable assistive steps; must generate explicit specs/config, not opaque state.
 
 Key repo pointers
+- Design export/import: WidgetWeaver/ContentView+SharePackage.swift (Transferable `.wwdesign` files)
+- Document type registration: WidgetWeaver/Info.plist (UTType export + document type + open-in-place declaration)
 - Smart Photos pipeline: WidgetWeaver/SmartPhotoPipeline/*
 - Crop editor: WidgetWeaver/SmartPhotoCropEditorView.swift
 - Poster background/overlay: Shared/WidgetWeaverSpecView+Background.swift, Shared/WidgetWeaverSpecView.swift
@@ -45,7 +48,7 @@ Feature removal / hiding pointers
 - “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
 - “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
 - Screen Actions / Clipboard Actions:
-  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift
+  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift (renders “Hidden by default” when the runtime flag is off; taps open the app)
   - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled)
   - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`clipboardActionsEnabled`, default off)
 - PawPulse / “Latest Cat”:

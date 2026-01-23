@@ -1,6 +1,6 @@
 # WidgetWeaver release plan (Feb 2026)
 
-Last updated: 2026-01-22
+Last updated: 2026-01-23
 
 ## 1) Scope summary
 
@@ -32,11 +32,12 @@ Weather and AI are deferred unless already rock-solid.
 ### Gate B: Data integrity and safe deprecations
 
 - [ ] Edits do not corrupt saved widget specs.
+- [ ] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
 - [ ] App Group storage migrations (if any) are forward compatible.
 - [ ] Removing templates from Explore does not break existing user widgets:
   - [ ] “Reading”
   - [ ] “Photo Quote”
-  - [ ] Screen Actions / Clipboard Actions (auto-detect does not create contacts; no Contacts permission prompt)
+  - [ ] Screen Actions / Clipboard Actions (default hidden; `clipboardActionsEnabled` default off; widget renders “Hidden by default” and opens the app on tap; auto-detect does not create contacts; no Contacts permission prompt)
   - [ ] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined)
 
 ### Gate C: Performance and stability
@@ -85,6 +86,8 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] Confirm removed/hidden templates are not visible in Explore (Reading, Photo Quote, Screen Actions, PawPulse).
 - [ ] Confirm PawPulse does not appear in the Home Screen “Add Widget” gallery (Release builds must not define `PAWPULSE`).
 - [ ] Confirm no Contacts permission prompt appears in normal flows.
+- [ ] Confirm design export/import works via Share Sheet and Files (`.wwdesign` files are offered and can be opened).
+- [ ] Confirm the Action Inbox widget renders a disabled state when `clipboardActionsEnabled` is off (no inbox text shown; tapping opens the app).
 
 ## 5) Release notes (draft)
 

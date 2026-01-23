@@ -75,6 +75,22 @@ App Group helper: `Shared/AppGroup.swift`
 
 ---
 
+## Design packages (.wwdesign)
+
+WidgetWeaver can export and import widget designs as a single file for sharing and backup.
+
+- File extension: `.wwdesign`
+- UTType identifier: `com.conornolan.widgetweaver.design` (conforms to `public.json`)
+- System integration:
+  - `WidgetWeaver/Info.plist` exports the type (`UTExportedTypeDeclarations`) and registers it as a document type (`CFBundleDocumentTypes`).
+  - `LSSupportsOpeningDocumentsInPlace` is set to `false` (imports copy data into the app rather than editing the original file in-place).
+- Transfer/export implementation: `WidgetWeaver/ContentView+SharePackage.swift` (`ContentView.WidgetWeaverSharePackage` via `Transferable` / `FileRepresentation`).
+- Import accepts `.wwdesign` and `.json` (legacy/dev).
+
+The on-disk format is JSON and is expected to evolve; treat files as best-effort forwards-compatible rather than a locked schema at this stage.
+
+---
+
 ## Widget catalogue (Explore)
 
 Explore presents widget templates that can be remixed.
@@ -199,141 +215,41 @@ WidgetWeaver includes a Home Screen clock widget designed to look and feel like 
 
 Clock rendering aims for:
 
-- correct time on the Home Screen
-- predictable updates after customisation changes
-- stable rendering across families and modes
-- no expensive work at draw time
+- stable geometry (no layout “jiggle” across timeline updates)
+- predictable customisation
+- correct timeline date usage (no “frozen minute” strings)
+- high-quality “glass” and tick styling where possible
 
-Clock rendering must remain deterministic and budget-safe.
-
-Key areas:
+### Key implementation files
 
 - Clock model: `Shared/Clock/*`
-- Clock widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+- Widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
 - Live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
-
-### Clock logs (budget-safe)
-
-Clock logging must be:
-
-- budget-safe (no spam)
-- usable from Home Screen logs
-- targeted (only log what proves correctness)
-
-If the clock seems wrong, prefer logs that prove:
-
-- entry date
-- derived components
-- local time zone
-- rendering phase (snapshot vs live)
-
-### Troubleshooting (iOS 26): colour scheme + black tile regressions
-
-iOS 26 widget rendering can cache aggressively, and can also surface transient “black tile” behaviours after certain theme changes.
-
-#### Clock colour scheme does not change on the Home Screen (but previews look correct)
-
-Symptoms:
-
-- Editor preview shows the updated palette.
-- Widget gallery preview shows the updated palette.
-- Home Screen widget stays on an older palette.
-
-Likely causes:
-
-- cached Home Screen snapshot
-- widget tree not keyed against the entry date
-- palette changes not invalidating the view identity
-
-Checklist:
-
-- ensure `.id(entry.date)` (or equivalent stable entry-key) exists at the root of the widget view
-- ensure palette is part of the view identity (avoid global cached palette state)
-- remove and re-add the widget after major style changes
-
-#### Clock widget renders as a solid black tile on the Home Screen
-
-Symptoms:
-
-- On add, the widget appears as a black tile.
-- Opening the app may fix it, or it may persist.
-
-Likely causes:
-
-- view recursion (WidgetKit snapshot mode can surface this as black)
-- invalid view identity causing cached broken snapshot reuse
-- unsupported SwiftUI effects in widget context (masking / complex blending / infinite geometry loops)
-
-Checklist:
-
-- verify there is no infinite view recursion
-- avoid complex masked text effects in widget context
-- keep gradients subtle and avoid heavy compositing where possible
-- bump widget kind only as a last resort (cache flush)
-
-### 🚨 Do not break these invariants (easy to regress)
-
-#### 1) Minute hand can look “slow” if the view only advances when WidgetKit applies the next entry (or render work blocks)
-
-A smooth-looking minute hand can still be wrong if the Home Screen does not advance the view at the expected cadence.
-
-When validating minute accuracy:
-
-- ensure the minute boundary tick is close to real time
-- do not accept “looks smooth” as proof
-- confirm entry times and render times with logs
-
-#### 2) Home Screen can cache a stale snapshot unless the widget tree is entry-keyed
-
-The Home Screen can reuse a cached render even when the timeline advances.
-
-To reduce this:
-
-- ensure the widget root view keys against the entry date
-- avoid global static caches without explicit entry scoping
-- avoid hidden state that does not change across entries
-
-#### 3) Proving minute accuracy (debug)
-
-Prove minute correctness by logging:
-
-- entry date
-- derived hour/min/sec
-- local time zone
-- render phase (live vs snapshot)
-
-If only pre-render output appears (large `ctx-sys` lead, or `live=0` in older log formats), those entries are from WidgetKit timeline caching and won’t prove live ticking.
+- Render helpers: `Shared/Clock/ClockRender/*`
 
 ### Notes
 
-- The clock attempts frequent updates; WidgetKit delivery is best-effort.
-- A small spillover past `:59` is allowed to avoid a brief blank seconds hand if the next minute entry arrives slightly late.
-- When changing clock code, a short Home Screen test is required:
-  - minute boundary tick is on time (not slow),
-  - no black tile on add,
-  - minute hand advances on Home Screen,
-  - seconds hand behaviour unchanged.
+- Any time formatting or “now” resolution must use the timeline entry date from WidgetKit, not `Date()` directly.
+- Previews can mislead; Home Screen correctness is the target.
 
 ---
 
-## Featured — Reminders
+## Featured — Reminders template
 
-WidgetWeaver includes a Reminders template that can render a widget-safe snapshot of Apple Reminders.
+WidgetWeaver includes a Reminders template that can render a snapshot of reminders and supports completing reminders directly from the widget via an intent.
 
-Design goals:
+### Architecture
 
-- **budget-safe widgets:** widgets never talk to EventKit; they render from cached snapshots only
-- **fast updates:** the host app refreshes the snapshot and signals WidgetKit to reload timelines
-- **optional interactivity:** in widget context, tapping a row can complete a reminder via an App Intent (gated when access/snapshot state is not safe)
+- App-only snapshot refresh uses EventKit (Full Access).
+- A lightweight snapshot is persisted to the App Group.
+- Widgets render from the persisted snapshot.
 
-### Architecture (budget-safe)
+### Key implementation files
 
 - Reminders engine (EventKit, app-only): `Shared/WidgetWeaverRemindersEngine.swift`
 - Snapshot store (App Group): `Shared/WidgetWeaverRemindersStore.swift`
 - Widget render view: `Shared/WidgetWeaverRemindersTemplateView.swift`
 - Schema/config: `Shared/WidgetWeaverRemindersConfig.swift`
-
-Widgets render from `WidgetWeaverRemindersStore` only. If no snapshot exists yet, the template shows a placeholder and asks the user to open the app to refresh.
 
 ### Configuration
 
@@ -382,7 +298,7 @@ Runtime flags live in `Shared/WidgetWeaverFeatureFlags.swift` and are read by bo
 Current flags:
 
 - Reminders template: `WidgetWeaverFeatureFlags.remindersTemplateEnabled` (App Group key: `widgetweaver.feature.template.reminders.enabled`). Default: enabled.
-- Clipboard Actions: `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled.
+- Clipboard Actions: `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled (the widget renders a “Hidden by default” state and opens the app on tap when disabled).
 - PawPulse: `WidgetWeaverFeatureFlags.pawPulseEnabled` (App Group key: `widgetweaver.feature.pawpulse.enabled`). Default: disabled.
 
 ### PawPulse gating
@@ -409,6 +325,8 @@ The “Action Inbox” (Clipboard Actions) widget + intents are intentionally sc
 - The clipboard inbox and auto-detect intents can store text, export receipt CSV, create calendar events, and create reminders.
 - The `.contact` route is hard-disabled in the auto-detect intent (it returns a disabled status rather than creating a contact).
 - Clipboard Actions surfaces are runtime gated (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off).
+- When the flag is off, the widget intentionally renders a disabled state (“Hidden by default”), returns an empty snapshot, and maps taps to opening the app rather than running the Shortcut.
+- The widget remains registered in the extension; runtime gating keeps the shipped surface stable while preventing accidental actions/permission prompts.
 
 ---
 
@@ -458,48 +376,48 @@ WidgetWeaver widgets are built as real WidgetKit widgets with:
 
 - widget-safe rendering
 - App Group state reads
-- budget-safe timelines
+- deterministic timelines
+- zero heavy work at render time
 
-Widget work is split into:
-
-- providers (timeline entries)
-- views (rendering)
-- shared state stores (App Group)
+Shared stores live in `Shared/*Store*.swift` and are written by the app and read by widgets.
 
 ---
 
-## Build & run
+## Notes on reliability
 
-- Open `WidgetWeaver.xcodeproj`
-- Build the app target and widget extension target
-- Run the app on a device or simulator
-- Add widgets from the Home Screen
+Widget reliability is the product.
 
----
+Key principles:
 
-## Debugging tips
-
-- Widget rendering can be cached; use `.id(entry.date)` to force refresh across entries where needed.
-- If a widget looks stuck, remove and re-add the widget.
-- In DEBUG builds, prefer logging through `WWClockDebugLog` and keep logs small.
+- If a feature cannot be made deterministic and budget-safe in a widget, it stays in the app.
+- Timeline dates are the only “now” that matters.
+- Previews are not proof of correctness; Home Screen behaviour is the target.
+- Prefer stable, simple state reads over clever “live” logic in widgets.
 
 ---
 
-## Principles / guardrails
+## Dev notes
 
-- Widgets must remain deterministic and budget-safe.
-- Vision and heavy ranking work is app-only.
-- Avoid frequent widget reloads; prefer short precomputed timelines.
-- Context-aware editor must remain stable and predictable.
+### Avoiding WidgetCenter reload loops
+
+Widget providers must not call `WidgetCenter.shared.reloadAllTimelines()` or similar as part of timeline generation.
+
+Reload triggers should come from:
+
+- app-side persistence writes
+- explicit user actions
+- background tasks that refresh snapshots (app-only)
+
+### App Group state safety
+
+Widget state reads must handle:
+
+- missing files
+- partial writes (use atomic writes in the app)
+- schema evolution (versioned payloads or tolerant decoding)
 
 ---
 
-## Roadmap (high level)
+## Licence
 
-- Continue adding tools incrementally while keeping widget rendering stable.
-- Expand template catalogue and remix options.
-- Improve Smart Photos adoption and family-aware loading.
-- Expand Weather / time-critical widgets.
-- Harden editor teardown and selection stability as tool count grows.
-
----
+Private project (internal).
