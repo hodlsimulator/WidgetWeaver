@@ -238,7 +238,6 @@ struct WidgetWeaverHomeScreenClockWidget: Widget {
             provider: WidgetWeaverHomeScreenClockProvider()
         ) { entry in
             WidgetWeaverHomeScreenClockView(entry: entry)
-                .id(entry.date)
                 .transaction { transaction in
                     transaction.animation = nil
                 }
