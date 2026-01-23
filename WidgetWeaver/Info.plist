@@ -25,6 +25,8 @@
     <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
     <key>NSRemindersUsageDescription</key>
     <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>WidgetWeaver needs access to your Contacts to create contacts from captured clipboard text.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
