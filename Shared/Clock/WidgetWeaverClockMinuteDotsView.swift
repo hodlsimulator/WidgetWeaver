@@ -59,11 +59,11 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let majorFill = palette.minuteDot.opacity(0.88)
+        let majorFill = palette.minuteDot.opacity(0.82)
         let minorFill = palette.minuteDot.opacity(0.62)
 
-        let majorShadowRadius = max(px, majorWidth * 0.46)
-        let majorShadowY = max(px, majorWidth * 0.22)
+        let majorShadowRadius = max(px, majorWidth * 0.40)
+        let majorShadowY = max(px, majorWidth * 0.18)
 
         let minorShadowRadius = max(px, minorWidth * 1.05)
         let minorShadowY = max(px, minorWidth * 0.70)
@@ -81,7 +81,7 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
                     .fill(isMajor ? majorFill : minorFill)
                     .frame(width: width, height: length)
                     .shadow(
-                        color: Color.black.opacity(isMajor ? 0.22 : 0.14),
+                        color: Color.black.opacity(isMajor ? 0.18 : 0.14),
                         radius: isMajor ? majorShadowRadius : minorShadowRadius,
                         x: 0,
                         y: isMajor ? majorShadowY : minorShadowY
