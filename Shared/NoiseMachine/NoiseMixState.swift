@@ -138,3 +138,66 @@ public struct EQState: Codable, Hashable, Sendable {
         )
     }
 }
+
+public enum NoiseMixPreset: String, CaseIterable, Identifiable, Sendable {
+    case white
+    case pink
+    case brown
+    case deepFocus
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .white:
+            return "White"
+        case .pink:
+            return "Pink"
+        case .brown:
+            return "Brown"
+        case .deepFocus:
+            return "Deep Focus"
+        }
+    }
+
+    public func applying(to base: NoiseMixState, updatedAt: Date = Date()) -> NoiseMixState {
+        var s = base
+        s.updatedAt = updatedAt
+
+        switch self {
+        case .white:
+            s.slots = [
+                NoiseSlotState(enabled: true, volume: 0.65, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default)
+            ]
+
+        case .pink:
+            s.slots = [
+                NoiseSlotState(enabled: true, volume: 0.65, colour: 1.0, lowCutHz: 20, highCutHz: 16_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default)
+            ]
+
+        case .brown:
+            s.slots = [
+                NoiseSlotState(enabled: true, volume: 0.65, colour: 2.0, lowCutHz: 20, highCutHz: 10_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default)
+            ]
+
+        case .deepFocus:
+            s.slots = [
+                NoiseSlotState(enabled: true, volume: 0.55, colour: 2.0, lowCutHz: 80, highCutHz: 10_000, eq: .default),
+                NoiseSlotState(enabled: true, volume: 0.20, colour: 1.0, lowCutHz: 20, highCutHz: 16_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default),
+                NoiseSlotState(enabled: false, volume: 0.0, colour: 0.0, lowCutHz: 20, highCutHz: 18_000, eq: .default)
+            ]
+        }
+
+        return s.sanitised()
+    }
+}

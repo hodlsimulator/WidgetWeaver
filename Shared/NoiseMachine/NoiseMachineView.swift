@@ -69,14 +69,32 @@ struct NoiseMachineView: View {
                 .accessibilityHint("Stops playback and silences all layers.")
             }
 
-            Button {
-                model.resetToDefaults()
-            } label: {
-                Label("Reset to defaults", systemImage: "arrow.counterclockwise")
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 12) {
+                Button {
+                    model.resetToDefaults()
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Reset to defaults")
+                .accessibilityHint("Resets all layers, filters, and EQ to defaults.")
+
+                Menu {
+                    ForEach(NoiseMixPreset.allCases) { preset in
+                        Button {
+                            model.applyPreset(preset)
+                        } label: {
+                            Text(preset.title)
+                        }
+                    }
+                } label: {
+                    Label("Presets", systemImage: "sparkles")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Applies a built-in mix without changing the play/pause state.")
             }
-            .buttonStyle(.bordered)
-            .accessibilityHint("Resets all layers, filters, and EQ to defaults.")
 
             WWFloatSliderRow(
                 title: "Master volume",

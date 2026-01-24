@@ -105,9 +105,30 @@ final class NoiseMachineViewModel: ObservableObject {
 
     func resetToDefaults() {
         NoiseMachineDebugLogStore.shared.append(.warning, "UI resetToDefaults")
+        let defaults = NoiseMixState.default.sanitised()
+        state = defaults
         Task {
-            await NoiseMachineController.shared.stop()
-            await NoiseMachineController.shared.apply(state: .default)
+            // Pause without persisting the pre-reset state.
+            await NoiseMachineController.shared.pauseWithoutSaving()
+            await NoiseMachineController.shared.apply(state: defaults)
+
+            // Persist the reset mix so the widget and next launch stay in sync.
+            store.saveImmediate(defaults)
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
+            reloadNoiseMachineWidget()
+        }
+    }
+
+    func applyPreset(_ preset: NoiseMixPreset) {
+        NoiseMachineDebugLogStore.shared.append(.info, "UI applyPreset \(preset.rawValue)")
+
+        let next = preset.applying(to: state, updatedAt: Date()).sanitised()
+        state = next
+
+        Task {
+            await NoiseMachineController.shared.apply(state: next)
+            store.saveImmediate(next)
             state = await NoiseMachineController.shared.currentMixState()
             await refreshAudioStatus()
             reloadNoiseMachineWidget()
