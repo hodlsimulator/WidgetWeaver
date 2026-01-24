@@ -13,7 +13,11 @@ Surface-area reductions for the Feb ship are explicit:
 
 - Remove “Reading” from Explore/catalogue surfaces (without breaking existing user widgets).
 - Remove the “Photo Quote” template from Explore/catalogue surfaces.
-- Clipboard Actions is parked for this ship. Keep it out of Explore / first-run surfaces and keep `WidgetWeaverFeatureFlags.clipboardActionsEnabled` default off. Contacts creation remains hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt. When the flag is off, the AppIntents must return a disabled status and must not trigger Calendar/Reminders writes or any permission prompts via Shortcuts.
+- Clipboard Actions (Screen Actions) is parked for this ship and must be absent in release builds:
+  - Not listed in Explore / first-run surfaces.
+  - Not registered in the widget extension bundle (no Home Screen “Add Widget” gallery presence).
+  - No dependency on ScreenActionsCore in the default build (and no local-path Swift Package dependencies in the Xcode project).
+  - `NSContactsUsageDescription` must not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
 - Hide PawPulse / “Latest Cat” (cat adoption) entirely for this ship. The widget is compile-time gated (only built when `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured). Treat it as future work.
 
 Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work remains a post-ship R&D track, with small, reviewable assistive wins rather than a single large “magic” feature.
@@ -118,6 +122,7 @@ By feature freeze (P0/P1):
   - Ensure there is a single, obvious entry point to Weather settings when using the Weather template.
   - Manual location entry (geocode search) must work without Location permission.
   - Location permission is requested only for “Use Current Location”, and denial is handled with a clear fallback.
+  - If `requestWhenInUseAuthorization()` can be called, `WidgetWeaver/Info.plist` must include `NSLocationWhenInUseUsageDescription` with a user-facing explanation (missing usage strings are crash-class defects).
   - Clearing location deterministically clears the snapshot and updates widgets.
 
 - P1: Template polish and clarity
@@ -202,9 +207,9 @@ Key areas:
 - Variable resolution: `Shared/WidgetSpec+VariableResolutionNow.swift`
 - Variables UI: `WidgetWeaver/WidgetWeaverVariablesView.swift`
 
-## Theme F: Scope cuts and surface reduction (risk reduction)
+## Theme F: Scope cuts and surface reduction (usefulness + trust)
 
-Goal: Reduce maintenance and App Review risk by shipping a coherent, minimal surface.
+Goal: Reduce user confusion, permissions footprint, and App Review risk by shipping a coherent, minimal surface.
 
 By feature freeze (P0/P1):
 
@@ -216,10 +221,11 @@ By feature freeze (P0/P1):
   - Ensure it is not in Explore/catalogue surfaces.
   - Ensure existing user widgets still render correctly.
 
-- P0: Park Clipboard Actions
+- P0: Park Clipboard Actions (Screen Actions) and remove from release builds
   - Ensure it is not in Explore/catalogue surfaces.
-  - Keep the widget in the extension but render “Hidden by default” when `clipboardActionsEnabled` is off.
-  - Ensure auto-detect does not create contacts and does not trigger a Contacts permission prompt.
+  - Ensure it is not registered in the widget extension bundle in release builds (no gallery presence).
+  - Remove ScreenActionsCore from the default build and remove any local-path Swift Package references from the Xcode project.
+  - Remove `NSContactsUsageDescription` from `WidgetWeaver/Info.plist` (and any InfoPlist.strings entry).
 
 - P0: Hide PawPulse / “Latest Cat”
   - Ensure it is not in Explore/catalogue surfaces.
@@ -228,24 +234,29 @@ By feature freeze (P0/P1):
 
 Acceptance criteria:
 
-- New users cannot create Reading, Photo Quote, Clipboard Actions, or PawPulse widgets from Explore.
+- New users cannot create Reading or Photo Quote widgets from Explore.
+- Release builds do not show Clipboard Actions in the Home Screen widget gallery.
 - Existing user widgets do not break.
-- No Contacts permission prompt appears in normal flows.
+- No Contacts permission prompt appears in normal flows, and `NSContactsUsageDescription` does not exist in the shipped Info.plist.
+- Weather can request Location permission safely (Info.plist usage string present) and only in-context.
 
 Key areas:
 
 - Reading template surfaces: `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
 - Photo Quote helper/spec: `Shared/WidgetSpec+Utilities.swift`
+- Widget bundle registration: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift`
 - Clipboard Actions widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
 - Clipboard Actions app intent: `WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift` (contact creation disabled)
-- Feature flags: `Shared/WidgetWeaverFeatureFlags.swift` (`clipboardActionsEnabled`, `pawPulseEnabled`)
-- PawPulse widget bundle gate: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (`#if PAWPULSE`)
+- Feature flags: `Shared/WidgetWeaverFeatureFlags.swift`
+- PawPulse bundle gate: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (`#if PAWPULSE`)
 - PawPulse / “Latest Cat”: `WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift`, `Shared/PawPulseLatestCatDetailView.swift`
+- Privacy usage strings: `WidgetWeaver/Info.plist`
+- Build reproducibility: `WidgetWeaver.xcodeproj/project.pbxproj` (no XCLocalSwiftPackageReference in the default build)
 
 ---
 
 ## Appendix: definitions and notes
 
 - “Explore/catalogue surfaces” refers to anything visible to a new user without deep navigation (Explore tab, featured templates, first-run prompts).
-- “Hidden” means the widget and code can remain present, but is not promoted and defaults to an inert/disabled state.
-- “Scope cut” means it can remain in the repo as future work, but must not increase shipped surface area or permission prompts.
+- “Hidden” means not visible in Explore and not registered in the widget bundle for release builds.
+- “Scope cut” means it can remain in the repo as future work, but must not increase shipped surface area, permissions footprint, or widget gallery clutter.

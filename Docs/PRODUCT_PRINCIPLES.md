@@ -26,6 +26,7 @@ Rules:
 - Explore should showcase a small set of high-quality templates that represent the product.
 - Each visible template should have a clear “why would someone keep this on their Home Screen?” story.
 - Breadth that increases permissions, complexity, or App Review risk should be hidden or deferred until it has a strong narrative and polish.
+- “Hidden” means not discoverable in Explore and not addable from the Home Screen widget gallery in release builds.
 
 ## 4) Widgets are deterministic and budget-safe
 
@@ -72,6 +73,7 @@ Rules:
 - Removing a template from Explore is acceptable; breaking an existing user widget is not.
 - Deprecations should be “hidden from new”, with migration paths where feasible.
 - If a feature is not ready, it should be behind an “Experimental” label or disabled, rather than half-exposed.
+- If a feature is scope-cut for a release, it must not appear in the widget gallery for that release (runtime “disabled” states are not enough on their own).
 
 ## 11) AI is assistive, not magical
 
@@ -85,6 +87,8 @@ Rules:
 - Ask only at the point the user has chosen a template or tool that clearly benefits from the permission.
 - Each permission prompt must have a clear in-product explanation of what changes when access is granted or denied.
 - Avoid shipping with a wide permission footprint. If a feature requires a new permission (especially Contacts), it must justify itself as a flagship experience; otherwise it is hidden/deferred.
+- Privacy usage strings in Info.plist count as part of the permission footprint. If a feature is removed/parked, remove its unused usage strings (for example, do not ship `NSContactsUsageDescription` if Contacts are not used).
+- If the app requests authorisation (for example, `requestWhenInUseAuthorization()`), the corresponding Info.plist usage string must exist. Missing required usage strings are not “minor”; they are crash-class defects.
 
 ## 13) Release builds must be reproducible and boring
 

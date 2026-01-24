@@ -22,11 +22,16 @@ Current roadmap priorities (pre-freeze)
 3) Weather (flagship): ship the rain-first Weather template + `__weather_*` variables with a clear location flow, stable caching, and attribution.
 4) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
 5) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys.
-6) Reduce surface area and permission footprint (do not break existing widgets):
-   - Hide “Reading” from Explore / starter surfaces.
+6) Catalogue and trust clean-up (usefulness-first; do not break existing widgets):
+   - Remove “Reading” from Explore / starter surfaces.
    - Remove the “Photo Quote” template from Explore / starter surfaces.
-   - Clipboard Actions is parked. Keep it out of Explore and first-run paths and keep the runtime gate off (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off). When the flag is off, AppIntents must return a disabled status (no Calendar/Reminders writes) and must not trigger any permission prompts (especially Contacts). Do not propose or prioritise work that improves or expands Clipboard Actions.
+   - Clipboard Actions (Screen Actions) is parked for this ship and must be absent in release builds:
+     - Not listed in Explore/starter surfaces.
+     - Not registered in the widget extension bundle (no Home Screen “Add Widget” gallery presence).
+     - No dependency on ScreenActionsCore in the default build; no local-path SPM dependencies in the Xcode project.
+     - `NSContactsUsageDescription` must not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
    - Keep PawPulse / “Latest Cat” (cat adoption) out of shipped surfaces. The widget is compile-time gated (no gallery presence unless `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh scheduling is cancelled when disabled (or when no base URL is configured).
+   - Weather location safety: if the app can call `requestWhenInUseAuthorization()`, `WidgetWeaver/Info.plist` must contain `NSLocationWhenInUseUsageDescription` with a user-facing explanation.
 
 Defer
 - AI: post-ship R&D track; small, reviewable assistive steps; must generate explicit specs/config, not opaque state.
@@ -34,6 +39,7 @@ Defer
 Key repo pointers
 - Design export/import: WidgetWeaver/ContentView+SharePackage.swift (Transferable `.wwdesign` files)
 - Document type registration: WidgetWeaver/Info.plist (UTType export + document type + open-in-place declaration)
+- Privacy usage strings: WidgetWeaver/Info.plist (Location / Photos / etc.)
 - Smart Photos pipeline: WidgetWeaver/SmartPhotoPipeline/*
 - Crop editor: WidgetWeaver/SmartPhotoCropEditorView.swift
 - Poster background/overlay: Shared/WidgetWeaverSpecView+Background.swift, Shared/WidgetWeaverSpecView.swift
@@ -49,15 +55,15 @@ Key repo pointers
 - Template catalogue entries: WidgetWeaver/WidgetWeaverAboutCatalog.swift
 - Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift
 - Variables UI: WidgetWeaver/WidgetWeaverVariablesView.swift (and related sheets)
-- DEBUG feature flag toggles (Reminders / Clipboard Actions (parked) / PawPulse): WidgetWeaver/ContentView+Toolbar.swift
 
 Feature removal / hiding pointers
 - “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
 - “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
-- Clipboard Actions (parked):
-  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift (renders “Hidden by default” when the runtime flag is off; taps open the app)
-  - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled; hard-gated by `clipboardActionsEnabled` and returns disabled when off)
-  - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`clipboardActionsEnabled`, default off)
+- Clipboard Actions (parked; must be absent in release builds):
+  - Widget registration: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (gate behind the compiler flag `CLIPBOARD_ACTIONS`; release builds must not define it)
+  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift
+  - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled; must not ship as a surfaced feature)
+  - Xcode project dependency: WidgetWeaver.xcodeproj/project.pbxproj (remove XCLocalSwiftPackageReference for ScreenActionsCore from the default build)
 - PawPulse / “Latest Cat”:
   - Widget registration gate: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (`#if PAWPULSE`)
   - Widget: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift
@@ -69,5 +75,6 @@ Non-negotiables
 - Do not run heavy work in widgets.
 - Do not introduce WidgetCenter reload loops from widget providers.
 - Do not break existing user widgets when removing templates from Explore.
-- Do not ship a build that requests Contacts permission.
-- Clipboard Actions is parked: keep it inert and default-off; do not revive it via patches.
+- Do not ship a build that requests Contacts permission or declares Contacts usage strings.
+- Do not ship a build that can request Location authorisation without `NSLocationWhenInUseUsageDescription` in Info.plist.
+- Clipboard Actions is parked: release builds must not register it in the widget gallery and must not depend on ScreenActionsCore.
