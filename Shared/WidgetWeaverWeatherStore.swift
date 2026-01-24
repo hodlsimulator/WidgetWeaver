@@ -302,9 +302,6 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
             vars["__weather_rain_peak_chance"] = percentString(fromChance01: nowcast.peakChance01)
             vars["__weather_rain_peak_chance_fraction"] = String(nowcast.peakChance01)
 
-            let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
-            for (k, v) in stepsVars { vars[k] = v }
-
             return vars
         }
 
