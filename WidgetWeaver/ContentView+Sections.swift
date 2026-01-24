@@ -544,6 +544,14 @@ extension ContentView {
                     onOpenRemindersSettings: { activeSheet = .reminders }
                 )
             }
+            if FeatureFlags.posterSuiteEnabled && currentTemplate == .poster {
+                PosterSuiteStage1Controls(
+                    posterOverlayMode: binding(\.posterOverlayMode),
+                    alignment: binding(\.alignment),
+                    imageContentMode: binding(\.imageContentMode),
+                    styleDraft: $styleDraft
+                )
+            }
 
             Toggle("Show accent bar", isOn: binding(\.showsAccentBar))
 
@@ -861,87 +869,51 @@ private struct RemindersPackControls: View {
 
             Divider()
 
-            HStack {
-                Text("List filter")
-                Spacer()
-                Text(listSummary)
-                    .foregroundStyle(.secondary)
+            Button {
+                loadLists()
+            } label: {
+                Label(isLoadingLists ? "Loading lists…" : "Refresh lists", systemImage: "arrow.clockwise")
             }
+            .disabled(isLoadingLists)
 
-            if config.selectedListIDs.isEmpty {
-                Button {
-                    enableListFiltering()
-                } label: {
-                    HStack {
-                        Text("Filter by list…")
-                        Spacer()
-                        if isLoadingLists {
-                            ProgressView()
-                        }
-                    }
+            Toggle("Enable list filtering", isOn: Binding(
+                get: { !config.selectedListIDs.isEmpty },
+                set: { enabled in
+                    if enabled { enableListFiltering() }
+                    else { disableListFiltering() }
+                    config = config.normalised()
                 }
-                .disabled(isLoadingLists)
+            ))
 
-                Text("Empty selection means “All lists”. Enable filtering to pick specific lists.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Button {
-                    disableListFiltering()
-                } label: {
-                    Label("Show all lists", systemImage: "line.3.horizontal")
+            if !config.selectedListIDs.isEmpty {
+                HStack {
+                    Text("Lists")
+                    Spacer()
+                    Text(listSummary)
+                        .foregroundStyle(.secondary)
                 }
-
-                Button {
-                    loadLists()
-                } label: {
-                    HStack {
-                        Text(lists.isEmpty ? "Load lists" : "Reload lists")
-                        Spacer()
-                        if isLoadingLists {
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(isLoadingLists)
 
                 if lists.isEmpty {
-                    ForEach(config.selectedListIDs, id: \.self) { id in
-                        Text(id)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                } else {
-                    ForEach(lists) { list in
-                        Toggle(isOn: Binding(
-                            get: { config.selectedListIDs.contains(list.id) },
-                            set: { newValue in setListIncluded(newValue, listID: list.id) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(list.title)
-                                if let source = list.sourceTitle {
-                                    Text(source)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let err = lastError {
-                    Text(err)
+                    Text("No lists loaded yet.\nTap Refresh lists.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(lists, id: \.id) { list in
+                        Toggle(list.title, isOn: Binding(
+                            get: { config.selectedListIDs.contains(list.id) },
+                            set: { included in
+                                setListIncluded(included, listID: list.id)
+                                config = config.normalised()
+                            }
+                        ))
+                    }
                 }
+            }
 
-                Text("List filtering is per-widget. Snapshot refresh can also globally restrict lists (Reminders settings).")
+            if let lastError, !lastError.isEmpty {
+                Text(lastError)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
