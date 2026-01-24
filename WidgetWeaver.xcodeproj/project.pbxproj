@@ -434,17 +434,16 @@
 		E18676A62EF240690098B095 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				E15047332F1CA2760047863A /* Clock */,
 				E18676A72EF240A70098B095 /* AppGroup.swift */,
 				E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */,
 				E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */,
+				E15047332F1CA2760047863A /* Clock */,
 				E1E8780F2F08056900C9AA14 /* NoiseMachine */,
 				E160114F2F15ECB400A3B10B /* PawPulseBackgroundTasks.swift */,
 				E16011462F15EC4200A3B10B /* PawPulseCache.swift */,
 				E160114C2F15EC9C00A3B10B /* PawPulseEngine.swift */,
 				E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */,
 				E16011432F15EC1000A3B10B /* PawPulseLatestItem.swift */,
-				E150474B2F1D41890047863A /* WidgetSpec+VariableResolutionNow.swift */,
 				E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */,
 				E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
@@ -468,6 +467,7 @@
 				CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */,
 				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
 				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
+				E150474B2F1D41890047863A /* WidgetSpec+VariableResolutionNow.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
 				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
 				E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */,

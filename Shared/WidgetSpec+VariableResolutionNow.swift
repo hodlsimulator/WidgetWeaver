@@ -32,7 +32,7 @@ public extension WidgetSpec {
 
         // Steps variables behave like built-ins (not Pro-gated).
         // These intentionally override any existing keys to keep the widget truthful.
-        let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary()
+        let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary(now: now)
         for (k, v) in stepsVars {
             vars[k] = v
         }

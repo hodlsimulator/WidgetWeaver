@@ -179,7 +179,7 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
 
     // MARK: - Goal schedule
 
-    public func loadGoalSteps(default fallback: Int = 10_000, now: Date = Date()) -> Int {
+    public func loadGoalSteps(default fallback: Int = 10_000, now: Date = WidgetWeaverRenderClock.now) -> Int {
         let schedule = loadGoalSchedule(default: fallback)
         return schedule.goalSteps(for: now)
     }
@@ -287,7 +287,7 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
         sync()
     }
 
-    public func snapshotForToday(now: Date = Date()) -> WidgetWeaverStepsSnapshot? {
+    public func snapshotForToday(now: Date = WidgetWeaverRenderClock.now) -> WidgetWeaverStepsSnapshot? {
         guard let snap = loadSnapshot() else { return nil }
         let cal = Calendar.autoupdatingCurrent
         let today = cal.startOfDay(for: now)
@@ -373,7 +373,7 @@ public final class WidgetWeaverStepsStore: @unchecked Sendable {
         60 * 15
     }
 
-    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+    public func variablesDictionary(now: Date = WidgetWeaverRenderClock.now) -> [String: String] {
         let cal = Calendar.autoupdatingCurrent
         let schedule = loadGoalSchedule()
         let rule = loadStreakRule()
@@ -654,7 +654,7 @@ public final class WidgetWeaverActivityStore: @unchecked Sendable {
 
     // MARK: - Snapshot
 
-    public func snapshotForToday(now: Date = Date()) -> WidgetWeaverActivitySnapshot? {
+    public func snapshotForToday(now: Date = WidgetWeaverRenderClock.now) -> WidgetWeaverActivitySnapshot? {
         guard let snap = loadSnapshot() else { return nil }
         let cal = Calendar.autoupdatingCurrent
         let today = cal.startOfDay(for: now)
@@ -745,7 +745,7 @@ public final class WidgetWeaverActivityStore: @unchecked Sendable {
 
     // MARK: - Template variables
 
-    public func variablesDictionary(now: Date = Date()) -> [String: String] {
+    public func variablesDictionary(now: Date = WidgetWeaverRenderClock.now) -> [String: String] {
         var vars: [String: String] = [:]
         vars["__activity_access"] = loadLastAccess().rawValue
 
