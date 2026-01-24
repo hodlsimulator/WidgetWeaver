@@ -149,3 +149,63 @@ struct WidgetWeaverStepsRenderClockTests {
         #expect(resolvedActivity?.steps == 321)
     }
 }
+
+
+struct WidgetWeaverVariableTemplateTests {
+
+    @Test func render_appliesFiltersToFallbackValues() {
+        let out = WidgetWeaverVariableTemplate.render(
+            "Hi {{missing|hello|upper}}",
+            variables: [:],
+            now: Date(timeIntervalSince1970: 0),
+            maxPasses: 1
+        )
+
+        #expect(out == "Hi HELLO")
+    }
+
+    @Test func render_explicitFilterDelimiter_preservesPipesInFallback() {
+        let out = WidgetWeaverVariableTemplate.render(
+            "{{missing|a|b||upper}}",
+            variables: [:],
+            now: Date(timeIntervalSince1970: 0),
+            maxPasses: 1
+        )
+
+        #expect(out == "A|B")
+    }
+
+    @Test func render_backCompatTreatsUnknownFiltersAsFallback() {
+        let out = WidgetWeaverVariableTemplate.render(
+            "{{missing|a|b|c}}",
+            variables: [:],
+            now: Date(timeIntervalSince1970: 0),
+            maxPasses: 1
+        )
+
+        #expect(out == "a|b|c")
+    }
+
+    @Test func render_inlineMaths_supportsNumericExpressionsAndFormatting() {
+        let vars: [String: String] = [
+            "done": "1",
+            "total": "4",
+        ]
+
+        let out = WidgetWeaverVariableTemplate.render(
+            "{{=done/total*100|0|number:0}}%",
+            variables: vars,
+            now: Date(timeIntervalSince1970: 0),
+            maxPasses: 1
+        )
+
+        #expect(out == "25%")
+    }
+
+    @Test func isTimeDependentTemplate_detectsRelativeAndBuiltInTimeKeys() {
+        #expect(WidgetWeaverVariableTemplate.isTimeDependentTemplate("Hello {{name}}") == false)
+        #expect(WidgetWeaverVariableTemplate.isTimeDependentTemplate("Now {{__time}}") == true)
+        #expect(WidgetWeaverVariableTemplate.isTimeDependentTemplate("{{last_done|Never|relative}}") == true)
+        #expect(WidgetWeaverVariableTemplate.isTimeDependentTemplate("{{__weather_nowcast}}") == true)
+    }
+}
