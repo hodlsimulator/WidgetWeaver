@@ -21,8 +21,8 @@ struct WidgetWeaverAboutClockThumbnail: View {
 
     let variant: Variant
 
-    /// Defaults to `.ceramic` to match the current Clock (Quick) behaviour.
-    var face: WidgetWeaverClockFaceToken = .ceramic
+    /// Defaults to `.icon` to match the current Clock defaults (Quick and new Designer).
+    var face: WidgetWeaverClockFaceToken = .icon
 
     @Environment(\.wwThumbnailRenderingEnabled) private var thumbnailRenderingEnabled
     @Environment(\.colorScheme) private var colorScheme

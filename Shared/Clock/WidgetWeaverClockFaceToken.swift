@@ -57,4 +57,19 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
             return "12 numerals"
         }
     }
+
+    /// Sort index used to keep face pickers stable and scalable as more faces are added.
+    public var pickerSortIndex: Int {
+        switch self {
+        case .icon:
+            return 0
+        case .ceramic:
+            return 1
+        }
+    }
+
+    /// Face tokens ordered for presentation in pickers and catalogue UIs.
+    public static var orderedForPicker: [WidgetWeaverClockFaceToken] {
+        Self.allCases.sorted { $0.pickerSortIndex < $1.pickerSortIndex }
+    }
 }

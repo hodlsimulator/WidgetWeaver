@@ -482,25 +482,26 @@ private struct WidgetWeaverClockFaceSelector: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityHidden(true)
 
-            HStack(spacing: 12) {
-                WidgetWeaverClockFaceSelectorCard(
-                    token: .ceramic,
-                    isSelected: selectedToken == .ceramic,
-                    palette: palette,
-                    action: {
-                        clockFaceRaw = WidgetWeaverClockFaceToken.ceramic.rawValue
-                    }
-                )
 
-                WidgetWeaverClockFaceSelectorCard(
-                    token: .icon,
-                    isSelected: selectedToken == .icon,
-                    palette: palette,
-                    action: {
-                        clockFaceRaw = WidgetWeaverClockFaceToken.icon.rawValue
-                    }
-                )
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 150), spacing: 12)
+                ],
+                alignment: .leading,
+                spacing: 12
+            ) {
+                ForEach(WidgetWeaverClockFaceToken.orderedForPicker, id: \.rawValue) { token in
+                    WidgetWeaverClockFaceSelectorCard(
+                        token: token,
+                        isSelected: selectedToken == token,
+                        palette: palette,
+                        action: {
+                            clockFaceRaw = token.rawValue
+                        }
+                    )
+                }
             }
+
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .contain)

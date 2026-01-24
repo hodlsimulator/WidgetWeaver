@@ -19,10 +19,10 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
 
     public static let defaultTheme: String = "classic"
 
-    public static let supportedFaces: Set<String> = [
-        WidgetWeaverClockFaceToken.ceramic.rawValue,
-        WidgetWeaverClockFaceToken.icon.rawValue
-    ]
+    public static var supportedFaces: Set<String> {
+        Set(WidgetWeaverClockFaceToken.allCases.map { $0.rawValue })
+    }
+
 
     /// Default face for newly created Clock (Designer) configurations.
     public static let defaultFace: String = WidgetWeaverClockFaceToken.icon.rawValue
