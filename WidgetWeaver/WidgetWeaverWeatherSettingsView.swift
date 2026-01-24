@@ -21,6 +21,10 @@ struct WidgetWeaverWeatherSettingsView: View {
     @State private var isWorking: Bool = false
     @State private var statusText: String? = nil
 
+    @State private var geocodeCandidates: [WidgetWeaverWeatherGeocodeCandidate] = []
+    @State private var geocodeCandidatesQuery: String = ""
+    @State private var geocodeCandidatesPresented: Bool = false
+
     @State private var savedLocation: WidgetWeaverWeatherLocation? = WidgetWeaverWeatherStore.shared.loadLocation()
     @State private var snapshot: WidgetWeaverWeatherSnapshot? = WidgetWeaverWeatherStore.shared.loadSnapshot()
     @State private var unitPreference: WidgetWeaverWeatherUnitPreference = WidgetWeaverWeatherStore.shared.loadUnitPreference()
@@ -74,7 +78,6 @@ struct WidgetWeaverWeatherSettingsView: View {
 
                     Button(role: .destructive) {
                         store.saveLocation(nil)
-                        store.clearSnapshot()
                         refreshLocalState()
                         reloadWidgets()
                     } label: {
@@ -278,6 +281,17 @@ struct WidgetWeaverWeatherSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshLocationAuthStatus()
         }
+        .sheet(isPresented: $geocodeCandidatesPresented) {
+            NavigationStack {
+                WidgetWeaverWeatherLocationSearchResultsView(
+                    query: geocodeCandidatesQuery,
+                    candidates: geocodeCandidates,
+                    onSelect: { candidate in
+                        Task { await saveGeocodeCandidate(candidate, fallbackQuery: geocodeCandidatesQuery) }
+                    }
+                )
+            }
+        }
         .tint(.blue)
     }
 
@@ -402,29 +416,43 @@ struct WidgetWeaverWeatherSettingsView: View {
 
         do {
             let candidates = try await geocode(trimmed)
-            guard let best = candidates.first else {
+            guard let first = candidates.first else {
                 statusText = "No results found."
                 return
             }
 
-            let name = (best.name?.trimmingCharacters(in: .whitespacesAndNewlines))
-                .flatMap { $0.isEmpty ? nil : $0 } ?? trimmed
-
-            let stored = WidgetWeaverWeatherLocation(
-                name: name,
-                latitude: best.latitude,
-                longitude: best.longitude,
-                updatedAt: Date()
-            )
-
-            // Keep the existing snapshot until a new one is successfully fetched.
-            store.saveLocation(stored)
-            refreshLocalState()
-
-            await updateNow(force: true)
+            if candidates.count == 1 {
+                await saveGeocodeCandidate(first, fallbackQuery: trimmed)
+            } else {
+                geocodeCandidatesQuery = trimmed
+                geocodeCandidates = candidates
+                geocodeCandidatesPresented = true
+            }
         } catch {
             statusText = "Geocoding failed: \(String(describing: error))"
         }
+    }
+
+    private func saveGeocodeCandidate(
+        _ candidate: WidgetWeaverWeatherGeocodeCandidate,
+        fallbackQuery: String
+    ) async {
+        let trimmedTitle = candidate.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedTitle.isEmpty ? fallbackQuery : trimmedTitle
+
+        let stored = WidgetWeaverWeatherLocation(
+            name: name,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude,
+            updatedAt: Date()
+        )
+
+        // Keep the existing snapshot until a new one is successfully fetched.
+        store.saveLocation(stored)
+        query = name
+        refreshLocalState()
+
+        await updateNow(force: true)
     }
 
     private func updateNow(force: Bool) async {
@@ -452,25 +480,143 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
     }
 
-    private struct GeocodeCandidate: Sendable {
-        let name: String?
-        let latitude: Double
-        let longitude: Double
-    }
 
-    private func geocode(_ query: String) async throws -> [GeocodeCandidate] {
-        try await Task.detached(priority: .userInitiated) { () -> [GeocodeCandidate] in
+
+    private func geocode(_ query: String) async throws -> [WidgetWeaverWeatherGeocodeCandidate] {
+        try await Task.detached(priority: .userInitiated) { () -> [WidgetWeaverWeatherGeocodeCandidate] in
             guard let request = MKGeocodingRequest(addressString: query) else { return [] }
             let items = try await request.mapItems
 
-            return items.map { item in
+            var out: [WidgetWeaverWeatherGeocodeCandidate] = []
+            out.reserveCapacity(items.count)
+
+            for item in items {
                 let loc = item.location
-                return GeocodeCandidate(
-                    name: item.name,
-                    latitude: loc.coordinate.latitude,
-                    longitude: loc.coordinate.longitude
+
+                let title: String = {
+                    if let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !name.isEmpty {
+                        return name
+                    }
+
+                    if let address = item.address {
+                        let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !short.isEmpty { return short }
+
+                        let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !full.isEmpty { return full }
+                    }
+
+                    return query
+                }()
+
+                let subtitle: String? = {
+                    guard let address = item.address else { return nil }
+
+                    let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !short.isEmpty, short != title { return short }
+
+                    let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !full.isEmpty, full != title { return full }
+
+                    return nil
+                }()
+
+                out.append(
+                    WidgetWeaverWeatherGeocodeCandidate(
+                        title: title,
+                        subtitle: subtitle,
+                        latitude: loc.coordinate.latitude,
+                        longitude: loc.coordinate.longitude
+                    )
                 )
             }
+
+            var seen = Set<String>()
+            return out.filter { seen.insert($0.id).inserted }
         }.value
+    }
+}
+
+
+private struct WidgetWeaverWeatherGeocodeCandidate: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let latitude: Double
+    let longitude: Double
+
+    init(
+        id: String? = nil,
+        title: String,
+        subtitle: String?,
+        latitude: Double,
+        longitude: Double
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.latitude = latitude
+        self.longitude = longitude
+
+        let roundedLat = String(format: "%.5f", latitude)
+        let roundedLon = String(format: "%.5f", longitude)
+        let rawID = id ?? "\(roundedLat),\(roundedLon)|\(title)|\(subtitle ?? "")"
+        self.id = rawID
+    }
+
+    var coordinateText: String {
+        "Lat \(String(format: "%.4f", latitude)), Lon \(String(format: "%.4f", longitude))"
+    }
+}
+
+private struct WidgetWeaverWeatherLocationSearchResultsView: View {
+    let query: String
+    let candidates: [WidgetWeaverWeatherGeocodeCandidate]
+    let onSelect: (WidgetWeaverWeatherGeocodeCandidate) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                Text("Choose the best match for “\(query)”.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Results (\(candidates.count))") {
+                ForEach(candidates) { candidate in
+                    Button {
+                        onSelect(candidate)
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+
+                            if let subtitle = candidate.subtitle, !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+
+                            Text(candidate.coordinateText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Choose location")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Cancel") { dismiss() }
+            }
+        }
     }
 }
