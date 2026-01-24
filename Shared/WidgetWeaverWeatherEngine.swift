@@ -58,6 +58,11 @@ public actor WidgetWeaverWeatherEngine {
     private func update(force: Bool) async -> Result {
         let store = WidgetWeaverWeatherStore.shared
 
+        // Weather refresh is app-only. Widgets should render deterministically from cached App Group state.
+        if WidgetWeaverRuntime.isRunningInAppExtension {
+            return Result(snapshot: store.loadSnapshot(), attribution: store.loadAttribution(), errorDescription: nil)
+        }
+
         guard let location = store.loadLocation() else {
             store.saveLastError("No location configured")
             // Widget reloads are not forced when there is no location, which prevents

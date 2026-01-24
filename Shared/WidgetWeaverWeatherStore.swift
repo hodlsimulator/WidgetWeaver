@@ -93,6 +93,21 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: Keys.locationData)
             UserDefaults.standard.removeObject(forKey: Keys.locationData)
+
+            // Clearing the saved location invalidates all cached weather state.
+            defaults.removeObject(forKey: Keys.snapshotData)
+            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+
+            defaults.removeObject(forKey: Keys.attributionData)
+            UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+
+            defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
+            defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+            defaults.removeObject(forKey: Keys.lastError)
+
+            UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
+            UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+            UserDefaults.standard.removeObject(forKey: Keys.lastError)
         }
 
         notifyWidgetsWeatherUpdated()
