@@ -63,6 +63,7 @@ enum WidgetWeaverNowValueFormat: String, AppEnum {
         [
             .iso8601: DisplayRepresentation(title: "ISO8601 (UTC)"),
             .unixSeconds: DisplayRepresentation(title: "Unix seconds"),
+            .unixMilliseconds: DisplayRepresentation(title: "Unix milliseconds"),
             .dateOnly: DisplayRepresentation(title: "Date (yyyy-MM-dd)"),
             .timeOnly: DisplayRepresentation(title: "Time (HH:mm)"),
         ]
@@ -70,6 +71,7 @@ enum WidgetWeaverNowValueFormat: String, AppEnum {
 
     case iso8601
     case unixSeconds
+    case unixMilliseconds
     case dateOnly
     case timeOnly
 }
@@ -114,6 +116,9 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
 
             case .unixSeconds:
                 return String(Int64(now.timeIntervalSince1970))
+
+            case .unixMilliseconds:
+                return String(Int64((now.timeIntervalSince1970 * 1000.0).rounded(.down)))
 
             case .dateOnly:
                 let df = DateFormatter()

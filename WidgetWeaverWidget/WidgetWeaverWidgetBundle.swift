@@ -25,7 +25,10 @@ struct WidgetWeaverWidgetBundle: WidgetBundle {
         #endif
 
         WidgetWeaverNoiseMachineWidget()
+
+        #if CLIPBOARD_ACTIONS
         WidgetWeaverClipboardActionsWidget()
+        #endif
 
         #if DEBUG
         WidgetWeaverRemindersDebugSpikeWidget()

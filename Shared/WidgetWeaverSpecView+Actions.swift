@@ -60,7 +60,7 @@ extension WidgetWeaverSpecView {
         case .unixSeconds:
             return .unixSeconds
         case .unixMilliseconds:
-            return .unixSeconds
+            return .unixMilliseconds
         case .dateOnly:
             return .dateOnly
         case .timeOnly:

@@ -24,17 +24,14 @@
     <true/>
 
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+    <string>WidgetWeaver uses your Calendar to show upcoming events in your widgets.</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>WidgetWeaver needs access to your Calendar to create events from captured clipboard text.</string>
+    <string>WidgetWeaver uses your Calendar to show upcoming events in your widgets.</string>
 
     <key>NSRemindersFullAccessUsageDescription</key>
-    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
+    <string>WidgetWeaver uses your Reminders to show and complete reminders in your widgets.</string>
     <key>NSRemindersUsageDescription</key>
-    <string>WidgetWeaver needs access to Reminders to create reminders from captured clipboard text.</string>
-
-    <key>NSContactsUsageDescription</key>
-    <string>WidgetWeaver needs access to Contacts to create contacts from captured clipboard text.</string>
+    <string>WidgetWeaver uses your Reminders to show and complete reminders in your widgets.</string>
 
     <key>NSExtension</key>
     <dict>
