@@ -381,7 +381,6 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
     }
 
-
     // MARK: Last error
 
     public func loadLastError() -> String? {
@@ -438,9 +437,7 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
         notifyWidgetsWeatherUpdated()
     }
-
 }
-
 
 #if canImport(WidgetKit)
 @MainActor
@@ -460,7 +457,8 @@ final class WidgetWeaverWeatherWidgetReloadDebouncer {
         let work = DispatchWorkItem {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
-            WidgetCenter.shared.reloadAllTimelines()
+            // Avoid reloadAllTimelines() here. Weather updates only need to refresh the main widget
+            // (user designs) and the dedicated lock screen Weather widget.
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }

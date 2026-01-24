@@ -174,7 +174,6 @@ struct WidgetWeaverWeatherSettingsView: View {
                 .disabled(snapshot == nil)
             }
 
-
             Section("Auto-refresh") {
                 if let lastRefreshAttemptAt {
                     Text("Last attempt \(lastRefreshAttemptAt.formatted(date: .abbreviated, time: .shortened))")
@@ -237,7 +236,6 @@ struct WidgetWeaverWeatherSettingsView: View {
                     Label("Clear last error", systemImage: "trash")
                 }
                 .disabled(lastError == nil)
-
 
                 Button(role: .destructive) {
                     store.clearRefreshTimestamps()
@@ -324,11 +322,9 @@ struct WidgetWeaverWeatherSettingsView: View {
     private func reloadWidgets() {
         AppGroup.userDefaults.synchronize()
 
-        let kind = WidgetWeaverWidgetKinds.main
-
         Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: kind)
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
 
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
@@ -480,8 +476,6 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
     }
 
-
-
     private func geocode(_ query: String) async throws -> [WidgetWeaverWeatherGeocodeCandidate] {
         try await Task.detached(priority: .userInitiated) { () -> [WidgetWeaverWeatherGeocodeCandidate] in
             guard let request = MKGeocodingRequest(addressString: query) else { return [] }
@@ -537,7 +531,6 @@ struct WidgetWeaverWeatherSettingsView: View {
         }.value
     }
 }
-
 
 private struct WidgetWeaverWeatherGeocodeCandidate: Identifiable, Hashable, Sendable {
     let id: String
