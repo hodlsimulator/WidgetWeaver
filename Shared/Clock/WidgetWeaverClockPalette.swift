@@ -105,8 +105,32 @@ struct WidgetWeaverClockPalette {
         let dialVignette: Color = WWClock.colour(0x000000, alpha: 0.22)
         let dialDomeHighlight: Color = WWClock.colour(0xFFFFFF, alpha: 0.040)
 
-        // Icon face dial: a calmer, flatter slate-blue field.
-        let iconDialFill: Color = isDark ? WWClock.colour(0x22364B, alpha: 1.0) : WWClock.colour(0x2A4158, alpha: 1.0)
+        // Icon face dial fill varies by scheme so the 12‑numeral face responds clearly to Scheme changes.
+        // Values are curated (no free-form colour picker) and kept relatively dark for legibility.
+        let iconDialFill: Color = {
+            switch scheme {
+            case .classic:
+                return isDark ? WWClock.colour(0x22364B, alpha: 1.0) : WWClock.colour(0x2A4158, alpha: 1.0)
+
+            case .ocean:
+                return isDark ? WWClock.colour(0x1B3A5E, alpha: 1.0) : WWClock.colour(0x234A76, alpha: 1.0)
+
+            case .mint:
+                return isDark ? WWClock.colour(0x1F4B3F, alpha: 1.0) : WWClock.colour(0x256253, alpha: 1.0)
+
+            case .orchid:
+                return isDark ? WWClock.colour(0x3A2A63, alpha: 1.0) : WWClock.colour(0x4A357A, alpha: 1.0)
+
+            case .sunset:
+                return isDark ? WWClock.colour(0x4A243B, alpha: 1.0) : WWClock.colour(0x5C2D4A, alpha: 1.0)
+
+            case .ember:
+                return isDark ? WWClock.colour(0x4A1F1F, alpha: 1.0) : WWClock.colour(0x5E2727, alpha: 1.0)
+
+            case .graphite:
+                return isDark ? WWClock.colour(0x1F242C, alpha: 1.0) : WWClock.colour(0x2A303A, alpha: 1.0)
+            }
+        }()
 
         // Icon face baseline seconds hand colour (red).
         let iconSecondHand: Color = WWClock.colour(0xF53842, alpha: 1.0)
