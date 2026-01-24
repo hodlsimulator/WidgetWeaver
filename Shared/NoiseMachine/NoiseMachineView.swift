@@ -10,7 +10,11 @@ import SwiftUI
 
 struct NoiseMachineView: View {
     @StateObject private var model = NoiseMachineViewModel()
+
+    #if DEBUG
     @StateObject private var logModel = NoiseMachineDebugLogModel()
+    #endif
+
     @State private var expandedEQ: Set<Int> = []
 
     @Environment(\.noiseMachinePresentationTracker) private var presentationTracker
@@ -27,12 +31,16 @@ struct NoiseMachineView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
             presentationTracker?.setVisible(true)
+            #if DEBUG
             logModel.start()
+            #endif
             model.onAppear()
         }
         .onDisappear {
             presentationTracker?.setVisible(false)
+            #if DEBUG
             logModel.stop()
+            #endif
             model.onDisappear()
         }
     }
@@ -47,6 +55,8 @@ struct NoiseMachineView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityLabel(model.state.wasPlaying ? "Pause noise" : "Play noise")
+                .accessibilityHint("Toggles Noise Machine playback.")
 
                 Button(role: .destructive) {
                     model.stop()
@@ -55,6 +65,8 @@ struct NoiseMachineView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("Stop noise")
+                .accessibilityHint("Stops playback and silences all layers.")
             }
 
             Button {
@@ -64,9 +76,11 @@ struct NoiseMachineView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .accessibilityHint("Resets all layers, filters, and EQ to defaults.")
 
             WWFloatSliderRow(
                 title: "Master volume",
+                accessibilityLabel: "Master volume",
                 value: Binding(
                     get: { model.state.masterVolume },
                     set: { model.setMasterVolume($0, commit: false) }
@@ -85,7 +99,9 @@ struct NoiseMachineView: View {
                 Text("Resume on launch")
             }
 
+            #if DEBUG
             diagnosticsSection
+            #endif
         } header: {
             Text("Master")
         } footer: {
@@ -93,6 +109,7 @@ struct NoiseMachineView: View {
         }
     }
 
+    #if DEBUG
     private var diagnosticsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Divider().padding(.top, 4)
@@ -171,6 +188,7 @@ struct NoiseMachineView: View {
         }
         .padding(.vertical, 6)
     }
+    #endif
 
     private func slotSection(index: Int) -> some View {
         Section {
@@ -180,9 +198,11 @@ struct NoiseMachineView: View {
             )) {
                 Text("Enabled")
             }
+            .accessibilityLabel("Layer \(index + 1) enabled")
 
             WWFloatSliderRow(
                 title: "Volume",
+                accessibilityLabel: "Layer \(index + 1) volume",
                 value: Binding(
                     get: { model.state.slots[index].volume },
                     set: { model.setSlotVolume(index, volume: $0, commit: false) }
@@ -196,6 +216,7 @@ struct NoiseMachineView: View {
 
             WWFloatSliderRow(
                 title: "Colour",
+                accessibilityLabel: "Layer \(index + 1) colour",
                 value: Binding(
                     get: { model.state.slots[index].colour },
                     set: { model.setSlotColour(index, colour: $0, commit: false) }
@@ -209,6 +230,7 @@ struct NoiseMachineView: View {
 
             WWFloatSliderRow(
                 title: "Low cut",
+                accessibilityLabel: "Layer \(index + 1) low cut",
                 value: Binding(
                     get: { model.state.slots[index].lowCutHz },
                     set: { model.setSlotLowCut(index, hz: $0, commit: false) }
@@ -222,6 +244,7 @@ struct NoiseMachineView: View {
 
             WWFloatSliderRow(
                 title: "High cut",
+                accessibilityLabel: "Layer \(index + 1) high cut",
                 value: Binding(
                     get: { model.state.slots[index].highCutHz },
                     set: { model.setSlotHighCut(index, hz: $0, commit: false) }
@@ -248,6 +271,7 @@ struct NoiseMachineView: View {
                 VStack(spacing: 12) {
                     WWFloatSliderRow(
                         title: "Low",
+                        accessibilityLabel: "Layer \(index + 1) EQ low",
                         value: Binding(
                             get: { model.state.slots[index].eq.lowGainDB },
                             set: { model.setSlotEQ(index, eq: updatedEQ(index: index, low: $0), commit: false) }
@@ -261,6 +285,7 @@ struct NoiseMachineView: View {
 
                     WWFloatSliderRow(
                         title: "Mid",
+                        accessibilityLabel: "Layer \(index + 1) EQ mid",
                         value: Binding(
                             get: { model.state.slots[index].eq.midGainDB },
                             set: { model.setSlotEQ(index, eq: updatedEQ(index: index, mid: $0), commit: false) }
@@ -274,6 +299,7 @@ struct NoiseMachineView: View {
 
                     WWFloatSliderRow(
                         title: "High",
+                        accessibilityLabel: "Layer \(index + 1) EQ high",
                         value: Binding(
                             get: { model.state.slots[index].eq.highGainDB },
                             set: { model.setSlotEQ(index, eq: updatedEQ(index: index, high: $0), commit: false) }
@@ -289,6 +315,8 @@ struct NoiseMachineView: View {
             } label: {
                 Text("EQ")
             }
+            .accessibilityLabel("Layer \(index + 1) EQ")
+            .accessibilityHint("Shows three band equaliser controls.")
         } header: {
             Text("Layer \(index + 1)")
         } footer: {
@@ -325,6 +353,7 @@ struct NoiseMachineView: View {
 
 private struct WWFloatSliderRow: View {
     let title: String
+    let accessibilityLabel: String
     let value: Binding<Float>
     let range: ClosedRange<Float>
     let valueText: (Float) -> String
@@ -342,11 +371,14 @@ private struct WWFloatSliderRow: View {
             }
 
             Slider(value: value, in: range, onEditingChanged: onEditingChanged)
+                .accessibilityLabel(Text(accessibilityLabel))
+                .accessibilityValue(Text(valueText(value.wrappedValue)))
         }
         .padding(.vertical, 4)
     }
 }
 
+#if DEBUG
 @MainActor
 private final class NoiseMachineDebugLogModel: ObservableObject {
     @Published private(set) var entries: [NoiseMachineLogEntry] = []
@@ -393,6 +425,7 @@ private final class NoiseMachineDebugLogModel: ObservableObject {
         return "\(date) [\(entry.level.rawValue.uppercased())] \(entry.message)"
     }
 }
+#endif
 
 final class NoiseMachinePresentationTracker: ObservableObject {
     @Published private(set) var isVisible: Bool = false

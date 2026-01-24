@@ -14,10 +14,16 @@ extension NoiseMachineController {
 
     func log(_ message: String, level: NoiseMachineLogLevel = .info) {
         let bundle = Bundle.main.bundleIdentifier ?? "unknown.bundle"
-        NoiseMachineDebugLogStore.shared.append(level, message, origin: bundle)
 
         #if DEBUG
+        NoiseMachineDebugLogStore.shared.append(level, message, origin: bundle)
         print("[NoiseMachine][\(bundle)] \(message)")
+        #else
+        // Avoid writing info-level logs in release builds. Warnings/errors remain persisted to the
+        // App Group store so field failures are still diagnosable.
+        if level != .info {
+            NoiseMachineDebugLogStore.shared.append(level, message, origin: bundle)
+        }
         #endif
     }
 
