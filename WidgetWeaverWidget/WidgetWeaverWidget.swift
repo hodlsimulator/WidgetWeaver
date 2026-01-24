@@ -420,9 +420,10 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
             if family != .systemSmall {
                 clockUnsupportedSize
             } else {
-                let scheme = Self.scheme(for: spec)
-                let face = (spec.clockConfig ?? WidgetWeaverClockDesignConfig.default).faceToken
-                let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+                let clockConfig = (spec.clockConfig ?? WidgetWeaverClockDesignConfig.default).normalised()
+                let appearance = WidgetWeaverClockAppearanceResolver.resolve(config: clockConfig, mode: colorScheme)
+                let face = clockConfig.faceToken
+                let palette = appearance.palette
 
                 Group {
                     if isLowBudget {
@@ -468,20 +469,6 @@ private struct WidgetWeaverClockIconDesignWidgetView: View {
         .clipShape(ContainerRelativeShape())
     }
 
-    private static func scheme(for spec: WidgetSpec) -> WidgetWeaverClockColourScheme {
-        let theme = (spec.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        switch theme {
-        case "ocean":
-            return .ocean
-        case "graphite":
-            return .graphite
-        default:
-            return .classic
-        }
-    }
 }
 
 private struct WWMainClockStaticFace: View {

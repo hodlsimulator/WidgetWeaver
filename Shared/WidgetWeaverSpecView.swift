@@ -248,32 +248,13 @@ public struct WidgetWeaverSpecView: View {
 
     private func clockIconTemplatePlaceholder(spec: WidgetSpec, layout: LayoutSpec, style: StyleSpec, accent: Color) -> some View {
         let clockConfig = (spec.clockConfig ?? WidgetWeaverClockDesignConfig.default).normalised()
-        let theme = clockConfig.theme
-
-        let scheme: WidgetWeaverClockColourScheme = {
-            switch theme {
-            case "ocean":
-                return .ocean
-            case "graphite":
-                return .graphite
-            default:
-                return .classic
-            }
-        }()
-
-        let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+        let appearance = WidgetWeaverClockAppearanceResolver.resolve(config: clockConfig, mode: colorScheme)
+        let palette = appearance.palette
 
         let label: String? = {
             guard context == .preview else { return nil }
 
-            switch scheme {
-            case .ocean:
-                return "Ocean"
-            case .graphite:
-                return "Graphite"
-            default:
-                return "Classic"
-            }
+            return appearance.schemeDisplayName
         }()
 
         let showsSecondsHand = (context == .simulator)

@@ -455,18 +455,9 @@ private struct WidgetWeaverClockFaceSelector: View {
     private var palette: WidgetWeaverClockPalette {
         let config = WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: selectedToken.rawValue)
 
-        let scheme: WidgetWeaverClockColourScheme = {
-            switch config.theme {
-            case "ocean":
-                return .ocean
-            case "graphite":
-                return .graphite
-            default:
-                return .classic
-            }
-        }()
-
-        return WidgetWeaverClockPalette.resolve(scheme: scheme, mode: colorScheme)
+        return WidgetWeaverClockAppearanceResolver
+            .resolve(config: config, mode: colorScheme)
+            .palette
     }
 
     var body: some View {
