@@ -42,6 +42,26 @@ public actor WidgetWeaverWeatherEngine {
     public var minimumUpdateInterval: TimeInterval = 60 * 10
     private var inFlight: Task<Result, Never>?
 
+    // MARK: - Refresh throttling
+
+    nonisolated static func shouldAttemptRefresh(
+        force: Bool,
+        now: Date,
+        lastAttemptAt: Date?,
+        minimumUpdateInterval: TimeInterval
+    ) -> Bool {
+        if force { return true }
+        if minimumUpdateInterval <= 0 { return true }
+        guard let lastAttemptAt else { return true }
+
+        let age = now.timeIntervalSince(lastAttemptAt)
+
+        // If the device clock changed (or lastAttemptAt is corrupt), avoid freezing refresh for a long time.
+        if age < 0 { return true }
+
+        return age >= minimumUpdateInterval
+    }
+
     public func updateIfNeeded(force: Bool = false) async -> Result {
         if let inFlight { return await inFlight.value }
 
@@ -70,15 +90,32 @@ public actor WidgetWeaverWeatherEngine {
             return Result(snapshot: nil, attribution: store.loadAttribution(), errorDescription: "No location configured")
         }
 
+        let now = Date()
+
+        // Fast-path: if the cached snapshot is fresh enough, skip WeatherKit.
         if !force, let existing = store.loadSnapshot() {
-            let age = Date().timeIntervalSince(existing.fetchedAt)
-            if age < minimumUpdateInterval {
+            let age = now.timeIntervalSince(existing.fetchedAt)
+            if age >= 0, age < minimumUpdateInterval {
                 store.saveLastError(nil)
                 return Result(snapshot: existing, attribution: store.loadAttribution(), errorDescription: nil)
             }
         }
 
-        store.saveLastRefreshAttemptAt(Date())
+        // Throttle repeated attempts (including failures) so foreground/background triggers do not spam WeatherKit.
+        if !Self.shouldAttemptRefresh(
+            force: force,
+            now: now,
+            lastAttemptAt: store.loadLastRefreshAttemptAt(),
+            minimumUpdateInterval: minimumUpdateInterval
+        ) {
+            return Result(
+                snapshot: store.loadSnapshot(),
+                attribution: store.loadAttribution(),
+                errorDescription: store.loadLastError()
+            )
+        }
+
+        store.saveLastRefreshAttemptAt(now)
 
         #if canImport(WeatherKit)
         do {
