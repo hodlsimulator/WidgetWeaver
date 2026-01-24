@@ -5,6 +5,7 @@
 //  Created by . . on 1/13/26.
 //
 
+#if CLIPBOARD_ACTIONS
 import AppIntents
 import Foundation
 
@@ -21,3 +22,4 @@ struct WidgetWeaverClipboardClearInboxIntent: AppIntent {
         return .result()
     }
 }
+#endif

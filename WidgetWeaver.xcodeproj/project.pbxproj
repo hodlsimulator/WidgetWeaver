@@ -58,7 +58,6 @@
 		E16011562F15ECE600A3B10B /* PawPulseLatestCatDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */; };
 		E160115B2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */; };
 		E160115C2F16155300A3B10B /* ClipboardInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160115A2F16155000A3B10B /* ClipboardInboxStore.swift */; };
-		E16011642F16173600A3B10B /* ScreenActionsCore in Frameworks */ = {isa = PBXBuildFile; productRef = E16011632F16173600A3B10B /* ScreenActionsCore */; };
 		E16011682F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */; };
 		E16011692F18399700A3B10B /* WidgetWeaverFeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16011672F18399400A3B10B /* WidgetWeaverFeatureFlags.swift */; };
 		E160116B2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160116A2F1839B900A3B10B /* WidgetWeaverRemindersConfig.swift */; };
@@ -92,7 +91,6 @@
 		E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18676B02EF241130098B095 /* WidgetSpecStore.swift */; };
 		E197A1012F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
 		E197A1022F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E197A1002F0623DB00B415B8 /* RainSurfaceSeamlessNoiseTile.swift */; };
-		E1A9B75F2F1568DB0096765D /* ScreenActionsCore in Frameworks */ = {isa = PBXBuildFile; productRef = E1A9B75E2F1568DB0096765D /* ScreenActionsCore */; };
 		E1C834C82EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834C92EFA5CFF00E3AA98 /* WidgetWeaverWeatherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834C72EFA5CFB00E3AA98 /* WidgetWeaverWeatherStore.swift */; };
 		E1C834CB2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C834CA2EFA5D1800E3AA98 /* WidgetWeaverWeatherEngine.swift */; };
@@ -366,7 +364,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E1A9B75F2F1568DB0096765D /* ScreenActionsCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -375,7 +372,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				E18676912EF232180098B095 /* WidgetKit.framework in Frameworks */,
-				E16011642F16173600A3B10B /* ScreenActionsCore in Frameworks */,
 				E18676932EF232180098B095 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -641,7 +637,6 @@
 			);
 			mainGroup = E186766E2EF227C20098B095;
 			packageReferences = (
-				E1A9B75D2F1568DB0096765D /* XCLocalSwiftPackageReference "../ScreenActions-clone/ScreenActionsCore" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E18676792EF227C30098B095 /* Products */;
@@ -1219,25 +1214,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		E1A9B75D2F1568DB0096765D /* XCLocalSwiftPackageReference "../ScreenActions-clone/ScreenActionsCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../ScreenActions-clone/ScreenActionsCore";
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		E16011632F16173600A3B10B /* ScreenActionsCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E1A9B75D2F1568DB0096765D /* XCLocalSwiftPackageReference "../ScreenActions-clone/ScreenActionsCore" */;
-			productName = ScreenActionsCore;
-		};
-		E1A9B75E2F1568DB0096765D /* ScreenActionsCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = ScreenActionsCore;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E18676702EF227C20098B095 /* Project object */;
 }
