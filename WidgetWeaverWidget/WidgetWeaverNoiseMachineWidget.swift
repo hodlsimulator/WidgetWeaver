@@ -288,18 +288,16 @@ private struct NoiseMachineWidgetView: View {
     private func mediumLayout(slots: [NoiseSlotState]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            masterVolumeRow
+            metaRow
             layerRow(slots: slots)
-            footer
         }
     }
 
     private func largeLayout(slots: [NoiseSlotState]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            masterVolumeRow
+            metaRow
             layerGrid(slots: slots)
-            footer
         }
     }
 
@@ -333,17 +331,6 @@ private struct NoiseMachineWidgetView: View {
                 })
             }
 
-            Button(intent: StopNoiseIntent()) {
-                Image(systemName: "stop.fill")
-                    .font(.title2.weight(.semibold))
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Stop noise machine")
-            .simultaneousGesture(TapGesture().onEnded {
-                setOptimisticWasPlaying(false)
-            })
-
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {
@@ -357,12 +344,20 @@ private struct NoiseMachineWidgetView: View {
         }
     }
 
-    private var footer: some View {
+    private var metaRow: some View {
         HStack(spacing: 8) {
             Button(intent: ToggleResumeOnLaunchIntent()) {
-                Text(displayResumeOnLaunchEnabled ? "Resume: On" : "Resume: Off")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Image(systemName: displayResumeOnLaunchEnabled ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath.circle")
+                        .font(.caption.weight(.semibold))
+
+                    Text("Resume")
+                        .font(.caption.weight(.semibold))
+
+                    Text(displayResumeOnLaunchEnabled ? "On" : "Off")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -374,38 +369,12 @@ private struct NoiseMachineWidgetView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 4) {
-                Text("Updated")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(displayState.updatedAt, style: .time)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
+            Text("Updated \(displayState.updatedAt, style: .time)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Updated")
+                .accessibilityValue(Text(displayState.updatedAt, style: .time))
         }
-    }
-
-    // MARK: - Volume
-
-    private var masterVolumeRow: some View {
-        let pct = percentageString(displayState.masterVolume)
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Master")
-                    .font(.caption.weight(.semibold))
-                Spacer(minLength: 0)
-                Text(pct)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ProgressView(value: Double(clamped01(displayState.masterVolume)))
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Master volume")
-        .accessibilityValue(pct)
     }
 
     // MARK: - Layers
@@ -440,9 +409,10 @@ private struct NoiseMachineWidgetView: View {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
                 Text("\(index + 1)")
                     .font(.headline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .frame(maxWidth: .infinity, minHeight: 34)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.small)
             .accessibilityLabel("Layer \(index + 1)")
             .accessibilityValue("On")
             .simultaneousGesture(TapGesture().onEnded {
@@ -452,9 +422,10 @@ private struct NoiseMachineWidgetView: View {
             Button(intent: ToggleSlotIntent(layerIndex: index + 1)) {
                 Text("\(index + 1)")
                     .font(.headline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .frame(maxWidth: .infinity, minHeight: 34)
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
             .accessibilityLabel("Layer \(index + 1)")
             .accessibilityValue("Off")
             .simultaneousGesture(TapGesture().onEnded {

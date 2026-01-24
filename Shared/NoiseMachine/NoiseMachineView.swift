@@ -47,34 +47,28 @@ struct NoiseMachineView: View {
 
     private var masterSection: some View {
         Section {
-            HStack(spacing: 12) {
-                Button {
-                    model.togglePlayPause()
-                } label: {
-                    Label(model.state.wasPlaying ? "Pause" : "Play", systemImage: model.state.wasPlaying ? "pause.fill" : "play.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel(model.state.wasPlaying ? "Pause noise" : "Play noise")
-                .accessibilityHint("Toggles Noise Machine playback.")
-
-                Button(role: .destructive) {
-                    model.stop()
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Stop noise")
-                .accessibilityHint("Stops playback and silences all layers.")
+            Button {
+                model.togglePlayPause()
+            } label: {
+                NoiseMachineActionButtonLabel(
+                    title: model.state.wasPlaying ? "Pause" : "Play",
+                    systemImage: model.state.wasPlaying ? "pause.fill" : "play.fill",
+                    variant: .prominent
+                )
             }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel(model.state.wasPlaying ? "Pause noise" : "Play noise")
+            .accessibilityHint("Toggles Noise Machine playback.")
 
             HStack(spacing: 12) {
                 Button {
                     model.resetToDefaults()
                 } label: {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
+                    NoiseMachineActionButtonLabel(
+                        title: "Reset",
+                        systemImage: "arrow.counterclockwise",
+                        variant: .normal
+                    )
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Reset to defaults")
@@ -89,8 +83,11 @@ struct NoiseMachineView: View {
                         }
                     }
                 } label: {
-                    Label("Presets", systemImage: "sparkles")
-                        .frame(maxWidth: .infinity)
+                    NoiseMachineActionButtonLabel(
+                        title: "Presets",
+                        systemImage: "sparkles",
+                        variant: .normal
+                    )
                 }
                 .buttonStyle(.bordered)
                 .accessibilityHint("Applies a built-in mix without changing the play/pause state.")
@@ -124,6 +121,41 @@ struct NoiseMachineView: View {
             Text("Master")
         } footer: {
             Text("Reset sets all layers, filters, and EQ back to defaults. Playback stops; press Play to start again.")
+        }
+    }
+
+    private enum NoiseMachineActionButtonVariant {
+        case prominent
+        case normal
+    }
+
+    private struct NoiseMachineActionButtonLabel: View {
+        let title: String
+        let systemImage: String
+        let variant: NoiseMachineActionButtonVariant
+
+        var body: some View {
+            HStack(spacing: 10) {
+                if variant == .prominent {
+                    Image(systemName: systemImage)
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.white)
+                } else {
+                    Image(systemName: systemImage)
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.tint)
+                }
+
+                if variant == .prominent {
+                    Text(title)
+                        .foregroundStyle(.white)
+                } else {
+                    Text(title)
+                        .foregroundStyle(.tint)
+                }
+            }
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity)
         }
     }
 
