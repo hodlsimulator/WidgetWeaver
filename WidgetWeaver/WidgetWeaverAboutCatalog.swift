@@ -241,8 +241,24 @@ extension WidgetWeaverAboutView {
     /// Templates shown in the Templates section on Explore.
     ///
     /// Featured templates already appear above as large cards, so they’re excluded here to avoid duplicates.
+    ///
+    /// Some older starter presets remain in the app for back-compat, but are hidden from Explore to keep the
+    /// Photos surface curated and reduce duplicate “wrapper” templates.
+    private static let exploreHiddenTemplateIDs: Set<String> = [
+        "starter-reading",
+        "starter-photo-framed",
+        "starter-photo-caption",
+        "starter-photo-caption-top",
+        "starter-photo-caption-glass",
+        "starter-photo-clock",
+        "starter-photo-quote",
+    ]
+
     static let starterTemplates: [WidgetWeaverAboutTemplate] = deduplicatedTemplates(
-        starterTemplatesAll.filter { !featuredTemplateIDs.contains($0.id) && $0.id != "starter-reading" }
+        starterTemplatesAll.filter { template in
+            if featuredTemplateIDs.contains(template.id) { return false }
+            return !exploreHiddenTemplateIDs.contains(template.id)
+        }
     )
 
     static let proTemplates: [WidgetWeaverAboutTemplate] = [
