@@ -45,7 +45,7 @@ extension WidgetWeaverAboutView {
                             "Low cut / high cut per layer.",
                             "Simple 3-band EQ per layer.",
                             "Instant resume on relaunch (optional).",
-                            "Home Screen widget controls play/pause, stop, and layer toggles."
+                            "Home Screen widget controls play/pause, stop, layer toggles, and resume-on-launch."
                         ])
                     }
                 }

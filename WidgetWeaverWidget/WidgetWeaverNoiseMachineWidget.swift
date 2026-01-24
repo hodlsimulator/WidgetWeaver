@@ -249,10 +249,14 @@ private struct NoiseMachineWidgetView: View {
     var body: some View {
         Group {
             switch family {
+            case .systemSmall:
+                smallLayout(slots: slots)
+            case .systemMedium:
+                mediumLayout(slots: slots)
             case .systemLarge:
                 largeLayout(slots: slots)
             default:
-                compactLayout(slots: slots)
+                mediumLayout(slots: slots)
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
@@ -274,10 +278,19 @@ private struct NoiseMachineWidgetView: View {
 
     // MARK: - Layouts
 
-    private func compactLayout(slots: [NoiseSlotState]) -> some View {
+    private func smallLayout(slots: [NoiseSlotState]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             header
             layerRow(slots: slots)
+        }
+    }
+
+    private func mediumLayout(slots: [NoiseSlotState]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            masterVolumeRow
+            layerRow(slots: slots)
+            footer
         }
     }
 
