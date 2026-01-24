@@ -438,17 +438,19 @@ private enum SmartPhotoRenderer {
 
 private enum SmartPhotoJPEG {
     static func encode(image: UIImage, startQuality: CGFloat, maxBytes: Int) throws -> Data {
+        let preparedImage = ensureOpaquePixelFormatIfNeeded(image)
+
         var q = min(0.95, max(0.1, startQuality))
         let minQ: CGFloat = 0.65
 
-        guard var data = image.jpegData(compressionQuality: q) else {
+        guard var data = preparedImage.jpegData(compressionQuality: q) else {
             throw SmartPhotoPipelineError.encodeFailed
         }
 
         var steps = 0
         while data.count > maxBytes && q > minQ && steps < 6 {
             q = max(minQ, q - 0.05)
-            guard let next = image.jpegData(compressionQuality: q) else { break }
+            guard let next = preparedImage.jpegData(compressionQuality: q) else { break }
             data = next
             steps += 1
         }
@@ -458,5 +460,54 @@ private enum SmartPhotoJPEG {
         }
 
         return data
+    }
+
+    private static func ensureOpaquePixelFormatIfNeeded(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        if isAlphaFree(cgImage.alphaInfo) { return image }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return image }
+
+        let colourSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue)
+        )
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colourSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return image
+        }
+
+        ctx.interpolationQuality = .high
+
+        let rect = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        ctx.setFillColor(UIColor.black.cgColor)
+        ctx.fill(rect)
+
+        // Bitmap contexts are y-up. Flip so the output image matches UIKit's expected orientation.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(cgImage, in: rect)
+
+        guard let out = ctx.makeImage() else { return image }
+        return UIImage(cgImage: out, scale: 1, orientation: .up)
+    }
+
+    private static func isAlphaFree(_ alphaInfo: CGImageAlphaInfo) -> Bool {
+        switch alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast:
+            return true
+        default:
+            return false
+        }
     }
 }
