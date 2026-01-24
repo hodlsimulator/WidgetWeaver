@@ -13,7 +13,7 @@ extension ContentView {
         Menu {
             Button {
                 selectedTab = .explore
-            } label: {
+            } label: {      
                 Label("Explore", systemImage: "sparkles")
             }
 
@@ -125,6 +125,17 @@ extension ContentView {
                     }
                 )
             )
+
+            Toggle(
+                "Debug: enable Photos Explore V2",
+                isOn: Binding(
+                    get: { FeatureFlags.photosExploreV2Enabled },
+                    set: { newValue in
+                        FeatureFlags.setPhotosExploreV2Enabled(newValue)
+                    }
+                )
+            )
+
 
             Toggle(
                 "Debug: enable Clipboard Actions",

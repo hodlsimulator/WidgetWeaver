@@ -12,7 +12,43 @@ import WidgetKit
 extension WidgetWeaverAboutView {
     // MARK: - Featured Photos
 
+    @ViewBuilder
     var featuredPhotosSection: some View {
+        if mode == .explore && FeatureFlags.photosExploreV2Enabled {
+            featuredPhotosHeroV2Section
+        } else {
+            featuredPhotosLegacySection
+        }
+    }
+
+    private var featuredPhotosHeroV2Section: some View {
+        let template = Self.featuredPhotoTemplate
+        let variants = photosExploreV2VariantTemplates
+
+        return Section {
+            WidgetWeaverAboutPhotosHeroEntryV2(
+                primaryTemplate: template,
+                variantTemplates: variants,
+                onAdd: { template, makeDefault in
+                    handleAdd(template: template, makeDefault: makeDefault)
+                }
+            )
+        } header: {
+            WidgetWeaverAboutSectionHeader("Photos", systemImage: "photo", accent: .pink)
+        } footer: {
+            Text("Photo designs show a placeholder until a photo is chosen (or if an image file can’t be loaded).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var photosExploreV2VariantTemplates: [WidgetWeaverAboutTemplate] {
+        ["starter-photo-caption", "starter-photo-framed"].compactMap { id in
+            Self.starterTemplatesAll.first(where: { $0.id == id })
+        }
+    }
+
+    private var featuredPhotosLegacySection: some View {
         let template = Self.featuredPhotoTemplate
 
         return Section {

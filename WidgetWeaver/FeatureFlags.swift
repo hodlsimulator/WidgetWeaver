@@ -17,6 +17,9 @@ enum FeatureFlags {
 
         // Photo Suite / Poster UX rollout.
         static let posterSuiteEnabled = "widgetweaver.feature.editor.posterSuite.enabled"
+
+        // Explore (Photos) curation.
+        static let photosExploreV2Enabled = "widgetweaver.feature.explore.photosV2.enabled"
     }
 
     /// Default state for the context-aware editor tool suite.
@@ -67,5 +70,29 @@ enum FeatureFlags {
 
     static func clearPosterSuiteOverride() {
         UserDefaults.standard.removeObject(forKey: Keys.posterSuiteEnabled)
+    }
+
+    /// Default state for the Photos-first Explore hero presentation.
+    ///
+    /// When `false`, Explore shows the existing Photo (Single) featured card.
+    /// When `true`, Explore shows a Photos hero entry designed for “choose photo now, customise later”.
+    static let defaultPhotosExploreV2Enabled: Bool = false
+
+    static var photosExploreV2Enabled: Bool {
+        let defaults = UserDefaults.standard
+
+        if defaults.object(forKey: Keys.photosExploreV2Enabled) == nil {
+            return defaultPhotosExploreV2Enabled
+        }
+
+        return defaults.bool(forKey: Keys.photosExploreV2Enabled)
+    }
+
+    static func setPhotosExploreV2Enabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.photosExploreV2Enabled)
+    }
+
+    static func clearPhotosExploreV2Override() {
+        UserDefaults.standard.removeObject(forKey: Keys.photosExploreV2Enabled)
     }
 }
