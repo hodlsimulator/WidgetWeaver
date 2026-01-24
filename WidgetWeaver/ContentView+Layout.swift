@@ -266,12 +266,10 @@ extension ContentView {
                 )
                 .accessibilityIdentifier("Editor.Clock.FaceSelector")
 
-                Picker("Clock theme", selection: binding(\.clockThemeRaw)) {
-                    Text("Classic").tag("classic")
-                    Text("Ocean").tag("ocean")
-                    Text("Graphite").tag("graphite")
-                }
-                .pickerStyle(.segmented)
+                WidgetWeaverClockThemePicker(
+                    clockThemeRaw: binding(\.clockThemeRaw),
+                    clockFaceRaw: currentFamilyDraft().clockFaceRaw
+                )
                 .accessibilityIdentifier("Editor.Clock.ThemePicker")
 
                 Picker("Template", selection: binding(\.template)) {
@@ -440,6 +438,159 @@ extension ContentView {
         }
     }
 #endif
+}
+
+private struct WidgetWeaverClockThemePicker: View {
+    @Binding var clockThemeRaw: String
+    let clockFaceRaw: String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private struct Option: Identifiable {
+        let id: String
+        let themeRaw: String
+        let displayName: String
+    }
+
+    private static let options: [Option] = [
+        Option(id: "classic", themeRaw: "classic", displayName: "Classic"),
+        Option(id: "ocean", themeRaw: "ocean", displayName: "Ocean"),
+        Option(id: "mint", themeRaw: "mint", displayName: "Mint"),
+        Option(id: "orchid", themeRaw: "orchid", displayName: "Orchid"),
+        Option(id: "sunset", themeRaw: "sunset", displayName: "Sunset"),
+        Option(id: "ember", themeRaw: "ember", displayName: "Ember"),
+        Option(id: "graphite", themeRaw: "graphite", displayName: "Graphite"),
+    ]
+
+    private var selectedTheme: String {
+        WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw).theme
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Scheme")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 150), spacing: 10)
+                ],
+                alignment: .leading,
+                spacing: 10
+            ) {
+                ForEach(Self.options) { option in
+                    let isSelected = (selectedTheme == option.themeRaw)
+
+                    let palette = WidgetWeaverClockAppearanceResolver
+                        .resolve(
+                            config: WidgetWeaverClockDesignConfig(theme: option.themeRaw, face: clockFaceRaw),
+                            mode: colorScheme
+                        )
+                        .palette
+
+                    WidgetWeaverClockThemeChip(
+                        title: option.displayName,
+                        palette: palette,
+                        themeRaw: option.themeRaw,
+                        isSelected: isSelected,
+                        action: {
+                            clockThemeRaw = option.themeRaw
+                        }
+                    )
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct WidgetWeaverClockThemeChip: View {
+    let title: String
+    let palette: WidgetWeaverClockPalette
+    let themeRaw: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                WidgetWeaverClockThemeSwatch(palette: palette)
+                    .frame(width: 28, height: 28)
+
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .imageScale(.small)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.thinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? Color.accentColor.opacity(0.85) : Color.secondary.opacity(0.25),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("Editor.Clock.ThemeChip.\(themeRaw)")
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct WidgetWeaverClockThemeSwatch: View {
+    let palette: WidgetWeaverClockPalette
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            palette.backgroundTop,
+                            palette.backgroundBottom
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Circle()
+                .fill(palette.dialCenter.opacity(0.95))
+                .frame(width: 18, height: 18)
+
+            Circle()
+                .strokeBorder(palette.accent.opacity(0.95), lineWidth: 2)
+                .frame(width: 18, height: 18)
+
+            Circle()
+                .fill(palette.accent.opacity(0.95))
+                .frame(width: 6, height: 6)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityHidden(true)
+    }
 }
 
 private struct WidgetWeaverClockFaceSelector: View {

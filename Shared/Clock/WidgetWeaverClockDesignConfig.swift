@@ -14,6 +14,10 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
     public static let supportedThemes: Set<String> = [
         "classic",
         "ocean",
+        "mint",
+        "orchid",
+        "sunset",
+        "ember",
         "graphite"
     ]
 
