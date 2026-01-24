@@ -353,7 +353,7 @@ private enum SmartPhotoSubjectDetector {
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {
-            try handler.perform([objReq, attReq])
+            try handler.perform([objReq]); try handler.perform([attReq])
         } catch {
             return []
         }

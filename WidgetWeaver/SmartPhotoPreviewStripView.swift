@@ -5,6 +5,7 @@
 //  Created by . . on 2026-01-05.
 //
 
+import Foundation
 import SwiftUI
 import UIKit
 import WidgetKit
@@ -36,6 +37,9 @@ struct SmartPhotoPreviewStripView: View {
 
     @AppStorage("preview.liveEnabled")
     private var liveEnabled: Bool = true
+
+    @AppStorage(FeatureFlags.Keys.smartPhotosUXHardeningEnabled)
+    private var uxHardeningEnabled: Bool = FeatureFlags.defaultSmartPhotosUXHardeningEnabled
 
     private var shuffleManifestFileName: String {
         (smart.shuffleManifestFileName ?? "")
@@ -74,6 +78,7 @@ struct SmartPhotoPreviewStripView: View {
 
     private var stripBody: some View {
         let entry = fixedShuffleEntry ?? currentShuffleEntry()
+        let hint = previewStripHint(entry: entry)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
@@ -85,6 +90,10 @@ struct SmartPhotoPreviewStripView: View {
             Text("Tap a preview to select that size.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+            if let hint {
+                hintView(text: hint)
+            }
         }
     }
 
@@ -159,6 +168,18 @@ struct SmartPhotoPreviewStripView: View {
         }
     }
 
+    @ViewBuilder
+    private func hintView(text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func currentShuffleEntry() -> SmartPhotoShuffleManifest.Entry? {
         guard shuffleEnabled else { return nil }
         guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return nil }
@@ -175,6 +196,47 @@ struct SmartPhotoPreviewStripView: View {
         case .medium: return smart.medium?.renderFileName
         case .large: return smart.large?.renderFileName
         }
+    }
+
+    private func fileExistsInAppGroup(_ fileName: String?) -> Bool {
+        let trimmed = (fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let url = AppGroup.imageFileURL(fileName: trimmed)
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    private func previewStripHint(entry: SmartPhotoShuffleManifest.Entry?) -> String? {
+        guard uxHardeningEnabled else { return nil }
+
+        if shuffleEnabled, fixedShuffleEntry == nil {
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else {
+                return "Album Shuffle is enabled, but the shuffle manifest is missing.\nOpen Album Shuffle and re-select an album."
+            }
+
+            if manifest.entryForRender() == nil {
+                return "Album Shuffle is enabled, but no photos have been prepared yet.\nOpen Album Shuffle and tap “Prepare next batch”."
+            }
+        }
+
+        let checks: [(family: EditingFamily, fileName: String?)] = [
+            (.small, resolvedRenderFileName(for: .small, entry: entry)),
+            (.medium, resolvedRenderFileName(for: .medium, entry: entry)),
+            (.large, resolvedRenderFileName(for: .large, entry: entry)),
+        ]
+
+        let missing = checks.filter { pair in
+            fileExistsInAppGroup(pair.fileName) == false
+        }
+
+        guard !missing.isEmpty else { return nil }
+
+        let labels = missing.map { $0.family.label }.joined(separator: ", ")
+
+        if shuffleEnabled {
+            return "Some shuffle preview renders are missing (\(labels)).\nTap “Prepare next batch” in Album Shuffle, or tap “Regenerate smart renders”."
+        }
+
+        return "Some Smart Photo preview renders are missing (\(labels)).\nTap “Regenerate smart renders”."
     }
 
     private func isManual(renderFileName: String?) -> Bool {
