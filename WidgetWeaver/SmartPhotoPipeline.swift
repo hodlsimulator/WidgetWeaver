@@ -48,6 +48,12 @@ enum SmartPhotoPipelineError: Error {
 struct SmartPhotoPipeline {
     static let algorithmVersion: Int = 5
 
+    /// Smart Photo work is expensive (Vision, decoding, rendering, I/O).
+    ///
+    /// When UX hardening is enabled, serialise the pipeline so overlapping work cannot
+    /// compete for memory/CPU and destabilise the app.
+    private static let prepareLock = NSLock()
+
     /// Creates:
     /// - master (largest preserved)
     /// - small render
@@ -57,6 +63,10 @@ struct SmartPhotoPipeline {
     /// Returns an `ImageSpec` where `fileName` is the **medium** render (backwards compatible),
     /// and `smartPhoto` contains master + per-family variants.
     static func prepare(from originalData: Data, renderTargets: SmartPhotoRenderTargets) throws -> ImageSpec {
+        let didLock = FeatureFlags.smartPhotosUXHardeningEnabled
+        if didLock { prepareLock.lock() }
+        defer { if didLock { prepareLock.unlock() } }
+
         let analysisLongestEdge = 1024
         let masterLongestEdge = 3072
 

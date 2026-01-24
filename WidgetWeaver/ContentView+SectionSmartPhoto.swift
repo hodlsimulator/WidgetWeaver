@@ -182,6 +182,13 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
 
+            if uxHardeningEnabled, importInProgress {
+                let trimmed = saveStatusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+                Text(trimmed.isEmpty ? "Working…" : trimmed)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if hasSmartPhoto,
                let unavailable = EditorUnavailableState.photosAccessRequiredForAlbumShuffle(photoAccess: photoAccess) {
                 EditorUnavailableStateView(
