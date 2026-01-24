@@ -13,7 +13,7 @@ extension ContentView {
         Menu {
             Button {
                 selectedTab = .explore
-            } label: {      
+            } label: {
                 Label("Explore", systemImage: "sparkles")
             }
 

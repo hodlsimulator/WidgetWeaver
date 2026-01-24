@@ -287,8 +287,8 @@ private struct NoiseMachineWidgetView: View {
 
     private func mediumLayout(slots: [NoiseSlotState]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
-            metaRow
+            mediumHeader
+            mediumMetaRow
             layerRow(slots: slots)
         }
     }
@@ -341,6 +341,79 @@ private struct NoiseMachineWidgetView: View {
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var mediumHeader: some View {
+        let isPlaying = displayState.wasPlaying
+
+        return HStack(spacing: 10) {
+            Spacer(minLength: 0)
+
+            if isPlaying {
+                Button(intent: PauseNoiseIntent()) {
+                    Image(systemName: "pause.fill")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Pause noise machine")
+                .simultaneousGesture(TapGesture().onEnded {
+                    setOptimisticWasPlaying(false)
+                })
+            } else {
+                Button(intent: PlayNoiseIntent()) {
+                    Image(systemName: "play.fill")
+                        .font(.title2.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Play noise machine")
+                .simultaneousGesture(TapGesture().onEnded {
+                    setOptimisticWasPlaying(true)
+                })
+            }
+
+            Button(intent: ToggleResumeOnLaunchIntent()) {
+                Image(systemName: displayResumeOnLaunchEnabled ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath.circle")
+                    .font(.title3.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Resume on launch")
+            .accessibilityValue(displayResumeOnLaunchEnabled ? "On" : "Off")
+            .simultaneousGesture(TapGesture().onEnded {
+                setOptimisticResumeOnLaunchEnabled(!displayResumeOnLaunchEnabled)
+            })
+
+            Color.clear
+                .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var mediumMetaRow: some View {
+        let isPlaying = displayState.wasPlaying
+
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Noise")
+                    .font(.headline)
+                Text(isPlaying ? "Playing" : "Paused")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+
+            Spacer(minLength: 0)
+
+            Text("Updated \(displayState.updatedAt, style: .time)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Updated")
+                .accessibilityValue(Text(displayState.updatedAt, style: .time))
         }
     }
 
