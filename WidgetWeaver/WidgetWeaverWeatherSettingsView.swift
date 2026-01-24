@@ -27,6 +27,9 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     @State private var lastError: String? = WidgetWeaverWeatherStore.shared.loadLastError()
 
+    @State private var lastRefreshAttemptAt: Date? = WidgetWeaverWeatherStore.shared.loadLastRefreshAttemptAt()
+    @State private var lastSuccessfulRefreshAt: Date? = WidgetWeaverWeatherStore.shared.loadLastSuccessfulRefreshAt()
+
     @State private var locationAuthStatus: CLAuthorizationStatus = CLLocationManager().authorizationStatus
 
     private let store = WidgetWeaverWeatherStore.shared
@@ -168,6 +171,32 @@ struct WidgetWeaverWeatherSettingsView: View {
                 .disabled(snapshot == nil)
             }
 
+
+            Section("Auto-refresh") {
+                if let lastRefreshAttemptAt {
+                    Text("Last attempt \(lastRefreshAttemptAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No refresh attempts yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastSuccessfulRefreshAt {
+                    Text("Last success \(lastSuccessfulRefreshAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No successful refresh yet.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Weather refreshes when the app becomes active and during iOS background fetch windows.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Attribution") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Weather data is provided by Weather.")
@@ -205,6 +234,16 @@ struct WidgetWeaverWeatherSettingsView: View {
                     Label("Clear last error", systemImage: "trash")
                 }
                 .disabled(lastError == nil)
+
+
+                Button(role: .destructive) {
+                    store.clearRefreshTimestamps()
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Clear refresh history", systemImage: "clock.arrow.circlepath")
+                }
+                .disabled(lastRefreshAttemptAt == nil && lastSuccessfulRefreshAt == nil)
 
                 Button(role: .destructive) {
                     store.resetAll()
@@ -264,6 +303,8 @@ struct WidgetWeaverWeatherSettingsView: View {
         snapshot = store.loadSnapshot()
         unitPreference = store.loadUnitPreference()
         lastError = store.loadLastError()
+        lastRefreshAttemptAt = store.loadLastRefreshAttemptAt()
+        lastSuccessfulRefreshAt = store.loadLastSuccessfulRefreshAt()
     }
 
     private func reloadWidgets() {

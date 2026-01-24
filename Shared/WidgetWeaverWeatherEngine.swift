@@ -73,6 +73,8 @@ public actor WidgetWeaverWeatherEngine {
             }
         }
 
+        store.saveLastRefreshAttemptAt(Date())
+
         #if canImport(WeatherKit)
         do {
             // Core weather must succeed for the widget to be useful everywhere.
@@ -89,6 +91,7 @@ public actor WidgetWeaverWeatherEngine {
             )
 
             store.saveSnapshot(snap)
+            store.saveLastSuccessfulRefreshAt(snap.fetchedAt)
 
             // Attribution is best-effort. Keep existing attribution if fetch fails.
             let existingAttr = store.loadAttribution()

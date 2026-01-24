@@ -7,6 +7,8 @@
 
 import SwiftUI
 import UIKit
+import Foundation
+@preconcurrency import BackgroundTasks
 
 @MainActor
 final class WidgetWeaverAppDelegate: NSObject, UIApplicationDelegate {
@@ -37,6 +39,10 @@ struct WidgetWeaverApp: App {
             PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
         }
 
+        WidgetWeaverWeatherBackgroundRefresh.register()
+        WidgetWeaverWeatherBackgroundRefresh.scheduleNextEarliest(minutesFromNow: 30)
+        WidgetWeaverWeatherBackgroundRefresh.kickIfLocationConfigured()
+
         Task {
             await NoiseMachineController.shared.bootstrapOnLaunch()
         }
@@ -59,9 +65,15 @@ struct WidgetWeaverApp: App {
 #endif
             }
             .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    WidgetWeaverWeatherBackgroundRefresh.scheduleNextEarliest(minutesFromNow: 30)
+                    WidgetWeaverWeatherBackgroundRefresh.kickIfLocationConfigured()
+                }
+
                 if phase == .background {
                     Task { await NoiseMachineController.shared.flushPersistence() }
                     PawPulseBackgroundTasks.scheduleNextEarliest(minutesFromNow: 30)
+                    WidgetWeaverWeatherBackgroundRefresh.scheduleNextEarliest(minutesFromNow: 30)
                 }
 
 #if !DEBUG
@@ -70,6 +82,91 @@ struct WidgetWeaverApp: App {
                 }
 #endif
             }
+        }
+    }
+}
+
+private enum WidgetWeaverWeatherBackgroundRefresh {
+    static let refreshTaskIdentifier: String = "com.conornolan.widgetweaver.weather.refresh"
+
+    private static let registrationToken: Bool = {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: refreshTaskIdentifier, using: nil) { task in
+            guard let appRefreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            handle(appRefreshTask)
+        }
+    }()
+
+    @discardableResult
+    static func register() -> Bool {
+        registrationToken
+    }
+
+    static func cancelPending() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: refreshTaskIdentifier)
+    }
+
+    static func scheduleNextEarliest(minutesFromNow: Int = 30) {
+        guard register() else { return }
+
+        guard WidgetWeaverWeatherStore.shared.loadLocation() != nil else {
+            cancelPending()
+            return
+        }
+
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: refreshTaskIdentifier)
+
+        let request = BGAppRefreshTaskRequest(identifier: refreshTaskIdentifier)
+        request.earliestBeginDate = Date().addingTimeInterval(TimeInterval(max(15, minutesFromNow)) * 60.0)
+
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // Intentionally ignored. iOS can reject requests and will manage execution timing.
+        }
+    }
+
+    static func kickIfLocationConfigured() {
+        Task(priority: .utility) {
+            guard WidgetWeaverWeatherStore.shared.loadLocation() != nil else { return }
+            _ = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+        }
+    }
+
+    private static func handle(_ bgTask: BGAppRefreshTask) {
+        guard WidgetWeaverWeatherStore.shared.loadLocation() != nil else {
+            bgTask.setTaskCompleted(success: true)
+            return
+        }
+
+        scheduleNextEarliest(minutesFromNow: 30)
+
+        let completer = BGTaskCompleter(bgTask)
+
+        let work = Task(priority: .utility) {
+            var success = true
+            defer { completer.complete(success: success && !Task.isCancelled) }
+
+            let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: false)
+            success = (result.errorDescription == nil)
+        }
+
+        bgTask.expirationHandler = {
+            work.cancel()
+        }
+    }
+
+    private final class BGTaskCompleter: @unchecked Sendable {
+        private let bgTask: BGAppRefreshTask
+
+        init(_ bgTask: BGAppRefreshTask) {
+            self.bgTask = bgTask
+        }
+
+        func complete(success: Bool) {
+            bgTask.setTaskCompleted(success: success)
         }
     }
 }

@@ -23,6 +23,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         public static let snapshotData = "widgetweaver.weather.snapshot.v1"
         public static let unitPreference = "widgetweaver.weather.unitPreference.v1"
         public static let attributionData = "widgetweaver.weather.attribution.v1"
+        public static let lastRefreshAttemptAt = "widgetweaver.weather.lastRefreshAttemptAt.v1"
+        public static let lastSuccessfulRefreshAt = "widgetweaver.weather.lastSuccessfulRefreshAt.v1"
         public static let lastError = "widgetweaver.weather.lastError.v1"
     }
 
@@ -311,6 +313,63 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         return String(pct)
     }
 
+    // MARK: Refresh timestamps
+
+    public func loadLastRefreshAttemptAt() -> Date? {
+        if let d = defaults.object(forKey: Keys.lastRefreshAttemptAt) as? Date {
+            return d
+        }
+
+        if let d = UserDefaults.standard.object(forKey: Keys.lastRefreshAttemptAt) as? Date {
+            defaults.set(d, forKey: Keys.lastRefreshAttemptAt)
+            return d
+        }
+
+        return nil
+    }
+
+    public func saveLastRefreshAttemptAt(_ date: Date?) {
+        if let date {
+            defaults.set(date, forKey: Keys.lastRefreshAttemptAt)
+            UserDefaults.standard.set(date, forKey: Keys.lastRefreshAttemptAt)
+        } else {
+            defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
+            UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        }
+    }
+
+    public func loadLastSuccessfulRefreshAt() -> Date? {
+        if let d = defaults.object(forKey: Keys.lastSuccessfulRefreshAt) as? Date {
+            return d
+        }
+
+        if let d = UserDefaults.standard.object(forKey: Keys.lastSuccessfulRefreshAt) as? Date {
+            defaults.set(d, forKey: Keys.lastSuccessfulRefreshAt)
+            return d
+        }
+
+        return nil
+    }
+
+    public func saveLastSuccessfulRefreshAt(_ date: Date?) {
+        if let date {
+            defaults.set(date, forKey: Keys.lastSuccessfulRefreshAt)
+            UserDefaults.standard.set(date, forKey: Keys.lastSuccessfulRefreshAt)
+        } else {
+            defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+            UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+        }
+    }
+
+    public func clearRefreshTimestamps() {
+        defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+
+        UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+    }
+
+
     // MARK: Last error
 
     public func loadLastError() -> String? {
@@ -353,12 +412,16 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         defaults.removeObject(forKey: Keys.snapshotData)
         defaults.removeObject(forKey: Keys.unitPreference)
         defaults.removeObject(forKey: Keys.attributionData)
+        defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
         defaults.removeObject(forKey: Keys.lastError)
 
         UserDefaults.standard.removeObject(forKey: Keys.locationData)
         UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         UserDefaults.standard.removeObject(forKey: Keys.unitPreference)
         UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+        UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
         UserDefaults.standard.removeObject(forKey: Keys.lastError)
 
         notifyWidgetsWeatherUpdated()

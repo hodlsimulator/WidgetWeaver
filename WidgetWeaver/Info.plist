@@ -5,6 +5,7 @@
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
         <string>com.conornolan.widgetweaver.pawpulse.refresh</string>
+        <string>com.conornolan.widgetweaver.weather.refresh</string>
     </array>
     <key>CFBundleURLTypes</key>
     <array>
