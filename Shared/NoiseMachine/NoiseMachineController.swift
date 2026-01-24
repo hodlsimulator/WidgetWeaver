@@ -48,6 +48,7 @@ public actor NoiseMachineController {
     let engineStopGraceSeconds: TimeInterval = 180.0
 
     var currentState: NoiseMixState = .default
+    var didLoadInitialStateFromStore: Bool = false
     var isEngineRunning: Bool = false
     var playbackRequestID: UInt64 = 0
 
@@ -68,11 +69,23 @@ public actor NoiseMachineController {
         return playbackRequestID
     }
 
+    private func loadInitialStateFromStoreIfNeeded(context: String) {
+        if didLoadInitialStateFromStore { return }
+
+        let loaded = store.loadLastMix().sanitised()
+        currentState = loaded
+        didLoadInitialStateFromStore = true
+
+        log("Loaded initial mix from store (\(context)). wasPlaying=\(loaded.wasPlaying) updatedAt=\(loaded.updatedAt)")
+    }
+
+
     // MARK: - Lifecycle
 
     public func bootstrapOnLaunch() async {
         log("bootstrapOnLaunch")
-        let state = store.loadLastMix()
+        let state = store.loadLastMix().sanitised()
+        didLoadInitialStateFromStore = true
         currentState = state
 
         await prepareIfNeeded()
@@ -85,6 +98,8 @@ public actor NoiseMachineController {
 
     public func prepareIfNeeded() async {
         if engine != nil { return }
+
+        loadInitialStateFromStoreIfNeeded(context: "prepareIfNeeded")
 
         log("prepareIfNeeded: building audio engine")
         await configureSessionIfNeeded()
