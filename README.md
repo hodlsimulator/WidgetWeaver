@@ -1,204 +1,57 @@
 # WidgetWeaver
 
-WidgetWeaver builds and previews real WidgetKit widgets in a fast “template catalogue (Explore) + editor” workflow.
+WidgetWeaver is an iOS app for designing widget-safe templates (Photos, Clock, Weather, Reminders, etc.) with a focused editor workflow and deterministic WidgetKit rendering.
 
-The core idea:
+This repo intentionally keeps widget rendering *boring*: shared cached state is written by the app (App Group) and read by widgets; heavy work is app-only.
 
-- widgets are composed from **capability-driven tools** (layout, text, symbols, images, Smart Photos, clock, weather, etc.)
-- the editor is **context-aware**, so only tools relevant to the current focus/selection are visible
-- heavy work (Vision, ranking, rendering prep) happens in the **app**, while widgets stay deterministic and budget-safe
+## Targets
 
-Minimum OS: **iOS 26**
+- `WidgetWeaver` — the app (editor, snapshot refresh, stores, export/import)
+- `WidgetWeaverWidget` — widget extension (WidgetKit widgets + AppIntents)
+- `Shared` — shared models, stores, and render helpers used by both
 
----
+## Core constraints
 
-## Status
+- Widgets must be deterministic and budget-safe.
+- Heavy work happens in the app (Vision, ranking, large I/O, networking).
+- Widgets render from cached App Group state and timeline entry date.
+- Home Screen behaviour is the correctness target; previews are not proof.
 
-WidgetWeaver is in active development. The current product focus is a small flagship set (Photos/Smart Photos, Clock, Weather), with everything else gated, hidden, or explicitly parked to keep widget rendering safe and deterministic.
+## Design export/import
 
----
+WidgetWeaver supports exporting and importing widget designs as `.wwdesign` files (JSON payload under a custom UTType).
 
-## High-level architecture
+Key files:
 
-WidgetWeaver is split into three layers:
+- Export/share: `WidgetWeaver/ContentView+SharePackage.swift`
+- Document type + UTType: `WidgetWeaver/Info.plist`
+- Parser / models: `Shared/WidgetSpec.swift` and related helpers
 
-1) **Model + persistence (App Group shared)**
-- All widget state that the widget needs is stored in the App Group.
-- Widgets read shared state and render deterministically.
+## App Group storage
 
-2) **Editor (App)**
-- The editor builds and edits widget drafts.
-- The editor can perform heavy work (Vision, ranking, asset prep) that cannot run in widgets.
+All cross-process state uses an App Group. Typical pattern:
 
-3) **Widgets (Widget extension)**
-- Widgets render based on shared state and timeline entries.
-- Widgets must stay budget-safe and avoid expensive work at render time.
+- App writes a compact snapshot to App Group (atomic write / defaults store)
+- Widget reads snapshot and renders deterministically
+- App triggers widget reloads when snapshot changes
 
----
+Key file:
 
-## Context-aware editor
+- App Group definitions + convenience: `Shared/AppGroup.swift`
 
-The editor is context-aware: the visible tool suite is derived from what is currently being edited (selection/focus/mode), so irrelevant tools are hidden.
+## Templates and rendering
 
-Key ideas:
+Templates are represented as `WidgetSpec` values. A spec can be:
 
-- Tools declare required capabilities and selection constraints.
-- Content types (e.g. Smart Photos, Clock) declare what they support.
-- A single source of truth produces an `EditorToolContext` (focus, selection descriptor, capabilities, mode).
-- The tool suite is computed from that context and is stable/deterministic.
-- Tool teardown actions prevent “dangling state” when focus changes (e.g. leaving a crop editor, exiting a modal flow).
-
-This keeps the editor predictable even as more tools are added.
-
----
-
-## Project structure
-
-- `WidgetWeaver/` — app (editor)
-- `WidgetWeaverWidget/` — widget extension
-- `Shared/` — shared code used by both app and widget extension
-- `Resources/` — assets, localisation, fonts, etc.
-
-Shared code uses the App Group for persistence and cross-process signalling.
-
----
-
-## Storage & App Group
-
-WidgetWeaver stores shared state in the App Group so:
-
-- widget rendering is deterministic
-- the widget can update quickly after edits
-- the app and widget can communicate without network dependencies
-
-App Group helper: `Shared/AppGroup.swift`
-
----
-
-## Design packages (.wwdesign)
-
-WidgetWeaver can export and import widget designs as a single file for sharing and backup.
-
-- File extension: `.wwdesign`
-- UTType identifier: `com.conornolan.widgetweaver.design` (conforms to `public.json`)
-- System integration:
-  - `WidgetWeaver/Info.plist` exports the type (`UTExportedTypeDeclarations`) and registers it as a document type (`CFBundleDocumentTypes`).
-  - `LSSupportsOpeningDocumentsInPlace` is set to `false` (imports copy data into the app rather than editing the original file in-place).
-- Transfer/export implementation: `WidgetWeaver/ContentView+SharePackage.swift` (`ContentView.WidgetWeaverSharePackage` via `Transferable` / `FileRepresentation`).
-- Import accepts `.wwdesign` and `.json` (legacy/dev).
-
-The on-disk format is JSON and is expected to evolve; treat files as best-effort forwards-compatible rather than a locked schema at this stage.
-
----
-
-## Widget catalogue (Explore)
-
-Explore presents widget templates that can be remixed.
-
-A template can be:
-
-- a static preset
-- a preset plus tool defaults
-- a preset with optional dynamic behaviour (e.g. Smart Photos rotation)
-
-Explore is designed to keep the “edit loop” fast: find a template, remix, preview, save.
-
----
-
-## Draft model
-
-Widget drafts are designed around:
-
-- typed capability sets (what a draft can support)
-- explicit selection descriptors (what is selected, how many, homogeneous/heterogeneous)
-- predictable focus boundaries (widget vs Smart Photos vs Clock, etc.)
-
-The editor uses this to derive tool availability.
-
----
-
-## Smart Photos
-
-Smart Photos are “widget-safe photo experiences” that can be prepared in-app and rendered deterministically in widgets.
-
-### Current shape
-
-- Smart Photos are prepared and ranked in the app (Vision allowed).
-- Widgets only render from the prepared artifacts.
-- Prep includes:
-  - thumbnail + per-family renders (Small/Medium/Large)
-  - crop metadata
-  - ranking/quality info (debuggable)
-  - shuffle/rotation manifests (budget-safe)
-
-### Key implementation files
-
-- Smart Photo pipeline: `WidgetWeaver/SmartPhotoPipeline/*`
-- Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
-- Shuffle manifest store: `WidgetWeaver/SmartPhotoShuffleManifestStore.swift`
-- Widget render: `WidgetWeaverWidget/SmartPhoto/*`
-
-### Why Vision stays out of the widget
-
-Widgets have tight CPU/memory/time budgets and can be killed aggressively. Running Vision in widgets is a reliability and performance risk.
-
-The correct approach is:
-
-- do heavy work in the app
-- persist results in the App Group
-- render deterministically in the widget
-
----
-
-## Photo widgets (Poster templates)
-
-Photo templates are “simple photo-backed widgets” that can either use:
-
-- a single chosen photo
-- a Smart Photos source (shuffle / rotate / curated)
-
-### Variants
-
-Poster templates include multiple variants in the catalogue:
-
-- “Poster” (basic)
-- “Poster + Caption”
-- “Poster + Glass Caption”
-- “Poster + Top Caption”
-- “Poster + Glass Top Caption”
-
-The variants differ in presentation and defaults, but share the same underlying rendering system.
-
-### How photos are sourced (widget-safe)
-
-Photo widgets never do heavy work in the widget process.
-
-- The app prepares images and writes them to the App Group images directory.
-- The widget reads the pre-rendered files and renders them.
-- For Smart Photos, the app writes a manifest describing which image is “current” for the widget at a given time.
-
-### Timeline behaviour (rotation vs time)
-
-Photo widgets rely on WidgetKit timelines for the “current” entry date, but do not assume per-second delivery.
-
-- Simple photo widgets can use long timelines (hourly/daily) because content does not need to update frequently.
-- Smart Photos rotation chooses a schedule based on rotation settings (e.g. hourly/daily) and writes a manifest so the widget always has a deterministic “current” image.
-
-### Known issue: Photo Clock minutes frozen / wrong time on the Home Screen
-
-If a photo template includes clock variables (like `{{time}}`) or a “Photo Clock” overlay:
-
-- The preview can look correct while the Home Screen looks “stuck”.
-- This is usually caused by resolving “now” incorrectly (using `Date()` instead of the timeline entry date), or by Home Screen snapshot caching.
-
-If the photo clock minutes are frozen:
-
-- confirm the render path is using the entry date provided by WidgetKit
-- confirm the widget tree keys against the entry date (avoid cached snapshot reuse)
-- confirm time zone offsets are not being double-applied
+- created from a catalogue template
+- edited in the app
+- persisted to the App Group
+- rendered by the widget extension
 
 Relevant files:
 
+- Spec model: `Shared/WidgetSpec.swift`
+- Rendering helpers: `Shared/WidgetWeaverSpecView.swift` and extensions
 - Variable resolution: `Shared/WidgetSpec+VariableResolutionNow.swift`
 - Photo clock render path: `Shared/WidgetWeaverSpecView+TemplatePhotoClock.swift`
 - Widget timeline entry plumbing: `WidgetWeaverWidget/*Provider*`
@@ -252,6 +105,8 @@ Weather can use either:
 - the device’s current location (requires Location permission when explicitly requested).
 
 Location permission is requested only when the user chooses “Use Current Location” in Weather settings.
+
+If the app can request Location authorisation, `WidgetWeaver/Info.plist` must contain `NSLocationWhenInUseUsageDescription` (see `Docs/RELEASE_PLAN_2026-02.md` for the ship copy).
 
 ### Built-in variables
 
@@ -336,6 +191,28 @@ The flag defaults to enabled when unset, but can be overridden per-device via th
 
 If the template/settings show on one device but not another, check for an explicit override on the missing device (reset/remove the key).
 
+## Variables
+
+WidgetWeaver supports variable templates inside text fields so designs can display dynamic values (time, weather, steps, activity, and user-defined Variables).
+
+- Basic: `{{key}}`
+- Fallback: `{{key|fallback}}`
+- Filters: `{{key|fallback||upper}}`, `{{amount|0|number:0}}`, `{{progress|0|bar:10}}`
+- Inline maths: `{{=done/total*100|0|number:0}}`
+
+Built-in keys (always available) include:
+
+- Time: `__now`, `__now_unix`, `__today`, `__time`, `__weekday`
+- Weather: keys prefixed `__weather_` (from the cached Weather snapshot store)
+- Steps: keys prefixed `__steps_` (from the cached Steps snapshot store)
+- Activity: keys prefixed `__activity_` (from the cached Activity snapshot store)
+
+Custom variables are stored in the App Group and are Pro-gated.
+
+Interactive widgets can also include action buttons that set a variable to “now” in a chosen format, including Unix milliseconds (milliseconds since 1970).
+
+Reference: `Docs/VARIABLES.md`.
+
 ## Feature flags and compilation conditions
 
 WidgetWeaver uses a small set of shared feature flags (stored in the App Group) to keep the shipped surface area tight while still allowing internal experimentation.
@@ -345,7 +222,7 @@ Runtime flags live in `Shared/WidgetWeaverFeatureFlags.swift` and are read by bo
 Current flags:
 
 - Reminders template: `WidgetWeaverFeatureFlags.remindersTemplateEnabled` (App Group key: `widgetweaver.feature.template.reminders.enabled`). Default: enabled.
-- Clipboard Actions (parked): `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled (the widget renders a “Hidden by default” state and opens the app on tap when disabled). Do not prioritise or propose patches that add features or polish here; treat it as out of scope for the Feb 2026 ship unless a change is required to keep the disabled behaviour safe.
+- Clipboard Actions (parked): `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled. Note: the Clipboard Actions widget is also compile-time gated, so the runtime flag only matters in internal builds where the widget is compiled in.
 - PawPulse: `WidgetWeaverFeatureFlags.pawPulseEnabled` (App Group key: `widgetweaver.feature.pawpulse.enabled`). Default: disabled.
 
 ### DEBUG feature flag toggles
@@ -353,7 +230,7 @@ Current flags:
 In DEBUG builds, the main toolbar menu (ellipsis button) includes toggles for the runtime feature flags. This allows internal testing to enable/disable features per-device without code changes.
 
 - “Debug: enable Reminders template” updates editor tool availability immediately.
-- “Debug: enable Clipboard Actions” toggles the runtime gate and reloads the Action Inbox widget timeline. Clipboard Actions is parked; this toggle exists only for regression checks of the disabled/inert behaviour.
+- “Debug: enable Clipboard Actions” toggles the runtime gate and reloads the Clipboard Actions widget timeline (only meaningful if the Clipboard Actions widget is compiled into the widget extension).
 - “Debug: enable PawPulse” toggles the runtime gate, ensures the cache directory exists, schedules (or cancels) the next background refresh request, and reloads the PawPulse widget timeline.
 
 These toggles write to the App Group store, so the state is shared between the app and widgets but is not synced across devices.
@@ -379,16 +256,24 @@ If PawPulse appears in the widget gallery after disabling it, the Home Screen ca
 
 ### Clipboard Actions and Contacts (parked)
 
-Clipboard Actions is parked for this release cycle. The “Action Inbox” widget + intents remain in the repo to ensure the disabled/inert behaviour stays permission-safe (especially avoiding Contacts prompts).
+Clipboard Actions is parked for this release cycle. The widget + intents remain in the repo to ensure the disabled/inert behaviour stays permission-safe (especially avoiding Contacts prompts), but it must be absent from release builds.
 
-Do not treat this area as a target for new work. Patches should avoid touching Clipboard Actions unless the goal is to keep it inert, compile-clean, and free of permission prompts.
+Gating model:
 
-- The clipboard inbox and auto-detect intents can store text, export receipt CSV, create calendar events, and create reminders.
+1) Widget registration (compile-time). The Clipboard Actions widget is only included in the widget bundle when the widget extension target defines `CLIPBOARD_ACTIONS`. Without this flag, it does not appear in the Home Screen “Add Widget” gallery and cannot be added by a user.
+
+2) Behaviour (runtime). When compiled in, Clipboard Actions surfaces are runtime gated (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off). When the flag is off, intents return “Clipboard Actions are disabled.” and only update the widget status store (no Calendar/Reminders writes). The widget renders its parked state and maps taps to opening the app.
+
+Notes:
+
+- Do not treat this area as a target for new work for the Feb 2026 ship. Patches should avoid touching Clipboard Actions unless the goal is to keep it inert, compile-clean, and free of permission prompts.
 - The `.contact` route is hard-disabled in the auto-detect intent (it returns a disabled status rather than creating a contact).
-- Clipboard Actions surfaces are runtime gated (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off).
-- The AppIntents (`WidgetWeaverSetClipboardInboxIntent`, `WidgetWeaverAutoDetectFromTextIntent`) are hard-gated behind `WidgetWeaverFeatureFlags.clipboardActionsEnabled`. When the flag is off, they return “Clipboard Actions are disabled.” and only update the widget status store (no Calendar/Reminders writes).
-- When the flag is off, the widget intentionally renders a disabled state (“Hidden by default”), returns an empty snapshot, and maps taps to opening the app rather than running the Shortcut.
-- The widget remains registered in the extension; runtime gating keeps the shipped surface stable while preventing accidental actions/permission prompts.
+- Release builds must not declare Contacts usage strings. `NSContactsUsageDescription` must not exist in the shipped app or widget Info.plists.
+
+To enable Clipboard Actions for internal builds:
+
+- In Xcode: select the `WidgetWeaverWidget` target → Build Settings → Active Compilation Conditions → add `CLIPBOARD_ACTIONS` (typically Debug only).
+- Enable the runtime flag in a DEBUG build via the toolbar toggle “Debug: enable Clipboard Actions”.
 
 ---
 

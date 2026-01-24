@@ -55,6 +55,7 @@ Key repo pointers
 - Template catalogue entries: WidgetWeaver/WidgetWeaverAboutCatalog.swift
 - Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift
 - Variables UI: WidgetWeaver/WidgetWeaverVariablesView.swift (and related sheets)
+- Variables reference: Docs/VARIABLES.md (syntax, filters, built-in keys, and Now formats including Unix milliseconds).
 
 Feature removal / hiding pointers
 - “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
