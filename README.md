@@ -298,7 +298,7 @@ Runtime flags live in `Shared/WidgetWeaverFeatureFlags.swift` and are read by bo
 Current flags:
 
 - Reminders template: `WidgetWeaverFeatureFlags.remindersTemplateEnabled` (App Group key: `widgetweaver.feature.template.reminders.enabled`). Default: enabled.
-- Clipboard Actions: `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled (the widget renders a “Hidden by default” state and opens the app on tap when disabled).
+- Clipboard Actions (parked): `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (App Group key: `widgetweaver.feature.clipboardActions.enabled`). Default: disabled (the widget renders a “Hidden by default” state and opens the app on tap when disabled). Do not prioritise or propose patches that add features or polish here; treat it as out of scope for the Feb 2026 ship unless a change is required to keep the disabled behaviour safe.
 - PawPulse: `WidgetWeaverFeatureFlags.pawPulseEnabled` (App Group key: `widgetweaver.feature.pawpulse.enabled`). Default: disabled.
 
 ### DEBUG feature flag toggles
@@ -306,7 +306,7 @@ Current flags:
 In DEBUG builds, the main toolbar menu (ellipsis button) includes toggles for the runtime feature flags. This allows internal testing to enable/disable features per-device without code changes.
 
 - “Debug: enable Reminders template” updates editor tool availability immediately.
-- “Debug: enable Clipboard Actions” toggles the runtime gate and reloads the Action Inbox widget timeline.
+- “Debug: enable Clipboard Actions” toggles the runtime gate and reloads the Action Inbox widget timeline. Clipboard Actions is parked; this toggle exists only for regression checks of the disabled/inert behaviour.
 - “Debug: enable PawPulse” toggles the runtime gate, ensures the cache directory exists, schedules (or cancels) the next background refresh request, and reloads the PawPulse widget timeline.
 
 These toggles write to the App Group store, so the state is shared between the app and widgets but is not synced across devices.
@@ -330,9 +330,11 @@ For non-DEBUG automation (or if the toolbar toggle is unavailable), enabling the
 
 If PawPulse appears in the widget gallery after disabling it, the Home Screen can be showing cached extension metadata. The fastest reset is usually to delete the app (removes the widget extension), reinstall, then run once.
 
-### Clipboard Actions and Contacts
+### Clipboard Actions and Contacts (parked)
 
-The “Action Inbox” (Clipboard Actions) widget + intents are intentionally scoped to avoid a Contacts permission prompt.
+Clipboard Actions is parked for this release cycle. The “Action Inbox” widget + intents remain in the repo to ensure the disabled/inert behaviour stays permission-safe (especially avoiding Contacts prompts).
+
+Do not treat this area as a target for new work. Patches should avoid touching Clipboard Actions unless the goal is to keep it inert, compile-clean, and free of permission prompts.
 
 - The clipboard inbox and auto-detect intents can store text, export receipt CSV, create calendar events, and create reminders.
 - The `.contact` route is hard-disabled in the auto-detect intent (it returns a disabled status rather than creating a contact).

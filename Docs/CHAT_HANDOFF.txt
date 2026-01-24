@@ -24,7 +24,7 @@ Current roadmap priorities (pre-freeze)
 5) Reduce surface area and permission footprint (do not break existing widgets):
    - Hide “Reading” from Explore / starter surfaces.
    - Remove the “Photo Quote” template from Explore / starter surfaces.
-   - Hide Screen Actions / Clipboard Actions from Explore and first-run paths. Contacts creation is hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt. The clipboard inbox + auto-detect AppIntents are also hard-gated behind `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (default off) and return a disabled status when the flag is off.
+   - Clipboard Actions is parked. Keep it out of Explore and first-run paths and keep the runtime gate off (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off). When the flag is off, AppIntents must return a disabled status (no Calendar/Reminders writes) and must not trigger any permission prompts (especially Contacts). Do not propose or prioritise work that improves or expands Clipboard Actions.
    - Keep PawPulse / “Latest Cat” (cat adoption) out of shipped surfaces. The widget is compile-time gated (no gallery presence unless `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh scheduling is cancelled when disabled (or when no base URL is configured).
 
 Defer
@@ -43,12 +43,12 @@ Key repo pointers
 - Template catalogue entries: WidgetWeaver/WidgetWeaverAboutCatalog.swift
 - Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift
 - Variables UI: WidgetWeaver/WidgetWeaverVariablesView.swift (and related sheets)
-- DEBUG feature flag toggles (Reminders / Clipboard Actions / PawPulse): WidgetWeaver/ContentView+Toolbar.swift
+- DEBUG feature flag toggles (Reminders / Clipboard Actions (parked) / PawPulse): WidgetWeaver/ContentView+Toolbar.swift
 
 Feature removal / hiding pointers
 - “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
 - “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
-- Screen Actions / Clipboard Actions:
+- Clipboard Actions (parked):
   - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift (renders “Hidden by default” when the runtime flag is off; taps open the app)
   - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled; hard-gated by `clipboardActionsEnabled` and returns disabled when off)
   - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`clipboardActionsEnabled`, default off)
@@ -63,4 +63,5 @@ Non-negotiables
 - Do not run heavy work in widgets.
 - Do not introduce WidgetCenter reload loops from widget providers.
 - Do not break existing user widgets when removing templates from Explore.
-- Do not ship a build that requests Contacts permission (scope cut: keep Screen Actions surfaces hidden; contact creation remains disabled in the auto-detect app intent).
+- Do not ship a build that requests Contacts permission.
+- Clipboard Actions is parked: keep it inert and default-off; do not revive it via patches.

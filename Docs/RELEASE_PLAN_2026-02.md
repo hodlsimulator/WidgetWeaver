@@ -10,7 +10,7 @@ Out of scope (scope cuts):
 
 - Reading
 - Photo Quote
-- Screen Actions / Clipboard Actions (hide from surfaced paths)
+- Clipboard Actions (parked; keep hidden and default-off)
 - PawPulse / “Latest Cat” (future feature)
 
 Weather and AI are deferred unless already rock-solid.
@@ -37,7 +37,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] Removing templates from Explore does not break existing user widgets:
   - [ ] “Reading”
   - [ ] “Photo Quote”
-  - [ ] Screen Actions / Clipboard Actions (default hidden; `clipboardActionsEnabled` default off; widget renders “Hidden by default” and opens the app on tap; AppIntents return disabled when the flag is off; auto-detect does not create contacts; no Contacts permission prompt)
+  - [ ] Clipboard Actions (parked; `clipboardActionsEnabled` default off; widget renders “Hidden by default” and opens the app on tap; AppIntents return disabled when the flag is off; auto-detect does not create contacts; no Contacts permission prompt)
   - [ ] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined)
 
 ### Gate C: Performance and stability
@@ -50,7 +50,7 @@ Weather and AI are deferred unless already rock-solid.
 
 - [ ] Clean checkout builds without local-path package dependencies.
 - [ ] No unintended repo artefacts (for example, `*.bak`) are included in build targets.
-- [ ] The app does not request Contacts permission in onboarding or normal use (auto-detect contact creation remains disabled).
+- [ ] The app does not request Contacts permission in onboarding or normal use.
   - [ ] Confirm `WidgetWeaverAutoDetectFromTextIntent` does not import Contacts and returns a disabled status for `.contact`.
   - [ ] Confirm Clipboard Actions AppIntents return “Clipboard Actions are disabled.” when `clipboardActionsEnabled` is off (no Calendar/Reminders writes; no permission prompts from Shortcuts).
 
@@ -62,7 +62,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] Templates: top 6–10 templates feel high quality and coherent.
 - [ ] “Reading” is removed from visible catalogue surfaces.
 - [ ] “Photo Quote” is removed from visible catalogue surfaces.
-- [ ] Screen Actions / Clipboard Actions are hidden from Explore and first-run paths (auto-detect contact creation remains disabled).
+- [ ] Clipboard Actions remains parked: hidden from Explore and first-run paths; default-off; disabled behaviour intact.
 - [ ] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined).
 - [ ] Variables: discoverability improved (at least one obvious entry point and in-context insertion when editing text).
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
@@ -84,7 +84,7 @@ Weather and AI are deferred unless already rock-solid.
 - [ ] No crashes in common flows (Explore → remix → save → add widget).
 - [ ] No “black tiles” or blank widget views after edits.
 - [ ] Widget timelines produce predictable entries without reload loops.
-- [ ] Confirm removed/hidden templates are not visible in Explore (Reading, Photo Quote, Screen Actions, PawPulse).
+- [ ] Confirm removed/hidden templates are not visible in Explore (Reading, Photo Quote, Clipboard Actions, PawPulse).
 - [ ] Confirm PawPulse does not appear in the Home Screen “Add Widget” gallery (Release builds must not define `PAWPULSE`).
 - [ ] Confirm no Contacts permission prompt appears in normal flows.
 - [ ] Confirm design export/import works via Share Sheet and Files (`.wwdesign` files are offered and can be opened).
@@ -103,7 +103,7 @@ This release focuses on making WidgetWeaver feel high-quality and safe to use da
 Scope cuts to keep the release coherent:
 
 - Reading and Photo Quote templates are removed from surfaced catalogue paths.
-- Screen Actions / Clipboard Actions are hidden from surfaced paths.
+- Clipboard Actions is parked and kept hidden/default-off.
 - PawPulse (“Latest Cat”) is treated as a future feature and not included in shipped surfaces.
 
 ## 6) Notes for future iterations
@@ -122,4 +122,4 @@ After ship:
 4) Do not ship a permission-heavy feature grab bag.
 5) Prefer hiding/deprecation over half-polished shipping.
 
-1) Keep the catalogue minimal: hide any non-flagship templates/features (Screen Actions, PawPulse, Photo Quote, Reading) rather than shipping them half-polished.
+1) Keep the catalogue minimal: hide any non-flagship templates/features (Clipboard Actions, PawPulse, Photo Quote, Reading) rather than shipping them half-polished.

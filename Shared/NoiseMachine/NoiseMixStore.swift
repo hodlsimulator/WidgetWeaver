@@ -14,10 +14,23 @@ public final class NoiseMixStore: @unchecked Sendable {
     private let lastMixKey = "NoiseMachine.LastMixState.v1"
     private let resumeOnLaunchKey = "NoiseMachine.ResumeOnLaunch.Enabled.v1"
 
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
     private let defaults = AppGroup.userDefaults
+
+    // JSONEncoder/JSONDecoder instances are not safe to share across threads.
+    // These helpers create a fresh instance per call.
+    @inline(__always)
+    private func makeEncoder() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }
+
+    @inline(__always)
+    private func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
 
     private let queue = DispatchQueue(label: "NoiseMixStore.queue", qos: .utility)
     private let queueKey = DispatchSpecificKey<UInt8>()
@@ -30,8 +43,6 @@ public final class NoiseMixStore: @unchecked Sendable {
     private let widgetReloadCoalesceSeconds: TimeInterval = 0.30
 
     private init() {
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
         queue.setSpecific(key: queueKey, value: 1)
     }
 
@@ -41,6 +52,7 @@ public final class NoiseMixStore: @unchecked Sendable {
         }
 
         do {
+            let decoder = makeDecoder()
             let state = try decoder.decode(NoiseMixState.self, from: data)
             return state.sanitised()
         } catch {
@@ -56,6 +68,7 @@ public final class NoiseMixStore: @unchecked Sendable {
             pendingWorkItem = nil
 
             do {
+                let encoder = makeEncoder()
                 let data = try encoder.encode(state)
                 let hash = data.hashValue
                 if lastSavedDataHash == hash { return }
@@ -82,7 +95,8 @@ public final class NoiseMixStore: @unchecked Sendable {
             let work = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 do {
-                    let data = try self.encoder.encode(state)
+                    let encoder = self.makeEncoder()
+                    let data = try encoder.encode(state)
                     let hash = data.hashValue
                     if self.lastSavedDataHash == hash { return }
                     self.lastSavedDataHash = hash
@@ -190,13 +204,23 @@ public final class NoiseMachineDebugLogStore: @unchecked Sendable {
     private let defaults = AppGroup.userDefaults
     private let queue = DispatchQueue(label: "NoiseMachineDebugLogStore.queue", qos: .utility)
 
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    private init() {
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
+    // JSONEncoder/JSONDecoder instances are not safe to share across threads.
+    // These helpers create a fresh instance per call.
+    @inline(__always)
+    private func makeEncoder() -> JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
     }
+
+    @inline(__always)
+    private func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
+
+    private init() {}
 
     public func append(
         _ level: NoiseMachineLogLevel = .info,
@@ -214,7 +238,8 @@ public final class NoiseMachineDebugLogStore: @unchecked Sendable {
             }
 
             do {
-                let data = try self.encoder.encode(entries)
+                let encoder = self.makeEncoder()
+                let data = try encoder.encode(entries)
                 self.defaults.set(data, forKey: self.key)
                 self.defaults.synchronize()
             } catch {
@@ -248,6 +273,7 @@ public final class NoiseMachineDebugLogStore: @unchecked Sendable {
     private func loadUnsafe() -> [NoiseMachineLogEntry] {
         guard let data = defaults.data(forKey: key) else { return [] }
         do {
+            let decoder = makeDecoder()
             return try decoder.decode([NoiseMachineLogEntry].self, from: data)
         } catch {
             return []

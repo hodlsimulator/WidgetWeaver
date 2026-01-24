@@ -11,7 +11,7 @@ Surface-area reductions for the Feb ship are explicit:
 
 - Remove “Reading” from Explore/catalogue surfaces (without breaking existing user widgets).
 - Remove the “Photo Quote” template from Explore/catalogue surfaces.
-- Hide Screen Actions / Clipboard Actions entirely for this ship (no Explore / first-run surfaces). Contacts creation is hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt. The clipboard inbox + auto-detect AppIntents are hard-gated behind `WidgetWeaverFeatureFlags.clipboardActionsEnabled` (default off) so disabled features do not trigger Calendar/Reminders work or permission prompts via Shortcuts.
+- Clipboard Actions is parked for this ship. Keep it out of Explore / first-run surfaces and keep `WidgetWeaverFeatureFlags.clipboardActionsEnabled` default off. Contacts creation remains hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt. When the flag is off, the AppIntents must return a disabled status and must not trigger Calendar/Reminders writes or any permission prompts via Shortcuts.
 - Hide PawPulse / “Latest Cat” (cat adoption) entirely for this ship. The widget is compile-time gated (only built when `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured). Treat it as future work.
 
 Weather and AI are strategically important, but will not block the mid-February ship. Weather is scheduled for a post-ship iteration (and may stay hidden/experimental until it has a clear pipeline + permissions story). AI work starts as an R&D track after ship, with small, reviewable assistive wins rather than a single large “magic” feature.
@@ -170,7 +170,7 @@ By feature freeze (P0/P1):
   - Ensure it is not in Explore/catalogue surfaces.
   - Ensure existing user widgets still render correctly.
 
-- P0: Hide Screen Actions / Clipboard Actions
+- P0: Park Clipboard Actions
   - Ensure it is not in Explore/catalogue surfaces.
   - Keep the widget in the extension but render “Hidden by default” when `clipboardActionsEnabled` is off.
   - Ensure auto-detect does not create contacts and does not trigger a Contacts permission prompt.
@@ -182,7 +182,7 @@ By feature freeze (P0/P1):
 
 Acceptance criteria:
 
-- New users cannot create Reading, Photo Quote, Screen Actions, or PawPulse widgets from Explore.
+- New users cannot create Reading, Photo Quote, Clipboard Actions, or PawPulse widgets from Explore.
 - Existing user widgets do not break.
 - No Contacts permission prompt appears in normal flows.
 
@@ -190,8 +190,8 @@ Key areas:
 
 - Reading template surfaces: `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
 - Photo Quote helper/spec: `Shared/WidgetSpec+Utilities.swift`
-- Screen Actions / Clipboard Actions widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
-- Screen Actions / Clipboard Actions app intent: `WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift` (contact creation disabled)
+- Clipboard Actions widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
+- Clipboard Actions app intent: `WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift` (contact creation disabled)
 - Feature flags: `Shared/WidgetWeaverFeatureFlags.swift` (`clipboardActionsEnabled`, `pawPulseEnabled`)
 - PawPulse widget bundle gate: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (`#if PAWPULSE`)
 - PawPulse / “Latest Cat”: `WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift`, `Shared/PawPulseLatestCatDetailView.swift`
@@ -203,4 +203,3 @@ Key areas:
 - “Explore/catalogue surfaces” refers to anything visible to a new user without deep navigation (Explore tab, featured templates, first-run prompts).
 - “Hidden” means the widget and code can remain present, but is not promoted and defaults to an inert/disabled state.
 - “Scope cut” means it can remain in the repo as future work, but must not increase shipped surface area or permission prompts.
-
