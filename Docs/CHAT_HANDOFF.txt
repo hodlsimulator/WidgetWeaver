@@ -1,5 +1,5 @@
 WidgetWeaver – chat handoff (copy/paste)
-Last updated: 2026-01-23
+Last updated: 2026-01-24
 
 Product
 - WidgetWeaver is an iOS 26+ app that builds and previews real WidgetKit widgets via an Explore (template catalogue) + context-aware editor workflow.
@@ -11,7 +11,7 @@ Strategic intent
 - Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-23.
+- Today: 2026-01-24.
 - Feature freeze: 2026-01-31 (stop adding features).
 - Polish: 2026-02-01 to 2026-02-14.
 - Target ship: 2026-02-14 to 2026-02-16.
@@ -19,16 +19,16 @@ Near-term schedule
 Current roadmap priorities (pre-freeze)
 1) Photos: make Smart Photos + poster/photo widgets feel flagship (fast, reliable, good defaults).
 2) Clock: Home Screen correctness and predictable customisation updates.
-3) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
-4) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys.
-5) Reduce surface area and permission footprint (do not break existing widgets):
+3) Weather (flagship): ship the rain-first Weather template + `__weather_*` variables with a clear location flow, stable caching, and attribution.
+4) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
+5) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys.
+6) Reduce surface area and permission footprint (do not break existing widgets):
    - Hide “Reading” from Explore / starter surfaces.
    - Remove the “Photo Quote” template from Explore / starter surfaces.
    - Clipboard Actions is parked. Keep it out of Explore and first-run paths and keep the runtime gate off (`WidgetWeaverFeatureFlags.clipboardActionsEnabled`, default off). When the flag is off, AppIntents must return a disabled status (no Calendar/Reminders writes) and must not trigger any permission prompts (especially Contacts). Do not propose or prioritise work that improves or expands Clipboard Actions.
    - Keep PawPulse / “Latest Cat” (cat adoption) out of shipped surfaces. The widget is compile-time gated (no gallery presence unless `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh scheduling is cancelled when disabled (or when no base URL is configured).
 
 Defer
-- Weather: later (post-ship) unless it is already rock-solid; can be hidden/experimental.
 - AI: post-ship R&D track; small, reviewable assistive steps; must generate explicit specs/config, not opaque state.
 
 Key repo pointers
@@ -39,6 +39,12 @@ Key repo pointers
 - Poster background/overlay: Shared/WidgetWeaverSpecView+Background.swift, Shared/WidgetWeaverSpecView.swift
 - Home Screen clock widget: WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift
 - Clock live view: WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift
+- Weather pipeline:
+  - Engine (fetch + throttling): Shared/WidgetWeaverWeatherEngine.swift
+  - Store (App Group): Shared/WidgetWeaverWeatherStore.swift
+  - Template views: Shared/WidgetWeaverWeatherTemplateView.swift (and related `*NowcastChart*`, `*Layouts*`, `*Components*`)
+  - Settings UX: WidgetWeaver/WidgetWeaverWeatherSettingsView.swift
+  - Widget integration: WidgetWeaverWidget/WidgetWeaverWidget.swift (weather body)
 - Noise Machine widget: WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift
 - Template catalogue entries: WidgetWeaver/WidgetWeaverAboutCatalog.swift
 - Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift

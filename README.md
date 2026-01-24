@@ -14,7 +14,7 @@ Minimum OS: **iOS 26**
 
 ## Status
 
-WidgetWeaver is in active development. The codebase is structured so new tools can be added incrementally while keeping widget rendering safe and deterministic.
+WidgetWeaver is in active development. The current product focus is a small flagship set (Photos/Smart Photos, Clock, Weather), with everything else gated, hidden, or explicitly parked to keep widget rendering safe and deterministic.
 
 ---
 
@@ -231,6 +231,53 @@ Clock rendering aims for:
 
 - Any time formatting or “now” resolution must use the timeline entry date from WidgetKit, not `Date()` directly.
 - Previews can mislead; Home Screen correctness is the target.
+
+---
+
+## Featured — Weather (rain-first)
+
+WidgetWeaver includes a Weather template designed to be useful at a glance, with an emphasis on the next-hour rain nowcast where available.
+
+### Architecture
+
+- Weather refresh runs in the app (WeatherKit allowed) and persists a compact snapshot + attribution to the App Group.
+- Widgets render deterministically from the stored snapshot and do not block on network.
+- Minute forecast is best-effort; the template falls back to hourly/daily data when minute data is unavailable.
+
+### Location and permissions
+
+Weather can use either:
+
+- a manually entered location (geocoded; no Location permission required), or
+- the device’s current location (requires Location permission when explicitly requested).
+
+Location permission is requested only when the user chooses “Use Current Location” in Weather settings.
+
+### Built-in variables
+
+Weather values are exposed as built-in keys that can be used in any text field, for example:
+
+- `{{__weather_location|Set location}}`
+- `{{__weather_temp|--}}°`
+- `{{__weather_condition|Updating…}}`
+- `{{__weather_precip|0}}%`
+
+### Key implementation files
+
+- Engine (fetch + throttling): `Shared/WidgetWeaverWeatherEngine.swift`
+- Snapshot + location store (App Group): `Shared/WidgetWeaverWeatherStore.swift`
+- Template views:
+  - `Shared/WidgetWeaverWeatherTemplateView.swift`
+  - `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`
+  - `Shared/WidgetWeaverWeatherTemplateLayouts.swift`
+  - `Shared/WidgetWeaverWeatherTemplateComponents.swift`
+- Settings UI: `WidgetWeaver/WidgetWeaverWeatherSettingsView.swift`
+- Widget render entry point: `WidgetWeaverWidget/WidgetWeaverWidget.swift` (`weatherBody`)
+
+### Notes
+
+- If no location is configured, the widget renders a stable “Set location” state rather than a blank tile.
+- Weather attribution is required; the legal link appears after the first successful update.
 
 ---
 

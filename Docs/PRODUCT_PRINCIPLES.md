@@ -1,6 +1,6 @@
 # Product principles
 
-Last updated: 2026-01-22
+Last updated: 2026-01-24
 
 WidgetWeaver’s differentiation is not “more widgets”. It is a repeatable workflow for building widget-safe experiences quickly, without the UI collapsing under its own feature weight.
 
@@ -45,38 +45,48 @@ Rules:
 - Avoid WidgetKit reload loops. Prefer short timelines and lightweight view heartbeats where justified.
 - Diagnostic logging must never be able to delay rendering.
 
-## 7) Noise Machine is interaction-first
+## 7) Weather is a flagship experience (reliability-first)
+
+- Weather must be useful everywhere: it should render from cached state immediately and update best-effort in the background.
+- Treat minute forecast as best-effort; core current/hourly/daily data must be reliable.
+- Location is earned and explicit:
+  - Manual location entry must work without requesting Location permission.
+  - Location permission is requested only for “Use Current Location”, and denial has a clear fallback.
+- When there is no saved location, Weather must render a stable “Set location” state (never a blank tile).
+- Attribution and legal link must be present and reliable (appears after the first successful update).
+
+## 8) Noise Machine is interaction-first
 
 - Widget controls must feel instantaneous (optimistic UI is acceptable if it reconciles quickly).
 - State changes must be resilient across cold starts and host delays.
 - Audio behaviour should be predictable, with clear “playing/paused/stopped” semantics.
 
-## 8) Variables are first-class
+## 9) Variables are first-class
 
 - Variables must be discoverable at the moment they are useful (text editing, button actions).
 - Insert and preview should be easy, with guardrails (validation, examples, fallback syntax).
 - Built-in keys should be documented and surfaced, not hidden in README-only knowledge.
 
-## 9) Deprecations do not break existing widgets
+## 10) Deprecations do not break existing widgets
 
 - Removing a template from Explore is acceptable; breaking an existing user widget is not.
 - Deprecations should be “hidden from new”, with migration paths where feasible.
 - If a feature is not ready, it should be behind an “Experimental” label or disabled, rather than half-exposed.
 
-## 10) AI is assistive, not magical
+## 11) AI is assistive, not magical
 
 - AI features must be optional, reviewable, and reversible.
 - AI output should generate real widget specs / tool configurations, not opaque state.
 - Prefer on-device and privacy-preserving approaches; do not block shipping on AI.
 
-## 11) Permissions are earned and minimised
+## 12) Permissions are earned and minimised
 
 - Do not request permissions “up front”.
 - Ask only at the point the user has chosen a template or tool that clearly benefits from the permission.
 - Each permission prompt must have a clear in-product explanation of what changes when access is granted or denied.
 - Avoid shipping with a wide permission footprint. If a feature requires a new permission (especially Contacts), it must justify itself as a flagship experience; otherwise it is hidden/deferred.
 
-## 12) Release builds must be reproducible and boring
+## 13) Release builds must be reproducible and boring
 
 - A clean checkout should build without local-path package dependencies.
 - Repository artefacts and backup files do not ship in targets.

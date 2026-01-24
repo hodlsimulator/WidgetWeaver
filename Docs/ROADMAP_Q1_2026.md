@@ -1,11 +1,11 @@
 # WidgetWeaver roadmap (Q1 2026)
 
-Last updated: 2026-01-23
+Last updated: 2026-01-24
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
 
-We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap concentrates on making Photos + Clock feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
+We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap concentrates on making Photos + Clock + Weather feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
 
 Surface-area reductions for the Feb ship are explicit:
 
@@ -14,7 +14,7 @@ Surface-area reductions for the Feb ship are explicit:
 - Clipboard Actions is parked for this ship. Keep it out of Explore / first-run surfaces and keep `WidgetWeaverFeatureFlags.clipboardActionsEnabled` default off. Contacts creation remains hard-disabled in the auto-detect app intent to avoid a Contacts permission prompt. When the flag is off, the AppIntents must return a disabled status and must not trigger Calendar/Reminders writes or any permission prompts via Shortcuts.
 - Hide PawPulse / “Latest Cat” (cat adoption) entirely for this ship. The widget is compile-time gated (only built when `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured). Treat it as future work.
 
-Weather and AI are strategically important, but will not block the mid-February ship. Weather is scheduled for a post-ship iteration (and may stay hidden/experimental until it has a clear pipeline + permissions story). AI work starts as an R&D track after ship, with small, reviewable assistive wins rather than a single large “magic” feature.
+Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work remains a post-ship R&D track, with small, reviewable assistive wins rather than a single large “magic” feature.
 
 ## Dates and milestones
 
@@ -98,7 +98,49 @@ Key areas:
 - Widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
 - Live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
 
-## Theme C: Noise Machine (flagship-adjacent)
+## Theme C: Weather (flagship)
+
+Goal: Ship a Weather experience that is immediately useful, visually coherent, and robust: deterministic rendering from cached state, a clear location flow, and correct attribution.
+
+By feature freeze (P0/P1):
+
+- P0: Weather pipeline reliability
+  - Ensure the app refreshes weather into the App Group on a predictable cadence (respect `minimumUpdateInterval`).
+  - Ensure the widget can render a useful state from cached data without waiting for network.
+  - Treat minute forecast as best-effort; core current/hourly/daily must be reliable.
+  - Avoid WidgetCenter reload loops (no re-entrant reloads from the extension process).
+
+- P0: Location and permissions story
+  - Ensure there is a single, obvious entry point to Weather settings when using the Weather template.
+  - Manual location entry (geocode search) must work without Location permission.
+  - Location permission is requested only for “Use Current Location”, and denial is handled with a clear fallback.
+  - Clearing location deterministically clears the snapshot and updates widgets.
+
+- P1: Template polish and clarity
+  - Make the “rain-first” nowcast story legible at a glance (chart + copy + fallback behaviour).
+  - Units behaviour is consistent (preference applies to template and variables).
+  - Attribution/legal link is present and reliable (appears after first successful update).
+
+Acceptance criteria:
+
+- A new user can add the Weather widget and see useful content within 60 seconds (either cached weather or a clear “Set location” state).
+- Weather never renders as a blank tile; failure modes are explicit and stable.
+- Weather updates do not cause widget reload thrash.
+
+Key areas:
+
+- Weather engine (fetch + throttling): `Shared/WidgetWeaverWeatherEngine.swift`
+- Weather store (App Group): `Shared/WidgetWeaverWeatherStore.swift`
+- Weather template views:
+  - `Shared/WidgetWeaverWeatherTemplateView.swift`
+  - `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`
+  - `Shared/WidgetWeaverWeatherTemplateLayouts.swift`
+  - `Shared/WidgetWeaverWeatherTemplateComponents.swift`
+- Weather settings UX: `WidgetWeaver/WidgetWeaverWeatherSettingsView.swift`
+- Variable resolution plumbing: `Shared/WidgetSpec+VariableResolutionNow.swift`, `Shared/WidgetSpec+Utilities.swift`
+- Widget entry points: `WidgetWeaverWidget/WidgetWeaverWidget.swift` (weather body)
+
+## Theme D: Noise Machine (flagship-adjacent)
 
 Goal: Keep Noise Machine stable, responsive, and polished enough for daily use.
 
@@ -129,7 +171,7 @@ Key areas:
 - Graph: `Shared/NoiseMachine/NoiseMachineController+Graph.swift`
 - Widget: `WidgetWeaverWidget/NoiseMachine/*`
 
-## Theme D: Variables (clarity)
+## Theme E: Variables (clarity)
 
 Goal: Make variables discoverable and easy to use in text editing, without making the editor feel complex.
 
@@ -156,7 +198,7 @@ Key areas:
 - Variable resolution: `Shared/WidgetSpec+VariableResolutionNow.swift`
 - Variables UI: `WidgetWeaver/WidgetWeaverVariablesView.swift`
 
-## Theme E: Scope cuts and surface reduction (risk reduction)
+## Theme F: Scope cuts and surface reduction (risk reduction)
 
 Goal: Reduce maintenance and App Review risk by shipping a coherent, minimal surface.
 
