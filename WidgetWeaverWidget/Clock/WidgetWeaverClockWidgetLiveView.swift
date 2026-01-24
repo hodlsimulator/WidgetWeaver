@@ -135,7 +135,19 @@ fileprivate struct WWClockRenderBody: View {
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)
         // - Keep enabled during placeholder redaction to avoid transient hand swapping
-        let showsMinuteHandGlyph = (!isPrerender) && WWClockMinuteHandFont.isAvailable()
+        //
+        // Font selection:
+        // - Icon face: prefer the Icon-specific thicker font, but fall back to the regular font
+        //   if the Icon font is unavailable for any reason.
+        // - Ceramic face: use the regular font (unchanged).
+        let minuteGlyphFontAvailable: Bool = {
+            if face == .icon {
+                return WWClockMinuteHandIconFont.isAvailable() || WWClockMinuteHandFont.isAvailable()
+            }
+            return WWClockMinuteHandFont.isAvailable()
+        }()
+
+        let showsMinuteHandGlyph = (!isPrerender) && minuteGlyphFontAvailable
 
         let baseAngles = WWClockBaseAngles(date: handsNow)
         let hourAngle = Angle.degrees(baseAngles.hour)
@@ -380,6 +392,7 @@ private struct WWClockSecondsAndHubOverlay: View {
             ZStack {
                 if showsMinuteHand {
                     WWClockMinuteHandGlyphView(
+                        face: face,
                         palette: palette,
                         timerRange: minuteTimerRange,
                         diameter: layout.dialDiameter
@@ -425,14 +438,22 @@ private struct WWClockSecondsAndHubOverlay: View {
 }
 
 private struct WWClockMinuteHandGlyphView: View {
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let timerRange: ClosedRange<Date>
     let diameter: CGFloat
 
+    private var glyphFont: Font {
+        if face == .icon, WWClockMinuteHandIconFont.isAvailable() {
+            return WWClockMinuteHandIconFont.font(size: diameter)
+        }
+        return WWClockMinuteHandFont.font(size: diameter)
+    }
+
     private func glyph() -> some View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(WWClockMinuteHandFont.font(size: diameter))
+            .font(glyphFont)
             .unredacted()
             .lineLimit(1)
             .multilineTextAlignment(.center)
@@ -522,14 +543,15 @@ private struct WWClockDialLayout {
         let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: scale)
 
         let R = outerRadius - ringA - ringB - ringC
-        self.dialDiameter = R * 2.0
 
-        self.hubBaseRadius = WWClock.pixel(
-            WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+        dialDiameter = R * 2.0
+
+        hubBaseRadius = WWClock.pixel(
+            WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.040),
             scale: scale
         )
 
-        self.hubCapRadius = WWClock.pixel(
+        hubCapRadius = WWClock.pixel(
             WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
             scale: scale
         )

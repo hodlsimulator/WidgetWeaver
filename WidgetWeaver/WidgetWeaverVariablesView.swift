@@ -14,6 +14,14 @@ struct WidgetWeaverVariablesView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    private enum FocusedField: Hashable {
+        case tryItInput
+        case newKey
+        case newValue
+    }
+
+    @FocusState private var focusedField: FocusedField?
+
     @State private var variables: [String: String] = [:]
     @State private var searchText: String = ""
 
@@ -22,6 +30,8 @@ struct WidgetWeaverVariablesView: View {
 
     @State private var statusMessage: String = ""
     @State private var showClearConfirmation: Bool = false
+
+    @State private var showInsertPicker: Bool = false
 
     @AppStorage("variables.tryit.input") private var tryItInput: String = "Streak: {{streak|0}}"
     @State private var tryItCopied: Bool = false
@@ -47,6 +57,17 @@ struct WidgetWeaverVariablesView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Close") { dismiss() }
                 }
+
+                ToolbarItemGroup(placement: .keyboard) {
+                    if focusedField != nil {
+                        Spacer()
+                        Button {
+                            showInsertPicker = true
+                        } label: {
+                            Label("Insert variable", systemImage: "curlybraces.square")
+                        }
+                    }
+                }
             }
             .confirmationDialog(
                 "Clear all variables?",
@@ -57,6 +78,17 @@ struct WidgetWeaverVariablesView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This removes all saved variables from the App Group.\nWidgets will update after clearing.")
+            }
+            .sheet(isPresented: $showInsertPicker) {
+                NavigationStack {
+                    WidgetWeaverVariableInsertPickerView(
+                        isProUnlocked: proManager.isProUnlocked,
+                        customVariables: variables,
+                        onInsert: { snippet in
+                            insertSnippet(snippet)
+                        }
+                    )
+                }
             }
             .onAppear { refresh() }
             .onChange(of: proManager.isProUnlocked) { _, _ in refresh() }
@@ -140,6 +172,7 @@ struct WidgetWeaverVariablesView: View {
                         .foregroundStyle(.secondary)
 
                     TextEditor(text: $tryItInput)
+                        .focused($focusedField, equals: .tryItInput)
                         .font(.system(.callout, design: .monospaced))
                         .frame(minHeight: 96)
                         .scrollContentBackground(.hidden)
@@ -164,7 +197,7 @@ struct WidgetWeaverVariablesView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
                         ForEach(tryItSnippets) { snippet in
                             Button {
-                                appendTryItSnippet(snippet.value)
+                                insertSnippet(snippet.value)
                             } label: {
                                 Text(snippet.value)
                                     .font(.system(.caption2, design: .monospaced))
@@ -216,6 +249,13 @@ struct WidgetWeaverVariablesView: View {
             }
             .padding(.vertical, 4)
 
+            Button {
+                focusedField = .tryItInput
+                showInsertPicker = true
+            } label: {
+                Label("Insert variable…", systemImage: "curlybraces.square")
+            }
+
             NavigationLink {
                 WidgetWeaverBuiltInKeysView(tryItInput: $tryItInput)
             } label: {
@@ -232,17 +272,15 @@ struct WidgetWeaverVariablesView: View {
 
     private var lockedSection: some View {
         Section {
-            Label("Variables require WidgetWeaver Pro.", systemImage: "lock.fill")
-                .foregroundStyle(.secondary)
-
-            Text("Unlock Pro to manage variables in-app and update widgets via Shortcuts.")
-                .font(.caption)
+            Text("Custom variables are a Pro feature.")
                 .foregroundStyle(.secondary)
 
             Button {
-                Task { @MainActor in onShowPro() }
+                Task { @MainActor in
+                    onShowPro()
+                }
             } label: {
-                Label("Unlock Pro", systemImage: "crown.fill")
+                Label("Unlock Pro", systemImage: "sparkles")
             }
         } header: {
             Text("Pro")
@@ -252,10 +290,12 @@ struct WidgetWeaverVariablesView: View {
     private var addSection: some View {
         Section {
             TextField("Key (e.g. streak)", text: $newKey)
+                .focused($focusedField, equals: .newKey)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
 
             TextField("Value", text: $newValue)
+                .focused($focusedField, equals: .newValue)
 
             Button { addVariable() } label: {
                 Label("Add Variable", systemImage: "plus.circle.fill")
@@ -452,18 +492,30 @@ struct WidgetWeaverVariablesView: View {
         refresh()
     }
 
-    private func appendTryItSnippet(_ snippet: String) {
-        let trimmed = tryItInput.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func insertSnippet(_ snippet: String) {
+        switch focusedField {
+        case .newKey:
+            newKey = appendingSnippet(snippet, to: newKey)
+
+        case .newValue:
+            newValue = appendingSnippet(snippet, to: newValue)
+
+        default:
+            tryItInput = appendingSnippet(snippet, to: tryItInput)
+        }
+    }
+
+    private func appendingSnippet(_ snippet: String, to text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            tryItInput = snippet
-            return
+            return snippet
         }
 
-        if let last = tryItInput.last, last == "\n" || last == " " {
-            tryItInput += snippet
-        } else {
-            tryItInput += " " + snippet
+        if let last = text.last, last == "\n" || last == " " {
+            return text + snippet
         }
+
+        return text + " " + snippet
     }
 
     private func copyTryItOutput() {
