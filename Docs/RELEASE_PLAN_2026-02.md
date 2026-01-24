@@ -47,13 +47,13 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 ### Gate B: Data integrity and safe deprecations
 
 - [ ] Edits do not corrupt saved widget specs.
-- [ ] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
+- [x] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
 - [ ] App Group storage migrations (if any) are forward compatible.
 - [ ] Removing templates from Explore does not break existing user widgets:
-  - [ ] “Reading” (hidden from new)
-  - [ ] “Photo Quote” (hidden from new)
-  - [ ] Clipboard Actions / Screen Actions (parked; no release-bundle registration; internal builds only if explicitly enabled)
-  - [ ] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined; release builds must not define it)
+  - [x] “Reading” (hidden from new)
+  - [x] “Photo Quote” (hidden from new)
+  - [x] Clipboard Actions / Screen Actions (parked; no release-bundle registration; internal builds only if explicitly enabled)
+  - [x] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined; release builds must not define it)
 - [ ] Weather cache/state is robust:
   - [ ] Clearing location clears the weather snapshot deterministically.
   - [ ] Snapshot decoding is tolerant (no crashes on partial/old data).
@@ -68,21 +68,21 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 ### Gate D: Usefulness + trust gates (permissions, surfaces, reproducibility)
 
-- [ ] Explore/catalogue surfaces are curated for the flagship story:
-  - [ ] “Reading” is not listed.
-  - [ ] “Photo Quote” is not listed.
-- [ ] Clipboard Actions is absent from the release build:
-  - [ ] Not listed in Explore.
-  - [ ] Not registered in `WidgetWeaverWidgetBundle` (no Home Screen widget gallery entry).
-  - [ ] No dependency on ScreenActionsCore in the default build.
-- [ ] Privacy strings match shipped behaviour:
-  - [ ] `WidgetWeaver/Info.plist` does not contain `NSContactsUsageDescription` (nor any InfoPlist.strings entry).
-  - [ ] `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with the exact copy below (if Weather can request Location authorisation):
+- [x] Explore/catalogue surfaces are curated for the flagship story:
+  - [x] “Reading” is not listed.
+  - [x] “Photo Quote” is not listed.
+- [x] Clipboard Actions is absent from the release build:
+  - [x] Not listed in Explore.
+  - [x] Not registered in `WidgetWeaverWidgetBundle` (no Home Screen widget gallery entry).
+  - [x] No dependency on ScreenActionsCore in the default build.
+- [x] Privacy strings match shipped behaviour:
+  - [x] `WidgetWeaver/Info.plist` does not contain `NSContactsUsageDescription` (nor any InfoPlist.strings entry).
+  - [x] `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with the exact copy below (if Weather can request Location authorisation):
     - “WidgetWeaver uses your location to fetch local weather for your Weather widget when you choose Use Current Location.”
 - [ ] Location permission is requested only in-context (Weather settings / explicit “Use Current Location”), not on launch.
-- [ ] Clean checkout builds without local-path package dependencies:
-  - [ ] No `XCLocalSwiftPackageReference` entries in `WidgetWeaver.xcodeproj/project.pbxproj` for release builds.
-  - [ ] A collaborator machine can build without a sibling folder such as `../ScreenActions-clone/...`.
+- [x] Clean checkout builds without local-path package dependencies:
+  - [x] No `XCLocalSwiftPackageReference` entries in `WidgetWeaver.xcodeproj/project.pbxproj` for release builds.
+  - [x] A collaborator machine can build without a sibling folder such as `../ScreenActions-clone/...`.
 
 ## 4) Polish checklist
 
@@ -92,10 +92,10 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [ ] Templates: top 6–10 templates feel high quality and coherent.
 - [ ] Weather is surfaced as a flagship template (not hidden/experimental in shipped surfaces).
 - [ ] Weather settings is easy to find when using Weather (one obvious entry point).
-- [ ] “Reading” is removed from visible catalogue surfaces.
-- [ ] “Photo Quote” is removed from visible catalogue surfaces.
-- [ ] Clipboard Actions is absent from release builds (no Explore listing, no widget gallery registration).
-- [ ] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined; release builds must not define it).
+- [x] “Reading” is removed from visible catalogue surfaces.
+- [x] “Photo Quote” is removed from visible catalogue surfaces.
+- [x] Clipboard Actions is absent from release builds (no Explore listing, no widget gallery registration).
+- [x] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined; release builds must not define it).
 - [ ] Variables: discoverability improved (at least one obvious entry point and in-context insertion when editing text).
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
 - [ ] Weather error states are actionable (no “mystery blank widget”):
@@ -108,8 +108,8 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [ ] Permission prompts are in-context only (no “ask everything at first launch”).
 - [ ] If a permission is denied, the UI explains what changes and how to enable it later.
 - [ ] Location permission is requested only when using “Use Current Location” (manual location entry works without it).
-- [ ] `NSContactsUsageDescription` is removed from Info.plist (Contacts are not used in this release).
-- [ ] Weather can request Location authorisation without crashing (Info.plist usage string present).
+- [x] `NSContactsUsageDescription` is removed from Info.plist (Contacts are not used in this release).
+- [x] Weather can request Location authorisation without crashing (Info.plist usage string present).
 
 ### Accessibility
 

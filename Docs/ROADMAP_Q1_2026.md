@@ -9,16 +9,19 @@ We will ship the next public-quality release in mid-February 2026, with a hard f
 
 UX is the primary success metric for this cycle; the Photos track has a dedicated micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
 
-Surface-area reductions for the Feb ship are explicit:
+Surface-area reductions for the Feb ship are explicit (status as of 2026-01-24 / commit 2218a36):
 
-- Remove “Reading” from Explore/catalogue surfaces (without breaking existing user widgets).
-- Remove the “Photo Quote” template from Explore/catalogue surfaces.
-- Clipboard Actions (Screen Actions) is parked for this ship and must be absent in release builds:
+- “Reading” is hidden from Explore/catalogue surfaces (kept in-app for back-compat).
+- “Photo Quote” is hidden from Explore/catalogue surfaces (kept in-app for back-compat).
+- Clipboard Actions (Screen Actions) is parked for this ship and is absent in release builds:
+  - Compile-time gated behind `CLIPBOARD_ACTIONS` (release builds must not define it).
   - Not listed in Explore / first-run surfaces.
   - Not registered in the widget extension bundle (no Home Screen “Add Widget” gallery presence).
-  - No dependency on ScreenActionsCore in the default build (and no local-path Swift Package dependencies in the Xcode project).
-  - `NSContactsUsageDescription` must not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
-- Hide PawPulse / “Latest Cat” (cat adoption) entirely for this ship. The widget is compile-time gated (only built when `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured). Treat it as future work.
+  - Default build has no ScreenActionsCore dependency and no local-path Swift Package dependencies in the Xcode project.
+  - `NSContactsUsageDescription` does not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
+- PawPulse / “Latest Cat” (cat adoption) is treated as future work:
+  - Compile-time gated (only built when `PAWPULSE` is defined).
+  - Background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured).
 
 Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work remains a post-ship R&D track, with small, reviewable assistive wins rather than a single large “magic” feature.
 
@@ -213,24 +216,24 @@ Goal: Reduce user confusion, permissions footprint, and App Review risk by shipp
 
 By feature freeze (P0/P1):
 
-- P0: Remove/hide “Reading”
-  - Ensure it is not in Explore/catalogue surfaces.
+- P0: Remove/hide “Reading” (implemented)
+  - Hidden from Explore/catalogue surfaces (kept in-app for back-compat).
   - Ensure existing user widgets still render correctly.
 
-- P0: Remove/hide “Photo Quote”
-  - Ensure it is not in Explore/catalogue surfaces.
+- P0: Remove/hide “Photo Quote” (implemented)
+  - Hidden from Explore/catalogue surfaces (kept in-app for back-compat).
   - Ensure existing user widgets still render correctly.
 
-- P0: Park Clipboard Actions (Screen Actions) and remove from release builds
-  - Ensure it is not in Explore/catalogue surfaces.
-  - Ensure it is not registered in the widget extension bundle in release builds (no gallery presence).
-  - Remove ScreenActionsCore from the default build and remove any local-path Swift Package references from the Xcode project.
-  - Remove `NSContactsUsageDescription` from `WidgetWeaver/Info.plist` (and any InfoPlist.strings entry).
+- P0: Park Clipboard Actions (Screen Actions) and remove from release builds (implemented)
+  - Not listed in Explore/catalogue surfaces.
+  - Not registered in the widget extension bundle in release builds (compile-time gated behind `CLIPBOARD_ACTIONS`; release builds must not define it).
+  - Default build has no ScreenActionsCore dependency and no local-path Swift Package references in the Xcode project.
+  - `NSContactsUsageDescription` is absent from `WidgetWeaver/Info.plist` (and there is no InfoPlist.strings entry).
 
-- P0: Hide PawPulse / “Latest Cat”
-  - Ensure it is not in Explore/catalogue surfaces.
-  - Ensure the widget is not registered unless `PAWPULSE` is defined.
-  - Ensure background refresh is gated behind `pawPulseEnabled` (default off).
+- P0: Hide PawPulse / “Latest Cat” (implemented gating)
+  - Not listed in Explore/catalogue surfaces.
+  - Widget is not registered unless `PAWPULSE` is defined.
+  - Background refresh is gated behind `pawPulseEnabled` (default off) and cancels pending requests when disabled or when no base URL is configured.
 
 Acceptance criteria:
 

@@ -22,16 +22,19 @@ Current roadmap priorities (pre-freeze)
 3) Weather (flagship): ship the rain-first Weather template + `__weather_*` variables with a clear location flow, stable caching, and attribution.
 4) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
 5) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys.
-6) Catalogue and trust clean-up (usefulness-first; do not break existing widgets):
-   - Remove “Reading” from Explore / starter surfaces.
-   - Remove the “Photo Quote” template from Explore / starter surfaces.
-   - Clipboard Actions (Screen Actions) is parked for this ship and must be absent in release builds:
+6) Catalogue and trust clean-up (usefulness-first; do not break existing widgets) — status (commit 2218a36):
+   - “Reading” is hidden from Explore/starter surfaces (kept in the app for back-compat).
+   - “Photo Quote” is hidden from Explore/starter surfaces (kept in the app for back-compat).
+   - Clipboard Actions (Screen Actions) is parked for this ship and is absent from release builds:
+     - Compile-time gated behind `CLIPBOARD_ACTIONS` (release builds must not define it).
      - Not listed in Explore/starter surfaces.
      - Not registered in the widget extension bundle (no Home Screen “Add Widget” gallery presence).
-     - No dependency on ScreenActionsCore in the default build; no local-path SPM dependencies in the Xcode project.
-     - `NSContactsUsageDescription` must not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
-   - Keep PawPulse / “Latest Cat” (cat adoption) out of shipped surfaces. The widget is compile-time gated (no gallery presence unless `PAWPULSE` is defined) and background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh scheduling is cancelled when disabled (or when no base URL is configured).
-   - Weather location safety: if the app can call `requestWhenInUseAuthorization()`, `WidgetWeaver/Info.plist` must contain `NSLocationWhenInUseUsageDescription` with a user-facing explanation.
+     - Default build has no ScreenActionsCore dependency and no local-path SPM dependencies in the Xcode project.
+     - `NSContactsUsageDescription` does not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
+   - PawPulse / “Latest Cat” is treated as a future feature:
+     - Compile-time gated (no widget gallery presence unless `PAWPULSE` is defined).
+     - Background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off) and refresh scheduling is cancelled when disabled or when no base URL is configured.
+   - Weather location safety: `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with a user-facing explanation. Keep the permission request in-context (“Use Current Location” only).
 
 Defer
 - AI: post-ship R&D track; small, reviewable assistive steps; must generate explicit specs/config, not opaque state.
@@ -64,7 +67,7 @@ Feature removal / hiding pointers
   - Widget registration: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (gate behind the compiler flag `CLIPBOARD_ACTIONS`; release builds must not define it)
   - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift
   - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled; must not ship as a surfaced feature)
-  - Xcode project dependency: WidgetWeaver.xcodeproj/project.pbxproj (remove XCLocalSwiftPackageReference for ScreenActionsCore from the default build)
+  - Xcode project dependency: WidgetWeaver.xcodeproj/project.pbxproj (already clean: no `XCLocalSwiftPackageReference`; ScreenActionsCore is removed from the default build)
 - PawPulse / “Latest Cat”:
   - Widget registration gate: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (`#if PAWPULSE`)
   - Widget: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift
