@@ -487,13 +487,24 @@ public enum WidgetWeaverDesignExchangeCodec {
         if let payload = try? decodeExchange(data, iso8601: true) { return try validate(payload) }
         if let payload = try? decodeExchange(data, iso8601: false) { return try validate(payload) }
 
-        if let specs = try? JSONDecoder().decode([WidgetSpec].self, from: data) {
+        // Legacy: allow importing a plain JSON array of WidgetSpec.
+        // This is supported for internal builds and back-compat exports.
+        if let specs = try? decodeSpecsArray(data, iso8601: true) {
+            let normalised = specs.map { $0.normalised() }
+            guard !normalised.isEmpty else { throw WidgetWeaverDesignExchangeError.noSpecsFound }
+            return WidgetWeaverDesignExchangePayload(specs: normalised, images: [])
+        }
+        if let specs = try? decodeSpecsArray(data, iso8601: false) {
             let normalised = specs.map { $0.normalised() }
             guard !normalised.isEmpty else { throw WidgetWeaverDesignExchangeError.noSpecsFound }
             return WidgetWeaverDesignExchangePayload(specs: normalised, images: [])
         }
 
-        if let spec = try? JSONDecoder().decode(WidgetSpec.self, from: data) {
+        // Legacy: allow importing a single WidgetSpec JSON object.
+        if let spec = try? decodeSingleSpec(data, iso8601: true) {
+            return WidgetWeaverDesignExchangePayload(specs: [spec.normalised()], images: [])
+        }
+        if let spec = try? decodeSingleSpec(data, iso8601: false) {
             return WidgetWeaverDesignExchangePayload(specs: [spec.normalised()], images: [])
         }
 
@@ -504,6 +515,18 @@ public enum WidgetWeaverDesignExchangeCodec {
         let decoder = JSONDecoder()
         if iso8601 { decoder.dateDecodingStrategy = .iso8601 }
         return try decoder.decode(WidgetWeaverDesignExchangePayload.self, from: data)
+    }
+
+    private static func decodeSpecsArray(_ data: Data, iso8601: Bool) throws -> [WidgetSpec] {
+        let decoder = JSONDecoder()
+        if iso8601 { decoder.dateDecodingStrategy = .iso8601 }
+        return try decoder.decode([WidgetSpec].self, from: data)
+    }
+
+    private static func decodeSingleSpec(_ data: Data, iso8601: Bool) throws -> WidgetSpec {
+        let decoder = JSONDecoder()
+        if iso8601 { decoder.dateDecodingStrategy = .iso8601 }
+        return try decoder.decode(WidgetSpec.self, from: data)
     }
 
     private static func validate(_ payload: WidgetWeaverDesignExchangePayload) throws -> WidgetWeaverDesignExchangePayload {
