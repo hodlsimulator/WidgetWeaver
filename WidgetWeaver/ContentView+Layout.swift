@@ -446,6 +446,10 @@ private struct WidgetWeaverClockThemePicker: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var selectedFaceToken: WidgetWeaverClockFaceToken {
+        WidgetWeaverClockFaceToken.canonical(from: clockFaceRaw)
+    }
+
     private struct Option: Identifiable {
         let id: String
         let themeRaw: String
@@ -492,6 +496,7 @@ private struct WidgetWeaverClockThemePicker: View {
 
                     WidgetWeaverClockThemeChip(
                         title: option.displayName,
+                        face: selectedFaceToken,
                         palette: palette,
                         themeRaw: option.themeRaw,
                         isSelected: isSelected,
@@ -509,6 +514,7 @@ private struct WidgetWeaverClockThemePicker: View {
 
 private struct WidgetWeaverClockThemeChip: View {
     let title: String
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let themeRaw: String
     let isSelected: Bool
@@ -517,7 +523,7 @@ private struct WidgetWeaverClockThemeChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                WidgetWeaverClockThemeSwatch(palette: palette)
+                WidgetWeaverClockThemeSwatch(face: face, palette: palette)
                     .frame(width: 28, height: 28)
 
                 Text(title)
@@ -556,6 +562,7 @@ private struct WidgetWeaverClockThemeChip: View {
 }
 
 private struct WidgetWeaverClockThemeSwatch: View {
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
 
     var body: some View {
@@ -572,17 +579,23 @@ private struct WidgetWeaverClockThemeSwatch: View {
                     )
                 )
 
-            Circle()
-                .fill(palette.dialCenter.opacity(0.95))
-                .frame(width: 18, height: 18)
-
-            Circle()
-                .strokeBorder(palette.accent.opacity(0.95), lineWidth: 2)
-                .frame(width: 18, height: 18)
-
-            Circle()
-                .fill(palette.accent.opacity(0.95))
-                .frame(width: 6, height: 6)
+            WidgetWeaverClockFaceView(
+                face: face,
+                palette: palette,
+                hourAngle: .degrees(310.0),
+                minuteAngle: .degrees(120.0),
+                secondAngle: .degrees(200.0),
+                showsSecondHand: false,
+                showsMinuteHand: true,
+                showsHandShadows: false,
+                showsGlows: false,
+                showsCentreHub: true,
+                handsOpacity: 1.0
+            )
+            .padding(2)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
@@ -601,14 +614,6 @@ private struct WidgetWeaverClockFaceSelector: View {
 
     private var selectedToken: WidgetWeaverClockFaceToken {
         WidgetWeaverClockFaceToken.canonical(from: clockFaceRaw)
-    }
-
-    private var palette: WidgetWeaverClockPalette {
-        let config = WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: selectedToken.rawValue)
-
-        return WidgetWeaverClockAppearanceResolver
-            .resolve(config: config, mode: colorScheme)
-            .palette
     }
 
     var body: some View {
@@ -633,6 +638,13 @@ private struct WidgetWeaverClockFaceSelector: View {
                 spacing: 12
             ) {
                 ForEach(WidgetWeaverClockFaceToken.orderedForPicker, id: \.rawValue) { token in
+                    let palette = WidgetWeaverClockAppearanceResolver
+                        .resolve(
+                            config: WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: token.rawValue),
+                            mode: colorScheme
+                        )
+                        .palette
+
                     WidgetWeaverClockFaceSelectorCard(
                         token: token,
                         isSelected: selectedToken == token,
