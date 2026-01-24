@@ -20,6 +20,9 @@ enum FeatureFlags {
 
         // Explore (Photos) curation.
         static let photosExploreV2Enabled = "widgetweaver.feature.explore.photosV2.enabled"
+
+        // Smart Photos reliability + clarity.
+        static let smartPhotosUXHardeningEnabled = "widgetweaver.feature.smartPhotos.uxHardening.enabled"
     }
 
     /// Default state for the context-aware editor tool suite.
@@ -94,5 +97,29 @@ enum FeatureFlags {
 
     static func clearPhotosExploreV2Override() {
         UserDefaults.standard.removeObject(forKey: Keys.photosExploreV2Enabled)
+    }
+
+    /// Default state for Smart Photos reliability + clarity hardening.
+    ///
+    /// When `false`, Smart Photos stays on the current baseline behaviour/copy.
+    /// When `true`, Smart Photos may show clearer half-state messaging and stronger safety rails.
+    static let defaultSmartPhotosUXHardeningEnabled: Bool = false
+
+    static var smartPhotosUXHardeningEnabled: Bool {
+        let defaults = UserDefaults.standard
+
+        if defaults.object(forKey: Keys.smartPhotosUXHardeningEnabled) == nil {
+            return defaultSmartPhotosUXHardeningEnabled
+        }
+
+        return defaults.bool(forKey: Keys.smartPhotosUXHardeningEnabled)
+    }
+
+    static func setSmartPhotosUXHardeningEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.smartPhotosUXHardeningEnabled)
+    }
+
+    static func clearSmartPhotosUXHardeningOverride() {
+        UserDefaults.standard.removeObject(forKey: Keys.smartPhotosUXHardeningEnabled)
     }
 }

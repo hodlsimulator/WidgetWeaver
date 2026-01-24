@@ -136,6 +136,16 @@ extension ContentView {
                 )
             )
 
+            Toggle(
+                "Debug: Smart Photos UX hardening",
+                isOn: Binding(
+                    get: { FeatureFlags.smartPhotosUXHardeningEnabled },
+                    set: { newValue in
+                        FeatureFlags.setSmartPhotosUXHardeningEnabled(newValue)
+                        EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                    }
+                )
+            )
 
             Toggle(
                 "Debug: enable Clipboard Actions",
