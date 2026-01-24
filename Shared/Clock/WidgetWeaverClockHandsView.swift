@@ -270,7 +270,7 @@ struct WidgetWeaverClockHandsView: View {
             .offset(y: -hourStemLength / 2.0)
 
             if hourHandStyle == .icon {
-                // MARK: Hour hand (icon variant: flatter tip, more tapered silhouette)
+                // MARK: Hour hand (icon variant: subtly pointed tip, more tapered silhouette)
                 metalField
                     .mask(
                         WidgetWeaverClockHourTaperedShape(tipWidthFraction: 0.42)
@@ -621,15 +621,21 @@ struct WidgetWeaverClockHourTaperedShape: Shape {
         let baseInset = w * 0.040
         let tipFraction = WWClock.clamp(tipWidthFraction, min: 0.10, max: 0.98)
 
+        // Icon hour-hand finish: a subtle point, avoiding a needle silhouette.
+        // The shoulder line stays wide, while the very end resolves to a small apex.
+        let pointDepth = max(1, min(min(w, h) * 0.10, w * 0.12))
+
         let tipWidth = w * tipFraction
         let tipInsetX = (w - tipWidth) * 0.5
 
         let a = CGPoint(x: rect.minX + baseInset, y: rect.maxY)
-        let b = CGPoint(x: rect.minX + tipInsetX, y: rect.minY)
-        let c = CGPoint(x: rect.maxX - tipInsetX, y: rect.minY)
+        let b = CGPoint(x: rect.minX + tipInsetX, y: rect.minY + pointDepth)
+        let t = CGPoint(x: rect.midX, y: rect.minY)
+        let c = CGPoint(x: rect.maxX - tipInsetX, y: rect.minY + pointDepth)
         let d = CGPoint(x: rect.maxX - baseInset, y: rect.maxY)
 
         let cornerRadius = max(1, min(min(w, h) * 0.090, w * 0.12))
+        let tipCornerRadius = max(0.5, min(cornerRadius * 0.28, pointDepth * 0.60))
 
         func length(_ v: CGPoint) -> CGFloat {
             sqrt(v.x * v.x + v.y * v.y)
@@ -656,7 +662,12 @@ struct WidgetWeaverClockHourTaperedShape: Shape {
             length(sub(p, q))
         }
 
-        let points = [a, b, c, d]
+        let points = [a, b, t, c, d]
+
+        func cornerRadius(for index: Int) -> CGFloat {
+            if index == 2 { return tipCornerRadius }
+            return cornerRadius
+        }
 
         var path = Path()
 
@@ -670,7 +681,7 @@ struct WidgetWeaverClockHourTaperedShape: Shape {
 
             let r1 = dist(cur, prev) * 0.5
             let r2 = dist(cur, next) * 0.5
-            let r = min(cornerRadius, r1, r2)
+            let r = min((i == 2 ? tipCornerRadius : cornerRadius), r1, r2)
 
             let p1 = add(cur, mul(v1, r))
             let p2 = add(cur, mul(v2, r))
