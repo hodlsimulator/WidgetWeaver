@@ -7,6 +7,8 @@ Owner: Conor (engineering) / ChatGPT (PM support)
 
 We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap concentrates on making Photos + Clock + Weather feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
 
+UX is the primary success metric for this cycle; the Photos track has a dedicated micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
+
 Surface-area reductions for the Feb ship are explicit:
 
 - Remove “Reading” from Explore/catalogue surfaces (without breaking existing user widgets).
@@ -65,6 +67,8 @@ Key areas:
 - Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
 - Widget render: `WidgetWeaverWidget/SmartPhoto/*`
 - App Group image directory: `Shared/AppGroup.swift`
+
+Detailed micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
 
 ## Theme B: Clock (flagship)
 
