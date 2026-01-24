@@ -61,10 +61,15 @@ struct StyleDraft: Hashable {
     var cornerRadius: Double
     var weatherScale: Double
     var background: BackgroundToken
+    var backgroundOverlay: BackgroundToken
+    var backgroundOverlayOpacity: Double
+    var backgroundGlowEnabled: Bool
     var accent: AccentToken
     var nameTextStyle: TextStyleToken
     var primaryTextStyle: TextStyleToken
     var secondaryTextStyle: TextStyleToken
+
+    var symbolSize: Double
 
     static var defaultDraft: StyleDraft { StyleDraft(from: .defaultStyle) }
 
@@ -73,10 +78,15 @@ struct StyleDraft: Hashable {
         self.cornerRadius = style.cornerRadius
         self.weatherScale = style.weatherScale
         self.background = style.background
+        self.backgroundOverlay = style.backgroundOverlay
+        self.backgroundOverlayOpacity = style.backgroundOverlayOpacity
+        self.backgroundGlowEnabled = style.backgroundGlowEnabled
         self.accent = style.accent
         self.nameTextStyle = style.nameTextStyle
         self.primaryTextStyle = style.primaryTextStyle
         self.secondaryTextStyle = style.secondaryTextStyle
+
+        self.symbolSize = style.symbolSize
     }
 
     func toStyleSpec() -> StyleSpec {
@@ -84,10 +94,14 @@ struct StyleDraft: Hashable {
             padding: padding,
             cornerRadius: cornerRadius,
             background: background,
+            backgroundOverlay: backgroundOverlay,
+            backgroundOverlayOpacity: backgroundOverlayOpacity,
+            backgroundGlowEnabled: backgroundGlowEnabled,
             accent: accent,
             nameTextStyle: nameTextStyle,
             primaryTextStyle: primaryTextStyle,
             secondaryTextStyle: secondaryTextStyle,
+            symbolSize: symbolSize,
             weatherScale: weatherScale
         ).normalised()
     }
