@@ -116,6 +116,17 @@ extension ContentView {
             )
 
             Toggle(
+                "Debug: enable Poster suite",
+                isOn: Binding(
+                    get: { FeatureFlags.posterSuiteEnabled },
+                    set: { newValue in
+                        FeatureFlags.setPosterSuiteEnabled(newValue)
+                        EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                    }
+                )
+            )
+
+            Toggle(
                 "Debug: enable Clipboard Actions",
                 isOn: Binding(
                     get: { WidgetWeaverFeatureFlags.clipboardActionsEnabled },
