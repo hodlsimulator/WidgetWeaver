@@ -60,8 +60,8 @@ public actor WidgetWeaverWeatherEngine {
 
         guard let location = store.loadLocation() else {
             store.saveLastError("No location configured")
-            // Avoid forcing widget reloads when there is no location; this can create re-entrant
-            // reload/render loops inside the widget extension.
+            // Widget reloads are not forced when there is no location, which prevents
+            // re-entrant reload/render loops inside the widget extension.
             return Result(snapshot: nil, attribution: store.loadAttribution(), errorDescription: "No location configured")
         }
 
@@ -76,9 +76,8 @@ public actor WidgetWeaverWeatherEngine {
         #if canImport(WeatherKit)
         do {
             // Core weather must succeed for the widget to be useful everywhere.
-            // Minute forecast + attribution are treated as best-effort so they can't block the widget.
+            // Minute forecast + attribution are treated as best-effort so they cannot block the widget.
             let (current, hourly, daily) = try await fetchCoreWeatherWithRetry(for: location.clLocation)
-
             let minuteForecast = await fetchMinuteForecastBestEffort(for: location.clLocation)
 
             let snap = Self.makeSnapshot(
@@ -91,16 +90,15 @@ public actor WidgetWeaverWeatherEngine {
 
             store.saveSnapshot(snap)
 
-            // Attribution is best-effort. Keep the existing attribution if fetch fails.
+            // Attribution is best-effort. Keep existing attribution if fetch fails.
             let existingAttr = store.loadAttribution()
             if let newAttr = await fetchAttributionBestEffort() {
                 store.saveAttribution(newAttr)
             } else if existingAttr == nil {
-                // No-op: leave it nil. The UI already handles "link appears after first success".
+                // No-op.
             }
 
             store.saveLastError(nil)
-
             notifyWidgetsWeatherUpdated()
             return Result(snapshot: snap, attribution: store.loadAttribution(), errorDescription: nil)
         } catch {
@@ -122,16 +120,8 @@ public actor WidgetWeaverWeatherEngine {
 
     private func notifyWidgetsWeatherUpdated() {
         #if canImport(WidgetKit)
-        // Avoid re-entrant reload loops while the widget extension is rendering.
-        guard !WidgetWeaverRuntime.isRunningInAppExtension else { return }
-
-        let kind = WidgetWeaverWidgetKinds.main
         Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: kind)
-            WidgetCenter.shared.reloadAllTimelines()
-            if #available(iOS 17.0, *) {
-                WidgetCenter.shared.invalidateConfigurationRecommendations()
-            }
+            WidgetWeaverWeatherWidgetReloadDebouncer.shared.scheduleReloadCoalesced()
         }
         #endif
     }
@@ -155,7 +145,7 @@ public actor WidgetWeaverWeatherEngine {
             } catch {
                 lastError = error
 
-                // Tiny backoff. Helps with transient WeatherKit/network flakiness without stalling the widget.
+                // Tiny backoff for transient WeatherKit/network flakiness.
                 if attempt < maxAttempts {
                     let delayNanos: UInt64 = (attempt == 1) ? 250_000_000 : 600_000_000
                     try? await Task.sleep(nanoseconds: delayNanos)
@@ -163,14 +153,17 @@ public actor WidgetWeaverWeatherEngine {
             }
         }
 
-        throw lastError ?? NSError(domain: "WidgetWeaverWeatherEngine", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown WeatherKit error"])
+        throw lastError ?? NSError(
+            domain: "WidgetWeaverWeatherEngine",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Unknown WeatherKit error"]
+        )
     }
 
     private func fetchMinuteForecastBestEffort(
         for location: CLLocation
     ) async -> Forecast<MinuteWeather>? {
         do {
-            // This can throw intermittently even in regions where Weather is supported.
             return try await WeatherService.shared.weather(for: location, including: .minute)
         } catch {
             return nil
@@ -187,7 +180,6 @@ public actor WidgetWeaverWeatherEngine {
     }
 
     private static func describe(error: Error) -> String {
-        // Keep it simple but stable for debugging.
         if let urlError = error as? URLError {
             return "Network error (\(urlError.code.rawValue)): \(urlError.localizedDescription)"
         }
@@ -215,7 +207,7 @@ public actor WidgetWeaverWeatherEngine {
         @inline(__always)
         func mmPerHourFromHourAmount(_ amount: Measurement<UnitLength>) -> Double {
             // HourWeather exposes a per-hour precipitation amount (length), not an intensity.
-            // Treat the amount as "mm in that hour" → mm/hour.
+            // Treat the amount as "mm in that hour" -> mm/hour.
             amount.converted(to: .millimeters).value
         }
 

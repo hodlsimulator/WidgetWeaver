@@ -50,16 +50,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
     private func notifyWidgetsWeatherUpdated() {
         #if canImport(WidgetKit)
-        // Avoid re-entrant reload loops while the widget extension is rendering.
-        guard !WidgetWeaverRuntime.isRunningInAppExtension else { return }
-
         Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
-            WidgetCenter.shared.reloadAllTimelines()
-            if #available(iOS 17.0, *) {
-                WidgetCenter.shared.invalidateConfigurationRecommendations()
-            }
+            WidgetWeaverWeatherWidgetReloadDebouncer.shared.scheduleReloadCoalesced()
         }
         #endif
     }
@@ -373,3 +365,34 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     }
 
 }
+
+
+#if canImport(WidgetKit)
+@MainActor
+final class WidgetWeaverWeatherWidgetReloadDebouncer {
+    static let shared = WidgetWeaverWeatherWidgetReloadDebouncer()
+
+    private var pendingWorkItem: DispatchWorkItem?
+
+    private init() {}
+
+    func scheduleReloadCoalesced() {
+        // Avoid re-entrant reload loops while the widget extension is rendering.
+        guard !WidgetWeaverRuntime.isRunningInAppExtension else { return }
+
+        pendingWorkItem?.cancel()
+
+        let work = DispatchWorkItem {
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
+            WidgetCenter.shared.reloadAllTimelines()
+            if #available(iOS 17.0, *) {
+                WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+
+        pendingWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+}
+#endif
