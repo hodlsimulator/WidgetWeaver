@@ -401,7 +401,7 @@ extension WidgetWeaverAboutView {
                     Text(
                         """
                         These are clock Designs you can add to your Library and edit.
-                        Use the Editor’s Layout tool to change the clock theme.
+                        Use the Editor’s Layout tool to change the clock scheme.
                         """
                     )
                     .font(.caption)
@@ -436,7 +436,7 @@ extension WidgetWeaverAboutView {
 
                     WidgetWeaverAboutBulletList(items: [
                         "Add one of these Clock (Designer) templates to your Library.",
-                        "Open it in the Editor and use Clock theme (Layout tool) to switch Classic / Ocean / Graphite.",
+                        "Open it in the Editor and use Scheme (Layout tool) to switch Classic / Ocean / Mint / Orchid / Sunset / Ember / Graphite.",
                         "Add a WidgetWeaver widget to your Home Screen to see it live.",
                     ])
 

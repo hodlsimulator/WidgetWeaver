@@ -125,6 +125,10 @@ struct WidgetWeaverDeepLinkHost<Content: View>: View {
 private enum WidgetWeaverClockDesignerTheme: String, CaseIterable, Identifiable {
     case classic
     case ocean
+    case mint
+    case orchid
+    case sunset
+    case ember
     case graphite
 
     var id: String { rawValue }
@@ -135,6 +139,14 @@ private enum WidgetWeaverClockDesignerTheme: String, CaseIterable, Identifiable 
             return "Classic"
         case .ocean:
             return "Ocean"
+        case .mint:
+            return "Mint"
+        case .orchid:
+            return "Orchid"
+        case .sunset:
+            return "Sunset"
+        case .ember:
+            return "Ember"
         case .graphite:
             return "Graphite"
         }
@@ -146,11 +158,20 @@ private enum WidgetWeaverClockDesignerTheme: String, CaseIterable, Identifiable 
             return .orange
         case .ocean:
             return .blue
+        case .mint:
+            return .green
+        case .orchid:
+            return .purple
+        case .sunset:
+            return .pink
+        case .ember:
+            return .red
         case .graphite:
             return .gray
         }
     }
 }
+
 
 private enum WWClockDesignerCreateSource: String {
     case manual
@@ -178,21 +199,20 @@ private extension WidgetWeaverClockColourScheme {
 
     var mappedDesignerTheme: WidgetWeaverClockDesignerTheme {
         switch self {
+        case .classic:
+            return .classic
         case .ocean:
             return .ocean
+        case .mint:
+            return .mint
+        case .orchid:
+            return .orchid
+        case .sunset:
+            return .sunset
+        case .ember:
+            return .ember
         case .graphite:
             return .graphite
-        default:
-            return .classic
-        }
-    }
-
-    var requiresThemeNote: Bool {
-        switch self {
-        case .classic, .ocean, .graphite:
-            return false
-        default:
-            return true
         }
     }
 }
@@ -220,21 +240,20 @@ private enum WWClockQuickConfigurationReader {
 }
 
 private enum WWClockDesignerFunnelMetrics {
-    private static let openedCountKey = "widgetweaver.clockDesigner.funnel.opened.count"
-    private static let openedLastKey = "widgetweaver.clockDesigner.funnel.opened.last"
+    private static let openCountKey = "widgetweaver.clockDesignerFunnel.opened.count"
+    private static let openLastKey = "widgetweaver.clockDesignerFunnel.opened.last"
 
-    private static let createTappedCountKey = "widgetweaver.clockDesigner.create.tapped.count"
-    private static let createSucceededCountKey = "widgetweaver.clockDesigner.create.succeeded.count"
-
-    private static let createLastKey = "widgetweaver.clockDesigner.create.last"
-    private static let createLastSourceKey = "widgetweaver.clockDesigner.create.last.source"
-    private static let createLastThemeKey = "widgetweaver.clockDesigner.create.last.theme"
-    private static let createLastDesignIDKey = "widgetweaver.clockDesigner.create.last.designID"
+    private static let createTappedCountKey = "widgetweaver.clockDesignerFunnel.createTapped.count"
+    private static let createSucceededCountKey = "widgetweaver.clockDesignerFunnel.createSucceeded.count"
+    private static let createLastKey = "widgetweaver.clockDesignerFunnel.create.last"
+    private static let createLastSourceKey = "widgetweaver.clockDesignerFunnel.create.last.source"
+    private static let createLastThemeKey = "widgetweaver.clockDesignerFunnel.create.last.theme"
+    private static let createLastDesignIDKey = "widgetweaver.clockDesignerFunnel.create.last.designID"
 
     static func recordOpened(now: Date = Date()) {
         let defaults = AppGroup.userDefaults
-        defaults.set(now, forKey: openedLastKey)
-        defaults.set(defaults.integer(forKey: openedCountKey) + 1, forKey: openedCountKey)
+        defaults.set(now, forKey: openLastKey)
+        defaults.set(defaults.integer(forKey: openCountKey) + 1, forKey: openCountKey)
     }
 
     static func recordCreateTapped(source: WWClockDesignerCreateSource, theme: WidgetWeaverClockDesignerTheme, now: Date = Date()) {
@@ -285,12 +304,6 @@ private struct WidgetWeaverClockDeepLinkView: View {
                         Text("Last updated: \(quickSnapshot.lastTimelineBuildAt.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        if quickSnapshot.scheme.requiresThemeNote {
-                            Text("Designer clocks currently support Classic, Ocean, and Graphite. \"\(quickSnapshot.scheme.displayName)\" maps to Classic as the closest match.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
 
                         Button {
                             createDesignerClock(
