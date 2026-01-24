@@ -8,12 +8,12 @@
 import SwiftUI
 import WidgetKit
 
-
 extension ContentView {
     func smartPhotoCropSection(focus: Binding<EditorFocusSnapshot>) -> some View {
         let d = currentFamilyDraft()
         let hasImage = editorToolContext.hasImageConfigured
         let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
+        let uxHardeningEnabled = FeatureFlags.smartPhotosUXHardeningEnabled
 
         return Section {
             if !hasImage {
@@ -39,6 +39,7 @@ extension ContentView {
                         selectedFamily: editingFamily,
                         focus: focus,
                         isBusy: importInProgress,
+                        uxHardeningEnabled: uxHardeningEnabled,
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
@@ -70,6 +71,7 @@ extension ContentView {
                         smart: smart,
                         selectedFamily: editingFamily,
                         isBusy: importInProgress,
+                        uxHardeningEnabled: uxHardeningEnabled,
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
@@ -118,6 +120,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
     let smart: SmartPhotoSpec
     let selectedFamily: EditingFamily
     let isBusy: Bool
+    let uxHardeningEnabled: Bool
 
     let onSelectFamily: (EditingFamily) -> Void
     let onApplyCrop: (EditingFamily, NormalisedRect, Double, Int) async -> Void
@@ -126,7 +129,9 @@ private struct SmartPhotoSingleFramingEditorView: View {
     @State private var showOtherSizes: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let master = smart.masterFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let masterAvailable = !master.isEmpty && (!uxHardeningEnabled || FileManager.default.fileExists(atPath: AppGroup.imageFileURL(fileName: master).path))
+        return VStack(alignment: .leading, spacing: 12) {
             SmartPhotoPreviewStripView(
                 smart: smart,
                 selectedFamily: selectedFamily,
@@ -136,7 +141,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
 
             sizeControls
 
-            Text("Applies to this single photo. To revert to automatic framing for all sizes, use “Regenerate smart renders” in Smart Photo.")
+            Text(uxHardeningEnabled && !masterAvailable ? "Smart Photo master file is missing.\nOpen Smart Photo and tap “Regenerate smart renders”." : "Applies to this single photo. To revert to automatic framing for all sizes, use “Regenerate smart renders” in Smart Photo.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -191,6 +196,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
 
         let master = smart.masterFileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !master.isEmpty else { return nil }
+        if uxHardeningEnabled, FileManager.default.fileExists(atPath: AppGroup.imageFileURL(fileName: master).path) == false { return nil }
 
         return CropRoute(
             family: family,
@@ -247,6 +253,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     let selectedFamily: EditingFamily
     let focus: Binding<EditorFocusSnapshot>
     let isBusy: Bool
+    let uxHardeningEnabled: Bool
 
     let onSelectFamily: (EditingFamily) -> Void
     let onApplyCrop: (String, EditingFamily, NormalisedRect, Double) async -> Void
@@ -526,7 +533,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
             }
 
             if !canEdit {
-                Text("Source image for this shuffled photo is missing.\nRe-prepare this album shuffle set to enable manual framing.")
+                Text(uxHardeningEnabled ? "Source image for this shuffled photo is missing.\nOpen Album Shuffle and tap “Prepare next batch”, or re-select the album." : "Source image for this shuffled photo is missing.\nRe-prepare this album shuffle set to enable manual framing.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -727,7 +734,10 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     }
 
     private func entryHasSource(entry: SmartPhotoShuffleManifest.Entry) -> Bool {
-        entry.hasSourceImageFile
+        let t = (entry.sourceFileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return false }
+        if uxHardeningEnabled, FileManager.default.fileExists(atPath: AppGroup.imageFileURL(fileName: t).path) == false { return false }
+        return true
     }
 
     private func entryHasManual(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry) -> Bool {
