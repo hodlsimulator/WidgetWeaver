@@ -10,10 +10,14 @@ import UIKit
 
 struct WidgetWeaverVariableInsertPickerView: View {
     enum Scope: String, CaseIterable, Identifiable {
+        case all = "All"
         case builtIns = "Built-ins"
         case custom = "Custom"
 
         var id: String { rawValue }
+
+        static var proScopes: [Scope] { [.all, .builtIns, .custom] }
+        static var freeScopes: [Scope] { [.builtIns] }
     }
 
     let isProUnlocked: Bool
@@ -22,17 +26,28 @@ struct WidgetWeaverVariableInsertPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var scope: Scope = .builtIns
+    @AppStorage("variables.insert.scope") private var scopeRaw: String = Scope.all.rawValue
     @State private var searchText: String = ""
 
     @AppStorage("variables.builtins.showAdvanced") private var showAdvancedKeys: Bool = false
+    @AppStorage("variables.insert.keepOpenAfterInsert") private var keepOpenAfterInsert: Bool = false
+
+    @AppStorage("variables.insert.pinnedSnippets.json") private var pinnedSnippetsJSON: String = ""
+    @AppStorage("variables.insert.recentSnippets.json") private var recentSnippetsJSON: String = ""
+
+    @State private var showClearPinnedConfirmation: Bool = false
+    @State private var showClearRecentsConfirmation: Bool = false
 
     var body: some View {
-        List {
+        let scope = effectiveScope
+        let values = mergedValues
+        let searchIsActive = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return List {
             if isProUnlocked {
                 Section {
-                    Picker("Source", selection: $scope) {
-                        ForEach(Scope.allCases) { scope in
+                    Picker("Source", selection: scopeBinding) {
+                        ForEach(Scope.proScopes) { scope in
                             Text(scope.rawValue).tag(scope)
                         }
                     }
@@ -40,11 +55,21 @@ struct WidgetWeaverVariableInsertPickerView: View {
                 }
             }
 
-            if scope == .builtIns || !isProUnlocked {
+            if !searchIsActive {
+                historySections(scope: scope, values: values)
+            }
+
+            optionsSection(scope: scope)
+
+            if scope == .builtIns || !isProUnlocked || scope == .all {
                 builtInsBody
-            } else {
+            }
+
+            if scope == .custom || scope == .all {
                 customBody
             }
+
+            toolsSection
         }
         .navigationTitle("Insert variable")
         .navigationBarTitleDisplayMode(.inline)
@@ -54,12 +79,336 @@ struct WidgetWeaverVariableInsertPickerView: View {
                 Button("Close") { dismiss() }
             }
         }
+        .confirmationDialog(
+            "Clear pinned snippets?",
+            isPresented: $showClearPinnedConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Pinned", role: .destructive) {
+                pinnedSnippetsJSON = ""
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes pinned snippets on this device.")
+        }
+        .confirmationDialog(
+            "Clear recent inserts?",
+            isPresented: $showClearRecentsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Recents", role: .destructive) {
+                recentSnippetsJSON = ""
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This clears the recent insert history on this device.")
+        }
         .onAppear {
             if !isProUnlocked {
-                scope = .builtIns
+                scopeRaw = Scope.builtIns.rawValue
+            } else if Scope(rawValue: scopeRaw) == nil {
+                scopeRaw = Scope.all.rawValue
             }
         }
     }
+
+    private var effectiveScope: Scope {
+        if !isProUnlocked { return .builtIns }
+        return Scope(rawValue: scopeRaw) ?? .all
+    }
+
+    private var scopeBinding: Binding<Scope> {
+        Binding(
+            get: { effectiveScope },
+            set: { newValue in
+                scopeRaw = newValue.rawValue
+            }
+        )
+    }
+
+    private var mergedValues: [String: String] {
+        var out = resolvedBuiltInValues
+        for (k, v) in customVariables {
+            out[k] = v
+        }
+        return out
+    }
+
+    // MARK: - Options
+
+    private func optionsSection(scope: Scope) -> some View {
+        Section {
+            Toggle("Keep open after insert", isOn: $keepOpenAfterInsert)
+
+            if scope != .custom {
+                Toggle("Show advanced keys", isOn: $showAdvancedKeys)
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("When enabled, the picker stays open after inserting a snippet.")
+                if scope != .custom {
+                    Text("Search always includes advanced keys.")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - History
+
+    private enum SnippetKind {
+        case builtIn
+        case custom
+        case other
+    }
+
+    private func historySections(scope: Scope, values: [String: String]) -> some View {
+        let pinned = visiblePinnedSnippets(scope: scope)
+        let recents = visibleRecentSnippets(scope: scope)
+
+        return Group {
+            if !pinned.isEmpty {
+                Section("Pinned") {
+                    ForEach(pinned, id: \.self) { snippet in
+                        historyRow(
+                            snippet: snippet,
+                            values: values,
+                            showsPinnedIndicator: false,
+                            pinAvailability: .unpin
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                unpinSnippet(snippet)
+                            } label: {
+                                Label("Unpin", systemImage: "star.slash")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !recents.isEmpty {
+                Section("Recent") {
+                    ForEach(recents, id: \.self) { snippet in
+                        historyRow(
+                            snippet: snippet,
+                            values: values,
+                            showsPinnedIndicator: true,
+                            pinAvailability: pinnedSnippets.contains(snippet) ? .unpin : .pin
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if pinnedSnippets.contains(snippet) {
+                                Button {
+                                    unpinSnippet(snippet)
+                                } label: {
+                                    Label("Unpin", systemImage: "star.slash")
+                                }
+                                .tint(.yellow)
+                            } else {
+                                Button {
+                                    pinSnippet(snippet)
+                                } label: {
+                                    Label("Pin", systemImage: "star")
+                                }
+                                .tint(.yellow)
+                            }
+
+                            Button(role: .destructive) {
+                                removeRecentSnippet(snippet)
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private enum PinAvailability {
+        case pin
+        case unpin
+        case unavailable
+    }
+
+    private func historyRow(
+        snippet: String,
+        values: [String: String],
+        showsPinnedIndicator: Bool,
+        pinAvailability: PinAvailability
+    ) -> some View {
+        let key = snippetKey(snippet)
+        let value: String = {
+            guard let key else { return "" }
+            return values[key] ?? ""
+        }()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayValue = trimmed.isEmpty ? "—" : trimmed
+        let isPinned = pinnedSnippets.contains(snippet)
+
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(snippet)
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 0)
+
+            if key != nil {
+                Text(displayValue)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if showsPinnedIndicator, isPinned {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Pinned")
+            }
+
+            Button {
+                UIPasteboard.general.string = snippet
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy snippet")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            performInsert(snippet)
+        }
+        .contextMenu {
+            Button("Insert") {
+                performInsert(snippet)
+            }
+
+            Button("Copy") {
+                UIPasteboard.general.string = snippet
+            }
+
+            switch pinAvailability {
+            case .pin:
+                Button("Pin") { pinSnippet(snippet) }
+            case .unpin:
+                Button("Unpin") { unpinSnippet(snippet) }
+            case .unavailable:
+                EmptyView()
+            }
+
+            if recentSnippets.contains(snippet) {
+                Button("Remove from Recents") {
+                    removeRecentSnippet(snippet)
+                }
+            }
+        }
+        .accessibilityLabel(key ?? snippet)
+    }
+
+    private func visiblePinnedSnippets(scope: Scope) -> [String] {
+        pinnedSnippets.filter { isSnippetVisible($0, in: scope) }
+    }
+
+    private func visibleRecentSnippets(scope: Scope) -> [String] {
+        recentSnippets.filter { isSnippetVisible($0, in: scope) }
+    }
+
+    private func isSnippetVisible(_ snippet: String, in scope: Scope) -> Bool {
+        switch scope {
+        case .all:
+            return true
+        case .builtIns:
+            return snippetKind(snippet) == .builtIn
+        case .custom:
+            return snippetKind(snippet) == .custom
+        }
+    }
+
+    private func snippetKind(_ snippet: String) -> SnippetKind {
+        guard let key = snippetKey(snippet) else { return .other }
+        if key.hasPrefix("__") { return .builtIn }
+        return .custom
+    }
+
+    private func snippetKey(_ snippet: String) -> String? {
+        guard let start = snippet.range(of: "{{") else { return nil }
+        guard let end = snippet.range(of: "}}", range: start.upperBound..<snippet.endIndex) else { return nil }
+
+        let inner = snippet[start.upperBound..<end.lowerBound]
+        let trimmed = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.hasPrefix("=") { return nil }
+
+        let keyPart = trimmed.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let key = String(keyPart).trimmingCharacters(in: .whitespacesAndNewlines)
+        return key.isEmpty ? nil : key
+    }
+
+    private var pinnedSnippets: [String] {
+        decodeSnippetList(from: pinnedSnippetsJSON)
+    }
+
+    private var recentSnippets: [String] {
+        decodeSnippetList(from: recentSnippetsJSON)
+    }
+
+    private func pinSnippet(_ snippet: String) {
+        let s = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+
+        var list = pinnedSnippets
+        list.removeAll { $0 == s }
+        list.insert(s, at: 0)
+        pinnedSnippetsJSON = encodeSnippetList(list.prefix(24).map { $0 })
+    }
+
+    private func unpinSnippet(_ snippet: String) {
+        let s = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+
+        var list = pinnedSnippets
+        list.removeAll { $0 == s }
+        pinnedSnippetsJSON = encodeSnippetList(list)
+    }
+
+    private func recordRecentSnippet(_ snippet: String) {
+        let s = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+
+        var list = recentSnippets
+        list.removeAll { $0 == s }
+        list.insert(s, at: 0)
+        recentSnippetsJSON = encodeSnippetList(list.prefix(24).map { $0 })
+    }
+
+    private func removeRecentSnippet(_ snippet: String) {
+        let s = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+
+        var list = recentSnippets
+        list.removeAll { $0 == s }
+        recentSnippetsJSON = encodeSnippetList(list)
+    }
+
+    private func decodeSnippetList(from json: String) -> [String] {
+        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        guard let data = trimmed.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    private func encodeSnippetList(_ list: [String]) -> String {
+        guard let data = try? JSONEncoder().encode(Array(list)) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    // MARK: - Content
 
     private var builtInsBody: some View {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -81,14 +430,6 @@ struct WidgetWeaverVariableInsertPickerView: View {
         ]
 
         return Group {
-            Section {
-                Toggle("Show advanced keys", isOn: $showAdvancedKeys)
-            } footer: {
-                Text("Search always includes advanced keys.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             if !snippetMatches.isEmpty {
                 Section("Snippets") {
                     ForEach(snippetMatches) { item in
@@ -208,7 +549,9 @@ struct WidgetWeaverVariableInsertPickerView: View {
     }
 
     private func snippetRow(label: String, snippet: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        let isPinned = pinnedSnippets.contains(snippet)
+
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -221,6 +564,12 @@ struct WidgetWeaverVariableInsertPickerView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
+            if isPinned {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Pinned")
+            }
+
             Button {
                 UIPasteboard.general.string = snippet
             } label: {
@@ -232,16 +581,19 @@ struct WidgetWeaverVariableInsertPickerView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            onInsert(snippet)
-            dismiss()
+            performInsert(snippet)
         }
         .contextMenu {
             Button("Insert") {
-                onInsert(snippet)
-                dismiss()
+                performInsert(snippet)
             }
             Button("Copy") {
                 UIPasteboard.general.string = snippet
+            }
+            if isPinned {
+                Button("Unpin") { unpinSnippet(snippet) }
+            } else {
+                Button("Pin") { pinSnippet(snippet) }
             }
         }
     }
@@ -250,6 +602,7 @@ struct WidgetWeaverVariableInsertPickerView: View {
         let snippet = "{{\(key)}}"
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayValue = trimmed.isEmpty ? "—" : trimmed
+        let isPinned = pinnedSnippets.contains(snippet)
 
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(key)
@@ -265,6 +618,12 @@ struct WidgetWeaverVariableInsertPickerView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
+            if isPinned {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Pinned")
+            }
+
             Button {
                 UIPasteboard.general.string = snippet
             } label: {
@@ -276,23 +635,25 @@ struct WidgetWeaverVariableInsertPickerView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            onInsert(snippet)
-            dismiss()
+            performInsert(snippet)
         }
         .contextMenu {
             Button("Insert") {
-                onInsert(snippet)
-                dismiss()
+                performInsert(snippet)
             }
             Button("Insert with fallback") {
-                onInsert("{{\(key)|--}}")
-                dismiss()
+                performInsert("{{\(key)|--}}")
             }
             Button("Copy template") {
                 UIPasteboard.general.string = snippet
             }
             Button("Copy key") {
                 UIPasteboard.general.string = key
+            }
+            if isPinned {
+                Button("Unpin") { unpinSnippet(snippet) }
+            } else {
+                Button("Pin") { pinSnippet(snippet) }
             }
         }
     }
@@ -301,6 +662,7 @@ struct WidgetWeaverVariableInsertPickerView: View {
         let snippet = "{{\(key)}}"
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayValue = trimmed.isEmpty ? "—" : trimmed
+        let isPinned = pinnedSnippets.contains(snippet)
 
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(key)
@@ -316,6 +678,12 @@ struct WidgetWeaverVariableInsertPickerView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
+            if isPinned {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel("Pinned")
+            }
+
             Button {
                 UIPasteboard.general.string = snippet
             } label: {
@@ -327,23 +695,64 @@ struct WidgetWeaverVariableInsertPickerView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            onInsert(snippet)
-            dismiss()
+            performInsert(snippet)
         }
         .contextMenu {
             Button("Insert") {
-                onInsert(snippet)
-                dismiss()
+                performInsert(snippet)
             }
             Button("Insert with fallback") {
-                onInsert("{{\(key)|--}}")
-                dismiss()
+                performInsert("{{\(key)|--}}")
             }
             Button("Copy template") {
                 UIPasteboard.general.string = snippet
             }
             Button("Copy key") {
                 UIPasteboard.general.string = key
+            }
+            if isPinned {
+                Button("Unpin") { unpinSnippet(snippet) }
+            } else {
+                Button("Pin") { pinSnippet(snippet) }
+            }
+        }
+    }
+
+    // MARK: - Insert
+
+    private func performInsert(_ snippet: String) {
+        recordRecentSnippet(snippet)
+        onInsert(snippet)
+        if !keepOpenAfterInsert {
+            dismiss()
+        }
+    }
+
+    // MARK: - Tools
+
+    private var toolsSection: some View {
+        let hasPinned = !pinnedSnippets.isEmpty
+        let hasRecents = !recentSnippets.isEmpty
+
+        return Group {
+            if hasPinned || hasRecents {
+                Section("Tools") {
+                    if hasPinned {
+                        Button(role: .destructive) {
+                            showClearPinnedConfirmation = true
+                        } label: {
+                            Label("Clear pinned snippets", systemImage: "star.slash")
+                        }
+                    }
+
+                    if hasRecents {
+                        Button(role: .destructive) {
+                            showClearRecentsConfirmation = true
+                        } label: {
+                            Label("Clear recent inserts", systemImage: "clock.arrow.circlepath")
+                        }
+                    }
+                }
             }
         }
     }
