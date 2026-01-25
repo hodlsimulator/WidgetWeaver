@@ -378,7 +378,7 @@ public enum WidgetWeaverEntitlements {
         let kind = WidgetWeaverWidgetKinds.main
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: kind)
-            WidgetCenter.shared.reloadAllTimelines()
+            WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines()
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }
