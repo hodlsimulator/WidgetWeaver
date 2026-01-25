@@ -68,6 +68,11 @@ struct SmartPhotoPipeline {
         if didLock { prepareLock.lock() }
         defer { if didLock { prepareLock.unlock() } }
 
+        #if DEBUG
+        let inInfo = AppGroup.debugPickedImageInfo(data: originalData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        print("[WWSmartPhoto] prepare input=\(inInfo)")
+        #endif
+
         let analysisLongestEdge = 1024
         let masterLongestEdge = 3072
 
@@ -130,6 +135,17 @@ struct SmartPhotoPipeline {
         try AppGroup.writeImageData(smallData, fileName: smallFileName)
         try AppGroup.writeImageData(mediumData, fileName: mediumFileName)
         try AppGroup.writeImageData(largeData, fileName: largeFileName)
+
+        #if DEBUG
+        let masterInfo = AppGroup.debugPickedImageInfo(fileName: masterFileName)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        let smallInfo = AppGroup.debugPickedImageInfo(fileName: smallFileName)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        let mediumInfo = AppGroup.debugPickedImageInfo(fileName: mediumFileName)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        let largeInfo = AppGroup.debugPickedImageInfo(fileName: largeFileName)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        print("[WWSmartPhoto] wrote master=\(masterFileName) \(masterInfo)")
+        print("[WWSmartPhoto] wrote small=\(smallFileName) \(smallInfo)")
+        print("[WWSmartPhoto] wrote medium=\(mediumFileName) \(mediumInfo)")
+        print("[WWSmartPhoto] wrote large=\(largeFileName) \(largeInfo)")
+        #endif
 
         let smartPhoto = SmartPhotoSpec(
             masterFileName: masterFileName,
