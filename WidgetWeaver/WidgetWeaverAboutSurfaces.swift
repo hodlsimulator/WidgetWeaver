@@ -34,112 +34,126 @@ struct WidgetWeaverAboutBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
-            if colorScheme == .dark {
-                // Dark mode is intentionally unchanged.
-                WidgetWeaverAboutTheme.backgroundBase
-                    .ignoresSafeArea()
-
-                RadialGradient(
-                    colors: [Color.pink.opacity(0.18), Color.clear],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 600
-                )
-                .ignoresSafeArea()
-
-                RadialGradient(
-                    colors: [Color.orange.opacity(0.16), Color.clear],
-                    center: .bottomTrailing,
-                    startRadius: 0,
-                    endRadius: 760
-                )
-                .ignoresSafeArea()
-
-                RadialGradient(
-                    colors: [Color.purple.opacity(0.14), Color.clear],
-                    center: .top,
-                    startRadius: 0,
-                    endRadius: 820
-                )
-                .ignoresSafeArea()
-            } else {
-                // Light mode: higher-contrast “paper” backdrop with soft colour energy + subtle texture.
-                WidgetWeaverAboutTheme.backgroundBase
-                    .ignoresSafeArea()
-
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.92),
-                        Color(uiColor: .systemGroupedBackground).opacity(0.70),
-                        Color(uiColor: .systemGroupedBackground)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                // Soft colour fields (kept low-saturation to avoid fighting content).
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color("AccentColor").opacity(0.18), Color.clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 260
-                        )
-                    )
-                    .frame(width: 520, height: 520)
-                    .blur(radius: 40)
-                    .offset(x: -210, y: -260)
-                    .ignoresSafeArea()
-
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.blue.opacity(0.12), Color.clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 320
-                        )
-                    )
-                    .frame(width: 620, height: 620)
-                    .blur(radius: 44)
-                    .offset(x: 240, y: -120)
-                    .ignoresSafeArea()
-
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.purple.opacity(0.10), Color.clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 360
-                        )
-                    )
-                    .frame(width: 720, height: 720)
-                    .blur(radius: 48)
-                    .offset(x: 160, y: 340)
-                    .ignoresSafeArea()
-
-                // Fine grain helps the light UI feel less flat.
-                Image("RainFuzzNoise_Sparse")
-                    .resizable(resizingMode: .tile)
-                    .scaleEffect(1.35)
-                    .rotationEffect(.degrees(9))
-                    .blendMode(.softLight)
-                    .opacity(0.14)
-                    .ignoresSafeArea()
-
-                // Gentle vignette improves legibility near the bottom.
-                LinearGradient(
-                    colors: [Color.black.opacity(0.06), Color.clear],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-                .ignoresSafeArea()
+        GeometryReader { proxy in
+            ZStack {
+                if colorScheme == .dark {
+                    darkLayers
+                } else {
+                    lightLayers
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var darkLayers: some View {
+        // Dark mode is intentionally unchanged (layout is constrained to avoid sizing the parent).
+        WidgetWeaverAboutTheme.backgroundBase
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        RadialGradient(
+            colors: [Color.pink.opacity(0.18), Color.clear],
+            center: .topLeading,
+            startRadius: 0,
+            endRadius: 600
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        RadialGradient(
+            colors: [Color.orange.opacity(0.16), Color.clear],
+            center: .bottomTrailing,
+            startRadius: 0,
+            endRadius: 760
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        RadialGradient(
+            colors: [Color.purple.opacity(0.14), Color.clear],
+            center: .top,
+            startRadius: 0,
+            endRadius: 820
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var lightLayers: some View {
+        // Light mode: higher-contrast “paper” backdrop with soft colour energy + subtle texture.
+        WidgetWeaverAboutTheme.backgroundBase
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        LinearGradient(
+            colors: [
+                Color.white.opacity(0.92),
+                Color(uiColor: .systemGroupedBackground).opacity(0.70),
+                Color(uiColor: .systemGroupedBackground)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        // Soft colour fields (kept low-saturation to avoid fighting content).
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [Color("AccentColor").opacity(0.18), Color.clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 260
+                )
+            )
+            .frame(width: 520, height: 520)
+            .blur(radius: 40)
+            .offset(x: -210, y: -260)
+
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [Color.blue.opacity(0.12), Color.clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 320
+                )
+            )
+            .frame(width: 620, height: 620)
+            .blur(radius: 44)
+            .offset(x: 240, y: -120)
+
+        Circle()
+            .fill(
+                RadialGradient(
+                    colors: [Color.purple.opacity(0.10), Color.clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 360
+                )
+            )
+            .frame(width: 720, height: 720)
+            .blur(radius: 48)
+            .offset(x: 160, y: 340)
+
+        // Fine grain helps the light UI feel less flat.
+        Image("RainFuzzNoise_Sparse")
+            .resizable(resizingMode: .tile)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(1.35)
+            .rotationEffect(.degrees(9))
+            .blendMode(.softLight)
+            .opacity(0.14)
+
+        // Gentle vignette improves legibility near the bottom.
+        LinearGradient(
+            colors: [Color.black.opacity(0.06), Color.clear],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
