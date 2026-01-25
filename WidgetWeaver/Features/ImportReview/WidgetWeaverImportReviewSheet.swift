@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import UIKit
+import WidgetKit
 
 struct WidgetWeaverImportReviewSheet: View {
     let model: WidgetWeaverImportReviewModel
@@ -20,12 +22,114 @@ struct WidgetWeaverImportReviewSheet: View {
     let onSelectNone: () -> Void
     let onUnlockPro: (() -> Void)?
 
+    private enum ListScope: String, CaseIterable, Identifiable {
+        case all = "All"
+        case selected = "Selected"
+
+        var id: String { rawValue }
+    }
+
+    private enum Sort: String, CaseIterable, Identifiable {
+        case updated = "Updated"
+        case name = "Name"
+        case template = "Template"
+
+        var id: String { rawValue }
+    }
+
+    private struct PreviewState: Identifiable {
+        let id: UUID
+        let item: WidgetWeaverImportReviewItem
+        let spec: WidgetSpec
+    }
+
+    @State private var listScope: ListScope = .all
+    @State private var sort: Sort = .updated
+
+    @State private var filterWithImageOnly: Bool = false
+    @State private var templateFilter: String = "All"
+
+    @State private var searchText: String = ""
+
+    @State private var isListScrolling: Bool = false
+
+    @State private var preview: PreviewState?
+
     private var selectedCount: Int { selection.count }
 
     private var canImport: Bool {
         guard selectedCount > 0 else { return false }
         guard limitState.isImportAllowed else { return false }
         return !isImporting
+    }
+
+    private var isFiltering: Bool {
+        filterWithImageOnly || templateFilter != "All" || listScope == .selected
+    }
+
+    private var availableTemplates: [String] {
+        let unique = Set(model.items.map(\.templateDisplay))
+        return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var specsByID: [UUID: WidgetSpec] {
+        var out: [UUID: WidgetSpec] = [:]
+        for spec in model.payload.specs {
+            out[spec.id] = spec.normalised()
+        }
+        return out
+    }
+
+    private var displayedItems: [WidgetWeaverImportReviewItem] {
+        var items = model.items
+
+        if listScope == .selected {
+            items = items.filter { selection.contains($0.id) }
+        }
+
+        if filterWithImageOnly {
+            items = items.filter(\.hasImage)
+        }
+
+        if templateFilter != "All" {
+            items = items.filter { $0.templateDisplay == templateFilter }
+        }
+
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            items = items.filter {
+                $0.name.lowercased().contains(q)
+                || $0.templateDisplay.lowercased().contains(q)
+            }
+        }
+
+        switch sort {
+        case .updated:
+            items.sort {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+
+        case .name:
+            items.sort {
+                let a = $0.name.localizedStandardCompare($1.name)
+                if a != .orderedSame { return a == .orderedAscending }
+                return $0.updatedAt > $1.updatedAt
+            }
+
+        case .template:
+            items.sort {
+                let a = $0.templateDisplay.localizedStandardCompare($1.templateDisplay)
+                if a != .orderedSame { return a == .orderedAscending }
+
+                let b = $0.name.localizedStandardCompare($1.name)
+                if b != .orderedSame { return b == .orderedAscending }
+
+                return $0.updatedAt > $1.updatedAt
+            }
+        }
+
+        return items
     }
 
     var body: some View {
@@ -45,6 +149,11 @@ struct WidgetWeaverImportReviewSheet: View {
             }
             .navigationTitle("Review Import")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
+            .environment(\.wwThumbnailRenderingEnabled, !isListScrolling)
+            .onScrollPhaseChange { _, newPhase in
+                isListScrolling = newPhase.isScrolling
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
@@ -58,8 +167,46 @@ struct WidgetWeaverImportReviewSheet: View {
 
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
+                        Picker("Sort", selection: $sort) {
+                            ForEach(Sort.allCases) { s in
+                                Text(s.rawValue).tag(s)
+                            }
+                        }
+
+                        Divider()
+
+                        Toggle("With image only", isOn: $filterWithImageOnly)
+
+                        if availableTemplates.count > 1 {
+                            Picker("Template", selection: $templateFilter) {
+                                Text("All").tag("All")
+                                ForEach(availableTemplates, id: \.self) { template in
+                                    Text(template).tag(template)
+                                }
+                            }
+                        }
+
+                        if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Divider()
+
+                            Button("Clear filters") {
+                                listScope = .all
+                                filterWithImageOnly = false
+                                templateFilter = "All"
+                                searchText = ""
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("Sort and filter")
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
                         Button("Select all") { onSelectAll() }
                             .disabled(isImporting)
+
                         Button("Select none") { onSelectNone() }
                             .disabled(isImporting)
                     } label: {
@@ -67,6 +214,14 @@ struct WidgetWeaverImportReviewSheet: View {
                     }
                     .accessibilityLabel("Selection")
                 }
+            }
+            .sheet(item: $preview) { state in
+                WidgetWeaverImportDesignPreviewSheet(
+                    item: state.item,
+                    spec: state.spec,
+                    selection: $selection,
+                    isImporting: isImporting
+                )
             }
         }
     }
@@ -80,6 +235,14 @@ struct WidgetWeaverImportReviewSheet: View {
             }
 
             LabeledContent("Selected", value: "\(selectedCount) of \(model.items.count)")
+
+            Picker("Showing", selection: $listScope) {
+                ForEach(ListScope.allCases) { scope in
+                    Text(scope.rawValue).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isImporting)
 
             if isImporting {
                 HStack(spacing: 10) {
@@ -117,19 +280,99 @@ struct WidgetWeaverImportReviewSheet: View {
 
     private var designsSection: some View {
         Section {
-            ForEach(model.items) { item in
-                Button {
-                    toggle(item.id)
-                } label: {
-                    ItemRow(item: item, isSelected: selection.contains(item.id))
+            if displayedItems.isEmpty {
+                VStack(spacing: 10) {
+                    Text(emptyDesignsMessage)
+                        .foregroundStyle(.secondary)
+
+                    if listScope == .selected {
+                        Button("Show all") { listScope = .all }
+                            .disabled(isImporting)
+                    }
+
+                    if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button("Clear filters") {
+                            listScope = .all
+                            filterWithImageOnly = false
+                            templateFilter = "All"
+                            searchText = ""
+                        }
+                        .disabled(isImporting)
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(isImporting)
-                .accessibilityLabel(accessibilityLabel(item: item))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            } else {
+                ForEach(displayedItems) { item in
+                    Button {
+                        toggle(item.id)
+                    } label: {
+                        ImportItemRow(
+                            item: item,
+                            spec: specsByID[item.id],
+                            isSelected: selection.contains(item.id)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isImporting)
+                    .contextMenu {
+                        Button {
+                            presentPreview(for: item)
+                        } label: {
+                            Label("Preview", systemImage: "eye")
+                        }
+
+                        Button {
+                            UIPasteboard.general.string = item.name
+                        } label: {
+                            Label("Copy name", systemImage: "doc.on.doc")
+                        }
+
+                        Button {
+                            UIPasteboard.general.string = item.templateDisplay
+                        } label: {
+                            Label("Copy template", systemImage: "doc.on.doc")
+                        }
+
+                        Divider()
+
+                        Button {
+                            selectOnly(item.id)
+                        } label: {
+                            Label("Select only this", systemImage: "checkmark.circle")
+                        }
+                        .disabled(isImporting)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            presentPreview(for: item)
+                        } label: {
+                            Label("Preview", systemImage: "eye")
+                        }
+                        .tint(.blue)
+                    }
+                    .accessibilityLabel(accessibilityLabel(item: item))
+                }
             }
         } header: {
             Text("Designs")
+        } footer: {
+            Text("Tip: swipe right or long-press a row to preview before importing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private var emptyDesignsMessage: String {
+        if listScope == .selected && selectedCount == 0 {
+            return "No designs selected."
+        }
+
+        if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "No matches."
+        }
+
+        return "No designs found in this file."
     }
 
     private var unlockProSection: some View {
@@ -152,20 +395,33 @@ struct WidgetWeaverImportReviewSheet: View {
         }
     }
 
+    private func selectOnly(_ id: UUID) {
+        selection = [id]
+    }
+
+    private func presentPreview(for item: WidgetWeaverImportReviewItem) {
+        guard let spec = specsByID[item.id] else { return }
+        preview = PreviewState(id: item.id, item: item, spec: spec)
+    }
+
     private func accessibilityLabel(item: WidgetWeaverImportReviewItem) -> String {
         let hasImage = item.hasImage ? ", has image" : ""
-        return "\(item.name), \(item.templateDisplay), updated \(item.updatedAt.formatted(date: .abbreviated, time: .shortened))\(hasImage)"
+        let selected = selection.contains(item.id) ? ", selected" : ""
+        return "\(item.name), \(item.templateDisplay), updated \(item.updatedAt.formatted(date: .abbreviated, time: .shortened))\(hasImage)\(selected)"
     }
 }
 
-private struct ItemRow: View {
+private struct ImportItemRow: View {
     let item: WidgetWeaverImportReviewItem
+    let spec: WidgetSpec?
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .imageScale(.large)
+
+            thumbnail
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.name)
@@ -178,7 +434,7 @@ private struct ItemRow: View {
                     .lineLimit(1)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             if item.hasImage {
                 Text("Image")
@@ -192,5 +448,33 @@ private struct ItemRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if let spec {
+            let isTimeDependent = spec.normalised().usesTimeDependentRendering()
+
+            WidgetPreviewThumbnail(
+                spec: spec,
+                family: .systemSmall,
+                height: 54,
+                renderingStyle: isTimeDependent ? .live : .rasterCached
+            )
+            .frame(width: 54, height: 54)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.secondary.opacity(0.12))
+                .frame(width: 54, height: 54)
+                .overlay(
+                    Image(systemName: "square")
+                        .foregroundStyle(.secondary)
+                )
+        }
     }
 }
