@@ -10,14 +10,14 @@ import SwiftUI
 import WidgetKit
 
 struct WidgetWeaverClockWidgetLiveView: View {
-    let face: WidgetWeaverClockFaceToken?
+    let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
     let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
 
     init(
-        face: WidgetWeaverClockFaceToken? = nil,
+        face: WidgetWeaverClockFaceToken,
         palette: WidgetWeaverClockPalette,
         entryDate: Date,
         tickMode: WidgetWeaverClockTickMode,
@@ -47,7 +47,7 @@ struct WidgetWeaverClockWidgetLiveView: View {
     var body: some View {
         WidgetWeaverRenderClock.withNow(entryDate) {
             WWClockRenderBody(
-                face: face ?? .ceramic,
+                face: face,
                 palette: palette,
                 entryDate: entryDate,
                 tickMode: tickMode,

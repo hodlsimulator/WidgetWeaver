@@ -261,8 +261,7 @@ extension ContentView {
 
             Section {
                 WidgetWeaverClockFaceSelector(
-                    clockFaceRaw: binding(\.clockFaceRaw),
-                    clockThemeRaw: currentFamilyDraft().clockThemeRaw
+                    clockFaceRaw: binding(\.clockFaceRaw)
                 )
                 .accessibilityIdentifier("Editor.Clock.FaceSelector")
 
@@ -608,7 +607,9 @@ private struct WidgetWeaverClockThemeSwatch: View {
 
 private struct WidgetWeaverClockFaceSelector: View {
     @Binding var clockFaceRaw: String
-    let clockThemeRaw: String
+
+    // Face thumbnails remain stable under scheme changes so the editor reads as editing one face at a time.
+    private static let previewThemeRaw: String = "classic"
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -640,7 +641,7 @@ private struct WidgetWeaverClockFaceSelector: View {
                 ForEach(WidgetWeaverClockFaceToken.orderedForPicker, id: \.rawValue) { token in
                     let palette = WidgetWeaverClockAppearanceResolver
                         .resolve(
-                            config: WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: token.rawValue),
+                            config: WidgetWeaverClockDesignConfig(theme: Self.previewThemeRaw, face: token.rawValue),
                             mode: colorScheme
                         )
                         .palette

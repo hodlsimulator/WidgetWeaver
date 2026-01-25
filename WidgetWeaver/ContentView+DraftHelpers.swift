@@ -68,7 +68,9 @@ extension ContentView {
         }
 
         if v.template == .clockIcon {
-            v.clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: v.clockFaceRaw).rawValue
+            let canonical = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw, face: v.clockFaceRaw)
+            v.clockThemeRaw = canonical.theme
+            v.clockFaceRaw = canonical.face
         }
 
         if matchedSetEnabled {
@@ -82,7 +84,9 @@ extension ContentView {
             baseDraft = v
 
             if v.template == .clockIcon {
-                baseDraft.clockThemeRaw = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw).theme
+                let canonical = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw, face: v.clockFaceRaw)
+                baseDraft.clockThemeRaw = canonical.theme
+                baseDraft.clockFaceRaw = canonical.face
             }
         }
     }
