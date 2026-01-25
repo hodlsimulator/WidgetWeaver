@@ -40,238 +40,18 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     var body: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Weather")
-                            .font(.headline)
-
-                        Spacer()
-
-                        if let onClose {
-                            Button("Done") { onClose() }
-                                .font(.headline)
-                        }
-                    }
-
-                    Text("Used by the Weather layout template and the __weather_* built-in variables.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section("Location") {
-                if let loc = savedLocation {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(loc.name)
-                            .font(.headline)
-
-                        Text("Lat \(loc.latitudeString), Lon \(loc.longitudeString)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        Text("Updated \(loc.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button(role: .destructive) {
-                        store.saveLocation(nil)
-                        refreshLocalState()
-                        reloadWidgets()
-                    } label: {
-                        Label("Clear location", systemImage: "trash")
-                    }
-                } else {
-                    Text("No location saved yet.")
-                        .foregroundStyle(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Button {
-                        Task { await useCurrentLocation() }
-                    } label: {
-                        Label(currentLocationButtonTitle, systemImage: "location.fill")
-                    }
-                    .disabled(isWorking)
-                    .buttonStyle(.bordered)
-
-                    if locationAuthStatus == .denied || locationAuthStatus == .restricted {
-                        Button {
-                            if let url = URL(string: UIApplication.openSettingsURLString) {
-                                openURL(url)
-                            }
-                        } label: {
-                            Label("Open Location Settings", systemImage: "gear")
-                        }
-                        .disabled(isWorking)
-                    }
-
-                    TextField("City, town, postcode…", text: $query)
-                        .textInputAutocapitalization(.words)
-                        .disableAutocorrection(true)
-
-                    Button {
-                        Task { await geocodeAndSave() }
-                    } label: {
-                        Label("Save location", systemImage: "location.magnifyingglass")
-                    }
-                    .disabled(isWorking || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-
-            Section("Units") {
-                Picker("Temperature", selection: $unitPreference) {
-                    ForEach(WidgetWeaverWeatherUnitPreference.allCases) { pref in
-                        Text(pref.displayName).tag(pref)
-                    }
-                }
-                .onChange(of: unitPreference) { _, newValue in
-                    store.saveUnitPreference(newValue)
-                    reloadWidgets()
-                }
-            }
-
-            Section("Now") {
-                if let snap = snapshot {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(snap.conditionDescription)
-                            .font(.headline)
-
-                        Text("Updated \(snap.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        let unit = store.resolvedUnitTemperature()
-                        let tempValue = Measurement(value: snap.temperatureC, unit: UnitTemperature.celsius)
-                            .converted(to: unit)
-                            .value
-
-                        Text("Temp \(Int(round(tempValue)))°")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("No cached weather yet.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Button {
-                    Task { await updateNow(force: true) }
-                } label: {
-                    Label("Update now", systemImage: "arrow.clockwise")
-                }
-                .disabled(isWorking || savedLocation == nil)
-
-                Button(role: .destructive) {
-                    store.clearSnapshot()
-                    refreshLocalState()
-                    reloadWidgets()
-                } label: {
-                    Label("Clear cached weather", systemImage: "trash")
-                }
-                .disabled(snapshot == nil)
-            }
-
-            Section("Auto-refresh") {
-                if let lastRefreshAttemptAt {
-                    Text("Last attempt \(lastRefreshAttemptAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No refresh attempts yet.")
-                        .foregroundStyle(.secondary)
-                }
-
-                if let lastSuccessfulRefreshAt {
-                    Text("Last success \(lastSuccessfulRefreshAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("No successful refresh yet.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("Weather refreshes when the app becomes active and during iOS background fetch windows.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section("Attribution") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Weather data is provided by Weather.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    if let url = store.attributionLegalURL() {
-                        Link(destination: url) {
-                            Label("Legal & data sources", systemImage: "link")
-                        }
-                    } else {
-                        Text("Legal link will appear after the first successful update.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Section("Diagnostics") {
-                if let lastError {
-                    Text(lastError)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("No stored errors.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Button(role: .destructive) {
-                    store.clearLastError()
-                    refreshLocalState()
-                    reloadWidgets()
-                } label: {
-                    Label("Clear last error", systemImage: "trash")
-                }
-                .disabled(lastError == nil)
-
-                Button(role: .destructive) {
-                    store.clearRefreshTimestamps()
-                    refreshLocalState()
-                    reloadWidgets()
-                } label: {
-                    Label("Clear refresh history", systemImage: "clock.arrow.circlepath")
-                }
-                .disabled(lastRefreshAttemptAt == nil && lastSuccessfulRefreshAt == nil)
-
-                Button(role: .destructive) {
-                    store.resetAll()
-                    query = ""
-                    refreshLocalState()
-                    reloadWidgets()
-                } label: {
-                    Label("Reset Weather", systemImage: "arrow.counterclockwise")
-                }
-            }
-
-            if let statusText {
-                Section {
-                    Text(statusText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            headerSection
+            locationSection
+            unitsSection
+            nowSection
+            builtInVariablesSection
+            autoRefreshSection
+            attributionSection
+            diagnosticsSection
+            statusSection
         }
         .navigationTitle("Weather")
-        .overlay {
-            if isWorking {
-                ProgressView()
-                    .padding(14)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-        }
+        .overlay { workingOverlay }
         .onAppear {
             refreshLocalState()
             refreshLocationAuthStatus()
@@ -291,6 +71,281 @@ struct WidgetWeaverWeatherSettingsView: View {
             }
         }
         .tint(.blue)
+    }
+
+    @ViewBuilder
+    private var workingOverlay: some View {
+        if isWorking {
+            ProgressView()
+                .padding(14)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var headerSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Weather")
+                        .font(.headline)
+
+                    Spacer()
+
+                    if let onClose {
+                        Button("Done") { onClose() }
+                            .font(.headline)
+                    }
+                }
+
+                Text("Used by the Weather layout template and the __weather_* built-in variables.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var locationSection: some View {
+        Section("Location") {
+            if let loc = savedLocation {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(loc.name)
+                        .font(.headline)
+
+                    Text("Lat \(loc.latitudeString), Lon \(loc.longitudeString)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Text("Updated \(loc.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(role: .destructive) {
+                    store.saveLocation(nil)
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Clear location", systemImage: "trash")
+                }
+            } else {
+                Text("No location saved yet.")
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    Task { await useCurrentLocation() }
+                } label: {
+                    Label(currentLocationButtonTitle, systemImage: "location.fill")
+                }
+                .disabled(isWorking)
+                .buttonStyle(.bordered)
+
+                if locationAuthStatus == .denied || locationAuthStatus == .restricted {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label("Open Location Settings", systemImage: "gear")
+                    }
+                    .disabled(isWorking)
+                }
+
+                TextField("City, town, postcode…", text: $query)
+                    .textInputAutocapitalization(.words)
+                    .disableAutocorrection(true)
+
+                Button {
+                    Task { await geocodeAndSave() }
+                } label: {
+                    Label("Save location", systemImage: "location.magnifyingglass")
+                }
+                .disabled(isWorking || trimmedQuery.isEmpty)
+            }
+        }
+    }
+
+    private var unitsSection: some View {
+        Section("Units") {
+            Picker("Temperature", selection: $unitPreference) {
+                ForEach(WidgetWeaverWeatherUnitPreference.allCases) { pref in
+                    Text(pref.displayName).tag(pref)
+                }
+            }
+            .onChange(of: unitPreference) { _, newValue in
+                store.saveUnitPreference(newValue)
+                reloadWidgets()
+            }
+        }
+    }
+
+    private var nowSection: some View {
+        Section("Now") {
+            if let snap = snapshot {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(snap.conditionDescription)
+                        .font(.headline)
+
+                    Text("Updated \(snap.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Text(nowTemperatureText(for: snap))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("No cached weather yet.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                Task { await updateNow(force: true) }
+            } label: {
+                Label("Update now", systemImage: "arrow.clockwise")
+            }
+            .disabled(isWorking || savedLocation == nil)
+
+            Button(role: .destructive) {
+                store.clearSnapshot()
+                refreshLocalState()
+                reloadWidgets()
+            } label: {
+                Label("Clear cached weather", systemImage: "trash")
+            }
+            .disabled(snapshot == nil)
+        }
+    }
+
+    private var builtInVariablesSection: some View {
+        Section {
+            if weatherVariableItems.isEmpty {
+                Text("No weather variables yet.\nSet a location, then tap Update now.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button {
+                    copyAllWeatherVariables()
+                } label: {
+                    Label("Copy all __weather_* values", systemImage: "doc.on.doc")
+                }
+
+                ForEach(weatherVariableItems) { item in
+                    weatherVariableRow(key: item.key, value: item.value)
+                }
+            }
+        } header: {
+            Text("Built-in variables")
+        } footer: {
+            Text("These values back the __weather_* built-in keys used by templates and Variables.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var autoRefreshSection: some View {
+        Section("Auto-refresh") {
+            if let lastRefreshAttemptAt {
+                Text("Last attempt \(lastRefreshAttemptAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No refresh attempts yet.")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastSuccessfulRefreshAt {
+                Text("Last success \(lastSuccessfulRefreshAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No successful refresh yet.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Weather refreshes when the app becomes active and during iOS background fetch windows.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var attributionSection: some View {
+        Section("Attribution") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Weather data is provided by Weather.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if let url = store.attributionLegalURL() {
+                    Link(destination: url) {
+                        Label("Legal & data sources", systemImage: "link")
+                    }
+                } else {
+                    Text("Legal link will appear after the first successful update.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var diagnosticsSection: some View {
+        Section("Diagnostics") {
+            if let lastError {
+                Text(lastError)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("No stored errors.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(role: .destructive) {
+                store.clearLastError()
+                refreshLocalState()
+                reloadWidgets()
+            } label: {
+                Label("Clear last error", systemImage: "trash")
+            }
+            .disabled(lastError == nil)
+
+            Button(role: .destructive) {
+                store.clearRefreshTimestamps()
+                refreshLocalState()
+                reloadWidgets()
+            } label: {
+                Label("Clear refresh history", systemImage: "clock.arrow.circlepath")
+            }
+            .disabled(lastRefreshAttemptAt == nil && lastSuccessfulRefreshAt == nil)
+
+            Button(role: .destructive) {
+                store.resetAll()
+                query = ""
+                refreshLocalState()
+                reloadWidgets()
+            } label: {
+                Label("Reset Weather", systemImage: "arrow.counterclockwise")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusSection: some View {
+        if let statusText {
+            Section {
+                Text(statusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var currentLocationButtonTitle: String {
@@ -332,6 +387,100 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
     }
 
+    private struct WeatherVariableItem: Identifiable, Hashable {
+        let key: String
+        let value: String
+
+        var id: String { key }
+    }
+
+    private var weatherVariableItems: [WeatherVariableItem] {
+        let vars = store.variablesDictionary(now: WidgetWeaverRenderClock.now)
+
+        return vars
+            .filter { $0.key.hasPrefix("__weather_") }
+            .sorted { $0.key < $1.key }
+            .map { WeatherVariableItem(key: $0.key, value: $0.value) }
+    }
+
+    private func copyAllWeatherVariables() {
+        let lines: [String] = weatherVariableItems.map { item in
+            let sanitisedValue = item.value
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if sanitisedValue.isEmpty {
+                return "\(item.key)=—"
+            }
+
+            return "\(item.key)=\(sanitisedValue)"
+        }
+
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        statusText = "Copied \(lines.count) variables."
+    }
+
+    private func weatherVariableRow(key: String, value: String) -> some View {
+        let snippet = "{{\(key)}}"
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayValue = trimmed.isEmpty ? "—" : trimmed
+
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(key)
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Text(displayValue)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Button {
+                UIPasteboard.general.string = snippet
+                statusText = "Copied \(snippet)."
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy template")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            UIPasteboard.general.string = snippet
+            statusText = "Copied \(snippet)."
+        }
+        .contextMenu {
+            Button("Copy template") {
+                UIPasteboard.general.string = snippet
+                statusText = "Copied \(snippet)."
+            }
+
+            Button("Copy value") {
+                UIPasteboard.general.string = displayValue
+                statusText = "Copied value for \(key)."
+            }
+
+            Button("Copy key") {
+                UIPasteboard.general.string = key
+                statusText = "Copied \(key)."
+            }
+        }
+    }
+
+    private func nowTemperatureText(for snapshot: WidgetWeaverWeatherSnapshot) -> String {
+        let unit = store.resolvedUnitTemperature()
+        let tempValue = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius)
+            .converted(to: unit)
+            .value
+
+        return "Temp \(Int(round(tempValue)))°"
+    }
+
     private func useCurrentLocation() async {
         isWorking = true
         statusText = nil
@@ -366,7 +515,6 @@ struct WidgetWeaverWeatherSettingsView: View {
                 updatedAt: Date()
             )
 
-            // Keep the existing snapshot until a new one is successfully fetched.
             store.saveLocation(stored)
             refreshLocalState()
 
@@ -443,7 +591,6 @@ struct WidgetWeaverWeatherSettingsView: View {
             updatedAt: Date()
         )
 
-        // Keep the existing snapshot until a new one is successfully fetched.
         store.saveLocation(stored)
         query = name
         refreshLocalState()
@@ -458,7 +605,6 @@ struct WidgetWeaverWeatherSettingsView: View {
 
         let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: force)
 
-        // Preserve last known-good data if the refresh fails.
         if let snap = result.snapshot {
             store.saveSnapshot(snap)
         }

@@ -50,6 +50,23 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         return d
     }
 
+
+    @inline(__always)
+    private func decodeOrClear<T: Decodable>(
+        _ type: T.Type,
+        from data: Data,
+        key: String,
+        defaults: UserDefaults
+    ) -> T? {
+        let decoder = makeDecoder()
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+    }
+
     private func notifyWidgetsWeatherUpdated() {
         #if canImport(WidgetKit)
         Task { @MainActor in
@@ -61,17 +78,25 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Location
 
     public func loadLocation() -> WidgetWeaverWeatherLocation? {
-        let decoder = makeDecoder()
-
         if let data = defaults.data(forKey: Keys.locationData),
-           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data)
+           let loc = decodeOrClear(
+                WidgetWeaverWeatherLocation.self,
+                from: data,
+                key: Keys.locationData,
+                defaults: defaults
+           )
         {
             return loc
         }
 
         // Fallback for any legacy/misconfigured container situations.
         if let data = UserDefaults.standard.data(forKey: Keys.locationData),
-           let loc = try? decoder.decode(WidgetWeaverWeatherLocation.self, from: data)
+           let loc = decodeOrClear(
+                WidgetWeaverWeatherLocation.self,
+                from: data,
+                key: Keys.locationData,
+                defaults: UserDefaults.standard
+           )
         {
             // Heal: copy into the App Group store so the widget and app converge.
             let encoder = makeEncoder()
@@ -120,16 +145,24 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Snapshot
 
     public func loadSnapshot() -> WidgetWeaverWeatherSnapshot? {
-        let decoder = makeDecoder()
-
         if let data = defaults.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data)
+           let snap = decodeOrClear(
+                WidgetWeaverWeatherSnapshot.self,
+                from: data,
+                key: Keys.snapshotData,
+                defaults: defaults
+           )
         {
             return snap
         }
 
         if let data = UserDefaults.standard.data(forKey: Keys.snapshotData),
-           let snap = try? decoder.decode(WidgetWeaverWeatherSnapshot.self, from: data)
+           let snap = decodeOrClear(
+                WidgetWeaverWeatherSnapshot.self,
+                from: data,
+                key: Keys.snapshotData,
+                defaults: UserDefaults.standard
+           )
         {
             let encoder = makeEncoder()
             if let healed = try? encoder.encode(snap) {
@@ -151,6 +184,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
             defaults.removeObject(forKey: Keys.snapshotData)
             UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
         }
+
+        notifyWidgetsWeatherUpdated()
     }
 
     public func clearSnapshot() {
@@ -194,16 +229,24 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
     // MARK: Attribution
 
     public func loadAttribution() -> WidgetWeaverWeatherAttribution? {
-        let decoder = makeDecoder()
-
         if let data = defaults.data(forKey: Keys.attributionData),
-           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data)
+           let attr = decodeOrClear(
+                WidgetWeaverWeatherAttribution.self,
+                from: data,
+                key: Keys.attributionData,
+                defaults: defaults
+           )
         {
             return attr
         }
 
         if let data = UserDefaults.standard.data(forKey: Keys.attributionData),
-           let attr = try? decoder.decode(WidgetWeaverWeatherAttribution.self, from: data)
+           let attr = decodeOrClear(
+                WidgetWeaverWeatherAttribution.self,
+                from: data,
+                key: Keys.attributionData,
+                defaults: UserDefaults.standard
+           )
         {
             let encoder = makeEncoder()
             if let healed = try? encoder.encode(attr) {
@@ -225,6 +268,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
             defaults.removeObject(forKey: Keys.attributionData)
             UserDefaults.standard.removeObject(forKey: Keys.attributionData)
         }
+
+        notifyWidgetsWeatherUpdated()
     }
 
     public func clearAttribution() {
@@ -275,9 +320,13 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
 
             if let hi = snap.highTemperatureC {
                 vars["__weather_high"] = temperatureString(hi, unit: unit)
+                vars["__weather_high_c"] = temperatureString(hi, unit: .celsius)
+                vars["__weather_high_f"] = temperatureString(hi, unit: .fahrenheit)
             }
             if let lo = snap.lowTemperatureC {
                 vars["__weather_low"] = temperatureString(lo, unit: unit)
+                vars["__weather_low_c"] = temperatureString(lo, unit: .celsius)
+                vars["__weather_low_f"] = temperatureString(lo, unit: .fahrenheit)
             }
             if let p = snap.precipitationChance01 {
                 vars["__weather_precip"] = percentString(fromChance01: p)
