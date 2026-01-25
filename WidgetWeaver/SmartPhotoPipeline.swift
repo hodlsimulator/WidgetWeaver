@@ -10,6 +10,7 @@ import ImageIO
 import UIKit
 import Vision
 import WidgetKit
+import UniformTypeIdentifiers
 
 /// Pixel targets for the per-family widget renders.
 ///
@@ -438,20 +439,22 @@ private enum SmartPhotoRenderer {
 
 private enum SmartPhotoJPEG {
     static func encode(image: UIImage, startQuality: CGFloat, maxBytes: Int) throws -> Data {
-        let preparedImage = ensureOpaquePixelFormatIfNeeded(image)
+        let orientedUp = normalisedOrientationIfNeeded(image)
+        let preparedImage = ensureOpaquePixelFormatIfNeeded(orientedUp)
+
+        guard let cgImage = preparedImage.cgImage else {
+            throw SmartPhotoPipelineError.encodeFailed
+        }
 
         var q = min(0.95, max(0.1, startQuality))
         let minQ: CGFloat = 0.65
 
-        guard var data = autoreleasepool(invoking: { preparedImage.jpegData(compressionQuality: q) }) else {
-            throw SmartPhotoPipelineError.encodeFailed
-        }
+        var data = try autoreleasepool(invoking: { try encodeImageIOJPEG(cgImage: cgImage, quality: q) })
 
         var steps = 0
         while data.count > maxBytes && q > minQ && steps < 6 {
             q = max(minQ, q - 0.05)
-            guard let next = autoreleasepool(invoking: { preparedImage.jpegData(compressionQuality: q) }) else { break }
-            data = next
+            data = try autoreleasepool(invoking: { try encodeImageIOJPEG(cgImage: cgImage, quality: q) })
             steps += 1
         }
 
@@ -460,6 +463,66 @@ private enum SmartPhotoJPEG {
         }
 
         return data
+    }
+
+    /// Normalises UIKit orientation to guarantee pixels are `.up` before encoding.
+    ///
+    /// This avoids downstream decode paths applying EXIF orientation transforms (double-rotate).
+    private static func normalisedOrientationIfNeeded(_ image: UIImage) -> UIImage {
+        if image.imageOrientation == .up { return image }
+
+        let size: CGSize = {
+            if let cg = image.cgImage {
+                return CGSize(width: CGFloat(cg.width), height: CGFloat(cg.height))
+            }
+
+            let w = image.size.width * image.scale
+            let h = image.size.height * image.scale
+            return CGSize(width: w, height: h)
+        }()
+
+        if size.width <= 0 || size.height <= 0 { return image }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Encodes JPEG bytes via ImageIO with explicit orientation metadata `1`.
+    ///
+    /// Requirement for widget-safety:
+    /// - pixels are already `.up`
+    /// - metadata orientation is `1` (so thumbnailing with transform is a no-op)
+    private static func encodeImageIOJPEG(cgImage: CGImage, quality: CGFloat) throws -> Data {
+        let q = min(max(quality, 0.0), 1.0)
+
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            out,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw SmartPhotoPipelineError.encodeFailed
+        }
+
+        let props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: q,
+            kCGImagePropertyOrientation: 1
+        ]
+
+        CGImageDestinationAddImage(destination, cgImage, props as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else {
+            throw SmartPhotoPipelineError.encodeFailed
+        }
+
+        return out as Data
     }
 
     private static func ensureOpaquePixelFormatIfNeeded(_ image: UIImage) -> UIImage {
