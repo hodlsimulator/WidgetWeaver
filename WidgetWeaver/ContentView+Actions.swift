@@ -57,7 +57,7 @@ extension ContentView {
             }
 
             let fileName = AppGroup.createImageFileName(ext: "jpg")
-            try AppGroup.writeUIImage(uiImage, fileName: fileName, compressionQuality: 0.85)
+            try AppGroup.writePickedImageDataNormalised(data, fileName: fileName, maxPixel: 1024, compressionQuality: 0.85)
 
             var d = currentFamilyDraft()
             d.imageFileName = fileName

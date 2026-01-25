@@ -8,6 +8,7 @@
 import Foundation
 import UIKit
 import ImageIO
+import UniformTypeIdentifiers
 
 #if canImport(WidgetKit)
 import WidgetKit
@@ -154,6 +155,163 @@ public enum AppGroup {
 
         throw CocoaError(.fileWriteUnknown)
     }
+
+    // MARK: - Picked-photo normalisation (ImageIO)
+
+    /// Normalises picker-provided bytes so the saved file is a JPEG with pixels oriented `.up`.
+    ///
+    /// This is intended for “pick photo → save to App Group” boundaries, where downstream decoding
+    /// may otherwise legitimately display rotation/flip based on embedded orientation metadata.
+    public static func writePickedImageDataNormalised(
+        _ data: Data,
+        fileName: String,
+        maxPixel: Int = 1024,
+        compressionQuality: CGFloat = 0.85
+    ) throws {
+        let outData = try normalisePickedImageDataToJPEGUp(
+            data,
+            maxPixel: maxPixel,
+            compressionQuality: compressionQuality
+        )
+
+        try writeImageData(outData, fileName: fileName)
+
+        #if DEBUG
+        let inInfo = debugPickedImageInfo(data: data)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        let outInfo = debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        print("[WWPickedImage] source=data outFile=\(fileName) in=\(inInfo) out=\(outInfo)")
+        #endif
+    }
+
+    /// Converts picker-provided image bytes to a JPEG whose pixels are oriented `.up`.
+    public static func normalisePickedImageDataToJPEGUp(
+        _ data: Data,
+        maxPixel: Int = 1024,
+        compressionQuality: CGFloat = 0.85
+    ) throws -> Data {
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false
+        ]
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let clampedMaxPixel = max(1, maxPixel)
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: clampedMaxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let out = NSMutableData()
+
+        guard let destination = CGImageDestinationCreateWithData(
+            out,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let q = min(max(compressionQuality, 0.0), 1.0)
+
+        let props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: q,
+            kCGImagePropertyOrientation: 1
+        ]
+
+        CGImageDestinationAddImage(destination, cgImage, props as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        return out as Data
+    }
+
+    #if DEBUG
+    public struct PickedImageDebugInfo: Sendable {
+        public var uti: String?
+        public var orientation: Int?
+        public var pixelWidth: Int?
+        public var pixelHeight: Int?
+
+        public init(
+            uti: String? = nil,
+            orientation: Int? = nil,
+            pixelWidth: Int? = nil,
+            pixelHeight: Int? = nil
+        ) {
+            self.uti = uti
+            self.orientation = orientation
+            self.pixelWidth = pixelWidth
+            self.pixelHeight = pixelHeight
+        }
+
+        public var inlineSummary: String {
+            let utiLabel = uti ?? "?"
+            let oLabel = orientation.map(String.init) ?? "?"
+            let w = pixelWidth.map(String.init) ?? "?"
+            let h = pixelHeight.map(String.init) ?? "?"
+            return "uti=\(utiLabel) orient=\(oLabel) px=\(w)x\(h)"
+        }
+    }
+
+    public static func debugPickedImageInfo(data: Data) -> PickedImageDebugInfo? {
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceShouldCacheImmediately: false
+        ]
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            return nil
+        }
+
+        return debugPickedImageInfo(source: source)
+    }
+
+    public static func debugPickedImageInfo(fileName: String) -> PickedImageDebugInfo? {
+        guard let data = readImageData(fileName: fileName) else { return nil }
+        return debugPickedImageInfo(data: data)
+    }
+
+    private static func debugPickedImageInfo(source: CGImageSource) -> PickedImageDebugInfo? {
+        let uti = CGImageSourceGetType(source) as String?
+
+        let props = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary?) as? [CFString: Any]
+
+        let orientation: Int? = {
+            if let v = props?[kCGImagePropertyOrientation] as? Int { return v }
+            if let v = props?[kCGImagePropertyOrientation] as? NSNumber { return v.intValue }
+            if let v = props?[kCGImagePropertyOrientation] as? UInt32 { return Int(v) }
+            return nil
+        }()
+
+        let w: Int? = {
+            if let v = props?[kCGImagePropertyPixelWidth] as? Int { return v }
+            if let v = props?[kCGImagePropertyPixelWidth] as? NSNumber { return v.intValue }
+            return nil
+        }()
+
+        let h: Int? = {
+            if let v = props?[kCGImagePropertyPixelHeight] as? Int { return v }
+            if let v = props?[kCGImagePropertyPixelHeight] as? NSNumber { return v.intValue }
+            return nil
+        }()
+
+        return PickedImageDebugInfo(uti: uti, orientation: orientation, pixelWidth: w, pixelHeight: h)
+    }
+    #endif
 
     public static func loadUIImage(fileName: String) -> UIImage? {
         let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
