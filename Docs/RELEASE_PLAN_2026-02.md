@@ -1,6 +1,6 @@
 # WidgetWeaver release plan (Feb 2026)
 
-Last updated: 2026-01-24
+Last updated: 2026-01-25
 
 ## 1) Scope summary
 
@@ -36,11 +36,14 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 ### Gate A: Core widget quality
 
 - [ ] Photo widgets: no blank tiles after edits; images load reliably from App Group.
+- [x] Smart Photos: crop decision logic is isolated (family-specific defaults, subject-aware framing), reducing preview vs Home Screen drift.
 - [ ] Photo Clock: time variables resolve against the timeline entry date (no “frozen minute” strings).
+- [x] Clock appearance resolves through a single resolver (`WidgetWeaverClockAppearanceResolver`) to reduce preview vs Home Screen drift.
 - [ ] Weather: renders a useful widget state everywhere:
   - [ ] With a saved location: shows cached weather immediately and updates within expected intervals.
-  - [ ] Without a saved location: shows a stable “Set location” state (no blank tiles; no reload loops).
-  - [ ] Minute forecast is best-effort; core current/hourly/daily must be reliable.
+  - [x] Without a saved location or snapshot: shows a stable “Set location” state (no blank tiles).
+  - [x] Unconfigured Weather widgets deep-link to Weather settings (`widgetweaver://weather/settings`) rather than leaving the user stranded.
+  - [x] Minute forecast and WeatherKit attribution are treated as best-effort so they cannot block a useful widget state.
   - [ ] Weather attribution is present (legal link appears after first successful update).
 - [ ] Noise Machine: first tap after cold start updates UI immediately; state reconciles correctly.
 
@@ -48,6 +51,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 - [ ] Edits do not corrupt saved widget specs.
 - [x] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
+- [x] Import review flow exists, including an import preview sheet that renders Small/Medium/Large previews before import.
 - [ ] App Group storage migrations (if any) are forward compatible.
 - [ ] Removing templates from Explore does not break existing user widgets:
   - [x] “Reading” (hidden from new)
@@ -55,15 +59,20 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
   - [x] Clipboard Actions / Screen Actions (parked; no release-bundle registration; internal builds only if explicitly enabled)
   - [x] PawPulse / “Latest Cat” (not registered in the widget extension unless `PAWPULSE` is defined; release builds must not define it)
 - [ ] Weather cache/state is robust:
-  - [ ] Clearing location clears the weather snapshot deterministically.
-  - [ ] Snapshot decoding is tolerant (no crashes on partial/old data).
-  - [ ] Weather variables resolve deterministically from the stored snapshot.
+  - [x] Clearing location clears the weather snapshot deterministically (and clears attribution/refresh timestamps).
+  - [x] Snapshot/location decoding tolerates failures by clearing corrupt data (no crash-class decoding failures).
+  - [x] App Group / standard defaults “healing” exists so app + widget converge on the same store.
+  - [x] Weather variables resolve deterministically from the stored snapshot/location.
 
 ### Gate C: Performance and stability
 
 - [ ] No obvious jank when opening editor and scrolling tool panes on a mid-range device.
 - [ ] Smart Photos prep does not block the UI thread.
-- [ ] Weather updates respect the minimum update interval and do not thrash WidgetCenter reloads.
+- [ ] Weather updates respect the minimum update interval and do not thrash widget reloads:
+  - [x] Refresh throttling exists (`shouldAttemptRefresh`, `lastRefreshAttemptAt`) to prevent repeated retries/thrashing.
+  - [x] Core WeatherKit fetch has a small retry/backoff for transient failures.
+  - [x] Widget reloads are coalesced for Weather updates (reload specific kinds; avoid `reloadAllTimelines()`).
+- [x] A widget reload coordinator exists to coalesce/debounce reload requests and reload known widget kinds rather than using `reloadAllTimelines()`.
 - [ ] Widget extension does not do heavy work during timeline generation or rendering.
 
 ### Gate D: Usefulness + trust gates (permissions, surfaces, reproducibility)
@@ -71,6 +80,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [x] Explore/catalogue surfaces are curated for the flagship story:
   - [x] “Reading” is not listed.
   - [x] “Photo Quote” is not listed.
+  - [x] Legacy “Quote” starter template is not surfaced (any remaining `starter-quote` usage is for legacy/icon mapping only).
 - [x] Clipboard Actions is absent from the release build:
   - [x] Not listed in Explore.
   - [x] Not registered in `WidgetWeaverWidgetBundle` (no Home Screen widget gallery entry).
@@ -91,15 +101,15 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [ ] Explore catalogue: clearly communicates the core value (templates → remix).
 - [ ] Templates: top 6–10 templates feel high quality and coherent.
 - [ ] Weather is surfaced as a flagship template (not hidden/experimental in shipped surfaces).
-- [ ] Weather settings is easy to find when using Weather (one obvious entry point).
+- [x] Weather settings is easy to find from the widget when unconfigured (tap deep-links to settings).
 - [x] “Reading” is removed from visible catalogue surfaces.
 - [x] “Photo Quote” is removed from visible catalogue surfaces.
 - [x] Clipboard Actions is absent from release builds (no Explore listing, no widget gallery registration).
 - [x] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined; release builds must not define it).
-- [ ] Variables: discoverability improved (at least one obvious entry point and in-context insertion when editing text).
+- [x] Variables: discoverability improved (built-in key browser, syntax/filters reference, one-tap snippet insertion).
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
 - [ ] Weather error states are actionable (no “mystery blank widget”):
-  - [ ] “No location saved” explains how to set a location.
+  - [x] “No location saved” provides an obvious route to set a location (widget tap deep-link).
   - [ ] Transient WeatherKit/network failures fall back to cached snapshot and show a light status.
   - [ ] Units and attribution are visible and consistent.
 
@@ -123,6 +133,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [ ] No “black tiles” or blank widget views after edits.
 - [ ] Widget timelines produce predictable entries without reload loops.
 - [ ] Confirm removed/hidden templates are not visible in Explore (Reading, Photo Quote).
+- [ ] Confirm “Quote” starter template is not visible in Explore/templates (legacy mapping only).
 - [ ] Confirm Clipboard Actions does not appear in the Home Screen “Add Widget” gallery (release builds must not register it).
 - [ ] Confirm PawPulse does not appear in the Home Screen “Add Widget” gallery (release builds must not define `PAWPULSE`).
 - [ ] Confirm no Contacts permission prompt appears in normal flows (and that the Contacts usage string is absent from Info.plist).
@@ -131,7 +142,21 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
   - [ ] Denying permission yields a clear fallback to manual location entry.
   - [ ] Accepting permission updates the saved location and refreshes cached weather.
   - [ ] No crash on the first Location prompt (usage string is present).
+  - [ ] Tapping an unconfigured Weather widget opens Weather settings (deep-link works end-to-end).
 - [ ] Confirm design export/import works via Share Sheet and Files (`.wwdesign` files are offered and can be opened).
+- [ ] Confirm widget reload behaviour:
+  - [ ] The reload coordinator is used for user-driven edits (no reload storms).
+  - [ ] Remaining `reloadAllTimelines()` call sites are removed or justified.
+
+### Engineering hygiene (to track)
+
+These are not blockers for this check-in, but should be tracked during the polish window so the “newer” reload discipline is applied consistently.
+
+- [ ] Replace remaining `WidgetCenter.shared.reloadAllTimelines()` calls with `WidgetWeaverWidgetReloadCoordinator` (or targeted `reloadTimelines(ofKind:)` calls).
+  - Current known call sites include: `WidgetWeaver/WidgetWeaverVariableIntents.swift`, `WidgetWeaverWidget/WidgetWeaverWidgetVariableIntents.swift`, `WidgetWeaver/ContentView+Actions.swift`, `WidgetWeaver/ContentViewSupport.swift`, `Shared/WidgetSpec+Utilities.swift`, and parts of the Reminders pipeline.
+- [ ] Decide end-state for hidden templates:
+  - Option A: keep “Reading” and “Photo Quote” as back-compat-only (hidden, but preserved).
+  - Option B: fully remove (requires catalogue/spec clean-up and a migration strategy).
 
 ## 5) Release notes (draft)
 
@@ -142,6 +167,7 @@ This release focuses on making WidgetWeaver feel high-quality and safe to use da
 - Flagship Weather template with rain-first nowcast + built-in `__weather_*` variables.
 - Noise Machine stability and polish.
 - Better Variables discoverability and usability.
+- More realistic design sharing and import review (with previews).
 
 Scope cuts to keep the release coherent:
 

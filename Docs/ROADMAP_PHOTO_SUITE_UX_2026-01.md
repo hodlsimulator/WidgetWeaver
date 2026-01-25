@@ -1,6 +1,6 @@
 # Photo Suite UX micro-roadmap (Jan 2026)
 
-Last updated: 2026-01-24
+Last updated: 2026-01-25
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Why this exists
@@ -36,6 +36,18 @@ This plan is intentionally incremental. Each step is sized to avoid error storms
    - clear permission prompts and fallbacks
 4) Explore should feel curated, not exhaustive.
 
+## Status update (as of 2026-01-25)
+
+Progress already landed in the codebase:
+
+- Explore pruning has begun: Photo Quote and several Photos “wrapper” presets are hidden from Explore to keep the Photos surface curated (back-compat preserved for existing widgets/imports).
+- Smart Photos architecture is tighter: crop decision logic is isolated (family-specific defaults, subject-aware framing) to reduce preview vs Home Screen drift.
+
+Still to do in this roadmap:
+
+- The Step 4 Smart Photos UX hardening pass (state messaging for half-configured states, preview strip/crop editor stability, and clearer progress UI).
+- Decide the long-term end-state for hidden presets (keep hidden/back-compat only vs full removal with clean-up + migration strategy).
+
 ## Feature flags
 
 Existing:
@@ -63,198 +75,92 @@ Checklist:
 Output:
 - Capture notes/screenshots (internal) and record any friction points to resolve in later steps.
 
-### Step 1: Prune Photos template surface area on Explore (small, high UX impact)
+### Step 1: Reduce redundant Photos templates (catalogue curation)
 
-Goal:
-- Reduce confusing duplicates and push variants into editing controls.
+Intent:
+- Keep Explore curated.
+- Reduce choice overload while preserving back-compat.
 
-Scope (modest):
-- Remove Photo Quote from Explore/catalogue surfaces (keep back-compat for existing widgets).
-- Collapse redundant Photo variants (Top, Glass, Framed) from Explore lists where they are only “preset wrappers” around existing fields.
+Tasks:
+- Identify “wrapper” presets that are basically style variants of the same thing (caption, frame, glass strip, etc.).
+- Hide them from Explore templates list.
+- Keep legacy template IDs in the app so existing widgets import and render correctly.
 
-Implementation notes:
-- Do not delete template IDs/spec builders. Only remove from surfaced lists.
-- Preserve the ability to render existing saved widgets identically.
+Constraints:
+- Do not remove old template IDs unless there is a migration strategy.
+- Ensure the “Photos” story is still complete (full-bleed + caption + framed should remain reachable via editing controls).
 
-Likely files:
-- `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
-- `WidgetWeaver/WidgetWeaverAboutView.swift` (if any bespoke Photos section depends on the removed templates)
+Done when:
+- Explore Photos templates list is shorter and clearer.
+- Existing widgets using hidden templates still render correctly.
 
-Build + commit:
-- Commit: "Explore: prune photo starter templates"
+### Step 2: Make Photos editing feel obvious
 
-Acceptance:
-- New users cannot add Photo Quote from Explore.
-- Existing Photo Quote widgets still render and still open in the editor.
+Intent:
+- Make the first editing actions feel “photo-first”, not “settings-first”.
 
-### Step 2: Photos-first Explore presentation (UX refresh behind flag)
+Tasks:
+- In the editor, elevate the “Choose photo / Choose album / Smart Photo” entry points.
+- Ensure “Fit vs Fill” is near the photo picker (not buried).
+- Ensure caption controls are discoverable and match the current layout mode (caption on/off; top/bottom; scrim vs glass).
 
-Goal:
-- Make Photos feel like the flagship by giving it a dedicated, curated entry point.
+Done when:
+- A new user can plausibly modify a Photos widget without reading docs.
 
-Scope (modest, but meaningful):
-- Introduce a dedicated Photos card/section that:
-  - clearly explains “Choose a photo now, customise later”
-  - makes the primary CTA obvious (Add)
-  - optionally offers 2–3 variants as lightweight choices (not a long list)
+### Step 3: Memories mode (On this day / On this week) for Smart Photos (scoped)
 
-Gating:
-- Behind `FeatureFlags.photosExploreV2Enabled` (default off until stabilised).
+Intent:
+- Create a curated-feeling feature that differentiates Smart Photos from basic shuffle.
 
-Likely files:
-- `WidgetWeaver/WidgetWeaverAboutView.swift`
-- `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
-- New small view file for the Photos card (to avoid bloating `WidgetWeaverAboutView.swift`)
+Tasks:
+- Add a “Memories” mode inside Smart Photos:
+  - On this day (month/day match)
+  - On this week (week-of-year match, scoped)
+- Apply simple ranking rules:
+  - Favour photos with faces.
+  - Favour photos with high “quality” score.
+  - Avoid very low light / blurred items when possible.
+- Keep it deterministic:
+  - Use a saved “seed” per widget spec so the same day produces stable results unless the user requests a refresh.
 
-Build + commit:
-- Commit: "Explore: add Photos hero entry (flagged)"
+Constraints:
+- Do not do heavy Vision work inside widgets.
+- Any new heavy work runs in the app and saves results to App Group.
 
-Acceptance:
-- With flag off: current Explore remains unchanged.
-- With flag on: Photos entry is clearer and reduces template scrolling.
+Done when:
+- A user can enable Memories mode and it produces a plausible set of photos consistently.
 
-### Step 3: Photo “Essentials” editor controls (build on Poster Suite Stage 1)
+### Step 4: Smart Photos UX hardening pass
 
-Goal:
-- When editing a poster/photo widget, expose the core knobs in one place.
+Intent:
+- Make Smart Photos feel reliable and trustworthy.
 
-Scope:
-- Add a small Photo Essentials panel for `.poster` that reuses existing fields:
-  - Overlay content: Photo-only vs Caption
-  - Caption position: Top vs Bottom
-  - Caption style: Scrim vs Glass
-  - Treatment: Full-bleed vs Framed (Fill vs Fit)
-- Keep this within existing editor sections (no major rearrangement).
+Tasks:
+- Improve state messaging:
+  - “Preparing photos…”
+  - “No photos available”
+  - “Needs Photos access”
+  - “Needs album selection”
+- Ensure the preview strip remains stable while background prep runs.
+- Ensure the crop editor is stable and predictable for each widget family.
 
-Gating:
-- Behind `FeatureFlags.posterSuiteEnabled` and only when `template == .poster`.
+Done when:
+- Smart Photos feels “confident”, not experimental.
 
-Likely files:
-- `WidgetWeaver/PosterSuiteStage1Controls.swift` (extend carefully, no broad rewrite)
-- `WidgetWeaver/ContentView+Sections.swift` or `WidgetWeaver/ContentView+SectionsMedia.swift` (small, local insertion)
+### Step 5: Photos Explore V2 (optional, if time remains)
 
-Build + commit:
-- Commit: "Editor: add Photo Essentials controls (poster-only)"
+Intent:
+- Make Explore feel curated and premium without increasing template count.
 
-Acceptance:
-- Starting from any photo poster, all four axes are reachable quickly.
-- Existing saved posters remain identical until toggles change.
+Tasks:
+- Group Photos templates into a small number of “hero” entries.
+- Provide a clear “Remix” flow.
+- Make it obvious how to reach variants via editing controls.
 
-### Step 4: Smart Photos UX hardening pass (no new capability, just reliability + clarity)
+Done when:
+- Explore Photos feels like 2–3 “hero” options rather than 10 similar presets.
 
-Goal:
-- Make Smart Photos feel trustworthy and easy to understand.
+## Notes
 
-Scope (bounded):
-- Improve state messaging for half-configured Smart Photos (missing renders, missing manifest, etc.).
-- Ensure preview strip and crop editor entry points are stable and never crash on nil/missing files.
-- Ensure expensive work stays off the main thread and progress UI is obvious.
-
-Likely files:
-- `WidgetWeaver/ContentView+SectionsMedia.swift`
-- `WidgetWeaver/ContentView+SectionSmartPhoto*.swift`
-- `WidgetWeaver/SmartPhotoPreviewStripView.swift`
-- `WidgetWeaver/SmartPhotoPipeline.swift`
-
-Build + commit:
-- Commit: "Smart Photos: UX hardening pass"
-
-Acceptance:
-- No blank tile / missing-image states without an explanatory UI.
-- “Make Smart Photo” is deterministic and repeatable.
-
-### Step 5: Memories engine (On this day / On this week) — ENGINE ONLY, behind flag
-
-Goal:
-- Implement a new Smart Photos source that feels curated and intentional.
-
-Principles (how this beats typical implementations):
-- Quality-first selection (not purely random).
-- Variety: avoid repeating the same few photos day after day.
-- Respectful fallbacks: if no matches exist, the widget should explain and/or fall back gracefully.
-
-Encoding (no schema changes):
-- Store the mode in the shuffle manifest `sourceID` (e.g. `memories:onThisDay` / `memories:onThisWeek`).
-- Persist and rotate using existing `SmartPhotoShuffleManifest` + `SmartPhotoShuffleManifestStore`.
-
-Scope:
-- Implement a manifest builder that:
-  - fetches candidate PHAssets matching the date window across years
-  - filters out screenshots/low-res assets (reuse existing heuristics)
-  - scores and ranks (reuse `SmartPhotoQualityScorer` where possible)
-  - writes a manifest file and triggers preparation of an initial batch
-
-Gating:
-- Behind `FeatureFlags.smartPhotoMemoriesEnabled` (default off).
-
-Likely files:
-- `WidgetWeaver/SmartPhotoAlbumShuffleControls+Engine.swift` (extend with new fetch helpers)
-- Possibly a new small engine file for Memories selection to keep the shuffle engine readable
-
-Build + commit:
-- Commit: "Smart Photos: memories manifest builder (flagged)"
-
-Acceptance:
-- With the flag on, a developer-only call path can generate a manifest and preview at least one image.
-- No changes to the widget extension are required for basic rendering.
-
-### Step 6: Memories UI (editor surface) — small, guided, and safe
-
-Goal:
-- Expose Memories as a first-class Photo Source choice without overwhelming users.
-
-Scope:
-- Add a simple selector inside existing Smart Photos controls:
-  - Album Shuffle
-  - On this day
-  - On this week
-- Provide clear copy about Photos permissions and what will happen.
-- Provide a deterministic empty state (no matches) with next-step guidance.
-
-Gating:
-- Behind `FeatureFlags.smartPhotoMemoriesEnabled`.
-
-Likely files:
-- `WidgetWeaver/SmartPhotoAlbumShuffleControls.swift`
-- `WidgetWeaver/ContentView+SectionAlbumShuffle.swift` (if entry points are adjusted)
-
-Build + commit:
-- Commit: "Smart Photos: add Memories mode UI (flagged)"
-
-Acceptance:
-- A user can enable “On this day/week” and see the widget populate after preparation.
-- Disabling the mode cleanly returns to single-photo or album shuffle without corrupting state.
-
-### Step 7: Competitive polish (selection quality and user trust)
-
-Goal:
-- Make Memories feel “curated”, not like a random photo dump.
-
-Scope (one micro-upgrade per commit):
-- Add anti-repeat policy (e.g. rotate through ranked set before repeating).
-- Add optional “year” affordance (implemented as a caption preset, not a new template).
-- Ensure daily refresh policy is predictable (manifest regenerates at most once per day/week, not on every open).
-
-Build + commits:
-- Commit: "Memories: anti-repeat rotation"
-- Commit: "Memories: optional year caption preset"
-- Commit: "Memories: refresh cadence guardrails"
-
-Acceptance:
-- Consecutive days/weeks do not spam the same top 1–3 images.
-- The feature remains widget-safe and does not increase extension work.
-
-### Step 8: Ship decision and scope lock (NO CODE)
-
-Decide what ships by Feb (feature freeze constraints apply):
-
-- Must-ship candidates:
-  - Photo Essentials editor controls (poster-only) if stable.
-  - Explore pruning (remove Photo Quote surface area).
-  - Smart Photos reliability + UX hardening.
-
-- Post-ship or flagged:
-  - Memories (“On this day/week”) unless it is stable, fast, and obviously delightful.
-
-Output:
-- Update `Docs/RELEASE_PLAN_2026-02.md` with any Photos-specific QA steps if the feature is promoted.
+- This micro-roadmap is intentionally sequenced: reduce choice → improve editing → add one compelling feature → harden.
+- If any step introduces instability, revert and re-scope rather than pushing forward.

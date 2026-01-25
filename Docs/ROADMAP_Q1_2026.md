@@ -1,6 +1,6 @@
 # WidgetWeaver roadmap (Q1 2026)
 
-Last updated: 2026-01-24
+Last updated: 2026-01-25
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
@@ -9,10 +9,11 @@ We will ship the next public-quality release in mid-February 2026, with a hard f
 
 UX is the primary success metric for this cycle; the Photos track has a dedicated micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
 
-Surface-area reductions for the Feb ship are explicit (status as of 2026-01-24 / commit 2218a36):
+Surface-area reductions for the Feb ship are explicit (status as of 2026-01-25 / snapshot 4c7c51e9):
 
 - “Reading” is hidden from Explore/catalogue surfaces (kept in-app for back-compat).
 - “Photo Quote” is hidden from Explore/catalogue surfaces (kept in-app for back-compat).
+- Legacy “Quote” starter template is not surfaced (any remaining `starter-quote` usage is for legacy/icon mapping only).
 - Clipboard Actions (Screen Actions) is parked for this ship and is absent in release builds:
   - Compile-time gated behind `CLIPBOARD_ACTIONS` (release builds must not define it).
   - Not listed in Explore / first-run surfaces.
@@ -22,244 +23,139 @@ Surface-area reductions for the Feb ship are explicit (status as of 2026-01-24 /
 - PawPulse / “Latest Cat” (cat adoption) is treated as future work:
   - Compile-time gated (only built when `PAWPULSE` is defined).
   - Background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off). Refresh requests are cancelled when disabled (or when no base URL is configured).
+- Weather location safety: `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with in-context copy; keep permission requests limited to Weather settings / explicit “Use Current Location”.
+
+
+### Progress update (2026-01-25)
+
+Completed / locked in since the previous snapshot:
+
+- Permissions footprint: Contacts usage string removed; Location usage string present for Weather with in-context copy.
+- Clipboard Actions (Screen Actions) is parked: compile-time gated, not registered in release builds, and no local-path Swift Package dependency remains.
+- PawPulse is gated behind `PAWPULSE` (future feature; not shipped).
+- Catalogue curation: Reading and Photo Quote are hidden from Explore; legacy Quote starter template is not surfaced.
+- Weather: unconfigured widgets deep-link into Weather settings; a dedicated deep-link host routes `widgetweaver://weather/settings` to the settings UI.
+- Weather reliability: refresh throttling + small retry/backoff; minute forecast and attribution are best-effort; store clears corrupt data and heals between App Group defaults and standard defaults.
+- Variables: in-app built-in key browser + syntax/filters reference; built-ins intentionally override custom keys; `Docs/VARIABLES.md` is the canonical reference.
+- Design exchange: `.wwdesign` import review exists, including an import preview sheet that renders Small/Medium/Large previews before import.
+- Widget reload discipline: a reload coordinator exists to coalesce/debounce reload requests and reload known widget kinds rather than using `reloadAllTimelines()`.
+- Smart Photos + Clock correctness: Smart Photos crop decision logic is modularised; Clock appearance has a single resolver to reduce preview vs Home Screen drift.
+
+Still to track (non-blockers, but visible):
+
+- Decide whether “Reading” and “Photo Quote” remain hidden/back-compat only, or are fully removed (requires catalogue/spec clean-up and a migration strategy).
+- Migrate remaining direct `WidgetCenter.shared.reloadAllTimelines()` call sites (especially App Intents) to the reload coordinator / targeted reloads.
 
 Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work remains a post-ship R&D track, with small, reviewable assistive wins rather than a single large “magic” feature.
 
 ## Dates and milestones
 
-- 2026-01-20 to 2026-01-31: Feature work (build + integrate)
-- 2026-01-31: Feature freeze (no new capabilities; only bug fixes and risk-reducing scope cuts)
-- 2026-02-01 to 2026-02-14: Polish phase (UX, performance, reliability, test hardening)
-- Target ship window: 2026-02-14 to 2026-02-16 (two weeks after freeze)
+- Feature freeze: 2026-01-31
+- Polish: 2026-02-01 → 2026-02-14
+- Target ship: 2026-02-14 → 2026-02-16
 
-Definition: “feature freeze” means no net-new widget types, no new pipelines, and no new complex editor surfaces. Small, clearly bounded improvements to existing features are acceptable if they reduce user friction and are low-risk.
+## Themes and workstreams
 
-## Prioritisation rubric
+### A) Photos + Smart Photos (flagship)
 
-- P0: Must ship
-  - Home Screen correctness, crashes, data loss, corrupt saves, black tiles, broken widget updates.
-- P1: High user value, low/medium risk
-  - Improves daily usefulness and reduces complexity for users.
-- P2: Nice to have
-  - Valuable, but can be deferred without harming the release narrative.
+Goal: Photos widgets should be the “default reason to keep the app installed”.
 
-## Theme A: Photos (flagship)
+Primary metric: time-to-first-good-widget ≤ 60 seconds after granting Photos access.
 
-Goal: Make photo-backed widgets and Smart Photos feel fast, reliable, and rich, while remaining widget-safe.
+Work items (pre-freeze):
 
-By feature freeze (P0/P1):
+1) Smart Photos stability and correctness
+- Hardening for pipeline failures: missing albums, low-memory, permission flips, and background processing cancellations.
+- Make crop behaviour predictable; reduce “why is the face cut off?” errors.
+- Make preview vs Home Screen more consistent (“what you see is what you get”).
 
-- P0: Smart Photos reliability pass
-  - Fix any cases where image state is missing, stale, or corrupt.
-  - Ensure thumbnails and per-family renders exist and are refreshed correctly.
-  - Ensure crop metadata updates are reflected in widgets quickly and deterministically.
+2) Explore catalogue curation for Photos
+- Reduce the number of photo starter templates that feel redundant.
+- Keep back-compat for any already-shipped template IDs.
 
-- P0: Performance pass
-  - Prep work should not block the UI thread.
-  - Ensure large image operations are isolated and do not spike memory.
+3) Editor “Photos first” improvements
+- Make “pick a photo / pick an album / Smart Photos” obvious and close to the main editing flow.
+- Keep controls progressive, not overwhelming.
 
-- P1: Defaults and polish
-  - Make the out-of-box Smart Photos experience feel good without configuration.
-  - Ensure editing flows are predictable and do not strand users in “half state”.
+Micro-roadmap: see `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
 
-Acceptance criteria:
+### B) Clock (flagship)
 
-- A new user can create a photo widget and get a good result within 60 seconds.
-- Photo widgets do not show blank tiles after edits.
-- Widget timelines do not do heavy work.
+Goal: Clock widgets feel correct and predictable on the Home Screen.
 
-Key areas:
+Work items (pre-freeze):
 
-- Smart Photos pipeline: `WidgetWeaver/SmartPhotoPipeline/*`
-- Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
-- Widget render: `WidgetWeaverWidget/SmartPhoto/*`
-- App Group image directory: `Shared/AppGroup.swift`
+- Fix any preview vs Home Screen drift.
+- Ensure timeline updates propagate in a disciplined way (avoid reload storms).
+- Ensure customisation changes apply quickly and reliably.
 
-Detailed micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
+### C) Weather (flagship)
 
-## Theme B: Clock (flagship)
+Goal: Weather is safe to ship and genuinely useful even when unconfigured.
 
-Goal: Ensure Home Screen clock widgets are correct, predictable, and robust across families and customisations.
+Work items (pre-freeze):
 
-By feature freeze (P0/P1):
+- Baseline UX:
+  - A clear and correct location flow (“use current location” vs manual).
+  - A stable “no location configured” widget state that is not blank and guides the user.
+  - Attribution shown correctly after first successful update.
+- Baseline reliability:
+  - Stable caching in App Group, deterministic rendering from cached snapshot.
+  - Update throttling and retry/backoff for transient failures.
+  - Make minute forecast best-effort (cannot block core usefulness).
 
-- P0: Home Screen correctness
-  - Ensure time always updates.
-  - Ensure any text that depends on time resolves against the correct “now” (timeline entry date).
-  - Fix any cases where minutes “freeze” in strings or labels.
+### D) Noise Machine (promote to daily-use)
 
-- P0: Update propagation
-  - Ensure customisation updates apply predictably to existing widgets.
-  - Avoid cases where the widget appears “stuck” until a manual reload.
-  - Ensure widget writes and reload triggers are correct and minimal.
+Goal: Noise Machine becomes a genuine daily-use widget, not a novelty.
 
-- P1: Layout stability pass
-  - Reduce any layout “jiggle” as time updates.
-  - Ensure geometry is stable across families and timelines.
+Work items (pre-freeze):
 
-Acceptance criteria:
+- Fix any responsiveness issues (first tap after cold start, state reconciliation).
+- Add one or two scoped upgrades that improve daily usefulness:
+  - Better presets naming / grouping.
+  - Clearer “what is playing now” surface.
+  - More predictable behaviour after stopping/starting.
 
-- No “frozen minutes” on the Home Screen (timeline date always used).
-- Editing a clock widget updates reliably.
-- Widget is stable and does not crash under memory pressure.
+### E) Variables (discoverability + usefulness)
 
-Key areas:
+Goal: Variables feel approachable and support daily workflows (streaks, counters, weather/steps integrations).
 
-- Clock model: `Shared/Clock/*`
-- Widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
-- Live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
+Work items (pre-freeze):
 
-## Theme C: Weather (flagship)
+- Improve in-app reference surfaces for variables (built-in keys, syntax, filters).
+- Ensure built-in keys are discoverable and insertable while editing.
+- Keep the data model deterministic: built-ins should reflect “truthful output” even if a custom key exists.
 
-Goal: Ship a Weather experience that is immediately useful, visually coherent, and robust: deterministic rendering from cached state, a clear location flow, and correct attribution.
+### F) Sharing/import (more user-realistic)
 
-By feature freeze (P0/P1):
+Goal: Users can share designs and import them confidently.
 
-- P0: Weather pipeline reliability
-  - Ensure the app refreshes weather into the App Group on a predictable cadence (respect `minimumUpdateInterval`).
-  - Ensure the widget can render a useful state from cached data without waiting for network.
-  - Treat minute forecast as best-effort; core current/hourly/daily must be reliable.
-  - Avoid WidgetCenter reload loops (no re-entrant reloads from the extension process).
+Work items (pre-freeze):
 
-- P0: Location and permissions story
-  - Ensure there is a single, obvious entry point to Weather settings when using the Weather template.
-  - Manual location entry (geocode search) must work without Location permission.
-  - Location permission is requested only for “Use Current Location”, and denial is handled with a clear fallback.
-  - If `requestWhenInUseAuthorization()` can be called, `WidgetWeaver/Info.plist` must include `NSLocationWhenInUseUsageDescription` with a user-facing explanation (missing usage strings are crash-class defects).
-  - Clearing location deterministically clears the snapshot and updates widgets.
+- `.wwdesign` export and import is supported and documented.
+- Import flow shows previews and allows review/selection.
+- Back-compat for legacy import formats is maintained (internal builds only).
 
-- P1: Template polish and clarity
-  - Make the “rain-first” nowcast story legible at a glance (chart + copy + fallback behaviour).
-  - Units behaviour is consistent (preference applies to template and variables).
-  - Attribution/legal link is present and reliable (appears after first successful update).
+## Risks and mitigations
 
-Acceptance criteria:
+- Risk: Weather permissions and attribution issues cause App Review friction.
+  - Mitigation: Keep permission prompts in-context only; ensure usage string matches behaviour; make attribution visible.
 
-- A new user can add the Weather widget and see useful content within 60 seconds (either cached weather or a clear “Set location” state).
-- Weather never renders as a blank tile; failure modes are explicit and stable.
-- Weather updates do not cause widget reload thrash.
+- Risk: Widget reload storms (battery / UI churn).
+  - Mitigation: Use reload coordinator; remove direct `reloadAllTimelines()` calls where possible; reload known widget kinds only.
 
-Key areas:
+- Risk: Catalogue feels overwhelming / incoherent.
+  - Mitigation: Hide redundant templates; keep a curated flagship story.
 
-- Weather engine (fetch + throttling): `Shared/WidgetWeaverWeatherEngine.swift`
-- Weather store (App Group): `Shared/WidgetWeaverWeatherStore.swift`
-- Weather template views:
-  - `Shared/WidgetWeaverWeatherTemplateView.swift`
-  - `Shared/WidgetWeaverWeatherTemplateNowcastChart.swift`
-  - `Shared/WidgetWeaverWeatherTemplateLayouts.swift`
-  - `Shared/WidgetWeaverWeatherTemplateComponents.swift`
-- Weather settings UX: `WidgetWeaver/WidgetWeaverWeatherSettingsView.swift`
-- Variable resolution plumbing: `Shared/WidgetSpec+VariableResolutionNow.swift`, `Shared/WidgetSpec+Utilities.swift`
-- Widget entry points: `WidgetWeaverWidget/WidgetWeaverWidget.swift` (weather body)
+## Definition of done (Feb ship)
 
-## Theme D: Noise Machine (flagship-adjacent)
-
-Goal: Keep Noise Machine stable, responsive, and polished enough for daily use.
-
-By feature freeze (P0/P1):
-
-- P0: Responsiveness
-  - First tap after cold start updates UI immediately.
-  - Avoid delays when toggling layers or adjusting volume.
-
-- P0: State persistence correctness
-  - “Last Mix” state should persist correctly to App Group.
-  - Widget should reflect the correct state on Home Screen.
-
-- P1: Small upgrades (bounded)
-  - 1–2 improvements that do not widen surface area or add permissions.
-  - Examples: better defaults, small UI polish, better diagnostics.
-
-Acceptance criteria:
-
-- No obvious UI lag in normal use.
-- No audio graph instability during common interactions.
-- Widget reflects current state instantly.
-
-Key areas:
-
-- Controller: `Shared/NoiseMachine/NoiseMachineController.swift`
-- Engine + DSP: `Shared/NoiseMachine/NoiseMachineController+Engine.swift`
-- Graph: `Shared/NoiseMachine/NoiseMachineController+Graph.swift`
-- Widget: `WidgetWeaverWidget/NoiseMachine/*`
-
-## Theme E: Variables (clarity)
-
-Goal: Make variables discoverable and easy to use in text editing, without making the editor feel complex.
-
-By feature freeze (P0/P1):
-
-- P0: Discoverability
-  - Ensure there is at least one obvious entry point (Variables sheet).
-  - Add in-context insertion when editing text (tool button or accessory entry).
-
-- P1: Usability
-  - Ensure variable insertion does not break existing text.
-  - Ensure variable names are understandable and grouped sensibly.
-
-- P1: Preview resolved text
-  - Provide a quick “preview resolved text” toggle in text editing, using the correct `now` for context.
-
-Acceptance criteria:
-
-- A new user can find and insert a variable within 30 seconds.
-- Resolved previews match Home Screen behaviour.
-
-Key areas:
-
-- Variable resolution: `Shared/WidgetSpec+VariableResolutionNow.swift`
-- Variables UI: `WidgetWeaver/WidgetWeaverVariablesView.swift`
-
-## Theme F: Scope cuts and surface reduction (usefulness + trust)
-
-Goal: Reduce user confusion, permissions footprint, and App Review risk by shipping a coherent, minimal surface.
-
-By feature freeze (P0/P1):
-
-- P0: Remove/hide “Reading” (implemented)
-  - Hidden from Explore/catalogue surfaces (kept in-app for back-compat).
-  - Ensure existing user widgets still render correctly.
-
-- P0: Remove/hide “Photo Quote” (implemented)
-  - Hidden from Explore/catalogue surfaces (kept in-app for back-compat).
-  - Ensure existing user widgets still render correctly.
-
-- P0: Park Clipboard Actions (Screen Actions) and remove from release builds (implemented)
-  - Not listed in Explore/catalogue surfaces.
-  - Not registered in the widget extension bundle in release builds (compile-time gated behind `CLIPBOARD_ACTIONS`; release builds must not define it).
-  - Default build has no ScreenActionsCore dependency and no local-path Swift Package references in the Xcode project.
-  - `NSContactsUsageDescription` is absent from `WidgetWeaver/Info.plist` (and there is no InfoPlist.strings entry).
-
-- P0: Hide PawPulse / “Latest Cat” (implemented gating)
-  - Not listed in Explore/catalogue surfaces.
-  - Widget is not registered unless `PAWPULSE` is defined.
-  - Background refresh is gated behind `pawPulseEnabled` (default off) and cancels pending requests when disabled or when no base URL is configured.
-
-Acceptance criteria:
-
-- New users cannot create Reading or Photo Quote widgets from Explore.
-- Release builds do not show Clipboard Actions in the Home Screen widget gallery.
-- Existing user widgets do not break.
-- No Contacts permission prompt appears in normal flows, and `NSContactsUsageDescription` does not exist in the shipped Info.plist.
-- Weather can request Location permission safely (Info.plist usage string present) and only in-context.
-
-Key areas:
-
-- Reading template surfaces: `WidgetWeaver/WidgetWeaverAboutCatalog.swift`
-- Photo Quote helper/spec: `Shared/WidgetSpec+Utilities.swift`
-- Widget bundle registration: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift`
-- Clipboard Actions widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
-- Clipboard Actions app intent: `WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift` (contact creation disabled)
-- Feature flags: `Shared/WidgetWeaverFeatureFlags.swift`
-- PawPulse bundle gate: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (`#if PAWPULSE`)
-- PawPulse / “Latest Cat”: `WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift`, `Shared/PawPulseLatestCatDetailView.swift`
-- Privacy usage strings: `WidgetWeaver/Info.plist`
-- Build reproducibility: `WidgetWeaver.xcodeproj/project.pbxproj` (no XCLocalSwiftPackageReference in the default build)
-
----
-
-## Appendix: definitions and notes
-
-- “Explore/catalogue surfaces” refers to anything visible to a new user without deep navigation (Explore tab, featured templates, first-run prompts).
-- “Hidden” means not visible in Explore and not registered in the widget bundle for release builds.
-- “Scope cut” means it can remain in the repo as future work, but must not increase shipped surface area, permissions footprint, or widget gallery clutter.
+- Photos + Clock + Weather feel flagship, coherent, and stable enough for daily use.
+- Widget rendering is deterministic and budget-safe (no heavy work in widgets).
+- Surface area is reduced without breaking existing user widgets.
+- Permissions footprint is minimal and matches shipped behaviour.
+- Sharing/import works in a way that increases user confidence.
+
+## Notes (out of scope / post-ship)
+
+- Larger AI features remain a post-ship track.
+- Revisit parked templates/features only with a clear product narrative and permissions strategy.
