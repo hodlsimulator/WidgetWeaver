@@ -13,6 +13,26 @@ import UIKit
 import ImageIO
 import UniformTypeIdentifiers
 
+private struct WWPickedImageFileTransfer: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { received in
+            WWPickedImageFileTransfer(url: received.file)
+        }
+    }
+}
+
+private struct WWPickedImageDataTransfer: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: .image) { data in
+            WWPickedImageDataTransfer(data: data)
+        }
+    }
+}
+
 /// Normalises picker-selected photos so downstream Smart Photo + widget decode cannot double-apply orientation.
 ///
 /// Output contract:
@@ -33,9 +53,16 @@ enum WWPhotoImportNormaliser {
         let clampedMaxPixel = max(1, maxPixel)
         let clampedQuality = min(max(compressionQuality, 0.0), 1.0)
 
-        // Photos-library path:
-        // Prefer a PhotoKit-rendered UIImage so the pixels match what the Photos app displays.
-        if let localIdentifier = item.itemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+        #if DEBUG
+        let id = item.itemIdentifier ?? "nil"
+        let types = item.supportedContentTypes.map(\.identifier).joined(separator: ",")
+        print("[WWPhotoImport] pick itemIdentifier=\(id) types=\(types)")
+        #endif
+
+        // 1) PhotoKit-rendered path (only when PhotoKit access is available).
+        // This produces pixels as displayed by Photos (including orientation/edits).
+        if canUsePhotoKitForRenderedFetch,
+           let localIdentifier = item.itemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
            !localIdentifier.isEmpty,
            let uiImage = try await requestPhotoKitRenderedUIImage(
             localIdentifier: localIdentifier,
@@ -63,7 +90,49 @@ enum WWPhotoImportNormaliser {
             return outData
         }
 
-        // Fallback path (Files app, drag/drop, etc.).
+        // 2) Preferred picker path: ask for an image FILE representation.
+        // This tends to preserve original metadata better than generic `Data.self`.
+        if let transferredFile = try await item.loadTransferable(type: WWPickedImageFileTransfer.self) {
+            let fileData: Data
+            do {
+                fileData = try Data(contentsOf: transferredFile.url)
+            } catch {
+                return nil
+            }
+
+            let outData = try await normaliseImageDataOffMainThread(
+                fileData,
+                maxPixel: clampedMaxPixel,
+                compressionQuality: clampedQuality
+            )
+
+            #if DEBUG
+            let inInfo = AppGroup.debugPickedImageInfo(data: fileData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+            let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+            print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) source=fileTransfer(.image)")
+            #endif
+
+            return outData
+        }
+
+        // 3) Secondary picker path: ask for an image DATA representation.
+        if let transferredData = try await item.loadTransferable(type: WWPickedImageDataTransfer.self) {
+            let outData = try await normaliseImageDataOffMainThread(
+                transferredData.data,
+                maxPixel: clampedMaxPixel,
+                compressionQuality: clampedQuality
+            )
+
+            #if DEBUG
+            let inInfo = AppGroup.debugPickedImageInfo(data: transferredData.data)?.inlineSummary ?? "uti=? orient=? px=?x?"
+            let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+            print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) source=dataTransfer(.image)")
+            #endif
+
+            return outData
+        }
+
+        // 4) Fallback path: generic raw data (Files app, drag/drop, some Photos cases).
         guard let data = try await item.loadTransferable(type: Data.self) else {
             return nil
         }
@@ -81,6 +150,13 @@ enum WWPhotoImportNormaliser {
         #endif
 
         return outData
+    }
+
+    private static var canUsePhotoKitForRenderedFetch: Bool {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if status == .authorized { return true }
+        if status == .limited { return true }
+        return false
     }
 
     // MARK: - PhotoKit (rendered UIImage)
@@ -221,26 +297,16 @@ enum WWPhotoImportNormaliser {
         maxPixel: Int,
         compressionQuality: CGFloat
     ) throws -> Data {
-        let base: UIImage = {
-            if let cg = image.cgImage {
-                return UIImage(cgImage: cg, scale: 1, orientation: .up)
-            }
-            return image
-        }()
-
         let pixelSize: CGSize = {
-            if let cg = base.cgImage {
-                return CGSize(width: CGFloat(cg.width), height: CGFloat(cg.height))
-            }
-            let w = base.size.width * base.scale
-            let h = base.size.height * base.scale
-            return CGSize(width: w, height: h)
+            let w = image.size.width * image.scale
+            let h = image.size.height * image.scale
+            if w > 0, h > 0 { return CGSize(width: w, height: h) }
+            if let cg = image.cgImage { return CGSize(width: CGFloat(cg.width), height: CGFloat(cg.height)) }
+            return .zero
         }()
 
         let longest = max(pixelSize.width, pixelSize.height)
-        if longest <= 0 {
-            throw ImportError.decodeFailed
-        }
+        if longest <= 0 { throw ImportError.decodeFailed }
 
         let targetLongest = min(CGFloat(max(1, maxPixel)), longest)
         let ratio = targetLongest / longest
@@ -254,18 +320,16 @@ enum WWPhotoImportNormaliser {
         rendererFormat.scale = 1
         rendererFormat.opaque = true
 
+        // Drawing the UIImage bakes its `imageOrientation` into pixels.
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: rendererFormat)
         let rendered = renderer.image { ctx in
             ctx.cgContext.interpolationQuality = .high
             UIColor.black.setFill()
             ctx.fill(CGRect(origin: .zero, size: targetSize))
-            base.draw(in: CGRect(origin: .zero, size: targetSize))
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
 
-        guard let outCG = rendered.cgImage else {
-            throw ImportError.encodeFailed
-        }
-
+        guard let outCG = rendered.cgImage else { throw ImportError.encodeFailed }
         return try encodeJPEGUp(cgImage: outCG, compressionQuality: compressionQuality)
     }
 
