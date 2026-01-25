@@ -171,10 +171,53 @@ private enum SmartPhotoImageDecoder {
             return nil
         }
 
+        let clampedMaxPixel = max(1, maxPixel)
+
+        let props = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary?) as? [CFString: Any]
+
+        let orientation: Int? = {
+            if let v = props?[kCGImagePropertyOrientation] as? Int { return v }
+            if let v = props?[kCGImagePropertyOrientation] as? NSNumber { return v.intValue }
+            if let v = props?[kCGImagePropertyOrientation] as? UInt32 { return Int(v) }
+            return nil
+        }()
+
+        let pixelWidth: Int? = {
+            if let v = props?[kCGImagePropertyPixelWidth] as? Int { return v }
+            if let v = props?[kCGImagePropertyPixelWidth] as? NSNumber { return v.intValue }
+            return nil
+        }()
+
+        let pixelHeight: Int? = {
+            if let v = props?[kCGImagePropertyPixelHeight] as? Int { return v }
+            if let v = props?[kCGImagePropertyPixelHeight] as? NSNumber { return v.intValue }
+            return nil
+        }()
+
+        let shouldApplyTransform: Bool = {
+            let o = orientation ?? 1
+            if o == 1 { return false }
+
+            // Heuristic guardrail: some picker/transcoded bytes contain pixels already rotated to `.up`
+            // while metadata still reports a rotated orientation. Applying the transform again would
+            // double-rotate the pixels.
+            //
+            // When the EXIF orientation implies a 90°/270° rotation, the stored pixel dimensions are
+            // usually landscape (width >= height). If the stored pixels are already portrait, skip
+            // the transform.
+            if o == 5 || o == 6 || o == 7 || o == 8 {
+                if let w = pixelWidth, let h = pixelHeight, w < h {
+                    return false
+                }
+            }
+
+            return true
+        }()
+
         let downsampleOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: clampedMaxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: shouldApplyTransform,
             kCGImageSourceShouldCacheImmediately: false,
             kCGImageSourceShouldCache: false
         ]
@@ -183,7 +226,7 @@ private enum SmartPhotoImageDecoder {
             return nil
         }
 
-        // Orientation is already applied by kCGImageSourceCreateThumbnailWithTransform.
+        // The returned CGImage is already oriented correctly when `shouldApplyTransform` is true.
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 }
