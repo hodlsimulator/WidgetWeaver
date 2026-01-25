@@ -50,8 +50,10 @@ struct WidgetWeaverApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WidgetWeaverDeepLinkHost {
-                ContentView()
+            WidgetWeaverWeatherDeepLinkHost {
+                WidgetWeaverDeepLinkHost {
+                    ContentView()
+                }
             }
 #if DEBUG
             .modifier(WidgetWeaverUITestEnvironmentModifier())

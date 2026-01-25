@@ -58,6 +58,11 @@ struct WeatherTemplateView: View {
         let location = store.loadLocation()
         let unit = store.resolvedUnitTemperature()
 
+        let widgetTapURL: URL? = {
+            guard context == .widget else { return nil }
+            return Self.weatherTapTargetURL(snapshot: snapshot, location: location)
+        }()
+
         let trimmedTitle = spec.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = trimmedTitle.isEmpty ? "Rain" : trimmedTitle
 
@@ -145,6 +150,26 @@ struct WeatherTemplateView: View {
         .wwApplyIf(style.background == .subtleMaterial) { view in
             view.environment(\.colorScheme, .dark)
         }
+        .wwApplyIf(context == .widget && widgetTapURL != nil) { view in
+            view.widgetURL(widgetTapURL)
+        }
+    }
+
+    // MARK: - Widget tap behaviour
+
+    private static let weatherSettingsDeepLinkURL: URL = URL(string: "widgetweaver://weather/settings")!
+
+    private static func weatherTapTargetURL(
+        snapshot: WidgetWeaverWeatherSnapshot?,
+        location: WidgetWeaverWeatherLocation?
+    ) -> URL? {
+        if snapshot == nil {
+            return weatherSettingsDeepLinkURL
+        }
+        if location == nil {
+            return weatherSettingsDeepLinkURL
+        }
+        return nil
     }
 
     private func accessibilityLabel(
