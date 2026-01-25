@@ -443,14 +443,14 @@ private enum SmartPhotoJPEG {
         var q = min(0.95, max(0.1, startQuality))
         let minQ: CGFloat = 0.65
 
-        guard var data = preparedImage.jpegData(compressionQuality: q) else {
+        guard var data = autoreleasepool(invoking: { preparedImage.jpegData(compressionQuality: q) }) else {
             throw SmartPhotoPipelineError.encodeFailed
         }
 
         var steps = 0
         while data.count > maxBytes && q > minQ && steps < 6 {
             q = max(minQ, q - 0.05)
-            guard let next = preparedImage.jpegData(compressionQuality: q) else { break }
+            guard let next = autoreleasepool(invoking: { preparedImage.jpegData(compressionQuality: q) }) else { break }
             data = next
             steps += 1
         }
