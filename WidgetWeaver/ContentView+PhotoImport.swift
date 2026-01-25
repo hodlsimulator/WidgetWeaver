@@ -37,9 +37,18 @@ enum WWPhotoImportNormaliser {
            !localIdentifier.isEmpty,
            let (assetData, assetOrientation) = try await requestPhotoKitDataAndOrientation(localIdentifier: localIdentifier) {
 
+            let metaOrientation = readOrientationFromMetadata(data: assetData)
+            let effectiveOrientation = metaOrientation ?? assetOrientation
+
+            #if DEBUG
+            if let metaOrientation, metaOrientation != assetOrientation {
+                print("[WWPhotoImport] orientation mismatch photoKit=\(assetOrientation.rawValue) meta=\(metaOrientation.rawValue)")
+            }
+            #endif
+
             return try await normaliseOffMainThread(
                 data: assetData,
-                orientation: assetOrientation,
+                orientation: effectiveOrientation,
                 maxPixel: clampedMaxPixel,
                 compressionQuality: clampedQuality
             )
