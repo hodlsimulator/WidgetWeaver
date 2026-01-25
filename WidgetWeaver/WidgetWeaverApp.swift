@@ -30,6 +30,8 @@ struct WidgetWeaverApp: App {
     init() {
         AppGroup.ensureImagesDirectoryExists()
 
+        FeatureFlags.seedPosterSuiteOnForAquariumTestFlightIfNeeded()
+
         if WidgetWeaverFeatureFlags.pawPulseEnabled {
             PawPulseCache.ensureDirectoryExists()
         }

@@ -26,11 +26,6 @@ enum FeatureFlags {
     }
 
     /// Default state for the context-aware editor tool suite.
-    ///
-    /// When `false`, the editor surfaces fall back to a legacy “capabilities-only” tool list:
-    /// - no selection intersection policy
-    /// - no focus gating
-    /// - no availability gating (Smart Photo presence / Photos permission)
     static let defaultContextAwareEditorToolSuiteEnabled: Bool = true
 
     static var contextAwareEditorToolSuiteEnabled: Bool {
@@ -53,9 +48,9 @@ enum FeatureFlags {
 
     /// Default state for the Photo Suite / Poster-specific editor surfaces.
     ///
-    /// When `false`, poster-specific editing is available only through the existing generic tools.
-    /// When `true`, the editor may expose poster-only controls and/or a dedicated Poster tool.
-    static let defaultPosterSuiteEnabled: Bool = false
+    /// This was previously default-OFF for controlled rollout. It is now default-ON so
+    /// Poster “Photo Essentials” controls appear consistently across installs/builds.
+    static let defaultPosterSuiteEnabled: Bool = true
 
     static var posterSuiteEnabled: Bool {
         let defaults = UserDefaults.standard
@@ -76,9 +71,6 @@ enum FeatureFlags {
     }
 
     /// Default state for the Photos-first Explore hero presentation.
-    ///
-    /// When `false`, Explore shows the existing Photo (Single) featured card.
-    /// When `true`, Explore shows a Photos hero entry designed for “choose photo now, customise later”.
     static let defaultPhotosExploreV2Enabled: Bool = false
 
     static var photosExploreV2Enabled: Bool {
@@ -100,9 +92,6 @@ enum FeatureFlags {
     }
 
     /// Default state for Smart Photos reliability + clarity hardening.
-    ///
-    /// When `false`, Smart Photos stays on the current baseline behaviour/copy.
-    /// When `true`, Smart Photos may show clearer half-state messaging and stronger safety rails.
     static let defaultSmartPhotosUXHardeningEnabled: Bool = false
 
     static var smartPhotosUXHardeningEnabled: Bool {
