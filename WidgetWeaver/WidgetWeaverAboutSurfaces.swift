@@ -64,38 +64,78 @@ struct WidgetWeaverAboutBackground: View {
                 )
                 .ignoresSafeArea()
             } else {
-                // Light mode: same layout, slightly cleaner + less saturated backdrop.
+                // Light mode: higher-contrast “paper” backdrop with soft colour energy + subtle texture.
                 WidgetWeaverAboutTheme.backgroundBase
                     .ignoresSafeArea()
 
                 LinearGradient(
-                    colors: [Color.white.opacity(0.55), Color.clear],
+                    colors: [
+                        Color.white.opacity(0.92),
+                        Color(uiColor: .systemGroupedBackground).opacity(0.70),
+                        Color(uiColor: .systemGroupedBackground)
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
 
-                RadialGradient(
-                    colors: [Color.pink.opacity(0.10), Color.clear],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 600
-                )
-                .ignoresSafeArea()
+                // Soft colour fields (kept low-saturation to avoid fighting content).
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color("AccentColor").opacity(0.18), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 260
+                        )
+                    )
+                    .frame(width: 520, height: 520)
+                    .blur(radius: 40)
+                    .offset(x: -210, y: -260)
+                    .ignoresSafeArea()
 
-                RadialGradient(
-                    colors: [Color.orange.opacity(0.08), Color.clear],
-                    center: .bottomTrailing,
-                    startRadius: 0,
-                    endRadius: 760
-                )
-                .ignoresSafeArea()
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.blue.opacity(0.12), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 320
+                        )
+                    )
+                    .frame(width: 620, height: 620)
+                    .blur(radius: 44)
+                    .offset(x: 240, y: -120)
+                    .ignoresSafeArea()
 
-                RadialGradient(
-                    colors: [Color.purple.opacity(0.08), Color.clear],
-                    center: .top,
-                    startRadius: 0,
-                    endRadius: 820
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.purple.opacity(0.10), Color.clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 360
+                        )
+                    )
+                    .frame(width: 720, height: 720)
+                    .blur(radius: 48)
+                    .offset(x: 160, y: 340)
+                    .ignoresSafeArea()
+
+                // Fine grain helps the light UI feel less flat.
+                Image("RainFuzzNoise_Sparse")
+                    .resizable(resizingMode: .tile)
+                    .scaleEffect(1.35)
+                    .rotationEffect(.degrees(9))
+                    .blendMode(.softLight)
+                    .opacity(0.14)
+                    .ignoresSafeArea()
+
+                // Gentle vignette improves legibility near the bottom.
+                LinearGradient(
+                    colors: [Color.black.opacity(0.06), Color.clear],
+                    startPoint: .bottom,
+                    endPoint: .top
                 )
                 .ignoresSafeArea()
             }
@@ -196,19 +236,32 @@ struct WidgetWeaverAboutCard: View {
             content
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Light mode: more "card" contrast (solid surface) so the UI does not look washed out.
+                // Light mode: solid “ink on paper” surface with a clean border and gentle lift.
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.96),
+                                    Color(uiColor: .systemBackground)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [
-                                    accent.opacity(0.28),
-                                    accent.opacity(0.10),
-                                    Color.black.opacity(0.04)
+                                    accent.opacity(0.26),
+                                    accent.opacity(0.08),
+                                    Color.clear
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -220,14 +273,15 @@ struct WidgetWeaverAboutCard: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(
                             RadialGradient(
-                                colors: [accent.opacity(0.16), Color.clear],
+                                colors: [accent.opacity(0.14), Color.clear],
                                 center: .topLeading,
                                 startRadius: 0,
-                                endRadius: 260
+                                endRadius: 320
                             )
                         )
                 )
-                .shadow(color: Color.black.opacity(0.08), radius: 18, x: 0, y: 10)
+                .shadow(color: Color.black.opacity(0.10), radius: 18, x: 0, y: 12)
+                .shadow(color: accent.opacity(0.10), radius: 30, x: 0, y: 18)
         }
     }
 }

@@ -34,6 +34,8 @@ struct WidgetPreviewDock: View {
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
+    @Environment(\.colorScheme) private var colorScheme
+
     @SceneStorage("widgetPreviewDock.isExpanded") private var isExpanded: Bool = false
 
     @AppStorage("preview.liveEnabled") private var liveEnabled: Bool = true
@@ -110,135 +112,134 @@ struct WidgetPreviewDock: View {
     }
 
     private var expandedCard: some View {
-        VStack(spacing: 12) {
-            if presentation == .dock {
-                grabber
-                    .padding(.top, 2)
-                    .padding(.bottom, 2)
-            }
-
-            HStack(spacing: 10) {
-                Text("Preview")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 0)
-
-                Picker("Live", selection: $liveEnabled) {
-                    Text("Off").tag(false)
-                    Text("Live").tag(true)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(width: presentation == .sidebar ? 140 : 120)
-                .accessibilityLabel("Live preview")
-
-                if !liveEnabled {
-                    Button {
-                        refreshFrozen()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityLabel("Refresh preview")
-                }
-
-                Picker("Size", selection: $family) {
-                    Text("Small").tag(WidgetFamily.systemSmall)
-                    if !restrictToSmallOnly {
-                        Text("Medium").tag(WidgetFamily.systemMedium)
-                        Text("Large").tag(WidgetFamily.systemLarge)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(maxWidth: presentation == .sidebar ? 280 : 240)
-                .accessibilityLabel("Preview size")
-
+        expandedPreviewSurface(
+            VStack(spacing: 12) {
                 if presentation == .dock {
-                    Button {
-                        setExpanded(false)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 2)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Collapse preview")
+                    grabber
+                        .padding(.top, 2)
+                        .padding(.bottom, 2)
                 }
-            }
 
-            WidgetPreview(
-                spec: effectiveSpec,
-                family: family,
-                maxHeight: expandedPreviewMaxHeight,
-                isLive: liveEnabled
-            )
+                HStack(spacing: 10) {
+                    Text("Preview")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Preview is approximate; final widget size is device-dependent.")
+                    Spacer(minLength: 0)
+
+                    Picker("Live", selection: $liveEnabled) {
+                        Text("Off").tag(false)
+                        Text("Live").tag(true)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(width: presentation == .sidebar ? 140 : 120)
+                    .accessibilityLabel("Live preview")
+
+                    if !liveEnabled {
+                        Button {
+                            refreshFrozen()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityLabel("Refresh preview")
+                    }
+
+                    Picker("Size", selection: $family) {
+                        Text("Small").tag(WidgetFamily.systemSmall)
+                        if !restrictToSmallOnly {
+                            Text("Medium").tag(WidgetFamily.systemMedium)
+                            Text("Large").tag(WidgetFamily.systemLarge)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(maxWidth: presentation == .sidebar ? 280 : 240)
+                    .accessibilityLabel("Preview size")
+
+                    if presentation == .dock {
+                        Button {
+                            setExpanded(false)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse preview")
+                    }
+                }
+
+                WidgetPreview(
+                    spec: effectiveSpec,
+                    family: family,
+                    maxHeight: expandedPreviewMaxHeight,
+                    isLive: liveEnabled
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preview is approximate; final widget size is device-dependent.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Group {
+                        if liveEnabled {
+                            Text("Live updates are debounced; widget buttons run locally.")
+                        } else {
+                            Text("Live is off — preview is frozen. Tap Refresh to apply changes.")
+                        }
+                    }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                Group {
-                    if liveEnabled {
-                        Text("Live updates are debounced; widget buttons run locally.")
-                    } else {
-                        Text("Live is off — preview is frozen. Tap Refresh to apply changes.")
-                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .padding(12)
-        .background(.regularMaterial, in: cardShape)
-        .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
-        .shadow(color: .black.opacity(presentation == .dock ? 0.10 : 0.06), radius: 18, y: 8)
+            .padding(12)
+        )
     }
 
     private var collapsedCard: some View {
-        HStack(spacing: 12) {
-            WidgetPreviewThumbnail(
-                spec: effectiveSpec,
-                family: family,
-                height: collapsedThumbnailHeight,
-                renderingStyle: .live
-            )
+        collapsedPreviewSurface(
+            HStack(spacing: 12) {
+                WidgetPreviewThumbnail(
+                    spec: effectiveSpec,
+                    family: family,
+                    height: collapsedThumbnailHeight,
+                    renderingStyle: .live
+                )
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Preview")
-                    .font(.caption)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preview")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text(statusLine)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                familyMenu
+
+                Image(systemName: "chevron.up")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Text(statusLine)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
             }
-
-            Spacer(minLength: 0)
-
-            familyMenu
-
-            Image(systemName: "chevron.up")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(height: collapsedHeight)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: cardShape)
-        .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(height: collapsedHeight)
+            .frame(maxWidth: .infinity)
+        )
         .contentShape(cardShape)
         .onTapGesture { setExpanded(true) }
     }
@@ -277,12 +278,35 @@ struct WidgetPreviewDock: View {
                 }
             }
         } label: {
-            Text(familyAbbreviation)
+            let label = Text(familyAbbreviation)
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
+
+            if colorScheme == .dark {
+                label
+                    .background(.ultraThinMaterial, in: Capsule())
+            } else {
+                label
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.96),
+                                        Color(uiColor: .systemBackground)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+                    )
+            }
         }
         .buttonStyle(.plain)
         .disabled(isSingleFamily)
@@ -302,6 +326,82 @@ struct WidgetPreviewDock: View {
 
     private var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
+    }
+
+    private var lightCardFill: some View {
+        cardShape.fill(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.96),
+                    Color(uiColor: .systemBackground)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private var lightCardOverlay: some View {
+        ZStack {
+            cardShape.strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+
+            cardShape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        Color("AccentColor").opacity(0.22),
+                        Color("AccentColor").opacity(0.06),
+                        Color.clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        }
+    }
+
+    private var lightCardNoiseOverlay: some View {
+        Image("RainFuzzNoise_Sparse")
+            .resizable(resizingMode: .tile)
+            .scaleEffect(1.10)
+            .rotationEffect(.degrees(6))
+            .blendMode(.softLight)
+            .opacity(0.10)
+            .clipShape(cardShape)
+            .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func expandedPreviewSurface<Content: View>(_ content: Content) -> some View {
+        if colorScheme == .dark {
+            content
+                .background(.regularMaterial, in: cardShape)
+                .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
+                .shadow(color: .black.opacity(presentation == .dock ? 0.10 : 0.06), radius: 18, y: 8)
+        } else {
+            content
+                .background(lightCardFill)
+                .overlay(lightCardOverlay)
+                .overlay(lightCardNoiseOverlay)
+                .shadow(color: Color.black.opacity(presentation == .dock ? 0.14 : 0.10), radius: presentation == .dock ? 22 : 18, x: 0, y: presentation == .dock ? 10 : 8)
+                .shadow(color: Color("AccentColor").opacity(0.10), radius: presentation == .dock ? 30 : 26, x: 0, y: presentation == .dock ? 18 : 14)
+        }
+    }
+
+    @ViewBuilder
+    private func collapsedPreviewSurface<Content: View>(_ content: Content) -> some View {
+        if colorScheme == .dark {
+            content
+                .background(.regularMaterial, in: cardShape)
+                .overlay(cardShape.strokeBorder(.primary.opacity(0.10)))
+        } else {
+            content
+                .background(lightCardFill)
+                .overlay(lightCardOverlay)
+                .overlay(lightCardNoiseOverlay)
+                .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 10)
+                .shadow(color: Color("AccentColor").opacity(0.08), radius: 24, x: 0, y: 14)
+        }
     }
 
     private var collapsedHeight: CGFloat {

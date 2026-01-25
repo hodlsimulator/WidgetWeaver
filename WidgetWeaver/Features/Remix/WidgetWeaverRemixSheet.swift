@@ -16,6 +16,8 @@ struct WidgetWeaverRemixSheet: View {
     let onAgain: () -> Void
     let onClose: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -41,8 +43,11 @@ struct WidgetWeaverRemixSheet: View {
         }
     }
 
+    @ViewBuilder
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+        let content = VStack(alignment: .leading, spacing: 8) {
             Text("Tap a card to apply a look to the current draft.")
                 .font(.subheadline)
                 .foregroundStyle(.primary)
@@ -53,11 +58,57 @@ struct WidgetWeaverRemixSheet: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(.primary.opacity(0.08))
-        )
+
+        if colorScheme == .dark {
+            content
+                .background(.thinMaterial, in: shape)
+                .overlay(
+                    shape.strokeBorder(.primary.opacity(0.08))
+                )
+        } else {
+            content
+                .background(
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.96),
+                                Color(uiColor: .systemBackground)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+                .overlay(
+                    ZStack {
+                        shape.strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
+
+                        shape.strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color("AccentColor").opacity(0.20),
+                                    Color("AccentColor").opacity(0.06),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    }
+                )
+                .overlay(
+                    Image("RainFuzzNoise_Sparse")
+                        .resizable(resizingMode: .tile)
+                        .scaleEffect(1.10)
+                        .rotationEffect(.degrees(6))
+                        .blendMode(.softLight)
+                        .opacity(0.10)
+                        .clipShape(shape)
+                        .allowsHitTesting(false)
+                )
+                .shadow(color: Color.black.opacity(0.10), radius: 14, x: 0, y: 10)
+        }
     }
 
     private var groupedVariants: [(WidgetWeaverRemixEngine.Kind, [WidgetWeaverRemixEngine.Variant])] {
@@ -94,42 +145,97 @@ private struct VariantCard: View {
     let family: WidgetFamily
     let onTap: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 10) {
-                WidgetPreviewThumbnail(spec: variant.spec, family: family, height: 120)
-                    .frame(maxWidth: .infinity, alignment: .center)
+            cardSurface(
+                VStack(alignment: .leading, spacing: 10) {
+                    WidgetPreviewThumbnail(spec: variant.spec, family: family, height: 120)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(variant.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(variant.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
 
-                    if !variant.subtitle.isEmpty {
-                        Text(variant.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if !variant.subtitle.isEmpty {
+                            Text(variant.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+
+                    tagGrid
+
+                    Text(detailsLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-
-                tagGrid
-
-                Text(detailsLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.10))
+                .padding(12)
+                .frame(maxWidth: .infinity)
             )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Applies this look to the current draft.")
+    }
+
+    @ViewBuilder
+    private func cardSurface<Content: View>(_ content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+        if colorScheme == .dark {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay(
+                    shape.strokeBorder(.primary.opacity(0.10))
+                )
+        } else {
+            content
+                .background(
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.96),
+                                Color(uiColor: .systemBackground)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+                .overlay(
+                    ZStack {
+                        shape.strokeBorder(Color.black.opacity(0.06), lineWidth: 1)
+
+                        shape.strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color("AccentColor").opacity(0.20),
+                                    Color("AccentColor").opacity(0.06),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    }
+                )
+                .overlay(
+                    Image("RainFuzzNoise_Sparse")
+                        .resizable(resizingMode: .tile)
+                        .scaleEffect(1.10)
+                        .rotationEffect(.degrees(6))
+                        .blendMode(.softLight)
+                        .opacity(0.10)
+                        .clipShape(shape)
+                        .allowsHitTesting(false)
+                )
+                .shadow(color: Color.black.opacity(0.10), radius: 16, x: 0, y: 10)
+        }
     }
 
     private var tagGrid: some View {
@@ -210,21 +316,30 @@ private struct VariantCard: View {
 private struct TagPill: View {
     let text: String
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        Text(text)
+        let shape = RoundedRectangle(cornerRadius: 999, style: .continuous)
+
+        return Text(text)
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(.thinMaterial)
-            )
+            .background {
+                if colorScheme == .dark {
+                    shape.fill(.thinMaterial)
+                } else {
+                    shape.fill(Color(uiColor: .secondarySystemBackground))
+                }
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.06))
+                shape.strokeBorder(
+                    colorScheme == .dark ? Color.primary.opacity(0.06) : Color.black.opacity(0.06),
+                    lineWidth: 1
+                )
             )
     }
 }
