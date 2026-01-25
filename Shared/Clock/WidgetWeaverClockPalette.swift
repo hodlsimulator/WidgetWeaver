@@ -85,8 +85,54 @@ struct WidgetWeaverClockPalette {
         }()
 
         // Widget background (outside dial)
-        let backgroundTop: Color = isDark ? WWClock.colour(0x141A22) : WWClock.colour(0xECF1F8)
-        let backgroundBottom: Color = isDark ? WWClock.colour(0x0B0F15) : WWClock.colour(0xC7D2E5)
+        //
+        // The outer container should read as scheme-aware even if the dial changes are subtle.
+        // Backgrounds are curated per scheme and per light/dark mode to keep the clock legible.
+        let (backgroundTop, backgroundBottom): (Color, Color) = {
+            switch scheme {
+            case .classic:
+                return (
+                    isDark ? WWClock.colour(0x141A22) : WWClock.colour(0xECF1F8),
+                    isDark ? WWClock.colour(0x0B0F15) : WWClock.colour(0xC7D2E5)
+                )
+
+            case .ocean:
+                return (
+                    isDark ? WWClock.colour(0x10263F) : WWClock.colour(0xE8F3FF),
+                    isDark ? WWClock.colour(0x070F19) : WWClock.colour(0xBFD9FF)
+                )
+
+            case .mint:
+                return (
+                    isDark ? WWClock.colour(0x112A24) : WWClock.colour(0xE8FBF4),
+                    isDark ? WWClock.colour(0x060E0C) : WWClock.colour(0xBEEBDD)
+                )
+
+            case .orchid:
+                return (
+                    isDark ? WWClock.colour(0x241A33) : WWClock.colour(0xF2E9FF),
+                    isDark ? WWClock.colour(0x0F0A16) : WWClock.colour(0xD9C2F4)
+                )
+
+            case .sunset:
+                return (
+                    isDark ? WWClock.colour(0x2A1822) : WWClock.colour(0xFFE9F0),
+                    isDark ? WWClock.colour(0x120A0F) : WWClock.colour(0xF7C2D4)
+                )
+
+            case .ember:
+                return (
+                    isDark ? WWClock.colour(0x2A1611) : WWClock.colour(0xFFF0E8),
+                    isDark ? WWClock.colour(0x120A07) : WWClock.colour(0xF5C8B7)
+                )
+
+            case .graphite:
+                return (
+                    isDark ? WWClock.colour(0x1B1D22) : WWClock.colour(0xF3F4F6),
+                    isDark ? WWClock.colour(0x0D0E10) : WWClock.colour(0xD4D8E1)
+                )
+            }
+        }()
 
         // Bezel: stronger metal range; keep highlight controlled.
         let bezelBright: Color = WWClock.colour(0xF6FAFF, alpha: 0.96)
