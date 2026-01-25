@@ -18,7 +18,7 @@ extension ContentView {
     func importPickedImage(_ item: PhotosPickerItem) async {
         let data: Data
         do {
-            guard let loaded = try await item.loadTransferable(type: Data.self) else {
+            guard let loaded = try await WWPhotoImportNormaliser.loadNormalisedJPEGUpData(for: item, maxPixel: 3072, compressionQuality: 0.92) else {
                 pickedPhoto = nil
                 return
             }
