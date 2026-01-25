@@ -101,8 +101,14 @@ extension ContentView {
                 Label("Widget Help", systemImage: "questionmark.circle")
             }
 
-#if DEBUG
+            #if DEBUG
             Divider()
+
+            Button {
+                activeSheet = .clockFaceGallery
+            } label: {
+                Label("Debug: clock face gallery", systemImage: "square.grid.3x3")
+            }
 
             Toggle(
                 "Debug: enable Reminders template",
@@ -178,7 +184,7 @@ extension ContentView {
             )
 
             Toggle("Debug: editor diagnostics", isOn: $showEditorDiagnostics)
-#endif
+            #endif
 
             Divider()
 

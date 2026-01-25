@@ -262,6 +262,13 @@
 			);
 			target = E186768D2EF232180098B095 /* WidgetWeaverWidgetExtension */;
 		};
+		E15047CC2F267C6F0047863A /* Exceptions for "Docs" folder in "WidgetWeaver" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ClockFaceBaseline.png,
+			);
+			target = E18676772EF227C30098B095 /* WidgetWeaver */;
+		};
 		E18676892EF22EA40098B095 /* Exceptions for "WidgetWeaver" folder in "WidgetWeaver" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -308,7 +315,15 @@
 		};
 		E15047522F1F22010047863A /* Docs */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E15047CC2F267C6F0047863A /* Exceptions for "Docs" folder in "WidgetWeaver" target */,
+			);
 			path = Docs;
+			sourceTree = "<group>";
+		};
+		E15047C32F2674650047863A /* Debug */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Debug;
 			sourceTree = "<group>";
 		};
 		E16011732F19618B00A3B10B /* Scripts */ = {
@@ -399,6 +414,7 @@
 		E186766E2EF227C20098B095 = {
 			isa = PBXGroup;
 			children = (
+				E15047C32F2674650047863A /* Debug */,
 				E15047522F1F22010047863A /* Docs */,
 				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
@@ -528,6 +544,7 @@
 			fileSystemSynchronizedGroups = (
 				E15047332F1CA2760047863A /* Clock */,
 				E15047522F1F22010047863A /* Docs */,
+				E15047C32F2674650047863A /* Debug */,
 				E16011732F19618B00A3B10B /* Scripts */,
 				E186767A2EF227C30098B095 /* WidgetWeaver */,
 				E1E878082F0787DD00C9AA14 /* Tools */,

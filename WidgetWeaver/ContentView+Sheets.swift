@@ -380,6 +380,10 @@ extension ContentView {
         case remindersSmartStackGuide
         case importReview
 
+        #if DEBUG
+        case clockFaceGallery
+        #endif
+
         var id: Int {
             switch self {
             case .widgetHelp: return 1
@@ -393,6 +397,10 @@ extension ContentView {
             case .reminders: return 10
             case .remindersSmartStackGuide: return 11
             case .importReview: return 9
+
+            #if DEBUG
+            case .clockFaceGallery: return 12
+            #endif
             }
         }
     }
@@ -469,6 +477,12 @@ extension ContentView {
 
         case .importReview:
             return importReviewSheetAnyView()
+
+        #if DEBUG
+        case .clockFaceGallery:
+            let config = draftSpec(id: selectedSpecID).clockConfig ?? WidgetWeaverClockDesignConfig.default
+            return AnyView(ClockFaceGalleryView(config: config))
+        #endif
         }
     }
 }
