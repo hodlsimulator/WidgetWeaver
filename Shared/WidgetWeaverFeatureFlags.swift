@@ -17,6 +17,32 @@ public enum WidgetWeaverFeatureFlags {
         static let remindersTemplateEnabled = "widgetweaver.feature.template.reminders.enabled"
         static let clipboardActionsEnabled = "widgetweaver.feature.clipboardActions.enabled"
         static let pawPulseEnabled = "widgetweaver.feature.pawpulse.enabled"
+
+        static let aiEnabled = "widgetweaver.feature.ai.enabled"
+    }
+
+    // MARK: - AI
+
+    /// Master kill-switch for all AI surfaces.
+    ///
+    /// Important:
+    /// - `bool(forKey:)` returns `false` when a key is missing.
+    /// - Using `object(forKey:)` allows distinguishing “unset” from “explicit false”.
+    ///
+    /// Default is `true` to match shipped behaviour on fresh installs.
+    public static var aiEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.aiEnabled) as? Bool {
+            return v
+        }
+        return true
+    }
+
+    public static func setAIEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.aiEnabled)
+    }
+
+    public static func resetAIEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.aiEnabled)
     }
 
     // MARK: - Templates
