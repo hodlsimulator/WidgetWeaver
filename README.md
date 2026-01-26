@@ -363,6 +363,40 @@ Widget state reads must handle:
 - partial writes (use atomic writes in the app)
 - schema evolution (versioned payloads or tolerant decoding)
 
+### Photo orientation regressions (PhotosPicker / Smart Photo)
+
+If a picked photo renders upside down or rotated (including 90° sideways) after adding a Photo widget or regenerating Smart Photo renders, treat it as an orientation normalisation regression. The widget pipeline assumes all persisted JPEGs are:
+
+- pixel data already oriented “up”
+- written with EXIF orientation `1`
+
+What made this issue hard to diagnose is that different import representations can disagree about whether pixels are already rotated, and the problem can appear “random” across images (JPEG vs HEIC vs PNG, edited vs unedited, alpha vs opaque).
+
+Quick diagnosis (DEBUG builds)
+
+1) Ensure the import log includes `source=imageIO+...` from `WWPhotoImportNormaliser.loadNormalisedJPEGUpData(...)`.
+2) Compare the `in=` and `out=` summaries from `AppGroup.debugPickedImageInfo(data:)`:
+   - `out` must be `orient=1`
+3) Confirm Smart Photo is operating on normalised input and producing normalised renders:
+   - `[WWSmartPhoto] prepare input=... orient=1`
+   - `[WWSmartPhoto] wrote ... orient=1`
+
+If the logs show `orient=1` everywhere but the image still presents rotated, the pixels are not actually upright despite the metadata. That indicates the “normalise” step is not consistently applying transforms for that import representation.
+
+Known-good fix (Jan 2026)
+
+- PhotosPicker import is normalised from the picked file bytes via ImageIO (single source of truth) rather than rasterising `SwiftUI.Image` and then encoding a `cgImage`.
+  - File: `WidgetWeaver/ContentView+PhotoImport.swift`
+  - Entry point: `WWPhotoImportNormaliser.loadNormalisedJPEGUpData(...)`
+  - Normaliser: `AppGroup.normalisePickedImageDataToJPEGUp(...)` (ImageIO thumbnailing with transform)
+- Smart Photo JPEG encoding avoids Core Graphics coordinate flips when stripping alpha; it uses `UIGraphicsImageRenderer` instead.
+  - File: `WidgetWeaver/SmartPhotoPipeline.swift`
+  - Encoder: `SmartPhotoJPEG.ensureOpaquePixelFormatIfNeeded(...)`
+
+Important: previously-generated `smart-*` files will remain wrong until re-picked or re-generated.
+
+More detail: `Docs/PHOTO_ORIENTATION_TROUBLESHOOTING.md`.
+
 ---
 
 ## Licence

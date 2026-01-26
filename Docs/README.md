@@ -7,3 +7,4 @@ These documents are the product and release planning reference for WidgetWeaver.
 - `RELEASE_PLAN_2026-02.md` — feature freeze → polish → ship checklist.
 - `VARIABLES.md` — variable template syntax, built-in keys, filters, and maths.
 - `CHAT_HANDOFF.txt` — copy/paste summary for starting new chats without losing context.
+- `PHOTO_ORIENTATION_TROUBLESHOOTING.md` — diagnosing and fixing PhotosPicker / Smart Photo orientation regressions.
