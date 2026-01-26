@@ -1,166 +1,313 @@
-# Photo Suite UX micro-roadmap (Jan 2026)
+# PHOTO WIDGET SUITE — UX ROADMAP (2026-01)
 
-Last updated: 2026-01-25
-Owner: Conor (engineering) / ChatGPT (PM support)
+Updated: 2026-01-26 (rev L)
 
-## Why this exists
+## Delta since rev K (what changed)
 
-Photos are expected to be the most-used widget family in WidgetWeaver. The roadmap below is designed to:
+- Step 4.5.3 landed and verified: opaque JPEG writes now avoid alpha and encode via ImageIO with explicit orientation metadata == 1.
+  - Manual crop/straighten path: crops, straightens and saves successfully.
+  - Outcome: reduced decode/memory overhead for opaque JPEG outputs; eliminates reliance on UIKit jpegData for this path.
+- Orientation hotfix outcome unchanged: no upside-down images observed in regression runs (keep kill-switch plan as last-resort only).
+- Non-blocking simulator noise still observed (keep out of the roadmap unless it reproduces on device / release builds):
+  - CFPrefsPlistSource warnings for App Group domain
+  - repeated “XPC connection was invalidated”
+  - LaunchServices database mapping errors (-54)
+  - Swift concurrency warning: “unsafeForcedSync called from Swift Concurrent context.”
 
-- Improve UX first: faster “time to a great result”, fewer confusing choices, clearer editing.
-- Reduce surface area: fewer starter templates and fewer “one-off” variants, without breaking existing widgets.
-- Add a compelling competitive feature: a Memories mode (“On this day” / “On this week”) that feels curated, not random.
+## Target
 
-This plan is intentionally incremental. Each step is sized to avoid error storms while still moving the product meaningfully.
+- Make Photos feel like the flagship: faster time-to-a-great-result, fewer confusing choices, clearer editing.
+- Reduce Photos starter-template surface area (especially duplicates/presets) without breaking existing saved widgets.
+- Add a Memories source (“On this day” / “On this week”) implemented via existing Smart Photos plumbing (no spec/schema changes required).
 
 ## Operating rules (non-negotiable)
 
-- One modest change-set per step.
-- Build after every step.
+- One modest change-set per step (or sub-step where explicitly split).
+- Build after every step/sub-step.
 - Commit after every successful build.
-- Prefer additive code and small, local edits over broad refactors.
-- Avoid schema/Codable changes unless a step explicitly calls them out.
-- Any new user-facing surface that could regress should be gated behind a feature flag (UserDefaults boolean).
-- Do not increase template count as a proxy for discoverability. Prefer “few entry points, many editable options”.
+- No broad refactors. Keep edits local and additive.
+- Any new/changed user-facing surface that could regress must be feature-flagged (UserDefaults boolean).
+- Prefer presets + editable controls over new templates (Explore should be curated, not exhaustive).
+- Avoid touching shared Smart Photos schema/types unless strictly necessary (prevents redeclaration/ambiguity and large error surfaces).
 
-## UX north stars
+## Stage 2 steps
 
-1) A new user can add a great-looking Photo widget within 60 seconds.
-2) Once a Photo widget exists, editing should feel “obvious”:
-   - “Choose photo / choose album / choose memories”
-   - “Fit vs Fill”
-   - “Caption on/off, top/bottom, scrim vs glass”
-3) The app should earn trust:
-   - no blank tiles
-   - predictable refresh behaviour
-   - clear permission prompts and fallbacks
-4) Explore should feel curated, not exhaustive.
+### Step 0: Acceptance baseline (NO CODE) — TODO (manual verification)
 
-## Status update (as of 2026-01-25)
+- Time-to-first-good-photo widget (fresh install, Photos access granted) <= 60 seconds.
+- From starter-photo-single, confirm editor can reach:
+  - full-bleed vs framed
+  - caption on/off
+  - caption top vs bottom
+  - scrim vs glass
+- Confirm Smart Photos “Make Smart Photo” and Album Shuffle work end-to-end.
+- Confirm no blank tiles after edits (save → background → Home Screen).
+- Orientation regression check (run after each Step 2.1-related change):
+  - From Explore, create a photo-based widget from at least 3 EXIF-orientations:
+    - camera portrait
+    - camera landscape
+    - an older photo known to have non-.up EXIF orientation
+  - Expected: preview + saved widget are not rotated/upside down.
+  - Status: PASS (simulator; repeat once on physical device before shipping).
+- Poster controls check:
+  - On a device that has never run a DEBUG build, confirm Poster “Photo Essentials” controls appear for poster templates.
 
-Progress already landed in the codebase:
+### Step 1: Explore surface-area prune (high UX impact, low risk) — DONE (code + verified)
 
-- Explore pruning has begun: Photo Quote and several Photos “wrapper” presets are hidden from Explore to keep the Photos surface curated (back-compat preserved for existing widgets/imports).
-- Smart Photos architecture is tighter: crop decision logic is isolated (family-specific defaults, subject-aware framing) to reduce preview vs Home Screen drift.
+- Remove Photo Quote from Explore/catalogue surfaces (keep back-compat).
+- Collapse redundant Photos presets from Explore lists where they are only wrappers around existing fields.
 
-Still to do in this roadmap:
+Touched file(s):
+- `WidgetWeaverAboutCatalog.swift`
 
-- The Step 4 Smart Photos UX hardening pass (state messaging for half-configured states, preview strip/crop editor stability, and clearer progress UI).
-- Decide the long-term end-state for hidden presets (keep hidden/back-compat only vs full removal with clean-up + migration strategy).
+Commit:
+- `Explore: prune photo starter templates`
 
-## Feature flags
+### Step 2: Photos-first Explore presentation (flagged) — DONE (code + verified)
 
-Existing:
+- Add a dedicated Photos hero entry that reads “choose a photo now, customise later”.
+- Provide 2–3 lightweight variants (not a long list).
+- Gate behind `FeatureFlags.photosExploreV2Enabled` (default off until stable).
 
-- `FeatureFlags.posterSuiteEnabled` — poster-only editing controls (Stage 1).
+Touched file(s):
+- `FeatureFlags.swift`
+- `WidgetWeaverAboutSections+Photos.swift`
+- `ContentView+Toolbar.swift` (DEBUG toggle)
+- `WidgetWeaverAboutPhotosHeroEntryV2.swift`
 
-Planned (to be introduced as part of this roadmap):
+Commit:
+- `Explore: add Photos hero entry (flagged)`
 
-- `FeatureFlags.photosExploreV2Enabled` — revamped Photos presentation on Explore.
-- `FeatureFlags.smartPhotoMemoriesEnabled` — Memories modes (On this day/week) inside Smart Photos.
+### Step 2.1 (HOTFIX): Explore template photo orientation normalisation (fix upside-down photos) — DONE (verified)
 
-## Stage 2: Photos UX + Memories (new roadmap)
-
-### Step 0: Acceptance baseline (NO CODE)
-
-Checklist:
-
-- Time-to-first-good-photo (fresh install, Photos access granted) <= 60 seconds.
-- Starting from `starter-photo-single`, a user can reach: full-bleed vs framed, caption on/off, caption top/bottom, scrim vs glass.
-- Smart Photos:
-  - “Make Smart Photo” succeeds and produces a stable preview.
-  - Album shuffle can be configured and prepares at least one batch.
-- No blank tiles after edits (save → background → Home Screen).
-
-Output:
-- Capture notes/screenshots (internal) and record any friction points to resolve in later steps.
-
-### Step 1: Reduce redundant Photos templates (catalogue curation)
-
-Intent:
-- Keep Explore curated.
-- Reduce choice overload while preserving back-compat.
-
-Tasks:
-- Identify “wrapper” presets that are basically style variants of the same thing (caption, frame, glass strip, etc.).
-- Hide them from Explore templates list.
-- Keep legacy template IDs in the app so existing widgets import and render correctly.
+Goal:
+- Ensure any photo chosen during Explore template creation is persisted with pixels in `.up` orientation AND orientation metadata is 1, so downstream rendering/widgets cannot appear upside down.
 
 Constraints:
-- Do not remove old template IDs unless there is a migration strategy.
-- Ensure the “Photos” story is still complete (full-bleed + caption + framed should remain reachable via editing controls).
+- Keep changes local to the “choose photo / create spec / write file” boundary.
+- Avoid schema changes.
+- No user-facing UI; DEBUG-only logs are allowed and must be throttled.
 
-Done when:
-- Explore Photos templates list is shorter and clearer.
-- Existing widgets using hidden templates still render correctly.
+Status summary (rev L):
+- Regression runs show no upside-down images.
+- Observed logs confirm:
+  - picker input may arrive with rotated EXIF orientation (e.g. 6)
+  - normaliser emits JPEG bytes with orientation==1 and “already rotated” pixel dimensions
+  - Smart Photo pipeline writes master/small/medium/large with orientation==1
 
-### Step 2: Make Photos editing feel obvious
+Sub-steps (buildable micro-commits):
 
-Intent:
-- Make the first editing actions feel “photo-first”, not “settings-first”.
+#### Step 2.1.1: Attempt A — renderer-based normalisation in AppGroup.writeUIImage — DONE (insufficient historically)
 
-Tasks:
-- In the editor, elevate the “Choose photo / Choose album / Smart Photo” entry points.
-- Ensure “Fit vs Fill” is near the photo picker (not buried).
-- Ensure caption controls are discoverable and match the current layout mode (caption on/off; top/bottom; scrim vs glass).
+- Status: landed previously; not sufficient alone.
 
-Done when:
-- A new user can plausibly modify a Photos widget without reading docs.
+#### Step 2.1.2: Instrumentation — confirm source orientation, pipeline path, and written-file orientation — DONE (DEBUG-only)
 
-### Step 3: Memories mode (On this day / On this week) for Smart Photos (scoped)
+##### Step 2.1.2a: Log picker input + chosen pipeline path — DONE
 
-Intent:
-- Create a curated-feeling feature that differentiates Smart Photos from basic shuffle.
+- DEBUG-only, throttled logs at the import boundary:
+  - picker load result type (Data-only vs file URL representation if available)
+  - input UTI (if determinable)
+  - input orientation metadata (`kCGImagePropertyOrientation`) and pixel dimensions
+  - UIKit decode orientation (`UIImage(data:).imageOrientation`) as secondary signal
+  - whether Smart Photo pipeline succeeded or legacy fallback was used
 
-Tasks:
-- Add a “Memories” mode inside Smart Photos:
-  - On this day (month/day match)
-  - On this week (week-of-year match, scoped)
-- Apply simple ranking rules:
-  - Favour photos with faces.
-  - Favour photos with high “quality” score.
-  - Avoid very low light / blurred items when possible.
-- Keep it deterministic:
-  - Use a saved “seed” per widget spec so the same day produces stable results unless the user requests a refresh.
+Commit:
+- `Photos: log picker input orientation + import path (DEBUG)`
 
-Constraints:
-- Do not do heavy Vision work inside widgets.
-- Any new heavy work runs in the app and saves results to App Group.
+##### Step 2.1.2b: Log Smart Photo outputs after encode (master + small/medium/large) — DONE
 
-Done when:
-- A user can enable Memories mode and it produces a plausible set of photos consistently.
+- Logs show:
+  - input orientation + pixel dims at prepare
+  - written-file orientation + pixel dims for each output
 
-### Step 4: Smart Photos UX hardening pass
+Commit:
+- `Smart Photos: log encoded output orientation (DEBUG)`
 
-Intent:
-- Make Smart Photos feel reliable and trustworthy.
+##### Step 2.1.2c: Log widget decode inputs (pre-decode metadata) for the resolved file — DEFERRED
 
-Tasks:
-- Improve state messaging:
-  - “Preparing photos…”
-  - “No photos available”
-  - “Needs Photos access”
-  - “Needs album selection”
-- Ensure the preview strip remains stable while background prep runs.
-- Ensure the crop editor is stable and predictable for each widget family.
+Reason:
+- issue no longer reproduces; keep as a ready-to-apply diagnostic step if any device-only repro appears.
 
-Done when:
-- Smart Photos feels “confident”, not experimental.
+#### Step 2.1.3: Fix — enforce pixel + metadata normalisation for Smart Photo AND legacy writes — DONE
 
-### Step 5: Photos Explore V2 (optional, if time remains)
+- Fix A is sufficient per current evidence; Fix B/C not indicated.
 
-Intent:
-- Make Explore feel curated and premium without increasing template count.
+##### Step 2.1.3A: Fix A — prefer picker file representation and normalise bytes before any save — DONE
 
-Tasks:
-- Group Photos templates into a small number of “hero” entries.
-- Provide a clear “Remix” flow.
-- Make it obvious how to reach variants via editing controls.
+- Picker import now normalises source into a JPEG with:
+  - pixels rotated to `.up`
+  - metadata orientation set to 1
+  - maxPixel sized for intended pipeline stage:
+    - Smart Photo source bytes normalised at ~3072 longest edge
+    - Legacy single-file normalised at ~1024 longest edge
+- Applied at the import boundary (before `SmartPhotoPipeline.prepare`).
 
-Done when:
-- Explore Photos feels like 2–3 “hero” options rather than 10 similar presets.
+Commit:
+- `Photos: normalise picker bytes before Smart Photo prepare`
 
-## Notes
+##### Step 2.1.3B: Fix B — ImageIO-based JPEG encoding in Smart Photo pipeline (force orientation=1) — NOT REQUIRED
 
-- This micro-roadmap is intentionally sequenced: reduce choice → improve editing → add one compelling feature → harden.
-- If any step introduces instability, revert and re-scope rather than pushing forward.
+- Not indicated by logs (Smart Photo outputs already show orientation == 1).
+
+##### Step 2.1.3C: Fix C — widget decode guardrail (kill-switch only; last resort) — NOT REQUIRED
+
+- Keep design on file for rapid response if a future device-only regression appears.
+
+#### Step 2.1.4: Coverage audit — ensure no path writes raw picked bytes without normalisation — TODO
+
+- Identify all entry points that can persist a picked photo:
+  - Explore → add template → auto-present picker
+  - Editor → Replace photo
+  - any “choose photo now” Explore flows
+- Ensure all of them route through the same normalised-write boundary.
+
+Commit:
+- `Photos: audit + route all picker writes through normaliser`
+
+#### Step 2.1.5: Repair guidance (no automatic migration) — NOT REQUIRED (for now)
+
+- Only add user-facing guidance if support load indicates confusion.
+
+Commit (only if copy lands):
+- `Photos: add note for orientation repair`
+
+### Step 3: Photo Essentials editor controls (poster-only, builds on existing Poster Suite work) — DONE (code + verified)
+
+- Expose the core axes in one place for template == `.poster`:
+  - Photo-only vs Caption
+  - Caption top vs bottom
+  - Scrim vs Glass
+  - Full-bleed vs Framed (Fill vs Fit)
+- Gate behind `FeatureFlags.posterSuiteEnabled` and only for template == `.poster`.
+
+Touched file(s):
+- `PosterSuiteStage1Controls.swift`
+- `ContentView+Sections.swift`
+
+Commit:
+- `Editor: add Photo Essentials controls (poster-only)`
+
+### Step 3.1: Poster Suite availability across installs/builds — DONE (decision + code)
+
+- Change: `posterSuiteEnabled` default set to ON (flag remains as a kill-switch).
+- Remove Aquarium/TestFlight one-time seeding and any call sites (eliminates iOS 18 receipt API warning and cross-device inconsistencies).
+- Verify controls remain context-aware via template == `.poster` gating.
+
+Commits:
+- `Flags: default Poster Suite on`
+- `App: remove Aquarium poster flag seeding`
+
+### Step 4: Smart Photos UX hardening (no new capability; reliability + clarity) — IN PROGRESS (split into buildable sub-steps)
+
+Goal:
+- Improve half-state messaging, stabilise preview strip + crop entry points, ensure heavy work stays off the main thread, and make progress obvious.
+- Gate all Step 4 UX changes behind `FeatureFlags.smartPhotosUXHardeningEnabled` (default off).
+
+#### Step 4.1 — DONE
+
+- `Smart Photos: add UX hardening flag`
+
+#### Step 4.2 — DONE (flagged)
+
+- `Smart Photos: pipeline progress surface (flagged)`
+
+#### Step 4.3 — DONE (flagged)
+
+- `Smart Photos: preview strip missing-state hints (flagged)`
+
+#### Step 4.4 — DONE (flagged)
+
+- `Smart Photos: crop entry safety rails (flagged)`
+
+#### Step 4.5: Heavy work reliability — IN PROGRESS
+
+##### Step 4.5.1 — DONE
+
+- `Smart Photos: serialise saliency Vision requests`
+
+Extraction (no functional change intended):
+- `SmartPhotoPipeline+CropDecision.swift`
+
+##### Step 4.5.2 — DONE (flagged)
+
+- `Smart Photos: pipeline progress surface (flagged)`
+- `Smart Photos: fix pipeline lock scope`
+
+##### Step 4.5.3: Reduce decode/memory overhead when writing opaque JPEGs — DONE (verified)
+
+- Change: encode manual crop/straighten JPEGs via ImageIO and ensure alpha-free output (opaque draw when needed), with orientation metadata forced to 1.
+
+Commit:
+- `Smart Photos: write opaque JPEGs without alpha`
+
+##### Step 4.5.4: Concurrency warning audit (unsafeForcedSync from concurrent context) — TODO (only if reproducible on device)
+
+- Aim: remove or isolate any forced sync calls made from async contexts in DEBUG/preview flows.
+- Keep changes minimal and local; do not refactor broad pipeline ownership.
+
+### Step 5: Memories engine (On this day/week) — ENGINE ONLY (flagged) — TODO
+
+- Implement a manifest builder that:
+  - fetches candidate assets for the date window across years
+  - filters screenshots/low-res using existing heuristics
+  - scores/ranks (reuse `SmartPhotoQualityScorer` where possible)
+  - writes a `SmartPhotoShuffleManifest` and triggers initial prep
+- Encode mode via shuffle manifest sourceID prefix (e.g. `memories:onThisDay` / `memories:onThisWeek`); no spec schema changes.
+- Gate behind `FeatureFlags.smartPhotoMemoriesEnabled` (default off).
+
+Likely file(s):
+- `SmartPhotoAlbumShuffleControls+Engine.swift`
+- optional small new engine file
+
+Commit:
+- `Smart Photos: memories manifest builder (flagged)`
+
+### Step 6: Memories UI selector (flagged; guided and safe) — TODO
+
+- Add a simple “Source” selector inside existing Smart Photos controls:
+  - Album Shuffle
+  - On this day
+  - On this week
+- Provide clear permission copy and deterministic empty state guidance.
+- Gate behind `FeatureFlags.smartPhotoMemoriesEnabled`.
+
+Likely file(s):
+- `SmartPhotoAlbumShuffleControls.swift`
+- possibly `ContentView+SectionAlbumShuffle.swift`
+
+Commit:
+- `Smart Photos: add Memories mode UI (flagged)`
+
+### Step 7: Competitive polish (one micro-upgrade per commit) — TODO
+
+- Anti-repeat rotation policy.
+- Optional “year” affordance implemented as a caption preset (not a new template).
+- Refresh cadence guardrails (regen at most daily/weekly; not on every open).
+
+Commits:
+- `Memories: anti-repeat rotation`
+- `Memories: optional year caption preset`
+- `Memories: refresh cadence guardrails`
+
+### Step 8: Ship decision (NO CODE) — TODO
+
+- Decide which parts become default-on for the Feb ship (feature freeze constraints apply).
+- Update release checklist only if Memories is promoted beyond flagged.
+
+## Acceptance criteria (overall)
+
+- Photos feels curated in Explore, not cluttered.
+- Editor makes the primary photo knobs obvious and fast.
+- No blank tiles; Smart Photos remains deterministic and widget-safe.
+- Smart Photos hardening:
+  - Half-states are explained (manifest missing / nothing prepared / render missing).
+  - No saliency/pipeline crashes during “Prepare next batch” / “Regenerate smart renders”.
+  - Long-running work shows obvious progress and blocks overlapping actions when hardening is enabled.
+- Orientation:
+  - No upside-down photos when creating from Explore templates (preview + saved widget).
+  - Output files consumed by widgets always have pixels `.up` and orientation metadata == 1.
+- Poster controls:
+  - Poster Photo Essentials controls show consistently across devices/builds (default-ON; still poster-template-only).
+- Memories:
+  - Curated (quality + variety), with respectful fallbacks.
