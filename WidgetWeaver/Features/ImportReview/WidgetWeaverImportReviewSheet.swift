@@ -67,6 +67,18 @@ struct WidgetWeaverImportReviewSheet: View {
         filterWithImageOnly || templateFilter != "All" || listScope == .selected
     }
 
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var shouldShowShownSelectionActions: Bool {
+        isFiltering || isSearching
+    }
+
+    private var shownIDs: Set<UUID> {
+        Set(displayedItems.map(\.id))
+    }
+
     private var availableTemplates: [String] {
         let unique = Set(model.items.map(\.templateDisplay))
         return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -186,7 +198,7 @@ struct WidgetWeaverImportReviewSheet: View {
                             }
                         }
 
-                        if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if isFiltering || isSearching {
                             Divider()
 
                             Button("Clear filters") {
@@ -204,7 +216,34 @@ struct WidgetWeaverImportReviewSheet: View {
 
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button("Select all") { onSelectAll() }
+                        if shouldShowShownSelectionActions {
+                            let shownCount = displayedItems.count
+
+                            Button("Select shown (\(shownCount))") {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    selectShown(replacingExisting: true)
+                                }
+                            }
+                            .disabled(isImporting || shownCount == 0)
+
+                            Button("Add shown (\(shownCount))") {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    selectShown(replacingExisting: false)
+                                }
+                            }
+                            .disabled(isImporting || shownCount == 0)
+
+                            Button("Deselect shown (\(shownCount))") {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    deselectShown()
+                                }
+                            }
+                            .disabled(isImporting || shownCount == 0)
+
+                            Divider()
+                        }
+
+                        Button("Select all (\(model.items.count))") { onSelectAll() }
                             .disabled(isImporting)
 
                         if case .exceedsFreeLimit(let available) = limitState {
@@ -316,7 +355,7 @@ struct WidgetWeaverImportReviewSheet: View {
                             .disabled(isImporting)
                     }
 
-                    if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if isFiltering || isSearching {
                         Button("Clear filters") {
                             listScope = .all
                             filterWithImageOnly = false
@@ -404,7 +443,7 @@ struct WidgetWeaverImportReviewSheet: View {
         } header: {
             Text("Designs")
         } footer: {
-            Text("Tip: tap the eye, swipe right, or press and hold a row to preview before importing.")
+            Text("Tip: tap the eye, swipe right, or press and hold a row to preview. Use filters, then Selection → Select shown to bulk-select what is on screen.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -415,7 +454,7 @@ struct WidgetWeaverImportReviewSheet: View {
             return "No designs selected."
         }
 
-        if isFiltering || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if isFiltering || isSearching {
             return "No matches."
         }
 
@@ -460,6 +499,20 @@ struct WidgetWeaverImportReviewSheet: View {
         }
 
         selection = Set(sortedSelected.prefix(limit).map(\.id))
+    }
+
+    private func selectShown(replacingExisting: Bool) {
+        let ids = shownIDs
+
+        if replacingExisting {
+            selection = ids
+        } else {
+            selection.formUnion(ids)
+        }
+    }
+
+    private func deselectShown() {
+        selection.subtract(shownIDs)
     }
 
     private func presentPreview(for item: WidgetWeaverImportReviewItem) {
