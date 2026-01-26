@@ -9,15 +9,41 @@ import SwiftUI
 
 /// Editor control for selecting a curated dial-fill colour for the Clock "Icon" face.
 ///
-/// The swatches must resolve through the shared clock appearance resolver to avoid
-/// preview↔Home Screen drift.
+/// When `showsTitle` is true, the swatches are presented inside a persisted, collapsible section.
+/// The collapse state is shared with the seconds-hand picker so only one palette is expanded at a time.
 struct WidgetWeaverClockIconDialColourPicker: View {
     let clockThemeRaw: String
     let clockFaceRaw: String
 
     @Binding var clockIconDialColourTokenRaw: String?
 
+    let showsTitle: Bool
+
     @Environment(\.colorScheme) private var colorScheme
+
+    @AppStorage(StorageKeys.expandedSection) private var expandedSectionRaw: String = ExpandedSection.dial.rawValue
+
+    private enum StorageKeys {
+        static let expandedSection = "widgetweaver.editor.clock.iconPalette.expandedSection"
+    }
+
+    private enum ExpandedSection: String {
+        case dial
+        case secondsHand
+        case none
+    }
+
+    init(
+        clockThemeRaw: String,
+        clockFaceRaw: String,
+        clockIconDialColourTokenRaw: Binding<String?>,
+        showsTitle: Bool = true
+    ) {
+        self.clockThemeRaw = clockThemeRaw
+        self.clockFaceRaw = clockFaceRaw
+        _clockIconDialColourTokenRaw = clockIconDialColourTokenRaw
+        self.showsTitle = showsTitle
+    }
 
     private var selectedFaceToken: WidgetWeaverClockFaceToken {
         WidgetWeaverClockFaceToken.canonical(from: clockFaceRaw)
@@ -25,6 +51,23 @@ struct WidgetWeaverClockIconDialColourPicker: View {
 
     private var selectedToken: WidgetWeaverClockIconDialColourToken? {
         WidgetWeaverClockIconDialColourToken.canonical(from: clockIconDialColourTokenRaw)
+    }
+
+    private var selectedSummary: String {
+        selectedToken?.displayName ?? "Scheme"
+    }
+
+    private var expandedSection: ExpandedSection {
+        ExpandedSection(rawValue: expandedSectionRaw) ?? .dial
+    }
+
+    private var isExpanded: Binding<Bool> {
+        Binding(
+            get: { expandedSection == .dial },
+            set: { newValue in
+                expandedSectionRaw = newValue ? ExpandedSection.dial.rawValue : ExpandedSection.none.rawValue
+            }
+        )
     }
 
     private struct Option: Identifiable {
@@ -48,50 +91,82 @@ struct WidgetWeaverClockIconDialColourPicker: View {
     var body: some View {
         if selectedFaceToken != .icon {
             EmptyView()
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Face colour")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 120), spacing: 10)
-                    ],
-                    alignment: .leading,
-                    spacing: 10
-                ) {
-                    ForEach(options) { option in
-                        let isSelected = (selectedToken?.rawValue == option.tokenRaw)
-                            || (selectedToken == nil && option.tokenRaw == nil)
-
-                        let palette = WidgetWeaverClockAppearanceResolver
-                            .resolve(
-                                config: WidgetWeaverClockDesignConfig(
-                                    theme: clockThemeRaw,
-                                    face: clockFaceRaw,
-                                    iconDialColourToken: option.tokenRaw
-                                ),
-                                mode: colorScheme
-                            )
-                            .palette
-
-                        DialSwatchChip(
-                            title: option.title,
-                            fill: palette.iconDialFill,
-                            isSelected: isSelected,
-                            accessibilityID: "Editor.Clock.IconDialColour.\(option.id)",
-                            action: {
-                                clockIconDialColourTokenRaw = option.tokenRaw
-                            }
-                        )
-                    }
-                }
+        } else if showsTitle {
+            DisclosureGroup(isExpanded: isExpanded) {
+                swatchGrid
+                    .padding(.top, 8)
+            } label: {
+                PaletteDisclosureLabel(
+                    title: "Face colour",
+                    summary: selectedSummary
+                )
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
+            .accessibilityIdentifier("Editor.Clock.IconDialColourDisclosure")
             .accessibilityElement(children: .contain)
+        } else {
+            swatchGrid
+                .padding(.vertical, 6)
+                .accessibilityElement(children: .contain)
         }
+    }
+
+    @ViewBuilder
+    private var swatchGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 120), spacing: 10)
+            ],
+            alignment: .leading,
+            spacing: 10
+        ) {
+            ForEach(options) { option in
+                let isSelected = (selectedToken?.rawValue == option.tokenRaw)
+                    || (selectedToken == nil && option.tokenRaw == nil)
+
+                let palette = WidgetWeaverClockAppearanceResolver
+                    .resolve(
+                        config: WidgetWeaverClockDesignConfig(
+                            theme: clockThemeRaw,
+                            face: clockFaceRaw,
+                            iconDialColourToken: option.tokenRaw
+                        ),
+                        mode: colorScheme
+                    )
+                    .palette
+
+                DialSwatchChip(
+                    title: option.title,
+                    fill: palette.iconDialFill,
+                    isSelected: isSelected,
+                    accessibilityID: "Editor.Clock.IconDialColour.\(option.id)",
+                    action: {
+                        clockIconDialColourTokenRaw = option.tokenRaw
+                    }
+                )
+            }
+        }
+    }
+}
+
+private struct PaletteDisclosureLabel: View {
+    let title: String
+    let summary: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
     }
 }
 

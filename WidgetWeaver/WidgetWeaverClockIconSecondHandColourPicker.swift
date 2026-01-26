@@ -9,8 +9,8 @@ import SwiftUI
 
 /// Editor control for selecting a curated seconds-hand colour for the Clock "Icon" face.
 ///
-/// The swatches must resolve through the shared clock appearance resolver to avoid
-/// preview↔Home Screen drift.
+/// When `showsTitle` is true, the swatches are presented inside a persisted, collapsible section.
+/// The collapse state is shared with the dial-colour picker so only one palette is expanded at a time.
 struct WidgetWeaverClockIconSecondHandColourPicker: View {
     let clockThemeRaw: String
     let clockFaceRaw: String
@@ -18,7 +18,35 @@ struct WidgetWeaverClockIconSecondHandColourPicker: View {
 
     @Binding var clockIconSecondHandColourTokenRaw: String?
 
+    let showsTitle: Bool
+
     @Environment(\.colorScheme) private var colorScheme
+
+    @AppStorage(StorageKeys.expandedSection) private var expandedSectionRaw: String = ExpandedSection.dial.rawValue
+
+    private enum StorageKeys {
+        static let expandedSection = "widgetweaver.editor.clock.iconPalette.expandedSection"
+    }
+
+    private enum ExpandedSection: String {
+        case dial
+        case secondsHand
+        case none
+    }
+
+    init(
+        clockThemeRaw: String,
+        clockFaceRaw: String,
+        clockIconDialColourTokenRaw: String?,
+        clockIconSecondHandColourTokenRaw: Binding<String?>,
+        showsTitle: Bool = true
+    ) {
+        self.clockThemeRaw = clockThemeRaw
+        self.clockFaceRaw = clockFaceRaw
+        self.clockIconDialColourTokenRaw = clockIconDialColourTokenRaw
+        _clockIconSecondHandColourTokenRaw = clockIconSecondHandColourTokenRaw
+        self.showsTitle = showsTitle
+    }
 
     private var selectedFaceToken: WidgetWeaverClockFaceToken {
         WidgetWeaverClockFaceToken.canonical(from: clockFaceRaw)
@@ -26,6 +54,23 @@ struct WidgetWeaverClockIconSecondHandColourPicker: View {
 
     private var selectedToken: WidgetWeaverClockSecondHandColourToken? {
         WidgetWeaverClockSecondHandColourToken.canonical(from: clockIconSecondHandColourTokenRaw)
+    }
+
+    private var selectedSummary: String {
+        selectedToken?.displayName ?? "Default"
+    }
+
+    private var expandedSection: ExpandedSection {
+        ExpandedSection(rawValue: expandedSectionRaw) ?? .dial
+    }
+
+    private var isExpanded: Binding<Bool> {
+        Binding(
+            get: { expandedSection == .secondsHand },
+            set: { newValue in
+                expandedSectionRaw = newValue ? ExpandedSection.secondsHand.rawValue : ExpandedSection.none.rawValue
+            }
+        )
     }
 
     private struct Option: Identifiable {
@@ -52,51 +97,83 @@ struct WidgetWeaverClockIconSecondHandColourPicker: View {
     var body: some View {
         if selectedFaceToken != .icon {
             EmptyView()
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Seconds hand colour")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 120), spacing: 10)
-                    ],
-                    alignment: .leading,
-                    spacing: 10
-                ) {
-                    ForEach(options) { option in
-                        let isSelected = (selectedToken?.rawValue == option.tokenRaw)
-                            || (selectedToken == nil && option.tokenRaw == nil)
-
-                        let palette = WidgetWeaverClockAppearanceResolver
-                            .resolve(
-                                config: WidgetWeaverClockDesignConfig(
-                                    theme: clockThemeRaw,
-                                    face: clockFaceRaw,
-                                    iconDialColourToken: clockIconDialColourTokenRaw,
-                                    iconSecondHandColourToken: option.tokenRaw
-                                ),
-                                mode: colorScheme
-                            )
-                            .palette
-
-                        SecondHandSwatchChip(
-                            title: option.title,
-                            colour: palette.iconSecondHand,
-                            isSelected: isSelected,
-                            accessibilityID: "Editor.Clock.IconSecondHandColour.\(option.id)",
-                            action: {
-                                clockIconSecondHandColourTokenRaw = option.tokenRaw
-                            }
-                        )
-                    }
-                }
+        } else if showsTitle {
+            DisclosureGroup(isExpanded: isExpanded) {
+                swatchGrid
+                    .padding(.top, 8)
+            } label: {
+                PaletteDisclosureLabel(
+                    title: "Seconds hand colour",
+                    summary: selectedSummary
+                )
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
+            .accessibilityIdentifier("Editor.Clock.IconSecondHandColourDisclosure")
             .accessibilityElement(children: .contain)
+        } else {
+            swatchGrid
+                .padding(.vertical, 6)
+                .accessibilityElement(children: .contain)
         }
+    }
+
+    @ViewBuilder
+    private var swatchGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 120), spacing: 10)
+            ],
+            alignment: .leading,
+            spacing: 10
+        ) {
+            ForEach(options) { option in
+                let isSelected = (selectedToken?.rawValue == option.tokenRaw)
+                    || (selectedToken == nil && option.tokenRaw == nil)
+
+                let palette = WidgetWeaverClockAppearanceResolver
+                    .resolve(
+                        config: WidgetWeaverClockDesignConfig(
+                            theme: clockThemeRaw,
+                            face: clockFaceRaw,
+                            iconDialColourToken: clockIconDialColourTokenRaw,
+                            iconSecondHandColourToken: option.tokenRaw
+                        ),
+                        mode: colorScheme
+                    )
+                    .palette
+
+                SecondHandSwatchChip(
+                    title: option.title,
+                    colour: palette.iconSecondHand,
+                    isSelected: isSelected,
+                    accessibilityID: "Editor.Clock.IconSecondHandColour.\(option.id)",
+                    action: {
+                        clockIconSecondHandColourTokenRaw = option.tokenRaw
+                    }
+                )
+            }
+        }
+    }
+}
+
+private struct PaletteDisclosureLabel: View {
+    let title: String
+    let summary: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(summary)
     }
 }
 
