@@ -5,7 +5,10 @@
 //  Created by . . on 1/20/26.
 //
 
+import Foundation
+import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 enum SmartPhotoManualTransformError: LocalizedError, Sendable {
     case masterDecodeFailed
@@ -84,19 +87,29 @@ enum SmartPhotoManualCropRenderer {
         }
     }
 
+    /// Encodes JPEG bytes via ImageIO with explicit orientation metadata `1`.
+    ///
+    /// This avoids UIKit’s `jpegData` path (which can be memory-heavy) and guarantees:
+    /// - pixels are already `.up`
+    /// - metadata orientation is `1`
+    /// - alpha is not preserved (opaque draw when needed)
     static func encodeJPEG(image: UIImage, startQuality: CGFloat, maxBytes: Int) throws -> Data {
+        let orientedUp = normalisedOrientation(image)
+        let preparedImage = ensureOpaquePixelFormatIfNeeded(orientedUp)
+
+        guard let cgImage = preparedImage.cgImage else {
+            throw SmartPhotoManualTransformError.jpegEncodeFailed
+        }
+
         var q = min(0.95, max(0.1, startQuality))
         let minQ: CGFloat = 0.65
 
-        guard var data = image.jpegData(compressionQuality: q) else {
-            throw SmartPhotoManualTransformError.jpegEncodeFailed
-        }
+        var data = try autoreleasepool(invoking: { try encodeImageIOJPEG(cgImage: cgImage, quality: q) })
 
         var steps = 0
         while data.count > maxBytes && q > minQ && steps < 6 {
             q = max(minQ, q - 0.05)
-            guard let next = image.jpegData(compressionQuality: q) else { break }
-            data = next
+            data = try autoreleasepool(invoking: { try encodeImageIOJPEG(cgImage: cgImage, quality: q) })
             steps += 1
         }
 
@@ -120,7 +133,9 @@ enum SmartPhotoManualCropRenderer {
         format.opaque = true
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
+        return renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
             image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
@@ -186,5 +201,65 @@ enum SmartPhotoManualCropRenderer {
         }
 
         return img.cgImage
+    }
+
+    // MARK: - ImageIO JPEG (orientation=1, alpha-free)
+
+    private static func encodeImageIOJPEG(cgImage: CGImage, quality: CGFloat) throws -> Data {
+        let q = min(max(quality, 0.0), 1.0)
+
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            out,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw SmartPhotoManualTransformError.jpegEncodeFailed
+        }
+
+        let props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: q,
+            kCGImagePropertyOrientation: 1
+        ]
+
+        CGImageDestinationAddImage(destination, cgImage, props as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else {
+            throw SmartPhotoManualTransformError.jpegEncodeFailed
+        }
+
+        return out as Data
+    }
+
+    private static func ensureOpaquePixelFormatIfNeeded(_ image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        if isAlphaFree(cgImage.alphaInfo) { return image }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return image }
+
+        let size = CGSize(width: CGFloat(width), height: CGFloat(height))
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    private static func isAlphaFree(_ alphaInfo: CGImageAlphaInfo) -> Bool {
+        switch alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast:
+            return true
+        default:
+            return false
+        }
     }
 }
