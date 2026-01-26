@@ -32,8 +32,8 @@ struct WidgetWeaverClockPalette {
     // Icon face dial (uniform fill)
     var iconDialFill: Color
 
-    // Icon face seconds hand (baseline)
-    let iconSecondHand: Color
+    // Icon face seconds hand (baseline / overridable)
+    var iconSecondHand: Color
 
     // Tracks / markers
     let minuteDot: Color
@@ -264,12 +264,15 @@ extension WidgetWeaverClockPalette {
         let face = WidgetWeaverClockFaceToken.canonical(from: config.face)
         guard face == .icon else { return }
 
-        guard let raw = config.iconDialColourToken,
-              let token = WidgetWeaverClockIconDialColourToken.canonical(from: raw) else {
-            return
+        if let raw = config.iconDialColourToken,
+           let token = WidgetWeaverClockIconDialColourToken.canonical(from: raw) {
+            iconDialFill = Self.iconDialFillOverride(for: token, mode: mode)
         }
 
-        iconDialFill = Self.iconDialFillOverride(for: token, mode: mode)
+        if let raw = config.iconSecondHandColourToken,
+           let token = WidgetWeaverClockSecondHandColourToken.canonical(from: raw) {
+            iconSecondHand = Self.iconSecondHandOverride(for: token, mode: mode)
+        }
     }
 
     static func iconDialFillOverride(for token: WidgetWeaverClockIconDialColourToken, mode: ColorScheme) -> Color {
@@ -297,6 +300,29 @@ extension WidgetWeaverClockPalette {
 
         case .graphite:
             return isDark ? WWClock.colour(0x1F242C, alpha: 1.0) : WWClock.colour(0x2A303A, alpha: 1.0)
+        }
+    }
+
+    static func iconSecondHandOverride(for token: WidgetWeaverClockSecondHandColourToken, mode: ColorScheme) -> Color {
+        let isDark = (mode == .dark)
+
+        switch token {
+        case .red:
+            return WWClock.colour(0xF53842, alpha: 1.0)
+        case .orange:
+            return WWClock.colour(0xFF9F0A, alpha: 1.0)
+        case .ocean:
+            return WWClock.colour(0x339CFF, alpha: 1.0)
+        case .mint:
+            return WWClock.colour(0x34C759, alpha: 1.0)
+        case .orchid:
+            return WWClock.colour(0xAF52DE, alpha: 1.0)
+        case .sunset:
+            return WWClock.colour(0xFF2D55, alpha: 1.0)
+        case .graphite:
+            return WWClock.colour(0x8E8E93, alpha: 1.0)
+        case .white:
+            return WWClock.colour(0xFFFFFF, alpha: isDark ? 0.94 : 0.88)
         }
     }
 }

@@ -257,6 +257,28 @@ extension ContentView {
                 .canonical(from: canonical)?
                 .rawValue
         }
+        
+        func clockIconSecondHandColourTokenRawForSpec() -> String? {
+            let canonical: String? = {
+                if matchedSetEnabled {
+                    let current = currentFamilyDraft()
+                    if current.template == .clockIcon {
+                        return current.clockIconSecondHandColourTokenRaw
+                    }
+
+                    if matchedDrafts.medium.template == .clockIcon { return matchedDrafts.medium.clockIconSecondHandColourTokenRaw }
+                    if matchedDrafts.small.template == .clockIcon { return matchedDrafts.small.clockIconSecondHandColourTokenRaw }
+                    if matchedDrafts.large.template == .clockIcon { return matchedDrafts.large.clockIconSecondHandColourTokenRaw }
+
+                    return nil
+                }
+                return baseDraft.clockIconSecondHandColourTokenRaw
+            }()
+
+            return WidgetWeaverClockSecondHandColourToken
+                .canonical(from: canonical)?
+                .rawValue
+        }
 
         func overridePrimaryTextForSpecialTemplates(_ spec: inout WidgetSpec, source: FamilyDraft) {
             let trimmedPrimary = source.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -311,7 +333,8 @@ extension ContentView {
                             ? WidgetWeaverClockDesignConfig(
                                 theme: clockThemeRawForSpec(),
                                 face: clockFaceRawForSpec(),
-                                iconDialColourToken: clockIconDialColourTokenRawForSpec()
+                                iconDialColourToken: clockIconDialColourTokenRawForSpec(),
+                                iconSecondHandColourToken: clockIconSecondHandColourTokenRawForSpec()
                             )
                             : nil
             return out.normalised()
@@ -331,7 +354,8 @@ extension ContentView {
                             ? WidgetWeaverClockDesignConfig(
                                 theme: clockThemeRawForSpec(),
                                 face: clockFaceRawForSpec(),
-                                iconDialColourToken: clockIconDialColourTokenRawForSpec()
+                                iconDialColourToken: clockIconDialColourTokenRawForSpec(),
+                                iconSecondHandColourToken: clockIconSecondHandColourTokenRawForSpec()
                             )
                             : nil
             return out.normalised()

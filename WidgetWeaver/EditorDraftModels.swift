@@ -142,6 +142,7 @@ struct FamilyDraft: Hashable {
     var clockThemeRaw: String
     var clockFaceRaw: String
     var clockIconDialColourTokenRaw: String?
+    var clockIconSecondHandColourTokenRaw: String?
 
     static var defaultDraft: FamilyDraft { FamilyDraft(from: WidgetSpec.defaultSpec()) }
 
@@ -197,10 +198,14 @@ struct FamilyDraft: Hashable {
             self.clockIconDialColourTokenRaw = WidgetWeaverClockIconDialColourToken
                             .canonical(from: s.clockConfig?.iconDialColourToken)?
                             .rawValue
+            self.clockIconSecondHandColourTokenRaw = WidgetWeaverClockSecondHandColourToken
+                .canonical(from: s.clockConfig?.iconSecondHandColourToken)?
+                .rawValue
         } else {
             self.clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
             self.clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
             self.clockIconDialColourTokenRaw = nil
+            self.clockIconSecondHandColourTokenRaw = nil
         }
     }
 
@@ -249,7 +254,7 @@ struct FamilyDraft: Hashable {
             : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
 
         let clockConfig: WidgetWeaverClockDesignConfig? = layout.template == .clockIcon
-                    ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw, iconDialColourToken: clockIconDialColourTokenRaw)
+                    ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw, iconDialColourToken: clockIconDialColourTokenRaw, iconSecondHandColourToken: clockIconSecondHandColourTokenRaw)
                     : nil
 
         return WidgetSpec(
@@ -364,10 +369,14 @@ struct FamilyDraft: Hashable {
             clockIconDialColourTokenRaw = WidgetWeaverClockIconDialColourToken
                 .canonical(from: s.clockConfig?.iconDialColourToken)?
                 .rawValue
+            clockIconSecondHandColourTokenRaw = WidgetWeaverClockSecondHandColourToken
+                .canonical(from: s.clockConfig?.iconSecondHandColourToken)?
+                .rawValue
         } else {
             clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
             clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
             clockIconDialColourTokenRaw = nil
+            clockIconSecondHandColourTokenRaw = nil
         }
     }
 }

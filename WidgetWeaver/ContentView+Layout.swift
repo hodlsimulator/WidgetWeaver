@@ -271,6 +271,14 @@ extension ContentView {
                                     clockIconDialColourTokenRaw: binding(\.clockIconDialColourTokenRaw)
                                 )
                                 .accessibilityIdentifier("Editor.Clock.IconDialColourPicker")
+                
+                WidgetWeaverClockIconSecondHandColourPicker(
+                    clockThemeRaw: currentFamilyDraft().clockThemeRaw,
+                    clockFaceRaw: currentFamilyDraft().clockFaceRaw,
+                    clockIconDialColourTokenRaw: currentFamilyDraft().clockIconDialColourTokenRaw,
+                    clockIconSecondHandColourTokenRaw: binding(\.clockIconSecondHandColourTokenRaw)
+                )
+                .accessibilityIdentifier("Editor.Clock.IconSecondHandColourPicker")
 
                                 WidgetWeaverClockThemePicker(
                                     clockThemeRaw: binding(\.clockThemeRaw),

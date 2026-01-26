@@ -71,11 +71,13 @@ extension ContentView {
             let canonical = WidgetWeaverClockDesignConfig(
                 theme: v.clockThemeRaw,
                 face: v.clockFaceRaw,
-                iconDialColourToken: v.clockIconDialColourTokenRaw
+                iconDialColourToken: v.clockIconDialColourTokenRaw,
+                iconSecondHandColourToken: v.clockIconSecondHandColourTokenRaw
             )
             v.clockThemeRaw = canonical.theme
             v.clockFaceRaw = canonical.face
             v.clockIconDialColourTokenRaw = canonical.iconDialColourToken
+            v.clockIconSecondHandColourTokenRaw = canonical.iconSecondHandColourToken
         }
 
         if matchedSetEnabled {
@@ -85,6 +87,7 @@ extension ContentView {
                 propagateClockThemeToAllClockDrafts(rawTheme: v.clockThemeRaw)
                 propagateClockFaceToAllClockDrafts(rawFace: v.clockFaceRaw)
                 propagateClockIconDialColourTokenToAllClockDrafts(rawToken: v.clockIconDialColourTokenRaw)
+                propagateClockIconSecondHandColourTokenToAllClockDrafts(rawToken: v.clockIconSecondHandColourTokenRaw)
             }
         } else {
             baseDraft = v
@@ -143,6 +146,22 @@ extension ContentView {
         }
         if matchedDrafts.large.template == .clockIcon {
             matchedDrafts.large.clockFaceRaw = canonical
+        }
+    }
+    
+    private func propagateClockIconSecondHandColourTokenToAllClockDrafts(rawToken: String?) {
+        let canonical = WidgetWeaverClockSecondHandColourToken
+            .canonical(from: rawToken)?
+            .rawValue
+
+        if matchedDrafts.small.template == .clockIcon {
+            matchedDrafts.small.clockIconSecondHandColourTokenRaw = canonical
+        }
+        if matchedDrafts.medium.template == .clockIcon {
+            matchedDrafts.medium.clockIconSecondHandColourTokenRaw = canonical
+        }
+        if matchedDrafts.large.template == .clockIcon {
+            matchedDrafts.large.clockIconSecondHandColourTokenRaw = canonical
         }
     }
 
