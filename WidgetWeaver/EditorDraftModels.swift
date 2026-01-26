@@ -141,6 +141,7 @@ struct FamilyDraft: Hashable {
     // Clock
     var clockThemeRaw: String
     var clockFaceRaw: String
+    var clockIconDialColourTokenRaw: String?
 
     static var defaultDraft: FamilyDraft { FamilyDraft(from: WidgetSpec.defaultSpec()) }
 
@@ -193,9 +194,13 @@ struct FamilyDraft: Hashable {
         if s.layout.template == .clockIcon {
             self.clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
             self.clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: s.clockConfig?.face).rawValue
+            self.clockIconDialColourTokenRaw = WidgetWeaverClockIconDialColourToken
+                            .canonical(from: s.clockConfig?.iconDialColourToken)?
+                            .rawValue
         } else {
             self.clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
             self.clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
+            self.clockIconDialColourTokenRaw = nil
         }
     }
 
@@ -244,8 +249,8 @@ struct FamilyDraft: Hashable {
             : (trimmedPrimary.isEmpty ? "Hello" : trimmedPrimary)
 
         let clockConfig: WidgetWeaverClockDesignConfig? = layout.template == .clockIcon
-            ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw)
-            : nil
+                    ? WidgetWeaverClockDesignConfig(theme: clockThemeRaw, face: clockFaceRaw, iconDialColourToken: clockIconDialColourTokenRaw)
+                    : nil
 
         return WidgetSpec(
             id: id,
@@ -356,9 +361,13 @@ struct FamilyDraft: Hashable {
         if s.layout.template == .clockIcon {
             clockThemeRaw = s.clockConfig?.theme ?? WidgetWeaverClockDesignConfig.defaultTheme
             clockFaceRaw = WidgetWeaverClockFaceToken.canonical(from: s.clockConfig?.face).rawValue
+            clockIconDialColourTokenRaw = WidgetWeaverClockIconDialColourToken
+                .canonical(from: s.clockConfig?.iconDialColourToken)?
+                .rawValue
         } else {
             clockThemeRaw = WidgetWeaverClockDesignConfig.defaultTheme
             clockFaceRaw = WidgetWeaverClockDesignConfig.defaultFace
+            clockIconDialColourTokenRaw = nil
         }
     }
 }

@@ -35,13 +35,30 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
     public static let legacyDefaultFace: String = WidgetWeaverClockFaceToken.ceramic.rawValue
 
     public var theme: String
-    public var face: String
+        public var face: String
 
-    public init(theme: String = Self.defaultTheme, face: String = Self.defaultFace) {
-        self.theme = theme
-        self.face = face
-        self = self.normalised()
-    }
+        /// Optional override for the Icon face dial fill.
+        ///
+        /// Stored as a raw string so unknown future tokens can be ignored safely.
+        public var iconDialColourToken: String?
+
+        /// Optional override for the Icon face seconds-hand colour.
+        ///
+        /// Stored as a raw string so unknown future tokens can be ignored safely.
+        public var iconSecondHandColourToken: String?
+
+        public init(
+            theme: String = Self.defaultTheme,
+            face: String = Self.defaultFace,
+            iconDialColourToken: String? = nil,
+            iconSecondHandColourToken: String? = nil
+        ) {
+            self.theme = theme
+            self.face = face
+            self.iconDialColourToken = iconDialColourToken
+            self.iconSecondHandColourToken = iconSecondHandColourToken
+            self = self.normalised()
+        }
 
     public static var `default`: WidgetWeaverClockDesignConfig {
         WidgetWeaverClockDesignConfig(theme: Self.defaultTheme, face: Self.defaultFace)
@@ -70,25 +87,51 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
             c.face = Self.defaultFace
         }
 
+        if let token = WidgetWeaverClockIconDialColourToken.canonical(from: c.iconDialColourToken) {
+                    c.iconDialColourToken = token.rawValue
+                } else {
+                    c.iconDialColourToken = nil
+                }
+
+                if let token = WidgetWeaverClockSecondHandColourToken.canonical(from: c.iconSecondHandColourToken) {
+                    c.iconSecondHandColourToken = token.rawValue
+                } else {
+                    c.iconSecondHandColourToken = nil
+                }
+
         return c
     }
 
     private enum CodingKeys: String, CodingKey {
-        case theme
-        case face
-    }
+            case theme
+            case face
+            case iconDialColourToken
+            case iconSecondHandColourToken
+        }
 
     public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        let theme = (try? c.decode(String.self, forKey: .theme)) ?? Self.defaultTheme
-        let face = (try? c.decodeIfPresent(String.self, forKey: .face)) ?? Self.legacyDefaultFace
-        self.init(theme: theme, face: face)
-    }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+
+            let theme = (try? c.decode(String.self, forKey: .theme)) ?? Self.defaultTheme
+            let face = (try? c.decodeIfPresent(String.self, forKey: .face)) ?? Self.legacyDefaultFace
+
+            let iconDialColourToken = (try? c.decodeIfPresent(String.self, forKey: .iconDialColourToken)) ?? nil
+            let iconSecondHandColourToken = (try? c.decodeIfPresent(String.self, forKey: .iconSecondHandColourToken)) ?? nil
+
+            self.init(
+                theme: theme,
+                face: face,
+                iconDialColourToken: iconDialColourToken,
+                iconSecondHandColourToken: iconSecondHandColourToken
+            )
+        }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(theme, forKey: .theme)
         try c.encode(face, forKey: .face)
+        try c.encodeIfPresent(iconDialColourToken, forKey: .iconDialColourToken)
+                try c.encodeIfPresent(iconSecondHandColourToken, forKey: .iconSecondHandColourToken)
     }
 }
 

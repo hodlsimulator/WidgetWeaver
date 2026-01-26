@@ -24,8 +24,9 @@ enum WidgetWeaverClockAppearanceResolver {
     static func resolve(config: WidgetWeaverClockDesignConfig, mode: ColorScheme) -> Resolved {
         let c = config.normalised()
         let scheme = resolveScheme(theme: c.theme)
-        let palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: mode)
-        return Resolved(scheme: scheme, palette: palette)
+        var palette = WidgetWeaverClockPalette.resolve(scheme: scheme, mode: mode)
+            palette.applyIconOverrides(config: c, mode: mode)
+            return Resolved(scheme: scheme, palette: palette)
     }
 
     static func resolveScheme(theme rawTheme: String) -> WidgetWeaverClockColourScheme {

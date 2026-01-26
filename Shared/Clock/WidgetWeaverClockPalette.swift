@@ -30,7 +30,7 @@ struct WidgetWeaverClockPalette {
     let dialDomeHighlight: Color
 
     // Icon face dial (uniform fill)
-    let iconDialFill: Color
+    var iconDialFill: Color
 
     // Icon face seconds hand (baseline)
     let iconSecondHand: Color
@@ -254,5 +254,49 @@ struct WidgetWeaverClockPalette {
             hubCapDark: hubCapDark,
             hubShadow: hubShadow
         )
+    }
+}
+
+// MARK: - Icon face overrides (curated tokens)
+
+extension WidgetWeaverClockPalette {
+    mutating func applyIconOverrides(config: WidgetWeaverClockDesignConfig, mode: ColorScheme) {
+        let face = WidgetWeaverClockFaceToken.canonical(from: config.face)
+        guard face == .icon else { return }
+
+        guard let raw = config.iconDialColourToken,
+              let token = WidgetWeaverClockIconDialColourToken.canonical(from: raw) else {
+            return
+        }
+
+        iconDialFill = Self.iconDialFillOverride(for: token, mode: mode)
+    }
+
+    static func iconDialFillOverride(for token: WidgetWeaverClockIconDialColourToken, mode: ColorScheme) -> Color {
+        let isDark = (mode == .dark)
+
+        // Values are curated to remain relatively dark for numeral legibility.
+        switch token {
+        case .classic:
+            return isDark ? WWClock.colour(0x22364B, alpha: 1.0) : WWClock.colour(0x2A4158, alpha: 1.0)
+
+        case .ocean:
+            return isDark ? WWClock.colour(0x1B3A5E, alpha: 1.0) : WWClock.colour(0x234A76, alpha: 1.0)
+
+        case .mint:
+            return isDark ? WWClock.colour(0x1F4B3F, alpha: 1.0) : WWClock.colour(0x256253, alpha: 1.0)
+
+        case .orchid:
+            return isDark ? WWClock.colour(0x3A2A63, alpha: 1.0) : WWClock.colour(0x4A357A, alpha: 1.0)
+
+        case .sunset:
+            return isDark ? WWClock.colour(0x4A243B, alpha: 1.0) : WWClock.colour(0x5C2D4A, alpha: 1.0)
+
+        case .ember:
+            return isDark ? WWClock.colour(0x4A1F1F, alpha: 1.0) : WWClock.colour(0x5E2727, alpha: 1.0)
+
+        case .graphite:
+            return isDark ? WWClock.colour(0x1F242C, alpha: 1.0) : WWClock.colour(0x2A303A, alpha: 1.0)
+        }
     }
 }

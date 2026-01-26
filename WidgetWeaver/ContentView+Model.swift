@@ -235,6 +235,28 @@ extension ContentView {
             }
             return WidgetWeaverClockFaceToken.canonical(from: baseDraft.clockFaceRaw).rawValue
         }
+        
+        func clockIconDialColourTokenRawForSpec() -> String? {
+            let canonical: String? = {
+                if matchedSetEnabled {
+                    let current = currentFamilyDraft()
+                    if current.template == .clockIcon {
+                        return current.clockIconDialColourTokenRaw
+                    }
+
+                    if matchedDrafts.medium.template == .clockIcon { return matchedDrafts.medium.clockIconDialColourTokenRaw }
+                    if matchedDrafts.small.template == .clockIcon { return matchedDrafts.small.clockIconDialColourTokenRaw }
+                    if matchedDrafts.large.template == .clockIcon { return matchedDrafts.large.clockIconDialColourTokenRaw }
+
+                    return nil
+                }
+                return baseDraft.clockIconDialColourTokenRaw
+            }()
+
+            return WidgetWeaverClockIconDialColourToken
+                .canonical(from: canonical)?
+                .rawValue
+        }
 
         func overridePrimaryTextForSpecialTemplates(_ spec: inout WidgetSpec, source: FamilyDraft) {
             let trimmedPrimary = source.primaryText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -285,7 +307,13 @@ extension ContentView {
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.matchedSet = matched
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
-            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec(), face: clockFaceRawForSpec()) : nil
+            out.clockConfig = usesClockTemplate
+                            ? WidgetWeaverClockDesignConfig(
+                                theme: clockThemeRawForSpec(),
+                                face: clockFaceRawForSpec(),
+                                iconDialColourToken: clockIconDialColourTokenRawForSpec()
+                            )
+                            : nil
             return out.normalised()
 
         } else {
@@ -299,7 +327,13 @@ extension ContentView {
 
             out.actionBar = actionBarDraft.toActionBarSpec()
             out.remindersConfig = usesRemindersTemplate ? remindersDraft.normalised() : nil
-            out.clockConfig = usesClockTemplate ? WidgetWeaverClockDesignConfig(theme: clockThemeRawForSpec(), face: clockFaceRawForSpec()) : nil
+            out.clockConfig = usesClockTemplate
+                            ? WidgetWeaverClockDesignConfig(
+                                theme: clockThemeRawForSpec(),
+                                face: clockFaceRawForSpec(),
+                                iconDialColourToken: clockIconDialColourTokenRawForSpec()
+                            )
+                            : nil
             return out.normalised()
         }
     }

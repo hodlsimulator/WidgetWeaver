@@ -265,11 +265,19 @@ extension ContentView {
                 )
                 .accessibilityIdentifier("Editor.Clock.FaceSelector")
 
-                WidgetWeaverClockThemePicker(
-                    clockThemeRaw: binding(\.clockThemeRaw),
-                    clockFaceRaw: currentFamilyDraft().clockFaceRaw
-                )
-                .accessibilityIdentifier("Editor.Clock.ThemePicker")
+                WidgetWeaverClockIconDialColourPicker(
+                                    clockThemeRaw: currentFamilyDraft().clockThemeRaw,
+                                    clockFaceRaw: currentFamilyDraft().clockFaceRaw,
+                                    clockIconDialColourTokenRaw: binding(\.clockIconDialColourTokenRaw)
+                                )
+                                .accessibilityIdentifier("Editor.Clock.IconDialColourPicker")
+
+                                WidgetWeaverClockThemePicker(
+                                    clockThemeRaw: binding(\.clockThemeRaw),
+                                    clockFaceRaw: currentFamilyDraft().clockFaceRaw,
+                                    clockIconDialColourTokenRaw: currentFamilyDraft().clockIconDialColourTokenRaw
+                                )
+                                .accessibilityIdentifier("Editor.Clock.ThemePicker")
 
                 Picker("Template", selection: binding(\.template)) {
                     ForEach(templateTokens) { token in
@@ -442,6 +450,7 @@ extension ContentView {
 private struct WidgetWeaverClockThemePicker: View {
     @Binding var clockThemeRaw: String
     let clockFaceRaw: String
+    let clockIconDialColourTokenRaw: String?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -488,7 +497,11 @@ private struct WidgetWeaverClockThemePicker: View {
 
                     let palette = WidgetWeaverClockAppearanceResolver
                         .resolve(
-                            config: WidgetWeaverClockDesignConfig(theme: option.themeRaw, face: clockFaceRaw),
+                            config: WidgetWeaverClockDesignConfig(
+                                theme: option.themeRaw,
+                                face: clockFaceRaw,
+                                iconDialColourToken: clockIconDialColourTokenRaw
+                            ),
                             mode: colorScheme
                         )
                         .palette

@@ -68,9 +68,14 @@ extension ContentView {
         }
 
         if v.template == .clockIcon {
-            let canonical = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw, face: v.clockFaceRaw)
+            let canonical = WidgetWeaverClockDesignConfig(
+                theme: v.clockThemeRaw,
+                face: v.clockFaceRaw,
+                iconDialColourToken: v.clockIconDialColourTokenRaw
+            )
             v.clockThemeRaw = canonical.theme
             v.clockFaceRaw = canonical.face
+            v.clockIconDialColourTokenRaw = canonical.iconDialColourToken
         }
 
         if matchedSetEnabled {
@@ -79,14 +84,20 @@ extension ContentView {
             if v.template == .clockIcon {
                 propagateClockThemeToAllClockDrafts(rawTheme: v.clockThemeRaw)
                 propagateClockFaceToAllClockDrafts(rawFace: v.clockFaceRaw)
+                propagateClockIconDialColourTokenToAllClockDrafts(rawToken: v.clockIconDialColourTokenRaw)
             }
         } else {
             baseDraft = v
 
             if v.template == .clockIcon {
-                let canonical = WidgetWeaverClockDesignConfig(theme: v.clockThemeRaw, face: v.clockFaceRaw)
+                let canonical = WidgetWeaverClockDesignConfig(
+                    theme: v.clockThemeRaw,
+                    face: v.clockFaceRaw,
+                    iconDialColourToken: v.clockIconDialColourTokenRaw
+                )
                 baseDraft.clockThemeRaw = canonical.theme
                 baseDraft.clockFaceRaw = canonical.face
+                baseDraft.clockIconDialColourTokenRaw = canonical.iconDialColourToken
             }
         }
     }
@@ -104,6 +115,22 @@ extension ContentView {
             matchedDrafts.large.clockThemeRaw = canonical
         }
     }
+    
+    private func propagateClockIconDialColourTokenToAllClockDrafts(rawToken: String?) {
+            let canonical = WidgetWeaverClockIconDialColourToken
+                .canonical(from: rawToken)?
+                .rawValue
+
+            if matchedDrafts.small.template == .clockIcon {
+                matchedDrafts.small.clockIconDialColourTokenRaw = canonical
+            }
+            if matchedDrafts.medium.template == .clockIcon {
+                matchedDrafts.medium.clockIconDialColourTokenRaw = canonical
+            }
+            if matchedDrafts.large.template == .clockIcon {
+                matchedDrafts.large.clockIconDialColourTokenRaw = canonical
+            }
+        }
 
     private func propagateClockFaceToAllClockDrafts(rawFace: String) {
         let canonical = WidgetWeaverClockFaceToken.canonical(from: rawFace).rawValue
