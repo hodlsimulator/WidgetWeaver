@@ -59,8 +59,8 @@ enum WWPhotoImportNormaliser {
         print("[WWPhotoImport] pick itemIdentifier=\(id) types=\(types)")
         #endif
 
-        // 1) PhotoKit-rendered path (only when PhotoKit access is available).
-        // This produces pixels as displayed by Photos (including orientation/edits).
+        // 1) PhotoKit-rendered path (only when a stable asset identifier exists and Photos access is granted).
+        // This produces pixels as displayed by Photos (including edits/orientation).
         if canUsePhotoKitForRenderedFetch,
            let localIdentifier = item.itemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
            !localIdentifier.isEmpty,
@@ -90,8 +90,7 @@ enum WWPhotoImportNormaliser {
             return outData
         }
 
-        // 2) Preferred picker path: ask for an image FILE representation.
-        // This tends to preserve original metadata better than generic `Data.self`.
+        // 2) Load bytes from the picker.
         let pickedData: Data
         let pickedSourceLabel: String
 
@@ -112,36 +111,8 @@ enum WWPhotoImportNormaliser {
             return nil
         }
 
-        // 3) Preferred orientation-safe path (PhotosPicker): ask for a SwiftUI Image.
-        // This tends to match what the picker previews, even in environments where the exported
-        // JPEG bytes carry inconsistent orientation metadata.
-        let targetPixelSize = computeTargetPixelSize(from: pickedData, maxPixel: clampedMaxPixel)
-        if let uiImage = try await loadRenderedUIImageFromPickerItem(item, targetPixelSize: targetPixelSize) {
-            #if DEBUG
-            let o = uiImage.imageOrientation
-            let w = uiImage.cgImage?.width ?? Int(uiImage.size.width * uiImage.scale)
-            let h = uiImage.cgImage?.height ?? Int(uiImage.size.height * uiImage.scale)
-            print("[WWPhotoImport] swiftUIImage rendered orient=\(o) px=\(w)x\(h)")
-            #endif
-
-            // Critical: bake UIImage orientation into pixels before encoding.
-            let outData = try await normaliseUIImageOffMainThread(
-                uiImage,
-                maxPixel: clampedMaxPixel,
-                compressionQuality: clampedQuality
-            )
-
-            #if DEBUG
-            let inInfo = AppGroup.debugPickedImageInfo(data: pickedData)?.inlineSummary ?? "uti=? orient=? px=?x?"
-            let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
-            let sz = "\(Int(targetPixelSize.width))x\(Int(targetPixelSize.height))"
-            print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) target=\(sz) source=swiftUIImage+\(pickedSourceLabel)")
-            #endif
-
-            return outData
-        }
-
-        // 4) Fallback: normalise bytes via ImageIO.
+        // 3) Single source of truth: normalise from bytes via ImageIO.
+        // This applies EXIF orientation consistently for JPEG/HEIC and avoids SwiftUI rasterisation variance.
         let outData = try await normaliseImageDataOffMainThread(
             pickedData,
             maxPixel: clampedMaxPixel,
@@ -151,91 +122,10 @@ enum WWPhotoImportNormaliser {
         #if DEBUG
         let inInfo = AppGroup.debugPickedImageInfo(data: pickedData)?.inlineSummary ?? "uti=? orient=? px=?x?"
         let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
-        print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) source=\(pickedSourceLabel)")
+        print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) source=imageIO+\(pickedSourceLabel)")
         #endif
 
         return outData
-    }
-
-    // MARK: - SwiftUI Image → UIImage (for PhotosPicker correctness)
-
-    @MainActor
-    private static func loadRenderedUIImageFromPickerItem(
-        _ item: PhotosPickerItem,
-        targetPixelSize: CGSize
-    ) async throws -> UIImage? {
-        guard let swiftUIImage = try await item.loadTransferable(type: SwiftUI.Image.self) else {
-            return nil
-        }
-        return renderSwiftUIImageToUIImage(swiftUIImage, targetPixelSize: targetPixelSize)
-    }
-
-    private static func computeTargetPixelSize(from data: Data, maxPixel: Int) -> CGSize {
-        let options: [CFString: Any] = [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceShouldCacheImmediately: false
-        ]
-
-        guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary) else {
-            return CGSize(width: max(1, maxPixel), height: max(1, maxPixel))
-        }
-
-        let props = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as NSDictionary?) as? [CFString: Any]
-
-        func intValue(_ key: CFString) -> Int? {
-            if let v = props?[key] as? Int { return v }
-            if let v = props?[key] as? NSNumber { return v.intValue }
-            if let v = props?[key] as? UInt32 { return Int(v) }
-            return nil
-        }
-
-        let o = intValue(kCGImagePropertyOrientation) ?? 1
-        var w = intValue(kCGImagePropertyPixelWidth) ?? 0
-        var h = intValue(kCGImagePropertyPixelHeight) ?? 0
-        if w <= 0 || h <= 0 {
-            // Avoid a degenerate layout size.
-            return CGSize(width: max(1, maxPixel), height: max(1, maxPixel))
-        }
-
-        // Orientations 5-8 are rotated 90°/270°.
-        if o == 5 || o == 6 || o == 7 || o == 8 {
-            swap(&w, &h)
-        }
-
-        let longest = max(w, h)
-        let targetLongest = min(max(1, maxPixel), longest)
-        let ratio = CGFloat(targetLongest) / CGFloat(max(1, longest))
-
-        let tw = max(1, (CGFloat(w) * ratio).rounded(.toNearestOrAwayFromZero))
-        let th = max(1, (CGFloat(h) * ratio).rounded(.toNearestOrAwayFromZero))
-
-        return CGSize(width: tw, height: th)
-    }
-
-    @MainActor
-    private static func renderSwiftUIImageToUIImage(
-        _ image: SwiftUI.Image,
-        targetPixelSize: CGSize
-    ) -> UIImage? {
-        let target = CGSize(width: max(1, targetPixelSize.width), height: max(1, targetPixelSize.height))
-
-        let content = ZStack {
-            Color.black
-            image
-                .resizable()
-                .scaledToFill()
-                .frame(width: target.width, height: target.height)
-                .clipped()
-        }
-        .frame(width: target.width, height: target.height)
-
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 1
-        if #available(iOS 17.0, *) {
-            renderer.isOpaque = true
-        }
-
-        return renderer.uiImage
     }
 
     private static var canUsePhotoKitForRenderedFetch: Bool {
