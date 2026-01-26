@@ -22,6 +22,10 @@ struct WidgetWeaverEditorTextToolSection: View {
     @State private var showInsertPicker: Bool = false
     @State private var insertTarget: InsertTarget = .primary
 
+    @State private var primaryInsertionRequest: WWTextInsertionRequest?
+    @State private var secondaryInsertionRequest: WWTextInsertionRequest?
+    @State private var restoreFocusAfterInsertPickerDismissal: FocusedField?
+
     init(
         designName: Binding<String>,
         primaryText: Binding<String>,
@@ -63,6 +67,7 @@ struct WidgetWeaverEditorTextToolSection: View {
                 text: $primaryText,
                 focusedFieldValue: .primaryText,
                 insertTarget: .primary,
+                insertionRequest: $primaryInsertionRequest,
                 accessibilityID: "EditorTextField.PrimaryText"
             )
 
@@ -73,6 +78,7 @@ struct WidgetWeaverEditorTextToolSection: View {
                 text: $secondaryText,
                 focusedFieldValue: .secondaryText,
                 insertTarget: .secondary,
+                insertionRequest: $secondaryInsertionRequest,
                 accessibilityID: "EditorTextField.SecondaryText"
             )
 
@@ -90,7 +96,7 @@ struct WidgetWeaverEditorTextToolSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .sheet(isPresented: $showInsertPicker) {
+        .sheet(isPresented: $showInsertPicker, onDismiss: restoreFocusAfterInsertPickerDismissalIfNeeded) {
             NavigationStack {
                 WidgetWeaverVariableInsertPickerView(
                     isProUnlocked: isProUnlocked,
@@ -229,6 +235,7 @@ struct WidgetWeaverEditorTextToolSection: View {
     }
 
     private func openVariablesFromDiagnostics() {
+        restoreFocusAfterInsertPickerDismissal = nil
         showInsertPicker = false
         focusedField = nil
         onOpenVariables?()
@@ -326,15 +333,29 @@ struct WidgetWeaverEditorTextToolSection: View {
         text: Binding<String>,
         focusedFieldValue: FocusedField,
         insertTarget: InsertTarget,
+        insertionRequest: Binding<WWTextInsertionRequest?>,
         accessibilityID: String
     ) -> some View {
         HStack(spacing: 10) {
-            TextField(title, text: text)
-                .accessibilityIdentifier(accessibilityID)
-                .focused($focusedField, equals: focusedFieldValue)
+            let isFocusedBinding = Binding<Bool>(
+                get: { focusedField == focusedFieldValue },
+                set: { newValue in
+                    focusedField = newValue ? focusedFieldValue : nil
+                }
+            )
+
+            WWInsertableTextField(
+                placeholder: title,
+                accessibilityIdentifier: accessibilityID,
+                text: text,
+                isFocused: isFocusedBinding,
+                insertionRequest: insertionRequest
+            )
 
             Button {
                 self.insertTarget = insertTarget
+                restoreFocusAfterInsertPickerDismissal = focusedFieldValue
+                focusedField = nil
                 showInsertPicker = true
             } label: {
                 Image(systemName: "curlybraces.square")
@@ -348,35 +369,34 @@ struct WidgetWeaverEditorTextToolSection: View {
         switch focusedField {
         case .primaryText:
             insertTarget = .primary
+            restoreFocusAfterInsertPickerDismissal = .primaryText
         case .secondaryText:
             insertTarget = .secondary
+            restoreFocusAfterInsertPickerDismissal = .secondaryText
         default:
             return
         }
 
+        focusedField = nil
         showInsertPicker = true
     }
 
     private func insertSnippet(_ snippet: String) {
         switch insertTarget {
         case .primary:
-            primaryText = appendingSnippet(snippet, to: primaryText)
+            primaryInsertionRequest = WWTextInsertionRequest(snippet: snippet)
+            restoreFocusAfterInsertPickerDismissal = .primaryText
         case .secondary:
-            secondaryText = appendingSnippet(snippet, to: secondaryText)
+            secondaryInsertionRequest = WWTextInsertionRequest(snippet: snippet)
+            restoreFocusAfterInsertPickerDismissal = .secondaryText
         }
     }
 
-    private func appendingSnippet(_ snippet: String, to text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return snippet
+    private func restoreFocusAfterInsertPickerDismissalIfNeeded() {
+        if let restore = restoreFocusAfterInsertPickerDismissal {
+            focusedField = restore
         }
-
-        if let last = text.last, last == "\n" || last == " " {
-            return text + snippet
-        }
-
-        return text + " " + snippet
+        restoreFocusAfterInsertPickerDismissal = nil
     }
 
     private func renderTemplatePreview(_ template: String, now: Date) -> String {
