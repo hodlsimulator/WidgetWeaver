@@ -70,7 +70,7 @@ enum WWPhotoImportNormaliser {
            ) {
 
             #if DEBUG
-            let o = uiImage.imageOrientation.rawValue
+            let o = uiImage.imageOrientation
             let w = uiImage.cgImage?.width ?? Int(uiImage.size.width * uiImage.scale)
             let h = uiImage.cgImage?.height ?? Int(uiImage.size.height * uiImage.scale)
             print("[WWPhotoImport] photoKitRendered orient=\(o) px=\(w)x\(h)")
@@ -117,8 +117,17 @@ enum WWPhotoImportNormaliser {
         // JPEG bytes carry inconsistent orientation metadata.
         let targetPixelSize = computeTargetPixelSize(from: pickedData, maxPixel: clampedMaxPixel)
         if let uiImage = try await loadRenderedUIImageFromPickerItem(item, targetPixelSize: targetPixelSize) {
-            let outData = try await encodeUIImageToJPEGUpOffMainThread(
+            #if DEBUG
+            let o = uiImage.imageOrientation
+            let w = uiImage.cgImage?.width ?? Int(uiImage.size.width * uiImage.scale)
+            let h = uiImage.cgImage?.height ?? Int(uiImage.size.height * uiImage.scale)
+            print("[WWPhotoImport] swiftUIImage rendered orient=\(o) px=\(w)x\(h)")
+            #endif
+
+            // Critical: bake UIImage orientation into pixels before encoding.
+            let outData = try await normaliseUIImageOffMainThread(
                 uiImage,
+                maxPixel: clampedMaxPixel,
                 compressionQuality: clampedQuality
             )
 
@@ -227,29 +236,6 @@ enum WWPhotoImportNormaliser {
         }
 
         return renderer.uiImage
-    }
-
-    private static func encodeUIImageToJPEGUpOffMainThread(
-        _ image: UIImage,
-        compressionQuality: CGFloat
-    ) async throws -> Data {
-        let q = min(max(compressionQuality, 0.0), 1.0)
-
-        guard let cg = image.cgImage else {
-            // Fallback: bake via UIKit draw then encode.
-            return try await normaliseUIImageOffMainThread(image, maxPixel: Int(max(image.size.width, image.size.height)), compressionQuality: q)
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let out = try encodeJPEGUp(cgImage: cg, compressionQuality: q)
-                    continuation.resume(returning: out)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
     }
 
     private static var canUsePhotoKitForRenderedFetch: Bool {
