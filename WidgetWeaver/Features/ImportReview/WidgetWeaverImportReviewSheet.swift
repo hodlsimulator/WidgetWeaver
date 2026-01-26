@@ -207,6 +207,15 @@ struct WidgetWeaverImportReviewSheet: View {
                         Button("Select all") { onSelectAll() }
                             .disabled(isImporting)
 
+                        if case .exceedsFreeLimit(let available) = limitState {
+                            Button("Trim selection to \(available)") {
+                                withAnimation(.spring(duration: 0.35)) {
+                                    trimSelectionToFreeLimit(available: available)
+                                }
+                            }
+                            .disabled(isImporting)
+                        }
+
                         Button("Select none") { onSelectNone() }
                             .disabled(isImporting)
                     } label: {
@@ -268,12 +277,29 @@ struct WidgetWeaverImportReviewSheet: View {
                 EmptyView()
 
             case .exceedsFreeLimit(let available):
-                Label(
-                    "Selection exceeds free-tier limit. Available slots: \(available).",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .foregroundStyle(.orange)
-                .font(.callout)
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(
+                        "Selection exceeds free-tier limit. Available slots: \(available).",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .font(.callout)
+
+                    Text("Trim the selection to import the most recent designs that fit the free tier.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        withAnimation(.spring(duration: 0.35)) {
+                            trimSelectionToFreeLimit(available: available)
+                        }
+                    } label: {
+                        Label("Trim selection to \(available)", systemImage: "scissors")
+                    }
+                    .disabled(isImporting)
+                    .buttonStyle(.bordered)
+                }
             }
         }
     }
@@ -397,6 +423,22 @@ struct WidgetWeaverImportReviewSheet: View {
 
     private func selectOnly(_ id: UUID) {
         selection = [id]
+    }
+
+    private func trimSelectionToFreeLimit(available: Int) {
+        let limit = max(0, available)
+        guard limit > 0 else {
+            selection.removeAll()
+            return
+        }
+
+        let selectedItems = model.items.filter { selection.contains($0.id) }
+        let sortedSelected = selectedItems.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+
+        selection = Set(sortedSelected.prefix(limit).map(\.id))
     }
 
     private func presentPreview(for item: WidgetWeaverImportReviewItem) {
