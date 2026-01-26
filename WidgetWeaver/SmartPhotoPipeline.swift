@@ -544,10 +544,12 @@ private enum SmartPhotoJPEG {
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        format.opaque = false
+        format.opaque = true
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
+        return renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
             image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
@@ -592,36 +594,22 @@ private enum SmartPhotoJPEG {
         let height = cgImage.height
         guard width > 0, height > 0 else { return image }
 
-        let colourSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
-            CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue)
-        )
+        #if DEBUG
+        print("[WWSmartPhoto] alphaFix inputAlpha=\(cgImage.alphaInfo.rawValue) px=\(width)x\(height)")
+        #endif
 
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colourSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        ) else {
-            return image
+        let size = CGSize(width: CGFloat(width), height: CGFloat(height))
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
-
-        ctx.interpolationQuality = .high
-
-        let rect = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
-        ctx.setFillColor(UIColor.black.cgColor)
-        ctx.fill(rect)
-
-        // Bitmap contexts are y-up. Flip so the output image matches UIKit's expected orientation.
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.draw(cgImage, in: rect)
-
-        guard let out = ctx.makeImage() else { return image }
-        return UIImage(cgImage: out, scale: 1, orientation: .up)
     }
 
     private static func isAlphaFree(_ alphaInfo: CGImageAlphaInfo) -> Bool {
