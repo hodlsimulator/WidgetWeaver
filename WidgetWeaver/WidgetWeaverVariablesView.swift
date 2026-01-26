@@ -194,24 +194,16 @@ struct WidgetWeaverVariablesView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
-                        ForEach(tryItSnippets) { snippet in
-                            Button {
-                                insertSnippet(snippet.value)
-                            } label: {
-                                Text(snippet.value)
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .padding(.vertical, 6)
-                                    .padding(.horizontal, 10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(.thinMaterial, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
+                    WidgetWeaverVariableSnippetChipsRow(
+                        isProUnlocked: proManager.isProUnlocked,
+                        defaults: tryItQuickInsertDefaults,
+                        onInsert: { snippet in
+                            insertSnippet(snippet)
+                        },
+                        onOpenPicker: {
+                            showInsertPicker = true
                         }
-                    }
+                    )
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -394,29 +386,19 @@ struct WidgetWeaverVariablesView: View {
         let isEmptyInput: Bool
     }
 
-    private struct TryItSnippet: Identifiable, Hashable {
-        let id: String
-        let value: String
-
-        init(_ value: String) {
-            self.value = value
-            self.id = value
-        }
-    }
-
-    private var tryItSnippets: [TryItSnippet] {
+    private var tryItQuickInsertDefaults: [String] {
         [
-            TryItSnippet("{{streak|0}}"),
-            TryItSnippet("{{count|0}}"),
-            TryItSnippet("{{done|0}}"),
-            TryItSnippet("{{waterMl|0}}"),
-            TryItSnippet("{{date.short}}"),
-            TryItSnippet("{{time.short}}"),
-            TryItSnippet("{{__today}}"),
-            TryItSnippet("{{__time}}"),
-            TryItSnippet("{{__steps_today|--|number:0}}"),
-            TryItSnippet("{{__activity_steps_today|--|number:0}}"),
-            TryItSnippet("{{__weather_temp|--}}"),
+            "{{streak|0}}",
+            "{{count|0}}",
+            "{{done|0}}",
+            "{{waterMl|0}}",
+            "{{date.short}}",
+            "{{time.short}}",
+            "{{__today}}",
+            "{{__time}}",
+            "{{__steps_today|--|number:0}}",
+            "{{__activity_steps_today|--|number:0}}",
+            "{{__weather_temp|--}}",
         ]
     }
 
