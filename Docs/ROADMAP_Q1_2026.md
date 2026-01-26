@@ -46,7 +46,7 @@ Still to track (non-blockers, but visible):
 - Decide whether “Reading” and “Photo Quote” remain hidden/back-compat only, or are fully removed (requires catalogue/spec clean-up and a migration strategy).
 - Migrate remaining direct `WidgetCenter.shared.reloadAllTimelines()` call sites (especially App Intents) to the reload coordinator / targeted reloads.
 
-Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work remains a post-ship R&D track, with small, reviewable assistive wins rather than a single large “magic” feature.
+Weather is not deferred. It is a flagship widget/template for the Feb ship and must meet a baseline of “useful everywhere”: stable caching, a clear location flow, deterministic rendering, and correct attribution. AI work is now an in-cycle track focused on safety and trust (reviewable, reversible spec authoring) plus a small set of tangible UX wins; see `Docs/ROADMAP_AI_2026-01.md`. Larger AI expansions remain optional and must not jeopardise the Feb ship.
 
 ## Dates and milestones
 
@@ -152,6 +152,27 @@ Work items (polish window):
 
 These items are tracked as explicit checklist tasks in `Docs/RELEASE_PLAN_2026-02.md` (UX and product clarity + Accessibility).
 
+
+### H) AI (assistive spec authoring)
+
+Goal: Make AI a trustworthy assistive layer for creating and editing designs, producing explicit `WidgetSpec` outputs that are reviewable and reversible.
+
+Work items (pre-freeze; small and low-risk):
+
+- Fix token mapping gaps (alignment, backgrounds, accents) and redact unnecessary file details from context.
+- Surface Apple Intelligence availability in the editor near AI controls.
+- Add an App Group kill-switch so AI can be disabled quickly if regressions appear.
+- Align About/help “prompt ideas” with what AI actually supports.
+
+Work items (polish window; feature-flagged, ship only if stable):
+
+- Add review UI for generation and patching (no silent saves), including a concise change summary.
+- Add a single-step “Undo last AI apply”.
+- Introduce schema v2 behind a flag to support content templates (Classic/Hero/Poster) plus poster overlays/glow/accent bar.
+- Multi-option generation (3 choices) to reduce “one bad roll” frustration.
+
+Reference: `Docs/ROADMAP_AI_2026-01.md`.
+
 ## Risks and mitigations
 
 - Risk: Weather permissions and attribution issues cause App Review friction.
@@ -174,7 +195,7 @@ These items are tracked as explicit checklist tasks in `Docs/RELEASE_PLAN_2026-0
 - Permissions footprint is minimal and matches shipped behaviour.
 - Sharing/import works in a way that increases user confidence.
 
-## Notes (out of scope / post-ship)
+## Notes (out of scope / later)
 
-- Larger AI features remain a post-ship track.
+- AI stretch goals may slip beyond the Feb ship if they are not stable behind kill-switches (matched sets, action bars, template-specific AI beyond styling).
 - Revisit parked templates/features only with a clear product narrative and permissions strategy.

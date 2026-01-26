@@ -15,13 +15,20 @@ In scope (must ship):
 - Variables: better discoverability and in-context insertion (bounded UX improvements only).
 - Surface-area reductions (usefulness + trust): hide/remove non-flagship templates without breaking existing user widgets, and remove unused permission declarations.
 
+In scope (targeted; ship if stable; feature-flagged):
+
+- AI: make the existing Pro “Generate” and “Patch” flows more trustworthy and more capable without widening permissions:
+  - Token mapping parity (alignment/backgrounds/accent).
+  - Clear Apple Intelligence availability messaging in the editor.
+  - App Group kill-switch for AI surfaces.
+  - Review-before-apply UI (no silent saves) with a short change summary and one-step undo.
+
 Out of scope (scope cuts for this release):
 
 - Reading (remove from surfaced catalogue paths)
 - Photo Quote (remove from surfaced catalogue paths)
 - Clipboard Actions / Screen Actions (parked; must be absent in release builds, including widget gallery)
 - PawPulse / “Latest Cat” (future feature; not in release builds)
-- New AI capabilities beyond what is already stable (does not block ship)
 
 Weather is not deferred. It is a flagship widget/template and a release gate.
 
@@ -50,6 +57,10 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 ### Gate B: Data integrity and safe deprecations
 
 - [ ] Edits do not corrupt saved widget specs.
+- [ ] AI (if shipped): generation/patching produces valid specs and cannot corrupt saved designs:
+  - [ ] Review-before-apply is enforced (no silent saves).
+  - [ ] Kill-switch exists and works (AI can be disabled without removing code).
+  - [ ] Deterministic fallback remains usable when Apple Intelligence is unavailable.
 - [x] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
 - [x] Import review flow exists, including an import preview sheet that renders Small/Medium/Large previews before import.
 - [ ] App Group storage migrations (if any) are forward compatible.
@@ -117,6 +128,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
   - [ ] Curate a “Top templates” set (6–10) and move advanced/edge templates behind “More”.
   - [ ] Default advanced editor controls to collapsed; surface them via “More” / “Advanced” panels.
   - [ ] Validate the primary path is linear: Explore → select → edit → save → add widget, with minimal branching.
+- [ ] AI (if shipped): Generate/Patch is reviewable and undoable (no silent saves).
 - [ ] Weather is surfaced as a flagship template (not hidden/experimental in shipped surfaces).
 - [x] Weather settings is easy to find from the widget when unconfigured (tap deep-links to settings).
 - [x] “Reading” is removed from visible catalogue surfaces.
@@ -201,7 +213,7 @@ Scope cuts to keep the release coherent:
 After ship:
 
 1) Weather: expand beyond the baseline (multiple saved locations, deeper forecasts, more visual variants) without widening permissions.
-2) AI: start with small assistive flows that produce explicit widget specs/config and are easy to undo.
+2) AI: expand beyond the baseline (multi-option generation, schema v2 for templates, and matched sets) only after the reviewable/undoable core is proven stable behind the kill-switch.
 3) Revisit “scope cut” features with a clear permissions strategy and a coherent product narrative.
 
 ## 7) Non-negotiables

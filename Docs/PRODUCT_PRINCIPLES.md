@@ -79,7 +79,7 @@ Rules:
 
 - AI features must be optional, reviewable, and reversible.
 - AI output should generate real widget specs / tool configurations, not opaque state.
-- Prefer on-device and privacy-preserving approaches; do not block shipping on AI.
+- Prefer on-device and privacy-preserving approaches; AI must be shippable behind a kill-switch so it cannot block a release.
 
 ## 12) Permissions are earned and minimised
 

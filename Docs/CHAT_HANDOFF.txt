@@ -1,5 +1,5 @@
 WidgetWeaver – chat handoff (copy/paste)
-Last updated: 2026-01-25
+Last updated: 2026-01-26
 
 Product
 - WidgetWeaver is an iOS 26+ app that builds and previews real WidgetKit widgets via an Explore (template catalogue) + context-aware editor workflow.
@@ -11,7 +11,7 @@ Strategic intent
 - Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-25.
+- Today: 2026-01-26.
 - Feature freeze: 2026-01-31 (stop adding features).
 - Polish: 2026-02-01 to 2026-02-14.
 - Target ship: 2026-02-14 to 2026-02-16.
@@ -22,7 +22,8 @@ Current roadmap priorities (pre-freeze)
 3) Weather (flagship): ship the rain-first Weather template + `__weather_*` variables with a clear location flow, stable caching, and attribution.
 4) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
 5) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys and syntax.
-6) Catalogue and trust clean-up (usefulness-first; do not break existing widgets) — status (snapshot 4c7c51e9):
+6) AI: upgrade the Pro “Generate” and “Patch” flows so they are reviewable and undoable (no silent saves), with token-mapping parity and an App Group kill-switch. Roadmap: `Docs/ROADMAP_AI_2026-01.md`.
+7) Catalogue and trust clean-up (usefulness-first; do not break existing widgets) — status (snapshot 4c7c51e9):
    - “Reading” is hidden from Explore/starter surfaces (kept in the app for back-compat).
    - “Photo Quote” is hidden from Explore/starter surfaces (kept in the app for back-compat).
    - Legacy “Quote” starter template is not surfaced (any remaining `starter-quote` usage is for legacy/icon mapping only).
@@ -37,8 +38,6 @@ Current roadmap priorities (pre-freeze)
      - Background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off) and refresh scheduling is cancelled when disabled or when no base URL is configured.
    - Weather location safety: `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with a user-facing explanation. Keep the permission request in-context (“Use Current Location” only).
 
-Defer
-- AI: post-ship R&D track; small, reviewable assistive steps; must generate explicit specs/config, not opaque state.
 
 Recent progress check-in (what is now implemented)
 - Weather usefulness: unconfigured Weather widgets deep-link into Weather settings (tap opens `widgetweaver://weather/settings`), routed via `WidgetWeaverWeatherDeepLinkHost`.
@@ -55,6 +54,7 @@ Still worth tracking (non-blockers, but visible)
 - Some App Intents and editor actions still call `WidgetCenter.shared.reloadAllTimelines()` directly. Migrate them to `WidgetWeaverWidgetReloadCoordinator` (or targeted `reloadTimelines(ofKind:)`) to match the newer reload discipline.
 
 Key repo pointers
+- AI service (prompt → spec + patching): WidgetWeaver/WidgetSpecAIService.swift
 - Design export/import Transferable: WidgetWeaver/ContentView+SharePackage.swift (`.wwdesign` files)
 - Import review + preview UI: WidgetWeaver/Features/ImportReview/*
 - Document type registration: WidgetWeaver/Info.plist (UTType export + document type + open-in-place declaration)
