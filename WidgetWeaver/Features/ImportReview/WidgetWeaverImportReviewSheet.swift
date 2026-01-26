@@ -330,17 +330,39 @@ struct WidgetWeaverImportReviewSheet: View {
                 .padding(.vertical, 10)
             } else {
                 ForEach(displayedItems) { item in
-                    Button {
-                        toggle(item.id)
-                    } label: {
-                        ImportItemRow(
-                            item: item,
-                            spec: specsByID[item.id],
-                            isSelected: selection.contains(item.id)
-                        )
+                    let spec = specsByID[item.id]
+                    let canPreview = spec != nil
+
+                    HStack(spacing: 8) {
+                        Button {
+                            toggle(item.id)
+                        } label: {
+                            ImportItemRow(
+                                item: item,
+                                spec: spec,
+                                isSelected: selection.contains(item.id)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isImporting)
+                        .accessibilityLabel(accessibilityLabel(item: item))
+
+                        Button {
+                            presentPreview(for: item)
+                        } label: {
+                            Image(systemName: "eye")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.tint)
+                                .frame(width: 44, height: 44)
+                                .background(
+                                    Circle()
+                                        .fill(.secondary.opacity(0.12))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isImporting || !canPreview)
+                        .accessibilityLabel("Preview")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isImporting)
                     .contextMenu {
                         Button {
                             presentPreview(for: item)
@@ -377,13 +399,12 @@ struct WidgetWeaverImportReviewSheet: View {
                         }
                         .tint(.blue)
                     }
-                    .accessibilityLabel(accessibilityLabel(item: item))
                 }
             }
         } header: {
             Text("Designs")
         } footer: {
-            Text("Tip: swipe right or long-press a row to preview before importing.")
+            Text("Tip: tap the eye, swipe right, or press and hold a row to preview before importing.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
