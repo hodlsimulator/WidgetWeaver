@@ -23,6 +23,9 @@ enum FeatureFlags {
 
         // Smart Photos reliability + clarity.
         static let smartPhotosUXHardeningEnabled = "widgetweaver.feature.smartPhotos.uxHardening.enabled"
+
+        // Smart Photos Memories (On this day / On this week).
+        static let smartPhotoMemoriesEnabled = "widgetweaver.feature.smartPhotos.memories.enabled"
     }
 
     /// Default state for the context-aware editor tool suite.
@@ -110,5 +113,26 @@ enum FeatureFlags {
 
     static func clearSmartPhotosUXHardeningOverride() {
         UserDefaults.standard.removeObject(forKey: Keys.smartPhotosUXHardeningEnabled)
+    }
+
+    /// Default state for Memories (On this day / On this week) built on Smart Photo shuffle plumbing.
+    static let defaultSmartPhotoMemoriesEnabled: Bool = false
+
+    static var smartPhotoMemoriesEnabled: Bool {
+        let defaults = UserDefaults.standard
+
+        if defaults.object(forKey: Keys.smartPhotoMemoriesEnabled) == nil {
+            return defaultSmartPhotoMemoriesEnabled
+        }
+
+        return defaults.bool(forKey: Keys.smartPhotoMemoriesEnabled)
+    }
+
+    static func setSmartPhotoMemoriesEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.smartPhotoMemoriesEnabled)
+    }
+
+    static func clearSmartPhotoMemoriesOverride() {
+        UserDefaults.standard.removeObject(forKey: Keys.smartPhotoMemoriesEnabled)
     }
 }
