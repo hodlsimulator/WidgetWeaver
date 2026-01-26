@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Steps settings
 
@@ -274,31 +275,15 @@ struct WidgetWeaverStepsSettingsView: View {
                 }
             }
 
-            Section("Template variables") {
-                Text("Use these built-in keys in any widget text:")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(verbatim: "__steps_today")
-                    Text(verbatim: "__steps_goal_today")
-                    Text(verbatim: "__steps_today_percent")
-                    Text(verbatim: "__steps_streak")
-                    Text(verbatim: "__steps_avg_7")
-                    Text(verbatim: "__steps_avg_30")
-                    Text(verbatim: "__steps_best_day")
-                    Text(verbatim: "__steps_best_day_date")
-                    Text(verbatim: "__steps_updated_iso")
-                    Text(verbatim: "__steps_access")
-                }
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-
-                Text("History-derived keys (streak, averages, best day) require a cached history snapshot.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            WidgetWeaverBuiltInVariableValuesSection(
+                title: "Template variables",
+                keyPrefix: "__steps_",
+                expectedKeys: WidgetWeaverBuiltInVariableValuesSection.stepsExpectedKeys,
+                values: WidgetWeaverStepsStore.shared.variablesDictionary(),
+                copyAllButtonTitle: "Copy all __steps_* values",
+                emptyMessage: "No Steps variables yet.\nRefresh Steps to cache a snapshot.",
+                footerText: "Tap a key to copy {{key}}. Values come from cached Steps snapshots (and history, when available)."
+            )
 
         }
         .navigationTitle("Steps")
@@ -524,27 +509,15 @@ struct WidgetWeaverActivitySettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Template variables") {
-                Text("Use these built-in keys in any widget text:")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("__activity_steps_today")
-                    Text("__activity_flights_today")
-                    Text("__activity_distance_km")
-                    Text("__activity_active_energy_kcal")
-                    Text("__activity_updated_iso")
-                    Text("__activity_access")
-                }
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-
-                Text("Keys appear once Health access is enabled and a snapshot is cached.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            WidgetWeaverBuiltInVariableValuesSection(
+                title: "Template variables",
+                keyPrefix: "__activity_",
+                expectedKeys: WidgetWeaverBuiltInVariableValuesSection.activityExpectedKeys,
+                values: WidgetWeaverActivityStore.shared.variablesDictionary(),
+                copyAllButtonTitle: "Copy all __activity_* values",
+                emptyMessage: "No Activity variables yet.\nEnable Health access, then refresh to cache a snapshot.",
+                footerText: "Tap a key to copy {{key}}. Values appear after Activity is refreshed."
+            )
         }
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
@@ -598,6 +571,217 @@ struct WidgetWeaverActivitySettingsView: View {
         case .authorised: return "Enabled"
         case .denied: return "Denied"
         case .partial: return "Partial"
+        }
+    }
+}
+
+
+// MARK: - Built-in variable values section
+
+private struct WidgetWeaverBuiltInVariableValuesSection: View {
+    let title: String
+    let keyPrefix: String
+    let expectedKeys: [String]
+    let values: [String: String]
+    let copyAllButtonTitle: String
+    let emptyMessage: String
+    let footerText: String
+
+    @AppStorage("variables.builtins.showAdvanced")
+    private var showAdvancedKeys: Bool = false
+
+    @State private var statusText: String? = nil
+
+    static let stepsExpectedKeys: [String] = [
+        "__steps_today",
+        "__steps_goal_today",
+        "__steps_today_percent",
+        "__steps_today_fraction",
+        "__steps_goal_hit_today",
+
+        "__steps_goal_weekday",
+        "__steps_goal_weekend",
+        "__steps_streak_rule",
+
+        "__steps_streak",
+        "__steps_avg_7",
+        "__steps_avg_7_exact",
+        "__steps_avg_30",
+        "__steps_avg_30_exact",
+
+        "__steps_best_day",
+        "__steps_best_day_date",
+        "__steps_best_day_date_iso",
+
+        "__steps_updated_iso",
+        "__steps_access",
+    ]
+
+    static let activityExpectedKeys: [String] = [
+        "__activity_steps_today",
+        "__activity_flights_today",
+        "__activity_distance_km",
+        "__activity_distance_km_exact",
+        "__activity_distance_m",
+        "__activity_distance_m_exact",
+        "__activity_active_energy_kcal",
+        "__activity_active_energy_kcal_exact",
+        "__activity_updated_iso",
+        "__activity_access",
+    ]
+
+    private struct VariableItem: Identifiable, Hashable {
+        let key: String
+        let value: String
+        let isAdvanced: Bool
+        var id: String { key }
+    }
+
+    private var orderedKeys: [String] {
+        let expected = expectedKeys.filter { $0.hasPrefix(keyPrefix) }
+        let expectedSet = Set(expected)
+
+        let extras = values.keys
+            .filter { $0.hasPrefix(keyPrefix) && !expectedSet.contains($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+
+        return expected + extras
+    }
+
+    private var containsAdvancedKeys: Bool {
+        orderedKeys.contains(where: isAdvancedKey)
+    }
+
+    private var items: [VariableItem] {
+        orderedKeys.compactMap { key in
+            let advanced = isAdvancedKey(key)
+            if advanced && !showAdvancedKeys { return nil }
+
+            let raw = values[key] ?? ""
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayValue = trimmed.isEmpty ? "—" : trimmed
+
+            return VariableItem(key: key, value: displayValue, isAdvanced: advanced)
+        }
+    }
+
+    var body: some View {
+        Section {
+            if containsAdvancedKeys {
+                Toggle("Show advanced keys", isOn: $showAdvancedKeys)
+            }
+
+            if items.isEmpty {
+                Text(emptyMessage)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button {
+                    copyAllVisibleVariables()
+                } label: {
+                    Label(copyAllButtonTitle, systemImage: "doc.on.doc")
+                }
+
+                ForEach(items) { item in
+                    variableRow(key: item.key, value: item.value)
+                }
+            }
+
+            if let statusText = statusText {
+                Text(statusText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            Text(footerText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func isAdvancedKey(_ key: String) -> Bool {
+        key.contains("_exact")
+    }
+
+    private func copyAllVisibleVariables() {
+        let lines: [String] = items.map { item in
+            let sanitised = item.value
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let finalValue = sanitised.isEmpty ? "—" : sanitised
+            return "\(item.key)=\(finalValue)"
+        }
+
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        setStatus("Copied \(lines.count) variables.")
+    }
+
+    private func variableRow(key: String, value: String) -> some View {
+        let snippet = "{{\(key)}}"
+
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(key)
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: 0)
+
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Button {
+                UIPasteboard.general.string = snippet
+                setStatus("Copied \(snippet).")
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy template")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            UIPasteboard.general.string = snippet
+            setStatus("Copied \(snippet).")
+        }
+        .contextMenu {
+            Button("Copy template") {
+                UIPasteboard.general.string = snippet
+                setStatus("Copied \(snippet).")
+            }
+
+            Button("Copy value") {
+                UIPasteboard.general.string = value
+                setStatus("Copied value for \(key).")
+            }
+
+            Button("Copy key") {
+                UIPasteboard.general.string = key
+                setStatus("Copied \(key).")
+            }
+        }
+    }
+
+    @MainActor
+    private func setStatus(_ message: String) {
+        statusText = message
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            await MainActor.run {
+                if statusText == message {
+                    statusText = nil
+                }
+            }
         }
     }
 }
