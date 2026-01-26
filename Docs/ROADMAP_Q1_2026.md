@@ -1,6 +1,6 @@
 # WidgetWeaver roadmap (Q1 2026)
 
-Last updated: 2026-01-25
+Last updated: 2026-01-26
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
@@ -136,6 +136,22 @@ Work items (pre-freeze):
 - Import flow shows previews and allows review/selection.
 - Back-compat for legacy import formats is maintained (internal builds only).
 
+### G) Cross-cutting UX/UI (cognitive load reduction)
+
+Goal: Reduce cognitive load in the high-frequency flows (Explore → Library → Editor) without widening scope.
+
+Primary metric: fewer “edited but nothing changed” moments (save-state confusion) and faster time-to-first-successful-widget.
+
+Work items (polish window):
+
+- Consolidate Library navigation bar actions: keep one primary “+” entry point and one secondary “More” menu; remove overlapping entry points.
+- Make editor save state unmissable: persistent unsaved indicator, a single prominent Save action, and safe back-navigation prompts only when loss is possible.
+- Standardise user-facing terminology (Template vs Design vs Widget) across Explore, Library, Editor, help text, and paywall copy.
+- Apply progressive disclosure: curate 6–10 flagship templates and keep advanced/edge templates behind “More”; default advanced editor controls to collapsed.
+- Accessibility pass focused on: hit targets for chips/pills, contrast over photos, Dynamic Type, and VoiceOver for primary editor controls.
+
+These items are tracked as explicit checklist tasks in `Docs/RELEASE_PLAN_2026-02.md` (UX and product clarity + Accessibility).
+
 ## Risks and mitigations
 
 - Risk: Weather permissions and attribution issues cause App Review friction.
@@ -146,6 +162,9 @@ Work items (pre-freeze):
 
 - Risk: Catalogue feels overwhelming / incoherent.
   - Mitigation: Hide redundant templates; keep a curated flagship story.
+
+- Risk: Library + Editor control density increases cognitive load and reduces first-session completion.
+  - Mitigation: Consolidate top-bar actions, make save state explicit, standardise terminology, and keep advanced controls behind progressive disclosure.
 
 ## Definition of done (Feb ship)
 

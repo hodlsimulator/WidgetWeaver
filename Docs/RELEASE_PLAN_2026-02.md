@@ -1,6 +1,6 @@
 # WidgetWeaver release plan (Feb 2026)
 
-Last updated: 2026-01-25
+Last updated: 2026-01-26
 
 ## 1) Scope summary
 
@@ -100,6 +100,23 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 - [ ] Explore catalogue: clearly communicates the core value (templates → remix).
 - [ ] Templates: top 6–10 templates feel high quality and coherent.
+- [ ] Library: consolidate top-bar actions to reduce duplication
+  - [ ] Keep one primary creation entry point (“+”) and one secondary actions menu (“More” / ellipsis); remove overlapping entry points.
+  - [ ] Ensure the toolbar does not duplicate the same actions already available via context menus (duplicate/rename/export/delete, pinning).
+  - [ ] Confirm the primary “Add” path supports: new design from template, import (`.wwdesign`), and duplicate.
+- [ ] Editor: make save state obvious and trustworthy
+  - [ ] Persistent unsaved-changes indicator when edits are pending (for example, an “Unsaved” tag or a dot near the title).
+  - [ ] Save action is singular, prominent, and disabled when no changes exist.
+  - [ ] Navigating back with unsaved changes prompts to Save / Discard (only when the change would be lost).
+  - [ ] If autosave exists for some edits, the UI still communicates “Saving…” → “Saved” to avoid uncertainty.
+- [ ] Terminology: standardise labels across Explore / Library / Editor
+  - [ ] Pick and enforce primary nouns for: Template (catalogue), Design (saved configuration), Widget (Home Screen instance).
+  - [ ] Align paywall copy and help text with the same nouns (avoid near-synonyms like “preset”, “layout”, “skin” unless strictly necessary).
+  - [ ] Add a short glossary section to in-app Help (or an existing Help screen) covering these terms.
+- [ ] Progressive disclosure: reduce first-session decision points
+  - [ ] Curate a “Top templates” set (6–10) and move advanced/edge templates behind “More”.
+  - [ ] Default advanced editor controls to collapsed; surface them via “More” / “Advanced” panels.
+  - [ ] Validate the primary path is linear: Explore → select → edit → save → add widget, with minimal branching.
 - [ ] Weather is surfaced as a flagship template (not hidden/experimental in shipped surfaces).
 - [x] Weather settings is easy to find from the widget when unconfigured (tap deep-links to settings).
 - [x] “Reading” is removed from visible catalogue surfaces.
@@ -126,6 +143,10 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [ ] VoiceOver labels for primary controls in Clock and Noise Machine.
 - [ ] Sufficient contrast in key templates (especially over photos).
 - [ ] Dynamic Type sanity pass for editor lists and primary text editing.
+- [ ] Hit-target audit for chips/pills, segmented controls, and small icon buttons (≥ 44×44pt).
+- [ ] Sanity pass under common system accessibility settings: Larger Text (AX sizes), Bold Text, Increase Contrast, Reduce Transparency.
+- [ ] Ensure scrims/overlays guarantee text contrast over photos (including in Light/Dark Mode).
+- [ ] VoiceOver: Editor controls announce value/state clearly; focus order is predictable; secondary panes do not trap focus.
 
 ### Stability / QA
 
