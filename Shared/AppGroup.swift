@@ -501,6 +501,15 @@ public enum AppGroup {
             return true
         }()
 
+        let metaOrient: Int = orientation ?? -1
+
+        let metaPx: String = {
+            if let w = pixelWidth, let h = pixelHeight { return "\(w)x\(h)" }
+            return "nil"
+        }()
+
+        let transformFlag: Int = shouldApplyTransform ? 1 : 0
+
         let thumbnailOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: clampedMaxPixel,
@@ -517,7 +526,7 @@ public enum AppGroup {
                     minInterval: 10.0,
                     context: debugContext
                 ) {
-                    "loadWidgetImage: CGImageSourceCreateThumbnailAtIndex failed file=\(safe) max=\(clampedMaxPixel)"
+                    "loadWidgetImage: CGImageSourceCreateThumbnailAtIndex failed file=\(safe) max=\(clampedMaxPixel) metaOrient=\(metaOrient) metaPx=\(metaPx) transform=\(transformFlag)"
                 }
             }
             return nil
@@ -532,12 +541,12 @@ public enum AppGroup {
                 minInterval: 30.0,
                 context: debugContext
             ) {
-                "decoded file=\(safe) px=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms"
+                "decoded file=\(safe) metaOrient=\(metaOrient) metaPx=\(metaPx) transform=\(transformFlag) thumbPx=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms"
             }
         }
 
         #if DEBUG
-        print("[WWWidgetImage] file=\(safe) px=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms")
+        print("[WWWidgetImage] file=\(safe) metaOrient=\(metaOrient) metaPx=\(metaPx) transform=\(transformFlag) thumbPx=\(cgImage.width)x\(cgImage.height) max=\(clampedMaxPixel) dt=\(dtMs)ms")
         #endif
 
         return UIImage(cgImage: cgImage)
