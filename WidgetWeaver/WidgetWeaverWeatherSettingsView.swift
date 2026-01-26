@@ -55,6 +55,11 @@ struct WidgetWeaverWeatherSettingsView: View {
         .onAppear {
             refreshLocalState()
             refreshLocationAuthStatus()
+
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let loc = savedLocation {
+                query = loc.name
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshLocationAuthStatus()
@@ -127,6 +132,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
                 Button(role: .destructive) {
                     store.saveLocation(nil)
+                    query = ""
                     refreshLocalState()
                     reloadWidgets()
                 } label: {
@@ -516,6 +522,7 @@ struct WidgetWeaverWeatherSettingsView: View {
             )
 
             store.saveLocation(stored)
+            query = stored.name
             refreshLocalState()
 
             await updateNow(force: true)

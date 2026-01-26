@@ -75,6 +75,38 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         #endif
     }
 
+    private func clearCachedWeatherSnapshotState() {
+        defaults.removeObject(forKey: Keys.snapshotData)
+        UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
+
+        defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+        defaults.removeObject(forKey: Keys.lastError)
+
+        UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
+        UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
+        UserDefaults.standard.removeObject(forKey: Keys.lastError)
+    }
+
+    private func clearCachedWeatherAttributionState() {
+        defaults.removeObject(forKey: Keys.attributionData)
+        UserDefaults.standard.removeObject(forKey: Keys.attributionData)
+    }
+
+    private func shouldInvalidateCacheForNewLocation(_ newLocation: WidgetWeaverWeatherLocation) -> Bool {
+        guard let existing = loadLocation() else { return true }
+
+        let existingName = existing.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let newName = newLocation.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if existingName != newName { return true }
+
+        let distanceMeters = existing.clLocation.distance(from: newLocation.clLocation)
+        if distanceMeters > 1000 { return true }
+
+        return false
+    }
+
+
     // MARK: Location
 
     public func loadLocation() -> WidgetWeaverWeatherLocation? {
@@ -113,6 +145,10 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
         let encoder = makeEncoder()
 
         if let location, let data = try? encoder.encode(location) {
+            if shouldInvalidateCacheForNewLocation(location) {
+                clearCachedWeatherSnapshotState()
+            }
+
             defaults.set(data, forKey: Keys.locationData)
             UserDefaults.standard.set(data, forKey: Keys.locationData)
         } else {
@@ -120,19 +156,8 @@ public final class WidgetWeaverWeatherStore: @unchecked Sendable {
             UserDefaults.standard.removeObject(forKey: Keys.locationData)
 
             // Clearing the saved location invalidates all cached weather state.
-            defaults.removeObject(forKey: Keys.snapshotData)
-            UserDefaults.standard.removeObject(forKey: Keys.snapshotData)
-
-            defaults.removeObject(forKey: Keys.attributionData)
-            UserDefaults.standard.removeObject(forKey: Keys.attributionData)
-
-            defaults.removeObject(forKey: Keys.lastRefreshAttemptAt)
-            defaults.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
-            defaults.removeObject(forKey: Keys.lastError)
-
-            UserDefaults.standard.removeObject(forKey: Keys.lastRefreshAttemptAt)
-            UserDefaults.standard.removeObject(forKey: Keys.lastSuccessfulRefreshAt)
-            UserDefaults.standard.removeObject(forKey: Keys.lastError)
+            clearCachedWeatherSnapshotState()
+            clearCachedWeatherAttributionState()
         }
 
         notifyWidgetsWeatherUpdated()
