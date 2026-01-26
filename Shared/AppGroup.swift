@@ -223,7 +223,7 @@ public enum AppGroup {
 
         let shouldApplyTransform: Bool = {
             let o = orientation ?? 1
-            if o == 1 { return false }
+            if o == 1 { return true }
 
             // Heuristic guardrail: some picker/transcoded bytes contain pixels already rotated to `.up`
             // while metadata still reports a rotated orientation. Applying the transform again would
@@ -483,7 +483,7 @@ public enum AppGroup {
 
         let shouldApplyTransform: Bool = {
             let o = orientation ?? 1
-            if o == 1 { return false }
+            if o == 1 { return true }
 
             // Heuristic guardrail: some persisted bytes contain pixels already rotated to `.up`
             // while metadata still reports a rotated orientation. Applying the transform again would
