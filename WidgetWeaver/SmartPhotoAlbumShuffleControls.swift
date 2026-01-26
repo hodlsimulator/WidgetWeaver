@@ -42,6 +42,13 @@ struct SmartPhotoAlbumShuffleControls: View {
 
     @State private var isPreparingBatch: Bool = false
 
+    @State private var selectedSourceKey: String = SmartPhotoShuffleSourceKey.album
+
+    private var selectedMemoriesMode: SmartPhotoMemoriesMode? {
+        guard FeatureFlags.smartPhotoMemoriesEnabled else { return nil }
+        return SmartPhotoMemoriesMode(rawValue: selectedSourceKey)
+    }
+
     private var manifestFileName: String {
         (smartPhoto?.shuffleManifestFileName ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,6 +65,16 @@ struct SmartPhotoAlbumShuffleControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Divider()
+
+            if FeatureFlags.smartPhotoMemoriesEnabled {
+                SmartPhotoShuffleSourceSelectorRow(
+                    selectedSourceKey: $selectedSourceKey,
+                    isDisabled: importInProgress || isPreparingBatch || smartPhoto == nil,
+                    onSelectionHint: { hint in
+                        saveStatusMessage = hint
+                    }
+                )
+            }
 
             statusText
 
@@ -155,13 +172,25 @@ struct SmartPhotoAlbumShuffleControls: View {
     @ViewBuilder
     private var statusText: some View {
         if smartPhoto == nil {
-            Text("Album shuffle requires Smart Photo.\nPick a photo and create Smart Photo renders first.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if FeatureFlags.smartPhotoMemoriesEnabled {
+                Text("Shuffle requires Smart Photo.\nPick a photo and create Smart Photo renders first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Album shuffle requires Smart Photo.\nPick a photo and create Smart Photo renders first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         } else if !shuffleEnabled {
-            Text("Choose an album to start. While the app is open, it will progressively pre-render the album (in batches of \(batchSize)).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let mode = selectedMemoriesMode {
+                Text("Build a Memories set for “\(mode.displayName)”. While the app is open, it will progressively pre-render it (in batches of \(batchSize)).\n\nIf nothing appears, try a different mode or choose an album. Screenshots and very low-res images are ignored.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Choose an album to start. While the app is open, it will progressively pre-render the album (in batches of \(batchSize)).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         } else if let progress {
             HStack(spacing: 8) {
                 if isPreparingBatch {
@@ -271,12 +300,23 @@ struct SmartPhotoAlbumShuffleControls: View {
         let cols = Array(repeating: GridItem(.flexible(minimum: minTileWidth), spacing: 12), count: columns)
 
         LazyVGrid(columns: cols, spacing: 12) {
-            Button {
-                albumPickerPresentedBinding.wrappedValue = true
-            } label: {
-                ActionTileLabel(title: "Choose\nalbum…", systemImage: "rectangle.stack.badge.plus")
+            if let mode = selectedMemoriesMode {
+                Button {
+                    Task { await configureMemories(mode: mode) }
+                } label: {
+                    let verb = shuffleEnabled ? "Refresh" : "Build"
+                    let icon = shuffleEnabled ? "arrow.clockwise" : "calendar"
+                    ActionTileLabel(title: "\(verb)\n\(mode.displayName)", systemImage: icon)
+                }
+                .disabled(importInProgress || smartPhoto == nil || isPreparingBatch)
+            } else {
+                Button {
+                    albumPickerPresentedBinding.wrappedValue = true
+                } label: {
+                    ActionTileLabel(title: "Choose\nalbum…", systemImage: "rectangle.stack.badge.plus")
+                }
+                .disabled(importInProgress || smartPhoto == nil || isPreparingBatch)
             }
-            .disabled(importInProgress || smartPhoto == nil || isPreparingBatch)
 
             if shuffleEnabled {
                 Button {
@@ -391,6 +431,10 @@ struct SmartPhotoAlbumShuffleControls: View {
         // Persist immediately so the widget extension uses the same manifest as the editor.
         WidgetSpecStore.shared.setSmartPhotoShuffleManifestFileName(specID: specID, manifestFileName: manifestFile)
 
+        if FeatureFlags.smartPhotoMemoriesEnabled {
+            selectedSourceKey = SmartPhotoShuffleSourceKey.album
+        }
+
         albumPickerPresentedBinding.wrappedValue = false
         albumPickerState = .idle
 
@@ -408,6 +452,63 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
     }
 
+    private func configureMemories(mode: SmartPhotoMemoriesMode) async {
+        guard FeatureFlags.smartPhotoMemoriesEnabled else {
+            saveStatusMessage = "Memories is disabled."
+            return
+        }
+
+        guard var sp = smartPhoto else {
+            saveStatusMessage = "Make Smart Photo first."
+            return
+        }
+
+        importInProgress = true
+        defer { importInProgress = false }
+
+        saveStatusMessage = "Building \(mode.displayName)…"
+
+        do {
+            let result = try await SmartPhotoMemoriesEngine.buildManifestAndPrepareInitialBatch(mode: mode)
+
+            sp.shuffleManifestFileName = result.manifestFileName
+            smartPhoto = sp
+
+            WidgetSpecStore.shared.setSmartPhotoShuffleManifestFileName(specID: specID, manifestFileName: result.manifestFileName)
+            WidgetWeaverWidgetRefresh.forceKick()
+
+            let failureSuffix = result.failedNow > 0 ? " (\(result.failedNow) failed)" : ""
+            saveStatusMessage = "Shuffle configured for \(mode.displayName) (\(result.selectedCount) photos).\nPrepared \(result.preparedNow) now\(failureSuffix)."
+
+            selectedSourceKey = mode.rawValue
+
+            await refreshFromManifest()
+        } catch let error as SmartPhotoMemoriesEngine.MemoriesError {
+            switch error {
+            case .disabled:
+                saveStatusMessage = "Memories is disabled."
+
+            case .photoAccessDenied:
+                saveStatusMessage = "Photo library access is off.\nEnable Photos access in Settings."
+
+            case .noCandidates:
+                if mode == .onThisDay {
+                    saveStatusMessage = "No usable photos found for \(mode.displayName).\nTry “On this week”, or choose an album."
+                } else {
+                    saveStatusMessage = "No usable photos found for \(mode.displayName).\nTry choosing an album."
+                }
+
+            case .manifestSaveFailed(let detail):
+                saveStatusMessage = "Failed to save Memories manifest: \(detail)"
+
+            case .manifestLoadFailed:
+                saveStatusMessage = "Memories manifest not found."
+            }
+        } catch {
+            saveStatusMessage = "Memories failed: \(error.localizedDescription)"
+        }
+    }
+
     private func disableShuffle() {
         guard var sp = smartPhoto else { return }
         sp.shuffleManifestFileName = nil
@@ -420,7 +521,11 @@ struct SmartPhotoAlbumShuffleControls: View {
         nextChangeDate = nil
         rotationIntervalMinutes = 60
 
-        saveStatusMessage = "Album shuffle disabled."
+        if FeatureFlags.smartPhotoMemoriesEnabled, selectedMemoriesMode != nil {
+            saveStatusMessage = "Shuffle disabled."
+        } else {
+            saveStatusMessage = "Album shuffle disabled."
+        }
     }
 
     // MARK: - Rotation
@@ -768,6 +873,20 @@ struct SmartPhotoAlbumShuffleControls: View {
             return manifest.nextChangeDateFrom(now: now) ?? manifest.nextChangeDate
         }()
 
+        let inferredMemoriesMode: SmartPhotoMemoriesMode? = {
+            guard FeatureFlags.smartPhotoMemoriesEnabled else { return nil }
+
+            let sourceID = manifest.sourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if sourceID.hasPrefix(SmartPhotoMemoriesMode.onThisDay.sourceIDPrefix) {
+                return .onThisDay
+            }
+            if sourceID.hasPrefix(SmartPhotoMemoriesMode.onThisWeek.sourceIDPrefix) {
+                return .onThisWeek
+            }
+
+            return nil
+        }()
+
         await MainActor.run {
             progress = ProgressSummary(
                 total: total,
@@ -779,6 +898,10 @@ struct SmartPhotoAlbumShuffleControls: View {
 
             rotationIntervalMinutes = manifest.rotationIntervalMinutes
             nextChangeDate = next
+
+            if let inferredMemoriesMode, selectedSourceKey == SmartPhotoShuffleSourceKey.album {
+                selectedSourceKey = inferredMemoriesMode.rawValue
+            }
         }
     }
 
