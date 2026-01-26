@@ -54,9 +54,17 @@ enum WWPhotoImportNormaliser {
         let clampedQuality = min(max(compressionQuality, 0.0), 1.0)
 
         #if DEBUG
-        let id = item.itemIdentifier ?? "nil"
-        let types = item.supportedContentTypes.map(\.identifier).joined(separator: ",")
-        print("[WWPhotoImport] pick itemIdentifier=\(id) types=\(types)")
+        let debugItemIdentifier = item.itemIdentifier ?? "nil"
+        let debugToken = debugThrottleToken(debugItemIdentifier)
+        let debugTypes = item.supportedContentTypes.map(\.identifier).joined(separator: ",")
+
+        WWPhotoDebugLog.appendLazy(
+            category: "photo.import",
+            throttleID: "import.pick.\(debugToken)",
+            minInterval: 2.0
+        ) {
+            "pick itemIdentifier=\(debugItemIdentifier) types=\(debugTypes) maxPixel=\(clampedMaxPixel) q=\(String(format: "%.2f", clampedQuality))"
+        }
         #endif
 
         // 1) PhotoKit-rendered path (only when a stable asset identifier exists and Photos access is granted).
@@ -70,10 +78,17 @@ enum WWPhotoImportNormaliser {
            ) {
 
             #if DEBUG
-            let o = uiImage.imageOrientation
+            let oLabel = debugUIKitOrientationLabel(uiImage.imageOrientation)
             let w = uiImage.cgImage?.width ?? Int(uiImage.size.width * uiImage.scale)
             let h = uiImage.cgImage?.height ?? Int(uiImage.size.height * uiImage.scale)
-            print("[WWPhotoImport] photoKitRendered orient=\(o) px=\(w)x\(h)")
+
+            WWPhotoDebugLog.appendLazy(
+                category: "photo.import",
+                throttleID: "import.photoKitRendered.\(debugToken)",
+                minInterval: 2.0
+            ) {
+                "photoKitRendered px=\(w)x\(h) uiKitOrient=\(oLabel)"
+            }
             #endif
 
             let outData = try await normaliseUIImageOffMainThread(
@@ -84,11 +99,45 @@ enum WWPhotoImportNormaliser {
 
             #if DEBUG
             let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
-            print("[WWPhotoImport] postNormalise out=\(outInfo) source=photoKitRendered")
+            let outUIKit = await debugUIKitOrientationLabel(for: outData)
+
+            WWPhotoDebugLog.appendLazy(
+                category: "photo.import",
+                throttleID: "import.postNormalise.photoKitRendered.\(debugToken)",
+                minInterval: 2.0
+            ) {
+                "postNormalise out=\(outInfo) uiKit=\(outUIKit) source=photoKitRendered"
+            }
             #endif
 
             return outData
         }
+
+        #if DEBUG
+        if let localIdentifier = item.itemIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !localIdentifier.isEmpty {
+
+            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+
+            if !canUsePhotoKitForRenderedFetch {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.import",
+                    throttleID: "import.photoKitRendered.skipped.\(debugToken)",
+                    minInterval: 2.0
+                ) {
+                    "photoKitRendered skipped authStatus=\(status.rawValue) (no PHPhotoLibrary readWrite access)"
+                }
+            } else {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.import",
+                    throttleID: "import.photoKitRendered.unavailable.\(debugToken)",
+                    minInterval: 2.0
+                ) {
+                    "photoKitRendered unavailable (request returned nil) authStatus=\(status.rawValue)"
+                }
+            }
+        }
+        #endif
 
         // 2) Load bytes from the picker.
         let pickedData: Data
@@ -98,6 +147,15 @@ enum WWPhotoImportNormaliser {
             do {
                 pickedData = try Data(contentsOf: transferredFile.url)
             } catch {
+                #if DEBUG
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.import",
+                    throttleID: "import.fileTransfer.readFail.\(debugToken)",
+                    minInterval: 2.0
+                ) {
+                    "fileTransfer(.image) Data(contentsOf:) failed error=\(String(describing: error))"
+                }
+                #endif
                 return nil
             }
             pickedSourceLabel = "fileTransfer(.image)"
@@ -108,8 +166,30 @@ enum WWPhotoImportNormaliser {
             pickedData = data
             pickedSourceLabel = "transferableData"
         } else {
+            #if DEBUG
+            WWPhotoDebugLog.appendLazy(
+                category: "photo.import",
+                throttleID: "import.loadTransferable.nil.\(debugToken)",
+                minInterval: 2.0
+            ) {
+                "loadTransferable returned nil (no file/data/Data representation)"
+            }
+            #endif
             return nil
         }
+
+        #if DEBUG
+        let loadedInfo = AppGroup.debugPickedImageInfo(data: pickedData)?.inlineSummary ?? "uti=? orient=? px=?x?"
+        let loadedUIKit = await debugUIKitOrientationLabel(for: pickedData)
+
+        WWPhotoDebugLog.appendLazy(
+            category: "photo.import",
+            throttleID: "import.bytesLoaded.\(debugToken)",
+            minInterval: 2.0
+        ) {
+            "loaded bytes source=\(pickedSourceLabel) bytes=\(pickedData.count) meta=\(loadedInfo) uiKit=\(loadedUIKit)"
+        }
+        #endif
 
         // 3) Single source of truth: normalise from bytes via ImageIO.
         // This applies EXIF orientation consistently for JPEG/HEIC and avoids SwiftUI rasterisation variance.
@@ -122,7 +202,16 @@ enum WWPhotoImportNormaliser {
         #if DEBUG
         let inInfo = AppGroup.debugPickedImageInfo(data: pickedData)?.inlineSummary ?? "uti=? orient=? px=?x?"
         let outInfo = AppGroup.debugPickedImageInfo(data: outData)?.inlineSummary ?? "uti=? orient=? px=?x?"
-        print("[WWPhotoImport] postNormalise in=\(inInfo) out=\(outInfo) source=imageIO+\(pickedSourceLabel)")
+        let inUIKit = await debugUIKitOrientationLabel(for: pickedData)
+        let outUIKit = await debugUIKitOrientationLabel(for: outData)
+
+        WWPhotoDebugLog.appendLazy(
+            category: "photo.import",
+            throttleID: "import.postNormalise.imageIO.\(debugToken)",
+            minInterval: 2.0
+        ) {
+            "postNormalise in=\(inInfo) uiKitIn=\(inUIKit) out=\(outInfo) uiKitOut=\(outUIKit) source=imageIO+\(pickedSourceLabel)"
+        }
         #endif
 
         return outData
@@ -358,4 +447,46 @@ enum WWPhotoImportNormaliser {
 
         return out as Data
     }
+
+
+    #if DEBUG
+    private static func debugThrottleToken(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "empty" }
+
+        var s = trimmed
+        s = s.replacingOccurrences(of: " ", with: "_")
+        s = s.replacingOccurrences(of: "/", with: "_")
+        s = s.replacingOccurrences(of: ":", with: "_")
+
+        if s.count <= 64 { return s }
+        return String(s.prefix(64))
+    }
+
+    private static func debugUIKitOrientationLabel(_ orientation: UIImage.Orientation) -> String {
+        switch orientation {
+        case .up: return "up(0)"
+        case .down: return "down(1)"
+        case .left: return "left(2)"
+        case .right: return "right(3)"
+        case .upMirrored: return "upMirrored(4)"
+        case .downMirrored: return "downMirrored(5)"
+        case .leftMirrored: return "leftMirrored(6)"
+        case .rightMirrored: return "rightMirrored(7)"
+        @unknown default: return "unknown(\(orientation.rawValue))"
+        }
+    }
+
+    private static func debugUIKitOrientationLabel(_ orientation: UIImage.Orientation?) -> String {
+        guard let orientation else { return "nil" }
+        return debugUIKitOrientationLabel(orientation)
+    }
+
+    private static func debugUIKitOrientationLabel(for data: Data) async -> String {
+        await Task.detached(priority: .utility) {
+            let o = UIImage(data: data)?.imageOrientation
+            return debugUIKitOrientationLabel(o)
+        }.value
+    }
+    #endif
 }
