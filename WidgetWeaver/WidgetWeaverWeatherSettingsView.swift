@@ -11,6 +11,7 @@ import CoreLocation
 import WidgetKit
 import UIKit
 
+@MainActor
 struct WidgetWeaverWeatherSettingsView: View {
 
     var onClose: (() -> Void)? = nil
@@ -19,7 +20,9 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     @State private var query: String = ""
     @State private var isWorking: Bool = false
-    @State private var statusText: String? = nil
+
+    @State private var toastItem: ToastItem? = nil
+    @State private var toastDismissTask: Task<Void, Never>? = nil
 
     @State private var geocodeCandidates: [WidgetWeaverWeatherGeocodeCandidate] = []
     @State private var geocodeCandidatesQuery: String = ""
@@ -48,9 +51,28 @@ struct WidgetWeaverWeatherSettingsView: View {
             autoRefreshSection
             attributionSection
             diagnosticsSection
-            statusSection
         }
         .navigationTitle("Weather")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    Task { await updateNow(force: true) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isWorking || savedLocation == nil)
+                .accessibilityLabel("Update now")
+
+                if let onClose {
+                    Button("Done") { onClose() }
+                }
+
+            }
+        }
+        .refreshable {
+            await refreshFromPullToRefresh()
+        }
+        .overlay(alignment: .bottom) { toastOverlay }
         .overlay { workingOverlay }
         .onAppear {
             refreshLocalState()
@@ -94,19 +116,11 @@ struct WidgetWeaverWeatherSettingsView: View {
     private var headerSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Weather")
-                        .font(.headline)
-
-                    Spacer()
-
-                    if let onClose {
-                        Button("Done") { onClose() }
-                            .font(.headline)
-                    }
-                }
-
                 Text("Used by the Weather layout template and the __weather_* built-in variables.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Text("Tip: pull down to refresh once a location is saved.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -164,6 +178,11 @@ struct WidgetWeaverWeatherSettingsView: View {
                 }
 
                 TextField("City, town, postcode…", text: $query)
+                    .submitLabel(.search)
+                    .onSubmit {
+                        guard !isWorking else { return }
+                        Task { await geocodeAndSave() }
+                    }
                     .textInputAutocapitalization(.words)
                     .disableAutocorrection(true)
 
@@ -344,13 +363,13 @@ struct WidgetWeaverWeatherSettingsView: View {
     }
 
     @ViewBuilder
-    private var statusSection: some View {
-        if let statusText {
-            Section {
-                Text(statusText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+    private var toastOverlay: some View {
+        if let toastItem {
+            WidgetWeaverToastView(text: toastItem.text, systemImage: toastItem.systemImage)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(false)
         }
     }
 
@@ -380,6 +399,17 @@ struct WidgetWeaverWeatherSettingsView: View {
         lastSuccessfulRefreshAt = store.loadLastSuccessfulRefreshAt()
     }
 
+    private func refreshFromPullToRefresh() async {
+        guard !isWorking else { return }
+
+        guard savedLocation != nil else {
+            showToast("Set a location first.", systemImage: "location.magnifyingglass", durationNanoseconds: 2_200_000_000)
+            return
+        }
+
+        await updateNow(force: true)
+    }
+
     private func reloadWidgets() {
         AppGroup.userDefaults.synchronize()
 
@@ -389,6 +419,53 @@ struct WidgetWeaverWeatherSettingsView: View {
 
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
+            }
+        }
+    }
+
+    private struct ToastItem: Identifiable, Hashable {
+        let id: UUID
+        let text: String
+        let systemImage: String
+        let durationNanoseconds: UInt64
+
+        init(
+            id: UUID = UUID(),
+            text: String,
+            systemImage: String,
+            durationNanoseconds: UInt64
+        ) {
+            self.id = id
+            self.text = text
+            self.systemImage = systemImage
+            self.durationNanoseconds = durationNanoseconds
+        }
+    }
+
+    private func clearToast() {
+        toastDismissTask?.cancel()
+        withAnimation(.spring(duration: 0.28)) {
+            toastItem = nil
+        }
+    }
+
+    private func showToast(
+        _ text: String,
+        systemImage: String,
+        durationNanoseconds: UInt64
+    ) {
+        toastDismissTask?.cancel()
+
+        let item = ToastItem(text: text, systemImage: systemImage, durationNanoseconds: durationNanoseconds)
+        withAnimation(.spring(duration: 0.35)) {
+            toastItem = item
+        }
+
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: durationNanoseconds)
+            guard toastItem?.id == item.id else { return }
+            withAnimation(.spring(duration: 0.35)) {
+                toastItem = nil
             }
         }
     }
@@ -423,7 +500,7 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
 
         UIPasteboard.general.string = lines.joined(separator: "\n")
-        statusText = "Copied \(lines.count) variables."
+        showToast("Copied \(lines.count) variables.", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
     }
 
     private func weatherVariableRow(key: String, value: String) -> some View {
@@ -447,7 +524,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
             Button {
                 UIPasteboard.general.string = snippet
-                statusText = "Copied \(snippet)."
+                showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
             } label: {
                 Image(systemName: "doc.on.doc")
                     .foregroundStyle(.secondary)
@@ -458,22 +535,22 @@ struct WidgetWeaverWeatherSettingsView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             UIPasteboard.general.string = snippet
-            statusText = "Copied \(snippet)."
+            showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
         }
         .contextMenu {
             Button("Copy template") {
                 UIPasteboard.general.string = snippet
-                statusText = "Copied \(snippet)."
+                showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
             }
 
             Button("Copy value") {
                 UIPasteboard.general.string = displayValue
-                statusText = "Copied value for \(key)."
+                showToast("Copied value for \(key).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
             }
 
             Button("Copy key") {
                 UIPasteboard.general.string = key
-                statusText = "Copied \(key)."
+                showToast("Copied \(key).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
             }
         }
     }
@@ -489,7 +566,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     private func useCurrentLocation() async {
         isWorking = true
-        statusText = nil
+        clearToast()
         defer {
             isWorking = false
             refreshLocationAuthStatus()
@@ -501,11 +578,11 @@ struct WidgetWeaverWeatherSettingsView: View {
         guard status == .authorizedWhenInUse || status == .authorizedAlways else {
             switch status {
             case .denied, .restricted:
-                statusText = "Location permission is disabled. Enable it in Settings to use Current Location."
+                showToast("Location permission is disabled. Enable it in Settings to use Current Location.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
             case .notDetermined:
-                statusText = "Location permission was not granted."
+                showToast("Location permission was not granted.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
             default:
-                statusText = "Location permission is unavailable (status: \(status.rawValue))."
+                showToast("Location permission is unavailable (status: \(status.rawValue)).", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
             }
             return
         }
@@ -527,7 +604,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
             await updateNow(force: true)
         } catch {
-            statusText = "Location failed: \(String(describing: error))"
+            showToast("Location failed: \(String(describing: error))", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
         }
     }
 
@@ -562,13 +639,13 @@ struct WidgetWeaverWeatherSettingsView: View {
         guard !trimmed.isEmpty else { return }
 
         isWorking = true
-        statusText = nil
+        clearToast()
         defer { isWorking = false }
 
         do {
             let candidates = try await geocode(trimmed)
             guard let first = candidates.first else {
-                statusText = "No results found."
+                showToast("No results found.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
                 return
             }
 
@@ -580,7 +657,7 @@ struct WidgetWeaverWeatherSettingsView: View {
                 geocodeCandidatesPresented = true
             }
         } catch {
-            statusText = "Geocoding failed: \(String(describing: error))"
+            showToast("Geocoding failed: \(String(describing: error))", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
         }
     }
 
@@ -607,7 +684,7 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     private func updateNow(force: Bool) async {
         isWorking = true
-        statusText = nil
+        clearToast()
         defer { isWorking = false }
 
         let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: force)
@@ -623,9 +700,9 @@ struct WidgetWeaverWeatherSettingsView: View {
         reloadWidgets()
 
         if let err = result.errorDescription {
-            statusText = "Update finished with an issue: \(err)"
+            showToast("Update finished with an issue: \(err)", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
         } else {
-            statusText = "Updated."
+            showToast("Updated.", systemImage: "checkmark.circle.fill", durationNanoseconds: 1_400_000_000)
         }
     }
 
@@ -682,87 +759,5 @@ struct WidgetWeaverWeatherSettingsView: View {
             var seen = Set<String>()
             return out.filter { seen.insert($0.id).inserted }
         }.value
-    }
-}
-
-private struct WidgetWeaverWeatherGeocodeCandidate: Identifiable, Hashable, Sendable {
-    let id: String
-    let title: String
-    let subtitle: String?
-    let latitude: Double
-    let longitude: Double
-
-    init(
-        id: String? = nil,
-        title: String,
-        subtitle: String?,
-        latitude: Double,
-        longitude: Double
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.latitude = latitude
-        self.longitude = longitude
-
-        let roundedLat = String(format: "%.5f", latitude)
-        let roundedLon = String(format: "%.5f", longitude)
-        let rawID = id ?? "\(roundedLat),\(roundedLon)|\(title)|\(subtitle ?? "")"
-        self.id = rawID
-    }
-
-    var coordinateText: String {
-        "Lat \(String(format: "%.4f", latitude)), Lon \(String(format: "%.4f", longitude))"
-    }
-}
-
-private struct WidgetWeaverWeatherLocationSearchResultsView: View {
-    let query: String
-    let candidates: [WidgetWeaverWeatherGeocodeCandidate]
-    let onSelect: (WidgetWeaverWeatherGeocodeCandidate) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        List {
-            Section {
-                Text("Choose the best match for “\(query)”.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Results (\(candidates.count))") {
-                ForEach(candidates) { candidate in
-                    Button {
-                        onSelect(candidate)
-                        dismiss()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(candidate.title)
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-
-                            if let subtitle = candidate.subtitle, !subtitle.isEmpty {
-                                Text(subtitle)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-
-                            Text(candidate.coordinateText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Choose location")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Cancel") { dismiss() }
-            }
-        }
     }
 }
