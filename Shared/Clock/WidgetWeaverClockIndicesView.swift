@@ -49,7 +49,7 @@ struct WidgetWeaverClockHourIndicesView: View {
         .frame(width: dialDiameter, height: dialDiameter)
 
         ZStack {
-            ForEach(hourIndices, id: \.self) { i in
+            SwiftUI.ForEach(hourIndices, id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
                 let corner = width * 0.18
 
@@ -110,7 +110,7 @@ struct WidgetWeaverClockCardinalPipsView: View {
         let shape = RoundedRectangle(cornerRadius: side * 0.32, style: .continuous)
 
         ZStack {
-            ForEach([3, 6, 9], id: \.self) { i in
+            SwiftUI.ForEach([3, 6, 9], id: \.self) { i in
                 let degrees = (Double(i) / 12.0) * 360.0
 
                 shape
@@ -139,40 +139,33 @@ private struct WidgetWeaverClockNumeralGlyphView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+        let t = WidgetWeaverClockFaceTokens.numerals
 
         let face = Text(text)
             .font(.system(size: fontSize, weight: .bold, design: .default))
             .fixedSize()
 
-        let fill = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: palette.numeralLight, location: 0.00),
-                .init(color: palette.numeralMid, location: 0.56),
-                .init(color: palette.numeralDark, location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        let fill = t.fillGradient(palette: palette)
 
         return ZStack {
             // Small depth shadow so it reads embossed, not floating.
             face
-                .foregroundStyle(palette.numeralDark.opacity(0.42))
-                .offset(x: px * 1.2, y: px * 1.4)
-                .blur(radius: max(0, px * 0.30))
+                .foregroundStyle(palette.numeralDark.opacity(t.depthShadowOpacity))
+                .offset(x: px * t.depthShadowOffsetXInPx, y: px * t.depthShadowOffsetYInPx)
+                .blur(radius: max(0, px * t.depthShadowBlurInPx))
                 .blendMode(.multiply)
 
             // Inner bevel: highlight + shade.
             face
                 .foregroundStyle(palette.numeralInnerHighlight)
-                .offset(x: -px * 0.9, y: -px * 1.0)
-                .blur(radius: max(0, px * 0.24))
+                .offset(x: px * t.innerHighlightOffsetXInPx, y: px * t.innerHighlightOffsetYInPx)
+                .blur(radius: max(0, px * t.innerHighlightBlurInPx))
                 .blendMode(.screen)
 
             face
                 .foregroundStyle(palette.numeralInnerShade)
-                .offset(x: px * 0.9, y: px * 1.0)
-                .blur(radius: max(0, px * 0.26))
+                .offset(x: px * t.innerShadeOffsetXInPx, y: px * t.innerShadeOffsetYInPx)
+                .blur(radius: max(0, px * t.innerShadeBlurInPx))
                 .blendMode(.multiply)
 
             // Main metal fill.
@@ -181,9 +174,9 @@ private struct WidgetWeaverClockNumeralGlyphView: View {
         }
         .shadow(
             color: palette.numeralShadow,
-            radius: max(px, fontSize * 0.045),
+            radius: max(px, fontSize * t.outerShadowRadiusFactor),
             x: 0,
-            y: max(px, fontSize * 0.020)
+            y: max(px, fontSize * t.outerShadowYOffsetFactor)
         )
     }
 }
@@ -237,7 +230,7 @@ struct WidgetWeaverClockTwelveNumeralsView: View {
 
     var body: some View {
         ZStack {
-            ForEach(1..<13, id: \.self) { numeral in
+            SwiftUI.ForEach(Array(1...12), id: \.self) { numeral in
                 let p = offset(for: numeral)
 
                 WidgetWeaverClockNumeralGlyphView(

@@ -79,9 +79,9 @@ struct WidgetWeaverClockBezelView: View {
                         gradient: Gradient(stops: [
                             .init(color: palette.bezelBright.opacity(0.00), location: 0.000),
                             .init(color: palette.bezelBright.opacity(0.00), location: 0.820),
-                            .init(color: palette.bezelBright.opacity(0.72), location: 0.880),
-                            .init(color: palette.bezelBright.opacity(0.90), location: 0.930),
-                            .init(color: palette.bezelBright.opacity(0.72), location: 0.980),
+                            .init(color: palette.bezelBright.opacity(WidgetWeaverClockFaceTokens.ceramicBezel.outerRimHighlightMidOpacity), location: 0.880),
+                            .init(color: palette.bezelBright.opacity(WidgetWeaverClockFaceTokens.ceramicBezel.outerRimHighlightPeakOpacity), location: 0.930),
+                            .init(color: palette.bezelBright.opacity(WidgetWeaverClockFaceTokens.ceramicBezel.outerRimHighlightMidOpacity), location: 0.980),
                             .init(color: palette.bezelBright.opacity(0.00), location: 1.000)
                         ]),
                         center: .center,
@@ -129,7 +129,7 @@ struct WidgetWeaverClockBezelView: View {
                 )
         }
         // Subtle outer drop shadow (tight).
-        .shadow(color: Color.black.opacity(0.30), radius: px * 1.4, x: 0, y: px * 1.0)
+        .shadow(color: Color.black.opacity(WidgetWeaverClockFaceTokens.ceramicBezel.outerShadowOpacity), radius: px * WidgetWeaverClockFaceTokens.ceramicBezel.outerShadowRadiusInPx, x: 0, y: px * WidgetWeaverClockFaceTokens.ceramicBezel.outerShadowYOffsetInPx)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

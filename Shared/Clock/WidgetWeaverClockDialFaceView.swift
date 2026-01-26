@@ -65,7 +65,7 @@ struct WidgetWeaverClockDialFaceView: View {
                     .frame(width: radius * 2.15, height: radius * 1.70)
                     .offset(x: -radius * 0.20, y: -radius * 0.24)
                     .blendMode(.screen)
-                    .opacity(0.60)
+                    .opacity(WidgetWeaverClockFaceTokens.dial.domeHighlightOpacity)
                     .mask(Circle())
             )
             // Ring D: tight inner occlusion separator (crisp, no halo).
@@ -74,8 +74,8 @@ struct WidgetWeaverClockDialFaceView: View {
                     .strokeBorder(
                         LinearGradient(
                             gradient: Gradient(stops: [
-                                .init(color: palette.separatorRing.opacity(0.58), location: 0.0),
-                                .init(color: palette.separatorRing.opacity(0.92), location: 1.0)
+                                .init(color: palette.separatorRing.opacity(WidgetWeaverClockFaceTokens.dial.occlusionRingStartOpacity), location: 0.0),
+                                .init(color: palette.separatorRing.opacity(WidgetWeaverClockFaceTokens.dial.occlusionRingEndOpacity), location: 1.0)
                             ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing

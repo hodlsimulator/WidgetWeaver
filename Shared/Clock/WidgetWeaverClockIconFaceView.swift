@@ -164,6 +164,7 @@ struct WidgetWeaverClockIconFaceView: View {
 
                     WidgetWeaverClockMinuteTickMarksView(
                         palette: palette,
+                        dialDiameter: dialDiameter,
                         radius: tickRadius,
                         majorLength: majorTickLength,
                         minorLength: minorTickLength,
@@ -272,7 +273,7 @@ private struct WidgetWeaverClockIconSecondHandView: View {
 
         ZStack {
             Rectangle()
-                .fill(colour.opacity(0.92))
+                .fill(colour.opacity(WidgetWeaverClockFaceTokens.iconSecondHand.stemOpacity))
                 .frame(width: width, height: length)
                 .offset(y: -length / 2.0)
 
@@ -283,7 +284,7 @@ private struct WidgetWeaverClockIconSecondHandView: View {
         }
         .overlay(
             Rectangle()
-                .strokeBorder(Color.black.opacity(0.12), lineWidth: max(px, width * 0.14))
+                .strokeBorder(Color.black.opacity(WidgetWeaverClockFaceTokens.iconSecondHand.tipStrokeOpacity), lineWidth: max(px, width * WidgetWeaverClockFaceTokens.iconSecondHand.tipStrokeWidthFactor))
                 .frame(width: tipSide, height: tipSide)
                 .offset(y: -length)
         )
@@ -309,7 +310,7 @@ private struct WidgetWeaverClockIconFaceDialFaceView: View {
             .fill(palette.iconDialFill)
             .overlay(
                 Circle()
-                    .strokeBorder(palette.separatorRing.opacity(0.22), lineWidth: max(px, occlusionWidth * 0.25))
+                    .strokeBorder(palette.separatorRing.opacity(WidgetWeaverClockFaceTokens.iconDial.separatorStrokeOpacity), lineWidth: max(px, occlusionWidth * WidgetWeaverClockFaceTokens.iconDial.separatorStrokeWidthFactor))
             )
     }
 }
@@ -330,9 +331,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
         let ringBInner = max(1, outerA - ((ringA + ringB) * 2.0))
 
         // Slightly “cooler” metal range than the shipped face.
-        let metalHi = WWClock.colour(0xF6FAFF, alpha: 1.0)
-        let metalMid = WWClock.colour(0xD6DEEA, alpha: 1.0)
-        let metalLo = WWClock.colour(0x9AA8BA, alpha: 1.0)
+        let metalHi = WidgetWeaverClockFaceTokens.iconBezel.metalHi
+        let metalMid = WidgetWeaverClockFaceTokens.iconBezel.metalMid
+        let metalLo = WidgetWeaverClockFaceTokens.iconBezel.metalLo
 
         let ringAStroke = LinearGradient(
             gradient: Gradient(stops: [
@@ -346,9 +347,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
 
         let ringAInnerStroke = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.18), location: 0.00),
+                .init(color: Color.white.opacity(WidgetWeaverClockFaceTokens.iconBezel.rimInnerTopOpacity), location: 0.00),
                 .init(color: Color.white.opacity(0.00), location: 0.62),
-                .init(color: Color.black.opacity(0.18), location: 1.00)
+                .init(color: Color.black.opacity(WidgetWeaverClockFaceTokens.iconBezel.rimInnerBottomOpacity), location: 1.00)
             ]),
             startPoint: .top,
             endPoint: .bottom
@@ -357,9 +358,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
         // Deep matte ring B.
         let ringBFill = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: WWClock.colour(0x0A0E14, alpha: 1.0), location: 0.00),
-                .init(color: WWClock.colour(0x0B0F15, alpha: 1.0), location: 0.60),
-                .init(color: WWClock.colour(0x05080C, alpha: 1.0), location: 1.00)
+                .init(color: WidgetWeaverClockFaceTokens.iconBezel.matteRingTop, location: 0.00),
+                .init(color: WidgetWeaverClockFaceTokens.iconBezel.matteRingMid, location: 0.60),
+                .init(color: WidgetWeaverClockFaceTokens.iconBezel.matteRingBottom, location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -368,9 +369,9 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
         // Thin inner metal ring C.
         let ringCStroke = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.22), location: 0.00),
-                .init(color: Color.white.opacity(0.06), location: 0.50),
-                .init(color: Color.black.opacity(0.22), location: 1.00)
+                .init(color: Color.white.opacity(WidgetWeaverClockFaceTokens.iconBezel.innerMetalTopOpacity), location: 0.00),
+                .init(color: Color.white.opacity(WidgetWeaverClockFaceTokens.iconBezel.innerMetalMidOpacity), location: 0.50),
+                .init(color: Color.black.opacity(WidgetWeaverClockFaceTokens.iconBezel.innerMetalBottomOpacity), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -385,7 +386,7 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
             Circle()
                 .strokeBorder(ringAStroke, lineWidth: ringA)
                 .frame(width: outerA, height: outerA)
-                .shadow(color: Color.black.opacity(0.20), radius: ringAShadow, x: 0, y: ringAShadow * 0.45)
+                .shadow(color: Color.black.opacity(WidgetWeaverClockFaceTokens.iconBezel.rimShadowOpacity), radius: ringAShadow, x: 0, y: ringAShadow * 0.45)
 
             // A) Inner rim definition stroke.
             Circle()
@@ -397,31 +398,31 @@ private struct WidgetWeaverClockIconFaceBezelView: View {
             Circle()
                 .strokeBorder(ringBFill, lineWidth: ringB)
                 .frame(width: ringAInner, height: ringAInner)
-                .shadow(color: Color.black.opacity(0.32), radius: ringBShadow, x: 0, y: ringBShadow * 0.40)
+                .shadow(color: Color.black.opacity(WidgetWeaverClockFaceTokens.iconBezel.matteRingShadowOpacity), radius: ringBShadow, x: 0, y: ringBShadow * 0.40)
 
             // C) Inner metal ring right before the dial.
             Circle()
                 .strokeBorder(ringCStroke, lineWidth: ringC)
                 .frame(width: ringBInner, height: ringBInner)
-                .shadow(color: Color.black.opacity(0.22), radius: ringCShadow, x: 0, y: ringCShadow * 0.38)
+                .shadow(color: Color.black.opacity(WidgetWeaverClockFaceTokens.iconBezel.innerMetalShadowOpacity), radius: ringCShadow, x: 0, y: ringCShadow * 0.38)
 
             // Outer gloss (subtle).
             Circle()
-                .trim(from: 0.06, to: 0.42)
+                .trim(from: WidgetWeaverClockFaceTokens.iconBezel.glossTrimFrom, to: WidgetWeaverClockFaceTokens.iconBezel.glossTrimTo)
                 .stroke(
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: Color.white.opacity(0.00), location: 0.00),
-                            .init(color: Color.white.opacity(0.08), location: 0.55),
-                            .init(color: Color.white.opacity(0.16), location: 1.00)
+                            .init(color: Color.white.opacity(WidgetWeaverClockFaceTokens.iconBezel.glossMidOpacity), location: 0.55),
+                            .init(color: Color.white.opacity(WidgetWeaverClockFaceTokens.iconBezel.glossPeakOpacity), location: 1.00)
                         ]),
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
-                    style: StrokeStyle(lineWidth: max(px, ringA * 0.26), lineCap: .round)
+                    style: StrokeStyle(lineWidth: max(px, ringA * WidgetWeaverClockFaceTokens.iconBezel.glossLineWidthFactor), lineCap: .round)
                 )
-                .rotationEffect(.degrees(-14))
-                .blur(radius: max(px, ringA * 0.12))
+                .rotationEffect(.degrees(WidgetWeaverClockFaceTokens.iconBezel.glossRotationDegrees))
+                .blur(radius: max(px, ringA * WidgetWeaverClockFaceTokens.iconBezel.glossBlurFactor))
                 .blendMode(.screen)
                 .frame(width: outerA, height: outerA)
         }

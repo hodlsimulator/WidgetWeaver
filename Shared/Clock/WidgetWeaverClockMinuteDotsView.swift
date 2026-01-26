@@ -46,6 +46,8 @@ struct WidgetWeaverClockMinuteDotsView: View {
 /// - Tick bodies extend inwards by their respective lengths.
 struct WidgetWeaverClockMinuteTickMarksView: View {
     let palette: WidgetWeaverClockPalette
+    let dialDiameter: CGFloat
+
     let radius: CGFloat
 
     let majorLength: CGFloat
@@ -58,9 +60,10 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+        let t = WidgetWeaverClockFaceTokens.tickMarks
 
-        let majorFill = palette.minuteDot.opacity(0.82)
-        let minorFill = palette.minuteDot.opacity(0.62)
+        let majorFill = palette.minuteDot.opacity(t.majorFillOpacity)
+        let minorFill = palette.minuteDot.opacity(t.minorOpacity(dialDiameter: dialDiameter))
 
         let majorShadowRadius = max(px, majorWidth * 0.40)
         let majorShadowY = max(px, majorWidth * 0.18)
@@ -81,7 +84,7 @@ struct WidgetWeaverClockMinuteTickMarksView: View {
                     .fill(isMajor ? majorFill : minorFill)
                     .frame(width: width, height: length)
                     .shadow(
-                        color: Color.black.opacity(isMajor ? 0.18 : 0.14),
+                        color: Color.black.opacity(isMajor ? t.majorShadowOpacity : t.minorShadowOpacity),
                         radius: isMajor ? majorShadowRadius : minorShadowRadius,
                         x: 0,
                         y: isMajor ? majorShadowY : minorShadowY
