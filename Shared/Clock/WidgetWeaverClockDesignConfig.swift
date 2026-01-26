@@ -99,6 +99,32 @@ public struct WidgetWeaverClockDesignConfig: Codable, Hashable, Sendable {
                     c.iconSecondHandColourToken = nil
                 }
 
+
+        // Step 5B: Constrain seconds-hand colours to curated matching sets (Icon face only).
+        if WidgetWeaverClockFaceToken.canonical(from: c.face) == .icon {
+            let dialToken = WidgetWeaverClockIconDialColourToken.effectiveToken(
+                themeRaw: c.theme,
+                overrideRaw: c.iconDialColourToken
+            )
+
+            let compatibility = dialToken.secondHandCompatibility
+
+            let currentToken: WidgetWeaverClockSecondHandColourToken = {
+                if let token = WidgetWeaverClockSecondHandColourToken.canonical(from: c.iconSecondHandColourToken) {
+                    return token
+                }
+                return .red
+            }()
+
+            if !compatibility.allowed.contains(currentToken) {
+                let recommended = compatibility.recommended
+                c.iconSecondHandColourToken = (recommended == .red) ? nil : recommended.rawValue
+            } else if currentToken == .red {
+                // Keep "red" represented as the default (nil) so selection stays stable in the editor.
+                c.iconSecondHandColourToken = nil
+            }
+        }
+
         return c
     }
 

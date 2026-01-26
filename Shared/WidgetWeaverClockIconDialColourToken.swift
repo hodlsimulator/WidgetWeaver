@@ -88,3 +88,90 @@ public enum WidgetWeaverClockIconDialColourToken: String, CaseIterable, Codable,
         Self.allCases.sorted { $0.pickerSortIndex < $1.pickerSortIndex }
     }
 }
+
+// MARK: - Icon seconds-hand compatibility (curated)
+
+public extension WidgetWeaverClockIconDialColourToken {
+
+    /// Curated compatibility constraints for pairing a seconds-hand colour with an Icon dial family.
+    ///
+    /// These constraints intentionally limit options to avoid clashing combinations.
+    struct SecondHandCompatibility: Hashable, Sendable {
+        public let allowed: Set<WidgetWeaverClockSecondHandColourToken>
+        public let recommended: WidgetWeaverClockSecondHandColourToken
+
+        public init(
+            allowed: Set<WidgetWeaverClockSecondHandColourToken>,
+            recommended: WidgetWeaverClockSecondHandColourToken
+        ) {
+            self.allowed = allowed
+            self.recommended = recommended
+        }
+    }
+
+    /// Returns the effective dial family used for Icon compatibility:
+    /// - `overrideRaw` if present and recognised
+    /// - otherwise the current theme (scheme) when it matches a dial family
+    /// - otherwise `.classic`
+    static func effectiveToken(
+        themeRaw: String,
+        overrideRaw: String?
+    ) -> WidgetWeaverClockIconDialColourToken {
+        if let override = WidgetWeaverClockIconDialColourToken.canonical(from: overrideRaw) {
+            return override
+        }
+
+        if let theme = WidgetWeaverClockIconDialColourToken.canonical(from: themeRaw) {
+            return theme
+        }
+
+        return .classic
+    }
+
+    /// Compatibility rule for the dial family.
+    var secondHandCompatibility: SecondHandCompatibility {
+        switch self {
+        case .classic:
+            return SecondHandCompatibility(
+                allowed: [.red, .orange, .ocean, .graphite, .white],
+                recommended: .red
+            )
+
+        case .ocean:
+            return SecondHandCompatibility(
+                allowed: [.red, .ocean, .orange, .graphite, .white],
+                recommended: .ocean
+            )
+
+        case .mint:
+            return SecondHandCompatibility(
+                allowed: [.red, .mint, .orange, .graphite, .white],
+                recommended: .mint
+            )
+
+        case .orchid:
+            return SecondHandCompatibility(
+                allowed: [.red, .orchid, .sunset, .graphite, .white],
+                recommended: .orchid
+            )
+
+        case .sunset:
+            return SecondHandCompatibility(
+                allowed: [.red, .sunset, .orchid, .graphite, .white],
+                recommended: .sunset
+            )
+
+        case .ember:
+            return SecondHandCompatibility(
+                allowed: [.red, .orange, .sunset, .graphite, .white],
+                recommended: .orange
+            )
+
+        case .graphite:
+            return SecondHandCompatibility(
+                allowed: [.red, .graphite, .orange, .ocean, .white],
+                recommended: .graphite
+            )
+        }
+    }
+}

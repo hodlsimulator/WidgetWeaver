@@ -80,12 +80,23 @@ struct WidgetWeaverClockIconSecondHandColourPicker: View {
     }
 
     private var options: [Option] {
-        var out: [Option] = [
-            Option(id: "default", title: "Default", tokenRaw: nil)
-        ]
+        let dialToken = WidgetWeaverClockIconDialColourToken.effectiveToken(
+            themeRaw: clockThemeRaw,
+            overrideRaw: clockIconDialColourTokenRaw
+        )
+
+        let allowed = dialToken.secondHandCompatibility.allowed
+
+        var out: [Option] = []
+
+        if allowed.contains(.red) {
+            out.append(Option(id: "default", title: "Default", tokenRaw: nil))
+        }
 
         out.append(contentsOf: WidgetWeaverClockSecondHandColourToken.orderedForPicker
-            .filter { $0 != .red }
+            .filter { token in
+                token != .red && allowed.contains(token)
+            }
             .map { token in
                 Option(id: token.rawValue, title: token.displayName, tokenRaw: token.rawValue)
             }

@@ -86,4 +86,31 @@ struct WidgetWeaverDesignExchangeCodecTests {
         #expect(payload.specs.first?.id == spec.id)
         #expect(payload.specs.first?.name == spec.name)
     }
+
+
+    @Test func clockConfig_normalised_constrainsSecondHandToMatchingSets() throws {
+        let config = WidgetWeaverClockDesignConfig(
+            theme: "classic",
+            face: WidgetWeaverClockFaceToken.icon.rawValue,
+            iconDialColourToken: WidgetWeaverClockIconDialColourToken.mint.rawValue,
+            iconSecondHandColourToken: WidgetWeaverClockSecondHandColourToken.ocean.rawValue
+        )
+
+        let normalised = config.normalised()
+
+        #expect(normalised.iconSecondHandColourToken == WidgetWeaverClockSecondHandColourToken.mint.rawValue)
+    }
+
+    @Test func clockConfig_normalised_collapsesExplicitRedOverrideToDefault() throws {
+        let config = WidgetWeaverClockDesignConfig(
+            theme: "classic",
+            face: WidgetWeaverClockFaceToken.icon.rawValue,
+            iconDialColourToken: WidgetWeaverClockIconDialColourToken.classic.rawValue,
+            iconSecondHandColourToken: WidgetWeaverClockSecondHandColourToken.red.rawValue
+        )
+
+        let normalised = config.normalised()
+
+        #expect(normalised.iconSecondHandColourToken == nil)
+    }
 }
