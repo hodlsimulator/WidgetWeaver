@@ -326,7 +326,7 @@ private extension WidgetSpecAIService {
 
         let imageSummary: String = {
             guard let img = s.image else { return "none" }
-            return "present (fileName=\(img.fileName), mode=\(img.contentMode.rawValue), height=\(Int(img.height)), radius=\(Int(img.cornerRadius)))"
+            return "present (contentMode=\(img.contentMode.rawValue), height=\(Int(img.height)), cornerRadius=\(Int(img.cornerRadius)))"
         }()
 
         return """
