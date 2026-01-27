@@ -1,18 +1,16 @@
 # PHOTO WIDGET SUITE — UX ROADMAP (2026-01)
 
-Updated: 2026-01-26 (rev L)
+Updated: 2026-01-27 (rev R)
 
-## Delta since rev K (what changed)
+## Delta since rev Q (what changed)
 
-- Step 4.5.3 landed and verified: opaque JPEG writes now avoid alpha and encode via ImageIO with explicit orientation metadata == 1.
-  - Manual crop/straighten path: crops, straightens and saves successfully.
-  - Outcome: reduced decode/memory overhead for opaque JPEG outputs; eliminates reliance on UIKit jpegData for this path.
-- Orientation hotfix outcome unchanged: no upside-down images observed in regression runs (keep kill-switch plan as last-resort only).
-- Non-blocking simulator noise still observed (keep out of the roadmap unless it reproduces on device / release builds):
-  - CFPrefsPlistSource warnings for App Group domain
-  - repeated “XPC connection was invalidated”
-  - LaunchServices database mapping errors (-54)
-  - Swift concurrency warning: “unsafeForcedSync called from Swift Concurrent context.”
+- Step 2.1.4 Coverage audit is now DONE:
+  - No path found that persists raw PhotosPicker bytes without passing through the JPEG `.up` normaliser (orientation metadata == 1).
+  - Note (non-blocking): import of embedded image bytes in `.wwdesign` may warrant a later hardening micro-step if legacy payloads can carry non-`.up` orientation.
+- Step 7.1 “Memories: anti-repeat rotation” change-set is now READY (engine-only; no UI; still flagged via FeatureFlags.smartPhotoMemoriesEnabled):
+  - Requires local Build + Commit to mark fully DONE (operating rules).
+- No schema/spec changes.
+- No new UI surfaces.
 
 ## Target
 
@@ -22,13 +20,13 @@ Updated: 2026-01-26 (rev L)
 
 ## Operating rules (non-negotiable)
 
-- One modest change-set per step (or sub-step where explicitly split).
+- One modest change-set per step (or explicitly listed sub-step).
 - Build after every step/sub-step.
 - Commit after every successful build.
-- No broad refactors. Keep edits local and additive.
+- Keep edits local and additive; no broad refactors.
 - Any new/changed user-facing surface that could regress must be feature-flagged (UserDefaults boolean).
 - Prefer presets + editable controls over new templates (Explore should be curated, not exhaustive).
-- Avoid touching shared Smart Photos schema/types unless strictly necessary (prevents redeclaration/ambiguity and large error surfaces).
+- Avoid touching shared Smart Photos schema/types unless strictly necessary.
 
 ## Stage 2 steps
 
@@ -46,9 +44,9 @@ Updated: 2026-01-26 (rev L)
   - From Explore, create a photo-based widget from at least 3 EXIF-orientations:
     - camera portrait
     - camera landscape
-    - an older photo known to have non-.up EXIF orientation
+    - an older photo known to have non-`.up` EXIF orientation
   - Expected: preview + saved widget are not rotated/upside down.
-  - Status: PASS (simulator; repeat once on physical device before shipping).
+  - Status: PASS (simulator); TODO: repeat once on physical device before shipping.
 - Poster controls check:
   - On a device that has never run a DEBUG build, confirm Poster “Photo Essentials” controls appear for poster templates.
 
@@ -67,7 +65,7 @@ Commit:
 
 - Add a dedicated Photos hero entry that reads “choose a photo now, customise later”.
 - Provide 2–3 lightweight variants (not a long list).
-- Gate behind `FeatureFlags.photosExploreV2Enabled` (default off until stable).
+- Gate behind FeatureFlags.photosExploreV2Enabled (default off until stable).
 
 Touched file(s):
 - `FeatureFlags.swift`
@@ -78,217 +76,137 @@ Touched file(s):
 Commit:
 - `Explore: add Photos hero entry (flagged)`
 
-### Step 2.1 (HOTFIX): Explore template photo orientation normalisation (fix upside-down photos) — DONE (verified)
+### Step 2.1 (HOTFIX): Explore template photo orientation normalisation — DONE (verified)
 
-Goal:
-- Ensure any photo chosen during Explore template creation is persisted with pixels in `.up` orientation AND orientation metadata is 1, so downstream rendering/widgets cannot appear upside down.
+#### Goal
 
-Constraints:
-- Keep changes local to the “choose photo / create spec / write file” boundary.
-- Avoid schema changes.
-- No user-facing UI; DEBUG-only logs are allowed and must be throttled.
+- Ensure any photo chosen during Explore template creation is persisted with pixels in `.up` orientation AND orientation metadata is 1.
 
-Status summary (rev L):
+#### Status summary
+
 - Regression runs show no upside-down images.
-- Observed logs confirm:
-  - picker input may arrive with rotated EXIF orientation (e.g. 6)
-  - normaliser emits JPEG bytes with orientation==1 and “already rotated” pixel dimensions
-  - Smart Photo pipeline writes master/small/medium/large with orientation==1
+- Logs confirm picker input may arrive rotated; normaliser outputs JPEG bytes with orientation==1; Smart Photo outputs also orientation==1.
 
-Sub-steps (buildable micro-commits):
+#### Step 2.1.4 Coverage audit — DONE
 
-#### Step 2.1.1: Attempt A — renderer-based normalisation in AppGroup.writeUIImage — DONE (insufficient historically)
+- Confirm no path writes raw picked bytes without normalisation.
 
-- Status: landed previously; not sufficient alone.
+### Step 3: Photo Essentials editor controls (poster-only) — DONE (code + verified)
 
-#### Step 2.1.2: Instrumentation — confirm source orientation, pipeline path, and written-file orientation — DONE (DEBUG-only)
+- Expose the core axes in one place for template == `.poster`.
+- Gate behind FeatureFlags.posterSuiteEnabled and only for template == `.poster`.
 
-##### Step 2.1.2a: Log picker input + chosen pipeline path — DONE
+### Step 3.1: Poster Suite availability across installs/builds — DONE
 
-- DEBUG-only, throttled logs at the import boundary:
-  - picker load result type (Data-only vs file URL representation if available)
-  - input UTI (if determinable)
-  - input orientation metadata (`kCGImagePropertyOrientation`) and pixel dimensions
-  - UIKit decode orientation (`UIImage(data:).imageOrientation`) as secondary signal
-  - whether Smart Photo pipeline succeeded or legacy fallback was used
+- posterSuiteEnabled default set to ON (flag remains kill-switch).
+- Remove Aquarium/TestFlight one-time seeding and any call sites.
 
-Commit:
-- `Photos: log picker input orientation + import path (DEBUG)`
+### Step 4: Smart Photos UX hardening (flagged) — IN PROGRESS (split into buildable sub-steps)
 
-##### Step 2.1.2b: Log Smart Photo outputs after encode (master + small/medium/large) — DONE
+- Gate all Step 4 UX changes behind FeatureFlags.smartPhotosUXHardeningEnabled (default off).
+- Step 4.1 — DONE: flag
+- Step 4.2 — DONE (flagged): pipeline progress surface
+- Step 4.3 — DONE (flagged): preview strip missing-state hints
+- Step 4.4 — DONE (flagged): crop entry safety rails
+- Step 4.5 Heavy work reliability — IN PROGRESS
+  - Step 4.5.1 — DONE: serialise saliency Vision requests (+ extraction)
+  - Step 4.5.2 — DONE (flagged): progress surface + lock-scope fix
+  - Step 4.5.3 — DONE: write opaque JPEGs without alpha
+  - Step 4.5.4 — TODO (only if reproducible on device): concurrency warning audit
 
-- Logs show:
-  - input orientation + pixel dims at prepare
-  - written-file orientation + pixel dims for each output
+### Step 5: Memories engine (On this day/week) — ENGINE ONLY (flagged) — DONE (code landed; exercised via Step 6A/6B UI)
 
-Commit:
-- `Smart Photos: log encoded output orientation (DEBUG)`
-
-##### Step 2.1.2c: Log widget decode inputs (pre-decode metadata) for the resolved file — DEFERRED
-
-Reason:
-- issue no longer reproduces; keep as a ready-to-apply diagnostic step if any device-only repro appears.
-
-#### Step 2.1.3: Fix — enforce pixel + metadata normalisation for Smart Photo AND legacy writes — DONE
-
-- Fix A is sufficient per current evidence; Fix B/C not indicated.
-
-##### Step 2.1.3A: Fix A — prefer picker file representation and normalise bytes before any save — DONE
-
-- Picker import now normalises source into a JPEG with:
-  - pixels rotated to `.up`
-  - metadata orientation set to 1
-  - maxPixel sized for intended pipeline stage:
-    - Smart Photo source bytes normalised at ~3072 longest edge
-    - Legacy single-file normalised at ~1024 longest edge
-- Applied at the import boundary (before `SmartPhotoPipeline.prepare`).
-
-Commit:
-- `Photos: normalise picker bytes before Smart Photo prepare`
-
-##### Step 2.1.3B: Fix B — ImageIO-based JPEG encoding in Smart Photo pipeline (force orientation=1) — NOT REQUIRED
-
-- Not indicated by logs (Smart Photo outputs already show orientation == 1).
-
-##### Step 2.1.3C: Fix C — widget decode guardrail (kill-switch only; last resort) — NOT REQUIRED
-
-- Keep design on file for rapid response if a future device-only regression appears.
-
-#### Step 2.1.4: Coverage audit — ensure no path writes raw picked bytes without normalisation — TODO
-
-- Identify all entry points that can persist a picked photo:
-  - Explore → add template → auto-present picker
-  - Editor → Replace photo
-  - any “choose photo now” Explore flows
-- Ensure all of them route through the same normalised-write boundary.
-
-Commit:
-- `Photos: audit + route all picker writes through normaliser`
-
-#### Step 2.1.5: Repair guidance (no automatic migration) — NOT REQUIRED (for now)
-
-- Only add user-facing guidance if support load indicates confusion.
-
-Commit (only if copy lands):
-- `Photos: add note for orientation repair`
-
-### Step 3: Photo Essentials editor controls (poster-only, builds on existing Poster Suite work) — DONE (code + verified)
-
-- Expose the core axes in one place for template == `.poster`:
-  - Photo-only vs Caption
-  - Caption top vs bottom
-  - Scrim vs Glass
-  - Full-bleed vs Framed (Fill vs Fit)
-- Gate behind `FeatureFlags.posterSuiteEnabled` and only for template == `.poster`.
-
-Touched file(s):
-- `PosterSuiteStage1Controls.swift`
-- `ContentView+Sections.swift`
-
-Commit:
-- `Editor: add Photo Essentials controls (poster-only)`
-
-### Step 3.1: Poster Suite availability across installs/builds — DONE (decision + code)
-
-- Change: `posterSuiteEnabled` default set to ON (flag remains as a kill-switch).
-- Remove Aquarium/TestFlight one-time seeding and any call sites (eliminates iOS 18 receipt API warning and cross-device inconsistencies).
-- Verify controls remain context-aware via template == `.poster` gating.
-
-Commits:
-- `Flags: default Poster Suite on`
-- `App: remove Aquarium poster flag seeding`
-
-### Step 4: Smart Photos UX hardening (no new capability; reliability + clarity) — IN PROGRESS (split into buildable sub-steps)
-
-Goal:
-- Improve half-state messaging, stabilise preview strip + crop entry points, ensure heavy work stays off the main thread, and make progress obvious.
-- Gate all Step 4 UX changes behind `FeatureFlags.smartPhotosUXHardeningEnabled` (default off).
-
-#### Step 4.1 — DONE
-
-- `Smart Photos: add UX hardening flag`
-
-#### Step 4.2 — DONE (flagged)
-
-- `Smart Photos: pipeline progress surface (flagged)`
-
-#### Step 4.3 — DONE (flagged)
-
-- `Smart Photos: preview strip missing-state hints (flagged)`
-
-#### Step 4.4 — DONE (flagged)
-
-- `Smart Photos: crop entry safety rails (flagged)`
-
-#### Step 4.5: Heavy work reliability — IN PROGRESS
-
-##### Step 4.5.1 — DONE
-
-- `Smart Photos: serialise saliency Vision requests`
-
-Extraction (no functional change intended):
-- `SmartPhotoPipeline+CropDecision.swift`
-
-##### Step 4.5.2 — DONE (flagged)
-
-- `Smart Photos: pipeline progress surface (flagged)`
-- `Smart Photos: fix pipeline lock scope`
-
-##### Step 4.5.3: Reduce decode/memory overhead when writing opaque JPEGs — DONE (verified)
-
-- Change: encode manual crop/straighten JPEGs via ImageIO and ensure alpha-free output (opaque draw when needed), with orientation metadata forced to 1.
-
-Commit:
-- `Smart Photos: write opaque JPEGs without alpha`
-
-##### Step 4.5.4: Concurrency warning audit (unsafeForcedSync from concurrent context) — TODO (only if reproducible on device)
-
-- Aim: remove or isolate any forced sync calls made from async contexts in DEBUG/preview flows.
-- Keep changes minimal and local; do not refactor broad pipeline ownership.
-
-### Step 5: Memories engine (On this day/week) — ENGINE ONLY (flagged) — TODO
-
-- Implement a manifest builder that:
-  - fetches candidate assets for the date window across years
-  - filters screenshots/low-res using existing heuristics
-  - scores/ranks (reuse `SmartPhotoQualityScorer` where possible)
-  - writes a `SmartPhotoShuffleManifest` and triggers initial prep
-- Encode mode via shuffle manifest sourceID prefix (e.g. `memories:onThisDay` / `memories:onThisWeek`); no spec schema changes.
-- Gate behind `FeatureFlags.smartPhotoMemoriesEnabled` (default off).
-
-Likely file(s):
-- `SmartPhotoAlbumShuffleControls+Engine.swift`
-- optional small new engine file
+- Manifest builder implemented via existing Smart Photos shuffle plumbing.
+- Gate behind FeatureFlags.smartPhotoMemoriesEnabled (default OFF).
+- Writes manifests with sourceID prefixes:
+  - memories:onThisDay
+  - memories:onThisWeek
+- Engine also prepares an initial batch so the manifest is immediately widget-renderable once surfaced by UI.
 
 Commit:
 - `Smart Photos: memories manifest builder (flagged)`
 
-### Step 6: Memories UI selector (flagged; guided and safe) — TODO
+### Step 6: Memories UI selector (flagged; guided and safe) — DONE (split into moderate sub-steps)
 
-- Add a simple “Source” selector inside existing Smart Photos controls:
+#### Scope guardrails (to prevent error storms)
+
+- Do not touch ContentView toolbar, Smart Photo section, or broader navigation/sheet plumbing.
+- Implement within the existing Album Shuffle control surface first.
+- No Smart Photos schema/spec changes.
+
+#### Step 6A (moderate): Add “Source” selector + Build/Refresh action inside Album Shuffle controls (flagged) — DONE (code + verified on device)
+
+- UI (Album Shuffle controls only): “Source” menu with:
   - Album Shuffle
   - On this day
   - On this week
-- Provide clear permission copy and deterministic empty state guidance.
-- Gate behind `FeatureFlags.smartPhotoMemoriesEnabled`.
+- Behaviour:
+  - Selecting a Memories mode swaps primary CTA to Build (or Refresh if already configured for that mode).
+  - Build/Refresh calls the Step 5 engine to write a shuffle manifest and prep an initial batch.
+  - Persist manifest filename onto the existing Smart Photo shuffle field (no schema change).
+- Empty state (minimal but deterministic):
+  - If no candidates: explain and suggest alternate mode or album.
+  - If Photos access off: explain and point to Settings.
+- Gate: FeatureFlags.smartPhotoMemoriesEnabled (default OFF)
+  - UserDefaults key: widgetweaver.feature.smartPhotos.memories.enabled
 
-Likely file(s):
+Touched file(s):
 - `SmartPhotoAlbumShuffleControls.swift`
-- possibly `ContentView+SectionAlbumShuffle.swift`
+- `SmartPhotoAlbumShuffleControls+Logic.swift`
+- `SmartPhotoShuffleSourceSelectorRow.swift`
+
+Commit (after successful build):
+- `Smart Photos: Memories source selector + build (flagged)`
+
+Acceptance:
+- Build passes (device).
+- Flag OFF: Album Shuffle UI/behaviour unchanged (no selector).
+- Flag ON: selector appears; Build produces a valid manifest and initial prepared entries; manifest filename persists via existing field.
+
+#### Step 6B (moderate): Copy + naming hardening + manifest-source inference (flagged) — DONE (code change-set complete; QA verify next)
+
+- Copy hardening:
+  - Add clearer guidance copy per mode:
+    - “On this day” vs “On this week” explanation, especially for sparse libraries.
+- Deterministic reopen behaviour:
+  - Selector selection is inferred from manifest.sourceID prefix:
+    - memories:onThisDay → On this day
+    - memories:onThisWeek → On this week
+    - otherwise → Album Shuffle
+  - Avoid confusing half-states by hydrating selection from the loaded manifest on each appearance/manifest change.
+  - If user selection differs from configured manifest, show “Currently configured …” hint.
+- Optional one-line editor header rename when flag is enabled:
+  - “Album Shuffle” → “Shuffle”
+- Disable consistency:
+  - Under the flag, disable messaging uses “Shuffle …” phrasing.
+- Gate: FeatureFlags.smartPhotoMemoriesEnabled.
+
+Touched file(s):
+- `SmartPhotoAlbumShuffleControls.swift`
+- `SmartPhotoAlbumShuffleControls+Logic.swift`
+- `ContentView+SectionAlbumShuffle.swift` (one-line header string, gated)
 
 Commit:
-- `Smart Photos: add Memories mode UI (flagged)`
+- `Smart Photos: Memories copy + source inference (flagged)`
 
-### Step 7: Competitive polish (one micro-upgrade per commit) — TODO
+Acceptance (run after build):
+- Reopen editor with an existing Memories manifest: selector reflects the correct mode.
+- No confusing half-states; guidance is deterministic.
+- Flag OFF: header remains “Album Shuffle”, and no other behaviour changes.
 
-- Anti-repeat rotation policy.
-- Optional “year” affordance implemented as a caption preset (not a new template).
-- Refresh cadence guardrails (regen at most daily/weekly; not on every open).
+### Step 7: Competitive polish (one micro-upgrade per commit) — IN PROGRESS
 
-Commits:
-- `Memories: anti-repeat rotation`
-- `Memories: optional year caption preset`
-- `Memories: refresh cadence guardrails`
+- Step 7.1 Anti-repeat rotation policy (engine-only; no UI) — READY (build + commit pending)
+  - Goal: reduce near-duplicate bursts and repeated events while keeping deterministic fallbacks for sparse libraries.
+  - Gate: FeatureFlags.smartPhotoMemoriesEnabled (no additional flag).
+  - Commit:
+    - `Memories: anti-repeat rotation`
+- Step 7.2 Optional “year” affordance implemented as a caption preset (not a new template) — TODO
+  - Commit:
+    - `Memories: optional year caption preset`
+- Step 7.3 Refresh cadence guardrails (regen at most daily/weekly; not on every open) — TODO
+  - Commit:
+    - `Memories: refresh cadence guardrails`
 
 ### Step 8: Ship decision (NO CODE) — TODO
 
@@ -310,4 +228,7 @@ Commits:
 - Poster controls:
   - Poster Photo Essentials controls show consistently across devices/builds (default-ON; still poster-template-only).
 - Memories:
+  - Engine builds deterministic shuffle manifest per mode/date window without schema changes.
+  - Step 6A yields immediately renderable entries and clear empty states within Album Shuffle controls.
+  - Step 6B ensures reopen behaviour is deterministic and copy is clearer per mode.
   - Curated (quality + variety), with respectful fallbacks.
