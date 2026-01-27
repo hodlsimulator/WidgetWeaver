@@ -150,11 +150,32 @@ extension ContentView {
     // MARK: - Status / Tools
 
     var statusSection: some View {
-        Section {
+        let isDefaultDesign: Bool = {
+            guard let defaultSpecID else { return false }
+            return selectedSpecID == defaultSpecID
+        }()
+
+        let hasChanges = hasUnsavedChanges
+
+        return Section {
             HStack {
                 Label("Preview size", systemImage: "rectangle.3.group")
                 Spacer()
                 Text(editingFamilyLabel)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Label("Default design", systemImage: "star")
+                Spacer()
+                Text(isDefaultDesign ? "Yes" : "No")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Label("Changes", systemImage: hasChanges ? "pencil.circle.fill" : "checkmark.circle")
+                Spacer()
+                Text(hasChanges ? "Unsaved" : "Saved")
                     .foregroundStyle(.secondary)
             }
 
@@ -166,6 +187,37 @@ extension ContentView {
                 Text("Not saved yet.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if let lastWidgetRefreshAt {
+                Text("Last widget refresh: \(lastWidgetRefreshAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if hasChanges {
+                ControlGroup {
+                    Button { saveSelected(makeDefault: false) } label: {
+                        Label("Save", systemImage: "tray.and.arrow.down")
+                    }
+
+                    if !isDefaultDesign {
+                        Button { saveSelected(makeDefault: true) } label: {
+                            Label("Save & Make Default", systemImage: "checkmark.circle.fill")
+                        }
+                    }
+                }
+                .controlSize(.small)
+
+            } else if !isDefaultDesign {
+                Button {
+                    store.setDefault(id: selectedSpecID)
+                    defaultSpecID = store.defaultSpecID()
+                    lastWidgetRefreshAt = Date()
+                    saveStatusMessage = "Made default.\nWidgets refreshed."
+                } label: {
+                    Label("Make This Design Default", systemImage: "star")
+                }
             }
 
             ControlGroup {
@@ -183,6 +235,13 @@ extension ContentView {
                 showRevertConfirmation = true
             } label: {
                 Label("Revert unsaved changes…", systemImage: "arrow.uturn.backward.circle")
+            }
+            .disabled(!hasChanges)
+
+            if !saveStatusMessage.isEmpty {
+                Text(saveStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         } header: {
             sectionHeader("Status")
@@ -442,7 +501,8 @@ extension ContentView {
             secondaryText: binding(\.secondaryText),
             matchedSetEnabled: matchedSetEnabled,
             editingFamilyLabel: editingFamilyLabel,
-            isProUnlocked: proManager.isProUnlocked
+            isProUnlocked: proManager.isProUnlocked,
+            onOpenVariables: { activeSheet = .variables }
         )
     }
 
