@@ -19,7 +19,13 @@ import SwiftUI
 /// Step 4:
 /// - Adds segment material shading (bevel + highlights + separation).
 ///
-/// Tick marks and segmented-specific hands are implemented in later steps.
+/// Step 5:
+/// - Adds embossed, upright numerals on the segment ring.
+///
+/// Step 6:
+/// - Adds inner tick marks with quarter/five/minute hierarchy.
+///
+/// Segmented-specific hands and centre hub are implemented in later steps.
 struct WidgetWeaverClockSegmentedFaceView: View {
     let palette: WidgetWeaverClockPalette
 
@@ -141,6 +147,13 @@ struct WidgetWeaverClockSegmentedFaceView: View {
 
                     // Segmented outer ring sectors (Step 3).
                     WidgetWeaverClockSegmentedOuterRingSectorsView(
+                        palette: palette,
+                        dialRadius: R,
+                        scale: displayScale
+                    )
+
+                    // Segmented inner tick marks (Step 6).
+                    WidgetWeaverClockSegmentedTickMarksView(
                         palette: palette,
                         dialRadius: R,
                         scale: displayScale

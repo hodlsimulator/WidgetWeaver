@@ -1,0 +1,190 @@
+//
+//  WidgetWeaverClockSegmentedTickMarksView.swift
+//  WidgetWeaver
+//
+//  Created by . . on 1/27/26.
+//
+
+import SwiftUI
+
+/// Tick marks used by the Segmented clock face.
+///
+/// Renders a three-level hierarchy:
+/// - Quarter-hour ticks (strongest)
+/// - Five-minute ticks (medium)
+/// - One-minute ticks (thin / short)
+///
+/// Layout convention:
+/// - `outerRadius` represents the outer edge of each tick.
+/// - Tick bodies extend inwards by their respective lengths.
+struct WidgetWeaverClockSegmentedTickMarksView: View {
+    let palette: WidgetWeaverClockPalette
+
+    let dialRadius: CGFloat
+    let scale: CGFloat
+
+    private struct Radii {
+        let outerRadius: CGFloat
+        let segmentInnerRadius: CGFloat
+    }
+
+    private func radii(dialRadius: CGFloat, scale: CGFloat) -> Radii {
+        let px = WWClock.px(scale: scale)
+
+        // Matches the Segmented outer-ring geometry so tick placement stays aligned with the ring.
+        let outerInset = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.010, min: px, max: dialRadius * 0.018),
+            scale: scale
+        )
+
+        let baseOuterRadius = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
+
+        let targetThickness = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
+            scale: scale
+        )
+
+        let baseInnerRadius = WWClock.pixel(max(1.0, baseOuterRadius - targetThickness), scale: scale)
+        let baseThickness = max(px, baseOuterRadius - baseInnerRadius)
+
+        let maxInset = baseThickness * 0.28
+        let radialInset = WWClock.pixel(min(maxInset, max(px, dialRadius * 0.004)), scale: scale)
+
+        let segmentInnerRadius = WWClock.pixel(baseInnerRadius + radialInset, scale: scale)
+
+        // Outer tick edge sits just inside the segmented ring's inner edge.
+        let ringGap = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.030, min: px * 2.0, max: dialRadius * 0.040),
+            scale: scale
+        )
+
+        let tickOuterRadius = WWClock.pixel(max(px, segmentInnerRadius - ringGap), scale: scale)
+
+        return Radii(outerRadius: tickOuterRadius, segmentInnerRadius: segmentInnerRadius)
+    }
+
+    private func tickSizes(dialRadius: CGFloat, scale: CGFloat) -> (quarter: (len: CGFloat, w: CGFloat), five: (len: CGFloat, w: CGFloat), minute: (len: CGFloat, w: CGFloat)) {
+        let px = WWClock.px(scale: scale)
+
+        let quarterLength = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.086, min: px * 3.0, max: dialRadius * 0.105),
+            scale: scale
+        )
+        let fiveLength = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.064, min: px * 2.4, max: dialRadius * 0.085),
+            scale: scale
+        )
+        let minuteLength = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.044, min: px * 1.6, max: dialRadius * 0.065),
+            scale: scale
+        )
+
+        let quarterWidth = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.020, min: px * 2.0, max: dialRadius * 0.026),
+            scale: scale
+        )
+        let fiveWidth = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.014, min: px * 1.6, max: dialRadius * 0.020),
+            scale: scale
+        )
+        let minuteWidth = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.0070, min: px, max: dialRadius * 0.012),
+            scale: scale
+        )
+
+        return (
+            quarter: (len: quarterLength, w: quarterWidth),
+            five: (len: fiveLength, w: fiveWidth),
+            minute: (len: minuteLength, w: minuteWidth)
+        )
+    }
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+        let dialDiameter = dialRadius * 2.0
+
+        let r = radii(dialRadius: dialRadius, scale: scale)
+        let sizes = tickSizes(dialRadius: dialRadius, scale: scale)
+
+        // Silver tick material (fixed) to match the Segmented face numerals.
+        let tickFill = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: palette.numeralLight.opacity(0.96), location: 0.00),
+                .init(color: palette.numeralMid.opacity(0.92), location: 0.58),
+                .init(color: palette.numeralDark.opacity(0.94), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let specularOverlay = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.22), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.42),
+                .init(color: Color.black.opacity(0.24), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        // Keeps the tick ring away from the dial occlusion ring and avoids touching the segmented ring.
+        let ringSafeInset = WWClock.pixel(max(px, dialRadius * 0.006), scale: scale)
+        let safeOuterRadius = WWClock.pixel(min(r.outerRadius, r.segmentInnerRadius - ringSafeInset), scale: scale)
+
+        ZStack {
+            ForEach(0..<60, id: \.self) { idx in
+                let isQuarter = (idx % 15 == 0)
+                let isFive = (!isQuarter && idx % 5 == 0)
+
+                let length: CGFloat = {
+                    if isQuarter { return sizes.quarter.len }
+                    if isFive { return sizes.five.len }
+                    return sizes.minute.len
+                }()
+
+                let width: CGFloat = {
+                    if isQuarter { return sizes.quarter.w }
+                    if isFive { return sizes.five.w }
+                    return sizes.minute.w
+                }()
+
+                let opacity: Double = {
+                    if isQuarter { return 0.92 }
+                    if isFive { return 0.74 }
+                    return 0.46
+                }()
+
+                let shadowOpacity: Double = {
+                    if isQuarter { return 0.22 }
+                    if isFive { return 0.18 }
+                    return 0.14
+                }()
+
+                let shadowRadius = WWClock.pixel(max(px, width * 0.55), scale: scale)
+                let shadowY = WWClock.pixel(max(0.0, width * 0.36), scale: scale)
+
+                let corner = max(px, width * 0.45)
+                let yOffset = WWClock.pixel(-(safeOuterRadius - (length / 2.0)), scale: scale)
+
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(tickFill)
+                    .opacity(opacity)
+                    .frame(width: width, height: length)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .fill(specularOverlay)
+                            .opacity(opacity * 0.70)
+                            .blendMode(.overlay)
+                    )
+                    .shadow(color: Color.black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
+                    .offset(y: yOffset)
+                    .rotationEffect(.degrees(Double(idx) * 6.0))
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: dialDiameter, height: dialDiameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .drawingGroup()
+    }
+}
