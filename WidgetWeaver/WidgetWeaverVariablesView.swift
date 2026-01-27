@@ -16,8 +16,39 @@ struct WidgetWeaverVariablesView: View {
 
     private enum FocusedField: Hashable {
         case tryItInput
-        case newKey
-        case newValue
+        case newName
+        case newTextValue
+    }
+
+    private enum NewValueKind: String, CaseIterable, Identifiable {
+        case number = "Number"
+        case text = "Text"
+        case yesNo = "Yes/No"
+        case dateTime = "Date & time"
+
+        var id: String { rawValue }
+
+        var systemImage: String {
+            switch self {
+            case .number: return "number"
+            case .text: return "textformat"
+            case .yesNo: return "checkmark.circle"
+            case .dateTime: return "clock"
+            }
+        }
+
+        var helperText: String {
+            switch self {
+            case .number:
+                return "Good for counters (streaks, score, water ml)."
+            case .text:
+                return "Good for names, labels, or short notes."
+            case .yesNo:
+                return "Stores 1 for Yes, 0 for No."
+            case .dateTime:
+                return "Saved as ISO8601 for relative/date filters."
+            }
+        }
     }
 
     @FocusState private var focusedField: FocusedField?
@@ -25,21 +56,27 @@ struct WidgetWeaverVariablesView: View {
     @State private var variables: [String: String] = [:]
     @State private var searchText: String = ""
 
-    @State private var newKey: String = ""
-    @State private var newValue: String = ""
+    @State private var newName: String = ""
+    @State private var newValueKind: NewValueKind = .number
+    @State private var newTextValue: String = ""
+    @State private var newNumberValue: Int = 0
+    @State private var newYesNoValue: Bool = false
+    @State private var newDateValue: Date = Date()
 
     @State private var statusMessage: String = ""
     @State private var showClearConfirmation: Bool = false
 
     @State private var showInsertPicker: Bool = false
+    @State private var showTemplateBuilder: Bool = false
 
+    @AppStorage("variables.help.showAdvanced") private var showAdvancedHelp: Bool = false
     @AppStorage("variables.tryit.input") private var tryItInput: String = "Streak: {{streak|0}}"
     @State private var tryItCopied: Bool = false
 
     var body: some View {
         NavigationStack {
             List {
-                headerSection
+                guideSection
                 tryItSection
 
                 if proManager.isProUnlocked {
@@ -59,12 +96,21 @@ struct WidgetWeaverVariablesView: View {
                 }
 
                 ToolbarItemGroup(placement: .keyboard) {
-                    if focusedField != nil {
+                    if focusedField == .tryItInput || focusedField == .newTextValue {
                         Spacer()
+
                         Button {
+                            showTemplateBuilder = false
                             showInsertPicker = true
                         } label: {
                             Label("Insert variable", systemImage: "curlybraces.square")
+                        }
+
+                        Button {
+                            showInsertPicker = false
+                            showTemplateBuilder = true
+                        } label: {
+                            Label("Build snippet", systemImage: "wand.and.stars")
                         }
                     }
                 }
@@ -77,11 +123,22 @@ struct WidgetWeaverVariablesView: View {
                 Button("Clear All", role: .destructive) { clearAll() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes all saved variables from the App Group.\nWidgets will update after clearing.")
+                Text("This removes all saved variables from the App Group. Widgets will update after clearing.")
             }
             .sheet(isPresented: $showInsertPicker) {
                 NavigationStack {
                     WidgetWeaverVariableInsertPickerView(
+                        isProUnlocked: proManager.isProUnlocked,
+                        customVariables: variables,
+                        onInsert: { snippet in
+                            insertSnippet(snippet)
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showTemplateBuilder) {
+                NavigationStack {
+                    WidgetWeaverVariableTemplateBuilderView(
                         isProUnlocked: proManager.isProUnlocked,
                         customVariables: variables,
                         onInsert: { snippet in
@@ -97,42 +154,82 @@ struct WidgetWeaverVariablesView: View {
 
     // MARK: - Sections
 
-    private var headerSection: some View {
+    private var guideSection: some View {
         Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Variables are saved values (like a counter or a name). Widgets can show them inside text.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Add a variable below (for example: streak = 3).", systemImage: "1.circle")
+                    Label("Use “Build snippet” or “Insert variable” instead of typing {{ }}.", systemImage: "2.circle")
+                    Label("Widgets refresh automatically when a variable changes.", systemImage: "3.circle")
+                }
+                .font(.subheadline)
+
+                ControlGroup {
+                    Button {
+                        focusedField = .tryItInput
+                        showInsertPicker = false
+                        showTemplateBuilder = true
+                    } label: {
+                        Label("Build a snippet…", systemImage: "wand.and.stars")
+                    }
+
+                    Button {
+                        focusedField = .tryItInput
+                        showTemplateBuilder = false
+                        showInsertPicker = true
+                    } label: {
+                        Label("Insert variable…", systemImage: "curlybraces.square")
+                    }
+                }
+                .controlSize(.regular)
+
+                Toggle("Show advanced syntax", isOn: $showAdvancedHelp)
+
+                if showAdvancedHelp {
+                    advancedHelpBody
+                }
+
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Quick guide")
+        }
+    }
+
+    private var advancedHelpBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(
                 """
-                Variables let text fields pull values at render time.
-
-                Basic:
+                Basics:
                 {{key}}  •  {{key|fallback}}
 
-                Filters:
+                Common styles:
                 {{amount|0|number:0}}
                 {{last_done|Never|relative}}
                 {{progress|0|bar:10}}
 
-                Built-ins:
-                {{__now||date:HH:mm}}  •  {{__today}}
-                
-                Weather:
-                {{__weather_temp}}°  •  {{__weather_condition}}
-                H {{__weather_high}}°  •  L {{__weather_low}}°  •  {{__weather_precip|0|number:0}}%
+                Built-ins (always available):
+                {{__time}}  •  {{__today}}  •  {{__weekday}}
                 """
             )
-            .font(.subheadline)
+            .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
+            .textSelection(.enabled)
 
-            HStack(alignment: .top, spacing: 12) {
-                Text(
-                    """
-                    Example:
-                    Streak: {{streak|0}} {{streak|0|plural:day:days}}
-                    Last done: {{last_done|Never|relative}}
-                    Progress: {{progress|0|bar:10}}
-                    """
-                )
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Example: Streak: {{streak|0}} {{streak|0|plural:day:days}}")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
 
                 Spacer(minLength: 0)
 
@@ -145,21 +242,13 @@ struct WidgetWeaverVariablesView: View {
                 }
                 .controlSize(.small)
             }
-
-            if !statusMessage.isEmpty {
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("How it works")
         }
     }
 
     private var tryItSection: some View {
         let result = tryItResult
         let outputDisplay: String = {
-            if result.isEmptyInput { return "Paste a template above to see its output." }
+            if result.isEmptyInput { return "Paste a snippet above to see its output." }
             if result.output.isEmpty { return "—" }
             return result.output
         }()
@@ -201,6 +290,7 @@ struct WidgetWeaverVariablesView: View {
                             insertSnippet(snippet)
                         },
                         onOpenPicker: {
+                            showTemplateBuilder = false
                             showInsertPicker = true
                         }
                     )
@@ -243,6 +333,15 @@ struct WidgetWeaverVariablesView: View {
 
             Button {
                 focusedField = .tryItInput
+                showInsertPicker = false
+                showTemplateBuilder = true
+            } label: {
+                Label("Build snippet…", systemImage: "wand.and.stars")
+            }
+
+            Button {
+                focusedField = .tryItInput
+                showTemplateBuilder = false
                 showInsertPicker = true
             } label: {
                 Label("Insert variable…", systemImage: "curlybraces.square")
@@ -251,12 +350,12 @@ struct WidgetWeaverVariablesView: View {
             NavigationLink {
                 WidgetWeaverBuiltInKeysView(tryItInput: $tryItInput)
             } label: {
-                Label("Browse built-in keys", systemImage: "curlybraces.square")
+                Label("Browse built-in keys", systemImage: "list.bullet")
             }
         } header: {
             Text("Try it")
         } footer: {
-            Text("Uses the same template renderer as widgets. Built-ins (e.g. __steps_*, __activity_* and __weather_*) resolve even without Pro.")
+            Text("Uses the same template renderer as widgets. Built-ins (for example: __time and __today) work without Pro.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -280,25 +379,88 @@ struct WidgetWeaverVariablesView: View {
     }
 
     private var addSection: some View {
-        Section {
-            TextField("Key (e.g. streak)", text: $newKey)
-                .focused($focusedField, equals: .newKey)
+        let key = WidgetWeaverVariableStore.canonicalKey(newName)
+        let templateSnippet = key.isEmpty ? "" : "{{\(key)}}"
+
+        return Section {
+            TextField("Name (for example: streak)", text: $newName)
+                .focused($focusedField, equals: .newName)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
 
-            TextField("Value", text: $newValue)
-                .focused($focusedField, equals: .newValue)
+            if !templateSnippet.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Template")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-            Button { addVariable() } label: {
-                Label("Add Variable", systemImage: "plus.circle.fill")
+                        Text(templateSnippet)
+                            .font(.system(.callout, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        UIPasteboard.general.string = templateSnippet
+                        statusMessage = "Copied \(templateSnippet)."
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .controlSize(.small)
+                }
             }
-            .disabled(WidgetWeaverVariableStore.canonicalKey(newKey).isEmpty)
+
+            Picker("Value type", selection: $newValueKind) {
+                ForEach(NewValueKind.allCases) { kind in
+                    Label(kind.rawValue, systemImage: kind.systemImage).tag(kind)
+                }
+            }
+
+            newValueEditor
+
+            Button {
+                addVariable()
+            } label: {
+                Label("Save variable", systemImage: "plus.circle.fill")
+            }
+            .disabled(key.isEmpty)
         } header: {
-            Text("Add")
+            Text("Add a variable")
         } footer: {
-            Text("Keys are canonicalised (trimmed, lowercased, internal whitespace collapsed).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The name becomes the key inside {{ }}.")
+                Text(newValueKind.helperText)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var newValueEditor: some View {
+        switch newValueKind {
+        case .number:
+            Stepper("Value: \(newNumberValue)", value: $newNumberValue, in: -999_999...999_999)
+
+        case .text:
+            TextField("Value", text: $newTextValue, axis: .vertical)
+                .focused($focusedField, equals: .newTextValue)
+                .lineLimit(3, reservesSpace: true)
+
+        case .yesNo:
+            Toggle("Value", isOn: $newYesNoValue)
+
+        case .dateTime:
+            DatePicker("Date & time", selection: $newDateValue, displayedComponents: [.date, .hourAndMinute])
+            Button {
+                newDateValue = Date()
+                statusMessage = "Set date/time to now."
+            } label: {
+                Label("Set to now", systemImage: "clock")
+            }
+            .controlSize(.small)
         }
     }
 
@@ -323,31 +485,7 @@ struct WidgetWeaverVariablesView: View {
                             }
                         )
                     } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(key)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
-                                Text(variables[key] ?? "")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 0)
-
-                            Button {
-                                UIPasteboard.general.string = "{{\(key)}}"
-                                statusMessage = "Copied {{\(key)}}."
-                            } label: {
-                                Image(systemName: "curlybraces")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Copy template")
-                        }
+                        variableRow(key: key, value: variables[key] ?? "")
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
@@ -368,10 +506,50 @@ struct WidgetWeaverVariablesView: View {
         }
     }
 
+    private func variableRow(key: String, value: String) -> some View {
+        let icon = iconName(forValue: value)
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayValue = trimmed.isEmpty ? "—" : trimmed
+
+        return HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(key)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(displayValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                let snippet = "{{\(key)}}"
+                UIPasteboard.general.string = snippet
+                statusMessage = "Copied \(snippet)."
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .labelStyle(.titleAndIcon)
+            .font(.caption)
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Copy template")
+        }
+    }
+
     private var toolsSection: some View {
         Section {
             Button(role: .destructive) { showClearConfirmation = true } label: {
-                Label("Clear All Variables", systemImage: "trash")
+                Label("Clear all variables", systemImage: "trash")
             }
         } header: {
             Text("Tools")
@@ -392,10 +570,9 @@ struct WidgetWeaverVariablesView: View {
             "{{count|0}}",
             "{{done|0}}",
             "{{waterMl|0}}",
-            "{{date.short}}",
-            "{{time.short}}",
             "{{__today}}",
             "{{__time}}",
+            "{{__weekday}}",
             "{{__steps_today|--|number:0}}",
             "{{__activity_steps_today|--|number:0}}",
             "{{__weather_temp|--}}",
@@ -458,12 +635,29 @@ struct WidgetWeaverVariablesView: View {
     }
 
     private func addVariable() {
-        let canonical = WidgetWeaverVariableStore.canonicalKey(newKey)
+        let canonical = WidgetWeaverVariableStore.canonicalKey(newName)
         guard !canonical.isEmpty else { return }
 
-        WidgetWeaverVariableStore.shared.setValue(newValue, for: canonical)
-        newKey = ""
-        newValue = ""
+        let valueToSave: String
+        switch newValueKind {
+        case .number:
+            valueToSave = String(newNumberValue)
+        case .text:
+            valueToSave = newTextValue
+        case .yesNo:
+            valueToSave = newYesNoValue ? "1" : "0"
+        case .dateTime:
+            valueToSave = WidgetWeaverVariableTemplate.iso8601String(newDateValue)
+        }
+
+        WidgetWeaverVariableStore.shared.setValue(valueToSave, for: canonical)
+
+        newName = ""
+        newTextValue = ""
+        newNumberValue = 0
+        newYesNoValue = false
+        newDateValue = Date()
+
         statusMessage = "Saved \(canonical)."
         refresh()
     }
@@ -476,11 +670,8 @@ struct WidgetWeaverVariablesView: View {
 
     private func insertSnippet(_ snippet: String) {
         switch focusedField {
-        case .newKey:
-            newKey = appendingSnippet(snippet, to: newKey)
-
-        case .newValue:
-            newValue = appendingSnippet(snippet, to: newValue)
+        case .newTextValue:
+            newTextValue = appendingSnippet(snippet, to: newTextValue)
 
         default:
             tryItInput = appendingSnippet(snippet, to: tryItInput)
@@ -520,6 +711,38 @@ struct WidgetWeaverVariablesView: View {
         }
     }
 
+    private func iconName(forValue rawValue: String) -> String {
+        let s = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty { return "questionmark.circle" }
+
+        if s == "0" || s == "1" { return "checkmark.circle" }
+
+        if Int(s) != nil { return "number" }
+
+        if looksLikeISO8601(s) || looksLikeUnixSeconds(s) {
+            return "clock"
+        }
+
+        return "textformat"
+    }
+
+    private func looksLikeISO8601(_ s: String) -> Bool {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if f.date(from: s) != nil { return true }
+
+        let f2 = ISO8601DateFormatter()
+        f2.formatOptions = [.withInternetDateTime]
+        return f2.date(from: s) != nil
+    }
+
+    private func looksLikeUnixSeconds(_ s: String) -> Bool {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10, trimmed.count <= 13 else { return false }
+        guard let i = Int64(trimmed) else { return false }
+        return i >= 1_000_000_000 && i <= 4_100_000_000
+    }
+
     private func hasUnbalancedTemplateDelimiters(_ s: String) -> Bool {
         var balance = 0
         var i = s.startIndex
@@ -549,128 +772,5 @@ struct WidgetWeaverVariablesView: View {
         }
 
         return balance != 0
-    }
-}
-
-private struct WidgetWeaverVariableDetailView: View {
-    let key: String
-    let initialValue: String
-
-    let onSave: (String) -> Void
-    let onDelete: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var value: String = ""
-    @State private var incrementAmount: Int = 1
-    @State private var statusMessage: String = ""
-
-    var body: some View {
-        List {
-            Section {
-                LabeledContent("Key", value: key)
-
-                Button {
-                    UIPasteboard.general.string = "{{\(key)}}"
-                    statusMessage = "Copied {{\(key)}}."
-                } label: {
-                    Label("Copy template {{\(key)}}", systemImage: "doc.on.doc")
-                }
-
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Template")
-            }
-
-            Section {
-                TextField("Value", text: $value, axis: .vertical)
-                    .lineLimit(3, reservesSpace: true)
-
-                Button {
-                    onSave(value)
-                    statusMessage = "Saved."
-                } label: {
-                    Label("Save", systemImage: "checkmark.circle.fill")
-                }
-            } header: {
-                Text("Value")
-            }
-
-            Section {
-                Button {
-                    let now = Date()
-                    value = WidgetWeaverVariableTemplate.iso8601String(now)
-                    onSave(value)
-                    statusMessage = "Set to now."
-                } label: {
-                    Label("Set to Now (ISO8601)", systemImage: "clock")
-                }
-
-                Button {
-                    value = String(Int64(Date().timeIntervalSince1970))
-                    onSave(value)
-                    statusMessage = "Set to unix seconds."
-                } label: {
-                    Label("Set to Now (Unix seconds)", systemImage: "timer")
-                }
-            } header: {
-                Text("Quick date/time")
-            } footer: {
-                Text("Handy for {{\(key)|Never|relative}} or {{\(key)||date:EEE d MMM}}.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Stepper("Amount: \(incrementAmount)", value: $incrementAmount, in: 1...999)
-
-                Button {
-                    let existing = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                    let newValue = existing + incrementAmount
-                    value = String(newValue)
-                    onSave(value)
-                    statusMessage = "Incremented to \(newValue)."
-                } label: {
-                    Label("Increment", systemImage: "plus.circle")
-                }
-
-                Button {
-                    let existing = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                    let newValue = existing - incrementAmount
-                    value = String(newValue)
-                    onSave(value)
-                    statusMessage = "Decremented to \(newValue)."
-                } label: {
-                    Label("Decrement", systemImage: "minus.circle")
-                }
-            } header: {
-                Text("Quick maths")
-            } footer: {
-                Text("Increment/decrement treats the value as an integer (non-numbers become 0).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    onDelete()
-                    dismiss()
-                } label: {
-                    Label("Delete Variable", systemImage: "trash")
-                }
-            }
-        }
-        .navigationTitle(key)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-            }
-        }
-        .onAppear { value = initialValue }
     }
 }

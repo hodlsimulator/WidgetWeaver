@@ -19,7 +19,7 @@ import SwiftUI
 /// Step 4:
 /// - Adds segment material shading (bevel + highlights + separation).
 ///
-/// Numerals, tick marks, and segmented-specific hands are implemented in later steps.
+/// Tick marks and segmented-specific hands are implemented in later steps.
 struct WidgetWeaverClockSegmentedFaceView: View {
     let palette: WidgetWeaverClockPalette
 
@@ -255,6 +255,20 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
         let segmentOuterRadius = baseOuterRadius - radialInset
         let segmentInnerRadius = baseInnerRadius + radialInset
 
+        let segmentThickness = max(px, segmentOuterRadius - segmentInnerRadius)
+
+        // Numerals sit slightly towards the outer edge of each segment (Step 5).
+        let numeralRadius = WWClock.pixel(
+            segmentInnerRadius + (segmentThickness * 0.64),
+            scale: scale
+        )
+
+        let numeralFontSize = WWClock.pixel(
+            WWClock.clamp(segmentThickness * 0.78, min: px * 4.0, max: segmentThickness * 0.84),
+            scale: scale
+        )
+
+
         let baseRingFill = palette.separatorRing.opacity(1.0)
 
         ZStack {
@@ -278,10 +292,70 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                     scale: scale
                 )
             }
+
+            WidgetWeaverClockSegmentedOuterRingNumeralsView(
+                radius: numeralRadius,
+                fontSize: numeralFontSize,
+                scale: scale
+            )
         }
         .frame(width: dialRadius * 2.0, height: dialRadius * 2.0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+private struct WidgetWeaverClockSegmentedOuterRingNumeralsView: View {
+    let radius: CGFloat
+    let fontSize: CGFloat
+    let scale: CGFloat
+
+    private func text(for numeral: Int) -> String {
+        numeral == 12 ? "12" : String(numeral)
+    }
+
+    private func offset(for numeral: Int) -> (x: CGFloat, y: CGFloat) {
+        let stepDegrees = Double(numeral % 12) * 30.0
+        let radians = stepDegrees * Double.pi / 180.0
+
+        let x = radius * CGFloat(sin(radians))
+        let y = -radius * CGFloat(cos(radians))
+
+        return (x, y)
+    }
+
+    private func fineTuning(for numeral: Int, px: CGFloat) -> (x: CGFloat, y: CGFloat) {
+        switch numeral {
+        case 12:
+            return (x: CGFloat(-0.45) * px, y: CGFloat(0.35) * px)
+        case 10:
+            return (x: CGFloat(-0.20) * px, y: 0.0)
+        case 11:
+            return (x: CGFloat(-0.12) * px, y: 0.0)
+        default:
+            return (x: 0.0, y: 0.0)
+        }
+    }
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+
+        ZStack {
+            SwiftUI.ForEach(Array(1...12), id: \.self) { numeral in
+                let p = offset(for: numeral)
+                let t = fineTuning(for: numeral, px: px)
+
+                WidgetWeaverClockSegmentedNumeralGlyphView(
+                    text: text(for: numeral),
+                    fontSize: fontSize,
+                    scale: scale
+                )
+                .offset(x: p.x + t.x, y: p.y + t.y)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .unredacted()
     }
 }
 
