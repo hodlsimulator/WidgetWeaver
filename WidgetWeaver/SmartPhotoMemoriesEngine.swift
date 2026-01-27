@@ -192,6 +192,88 @@ enum SmartPhotoMemoriesEngine {
         var isFavourite: Bool
     }
 
+    // MARK: - Anti-repeat
+
+    private static func antiRepeatWindowSeconds(for mode: SmartPhotoMemoriesMode) -> TimeInterval {
+        switch mode {
+        case .onThisDay:
+            // Tight window to drop near-duplicates (bursts) while keeping variety.
+            return 60.0 * 30.0
+
+        case .onThisWeek:
+            // Wider window to avoid long runs of the same event within a single week window.
+            return 60.0 * 60.0 * 3.0
+        }
+    }
+
+    private static func thinCandidatesForAntiRepeat(
+        _ candidates: [Candidate],
+        mode: SmartPhotoMemoriesMode,
+        perYearLimit: Int
+    ) -> [Candidate] {
+        let safeLimit = max(1, min(perYearLimit, 250))
+        guard candidates.count > 0 else { return [] }
+
+        // Keep behaviour stable for sparse years.
+        let minKeep: Int = {
+            switch mode {
+            case .onThisDay:
+                return min(6, safeLimit)
+            case .onThisWeek:
+                return min(10, safeLimit)
+            }
+        }()
+
+        guard candidates.count > minKeep else {
+            return Array(candidates.prefix(safeLimit))
+        }
+
+        let window = antiRepeatWindowSeconds(for: mode)
+        guard window > 0 else {
+            return Array(candidates.prefix(safeLimit))
+        }
+
+        var kept: [Candidate] = []
+        kept.reserveCapacity(min(candidates.count, safeLimit))
+
+        var lastKept: Date? = nil
+
+        for candidate in candidates {
+            if kept.count >= safeLimit {
+                break
+            }
+
+            if kept.isEmpty {
+                kept.append(candidate)
+                lastKept = candidate.createdAt
+                continue
+            }
+
+            if candidate.isFavourite {
+                kept.append(candidate)
+                lastKept = candidate.createdAt
+                continue
+            }
+
+            if let lastKept {
+                let delta = abs(lastKept.timeIntervalSince(candidate.createdAt))
+                if delta < window {
+                    continue
+                }
+            }
+
+            kept.append(candidate)
+            lastKept = candidate.createdAt
+        }
+
+        // If filtering made the year too sparse, fall back to the original list.
+        if kept.count < minKeep {
+            return Array(candidates.prefix(safeLimit))
+        }
+
+        return kept
+    }
+
     private static func buildCandidateIDs(
         mode: SmartPhotoMemoriesMode,
         now: Date,
@@ -223,6 +305,7 @@ enum SmartPhotoMemoriesEngine {
             let fetched = fetchCandidates(
                 window: window,
                 year: year,
+                mode: mode,
                 rules: rules,
                 perYearLimit: clampedPerYear,
                 calendar: calendar
@@ -323,6 +406,7 @@ enum SmartPhotoMemoriesEngine {
     private static func fetchCandidates(
         window: DateInterval,
         year: Int,
+        mode: SmartPhotoMemoriesMode,
         rules: SmartPhotoShuffleRules,
         perYearLimit: Int,
         calendar: Calendar
@@ -394,7 +478,7 @@ enum SmartPhotoMemoriesEngine {
             return a.id < b.id
         }
 
-        return out
+        return thinCandidatesForAntiRepeat(out, mode: mode, perYearLimit: perYearLimit)
     }
 
     // MARK: - Initial prep
