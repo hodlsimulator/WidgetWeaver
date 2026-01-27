@@ -7,16 +7,21 @@
 
 import SwiftUI
 import EventKit
+import UIKit
 
 struct RemindersPackControls: View {
     @Binding var config: WidgetWeaverRemindersConfig
     let onOpenRemindersSettings: () -> Void
+
+    @Environment(\.openURL) private var openURL
 
     @State private var lists: [WidgetWeaverRemindersEngine.ReminderListSummary] = []
     @State private var isLoadingLists: Bool = false
     @State private var lastError: String?
 
     @State private var enableFilteringAfterLoad: Bool = false
+
+    @State private var listSearchText: String = ""
 
     private var permissionStatus: EKAuthorizationStatus {
         EKEventStore.authorizationStatus(for: .reminder)
@@ -36,7 +41,31 @@ struct RemindersPackControls: View {
 
     private var listSummary: String {
         if config.selectedListIDs.isEmpty { return "All lists" }
-        return "\(config.selectedListIDs.count) selected"
+
+        if lists.isEmpty {
+            return "\(config.selectedListIDs.count) selected"
+        }
+
+        if config.selectedListIDs.count >= lists.count {
+            return "All loaded (\(lists.count))"
+        }
+
+        return "\(config.selectedListIDs.count) of \(lists.count)"
+    }
+
+    private var listSearchQuery: String {
+        listSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredLists: [WidgetWeaverRemindersEngine.ReminderListSummary] {
+        let q = listSearchQuery.lowercased()
+        guard !q.isEmpty else { return lists }
+
+        return lists.filter { list in
+            if list.title.lowercased().contains(q) { return true }
+            if let source = list.sourceTitle?.lowercased(), source.contains(q) { return true }
+            return false
+        }
     }
 
     private var soonWindowOptions: [Int] {
@@ -104,6 +133,8 @@ struct RemindersPackControls: View {
     private func enableListFiltering() {
         lastError = nil
 
+        listSearchText = ""
+
         if lists.isEmpty {
             enableFilteringAfterLoad = true
             loadLists()
@@ -116,6 +147,18 @@ struct RemindersPackControls: View {
     private func disableListFiltering() {
         lastError = nil
         config.selectedListIDs = []
+        listSearchText = ""
+    }
+
+    private func selectAllLoadedLists() {
+        lastError = nil
+        guard !lists.isEmpty else { return }
+        config.selectedListIDs = lists.map { $0.id }
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
     private func setListIncluded(_ included: Bool, listID: String) {
@@ -147,6 +190,19 @@ struct RemindersPackControls: View {
                 Spacer()
                 Text(permissionTitle)
                     .foregroundStyle(.secondary)
+            }
+
+            if permissionStatus == .denied || permissionStatus == .restricted || permissionStatus == .writeOnly {
+                Text("Reminders access is limited. Full Access is required for snapshots and completion in widgets.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    openAppSettings()
+                } label: {
+                    Label("Open iOS Settings", systemImage: "gear")
+                }
             }
 
             Button {
@@ -239,14 +295,58 @@ struct RemindersPackControls: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(lists, id: \.id) { list in
-                        Toggle(list.title, isOn: Binding(
-                            get: { config.selectedListIDs.contains(list.id) },
-                            set: { included in
-                                setListIncluded(included, listID: list.id)
-                                config = config.normalised()
+                    TextField("Search lists", text: $listSearchText)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled(true)
+
+                    if !listSearchQuery.isEmpty {
+                        Text("Showing \(filteredLists.count) of \(lists.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ControlGroup {
+                        Button("Select all") {
+                            selectAllLoadedLists()
+                            config = config.normalised()
+                        }
+
+                        Button("Show all lists") {
+                            disableListFiltering()
+                            config = config.normalised()
+                        }
+
+                        if !listSearchQuery.isEmpty {
+                            Button("Clear search") {
+                                listSearchText = ""
                             }
-                        ))
+                        }
+                    }
+                    .controlSize(.small)
+
+                    if filteredLists.isEmpty {
+                        Text("No matches.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(filteredLists, id: \.id) { list in
+                            Toggle(isOn: Binding(
+                                get: { config.selectedListIDs.contains(list.id) },
+                                set: { included in
+                                    setListIncluded(included, listID: list.id)
+                                    config = config.normalised()
+                                }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(list.title)
+                                    if let source = list.sourceTitle, !source.isEmpty {
+                                        Text(source)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
