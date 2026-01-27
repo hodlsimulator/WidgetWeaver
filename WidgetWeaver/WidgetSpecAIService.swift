@@ -491,24 +491,29 @@ private extension WidgetSpecAIService {
         let accent = detectAccent(in: lower) ?? .blue
 
         var background: BackgroundToken = .accentGlow
-        if lower.contains("material") || lower.contains("frosted") || lower.contains("blur") {
+        if lower.contains("subtlematerial") || lower.contains("subtle material") || lower.contains("material") || lower.contains("frosted") || lower.contains("blur") {
             background = .subtleMaterial
         }
-        if lower.contains("radial") {
+        if lower.contains("radialglow") || lower.contains("radial glow") || lower.contains("radial") {
             background = .radialGlow
         }
-        if lower.contains("solid accent") || lower.contains("tinted") {
+        if lower.contains("solidaccent") || lower.contains("solid accent") || lower.contains("tinted") {
             background = .solidAccent
         }
-        if lower.contains("minimal") || lower.contains("clean") || lower.contains("simple") {
+        if containsWord(lower, word: "plain") || lower.contains("minimal") || lower.contains("clean") || lower.contains("simple") {
             background = .plain
         }
-        if lower.contains("bold") || lower.contains("vibrant") || lower.contains("glow") {
+        if lower.contains("accentglow") || lower.contains("accent glow") || lower.contains("bold") || lower.contains("vibrant") || lower.contains("glow") {
             background = .accentGlow
         }
         if lower.contains("transparent") || lower.contains("clear background") {
             background = .plain
         }
+
+        if containsWord(lower, word: "aurora") { background = .aurora }
+        if containsWord(lower, word: "sunset") { background = .sunset }
+        if containsWord(lower, word: "midnight") { background = .midnight }
+        if containsWord(lower, word: "candy") { background = .candy }
 
         let axis: LayoutAxisToken = (lower.contains("horizontal") || lower.contains("row")) ? .horizontal : .vertical
 
@@ -558,11 +563,13 @@ private extension WidgetSpecAIService {
     static func fallbackPatch(base: WidgetSpec, instruction: String) -> WidgetSpec {
         var s = base.normalised()
         let lower = instruction.lowercased()
+        let collapsedLower = collapseWhitespace(lower).trimmingCharacters(in: .whitespacesAndNewlines)
+        let mentionsBackground = lower.contains("background") || containsWord(lower, word: "bg")
 
         if let ac = detectAccent(in: lower) { s.style.accent = ac }
 
-        if lower.contains("radial") { s.style.background = .radialGlow }
-        if lower.contains("solid accent") || lower.contains("tinted") { s.style.background = .solidAccent }
+        if lower.contains("radialglow") || lower.contains("radial glow") || lower.contains("radial") { s.style.background = .radialGlow }
+        if lower.contains("solidaccent") || lower.contains("solid accent") || lower.contains("tinted") { s.style.background = .solidAccent }
 
         if lower.contains("more minimal") || lower.contains("make it minimal") || lower.contains("cleaner") || lower.contains("simpler") {
             s.style.background = .plain
@@ -588,7 +595,19 @@ private extension WidgetSpecAIService {
         }
 
         if lower.contains("transparent") || lower.contains("clear background") { s.style.background = .plain }
-        if lower.contains("accent background") || lower.contains("use accent as background") { s.style.background = .accentGlow }
+        if collapsedLower == "plain" || (mentionsBackground && containsWord(lower, word: "plain")) { s.style.background = .plain }
+
+        if lower.contains("subtlematerial") || lower.contains("subtle material") || (mentionsBackground && (lower.contains("material") || lower.contains("frosted") || lower.contains("blur"))) {
+            s.style.background = .subtleMaterial
+        }
+        if lower.contains("accentglow") || lower.contains("accent glow") || lower.contains("accent background") || lower.contains("use accent as background") {
+            s.style.background = .accentGlow
+        }
+
+        if containsWord(lower, word: "aurora") { s.style.background = .aurora }
+        if containsWord(lower, word: "sunset") { s.style.background = .sunset }
+        if containsWord(lower, word: "midnight") { s.style.background = .midnight }
+        if containsWord(lower, word: "candy") { s.style.background = .candy }
 
         if lower.contains("horizontal") { s.layout.axis = .horizontal }
         if lower.contains("vertical") { s.layout.axis = .vertical }
@@ -627,6 +646,12 @@ private extension WidgetSpecAIService {
         let name: String
         let primary: String
         let secondary: String?
+    }
+
+    static func containsWord(_ text: String, word: String) -> Bool {
+        guard !word.isEmpty else { return false }
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+        return text.range(of: pattern, options: .regularExpression) != nil
     }
 
     static func fallbackTexts(from prompt: String) -> FallbackTexts {
