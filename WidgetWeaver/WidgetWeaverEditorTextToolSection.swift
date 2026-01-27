@@ -26,6 +26,13 @@ struct WidgetWeaverEditorTextToolSection: View {
     @State private var secondaryInsertionRequest: WWTextInsertionRequest?
     @State private var restoreFocusAfterInsertPickerDismissal: FocusedField?
 
+    private struct VariableFixMessage: Equatable {
+        let fieldID: String
+        let message: String
+    }
+
+    @State private var variableFixMessage: VariableFixMessage?
+
     init(
         designName: Binding<String>,
         primaryText: Binding<String>,
@@ -211,8 +218,6 @@ struct WidgetWeaverEditorTextToolSection: View {
     }
 
     private func templateDiagnosticsRows(template: String, fieldID: String) -> some View {
-        let builtInValues = TemplateKeyDiagnostics.currentBuiltInValues(now: WidgetWeaverRenderClock.now)
-
         let customKeys: Set<String> = {
             let vars = WidgetWeaverVariableStore.shared.loadAll()
             return Set(vars.keys.map { WidgetWeaverVariableStore.canonicalKey($0) })
@@ -221,23 +226,44 @@ struct WidgetWeaverEditorTextToolSection: View {
         let report = TemplateKeyDiagnostics.report(
             template: template,
             isProUnlocked: isProUnlocked,
-            customKeys: customKeys,
-            builtInKeys: Set(builtInValues.keys)
+            customKeys: customKeys
         )
+
+        let missingTitle = isProUnlocked ? "Missing variables" : "Custom variables (Pro)"
 
         return Group {
             if report.missingCustomKeys.count > 0 {
-                Label("Missing custom keys: \(report.missingCustomKeys.joined(separator: ", "))", systemImage: "key.slash")
+                Label("\(missingTitle): \(report.missingCustomKeys.joined(separator: ", "))", systemImage: "key.slash")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("EditorTextField.TemplateMissingCustomKeys.\(fieldID)")
+
+                if isProUnlocked {
+                    Button {
+                        createMissingVariables(report.missingCustomKeys, fieldID: fieldID)
+                    } label: {
+                        Label("Create missing variables", systemImage: "plus.circle")
+                    }
+                    .font(.caption)
+                    .accessibilityIdentifier("EditorTextField.TemplateCreateMissingVariables.\(fieldID)")
+
+                    if let onOpenVariables {
+                        Button {
+                            onOpenVariables()
+                        } label: {
+                            Label("Open Variables", systemImage: "slider.horizontal.3")
+                        }
+                        .font(.caption)
+                        .accessibilityIdentifier("EditorTextField.TemplateOpenVariables.\(fieldID)")
+                    }
+                }
             }
 
-            if report.unknownKeys.count > 0 {
-                Label("Unknown keys: \(report.unknownKeys.joined(separator: ", "))", systemImage: "questionmark.circle")
+            if report.unknownBuiltInKeys.count > 0 {
+                Label("Unknown built-in keys: \(report.unknownBuiltInKeys.joined(separator: ", "))", systemImage: "questionmark.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("EditorTextField.TemplateUnknownKeys.\(fieldID)")
+                    .accessibilityIdentifier("EditorTextField.TemplateUnknownBuiltIns.\(fieldID)")
             }
 
             if report.usesBuiltIns && !report.builtInKeysUsed.isEmpty {
@@ -255,6 +281,13 @@ struct WidgetWeaverEditorTextToolSection: View {
                 }
                 .font(.caption)
                 .accessibilityIdentifier("EditorTextField.TemplateProPrompt.\(fieldID)")
+            }
+
+            if let fix = variableFixMessage, fix.fieldID == fieldID {
+                Text(fix.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("EditorTextField.TemplateFixMessage.\(fieldID)")
             }
         }
     }
@@ -429,6 +462,29 @@ struct WidgetWeaverEditorTextToolSection: View {
         return balance != 0
     }
 
+    private func createMissingVariables(_ rawKeys: [String], fieldID: String) {
+        guard isProUnlocked else { return }
+
+        let canonicalKeys = rawKeys
+            .map { WidgetWeaverVariableStore.canonicalKey($0) }
+            .filter { !$0.isEmpty }
+
+        let uniqueKeys = Array(Set(canonicalKeys)).sorted()
+        guard !uniqueKeys.isEmpty else { return }
+
+        for key in uniqueKeys {
+            WidgetWeaverVariableStore.shared.setValue("", for: key)
+        }
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        let noun = uniqueKeys.count == 1 ? "variable" : "variables"
+        variableFixMessage = VariableFixMessage(
+            fieldID: fieldID,
+            message: "Created \(uniqueKeys.count) \(noun)."
+        )
+    }
+
     // MARK: - Template diagnostics helper
 
     private enum TemplateKeyDiagnostics {
@@ -438,35 +494,48 @@ struct WidgetWeaverEditorTextToolSection: View {
             let usesCustomKeys: Bool
             let isProLocked: Bool
             let builtInKeysUsed: Set<String>
+            let unknownBuiltInKeys: [String]
             let missingCustomKeys: [String]
-            let unknownKeys: [String]
         }
 
-        static func currentBuiltInValues(now: Date) -> [String: String] {
-            var vars = WidgetWeaverVariableTemplate.builtInVariables(now: now)
-            for (k, v) in WidgetWeaverWeatherStore.shared.variablesDictionary(now: now) { vars[k] = v }
-            for (k, v) in WidgetWeaverStepsStore.shared.variablesDictionary(now: now) { vars[k] = v }
-            for (k, v) in WidgetWeaverActivityStore.shared.variablesDictionary(now: now) { vars[k] = v }
-            return vars
+        private static let exactBuiltInKeys: Set<String> = [
+            "__now",
+            "__now_unix",
+            "__today",
+            "__time",
+            "__weekday",
+        ]
+
+        private static let builtInPrefixes: [String] = [
+            "__weather_",
+            "__steps_",
+            "__activity_",
+        ]
+
+        private static func isKnownBuiltInKey(_ key: String) -> Bool {
+            if exactBuiltInKeys.contains(key) { return true }
+            for prefix in builtInPrefixes where key.hasPrefix(prefix) {
+                return true
+            }
+            return false
         }
 
         static func report(
             template: String,
             isProUnlocked: Bool,
-            customKeys: Set<String>,
-            builtInKeys: Set<String>
+            customKeys: Set<String>
         ) -> Report {
             let keys = extractedKeys(from: template)
 
-            let builtInsUsed = keys.filter { builtInKeys.contains($0) }
+            let builtInsUsed = keys.filter { $0.hasPrefix("__") && isKnownBuiltInKey($0) }
+            let unknownBuiltIns = keys
+                .filter { $0.hasPrefix("__") && !isKnownBuiltInKey($0) }
+                .sorted()
+
             let customUsed = keys.filter { !$0.hasPrefix("__") }
 
             let missingCustom = customUsed
                 .filter { !customKeys.contains(WidgetWeaverVariableStore.canonicalKey($0)) }
-                .sorted()
-
-            let unknown = keys
-                .filter { !$0.hasPrefix("__") && !customKeys.contains(WidgetWeaverVariableStore.canonicalKey($0)) }
                 .sorted()
 
             let usesBuiltIns = !builtInsUsed.isEmpty
@@ -477,9 +546,9 @@ struct WidgetWeaverEditorTextToolSection: View {
                 usesBuiltIns: usesBuiltIns,
                 usesCustomKeys: usesCustom,
                 isProLocked: proLocked,
-                builtInKeysUsed: builtInsUsed,
-                missingCustomKeys: missingCustom,
-                unknownKeys: unknown
+                builtInKeysUsed: Set(builtInsUsed),
+                unknownBuiltInKeys: unknownBuiltIns,
+                missingCustomKeys: missingCustom
             )
         }
 
