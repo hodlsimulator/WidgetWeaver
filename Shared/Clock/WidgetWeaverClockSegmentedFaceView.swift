@@ -11,8 +11,11 @@ import SwiftUI
 ///
 /// Step 2 scaffold:
 /// - Uses a dedicated view so routing and geometry are stable.
-/// - Renders only bezel + dial placeholders and reuses the existing hands + centre hub.
-/// - Segment blocks, numerals, and tick marks are implemented in later steps.
+/// - Renders bezel + dial placeholders and reuses the existing hands + centre hub.
+///
+/// Step 3:
+/// - Adds the segmented outer ring geometry (12 sectors).
+/// - Numerals, tick marks, materials, and segmented-specific hands are implemented in later steps.
 struct WidgetWeaverClockSegmentedFaceView: View {
     let palette: WidgetWeaverClockPalette
 
@@ -132,6 +135,13 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                         occlusionWidth: occlusionWidth
                     )
 
+                    // Segmented outer ring sectors (Step 3).
+                    WidgetWeaverClockSegmentedOuterRingSectorsView(
+                        palette: palette,
+                        dialRadius: R,
+                        scale: displayScale
+                    )
+
                     ZStack {
                         let usedSecondLength = showsSecondHand ? secondLength : 0.0
                         let usedSecondWidth = showsSecondHand ? secondWidth : 0.0
@@ -199,6 +209,77 @@ struct WidgetWeaverClockSegmentedFaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
         }
+    }
+}
+
+private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
+    let palette: WidgetWeaverClockPalette
+    let dialRadius: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+
+        // Base ring radii (under the segments).
+        let outerInset = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.010, min: px, max: dialRadius * 0.018),
+            scale: scale
+        )
+
+        let baseOuterRadius = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
+
+        let targetThickness = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
+            scale: scale
+        )
+
+        let baseInnerRadius = WWClock.pixel(max(1.0, baseOuterRadius - targetThickness), scale: scale)
+        let baseThickness = max(px, baseOuterRadius - baseInnerRadius)
+        let midRadius = max(px, (baseInnerRadius + baseOuterRadius) * 0.5)
+
+        // Compute angular gap from a pixel-snapped linear gap.
+        let gapLinear = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.020, min: px * 2.0, max: dialRadius * 0.028),
+            scale: scale
+        )
+        let gapAngle = Angle.radians(Double(gapLinear / midRadius))
+
+        // A small radial inset helps the separators read as crisp black grooves.
+        let maxInset = baseThickness * 0.28
+        let radialInset = WWClock.pixel(min(maxInset, max(px, dialRadius * 0.004)), scale: scale)
+
+        let segmentOuterRadius = baseOuterRadius - radialInset
+        let segmentInnerRadius = baseInnerRadius + radialInset
+
+        let baseRingFill = palette.separatorRing.opacity(1.0)
+
+        // Flat-ish olive, close to the mock (shading added in Step 4).
+        let segmentFill = WWClock.colour(0x3B3A1E, alpha: 1.0)
+
+        ZStack {
+            Circle()
+                .strokeBorder(baseRingFill, lineWidth: baseThickness)
+                .frame(width: baseOuterRadius * 2.0, height: baseOuterRadius * 2.0)
+
+            ForEach(0..<12, id: \.self) { i in
+                // 12 at the top; sectors centred on hour positions.
+                let centreDeg = -90.0 + (Double(i) * 30.0)
+                let start = Angle.degrees(centreDeg - 15.0)
+                let end = Angle.degrees(centreDeg + 15.0)
+
+                WWClockAnnularSectorShape(
+                    innerRadius: segmentInnerRadius,
+                    outerRadius: segmentOuterRadius,
+                    startAngle: start,
+                    endAngle: end,
+                    angularGap: gapAngle
+                )
+                .fill(segmentFill, style: FillStyle(eoFill: false, antialiased: true))
+            }
+        }
+        .frame(width: dialRadius * 2.0, height: dialRadius * 2.0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
