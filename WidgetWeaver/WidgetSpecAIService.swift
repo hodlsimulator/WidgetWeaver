@@ -224,6 +224,15 @@ final class WidgetSpecAIService {
             )
         }
 
+        guard WidgetWeaverFeatureFlags.aiEnabled else {
+            let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
+            return WidgetSpecAIGenerationResult(
+                spec: spec,
+                usedModel: false,
+                note: "AI disabled — used deterministic template."
+            )
+        }
+
         switch model.availability {
         case .available:
             do {
@@ -253,6 +262,14 @@ final class WidgetSpecAIService {
         }
 
         let base = spec.normalised()
+
+        guard WidgetWeaverFeatureFlags.aiEnabled else {
+            return WidgetSpecAIGenerationResult(
+                spec: base,
+                usedModel: false,
+                note: "AI disabled — no change."
+            )
+        }
 
         switch model.availability {
         case .available:
