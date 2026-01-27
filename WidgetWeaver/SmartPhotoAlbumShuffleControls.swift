@@ -51,6 +51,11 @@ struct SmartPhotoAlbumShuffleControls: View {
     @State var selectedSourceKey: String = SmartPhotoShuffleSourceKey.album
     @State var configuredSourceKey: String = SmartPhotoShuffleSourceKey.album
 
+    /// Keeps the Source selector deterministic when reopening the editor.
+    ///
+    /// Updated by refreshFromManifest() and reset onAppear().
+    @State var sourceSelectionHydrationManifestFileName: String = ""
+
     private var selectedMemoriesMode: SmartPhotoMemoriesMode? {
         guard FeatureFlags.smartPhotoMemoriesEnabled else { return nil }
         return SmartPhotoMemoriesMode(rawValue: selectedSourceKey)
@@ -94,6 +99,7 @@ struct SmartPhotoAlbumShuffleControls: View {
             Divider()
         }
         .onAppear {
+            sourceSelectionHydrationManifestFileName = ""
             handleAlbumPickerPresentationChange(isPresented: albumPickerPresentedBinding.wrappedValue)
         }
         .sheet(isPresented: albumPickerPresentedBinding) {
@@ -190,24 +196,32 @@ struct SmartPhotoAlbumShuffleControls: View {
             }
         } else if !shuffleEnabled {
             if let mode = selectedMemoriesMode {
-                Text("Build a Memories set for “\(mode.displayName)”. While the app is open, it will progressively pre-render it (in batches of \(batchSize)).\n\nIf nothing appears, try a different mode or choose an album. Screenshots and very low-res images are ignored.")
+                Text(memoriesEmptyStateText(for: mode))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Choose an album to start. While the app is open, it will progressively pre-render the album (in batches of \(batchSize)).")
+                Text(albumEmptyStateText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         } else if let progress {
-            HStack(spacing: 8) {
-                if isPreparingBatch {
-                    ProgressView()
-                        .controlSize(.small)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    if isPreparingBatch {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Text("Prepared \(progress.prepared)/\(progress.total) • failed \(progress.failed) • currentIndex \(progress.currentIndex)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
-                Text("Prepared \(progress.prepared)/\(progress.total) • failed \(progress.failed) • currentIndex \(progress.currentIndex)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if FeatureFlags.smartPhotoMemoriesEnabled, selectedSourceKey != configuredSourceKey {
+                    Text("Currently configured: \(configuredSourceDisplayName). Tap Build/Refresh to switch source.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         } else {
             HStack(spacing: 8) {
@@ -220,6 +234,36 @@ struct SmartPhotoAlbumShuffleControls: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var configuredSourceDisplayName: String {
+        if configuredSourceKey == SmartPhotoShuffleSourceKey.album {
+            return "Album Shuffle"
+        }
+
+        if let mode = SmartPhotoMemoriesMode(rawValue: configuredSourceKey) {
+            return mode.displayName
+        }
+
+        return "Shuffle"
+    }
+
+    private var albumEmptyStateText: String {
+        if FeatureFlags.smartPhotoMemoriesEnabled {
+            return "Choose an album to start, or choose a Memories source above. While the app is open, it will progressively pre-render (in batches of \(batchSize))."
+        }
+
+        return "Choose an album to start. While the app is open, it will progressively pre-render the album (in batches of \(batchSize))."
+    }
+
+    private func memoriesEmptyStateText(for mode: SmartPhotoMemoriesMode) -> String {
+        switch mode {
+        case .onThisDay:
+            return "On this day finds photos taken on this date in past years.\n\nTap Build to create a Memories set. While the app is open, it will prepare the set in the background (in batches of \(batchSize)).\n\nIf nothing appears, try “On this week” or choose an album. Screenshots and very low-resolution images are ignored."
+
+        case .onThisWeek:
+            return "On this week finds photos taken in this week in past years (usually more results).\n\nTap Build to create a Memories set. While the app is open, it will prepare the set in the background (in batches of \(batchSize)).\n\nIf nothing appears, choose an album. Screenshots and very low-resolution images are ignored."
         }
     }
 

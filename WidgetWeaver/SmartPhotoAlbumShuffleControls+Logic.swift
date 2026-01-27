@@ -100,6 +100,7 @@ extension SmartPhotoAlbumShuffleControls {
 
         if FeatureFlags.smartPhotoMemoriesEnabled {
             selectedSourceKey = SmartPhotoShuffleSourceKey.album
+            sourceSelectionHydrationManifestFileName = manifestFile
         }
 
         albumPickerPresentedBinding.wrappedValue = false
@@ -148,6 +149,7 @@ extension SmartPhotoAlbumShuffleControls {
             saveStatusMessage = "Shuffle configured for \(mode.displayName) (\(result.selectedCount) photos).\nPrepared \(result.preparedNow) now\(failureSuffix)."
 
             selectedSourceKey = mode.rawValue
+            sourceSelectionHydrationManifestFileName = result.manifestFileName
 
             await refreshFromManifest()
         } catch let error as SmartPhotoMemoriesEngine.MemoriesError {
@@ -188,7 +190,8 @@ extension SmartPhotoAlbumShuffleControls {
         nextChangeDate = nil
         rotationIntervalMinutes = 60
 
-        if FeatureFlags.smartPhotoMemoriesEnabled, SmartPhotoMemoriesMode(rawValue: configuredSourceKey) != nil {
+        if FeatureFlags.smartPhotoMemoriesEnabled {
+            sourceSelectionHydrationManifestFileName = ""
             saveStatusMessage = "Shuffle disabled."
         } else {
             saveStatusMessage = "Album shuffle disabled."
@@ -513,6 +516,10 @@ extension SmartPhotoAlbumShuffleControls {
                 nextChangeDate = nil
                 rotationIntervalMinutes = 60
                 configuredSourceKey = SmartPhotoShuffleSourceKey.album
+
+                if FeatureFlags.smartPhotoMemoriesEnabled {
+                    sourceSelectionHydrationManifestFileName = ""
+                }
             }
             return
         }
@@ -523,6 +530,10 @@ extension SmartPhotoAlbumShuffleControls {
                 nextChangeDate = nil
                 rotationIntervalMinutes = 60
                 configuredSourceKey = SmartPhotoShuffleSourceKey.album
+
+                if FeatureFlags.smartPhotoMemoriesEnabled {
+                    sourceSelectionHydrationManifestFileName = ""
+                }
             }
             return
         }
@@ -578,10 +589,11 @@ extension SmartPhotoAlbumShuffleControls {
 
             configuredSourceKey = configuredKey
 
-            if configuredKey != SmartPhotoShuffleSourceKey.album,
-               selectedSourceKey == SmartPhotoShuffleSourceKey.album
-            {
-                selectedSourceKey = configuredKey
+            if FeatureFlags.smartPhotoMemoriesEnabled {
+                if sourceSelectionHydrationManifestFileName != mf {
+                    selectedSourceKey = configuredKey
+                    sourceSelectionHydrationManifestFileName = mf
+                }
             }
         }
     }
