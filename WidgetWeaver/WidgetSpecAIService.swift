@@ -44,7 +44,7 @@ struct WidgetSpecGenerationPayload {
 
     @Guide(
         description: "Background token.",
-        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial"])
+        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial", "aurora", "sunset", "midnight", "candy"])
     )
     var background: String
 
@@ -125,7 +125,7 @@ struct WidgetSpecPatchPayload {
 
     @Guide(
         description: "Optional background token.",
-        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial"])
+        .anyOf(["plain", "accentGlow", "radialGlow", "solidAccent", "subtleMaterial", "aurora", "sunset", "midnight", "candy"])
     )
     var background: String?
 
