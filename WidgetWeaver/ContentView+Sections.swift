@@ -207,6 +207,10 @@ extension ContentView {
                     onPerformCTA: performEditorUnavailableCTA
                 )
             } else {
+                Text(WidgetSpecAIService.availabilityMessage())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 TextField("Prompt (generate a new design)", text: $aiPrompt, axis: .vertical)
                     .lineLimit(2...6)
 
@@ -333,7 +337,7 @@ extension ContentView {
                 LabeledContent("Saved variables", value: "\(vars.count)")
                 Button { activeSheet = .variables } label: { Label("Open Variables", systemImage: "curlybraces.square") }
 
-                Text("Variables are stored on-device.\nUse them in text via {{__var_key|fallback}}.")
+                Text("Variables are stored on-device.\nOpen Variables → use “Insert variable…” (or “Build snippet…”) so there is no need to type {{ }}.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
