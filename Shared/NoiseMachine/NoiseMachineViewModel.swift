@@ -15,6 +15,9 @@ final class NoiseMachineViewModel: ObservableObject {
     @Published var resumeOnLaunch: Bool
     @Published var audioStatus: String = ""
 
+    @Published private(set) var copiedLayerIndex: Int? = nil
+    @Published private(set) var copiedLayerState: NoiseSlotState? = nil
+
     private let store = NoiseMixStore.shared
 
     private var darwinToken: DarwinNotificationToken?
@@ -260,6 +263,71 @@ final class NoiseMachineViewModel: ObservableObject {
             if commit {
                 state = await NoiseMachineController.shared.currentMixState()
             }
+        }
+    }
+
+    // MARK: - Layer tools (copy / paste / reset)
+
+    func copyLayer(_ index: Int) {
+        guard state.slots.indices.contains(index) else { return }
+
+        copiedLayerIndex = index
+        copiedLayerState = state.slots[index]
+
+        NoiseMachineDebugLogStore.shared.append(.info, "UI copyLayer index=\(index)")
+    }
+
+    func clearCopiedLayer() {
+        copiedLayerIndex = nil
+        copiedLayerState = nil
+
+        NoiseMachineDebugLogStore.shared.append(.info, "UI clearCopiedLayer")
+    }
+
+    func pasteCopiedLayer(to index: Int) {
+        guard state.slots.indices.contains(index) else { return }
+        guard let copiedLayerState else { return }
+
+        NoiseMachineDebugLogStore.shared.append(.info, "UI pasteCopiedLayer to=\(index)")
+
+        var next = state
+        next.slots[index] = copiedLayerState
+        next.updatedAt = Date()
+        state = next
+
+        Task {
+            await NoiseMachineController.shared.apply(state: next)
+            store.saveImmediate(next)
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
+            reloadNoiseMachineWidget()
+        }
+    }
+
+    func resetLayerTone(_ index: Int) {
+        guard state.slots.indices.contains(index) else { return }
+
+        NoiseMachineDebugLogStore.shared.append(.info, "UI resetLayerTone index=\(index)")
+
+        let defaults = NoiseSlotState.default
+        var slot = state.slots[index]
+
+        slot.colour = defaults.colour
+        slot.lowCutHz = defaults.lowCutHz
+        slot.highCutHz = defaults.highCutHz
+        slot.eq = defaults.eq
+
+        var next = state
+        next.slots[index] = slot
+        next.updatedAt = Date()
+        state = next
+
+        Task {
+            await NoiseMachineController.shared.apply(state: next)
+            store.saveImmediate(next)
+            state = await NoiseMachineController.shared.currentMixState()
+            await refreshAudioStatus()
+            reloadNoiseMachineWidget()
         }
     }
 }

@@ -17,6 +17,9 @@ struct NoiseMachineView: View {
 
     @State private var expandedEQ: Set<Int> = []
 
+    @State private var toastItem: ToastItem? = nil
+    @State private var toastDismissTask: Task<Void, Never>? = nil
+
     @Environment(\.noiseMachinePresentationTracker) private var presentationTracker
 
     var body: some View {
@@ -29,6 +32,7 @@ struct NoiseMachineView: View {
         }
         .navigationTitle("Noise Machine")
         .navigationBarTitleDisplayMode(.large)
+        .overlay(alignment: .bottom) { toastOverlay }
         .onAppear {
             presentationTracker?.setVisible(true)
             #if DEBUG
@@ -37,6 +41,8 @@ struct NoiseMachineView: View {
             model.onAppear()
         }
         .onDisappear {
+            clearToast()
+
             presentationTracker?.setVisible(false)
             #if DEBUG
             logModel.stop()
@@ -93,6 +99,24 @@ struct NoiseMachineView: View {
                 .accessibilityHint("Applies a built-in mix without changing the play/pause state.")
             }
 
+            if let copiedIndex = model.copiedLayerIndex, model.copiedLayerState != nil {
+                HStack(spacing: 12) {
+                    Label("Copied: Layer \(copiedIndex + 1)", systemImage: "doc.on.doc")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Button("Clear") {
+                        model.clearCopiedLayer()
+                        showToast("Cleared copied layer.", systemImage: "xmark.circle", durationNanoseconds: 1_100_000_000)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
             WWFloatSliderRow(
                 title: "Master volume",
                 accessibilityLabel: "Master volume",
@@ -120,7 +144,7 @@ struct NoiseMachineView: View {
         } header: {
             Text("Master")
         } footer: {
-            Text("Reset sets all layers, filters, and EQ back to defaults. Playback stops; press Play to start again.")
+            Text("Reset sets all layers, filters, and EQ back to defaults. Playback stops; press Play to start again.\nLayer tools can copy/paste settings and reset tone.")
         }
     }
 
@@ -250,6 +274,34 @@ struct NoiseMachineView: View {
             }
             .accessibilityLabel("Layer \(index + 1) enabled")
 
+            ControlGroup {
+                Button {
+                    model.copyLayer(index)
+                    showToast("Copied Layer \(index + 1).", systemImage: "doc.on.doc", durationNanoseconds: 1_150_000_000)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .accessibilityHint("Copies this layer's settings for pasting to another layer.")
+
+                Button {
+                    model.pasteCopiedLayer(to: index)
+                    showToast("Pasted to Layer \(index + 1).", systemImage: "doc.on.clipboard", durationNanoseconds: 1_150_000_000)
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                }
+                .disabled(model.copiedLayerState == nil)
+                .accessibilityHint("Applies the copied layer settings to this layer.")
+
+                Button {
+                    model.resetLayerTone(index)
+                    showToast("Reset tone for Layer \(index + 1).", systemImage: "arrow.counterclockwise", durationNanoseconds: 1_150_000_000)
+                } label: {
+                    Label("Reset tone", systemImage: "arrow.counterclockwise")
+                }
+                .accessibilityHint("Resets colour, filters, and EQ for this layer.")
+            }
+            .controlSize(.small)
+
             WWFloatSliderRow(
                 title: "Volume",
                 accessibilityLabel: "Layer \(index + 1) volume",
@@ -374,6 +426,88 @@ struct NoiseMachineView: View {
         }
     }
 
+
+    private struct ToastItem: Identifiable, Hashable {
+        let id: UUID
+        let text: String
+        let systemImage: String
+        let durationNanoseconds: UInt64
+
+        init(
+            id: UUID = UUID(),
+            text: String,
+            systemImage: String,
+            durationNanoseconds: UInt64
+        ) {
+            self.id = id
+            self.text = text
+            self.systemImage = systemImage
+            self.durationNanoseconds = durationNanoseconds
+        }
+    }
+
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let toastItem {
+            NoiseMachineToastView(text: toastItem.text, systemImage: toastItem.systemImage)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func clearToast() {
+        toastDismissTask?.cancel()
+        withAnimation(.spring(duration: 0.28)) {
+            toastItem = nil
+        }
+    }
+
+    private func showToast(
+        _ text: String,
+        systemImage: String,
+        durationNanoseconds: UInt64
+    ) {
+        toastDismissTask?.cancel()
+
+        let item = ToastItem(text: text, systemImage: systemImage, durationNanoseconds: durationNanoseconds)
+        withAnimation(.spring(duration: 0.35)) {
+            toastItem = item
+        }
+
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: durationNanoseconds)
+            guard toastItem?.id == item.id else { return }
+            withAnimation(.spring(duration: 0.35)) {
+                toastItem = nil
+            }
+        }
+    }
+
+    private struct NoiseMachineToastView: View {
+        let text: String
+        let systemImage: String
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.secondary)
+
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+        }
+    }
     private func colourLabel(_ value: Float) -> String {
         if value < 0.25 { return "White" }
         if value < 0.75 { return "White → Pink" }
