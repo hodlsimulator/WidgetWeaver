@@ -41,7 +41,7 @@ extension ContentView {
                 )
             }
         } header: {
-            sectionHeader(FeatureFlags.smartPhotoMemoriesEnabled ? "Shuffle" : "Album Shuffle")
+            sectionHeader("Album Shuffle")
         }
     }
 }
