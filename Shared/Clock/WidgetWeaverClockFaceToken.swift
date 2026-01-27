@@ -23,6 +23,9 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
     /// This is the default for newly created clock designs.
     case icon
 
+    /// Segmented face (12 numerals on an outer ring).
+    case segmented
+
     /// Returns the canonical face token for a raw persisted string.
     ///
     /// Unknown, missing, or empty inputs fall back to `.ceramic` to preserve legacy designs.
@@ -45,6 +48,8 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
             return "Ceramic"
         case .icon:
             return "Icon"
+        case .segmented:
+            return "Segmented"
         }
     }
 
@@ -55,6 +60,8 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
             return "4 numerals"
         case .icon:
             return "12 numerals"
+        case .segmented:
+            return "12 numerals (segmented)"
         }
     }
 
@@ -63,8 +70,10 @@ public enum WidgetWeaverClockFaceToken: String, CaseIterable, Codable, Hashable,
         switch self {
         case .icon:
             return 0
-        case .ceramic:
+        case .segmented:
             return 1
+        case .ceramic:
+            return 2
         }
     }
 

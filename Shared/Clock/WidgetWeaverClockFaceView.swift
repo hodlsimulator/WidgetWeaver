@@ -67,7 +67,7 @@ struct WidgetWeaverClockFaceView: View {
                 handsOpacity: handsOpacity
             )
 
-        case .icon:
+        case .icon, .segmented:
             WidgetWeaverClockIconFaceView(
                 palette: palette,
                 hourAngle: hourAngle,
