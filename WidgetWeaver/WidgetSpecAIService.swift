@@ -30,7 +30,7 @@ struct WidgetSpecGenerationPayload {
     @Guide(description: "Layout axis.", .anyOf(["vertical", "horizontal"]))
     var axis: String
 
-    @Guide(description: "Overall alignment.", .anyOf(["leading", "center", "trailing"]))
+    @Guide(description: "Overall alignment.", .anyOf(["leading", "centre", "trailing", "center"]))
     var alignment: String
 
     @Guide(description: "Spacing between elements (points).", .range(0.0...24.0))
@@ -102,7 +102,7 @@ struct WidgetSpecPatchPayload {
     @Guide(description: "Optional axis override.", .anyOf(["vertical", "horizontal"]))
     var axis: String?
 
-    @Guide(description: "Optional alignment override.", .anyOf(["leading", "center", "trailing"]))
+    @Guide(description: "Optional alignment override.", .anyOf(["leading", "centre", "trailing", "center"]))
     var alignment: String?
 
     @Guide(description: "Optional spacing override (points).", .range(0.0...24.0))
@@ -344,13 +344,26 @@ private extension WidgetSpecAIService {
 // MARK: - Mapping to WidgetSpec
 
 private extension WidgetSpecAIService {
+    static func normalisedAlignmentRawValue(_ rawValue: String) -> String {
+        let trimmed = collapseWhitespace(rawValue).trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+
+        switch lower {
+        case "center", "centre":
+            return LayoutAlignmentToken.centre.rawValue
+        default:
+            return trimmed
+        }
+    }
+
     static func widgetSpec(from payload: WidgetSpecGenerationPayload) -> WidgetSpec {
         let name = clean(payload.name, maxLength: 24, fallback: "WidgetWeaver")
         let primary = clean(payload.primaryText, maxLength: 46, fallback: "Hello")
         let secondary = optionalClean(payload.secondaryText, maxLength: 60)
 
         let axis = LayoutAxisToken(rawValue: payload.axis) ?? .vertical
-        let alignment = LayoutAlignmentToken(rawValue: payload.alignment) ?? .leading
+        let alignmentRaw = normalisedAlignmentRawValue(payload.alignment)
+        let alignment = LayoutAlignmentToken(rawValue: alignmentRaw) ?? .leading
 
         var layout = LayoutSpec.defaultLayout
         layout.axis = axis
