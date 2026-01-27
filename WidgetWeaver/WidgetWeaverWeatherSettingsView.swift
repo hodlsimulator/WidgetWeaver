@@ -39,6 +39,9 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     @State private var locationAuthStatus: CLAuthorizationStatus = CLLocationManager().authorizationStatus
 
+    @State private var backgroundRefreshStatus: UIBackgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
+    @State private var lowPowerModeEnabled: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
+
     private let store = WidgetWeaverWeatherStore.shared
 
     var body: some View {
@@ -77,6 +80,7 @@ struct WidgetWeaverWeatherSettingsView: View {
         .onAppear {
             refreshLocalState()
             refreshLocationAuthStatus()
+            refreshSystemRefreshStatus()
 
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                let loc = savedLocation {
@@ -85,6 +89,7 @@ struct WidgetWeaverWeatherSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshLocationAuthStatus()
+            refreshSystemRefreshStatus()
         }
         .sheet(isPresented: $geocodeCandidatesPresented) {
             NavigationStack {
@@ -116,13 +121,18 @@ struct WidgetWeaverWeatherSettingsView: View {
     private var headerSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Used by the Weather layout template and the __weather_* built-in variables.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Label("Weather Pack", systemImage: "cloud.sun.fill")
+                    .font(.headline)
 
-                Text("Tip: pull down to refresh once a location is saved.")
+                Text("Weather widgets refresh based on your saved location, unit preferences, and iOS background fetch windows.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Tip: if widgets feel stale, check Background App Refresh and Low Power Mode in the Auto-refresh section below.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 4)
         }
@@ -130,69 +140,60 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     private var locationSection: some View {
         Section("Location") {
-            if let loc = savedLocation {
+            if let savedLocation {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(loc.name)
+                    Text(savedLocation.name)
                         .font(.headline)
 
-                    Text("Lat \(loc.latitudeString), Lon \(loc.longitudeString)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    Text("Updated \(loc.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    Text("Lat \(savedLocation.latitude, specifier: "%.4f"), Lon \(savedLocation.longitude, specifier: "%.4f")")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
-                Button(role: .destructive) {
-                    store.saveLocation(nil)
-                    query = ""
-                    refreshLocalState()
-                    reloadWidgets()
-                } label: {
-                    Label("Clear location", systemImage: "trash")
-                }
+                .padding(.vertical, 4)
             } else {
                 Text("No location saved yet.")
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    Task { await useCurrentLocation() }
-                } label: {
-                    Label(currentLocationButtonTitle, systemImage: "location.fill")
-                }
-                .disabled(isWorking)
-                .buttonStyle(.bordered)
+            TextField("Search (city, town, postcode)", text: $query)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
 
-                if locationAuthStatus == .denied || locationAuthStatus == .restricted {
-                    Button {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            openURL(url)
-                        }
-                    } label: {
-                        Label("Open Location Settings", systemImage: "gear")
-                    }
-                    .disabled(isWorking)
-                }
-
-                TextField("City, town, postcode…", text: $query)
-                    .submitLabel(.search)
-                    .onSubmit {
-                        guard !isWorking else { return }
-                        Task { await geocodeAndSave() }
-                    }
-                    .textInputAutocapitalization(.words)
-                    .disableAutocorrection(true)
-
-                Button {
-                    Task { await geocodeAndSave() }
-                } label: {
-                    Label("Save location", systemImage: "location.magnifyingglass")
-                }
-                .disabled(isWorking || trimmedQuery.isEmpty)
+            Button {
+                Task { await runGeocodeSearch() }
+            } label: {
+                Label("Search locations", systemImage: "magnifyingglass")
             }
+            .disabled(trimmedQuery.isEmpty || isWorking)
+
+            Button {
+                Task { await useCurrentLocation() }
+            } label: {
+                Label(currentLocationButtonTitle, systemImage: "location.fill")
+            }
+            .disabled(isWorking)
+
+            if locationAuthStatus == .denied || locationAuthStatus == .restricted {
+                Button {
+                    openAppSettings()
+                } label: {
+                    Label("Open Settings (Location)", systemImage: "gear")
+                }
+            }
+
+            if let savedLocation {
+                Button(role: .destructive) {
+                    store.clearLocation()
+                    refreshLocalState()
+                    reloadWidgets()
+                } label: {
+                    Label("Clear location", systemImage: "trash")
+                }
+            }
+        } footer: {
+            Text("Weather widgets use the saved location. Searching uses Apple geocoding. Current Location requires permission.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -203,30 +204,49 @@ struct WidgetWeaverWeatherSettingsView: View {
                     Text(pref.displayName).tag(pref)
                 }
             }
+            .pickerStyle(.segmented)
             .onChange(of: unitPreference) { _, newValue in
                 store.saveUnitPreference(newValue)
                 reloadWidgets()
             }
+
+            Text("Unit preference controls __weather_temp_* variables and the weather template display.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var nowSection: some View {
         Section("Now") {
-            if let snap = snapshot {
+            if let snapshot {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(snap.conditionDescription)
+                    Text(snapshot.locationName)
                         .font(.headline)
 
-                    Text("Updated \(snap.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                    Text("Updated \(snapshot.generatedAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    Text(nowTemperatureText(for: snap))
+                    if let headline = snapshot.headline, !headline.isEmpty {
+                        Text(headline)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Temp: \(snapshot.temperatureC, specifier: "%.1f")°C")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    if let precip = snapshot.precipitationNextHourTotalMM {
+                        Text("Rain next hour: \(precip, specifier: "%.1f") mm")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .padding(.vertical, 4)
             } else {
-                Text("No cached weather yet.")
+                Text("No snapshot yet.")
                     .foregroundStyle(.secondary)
             }
 
@@ -237,38 +257,73 @@ struct WidgetWeaverWeatherSettingsView: View {
             }
             .disabled(isWorking || savedLocation == nil)
 
-            Button(role: .destructive) {
-                store.clearSnapshot()
-                refreshLocalState()
-                reloadWidgets()
-            } label: {
-                Label("Clear cached weather", systemImage: "trash")
+            if savedLocation == nil {
+                Text("Set a location first to fetch weather.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .disabled(snapshot == nil)
+
+            if let lastError, !lastError.isEmpty {
+                Text("Last error: \(lastError)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private var builtInVariablesSection: some View {
-        Section {
-            if weatherVariableItems.isEmpty {
-                Text("No weather variables yet.\nSet a location, then tap Update now.")
+        let values = store.variablesDictionary()
+
+        return Section("__weather_* variables") {
+            if values.isEmpty {
+                Text("No variables yet. Fetch weather to populate __weather_* keys.")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Button {
-                    copyAllWeatherVariables()
+                    copyWeatherVariables(values)
+                    showToast("Copied \(values.count) variables.", systemImage: "doc.on.doc")
                 } label: {
                     Label("Copy all __weather_* values", systemImage: "doc.on.doc")
                 }
 
-                ForEach(weatherVariableItems) { item in
-                    weatherVariableRow(key: item.key, value: item.value)
+                ForEach(values.keys.sorted(), id: \.self) { key in
+                    let val = values[key] ?? ""
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(key)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text(val.isEmpty ? "—" : val)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Button {
+                            UIPasteboard.general.string = "{{\(key)}}"
+                            showToast("Copied {{\(key)}}", systemImage: "doc.on.doc")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Copy snippet")
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        UIPasteboard.general.string = "{{\(key)}}"
+                        showToast("Copied {{\(key)}}", systemImage: "doc.on.doc")
+                    }
                 }
             }
-        } header: {
-            Text("Built-in variables")
         } footer: {
-            Text("These values back the __weather_* built-in keys used by templates and Variables.")
+            Text("Tap a row to copy {{key}}. Widgets render from a cached snapshot, not live network calls.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -294,7 +349,22 @@ struct WidgetWeaverWeatherSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Weather refreshes when the app becomes active and during iOS background fetch windows.")
+
+            HStack {
+                Text("Background App Refresh")
+                Spacer()
+                Text(backgroundRefreshStatusLabel)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text("Low Power Mode")
+                Spacer()
+                Text(lowPowerModeEnabled ? "On" : "Off")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(autoRefreshFooterText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -323,14 +393,19 @@ struct WidgetWeaverWeatherSettingsView: View {
 
     private var diagnosticsSection: some View {
         Section("Diagnostics") {
-            if let lastError {
-                Text(lastError)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("No stored errors.")
-                    .foregroundStyle(.secondary)
+            Button {
+                let loc = store.loadLocation()
+                let snap = store.loadSnapshot()
+                let err = store.loadLastError() ?? ""
+                let msg = """
+                Location: \(loc?.name ?? "nil")
+                Snapshot: \(snap == nil ? "nil" : "present")
+                Last error: \(err.isEmpty ? "none" : err)
+                """
+                UIPasteboard.general.string = msg
+                showToast("Copied diagnostics.", systemImage: "doc.on.doc")
+            } label: {
+                Label("Copy diagnostics", systemImage: "doc.on.doc")
             }
 
             Button(role: .destructive) {
@@ -399,365 +474,368 @@ struct WidgetWeaverWeatherSettingsView: View {
         lastSuccessfulRefreshAt = store.loadLastSuccessfulRefreshAt()
     }
 
-    private func refreshFromPullToRefresh() async {
-        guard !isWorking else { return }
-
-        guard savedLocation != nil else {
-            showToast("Set a location first.", systemImage: "location.magnifyingglass", durationNanoseconds: 2_200_000_000)
-            return
-        }
-
-        await updateNow(force: true)
-    }
-
     private func reloadWidgets() {
-        AppGroup.userDefaults.synchronize()
-
-        Task { @MainActor in
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.lockScreenWeather)
-
-            if #available(iOS 17.0, *) {
-                WidgetCenter.shared.invalidateConfigurationRecommendations()
-            }
-        }
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.weather)
     }
 
-    private struct ToastItem: Identifiable, Hashable {
-        let id: UUID
-        let text: String
-        let systemImage: String
-        let durationNanoseconds: UInt64
-
-        init(
-            id: UUID = UUID(),
-            text: String,
-            systemImage: String,
-            durationNanoseconds: UInt64
-        ) {
-            self.id = id
-            self.text = text
-            self.systemImage = systemImage
-            self.durationNanoseconds = durationNanoseconds
-        }
-    }
-
-    private func clearToast() {
+    private func showToast(_ text: String, systemImage: String? = nil) {
         toastDismissTask?.cancel()
-        withAnimation(.spring(duration: 0.28)) {
-            toastItem = nil
-        }
-    }
+        toastDismissTask = nil
 
-    private func showToast(
-        _ text: String,
-        systemImage: String,
-        durationNanoseconds: UInt64
-    ) {
-        toastDismissTask?.cancel()
-
-        let item = ToastItem(text: text, systemImage: systemImage, durationNanoseconds: durationNanoseconds)
         withAnimation(.spring(duration: 0.35)) {
-            toastItem = item
+            toastItem = ToastItem(text: text, systemImage: systemImage)
         }
 
         toastDismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: durationNanoseconds)
-            guard toastItem?.id == item.id else { return }
+            try? await Task.sleep(nanoseconds: 1_700_000_000)
             withAnimation(.spring(duration: 0.35)) {
                 toastItem = nil
             }
         }
     }
 
-    private struct WeatherVariableItem: Identifiable, Hashable {
-        let key: String
-        let value: String
-
-        var id: String { key }
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
     }
 
-    private var weatherVariableItems: [WeatherVariableItem] {
-        let vars = store.variablesDictionary(now: WidgetWeaverRenderClock.now)
-
-        return vars
-            .filter { $0.key.hasPrefix("__weather_") }
-            .sorted { $0.key < $1.key }
-            .map { WeatherVariableItem(key: $0.key, value: $0.value) }
-    }
-
-    private func copyAllWeatherVariables() {
-        let lines: [String] = weatherVariableItems.map { item in
-            let sanitisedValue = item.value
-                .replacingOccurrences(of: "\n", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if sanitisedValue.isEmpty {
-                return "\(item.key)=—"
-            }
-
-            return "\(item.key)=\(sanitisedValue)"
-        }
-
-        UIPasteboard.general.string = lines.joined(separator: "\n")
-        showToast("Copied \(lines.count) variables.", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-    }
-
-    private func weatherVariableRow(key: String, value: String) -> some View {
-        let snippet = "{{\(key)}}"
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayValue = trimmed.isEmpty ? "—" : trimmed
-
-        return HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(key)
-                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-
-            Text(displayValue)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            Button {
-                UIPasteboard.general.string = snippet
-                showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Copy template")
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            UIPasteboard.general.string = snippet
-            showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-        }
-        .contextMenu {
-            Button("Copy template") {
-                UIPasteboard.general.string = snippet
-                showToast("Copied \(snippet).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-            }
-
-            Button("Copy value") {
-                UIPasteboard.general.string = displayValue
-                showToast("Copied value for \(key).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-            }
-
-            Button("Copy key") {
-                UIPasteboard.general.string = key
-                showToast("Copied \(key).", systemImage: "doc.on.doc", durationNanoseconds: 1_400_000_000)
-            }
-        }
-    }
-
-    private func nowTemperatureText(for snapshot: WidgetWeaverWeatherSnapshot) -> String {
-        let unit = store.resolvedUnitTemperature()
-        let tempValue = Measurement(value: snapshot.temperatureC, unit: UnitTemperature.celsius)
-            .converted(to: unit)
-            .value
-
-        return "Temp \(Int(round(tempValue)))°"
-    }
-
-    private func useCurrentLocation() async {
-        isWorking = true
-        clearToast()
-        defer {
-            isWorking = false
-            refreshLocationAuthStatus()
-        }
-
-        let status = await WidgetWeaverLocationService.shared.ensureWhenInUseAuthorisation()
+    private func refreshFromPullToRefresh() async {
+        refreshLocalState()
         refreshLocationAuthStatus()
+        refreshSystemRefreshStatus()
 
-        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
-            switch status {
-            case .denied, .restricted:
-                showToast("Location permission is disabled. Enable it in Settings to use Current Location.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-            case .notDetermined:
-                showToast("Location permission was not granted.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-            default:
-                showToast("Location permission is unavailable (status: \(status.rawValue)).", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-            }
+        guard savedLocation != nil else {
+            showToast("Set a location first.", systemImage: "location.fill")
             return
         }
-
-        do {
-            let location = try await WidgetWeaverLocationService.shared.fetchOneLocation()
-            let name = await reverseGeocodedName(for: location) ?? "Current Location"
-
-            let stored = WidgetWeaverWeatherLocation(
-                name: name,
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                updatedAt: Date()
-            )
-
-            store.saveLocation(stored)
-            query = stored.name
-            refreshLocalState()
-
-            await updateNow(force: true)
-        } catch {
-            showToast("Location failed: \(String(describing: error))", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-        }
-    }
-
-    private func reverseGeocodedName(for location: CLLocation) async -> String? {
-        guard let request = MKReverseGeocodingRequest(location: location) else { return nil }
-
-        do {
-            let items = try await request.mapItems
-            guard let item = items.first else { return nil }
-
-            if let address = item.address {
-                let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !short.isEmpty { return short }
-
-                let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !full.isEmpty { return full }
-            }
-
-            if let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !name.isEmpty {
-                return name
-            }
-
-            return nil
-        } catch {
-            return nil
-        }
-    }
-
-    private func geocodeAndSave() async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        isWorking = true
-        clearToast()
-        defer { isWorking = false }
-
-        do {
-            let candidates = try await geocode(trimmed)
-            guard let first = candidates.first else {
-                showToast("No results found.", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-                return
-            }
-
-            if candidates.count == 1 {
-                await saveGeocodeCandidate(first, fallbackQuery: trimmed)
-            } else {
-                geocodeCandidatesQuery = trimmed
-                geocodeCandidates = candidates
-                geocodeCandidatesPresented = true
-            }
-        } catch {
-            showToast("Geocoding failed: \(String(describing: error))", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
-        }
-    }
-
-    private func saveGeocodeCandidate(
-        _ candidate: WidgetWeaverWeatherGeocodeCandidate,
-        fallbackQuery: String
-    ) async {
-        let trimmedTitle = candidate.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = trimmedTitle.isEmpty ? fallbackQuery : trimmedTitle
-
-        let stored = WidgetWeaverWeatherLocation(
-            name: name,
-            latitude: candidate.latitude,
-            longitude: candidate.longitude,
-            updatedAt: Date()
-        )
-
-        store.saveLocation(stored)
-        query = name
-        refreshLocalState()
 
         await updateNow(force: true)
     }
 
     private func updateNow(force: Bool) async {
+        guard !isWorking else { return }
+        guard store.loadLocation() != nil else { return }
+
         isWorking = true
-        clearToast()
         defer { isWorking = false }
 
-        let result = await WidgetWeaverWeatherEngine.shared.updateIfNeeded(force: force)
-
-        if let snap = result.snapshot {
-            store.saveSnapshot(snap)
-        }
-        if let attr = result.attribution {
-            store.saveAttribution(attr)
-        }
-
+        _ = await store.refreshSnapshot(force: force)
         refreshLocalState()
         reloadWidgets()
 
-        if let err = result.errorDescription {
-            showToast("Update finished with an issue: \(err)", systemImage: "exclamationmark.triangle.fill", durationNanoseconds: 3_400_000_000)
+        if let lastError, !lastError.isEmpty {
+            showToast("Update failed.", systemImage: "exclamationmark.triangle.fill")
         } else {
-            showToast("Updated.", systemImage: "checkmark.circle.fill", durationNanoseconds: 1_400_000_000)
+            showToast("Weather updated.", systemImage: "checkmark.circle.fill")
         }
     }
 
-    private func geocode(_ query: String) async throws -> [WidgetWeaverWeatherGeocodeCandidate] {
-        try await Task.detached(priority: .userInitiated) { () -> [WidgetWeaverWeatherGeocodeCandidate] in
-            guard let request = MKGeocodingRequest(addressString: query) else { return [] }
-            let items = try await request.mapItems
+    private func runGeocodeSearch() async {
+        guard !isWorking else { return }
 
-            var out: [WidgetWeaverWeatherGeocodeCandidate] = []
-            out.reserveCapacity(items.count)
+        let q = trimmedQuery
+        guard !q.isEmpty else { return }
 
-            for item in items {
-                let loc = item.location
+        isWorking = true
+        defer { isWorking = false }
 
-                let title: String = {
-                    if let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines),
-                       !name.isEmpty {
-                        return name
-                    }
+        do {
+            let candidates = try await geocodeCandidatesForQuery(q)
+            geocodeCandidates = candidates
+            geocodeCandidatesQuery = q
 
-                    if let address = item.address {
-                        let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !short.isEmpty { return short }
+            if candidates.isEmpty {
+                showToast("No matches.", systemImage: "xmark.circle")
+            } else if candidates.count == 1, let only = candidates.first {
+                await saveGeocodeCandidate(only, fallbackQuery: q)
+            } else {
+                geocodeCandidatesPresented = true
+            }
+        } catch {
+            showToast("Search failed.", systemImage: "exclamationmark.triangle.fill")
+        }
+    }
 
-                        let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !full.isEmpty { return full }
-                    }
+    private func saveGeocodeCandidate(_ candidate: WidgetWeaverWeatherGeocodeCandidate, fallbackQuery: String) async {
+        geocodeCandidatesPresented = false
 
-                    return query
-                }()
+        let name = candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackQuery : candidate.title
 
-                let subtitle: String? = {
-                    guard let address = item.address else { return nil }
+        let newLocation = WidgetWeaverWeatherLocation(
+            name: name,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude
+        )
 
-                    let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !short.isEmpty, short != title { return short }
+        store.saveLocation(newLocation)
+        refreshLocalState()
+        reloadWidgets()
 
-                    let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !full.isEmpty, full != title { return full }
+        showToast("Location saved.", systemImage: "checkmark.circle.fill")
 
-                    return nil
-                }()
+        await updateNow(force: true)
+    }
 
-                out.append(
-                    WidgetWeaverWeatherGeocodeCandidate(
-                        title: title,
-                        subtitle: subtitle,
-                        latitude: loc.coordinate.latitude,
-                        longitude: loc.coordinate.longitude
-                    )
-                )
+    private func useCurrentLocation() async {
+        isWorking = true
+        defer { isWorking = false }
+
+        let status = CLLocationManager().authorizationStatus
+        if status == .notDetermined {
+            let ok = await requestWhenInUseAuthorisation()
+            refreshLocationAuthStatus()
+            if !ok {
+                showToast("Location permission not granted.", systemImage: "exclamationmark.triangle.fill")
+                return
+            }
+        }
+
+        if CLLocationManager().authorizationStatus == .denied || CLLocationManager().authorizationStatus == .restricted {
+            showToast("Location permission is off. Enable it in Settings.", systemImage: "exclamationmark.triangle.fill")
+            return
+        }
+
+        do {
+            let loc = try await currentLocationOnce()
+            let place = try? await reverseGeocode(loc: loc)
+            let name = place?.locality ?? place?.name ?? "Current Location"
+
+            let newLocation = WidgetWeaverWeatherLocation(
+                name: name,
+                latitude: loc.coordinate.latitude,
+                longitude: loc.coordinate.longitude
+            )
+
+            store.saveLocation(newLocation)
+            query = name
+            refreshLocalState()
+            reloadWidgets()
+
+            showToast("Location saved.", systemImage: "checkmark.circle.fill")
+
+            await updateNow(force: true)
+        } catch {
+            showToast("Failed to read current location.", systemImage: "exclamationmark.triangle.fill")
+        }
+    }
+
+    private func requestWhenInUseAuthorisation() async -> Bool {
+        let manager = CLLocationManager()
+        return await withCheckedContinuation { continuation in
+            let delegate = WidgetWeaverLocationAuthDelegate { granted in
+                continuation.resume(returning: granted)
+            }
+            manager.delegate = delegate
+            objc_setAssociatedObject(manager, Unmanaged.passUnretained(manager).toOpaque(), delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            manager.requestWhenInUseAuthorization()
+        }
+    }
+
+    private func currentLocationOnce() async throws -> CLLocation {
+        let manager = CLLocationManager()
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let delegate = WidgetWeaverLocationOnceDelegate { result in
+                continuation.resume(with: result)
+            }
+            manager.delegate = delegate
+            objc_setAssociatedObject(manager, Unmanaged.passUnretained(manager).toOpaque(), delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            manager.requestLocation()
+        }
+    }
+
+    private func reverseGeocode(loc: CLLocation) async throws -> CLPlacemark? {
+        let coder = CLGeocoder()
+        let placemarks = try await coder.reverseGeocodeLocation(loc)
+        return placemarks.first
+    }
+
+    private func copyWeatherVariables(_ values: [String: String]) {
+        let lines = values
+            .keys
+            .sorted()
+            .map { key in
+                let value = values[key] ?? ""
+                return "\(key)=\(value)"
             }
 
-            var seen = Set<String>()
-            return out.filter { seen.insert($0.id).inserted }
-        }.value
+        UIPasteboard.general.string = lines.joined(separator: "\n")
     }
+
+    private struct ToastItem: Identifiable, Hashable {
+        let id = UUID()
+        let text: String
+        let systemImage: String?
+    }
+}
+
+// MARK: - Location helpers (UIKit delegates)
+
+private final class WidgetWeaverLocationAuthDelegate: NSObject, CLLocationManagerDelegate {
+    private let onFinish: (Bool) -> Void
+
+    init(onFinish: @escaping (Bool) -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            onFinish(true)
+        case .denied, .restricted:
+            onFinish(false)
+        default:
+            break
+        }
+    }
+}
+
+private final class WidgetWeaverLocationOnceDelegate: NSObject, CLLocationManagerDelegate {
+    private let onFinish: (Result<CLLocation, Error>) -> Void
+
+    init(onFinish: @escaping (Result<CLLocation, Error>) -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let loc = locations.first {
+            onFinish(.success(loc))
+        } else {
+            onFinish(.failure(NSError(domain: "location", code: 0)))
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        onFinish(.failure(error))
+    }
+}
+
+// MARK: - Search results UI
+
+struct WidgetWeaverWeatherLocationSearchResultsView: View {
+    let query: String
+    let candidates: [WidgetWeaverWeatherGeocodeCandidate]
+    let onSelect: (WidgetWeaverWeatherGeocodeCandidate) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                Text("Results for “\(query)”")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Matches") {
+                ForEach(candidates) { candidate in
+                    Button {
+                        onSelect(candidate)
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title)
+                                .font(.headline)
+
+                            if let subtitle = candidate.subtitle, !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Text("Lat \(candidate.latitude, specifier: "%.4f"), Lon \(candidate.longitude, specifier: "%.4f")")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Locations")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Close") { dismiss() }
+            }
+        }
+    }
+}
+
+// MARK: - Geocode candidate model
+
+struct WidgetWeaverWeatherGeocodeCandidate: Identifiable, Hashable {
+    let title: String
+    let subtitle: String?
+    let latitude: Double
+    let longitude: Double
+
+    var id: String {
+        "\(title)|\(subtitle ?? "")|\(latitude)|\(longitude)"
+    }
+}
+
+// MARK: - Geocoding
+
+private func geocodeCandidatesForQuery(_ query: String) async throws -> [WidgetWeaverWeatherGeocodeCandidate] {
+    let request = MKLocalSearch.Request()
+    request.naturalLanguageQuery = query
+    request.resultTypes = .address
+
+    let search = MKLocalSearch(request: request)
+    let response = try await search.start()
+
+    return await Task.detached {
+        var out: [WidgetWeaverWeatherGeocodeCandidate] = []
+
+        for item in response.mapItems {
+            guard let loc = item.placemark.location else { continue }
+
+            let title: String = {
+                let name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !name.isEmpty { return name }
+
+                let locality = item.placemark.locality?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !locality.isEmpty { return locality }
+
+                if let address = item.address {
+                    let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !short.isEmpty { return short }
+
+                    let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !full.isEmpty { return full }
+                }
+
+                return query
+            }()
+
+            let subtitle: String? = {
+                guard let address = item.address else { return nil }
+
+                let short = address.shortAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !short.isEmpty, short != title { return short }
+
+                let full = address.fullAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !full.isEmpty, full != title { return full }
+
+                return nil
+            }()
+
+            out.append(
+                WidgetWeaverWeatherGeocodeCandidate(
+                    title: title,
+                    subtitle: subtitle,
+                    latitude: loc.coordinate.latitude,
+                    longitude: loc.coordinate.longitude
+                )
+            )
+        }
+
+        var seen = Set<String>()
+        return out.filter { seen.insert($0.id).inserted }
+    }.value
 }
