@@ -54,14 +54,14 @@ struct WWClockAnnularSectorShape: Shape {
 
         p.move(to: outerStart)
 
-        // Clock geometry in this project treats increasing angles as clockwise.
-        // Drawing the outer arc clockwise avoids long-arc wraparound and self-intersection.
+        // UIKit / SwiftUI coordinate space uses a downward Y axis, so positive angles advance clockwise.
+        // Tracing the outer arc with `clockwise: false` follows the positive-angle direction without wraparound.
         p.addArc(
             center: centre,
             radius: outerRadius,
             startAngle: adjustedStart,
             endAngle: adjustedEnd,
-            clockwise: true
+            clockwise: false
         )
 
         let innerEnd = CGPoint(
@@ -77,7 +77,7 @@ struct WWClockAnnularSectorShape: Shape {
             radius: innerRadius,
             startAngle: adjustedEnd,
             endAngle: adjustedStart,
-            clockwise: false
+            clockwise: true
         )
 
         p.closeSubpath()

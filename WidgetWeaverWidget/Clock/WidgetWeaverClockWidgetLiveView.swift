@@ -227,13 +227,13 @@ private struct WWClockRenderBody: View {
             return ()
         }()
 
+        let wallSignatureChanged = (wallSignatureSeconds != lastWallSignatureSeconds)
+
         ZStack {
+            // Heartbeat driver: ensures the body is re-evaluated while the widget is on screen.
             if !isPrerender {
-                ProgressView(timerInterval: heartbeatRange, countsDown: false)
-                    .id(sysMinuteAnchor)
-                    .opacity(0.001)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                WWClockSecondsDriverText(timerRange: heartbeatRange)
+                    .id("hb-\(sysMinuteAnchor.timeIntervalSinceReferenceDate)")
             }
 
             WidgetWeaverClockFaceView(
@@ -246,12 +246,9 @@ private struct WWClockRenderBody: View {
                 showsMinuteHand: !showsMinuteHandGlyph,
                 showsHandShadows: false,
                 showsGlows: false,
-                showsCentreHub: false,
-                handsOpacity: handsOpacity
+                showsCentreHub: false
             )
-            .transaction { transaction in
-                transaction.animation = nil
-            }
+            .opacity(handsOpacity)
 
             WWClockSecondsAndHubOverlay(
                 face: face,
@@ -264,94 +261,69 @@ private struct WWClockRenderBody: View {
                 refreshToken: significantTimeChangeToken
             )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(URL(string: "widgetweaver://clock"))
-        .overlay(alignment: .bottomTrailing) {
-            if WWClockDebugLog.isEnabled() {
-                WWClockWidgetDebugBadge(
-                    entryDate: renderNow,
-                    minuteAnchor: secondsMinuteAnchor,
-                    timerRange: timerRange,
-                    showSeconds: showSeconds,
-                    tickModeLabel: showSeconds ? "secondsSweep" : "minuteOnly"
-                )
-                .padding(6)
-            }
+        .onAppear {
+            // Initialise signature.
+            lastWallSignatureSeconds = wallSignatureSeconds
         }
-        .onChange(of: handsNow) { _, newHands in
-            // Minute tick proof logging.
-            guard WWClockDebugLog.isEnabled() else { return }
+        .onChange(of: wallSignatureChanged) { _, changed in
+            guard changed else { return }
 
-            let handsRef = Int(newHands.timeIntervalSinceReferenceDate.rounded())
-            if handsRef == lastLoggedMinuteRef { return }
-            lastLoggedMinuteRef = handsRef
-
-            let wallNow2 = Date()
-
-            // Skip minuteTick logs for pre-render passes.
-            let ctxNow2 = WidgetWeaverRenderClock.now
-            let sysMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow2)
-            let ctxMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow2)
-            let leadSeconds2 = ctxNow2.timeIntervalSince(wallNow2)
-
-            let uptime2 = ProcessInfo.processInfo.systemUptime
-            let recentlyJumped2 = (lastClockJumpUptime >= 0.0) && ((uptime2 - lastClockJumpUptime) < (15.0 * 60.0))
-
-            let isPrerender2 = !recentlyJumped2 && ((leadSeconds2 > 5.0) || (ctxMinuteAnchor2 > sysMinuteAnchor2))
-            if isPrerender2 { return }
-
-            let lagMs = Int((wallNow2.timeIntervalSince(newHands) * 1000.0).rounded())
-            let ok = (abs(lagMs) <= 250) ? 1 : 0
-
-            let cal = Calendar.autoupdatingCurrent
-            let h = cal.component(.hour, from: newHands)
-            let m = cal.component(.minute, from: newHands)
-
-            WWClockDebugLog.appendLazySync(category: "clock", throttleID: nil, minInterval: 0, now: wallNow2) {
-                "minuteTick build=\(WidgetWeaverClockWidgetLiveView.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(handsRef) lagMs=\(lagMs) ok=\(ok)"
-            }
-        }
-        .onChange(of: wallSignatureSeconds) { _, newSig in
+            let now = Date()
             let prev = lastWallSignatureSeconds
-            lastWallSignatureSeconds = newSig
+            lastWallSignatureSeconds = wallSignatureSeconds
 
-            guard prev != Int.min else { return }
+            // Record a jump time so pre-render detection can relax briefly.
+            lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
 
-            let delta = abs(newSig - prev)
-            if delta >= 2 {
-                significantTimeChangeToken &+= 1
-                lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
-                lastLoggedMinuteRef = Int.min
+            // Force rebuild of glyph views on a significant wall clock jump.
+            significantTimeChangeToken &+= 1
 
-                if WWClockDebugLog.isEnabled() {
-                    let wallNow3 = Date()
-                    WWClockDebugLog.appendLazySync(category: "clock", throttleID: nil, minInterval: 0, now: wallNow3) {
-                        "clockJump build=\(WidgetWeaverClockWidgetLiveView.buildLabel) prevSig=\(prev) newSig=\(newSig) delta=\(delta)"
-                    }
+            if WWClockDebugLog.isEnabled() {
+                WWClockDebugLog.appendLazySync(category: "clock", throttleID: nil, minInterval: 0.0, now: now) {
+                    "clockJump build=\(WidgetWeaverClockWidgetLiveView.buildLabel) prevSig=\(prev) newSig=\(wallSignatureSeconds) delta=\(wallSignatureSeconds - prev)"
                 }
             }
         }
-        .onAppear {
-            if lastWallSignatureSeconds == Int.min {
-                lastWallSignatureSeconds = wallSignatureSeconds
+        .onChange(of: sysMinuteAnchor) { _, newMinuteAnchor in
+            // Some widget hosts do not re-evaluate exactly on the boundary; this is a belt-and-braces check.
+            let minuteRef = Int(newMinuteAnchor.timeIntervalSinceReferenceDate.rounded())
+            guard minuteRef != lastLoggedMinuteRef else { return }
+            lastLoggedMinuteRef = minuteRef
+
+            guard WWClockDebugLog.isEnabled() else { return }
+
+            let now = Date()
+            let balloon = WWClockDebugLog.isBallooningEnabled()
+
+            let ctxNow2 = WidgetWeaverRenderClock.now
+            let wallNow2 = now
+            let leadSeconds2 = ctxNow2.timeIntervalSince(wallNow2)
+
+            let sysMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(wallNow2)
+            let ctxMinuteAnchor2 = WidgetWeaverClockWidgetLiveView.floorToMinute(ctxNow2)
+            let isPrerender2 = (leadSeconds2 > 5.0) || (ctxMinuteAnchor2 > sysMinuteAnchor2)
+
+            let cal = Calendar.autoupdatingCurrent
+            let h = cal.component(.hour, from: newMinuteAnchor)
+            let m = cal.component(.minute, from: newMinuteAnchor)
+
+            let lagMs = Int((wallNow2.timeIntervalSince(newMinuteAnchor) * 1000.0).rounded())
+
+            let ok = (!isPrerender2) ? 1 : 0
+
+            WWClockDebugLog.appendLazySync(
+                category: "clock",
+                throttleID: balloon ? nil : "clockWidget.minute",
+                minInterval: balloon ? 0.0 : 60.0,
+                now: now
+            ) {
+                "minuteTick build=\(WidgetWeaverClockWidgetLiveView.buildLabel) hm=\(h):\(String(format: "%02d", m)) handsRef=\(minuteRef) lagMs=\(lagMs) ok=\(ok)"
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemClockDidChange)) { _ in
-            significantTimeChangeToken &+= 1
-            lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
-            lastLoggedMinuteRef = Int.min
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange)) { _ in
-            significantTimeChangeToken &+= 1
-            lastClockJumpUptime = ProcessInfo.processInfo.systemUptime
-            lastLoggedMinuteRef = Int.min
         }
     }
 
     static func wallClockSignatureSeconds(now: Date, uptime: TimeInterval) -> Int {
-        let wallSeconds = now.timeIntervalSinceReferenceDate
-        let sig = wallSeconds - uptime
-        return Int(sig.rounded())
+        WidgetWeaverClockWidgetLiveView.wallClockSignatureSeconds(now: now, uptime: uptime)
     }
 }
 
@@ -426,7 +398,7 @@ private struct WWClockSecondsAndHubOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
+            let layout = WWClockDialLayout(face: face, size: proxy.size, scale: displayScale)
 
             let dialDiameter = layout.dialDiameter
             let hubBaseRadius = layout.hubBaseRadius
@@ -438,7 +410,16 @@ private struct WWClockSecondsAndHubOverlay: View {
             let minuteID = WWClockDynamicHandID(anchorRef: minuteAnchorRef, refreshToken: refreshToken, kind: 1)
             let secondID = WWClockDynamicHandID(anchorRef: secondAnchorRef, refreshToken: refreshToken, kind: 2)
 
-            let secondHandColour: Color = (face == .icon) ? palette.iconSecondHand : palette.accent
+            let secondHandColour: Color = {
+                switch face {
+                case .icon:
+                    return palette.iconSecondHand
+                case .segmented:
+                    return WWClock.colour(0xE5D05A, alpha: 1.0)
+                case .ceramic:
+                    return palette.accent
+                }
+            }()
 
             ZStack {
                 if showsMinuteHand {
@@ -463,16 +444,28 @@ private struct WWClockSecondsAndHubOverlay: View {
                     .opacity(handsOpacity)
                 }
 
-                WidgetWeaverClockCentreHubView(
-                    palette: palette,
-                    baseRadius: hubBaseRadius,
-                    capRadius: hubCapRadius,
-                    scale: displayScale
-                )
+                Group {
+                    if face == .segmented {
+                        WidgetWeaverClockSegmentedCentreHubView(
+                            palette: palette,
+                            baseRadius: hubBaseRadius,
+                            capRadius: hubCapRadius,
+                            scale: displayScale
+                        )
+                    } else {
+                        WidgetWeaverClockCentreHubView(
+                            palette: palette,
+                            baseRadius: hubBaseRadius,
+                            capRadius: hubCapRadius,
+                            scale: displayScale
+                        )
+                    }
+                }
                 .opacity(handsOpacity)
             }
             .frame(width: dialDiameter, height: dialDiameter, alignment: .center)
             .clipShape(Circle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
@@ -566,7 +559,7 @@ private struct WWClockDialLayout {
     let hubBaseRadius: CGFloat
     let hubCapRadius: CGFloat
 
-    init(size: CGSize, scale: CGFloat) {
+    init(face: WidgetWeaverClockFaceToken, size: CGSize, scale: CGFloat) {
         let s = min(size.width, size.height)
 
         let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: scale)
@@ -588,14 +581,41 @@ private struct WWClockDialLayout {
 
         dialDiameter = R * 2.0
 
-        hubBaseRadius = WWClock.pixel(
-            WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.040),
-            scale: scale
-        )
+        switch face {
+        case .icon:
+            hubBaseRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.040),
+                scale: scale
+            )
 
-        hubCapRadius = WWClock.pixel(
-            WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
-            scale: scale
-        )
+            hubCapRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+                scale: scale
+            )
+
+        case .ceramic:
+            hubBaseRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.047, min: R * 0.040, max: R * 0.055),
+                scale: scale
+            )
+
+            hubCapRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+                scale: scale
+            )
+
+        case .segmented:
+            let base = WWClock.pixel(
+                WWClock.clamp(R * 0.085, min: R * 0.070, max: R * 0.095),
+                scale: scale
+            )
+
+            hubBaseRadius = base
+
+            hubCapRadius = WWClock.pixel(
+                WWClock.clamp(base * 0.50, min: base * 0.42, max: base * 0.58),
+                scale: scale
+            )
+        }
     }
 }
