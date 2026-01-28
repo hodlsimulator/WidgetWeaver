@@ -255,7 +255,7 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
 
         // Linear gap size converted to an angular gap at the mid radius.
         let linearGap = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.012, min: px * 1.4, max: dialRadius * 0.020),
+            WWClock.clamp(dialRadius * 0.012, min: px * 2.0, max: dialRadius * 0.020),
             scale: scale
         )
 
@@ -263,17 +263,12 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
         let angularGapRadians = max(0.0, linearGap / midR)
         let angularGap = Angle.radians(Double(angularGapRadians))
 
-        let baseRingThickness = WWClock.pixel(max(px, thickness + (px * 1.0)), scale: scale)
+        let baseRingLineWidth = WWClock.pixel(thickness, scale: scale)
 
-        // Base ring under segments so separators read as crisp black.
+        // Base ring under the segments so separators read as crisp black without darkening the dial centre.
         Circle()
-            .fill(Color.black.opacity(0.88))
-            .frame(width: outerR * 2.0, height: outerR * 2.0)
-            .overlay(
-                Circle()
-                    .stroke(Color.black.opacity(0.92), lineWidth: baseRingThickness)
-                    .frame(width: (outerR + innerR) * 2.0, height: (outerR + innerR) * 2.0)
-            )
+            .stroke(Color.black.opacity(0.90), lineWidth: baseRingLineWidth)
+            .frame(width: midR * 2.0, height: midR * 2.0)
             .accessibilityHidden(true)
 
         ZStack {
@@ -284,9 +279,9 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                 // Segment body material.
                 let bodyFill = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: WWClock.colour(0x3A3A21), location: 0.00),
-                        .init(color: WWClock.colour(0x2A2B18), location: 0.55),
-                        .init(color: WWClock.colour(0x16170E), location: 1.00)
+                        .init(color: WWClock.colour(0x474829), location: 0.00),
+                        .init(color: WWClock.colour(0x30311B), location: 0.55),
+                        .init(color: WWClock.colour(0x18190F), location: 1.00)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -294,9 +289,9 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
 
                 let bevelOverlay = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.22), location: 0.00),
+                        .init(color: Color.white.opacity(0.26), location: 0.00),
                         .init(color: Color.white.opacity(0.00), location: 0.35),
-                        .init(color: Color.black.opacity(0.28), location: 1.00)
+                        .init(color: Color.black.opacity(0.24), location: 1.00)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -304,23 +299,23 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
 
                 let specularOverlay = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.22), location: 0.00),
+                        .init(color: Color.white.opacity(0.26), location: 0.00),
                         .init(color: Color.white.opacity(0.00), location: 0.50),
-                        .init(color: Color.black.opacity(0.20), location: 1.00)
+                        .init(color: Color.black.opacity(0.18), location: 1.00)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
 
-                let liftShadowRadius = WWClock.pixel(max(px, thickness * 0.10), scale: scale)
-                let liftShadowY = WWClock.pixel(max(0.0, thickness * 0.08), scale: scale)
+                let liftShadowRadius = WWClock.pixel(max(px, thickness * 0.085), scale: scale)
+                let liftShadowY = WWClock.pixel(max(0.0, thickness * 0.060), scale: scale)
 
-                let edgeHighlightWidth = WWClock.pixel(max(px, thickness * 0.065), scale: scale)
-                let edgeShadowWidth = WWClock.pixel(max(px, thickness * 0.065), scale: scale)
+                let edgeHighlightWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
+                let edgeShadowWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
 
                 let innerEdgeShadow = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: Color.black.opacity(0.45), location: 0.00),
+                        .init(color: Color.black.opacity(0.40), location: 0.00),
                         .init(color: Color.black.opacity(0.00), location: 1.00)
                     ]),
                     startPoint: .bottom,
@@ -329,7 +324,7 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
 
                 let outerEdgeHighlight = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.28), location: 0.00),
+                        .init(color: Color.white.opacity(0.32), location: 0.00),
                         .init(color: Color.white.opacity(0.00), location: 1.00)
                     ]),
                     startPoint: .top,
@@ -350,19 +345,19 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                         sector
                             .fill(bevelOverlay)
                             .blendMode(.overlay)
-                            .opacity(0.90)
+                            .opacity(0.86)
                     )
                     .overlay(
                         sector
                             .fill(specularOverlay)
                             .blendMode(.screen)
-                            .opacity(0.22)
+                            .opacity(0.26)
                     )
                     .overlay(
                         sector
                             .stroke(Color.black.opacity(0.55), lineWidth: px)
                             .blendMode(.multiply)
-                            .opacity(0.90)
+                            .opacity(0.78)
                     )
                     .overlay(
                         // Inner edge shadow (towards dial).
@@ -376,7 +371,7 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                             .stroke(outerEdgeHighlight, lineWidth: edgeHighlightWidth)
                             .opacity(0.82)
                     )
-                    .shadow(color: Color.black.opacity(0.35), radius: liftShadowRadius, x: 0, y: liftShadowY)
+                    .shadow(color: Color.black.opacity(0.30), radius: liftShadowRadius, x: 0, y: liftShadowY)
                     .accessibilityHidden(true)
             }
         }

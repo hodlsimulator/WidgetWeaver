@@ -38,7 +38,7 @@ struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
             gradient: Gradient(stops: [
                 .init(color: Color.white.opacity(0.24), location: 0.00),
                 .init(color: Color.white.opacity(0.00), location: 0.40),
-                .init(color: Color.black.opacity(0.22), location: 1.00)
+                .init(color: Color.black.opacity(0.18), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -47,9 +47,9 @@ struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
         return ZStack {
             // Depth shadow so the glyph reads embossed into the segment surface.
             face
-                .foregroundStyle(Color.black.opacity(0.48))
-                .offset(x: px * 1.05, y: px * 1.25)
-                .blur(radius: max(0, px * 0.30))
+                .foregroundStyle(Color.black.opacity(0.44))
+                .offset(x: px * 0.95, y: px * 1.10)
+                .blur(radius: max(0, px * 0.22))
                 .blendMode(.multiply)
 
             // Inner bevel: highlight then shade.
@@ -73,13 +73,13 @@ struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
             face
                 .foregroundStyle(specularOverlay)
                 .blendMode(.overlay)
-                .opacity(0.80)
+                .opacity(0.72)
         }
         .shadow(
-            color: Color.black.opacity(0.22),
-            radius: max(px, fontSize * 0.030),
+            color: Color.black.opacity(0.16),
+            radius: max(px, fontSize * 0.024),
             x: 0,
-            y: max(0, fontSize * 0.012)
+            y: max(0, fontSize * 0.010)
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)

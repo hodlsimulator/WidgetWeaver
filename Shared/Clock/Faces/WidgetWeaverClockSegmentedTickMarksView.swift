@@ -109,9 +109,9 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         // Silver tick material (fixed) to match the Segmented face numerals.
         let tickFill = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: palette.numeralLight.opacity(0.96), location: 0.00),
-                .init(color: palette.numeralMid.opacity(0.92), location: 0.58),
-                .init(color: palette.numeralDark.opacity(0.94), location: 1.00)
+                .init(color: palette.numeralLight.opacity(0.98), location: 0.00),
+                .init(color: palette.numeralMid.opacity(0.94), location: 0.58),
+                .init(color: palette.numeralDark.opacity(0.96), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -150,14 +150,14 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
 
                 let opacity: Double = {
                     if isQuarter { return 0.92 }
-                    if isFive { return 0.74 }
-                    return 0.46
+                    if isFive { return 0.76 }
+                    return 0.52
                 }()
 
                 let shadowOpacity: Double = {
                     if isQuarter { return 0.22 }
                     if isFive { return 0.18 }
-                    return 0.14
+                    return 0.00
                 }()
 
                 let shadowRadius = WWClock.pixel(max(px, width * 0.55), scale: scale)
@@ -185,6 +185,5 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         .frame(width: dialDiameter, height: dialDiameter)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .drawingGroup()
     }
 }
