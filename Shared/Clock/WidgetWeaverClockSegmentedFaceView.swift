@@ -236,98 +236,152 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
             scale: scale
         )
 
-        let outerR = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
+        let bedOuterR = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
 
         let targetThickness = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
             scale: scale
         )
 
-        let innerR = WWClock.pixel(max(px, outerR - targetThickness), scale: scale)
-        let thickness = max(px, outerR - innerR)
+        let bedInnerR = WWClock.pixel(max(px, bedOuterR - targetThickness), scale: scale)
+        let bedThickness = max(px, bedOuterR - bedInnerR)
 
-        // Linear gap size converted to an angular gap at the mid radius.
-        let linearGap = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.012, min: px * 2.0, max: dialRadius * 0.020),
+        // Inset the blocks so the recessed bed remains visible around edges and through the gaps.
+        let channelInset = WWClock.pixel(
+            WWClock.clamp(bedThickness * 0.11, min: px, max: bedThickness * 0.18),
             scale: scale
         )
 
-        let midR = max(px, (outerR + innerR) * 0.5)
+        let blockOuterR = WWClock.pixel(max(px, bedOuterR - channelInset), scale: scale)
+        let blockInnerR = WWClock.pixel(max(px, bedInnerR + channelInset), scale: scale)
+        let blockThickness = max(px, blockOuterR - blockInnerR)
+
+        // Physical-pixel gap enforced so separators remain visible at 44/60.
+        let gapPxRaw = (dialRadius * scale * 0.045).rounded(.toNearestOrAwayFromZero)
+        let gapPx = WWClock.clamp(gapPxRaw, min: 2.0, max: 6.0)
+        let linearGap = WWClock.pixel(gapPx / max(scale, 1.0), scale: scale)
+
+        let midR = max(px, (blockOuterR + blockInnerR) * 0.5)
         let angularGapRadians = max(0.0, linearGap / midR)
         let angularGap = Angle.radians(Double(angularGapRadians))
 
-        let baseRingLineWidth = WWClock.pixel(thickness, scale: scale)
+        let bedMidR = max(px, (bedOuterR + bedInnerR) * 0.5)
 
-        // Base ring under the segments so separators read as crisp black without darkening the dial centre.
-        Circle()
-            .stroke(Color.black.opacity(0.90), lineWidth: baseRingLineWidth)
-            .frame(width: midR * 2.0, height: midR * 2.0)
-            .accessibilityHidden(true)
+        // Recessed bed material (visible in the gaps).
+        let bedFill = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x0A0C10, alpha: 1.0), location: 0.00),
+                .init(color: WWClock.colour(0x050608, alpha: 1.0), location: 0.55),
+                .init(color: WWClock.colour(0x000000, alpha: 1.0), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let bedRimHighlight = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.16), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let bedRimShadow = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.black.opacity(0.62), location: 0.00),
+                .init(color: Color.black.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .bottomTrailing,
+            endPoint: .topLeading
+        )
+
+        let bedRimLine = WWClock.pixel(max(px, bedThickness * 0.10), scale: scale)
+
+        // Block material (olive metal) with per-block chamfer read.
+        let bodyFill = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x5E6735), location: 0.00),
+                .init(color: WWClock.colour(0x4A522A), location: 0.28),
+                .init(color: WWClock.colour(0x2E3218), location: 0.68),
+                .init(color: WWClock.colour(0x14160A), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let bevelOverlay = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.30), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.33),
+                .init(color: Color.black.opacity(0.26), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let specularOverlay = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.22), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.55),
+                .init(color: Color.black.opacity(0.16), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let outerEdgeHighlight = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.34), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let innerEdgeShadow = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.black.opacity(0.44), location: 0.00),
+                .init(color: Color.black.opacity(0.00), location: 1.00)
+            ]),
+            startPoint: .bottomTrailing,
+            endPoint: .topLeading
+        )
+
+        let edgeLine = WWClock.pixel(max(px, blockThickness * 0.060), scale: scale)
+        let borderLine = WWClock.pixel(max(px, blockThickness * 0.020), scale: scale)
+
+        let contactRadius = WWClock.pixel(max(px, blockThickness * 0.055), scale: scale)
+        let contactOffset = WWClock.pixel(max(px, blockThickness * 0.050), scale: scale)
 
         ZStack {
+            // Recessed bed: visible through the block gaps.
+            Circle()
+                .stroke(bedFill, lineWidth: bedThickness)
+                .frame(width: bedMidR * 2.0, height: bedMidR * 2.0)
+                .overlay(
+                    Circle()
+                        .stroke(bedRimHighlight, lineWidth: bedRimLine)
+                        .frame(width: bedOuterR * 2.0, height: bedOuterR * 2.0)
+                        .blendMode(.screen)
+                        .opacity(0.85)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(bedRimShadow, lineWidth: bedRimLine)
+                        .frame(width: bedOuterR * 2.0, height: bedOuterR * 2.0)
+                        .blendMode(.multiply)
+                        .opacity(0.70)
+                )
+                .accessibilityHidden(true)
+
             SwiftUI.ForEach(WWClockSegmentedFaceConstants.segmentIndices, id: \.self) { (idx: Int) in
                 let startDeg = Double(idx) * 30.0
                 let endDeg = startDeg + 30.0
 
-                // Segment body material (cleaner olive; lifted top-left to match the mock).
-                let bodyFill = LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: WWClock.colour(0x4A532C), location: 0.00),
-                        .init(color: WWClock.colour(0x3B4123), location: 0.30),
-                        .init(color: WWClock.colour(0x2A2E16), location: 0.70),
-                        .init(color: WWClock.colour(0x16180C), location: 1.00)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                let bevelOverlay = LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.26), location: 0.00),
-                        .init(color: Color.white.opacity(0.00), location: 0.35),
-                        .init(color: Color.black.opacity(0.24), location: 1.00)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                let specularOverlay = LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.26), location: 0.00),
-                        .init(color: Color.white.opacity(0.00), location: 0.50),
-                        .init(color: Color.black.opacity(0.18), location: 1.00)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                let liftShadowRadius = WWClock.pixel(max(px, thickness * 0.070), scale: scale)
-                let liftShadowY = WWClock.pixel(max(0.0, thickness * 0.050), scale: scale)
-
-                let edgeHighlightWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
-                let edgeShadowWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
-
-                let innerEdgeShadow = LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.black.opacity(0.40), location: 0.00),
-                        .init(color: Color.black.opacity(0.00), location: 1.00)
-                    ]),
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-
-                let outerEdgeHighlight = LinearGradient(
-                    gradient: Gradient(stops: [
-                        .init(color: Color.white.opacity(0.32), location: 0.00),
-                        .init(color: Color.white.opacity(0.00), location: 1.00)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
                 let sector = WWClockAnnularSectorShape(
-                    innerRadius: innerR,
-                    outerRadius: outerR,
+                    innerRadius: blockInnerR,
+                    outerRadius: blockOuterR,
                     startAngle: .degrees(startDeg),
                     endAngle: .degrees(endDeg),
                     angularGap: angularGap
@@ -339,7 +393,7 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                         sector
                             .fill(bevelOverlay)
                             .blendMode(.overlay)
-                            .opacity(0.80)
+                            .opacity(0.88)
                     )
                     .overlay(
                         sector
@@ -348,24 +402,33 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                             .opacity(0.18)
                     )
                     .overlay(
+                        Circle()
+                            .stroke(outerEdgeHighlight, lineWidth: edgeLine)
+                            .frame(width: blockOuterR * 2.0, height: blockOuterR * 2.0)
+                            .mask(sector)
+                            .opacity(0.82)
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(innerEdgeShadow, lineWidth: edgeLine)
+                            .frame(width: blockInnerR * 2.0, height: blockInnerR * 2.0)
+                            .mask(sector)
+                            .opacity(0.86)
+                    )
+                    .overlay(
                         sector
-                            .stroke(Color.black.opacity(0.55), lineWidth: px)
+                            .stroke(Color.black.opacity(0.52), lineWidth: borderLine)
+                            .clipShape(sector)
                             .blendMode(.multiply)
-                            .opacity(0.66)
+                            .opacity(0.80)
                     )
-                    .overlay(
-                        // Inner edge shadow (towards dial).
-                        sector
-                            .stroke(innerEdgeShadow, lineWidth: edgeShadowWidth)
-                            .opacity(0.84)
+                    .compositingGroup()
+                    .shadow(
+                        color: Color.black.opacity(0.32),
+                        radius: contactRadius,
+                        x: contactOffset,
+                        y: contactOffset
                     )
-                    .overlay(
-                        // Outer edge highlight (towards bezel).
-                        sector
-                            .stroke(outerEdgeHighlight, lineWidth: edgeHighlightWidth)
-                            .opacity(0.78)
-                    )
-                    .shadow(color: Color.black.opacity(0.24), radius: liftShadowRadius, x: 0, y: liftShadowY)
                     .accessibilityHidden(true)
             }
         }
@@ -376,8 +439,8 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
             // Numerals on the segments (Step 5).
             WidgetWeaverClockSegmentedNumeralsOnRingView(
                 dialRadius: dialRadius,
-                innerRadius: innerR,
-                thickness: thickness,
+                innerRadius: blockInnerR,
+                thickness: blockThickness,
                 scale: scale
             )
         )
@@ -610,12 +673,12 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
 private struct WWClockSegmentedAnnulus: Shape {
     var innerRadiusFraction: CGFloat
-    
+
     func path(in rect: CGRect) -> Path {
         let r = min(rect.width, rect.height) * 0.5
         let innerR = max(0.0, r * innerRadiusFraction)
         let c = CGPoint(x: rect.midX, y: rect.midY)
-        
+
         var p = Path()
         p.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2.0, height: r * 2.0))
         p.addEllipse(in: CGRect(x: c.x - innerR, y: c.y - innerR, width: innerR * 2.0, height: innerR * 2.0))
