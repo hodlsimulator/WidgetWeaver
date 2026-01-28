@@ -439,7 +439,6 @@ private struct WidgetWeaverClockSegmentedNumeralsOnRingView: View {
                     fontSize: fontSize,
                     scale: scale
                 )
-                .rotationEffect(-angle)
                 .offset(x: xNudge, y: yNudge)
                 .position(
                     x: dialRadius + CGFloat(sin(angle.radians)) * r,
