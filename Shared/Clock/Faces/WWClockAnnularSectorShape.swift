@@ -7,21 +7,29 @@
 
 import SwiftUI
 
-/// An annular sector (ring segment) bounded by two radii and two angles.
+/// Annular sector (ring slice) used by the Segmented face outer ring.
 ///
-/// The shape is centred in its rect. `innerRadius` and `outerRadius` are in points,
-/// measured from the rect centre.
-///
-/// `angularGap` trims the sector symmetrically at both ends, producing a crisp separator
-/// when multiple sectors are laid out around a ring.
+/// `angularGap` trims the slice symmetrically at both ends so neighbouring sectors leave a crisp separator.
 struct WWClockAnnularSectorShape: Shape {
-    var innerRadius: CGFloat
-    var outerRadius: CGFloat
+    let innerRadius: CGFloat
+    let outerRadius: CGFloat
+    let startAngle: Angle
+    let endAngle: Angle
+    let angularGap: Angle
 
-    var startAngle: Angle
-    var endAngle: Angle
-
-    var angularGap: Angle = .zero
+    init(
+        innerRadius: CGFloat,
+        outerRadius: CGFloat,
+        startAngle: Angle,
+        endAngle: Angle,
+        angularGap: Angle = .zero
+    ) {
+        self.innerRadius = innerRadius
+        self.outerRadius = outerRadius
+        self.startAngle = startAngle
+        self.endAngle = endAngle
+        self.angularGap = angularGap
+    }
 
     func path(in rect: CGRect) -> Path {
         guard outerRadius > 0 else { return Path() }
@@ -30,6 +38,7 @@ struct WWClockAnnularSectorShape: Shape {
 
         let centre = CGPoint(x: rect.midX, y: rect.midY)
 
+        // Trim symmetrically for the separator gap.
         let halfGap = angularGap.radians * 0.5
         let adjustedStart = Angle.radians(startAngle.radians + halfGap)
         let adjustedEnd = Angle.radians(endAngle.radians - halfGap)
@@ -44,7 +53,16 @@ struct WWClockAnnularSectorShape: Shape {
         )
 
         p.move(to: outerStart)
-        p.addArc(center: centre, radius: outerRadius, startAngle: adjustedStart, endAngle: adjustedEnd, clockwise: false)
+
+        // Clock geometry in this project treats increasing angles as clockwise.
+        // Drawing the outer arc clockwise avoids long-arc wraparound and self-intersection.
+        p.addArc(
+            center: centre,
+            radius: outerRadius,
+            startAngle: adjustedStart,
+            endAngle: adjustedEnd,
+            clockwise: true
+        )
 
         let innerEnd = CGPoint(
             x: centre.x + (CGFloat(cos(adjustedEnd.radians)) * innerRadius),
@@ -52,9 +70,17 @@ struct WWClockAnnularSectorShape: Shape {
         )
 
         p.addLine(to: innerEnd)
-        p.addArc(center: centre, radius: innerRadius, startAngle: adjustedEnd, endAngle: adjustedStart, clockwise: true)
-        p.closeSubpath()
 
+        // Return along the inner radius in the opposite direction.
+        p.addArc(
+            center: centre,
+            radius: innerRadius,
+            startAngle: adjustedEnd,
+            endAngle: adjustedStart,
+            clockwise: false
+        )
+
+        p.closeSubpath()
         return p
     }
 }
