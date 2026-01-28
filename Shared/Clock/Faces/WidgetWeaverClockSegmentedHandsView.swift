@@ -320,7 +320,7 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
         let yellowMid = WWClock.colour(0xBCA429, alpha: 1.0)
         let yellowDark = WWClock.colour(0x6B5A14, alpha: 1.0)
 
-        let yellowField = LinearGradient(
+        let yellowFill = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: yellowLight, location: 0.00),
                 .init(color: yellowMid, location: 0.55),
@@ -329,7 +329,6 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-        .frame(width: dialDiameter, height: dialDiameter)
 
         let stemStroke = Color.black.opacity(0.22)
 
@@ -354,16 +353,20 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
         let stemShadowRadius = WWClock.pixel(max(px, stemWidth * 0.90), scale: scale)
         let stemShadowY = WWClock.pixel(max(0.0, stemWidth * 0.80), scale: scale)
 
+        let stemCornerRadius = max(px, stemWidth * 0.55)
+        let endBarCornerRadius = max(px, endBarThickness * 0.60)
+
         ZStack {
+            // A clear, dial-sized container keeps rotation stable while avoiding any large masked gradient field.
+            Color.clear
+
             // Main seconds stem.
-            yellowField
-                .mask(
-                    RoundedRectangle(cornerRadius: max(px, stemWidth * 0.55), style: .continuous)
-                        .frame(width: stemWidth, height: stemLength)
-                        .offset(y: -stemLength / 2.0)
-                )
+            RoundedRectangle(cornerRadius: stemCornerRadius, style: .continuous)
+                .fill(yellowFill)
+                .frame(width: stemWidth, height: stemLength)
+                .offset(y: -stemLength / 2.0)
                 .overlay(
-                    RoundedRectangle(cornerRadius: max(px, stemWidth * 0.55), style: .continuous)
+                    RoundedRectangle(cornerRadius: stemCornerRadius, style: .continuous)
                         .stroke(stemStroke, lineWidth: max(px, stemWidth * 0.35))
                         .frame(width: stemWidth, height: stemLength)
                         .offset(y: -stemLength / 2.0)
@@ -371,26 +374,22 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
                 .shadow(color: Color.black.opacity(0.24), radius: stemShadowRadius, x: 0, y: stemShadowY)
 
             // Terminal end bar near the tip (perpendicular to the stem).
-            yellowField
-                .mask(
-                    RoundedRectangle(cornerRadius: max(px, endBarThickness * 0.60), style: .continuous)
-                        .frame(width: endBarLength, height: endBarThickness)
-                        .offset(y: -stemLength)
-                )
+            RoundedRectangle(cornerRadius: endBarCornerRadius, style: .continuous)
+                .fill(yellowFill)
+                .frame(width: endBarLength, height: endBarThickness)
+                .offset(y: -stemLength)
                 .overlay(
-                    RoundedRectangle(cornerRadius: max(px, endBarThickness * 0.60), style: .continuous)
+                    RoundedRectangle(cornerRadius: endBarCornerRadius, style: .continuous)
                         .stroke(stemStroke, lineWidth: max(px, endBarThickness * 0.35))
                         .frame(width: endBarLength, height: endBarThickness)
                         .offset(y: -stemLength)
                 )
 
             // Leaf counterweight (opposite direction from the stem).
-            yellowField
-                .mask(
-                    WidgetWeaverClockSegmentedSecondHandLeafShape()
-                        .frame(width: leafWidth, height: leafLength)
-                        .offset(y: leafLength / 2.0)
-                )
+            WidgetWeaverClockSegmentedSecondHandLeafShape()
+                .fill(yellowFill)
+                .frame(width: leafWidth, height: leafLength)
+                .offset(y: leafLength / 2.0)
                 .overlay(
                     WidgetWeaverClockSegmentedSecondHandLeafShape()
                         .stroke(stemStroke, lineWidth: max(px, stemWidth * 0.35))
@@ -398,6 +397,7 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
                         .offset(y: leafLength / 2.0)
                 )
         }
+        .frame(width: dialDiameter, height: dialDiameter)
         .rotationEffect(angle)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
