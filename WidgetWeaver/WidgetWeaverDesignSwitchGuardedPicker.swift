@@ -30,9 +30,18 @@ struct WidgetWeaverDesignSwitchGuardedPicker: View {
 
             if isDirty() {
                 HStack(spacing: 10) {
-                    Label("Unsaved changes", systemImage: "exclamationmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(.secondary)
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+
+                        Text("Unsaved changes")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Unsaved changes")
 
                     Spacer(minLength: 0)
 
