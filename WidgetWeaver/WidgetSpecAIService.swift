@@ -190,7 +190,7 @@ final class WidgetSpecAIService {
         - Generated text must be short, glanceable, and suitable for WidgetKit.
         - Prefer good contrast and simple layouts.
         - Avoid emojis unless explicitly requested.
-        - When asked for a structured payload, output only the payload with no additional prose.
+        - When asked for a structured payload, output only the payload (no prose, no markdown, no code fences).
         - Never include an image file name. Image is handled separately in-app.
         """
 
@@ -283,7 +283,7 @@ final class WidgetSpecAIService {
                 return WidgetSpecAIGenerationResult(spec: patched, usedModel: true, note: "Applied patch.")
             } catch {
                 #if DEBUG
-                print("AI Patch model error: \(error)")
+                print("AI Patch fell back despite Apple Intelligence: Ready. Underlying error: \(error)")
                 #endif
 
                 let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
@@ -302,7 +302,7 @@ final class WidgetSpecAIService {
 private extension WidgetSpecAIService {
     static func newSpecPrompt(userPrompt: String) -> String {
         """
-        Create a WidgetWeaver widget design.
+        Create a WidgetWeaver widget design. Output only a WidgetSpecGenerationPayload.
         Keep it simple and readable for WidgetKit. Text should be short and glanceable.
         Brief: \(userPrompt)
         """
@@ -314,8 +314,8 @@ private extension WidgetSpecAIService {
         Update the existing WidgetWeaver design using the edit instruction.
         Current design: \(summary)
         Edit instruction: \(instruction)
-        Output only the changes as a patch:
-        - Omit unchanged fields.
+        Output only a WidgetSpecPatchPayload containing just the changes:
+        - Omit unchanged fields; do not output null/nil for unchanged values.
         - Use removeSecondaryText/removeSymbol/removeImage when the instruction asks for removal.
         """
     }
@@ -642,11 +642,11 @@ private extension WidgetSpecAIService {
             s.style.padding = v
         }
 
-        if let v = firstDoubleMatch("(?:\\bcorner\\s*radius\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
+        if let v = firstDoubleMatch("(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
             s.style.cornerRadius = v
         }
 
-        if let v = firstDoubleMatch("(?:\\bspacing\\b|\\bgap\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
+        if let v = firstDoubleMatch("(?:\\bspacing\\b|\\bgap\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
             s.layout.spacing = v
         }
 
