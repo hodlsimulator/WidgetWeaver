@@ -65,7 +65,7 @@ private enum WWQuickClockTimelineConfig {
 }
 
 private enum WWQuickClockDefaults {
-    static let face: WidgetWeaverClockFaceToken = .icon
+    static let face: WidgetWeaverClockFaceToken = .segmented
 }
 
 struct WidgetWeaverHomeScreenClockProvider: AppIntentTimelineProvider {

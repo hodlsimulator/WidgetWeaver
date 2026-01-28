@@ -132,6 +132,8 @@ fileprivate struct WWClockRenderBody: View {
         // Hiding the seconds hand in those moments makes the clock look frozen.
         let showSeconds = (tickMode == .secondsSweep)
 
+        let usesNativeHands = (face == .segmented)
+
         // Live minute-hand glyph:
         // - Disable for pre-render (must match entryDate snapshot)
         // - Keep enabled during placeholder redaction to avoid transient hand swapping
@@ -141,6 +143,8 @@ fileprivate struct WWClockRenderBody: View {
         //   if the Icon font is unavailable for any reason.
         // - Ceramic face: use the regular font (unchanged).
         let minuteGlyphFontAvailable: Bool = {
+            if usesNativeHands { return false }
+
             if face == .icon {
                 return WWClockMinuteHandIconFont.isAvailable() || WWClockMinuteHandFont.isAvailable()
             }
@@ -152,6 +156,20 @@ fileprivate struct WWClockRenderBody: View {
         let baseAngles = WWClockBaseAngles(date: handsNow)
         let hourAngle = Angle.degrees(baseAngles.hour)
         let minuteAngle = Angle.degrees(baseAngles.minute)
+
+        let secondAngle: Angle = {
+            guard usesNativeHands && showSeconds else { return .degrees(0) }
+
+            let cal = Calendar.autoupdatingCurrent
+            let comps = cal.dateComponents([.second, .nanosecond], from: renderNow)
+
+            let secondInt = Double(comps.second ?? 0)
+            let nano = Double(comps.nanosecond ?? 0)
+
+            let sec = secondInt + (nano / 1_000_000_000.0)
+            return .degrees(sec * 6.0)
+        }()
+
 
         // Seconds anchor:
         let secondsMinuteAnchor = handsNow
@@ -220,33 +238,56 @@ fileprivate struct WWClockRenderBody: View {
                     .accessibilityHidden(true)
             }
 
-            WidgetWeaverClockFaceView(
-                face: face,
-                palette: palette,
-                hourAngle: hourAngle,
-                minuteAngle: minuteAngle,
-                secondAngle: .degrees(0),
-                showsSecondHand: false,
-                showsMinuteHand: !showsMinuteHandGlyph,
-                showsHandShadows: false,
-                showsGlows: false,
-                showsCentreHub: false,
-                handsOpacity: handsOpacity
-            )
-            .transaction { transaction in
-                transaction.animation = nil
-            }
+            if usesNativeHands {
+                WidgetWeaverClockFaceView(
+                    face: face,
+                    palette: palette,
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: secondAngle,
+                    showsSecondHand: showSeconds,
+                    showsMinuteHand: true,
+                    showsHandShadows: true,
+                    showsGlows: false,
+                    showsCentreHub: true,
+                    handsOpacity: handsOpacity
+                )
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
 
-            WWClockSecondsAndHubOverlay(
-                face: face,
-                palette: palette,
-                showsMinuteHand: showsMinuteHandGlyph,
-                minuteTimerRange: minuteTimerRange,
-                showsSeconds: showSeconds,
-                timerRange: timerRange,
-                handsOpacity: handsOpacity,
-                refreshToken: significantTimeChangeToken
-            )
+                if showSeconds && !isPrerender {
+                    WWClockSecondsDriverText(timerRange: timerRange)
+                }
+            } else {
+                WidgetWeaverClockFaceView(
+                    face: face,
+                    palette: palette,
+                    hourAngle: hourAngle,
+                    minuteAngle: minuteAngle,
+                    secondAngle: .degrees(0),
+                    showsSecondHand: false,
+                    showsMinuteHand: !showsMinuteHandGlyph,
+                    showsHandShadows: false,
+                    showsGlows: false,
+                    showsCentreHub: false,
+                    handsOpacity: handsOpacity
+                )
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+
+                WWClockSecondsAndHubOverlay(
+                    face: face,
+                    palette: palette,
+                    showsMinuteHand: showsMinuteHandGlyph,
+                    minuteTimerRange: minuteTimerRange,
+                    showsSeconds: showSeconds,
+                    timerRange: timerRange,
+                    handsOpacity: handsOpacity,
+                    refreshToken: significantTimeChangeToken
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .widgetURL(URL(string: "widgetweaver://clock"))
@@ -358,6 +399,26 @@ private struct WWClockDynamicHandID: Hashable {
     let anchorRef: Int
     let token: Int
 }
+
+private struct WWClockSecondsDriverText: View {
+    let timerRange: ClosedRange<Date>
+
+    var body: some View {
+        Text(timerInterval: timerRange, countsDown: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(.system(size: 1, weight: .regular, design: .monospaced))
+            .unredacted()
+            .opacity(0.001)
+            .frame(width: 1, height: 1, alignment: .center)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+    }
+}
+
 
 private struct WWClockSecondsAndHubOverlay: View {
     let face: WidgetWeaverClockFaceToken
