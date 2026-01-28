@@ -512,15 +512,29 @@ struct WidgetWeaverVariableInsertPickerView: View {
     }
 
     private var builtInSnippets: [BuiltInSnippet] {
-        [
-            BuiltInSnippet(key: "snippet.time", label: "Time", snippet: "{{__time}}"),
-            BuiltInSnippet(key: "snippet.weekday", label: "Weekday", snippet: "{{__weekday}}"),
-            BuiltInSnippet(key: "snippet.today", label: "Today", snippet: "{{__today}}"),
-            BuiltInSnippet(key: "snippet.steps", label: "Steps today", snippet: "{{__steps_today|--|number:0}}"),
-            BuiltInSnippet(key: "snippet.activity.steps", label: "Activity steps", snippet: "{{__activity_steps_today|--|number:0}}"),
-            BuiltInSnippet(key: "snippet.weather.temp", label: "Weather temperature", snippet: "{{__weather_temp|--}}"),
-        ]
-    }
+            var out: [BuiltInSnippet] = [
+                BuiltInSnippet(key: "snippet.time", label: "Time", snippet: "{{__time}}"),
+                BuiltInSnippet(key: "snippet.weekday", label: "Weekday", snippet: "{{__weekday}}"),
+                BuiltInSnippet(key: "snippet.today", label: "Today", snippet: "{{__today}}"),
+                BuiltInSnippet(key: "snippet.steps", label: "Steps today", snippet: "{{__steps_today|--|number:0}}"),
+                BuiltInSnippet(key: "snippet.activity.steps", label: "Activity steps", snippet: "{{__activity_steps_today|--|number:0}}"),
+                BuiltInSnippet(key: "snippet.weather.temp", label: "Weather temperature", snippet: "{{__weather_temp|--}}"),
+                BuiltInSnippet(key: "snippet.weather.hilo", label: "Weather hi/lo", snippet: "{{__weather_hi|--}} / {{__weather_lo|--}}"),
+            ]
+
+            if FeatureFlags.smartPhotoMemoriesEnabled {
+                out.append(
+                    BuiltInSnippet(
+                        key: "snippet.smartphoto.year",
+                        label: "Year (Smart Photos)",
+                        snippet: "{{__smartphoto_year}}"
+                    )
+                )
+            }
+
+            return out
+        }
+
 
     private var resolvedBuiltInValues: [String: String] {
         let now = WidgetWeaverRenderClock.now

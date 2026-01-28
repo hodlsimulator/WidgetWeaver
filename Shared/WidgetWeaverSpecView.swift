@@ -68,7 +68,38 @@ public struct WidgetWeaverSpecView: View {
         self.renderDate = now
     }
 
+private static func smartPhotoYearString(spec: WidgetSpec) -> String? {
+    guard let image = spec.image else { return nil }
+    guard let sp = image.smartPhoto else { return nil }
+
+    let mf = (sp.shuffleManifestFileName ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    guard !mf.isEmpty else { return nil }
+    guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return nil }
+    guard let entry = manifest.entryForRender() else { return nil }
+
+    return smartPhotoYearString(flags: entry.flags)
+}
+
+private static func smartPhotoYearString(flags: [String]) -> String? {
+    for raw in flags {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.hasPrefix("year:") else { continue }
+
+        let tail = t.dropFirst("year:".count)
+        let yearText = String(tail).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let year = Int(yearText) else { continue }
+        guard year >= 1900 && year <= 2200 else { continue }
+        return String(year)
+    }
+
+    return nil
+}
+
     public var body: some View {
+        WidgetWeaverRenderClock.withNow(renderDate) {
         // Touch AppStorage so WidgetKit redraws when these change.
         let _ = weatherSnapshotData
         let _ = weatherAttributionData
@@ -90,7 +121,42 @@ public struct WidgetWeaverSpecView: View {
         }()
 
         let familySpec = baseSpec.resolved(for: family)
-        let resolved = familySpec.resolvingVariables(now: renderDate)
+                let resolved: WidgetSpec = {
+                    let now = renderDate
+
+                    var vars: [String: String] = {
+                        if WidgetWeaverEntitlements.isProUnlocked {
+                            return WidgetWeaverVariableStore.shared.loadAll()
+                        }
+                        return [:]
+                    }()
+
+                    let builtIns = WidgetWeaverVariableTemplate.builtInVariables(now: now)
+                    for (k, v) in builtIns where vars[k] == nil {
+                        vars[k] = v
+                    }
+
+                    let weatherVars = WidgetWeaverWeatherStore.shared.variablesDictionary(now: now)
+                    for (k, v) in weatherVars {
+                        vars[k] = v
+                    }
+
+                    let stepsVars = WidgetWeaverStepsStore.shared.variablesDictionary(now: now)
+                    for (k, v) in stepsVars {
+                        vars[k] = v
+                    }
+
+                    let activityVars = WidgetWeaverActivityStore.shared.variablesDictionary(now: now)
+                    for (k, v) in activityVars {
+                        vars[k] = v
+                    }
+
+                    if let smartYear = Self.smartPhotoYearString(spec: familySpec) {
+                        vars["__smartphoto_year"] = smartYear
+                    }
+
+                    return familySpec.resolvingVariables(using: vars, now: now)
+                }()
         let style = resolved.style
         let layout = resolved.layout
         let accent = style.accent.swiftUIColor
@@ -159,6 +225,7 @@ public struct WidgetWeaverSpecView: View {
                 background: background
             )
         )
+        }
     }
 
     // MARK: - Templates

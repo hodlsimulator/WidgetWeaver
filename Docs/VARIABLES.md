@@ -1,6 +1,6 @@
 # Variables
 
-Last updated: 2026-01-24
+Last updated: 2026-01-27
 
 WidgetWeaver supports lightweight variable templates inside text fields so a widget can display dynamic values (time, weather, steps, activity) and, if Pro is unlocked, user-defined variables stored in the App Group.
 
@@ -126,6 +126,14 @@ Keys include:
 - `__activity_distance_m`, `__activity_distance_m_exact` (only when available)
 - `__activity_distance_km`, `__activity_distance_km_exact` (only when available)
 - `__activity_active_energy_kcal`, `__activity_active_energy_kcal_exact` (only when available)
+
+
+### Smart Photos
+
+Smart Photos keys are populated when rendering a Smart Photos shuffle (Album Shuffle or Memories).
+Values are derived from the currently selected shuffle manifest entry.
+
+- `__smartphoto_year` — Photo creation year for the currently displayed Smart Photo entry (blank when unavailable).
 
 ## Filters
 

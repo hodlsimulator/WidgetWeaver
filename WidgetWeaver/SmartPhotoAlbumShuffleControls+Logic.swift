@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import WidgetKit
+import Photos
 
 extension SmartPhotoAlbumShuffleControls {
     // MARK: - Focus snapshot handling
@@ -412,7 +413,13 @@ extension SmartPhotoAlbumShuffleControls {
 
                     entry.preparedAt = sp.preparedAt
                     entry.score = scoreResult.score
-                    entry.flags = Array(Set(entry.flags).union(scoreResult.flags)).sorted()
+                    var mergedFlags = Set(entry.flags)
+                    mergedFlags.formUnion(scoreResult.flags)
+                    if let yearFlag = Self.smartPhotoYearFlag(localIdentifier: entry.id) {
+                        mergedFlags.insert(yearFlag)
+                    }
+
+                    entry.flags = Array(mergedFlags).sorted()
                     entry.flags.removeAll(where: { $0 == "failed" })
 
                     manifest.entries[idx] = entry
@@ -505,6 +512,19 @@ extension SmartPhotoAlbumShuffleControls {
         }
         return Array(set).sorted()
     }
+    private nonisolated static func smartPhotoYearFlag(localIdentifier: String, calendar: Calendar = .current) -> String? {
+    let id = localIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isEmpty else { return nil }
+
+    let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+    guard let asset = assets.firstObject else { return nil }
+    guard let createdAt = asset.creationDate else { return nil }
+
+    let year = calendar.component(.year, from: createdAt)
+    guard year >= 1900 && year <= 2200 else { return nil }
+
+    return "year:\(year)"
+}
 
     // MARK: - Manifest refresh
 
