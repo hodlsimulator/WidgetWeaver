@@ -106,22 +106,12 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         let r = radii(dialRadius: dialRadius, scale: scale)
         let sizes = tickSizes(dialRadius: dialRadius, scale: scale)
 
-        // Silver tick material (fixed) to match the Segmented face numerals.
+        // Matte, off-white tick material to match the mock (avoid a chrome read at 44/60).
         let tickFill = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: palette.numeralLight.opacity(0.98), location: 0.00),
-                .init(color: palette.numeralMid.opacity(0.94), location: 0.58),
-                .init(color: palette.numeralDark.opacity(0.96), location: 1.00)
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-
-        let specularOverlay = LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.22), location: 0.00),
-                .init(color: Color.white.opacity(0.00), location: 0.42),
-                .init(color: Color.black.opacity(0.24), location: 1.00)
+                .init(color: WWClock.colour(0xF1F3F6, alpha: 0.92), location: 0.00),
+                .init(color: WWClock.colour(0xE2E7EF, alpha: 0.90), location: 0.56),
+                .init(color: WWClock.colour(0xCCD5E2, alpha: 0.92), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -148,35 +138,19 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
                     return sizes.minute.w
                 }()
 
+                // Slightly higher minute-tick opacity keeps the ring present in WidgetKit snapshots.
                 let opacity: Double = {
                     if isQuarter { return 0.92 }
-                    if isFive { return 0.76 }
-                    return 0.52
+                    if isFive { return 0.78 }
+                    return 0.62
                 }()
 
-                let shadowOpacity: Double = {
-                    if isQuarter { return 0.22 }
-                    if isFive { return 0.18 }
-                    return 0.00
-                }()
-
-                let shadowRadius = WWClock.pixel(max(px, width * 0.55), scale: scale)
-                let shadowY = WWClock.pixel(max(0.0, width * 0.36), scale: scale)
-
-                let corner = max(px, width * 0.45)
                 let yOffset = WWClock.pixel(-(safeOuterRadius - (length / 2.0)), scale: scale)
 
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                Rectangle()
                     .fill(tickFill)
                     .opacity(opacity)
                     .frame(width: width, height: length)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .fill(specularOverlay)
-                            .opacity(opacity * 0.70)
-                            .blendMode(.overlay)
-                    )
-                    .shadow(color: Color.black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
                     .offset(y: yOffset)
                     .rotationEffect(.degrees(Double(idx) * 6.0))
                     .accessibilityHidden(true)

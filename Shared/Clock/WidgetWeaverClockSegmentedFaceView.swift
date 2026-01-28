@@ -118,101 +118,30 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 scale: displayScale
             )
             let minuteWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.060, min: R * 0.052, max: R * 0.068),
+                WWClock.clamp(R * 0.13, min: R * 0.11, max: R * 0.15),
                 scale: displayScale
             )
 
             let secondLength = WWClock.pixel(
-                WWClock.clamp(R * 0.90, min: R * 0.86, max: R * 0.92),
+                WWClock.clamp(R * 0.76, min: R * 0.70, max: R * 0.80),
                 scale: displayScale
             )
             let secondWidth = WWClock.pixel(
-                WWClock.clamp(R * 0.006, min: R * 0.004, max: R * 0.007),
+                WWClock.clamp(R * 0.010, min: WWClock.px(scale: displayScale), max: R * 0.016),
                 scale: displayScale
             )
 
-            let hubBaseRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.034, min: R * 0.030, max: R * 0.040),
+            let centreHubBaseRadius = WWClock.pixel(
+                WWClock.clamp(R * 0.085, min: R * 0.070, max: R * 0.095),
                 scale: displayScale
             )
-            let hubCapRadius = WWClock.pixel(
-                WWClock.clamp(R * 0.027, min: R * 0.022, max: R * 0.032),
+            let centreHubCapRadius = WWClock.pixel(
+                WWClock.clamp(centreHubBaseRadius * 0.50, min: centreHubBaseRadius * 0.42, max: centreHubBaseRadius * 0.58),
                 scale: displayScale
             )
 
             ZStack {
-                ZStack {
-                    // Dark dial base (placeholder).
-                    WidgetWeaverClockDialFaceView(
-                        palette: palette,
-                        radius: R,
-                        occlusionWidth: occlusionWidth
-                    )
-
-                    // Segmented outer ring sectors (Steps 3–5).
-                    WidgetWeaverClockSegmentedOuterRingSectorsView(
-                        palette: palette,
-                        dialRadius: R,
-                        scale: displayScale
-                    )
-
-                    // Segmented inner tick marks (Step 6).
-                    WidgetWeaverClockSegmentedTickMarksView(
-                        palette: palette,
-                        dialRadius: R,
-                        scale: displayScale
-                    )
-
-                    ZStack {
-                        let usedSecondLength = showsSecondHand ? secondLength : 0.0
-                        let usedSecondWidth = showsSecondHand ? secondWidth : 0.0
-                        let usedMinuteLength = showsMinuteHand ? minuteLength : 0.0
-                        let usedMinuteWidth = showsMinuteHand ? minuteWidth : 0.0
-
-                        if showsHandShadows {
-                            WidgetWeaverClockSegmentedHandShadowsView(
-                                palette: palette,
-                                dialDiameter: dialDiameter,
-                                hourAngle: hourAngle,
-                                minuteAngle: minuteAngle,
-                                hourLength: hourLength,
-                                hourWidth: hourWidth,
-                                minuteLength: usedMinuteLength,
-                                minuteWidth: usedMinuteWidth,
-                                scale: displayScale
-                            )
-                        }
-
-                        WidgetWeaverClockSegmentedHandsView(
-                            palette: palette,
-                            dialDiameter: dialDiameter,
-                            hourAngle: hourAngle,
-                            minuteAngle: minuteAngle,
-                            secondAngle: secondAngle,
-                            hourLength: hourLength,
-                            hourWidth: hourWidth,
-                            minuteLength: usedMinuteLength,
-                            minuteWidth: usedMinuteWidth,
-                            secondLength: usedSecondLength,
-                            secondWidth: usedSecondWidth,
-                            scale: displayScale
-                        )
-
-                        if showsCentreHub {
-                            WidgetWeaverClockSegmentedCentreHubView(
-                                palette: palette,
-                                baseRadius: hubBaseRadius,
-                                capRadius: hubCapRadius,
-                                scale: displayScale
-                            )
-                        }
-                    }
-                    .opacity(handsOpacity)
-                }
-                .frame(width: dialDiameter, height: dialDiameter)
-                .clipShape(Circle())
-
-                // Dark bezel + inner separator ring.
+                // Bezel placeholder ring (A/B/C rings) – annular only (transparent centre).
                 WidgetWeaverClockSegmentedBezelPlaceholderView(
                     palette: palette,
                     outerDiameter: outerDiameter,
@@ -221,29 +150,93 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                     ringC: ringC,
                     scale: displayScale
                 )
+                .frame(width: outerDiameter, height: outerDiameter)
+
+                // Dial.
+                WidgetWeaverClockDialFaceView(
+                    palette: palette,
+                    radius: R,
+                    occlusionWidth: occlusionWidth
+                )
+                .frame(width: dialDiameter, height: dialDiameter)
+
+                // Segmented outer ring (segments + numerals).
+                WidgetWeaverClockSegmentedOuterRingSectorsView(
+                    dialRadius: R,
+                    scale: displayScale
+                )
+
+                // Inner tick marks.
+                WidgetWeaverClockSegmentedTickMarksView(
+                    palette: palette,
+                    dialRadius: R,
+                    scale: displayScale
+                )
+
+                // Hand shadows (optional).
+                if showsHandShadows {
+                    WidgetWeaverClockSegmentedHandShadowsView(
+                        palette: palette,
+                        dialDiameter: dialDiameter,
+                        hourAngle: hourAngle,
+                        minuteAngle: minuteAngle,
+                        hourLength: hourLength,
+                        hourWidth: hourWidth,
+                        minuteLength: minuteLength,
+                        minuteWidth: minuteWidth,
+                        scale: displayScale
+                    )
+                }
+
+                // Hands (optional seconds, optional minute).
+                WidgetWeaverClockSegmentedHandsView(
+                    palette: palette,
+                    dialDiameter: dialDiameter,
+                    hourAngle: hourAngle,
+                    minuteAngle: showsMinuteHand ? minuteAngle : .degrees(0.0),
+                    secondAngle: showsSecondHand ? secondAngle : .degrees(0.0),
+                    hourLength: hourLength,
+                    hourWidth: hourWidth,
+                    minuteLength: showsMinuteHand ? minuteLength : 0.0,
+                    minuteWidth: showsMinuteHand ? minuteWidth : 0.0,
+                    secondLength: showsSecondHand ? secondLength : 0.0,
+                    secondWidth: showsSecondHand ? secondWidth : 0.0,
+                    scale: displayScale
+                )
+                .opacity(handsOpacity)
+
+                // Centre hub (optional).
+                if showsCentreHub {
+                    WidgetWeaverClockSegmentedCentreHubView(
+                        palette: palette,
+                        baseRadius: centreHubBaseRadius,
+                        capRadius: centreHubCapRadius,
+                        scale: displayScale
+                    )
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+            .frame(width: s, height: s)
         }
+        .aspectRatio(1, contentMode: .fit)
     }
 }
 
+// MARK: - Segmented outer ring
+
 private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
-    let palette: WidgetWeaverClockPalette
     let dialRadius: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Layout tuned to the mock: outer inset, thickness, and gap are expressed in pixels to remain stable
-        // at 60pt / 44pt widget sizes.
+        // Segment ring thickness and insets are tuned to match the mock.
         let outerInset = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.010, min: px, max: dialRadius * 0.018),
             scale: scale
         )
 
-        let outerR = WWClock.pixel(max(px, dialRadius - outerInset), scale: scale)
+        let outerR = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
 
         let targetThickness = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
@@ -276,12 +269,13 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                 let startDeg = Double(idx) * 30.0
                 let endDeg = startDeg + 30.0
 
-                // Segment body material.
+                // Segment body material (cleaner olive; lifted top-left to match the mock).
                 let bodyFill = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: WWClock.colour(0x474829), location: 0.00),
-                        .init(color: WWClock.colour(0x30311B), location: 0.55),
-                        .init(color: WWClock.colour(0x18190F), location: 1.00)
+                        .init(color: WWClock.colour(0x4A532C), location: 0.00),
+                        .init(color: WWClock.colour(0x3B4123), location: 0.30),
+                        .init(color: WWClock.colour(0x2A2E16), location: 0.70),
+                        .init(color: WWClock.colour(0x16180C), location: 1.00)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -307,8 +301,8 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                     endPoint: .bottomTrailing
                 )
 
-                let liftShadowRadius = WWClock.pixel(max(px, thickness * 0.085), scale: scale)
-                let liftShadowY = WWClock.pixel(max(0.0, thickness * 0.060), scale: scale)
+                let liftShadowRadius = WWClock.pixel(max(px, thickness * 0.070), scale: scale)
+                let liftShadowY = WWClock.pixel(max(0.0, thickness * 0.050), scale: scale)
 
                 let edgeHighlightWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
                 let edgeShadowWidth = WWClock.pixel(max(px, thickness * 0.058), scale: scale)
@@ -345,33 +339,33 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                         sector
                             .fill(bevelOverlay)
                             .blendMode(.overlay)
-                            .opacity(0.86)
+                            .opacity(0.80)
                     )
                     .overlay(
                         sector
                             .fill(specularOverlay)
                             .blendMode(.screen)
-                            .opacity(0.26)
+                            .opacity(0.18)
                     )
                     .overlay(
                         sector
                             .stroke(Color.black.opacity(0.55), lineWidth: px)
                             .blendMode(.multiply)
-                            .opacity(0.78)
+                            .opacity(0.66)
                     )
                     .overlay(
                         // Inner edge shadow (towards dial).
                         sector
                             .stroke(innerEdgeShadow, lineWidth: edgeShadowWidth)
-                            .opacity(0.88)
+                            .opacity(0.84)
                     )
                     .overlay(
                         // Outer edge highlight (towards bezel).
                         sector
                             .stroke(outerEdgeHighlight, lineWidth: edgeHighlightWidth)
-                            .opacity(0.82)
+                            .opacity(0.78)
                     )
-                    .shadow(color: Color.black.opacity(0.30), radius: liftShadowRadius, x: 0, y: liftShadowY)
+                    .shadow(color: Color.black.opacity(0.24), radius: liftShadowRadius, x: 0, y: liftShadowY)
                     .accessibilityHidden(true)
             }
         }
@@ -429,21 +423,28 @@ private struct WidgetWeaverClockSegmentedNumeralsOnRingView: View {
 
                 let yNudge: CGFloat = {
                     switch numeral {
-                    case 12: return -px * 0.2
+                    case 12: return -px * 0.6
+                    case 6: return px * 0.5
                     default: return 0.0
                     }
                 }()
 
-                WidgetWeaverClockSegmentedNumeralGlyphView(
-                    text: String(numeral),
-                    fontSize: fontSizeBase,
+                let fontSize = WWClock.pixel(
+                    WWClock.clamp(fontSizeBase, min: fontSizeBase * 0.92, max: fontSizeBase * 1.02),
                     scale: scale
                 )
-                .frame(width: fontSizeBase * 1.20, height: fontSizeBase * 1.10)
-                .offset(x: xNudge, y: yNudge)
+
+                WidgetWeaverClockSegmentedNumeralGlyphView(
+                    text: "\(numeral)",
+                    fontSize: fontSize,
+                    scale: scale
+                )
                 .rotationEffect(-angle)
-                .offset(y: -r)
-                .rotationEffect(angle)
+                .offset(x: xNudge, y: yNudge)
+                .position(
+                    x: dialRadius + CGFloat(sin(angle.radians)) * r,
+                    y: dialRadius - CGFloat(cos(angle.radians)) * r
+                )
                 .accessibilityHidden(true)
             }
         }
@@ -452,6 +453,8 @@ private struct WidgetWeaverClockSegmentedNumeralsOnRingView: View {
         .accessibilityHidden(true)
     }
 }
+
+// MARK: - Bezel placeholder (annular)
 
 private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
     let palette: WidgetWeaverClockPalette
@@ -522,12 +525,27 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
         let innerRidge = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.22), location: 0.00),
-                .init(color: Color.white.opacity(0.06), location: 0.52),
-                .init(color: Color.black.opacity(0.32), location: 1.00)
+                .init(color: Color.white.opacity(0.28), location: 0.00),
+                .init(color: Color.white.opacity(0.04), location: 0.44),
+                .init(color: Color.black.opacity(0.44), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
+        )
+
+        // Extra machined chamfer contrast (kept stroke-only so the dial centre stays unaffected).
+        let innerChamfer = AngularGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.34), location: 0.000),
+                .init(color: Color.white.opacity(0.18), location: 0.090),
+                .init(color: Color.white.opacity(0.00), location: 0.240),
+                .init(color: Color.black.opacity(0.20), location: 0.460),
+                .init(color: Color.black.opacity(0.58), location: 0.690),
+                .init(color: Color.black.opacity(0.30), location: 0.840),
+                .init(color: Color.white.opacity(0.22), location: 1.000)
+            ]),
+            center: .center,
+            angle: .degrees(-135.0)
         )
 
         ZStack {
@@ -555,14 +573,28 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .strokeBorder(innerRidge, lineWidth: max(px, ringC))
                 .frame(width: outerC, height: outerC)
                 .blendMode(.overlay)
-                .opacity(0.88)
+                .opacity(0.92)
+
+            // Directional chamfer contrast so the ridge reads machined at 44/60.
+            Circle()
+                .strokeBorder(innerChamfer, lineWidth: max(px, ringC * 0.92))
+                .frame(width: outerC, height: outerC)
+                .blendMode(.overlay)
+                .opacity(0.92)
+
+            // Tight inner highlight line (prevents the ridge from reading soft in snapshots).
+            Circle()
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: max(px, ringC * 0.22))
+                .frame(width: max(1.0, outerC - (ringC * 0.55)), height: max(1.0, outerC - (ringC * 0.55)))
+                .blendMode(.screen)
+                .opacity(0.80)
 
             // Crisp inner edge so the ridge does not blur into the dial at small widget sizes.
             Circle()
-                .strokeBorder(Color.black.opacity(0.55), lineWidth: max(px, ringC * 0.44))
+                .strokeBorder(Color.black.opacity(0.62), lineWidth: max(px, ringC * 0.52))
                 .frame(width: outerC, height: outerC)
                 .blendMode(.multiply)
-                .opacity(0.70)
+                .opacity(0.78)
         }
         .shadow(
             color: Color.black.opacity(0.34),
@@ -579,12 +611,12 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
 private struct WWClockSegmentedAnnulus: Shape {
     var innerRadiusFraction: CGFloat
-
+    
     func path(in rect: CGRect) -> Path {
         let r = min(rect.width, rect.height) * 0.5
         let innerR = max(0.0, r * innerRadiusFraction)
         let c = CGPoint(x: rect.midX, y: rect.midY)
-
+        
         var p = Path()
         p.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2.0, height: r * 2.0))
         p.addEllipse(in: CGRect(x: c.x - innerR, y: c.y - innerR, width: innerR * 2.0, height: innerR * 2.0))
