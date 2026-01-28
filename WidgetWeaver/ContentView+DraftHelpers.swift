@@ -65,6 +65,8 @@ extension ContentView {
         // that are no longer reachable from the spec.
         if v.imageFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             v.imageSmartPhoto = nil
+            v.imageFilterToken = .none
+            v.imageFilterIntensity = 1.0
         }
 
         if v.template == .clockIcon {

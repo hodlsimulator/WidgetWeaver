@@ -133,6 +133,18 @@ extension ContentView {
             )
 
             Toggle(
+                "Debug: enable Photo Filters",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.photoFiltersEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setPhotoFiltersEnabled(newValue)
+                        EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                )
+            )
+
+            Toggle(
                 "Debug: enable Poster suite",
                 isOn: Binding(
                     get: { FeatureFlags.posterSuiteEnabled },

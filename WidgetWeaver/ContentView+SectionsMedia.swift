@@ -58,17 +58,51 @@ extension ContentView {
             imageThemeControls(currentImageFileName: currentImageFileName, hasImage: hasImage)
 
             if hasImage {
+                let filter = PhotoFilterSpec(token: d.imageFilterToken, intensity: d.imageFilterIntensity)
+                    .normalisedOrNil()
+
                 EditorResolvedImagePreview(
                     imageSpec: ImageSpec(
                         fileName: currentImageFileName,
                         contentMode: d.imageContentMode,
                         height: d.imageHeight,
                         cornerRadius: d.imageCornerRadius,
+                        filter: filter,
                         smartPhoto: d.imageSmartPhoto
                     ),
                     family: previewFamily,
                     maxHeight: 140
                 )
+
+                if WidgetWeaverFeatureFlags.photoFiltersEnabled {
+                    Picker("Filter", selection: binding(\.imageFilterToken)) {
+                        ForEach(PhotoFilterToken.allCases) { token in
+                            Text(token.displayName).tag(token)
+                        }
+                    }
+
+                    if currentFamilyDraft().imageFilterToken != .none {
+                        HStack {
+                            Text("Intensity")
+                            Slider(value: binding(\.imageFilterIntensity), in: 0...1, step: 0.01)
+
+                            let pct = Int((currentFamilyDraft().imageFilterIntensity * 100.0).rounded())
+                            Text("\(pct)%")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Button {
+                            var d = currentFamilyDraft()
+                            d.imageFilterToken = .none
+                            d.imageFilterIntensity = 1.0
+                            setCurrentFamilyDraft(d)
+                        } label: {
+                            Text("Reset filter")
+                        }
+                        .controlSize(.small)
+                    }
+                }
 
                 Picker("Content mode", selection: binding(\.imageContentMode)) {
                     ForEach(ImageContentModeToken.allCases) { token in
@@ -100,6 +134,8 @@ extension ContentView {
                     var d = currentFamilyDraft()
                     d.imageFileName = ""
                     d.imageSmartPhoto = nil
+                    d.imageFilterToken = .none
+                    d.imageFilterIntensity = 1.0
                     setCurrentFamilyDraft(d)
                 } label: {
                     Text("Remove image")
