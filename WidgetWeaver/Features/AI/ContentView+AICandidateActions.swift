@@ -10,7 +10,7 @@ import SwiftUI
 
 extension ContentView {
 
-    // MARK: - AI (review mode; no saving)
+    // MARK: - AI (review mode; candidate generation)
 
     @MainActor
     func generateNewDesignCandidateFromPrompt() async {
@@ -59,6 +59,44 @@ extension ContentView {
         )
 
         activeSheet = .aiReview(candidate: candidate, mode: .patch)
+    }
+
+    // MARK: - AI (review mode; apply)
+
+    /// Applies a generated candidate spec using the same persistence steps as the legacy auto-apply Generate path.
+    ///
+    /// Returns `true` when the candidate was saved (and the review sheet can be dismissed).
+    /// Returns `false` when the save was blocked (e.g. free-tier limit).
+    @MainActor
+    func applyGeneratedDesignCandidateFromReviewSheet(_ candidate: WidgetSpecAICandidate) -> Bool {
+        aiStatusMessage = ""
+
+        guard aiHasCapacityToSaveAnotherDesign else {
+            aiStatusMessage = "Free tier allows up to \(WidgetWeaverEntitlements.maxFreeDesigns) designs.\nUnlock Pro for unlimited designs."
+            activeSheet = .pro
+            return false
+        }
+
+        var spec = candidate.candidateSpec.normalised()
+        spec.updatedAt = Date()
+
+        store.save(spec, makeDefault: aiMakeGeneratedDefault)
+        defaultSpecID = store.defaultSpecID()
+        lastWidgetRefreshAt = Date()
+
+        aiStatusMessage = formatCandidateStatusMessage(
+            candidate,
+            title: "Review mode is enabled. Applied and saved."
+        )
+
+        aiPrompt = ""
+
+        refreshSavedSpecs(preservingSelection: false)
+        selectedSpecID = spec.id
+        applySpec(spec)
+        saveStatusMessage = "Generated design saved.\nWidgets refreshed."
+
+        return true
     }
 
     // MARK: - Helpers

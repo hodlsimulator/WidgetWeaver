@@ -485,8 +485,21 @@ extension ContentView {
                 WidgetWeaverAIReviewSheet(
                     candidate: candidate,
                     mode: mode,
-                    onApply: { activeSheet = nil },
-                    onCancel: { activeSheet = nil }
+                    onApply: {
+                        switch mode {
+                        case .generate:
+                            let didApply = applyGeneratedDesignCandidateFromReviewSheet(candidate)
+                            if didApply {
+                                activeSheet = nil
+                            }
+
+                        case .patch:
+                            activeSheet = nil
+                        }
+                    },
+                    onCancel: {
+                        activeSheet = nil
+                    }
                 )
             )
 
