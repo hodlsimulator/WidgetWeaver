@@ -61,6 +61,8 @@ extension ContentView {
                 let filter = PhotoFilterSpec(token: d.imageFilterToken, intensity: d.imageFilterIntensity)
                     .normalisedOrNil()
 
+                let compareEnabled = WidgetWeaverFeatureFlags.photoFiltersEnabled && filter != nil
+
                 EditorResolvedImagePreview(
                     imageSpec: ImageSpec(
                         fileName: currentImageFileName,
@@ -71,26 +73,40 @@ extension ContentView {
                         smartPhoto: d.imageSmartPhoto
                     ),
                     family: previewFamily,
-                    maxHeight: 140
+                    maxHeight: 140,
+                    compareEnabled: compareEnabled
                 )
 
                 if WidgetWeaverFeatureFlags.photoFiltersEnabled {
-                    Picker("Filter", selection: binding(\.imageFilterToken)) {
-                        ForEach(PhotoFilterToken.allCases) { token in
-                            Text(token.displayName).tag(token)
-                        }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Filter")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        PhotoFilterThumbnailStrip(
+                            imageSpec: ImageSpec(
+                                fileName: currentImageFileName,
+                                smartPhoto: d.imageSmartPhoto
+                            ),
+                            family: previewFamily,
+                            selection: binding(\.imageFilterToken)
+                        )
                     }
 
                     if currentFamilyDraft().imageFilterToken != .none {
                         HStack {
                             Text("Intensity")
-                            Slider(value: binding(\.imageFilterIntensity), in: 0...1, step: 0.01)
 
                             let pct = Int((currentFamilyDraft().imageFilterIntensity * 100.0).rounded())
+
+                            Slider(value: binding(\.imageFilterIntensity), in: 0...1, step: 0.01)
+                                .accessibilityValue(Text("\(pct)%"))
+
                             Text("\(pct)%")
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityElement(children: .combine)
 
                         Button {
                             var d = currentFamilyDraft()
@@ -559,12 +575,23 @@ private struct EditorResolvedImagePreview: View {
     let imageSpec: ImageSpec
     let family: WidgetFamily
     let maxHeight: CGFloat
+    let compareEnabled: Bool
 
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
 
     @AppStorage("preview.liveEnabled")
     private var liveEnabled: Bool = true
+
+    @State private var compareOriginalUIImage: UIImage? = nil
+    @GestureState private var compareHeld: Bool = false
+
+    private struct CompareLoadKey: Hashable {
+        let sourceSpec: ImageSpec
+        let family: WidgetFamily
+        let updateToken: Int
+        let rotationDate: Date?
+    }
 
     private var shuffleManifestFileName: String {
         (imageSpec.smartPhoto?.shuffleManifestFileName ?? "")
@@ -600,42 +627,119 @@ private struct EditorResolvedImagePreview: View {
         }
     }
 
+    @ViewBuilder
     private var previewBody: some View {
         let uiImage = imageSpec.loadUIImageForRender(family: family, debugContext: nil)
+        let rotationDate: Date? = usesShuffleRotation ? WidgetWeaverRenderClock.now : nil
 
-        return VStack(alignment: .leading, spacing: 6) {
-            if let label = previewLabel {
-                Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+        let sourceSpec = ImageSpec(
+            fileName: imageSpec.fileName,
+            filter: nil,
+            smartPhoto: imageSpec.smartPhoto
+        )
 
-            if let uiImage {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: maxHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.quaternary)
-                        .frame(maxHeight: maxHeight)
+        let displayedUIImage: UIImage? = {
+            guard compareEnabled else { return uiImage }
+            guard compareHeld else { return uiImage }
+            return compareOriginalUIImage ?? uiImage
+        }()
 
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
+        let baseView =
+            VStack(alignment: .leading, spacing: 6) {
+                if let label = previewLabel {
+                    Text(label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
-                        Text(missingImageMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.horizontal, 10)
+                if let displayedUIImage {
+                    previewImage(displayedUIImage)
+                } else {
+                    missingImagePlaceholder
                 }
             }
+
+        if compareEnabled {
+            baseView
+                .task(
+                    id: CompareLoadKey(
+                        sourceSpec: sourceSpec,
+                        family: family,
+                        updateToken: smartPhotoShuffleUpdateToken,
+                        rotationDate: rotationDate
+                    )
+                ) {
+                    await loadCompareOriginalImage(sourceSpec: sourceSpec, rotationDate: rotationDate)
+                }
+        } else {
+            baseView
         }
+    }
+
+    @ViewBuilder
+    private func previewImage(_ uiImage: UIImage) -> some View {
+        let imageView =
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxHeight: maxHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+        if compareEnabled {
+            imageView
+                .highPriorityGesture(compareGesture)
+                .accessibilityHint(Text("Press and hold to compare with the original photo."))
+        } else {
+            imageView
+        }
+    }
+
+    private var compareGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .updating($compareHeld) { _, state, _ in
+                state = true
+            }
+    }
+
+    private var missingImagePlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.quaternary)
+                .frame(maxHeight: maxHeight)
+
+            VStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+
+                Text(missingImageMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    private func loadCompareOriginalImage(sourceSpec: ImageSpec, rotationDate: Date?) async {
+        compareOriginalUIImage = nil
+
+        let date = rotationDate ?? WidgetWeaverRenderClock.now
+
+        let work = Task.detached(priority: .utility) {
+            WidgetWeaverRenderClock.withNow(date) {
+                sourceSpec.loadUIImageForRender(family: family, debugContext: nil)
+            }
+        }
+
+        let loaded = await withTaskCancellationHandler {
+            await work.value
+        } onCancel: {
+            work.cancel()
+        }
+
+        if Task.isCancelled { return }
+        compareOriginalUIImage = loaded
     }
 
     private var previewLabel: String? {
