@@ -141,6 +141,8 @@
 		E1E87A0B2F0C417200C9AA14 /* SmartPhotoShuffleManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E87A092F0C416E00C9AA14 /* SmartPhotoShuffleManifest.swift */; };
 		E1F8D35E2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */; };
 		E1F8D35F2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */; };
+		E1F8D3672F2A5AF6004133CA /* WidgetSpecAICandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */; };
+		E1F8D3682F2A5AF6004133CA /* WidgetSpecAICandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -260,6 +262,7 @@
 		E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupDarwinNotifications.swift; sourceTree = "<group>"; };
 		E1E87A092F0C416E00C9AA14 /* SmartPhotoShuffleManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPhotoShuffleManifest.swift; sourceTree = "<group>"; };
 		E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecNormaliser.swift; sourceTree = "<group>"; };
+		E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecAICandidate.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -467,6 +470,7 @@
 				E16011432F15EC1000A3B10B /* PawPulseLatestItem.swift */,
 				E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */,
 				E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */,
+				E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */,
 				E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */,
@@ -745,6 +749,7 @@
 				E15047D62F271D890047863A /* WidgetWeaverClockIconDialColourToken.swift in Sources */,
 				E150474D2F1D418C0047863A /* WidgetSpec+VariableResolutionNow.swift in Sources */,
 				E15047242F1B46060047863A /* WidgetWeaverRemindersTemplateView.swift in Sources */,
+				E1F8D3672F2A5AF6004133CA /* WidgetSpecAICandidate.swift in Sources */,
 				E15047212F1B02E50047863A /* WidgetWeaverSpecView+Background.swift in Sources */,
 				E150471E2F1B02CF0047863A /* WidgetWeaverSpecView+Actions.swift in Sources */,
 				E15047C02F25D7CA0047863A /* WidgetWeaverWidgetReloadCoordinator.swift in Sources */,
@@ -823,6 +828,7 @@
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
 				E1C834D22EFAB7CF00E3AA98 /* WidgetWeaverWeatherTemplateNowcastChart.swift in Sources */,
 				E15047982F2313130047863A /* WidgetWeaverRemindersTemplateView+Placeholder.swift in Sources */,
+				E1F8D3682F2A5AF6004133CA /* WidgetSpecAICandidate.swift in Sources */,
 				E1C834EA2EFB8FF200E3AA98 /* WidgetWeaverRuntime.swift in Sources */,
 				E150471C2F1B029B0047863A /* WidgetWeaverSpecView+BuildingBlocks.swift in Sources */,
 				E1C834D52EFAB7F700E3AA98 /* WidgetWeaverWeatherTemplateHourlyStrip.swift in Sources */,
