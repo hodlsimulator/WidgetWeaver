@@ -7,6 +7,40 @@
 
 import Foundation
 
+private enum SmartPhotoYearBuiltIn {
+    static let key = "__smartphoto_year"
+
+    static func yearString(from spec: WidgetSpec) -> String? {
+        guard let image = spec.image else { return nil }
+        guard let sp = image.smartPhoto else { return nil }
+
+        let mf = (sp.shuffleManifestFileName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !mf.isEmpty else { return nil }
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return nil }
+        guard let entry = manifest.entryForRender() else { return nil }
+
+        return yearString(flags: entry.flags)
+    }
+
+    static func yearString(flags: [String]) -> String? {
+        for raw in flags {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard t.hasPrefix("year:") else { continue }
+
+            let tail = t.dropFirst("year:".count)
+            let yearText = String(tail).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let year = Int(yearText) else { continue }
+            guard year >= 1900 && year <= 2200 else { continue }
+            return String(year)
+        }
+
+        return nil
+    }
+}
+
 // MARK: - Resolve variable templates with an explicit "now"
 
 public extension WidgetSpec {
@@ -42,6 +76,10 @@ public extension WidgetSpec {
         let activityVars = WidgetWeaverActivityStore.shared.variablesDictionary(now: now)
         for (k, v) in activityVars {
             vars[k] = v
+        }
+
+        if let year = SmartPhotoYearBuiltIn.yearString(from: self) {
+            vars[SmartPhotoYearBuiltIn.key] = year
         }
 
         return resolvingVariables(using: vars, now: now)

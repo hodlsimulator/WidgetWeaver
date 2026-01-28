@@ -111,6 +111,17 @@ extension ContentView {
             }
 
             Toggle(
+                "Debug: enable AI",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.aiEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setAIEnabled(newValue)
+                        EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
+                    }
+                )
+            )
+
+            Toggle(
                 "Debug: enable Reminders template",
                 isOn: Binding(
                     get: { WidgetWeaverFeatureFlags.remindersTemplateEnabled },
