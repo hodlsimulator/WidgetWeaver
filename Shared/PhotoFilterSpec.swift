@@ -66,4 +66,37 @@ public struct PhotoFilterSpec: Hashable, Codable, Sendable {
         self.token = token
         self.intensity = intensity
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case token
+        case intensity
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.token = (try? c.decode(PhotoFilterToken.self, forKey: .token)) ?? .none
+
+        let rawIntensity = (try? c.decode(Double.self, forKey: .intensity)) ?? 1.0
+        self.intensity = rawIntensity.normalised().clamped(to: 0.0...1.0)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(token, forKey: .token)
+        try c.encode(intensity.normalised().clamped(to: 0.0...1.0), forKey: .intensity)
+    }
+
+    /// Returns a cleaned filter spec, or `nil` when it should behave as "None".
+    ///
+    /// Rules:
+    /// - `token == .none` => `nil`
+    /// - `intensity <= 0` => `nil`
+    /// - intensity is clamped to `0...1`
+    public func normalisedOrNil() -> PhotoFilterSpec? {
+        let cleaned = intensity.normalised().clamped(to: 0.0...1.0)
+        guard token != .none else { return nil }
+        guard cleaned > 0.0 else { return nil }
+        return PhotoFilterSpec(token: token, intensity: cleaned)
+    }
 }

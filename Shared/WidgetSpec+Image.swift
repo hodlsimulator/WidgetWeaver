@@ -203,6 +203,10 @@ public struct ImageSpec: Hashable, Codable, Sendable {
     public var height: Double
     public var cornerRadius: Double
 
+    /// Optional non-destructive photo filter configuration.
+    /// - Backwards compatible: older stored specs will not contain this key.
+    public var filter: PhotoFilterSpec?
+
     /// Optional smart photo payload (master + per-family renders).
     /// - Backwards compatible: older stored specs will not contain this key.
     public var smartPhoto: SmartPhotoSpec?
@@ -212,12 +216,14 @@ public struct ImageSpec: Hashable, Codable, Sendable {
         contentMode: ImageContentModeToken = .fill,
         height: Double = 120,
         cornerRadius: Double = 16,
+        filter: PhotoFilterSpec? = nil,
         smartPhoto: SmartPhotoSpec? = nil
     ) {
         self.fileName = fileName
         self.contentMode = contentMode
         self.height = height
         self.cornerRadius = cornerRadius
+        self.filter = filter
         self.smartPhoto = smartPhoto
     }
 
@@ -232,6 +238,12 @@ public struct ImageSpec: Hashable, Codable, Sendable {
         // Keep values in a sane range.
         s.height = s.height.clamped(to: 0...512)
         s.cornerRadius = s.cornerRadius.clamped(to: 0...128)
+
+        if let f = s.filter {
+            s.filter = f.normalisedOrNil()
+        } else {
+            s.filter = nil
+        }
 
         s.smartPhoto = s.smartPhoto?.normalised()
 
@@ -299,6 +311,7 @@ public struct ImageSpec: Hashable, Codable, Sendable {
         case contentMode
         case height
         case cornerRadius
+        case filter
 
         // Older key name used by an earlier schema.
         case crop
@@ -320,6 +333,7 @@ public struct ImageSpec: Hashable, Codable, Sendable {
         let height = (try? c.decode(Double.self, forKey: .height)) ?? 120
         let cornerRadius = (try? c.decode(Double.self, forKey: .cornerRadius)) ?? 16
 
+        let filter = try? c.decode(PhotoFilterSpec.self, forKey: .filter)
         let smart = try? c.decode(SmartPhotoSpec.self, forKey: .smartPhoto)
 
         self.init(
@@ -327,6 +341,7 @@ public struct ImageSpec: Hashable, Codable, Sendable {
             contentMode: mode,
             height: height,
             cornerRadius: cornerRadius,
+            filter: filter,
             smartPhoto: smart
         )
 
@@ -340,6 +355,10 @@ public struct ImageSpec: Hashable, Codable, Sendable {
         try c.encode(contentMode, forKey: .contentMode)
         try c.encode(height, forKey: .height)
         try c.encode(cornerRadius, forKey: .cornerRadius)
+
+        if let filter = filter?.normalisedOrNil() {
+            try c.encode(filter, forKey: .filter)
+        }
 
         if let smartPhoto {
             try c.encode(smartPhoto, forKey: .smartPhoto)
@@ -519,129 +538,82 @@ public extension ImageSpec {
                 return nil
             }
 
-            let candidate = fileNameForFamily(family)
-            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard !trimmed.isEmpty else {
-                if shouldLog {
-                    WWPhotoDebugLog.appendLazy(
-                        category: "photo.resolve",
-                        throttleID: "resolve.static.empty.\(fileName)",
-                        minInterval: 30.0,
-                        context: ctx
-                    ) {
-                        "resolve: per-family file empty -> baseFile=\(fileName)"
-                    }
-                }
-                return fileName
-            }
-
-            if isAppExtension {
-                // Avoid a second decode fallback attempt by checking existence first.
-                let url = AppGroup.imageFileURL(fileName: trimmed)
-                if FileManager.default.fileExists(atPath: url.path) {
-                    if shouldLog {
-                        WWPhotoDebugLog.appendLazy(
-                            category: "photo.resolve",
-                            throttleID: "resolve.static.ok.\(trimmed)",
-                            minInterval: 30.0,
-                            context: ctx
-                        ) {
-                            "resolve: per-family file exists file=\(trimmed)"
-                        }
-                    }
-                    return trimmed
-                }
-
-                if shouldLog {
-                    WWPhotoDebugLog.appendLazy(
-                        category: "photo.resolve",
-                        throttleID: "resolve.static.missing.\(trimmed)",
-                        minInterval: 30.0,
-                        context: ctx
-                    ) {
-                        "resolve: per-family file missing file=\(trimmed) -> baseFile=\(fileName)"
-                    }
-                }
-
-                return fileName
-            }
-
-            // App/previews: attempt the per-family render first (cached). If it doesn't exist, we'll
-            // fall back to the base file below.
-            return trimmed
-        }()
-
-        if isAppExtension {
-            // Widget-first decode path: exactly one file read + one decode (no multi-image cache).
-            // If shuffle is enabled and manifest selection fails, render should be blank.
-
-            // Prefer the Smart Photo variant’s recorded pixel target.
-            let maxPixel: Int = {
-                guard let family, let sp = smartPhoto else { return 1024 }
-
-                let px: PixelSize? = {
-                    switch family {
-                    case .systemSmall:
-                        return sp.small?.pixelSize
-                    case .systemMedium:
-                        return sp.medium?.pixelSize
-                    case .systemLarge:
-                        return sp.large?.pixelSize
-                    default:
-                        return nil
-                    }
-                }()
-
-                if let px {
-                    return max(px.width, px.height)
-                }
-
-                return 1024
-            }()
-
-            guard let resolvedFileName else {
-                if shouldLog {
-                    WWPhotoDebugLog.appendLazy(
-                        category: "photo.resolve",
-                        throttleID: "resolve.nil.\(fileName)",
-                        minInterval: 15.0,
-                        context: ctx
-                    ) {
-                        "resolve: final fileName nil"
-                    }
-                }
-                return nil
-            }
-            return AppGroup.loadWidgetImage(fileName: resolvedFileName, maxPixel: maxPixel, debugContext: ctx)
-        }
-
-        // App / previews: cached load. If shuffle is enabled and manifest selection fails, render
-        // should be blank (so the UI shows the shuffle placeholder rather than a stale/static photo).
-        if let resolvedFileName {
-            if let img = AppGroup.loadUIImage(fileName: resolvedFileName) {
-                if shouldLog {
-                    WWPhotoDebugLog.appendLazy(
-                        category: "photo.resolve",
-                        throttleID: "resolve.app.ok.\(resolvedFileName)",
-                        minInterval: 30.0,
-                        context: ctx
-                    ) {
-                        "resolve: app cached ok file=\(resolvedFileName)"
-                    }
-                }
-                return img
-            }
-
+            let fm = fileNameForFamily(family)
             if shouldLog {
                 WWPhotoDebugLog.appendLazy(
                     category: "photo.resolve",
-                    throttleID: "resolve.app.loadFail.\(resolvedFileName)",
+                    throttleID: "resolve.smart.family.\(fm)",
                     minInterval: 30.0,
                     context: ctx
                 ) {
-                    "resolve: app load failed file=\(resolvedFileName)"
+                    "resolve: smartPhoto family candidate=\(fm)"
                 }
+            }
+            return fm
+        }()
+
+        guard let resolvedFileName, !resolvedFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.resolve",
+                    throttleID: "resolve.nil.\(fileName)",
+                    minInterval: 30.0,
+                    context: ctx
+                ) {
+                    "resolve: resolvedFileName nil baseFile=\(fileName)"
+                }
+            }
+            return nil
+        }
+
+        if isAppExtension {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.resolve",
+                    throttleID: "resolve.appex.load.\(resolvedFileName)",
+                    minInterval: 20.0,
+                    context: ctx
+                ) {
+                    "resolve: appex downsample begin file=\(resolvedFileName)"
+                }
+            }
+
+            let img = AppGroup.loadWidgetImage(fileName: resolvedFileName, maxPixel: 1024, debugContext: ctx)
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.resolve",
+                    throttleID: "resolve.appex.result.\(resolvedFileName)",
+                    minInterval: 20.0,
+                    context: ctx
+                ) {
+                    img == nil ? "resolve: appex downsample failed file=\(resolvedFileName)" : "resolve: appex downsample ok file=\(resolvedFileName)"
+                }
+            }
+            return img
+        }
+
+        if let img = AppGroup.loadUIImage(fileName: resolvedFileName) {
+            if shouldLog {
+                WWPhotoDebugLog.appendLazy(
+                    category: "photo.resolve",
+                    throttleID: "resolve.app.cached.\(resolvedFileName)",
+                    minInterval: 30.0,
+                    context: ctx
+                ) {
+                    "resolve: app cached ok file=\(resolvedFileName)"
+                }
+            }
+            return img
+        }
+
+        if shouldLog {
+            WWPhotoDebugLog.appendLazy(
+                category: "photo.resolve",
+                throttleID: "resolve.app.loadFail.\(resolvedFileName)",
+                minInterval: 30.0,
+                context: ctx
+            ) {
+                "resolve: app load failed file=\(resolvedFileName)"
             }
         }
 

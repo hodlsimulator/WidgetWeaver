@@ -127,6 +127,9 @@ struct FamilyDraft: Hashable {
     var imageHeight: Double
     var imageCornerRadius: Double
 
+    var imageFilterToken: PhotoFilterToken
+    var imageFilterIntensity: Double
+
     // Layout
     var template: LayoutTemplateToken
     var posterOverlayMode: PosterOverlayMode
@@ -174,12 +177,18 @@ struct FamilyDraft: Hashable {
             self.imageContentMode = img.contentMode
             self.imageHeight = img.height
             self.imageCornerRadius = img.cornerRadius
+
+            self.imageFilterToken = img.filter?.token ?? .none
+            self.imageFilterIntensity = (img.filter?.intensity ?? 1.0).normalised().clamped(to: 0.0...1.0)
         } else {
             self.imageFileName = ""
             self.imageSmartPhoto = nil
             self.imageContentMode = .fill
             self.imageHeight = 120
             self.imageCornerRadius = 16
+
+            self.imageFilterToken = .none
+            self.imageFilterIntensity = 1.0
         }
 
         self.template = s.layout.template
@@ -224,11 +233,13 @@ struct FamilyDraft: Hashable {
         )
 
         let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filter = PhotoFilterSpec(token: imageFilterToken, intensity: imageFilterIntensity).normalisedOrNil()
         let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
             fileName: imgName,
             contentMode: imageContentMode,
             height: imageHeight,
             cornerRadius: imageCornerRadius,
+            filter: filter,
             smartPhoto: imageSmartPhoto
         )
 
@@ -287,11 +298,13 @@ struct FamilyDraft: Hashable {
         )
 
         let imgName = imageFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filter = PhotoFilterSpec(token: imageFilterToken, intensity: imageFilterIntensity).normalisedOrNil()
         let image: ImageSpec? = imgName.isEmpty ? nil : ImageSpec(
             fileName: imgName,
             contentMode: imageContentMode,
             height: imageHeight,
             cornerRadius: imageCornerRadius,
+            filter: filter,
             smartPhoto: imageSmartPhoto
         )
 
@@ -348,9 +361,14 @@ struct FamilyDraft: Hashable {
             imageContentMode = img.contentMode
             imageHeight = img.height
             imageCornerRadius = img.cornerRadius
+
+            imageFilterToken = img.filter?.token ?? .none
+            imageFilterIntensity = (img.filter?.intensity ?? 1.0).normalised().clamped(to: 0.0...1.0)
         } else {
             imageFileName = ""
             imageSmartPhoto = nil
+            imageFilterToken = .none
+            imageFilterIntensity = 1.0
         }
 
         template = s.layout.template
@@ -586,10 +604,10 @@ struct WidgetActionDraft: Hashable, Identifiable {
 
     init(
         id: UUID = UUID(),
-        title: String = "",
-        systemImage: String = "",
-        kind: WidgetActionKindToken = .incrementVariable,
-        variableKey: String = "",
+        title: String,
+        systemImage: String,
+        kind: WidgetActionKindToken,
+        variableKey: String,
         incrementAmount: Int = 1,
         nowFormat: WidgetNowFormatToken = .iso8601
     ) {
@@ -603,74 +621,32 @@ struct WidgetActionDraft: Hashable, Identifiable {
     }
 
     init(from spec: WidgetActionSpec) {
-        self.id = spec.id
-        self.title = spec.title
-        self.systemImage = spec.systemImage ?? ""
-        self.kind = spec.kind
-        self.variableKey = spec.variableKey
-        self.incrementAmount = spec.incrementAmount
-        self.nowFormat = spec.nowFormat
-    }
-
-    static func defaultIncrement() -> WidgetActionDraft {
-        WidgetActionDraft(
-            title: "+1",
-            systemImage: "plus.circle.fill",
-            kind: .incrementVariable,
-            variableKey: "counter",
-            incrementAmount: 1,
-            nowFormat: .iso8601
-        )
-    }
-
-    static func defaultDone() -> WidgetActionDraft {
-        WidgetActionDraft(
-            title: "Done",
-            systemImage: "checkmark.circle.fill",
-            kind: .setVariableToNow,
-            variableKey: "last_done",
-            incrementAmount: 1,
-            nowFormat: .iso8601
-        )
+        let s = spec.normalisedOrNil() ?? spec
+        self.id = s.id
+        self.title = s.title
+        self.systemImage = s.systemImage ?? ""
+        self.kind = s.kind
+        self.variableKey = s.variableKey
+        self.incrementAmount = s.incrementAmount
+        self.nowFormat = s.nowFormat
     }
 
     func toActionSpecOrNil() -> WidgetActionSpec? {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedKey = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let img = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return WidgetActionSpec(
+        let spec = WidgetActionSpec(
             id: id,
-            title: trimmedTitle.isEmpty ? (kind == .incrementVariable ? "+1" : "Done") : trimmedTitle,
-            systemImage: trimmedSymbol.isEmpty ? nil : trimmedSymbol,
+            title: t,
+            systemImage: img.isEmpty ? nil : img,
             kind: kind,
-            variableKey: trimmedKey,
+            variableKey: key,
             incrementAmount: incrementAmount,
             nowFormat: nowFormat
-        ).normalisedOrNil()
-    }
+        )
 
-    var previewString: String {
-        let key = variableKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        let keyPart = key.isEmpty ? "(No key)" : key
-
-        switch kind {
-        case .incrementVariable:
-            let amt = incrementAmount
-            let signed = amt >= 0 ? "+\(amt)" : "\(amt)"
-            return "Increment \(signed) → \(keyPart)"
-        case .setVariableToNow:
-            let fmt: String = {
-                switch nowFormat {
-                case .iso8601: return "ISO"
-                case .unixSeconds: return "Unix s"
-                case .unixMilliseconds: return "Unix ms"
-                case .dateOnly: return "Date"
-                case .timeOnly: return "Time"
-                }
-            }()
-            return "Set Now (\(fmt)) → \(keyPart)"
-        }
+        return spec.normalisedOrNil()
     }
 
     func validateVariableKey() -> VariableKeyValidationResult {
