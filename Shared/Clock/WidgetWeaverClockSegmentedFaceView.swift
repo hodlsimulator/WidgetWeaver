@@ -212,7 +212,7 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 .frame(width: dialDiameter, height: dialDiameter)
                 .clipShape(Circle())
 
-                // Dark bezel + inner separator ring (placeholder).
+                // Dark bezel + inner separator ring.
                 WidgetWeaverClockSegmentedBezelPlaceholderView(
                     palette: palette,
                     outerDiameter: outerDiameter,
@@ -284,9 +284,9 @@ private struct WidgetWeaverClockSegmentedOuterRingSectorsView: View {
                 // Segment body material.
                 let bodyFill = LinearGradient(
                     gradient: Gradient(stops: [
-                        .init(color: WWClock.colour(0x3A3A21).opacity(0.98), location: 0.00),
-                        .init(color: WWClock.colour(0x2A2B18).opacity(0.96), location: 0.55),
-                        .init(color: WWClock.colour(0x16170E).opacity(0.98), location: 1.00)
+                        .init(color: WWClock.colour(0x3A3A21), location: 0.00),
+                        .init(color: WWClock.colour(0x2A2B18), location: 0.55),
+                        .init(color: WWClock.colour(0x16170E), location: 1.00)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -471,24 +471,128 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Dark bezel ring.
-        Circle()
-            .fill(Color.black.opacity(0.70))
-            .frame(width: outerDiameter, height: outerDiameter)
-            .overlay(
-                Circle()
-                    .stroke(Color.white.opacity(0.06), lineWidth: max(px, ringA))
-                    .blendMode(.overlay)
-            )
+        // Ring geometry mirrors the other faces: A (outer rim), B (main body), C (inner ridge).
+        let outerA = outerDiameter
+        let outerB = max(1.0, outerA - (ringA * 2.0))
+        let outerC = max(1.0, outerA - ((ringA + ringB) * 2.0))
 
-        // Inner separator ring (thin bright ring between bezel and dial).
-        Circle()
-            .stroke(Color.white.opacity(0.08), lineWidth: max(px, ringC))
-            .frame(
-                width: outerDiameter - (ringA * 2.0) - (ringB * 2.0) - ringC,
-                height: outerDiameter - (ringA * 2.0) - (ringB * 2.0) - ringC
-            )
-            .blendMode(.screen)
-            .accessibilityHidden(true)
+        let outerBR = outerB * 0.5
+        let innerBR = max(0.0, outerBR - ringB)
+        let innerFractionB: CGFloat = (outerBR > 0.0) ? (innerBR / outerBR) : 0.01
+
+        // Dark, gunmetal bezel material tuned for the Segmented mock.
+        let bezelDark = WWClock.colour(0x06070A, alpha: 1.0)
+        let bezelMid = WWClock.colour(0x141922, alpha: 1.0)
+        let bezelBright = WWClock.colour(0x2E3642, alpha: 1.0)
+
+        let bodyFill = RadialGradient(
+            gradient: Gradient(stops: [
+                .init(color: bezelDark, location: 0.00),
+                .init(color: bezelMid, location: 0.64),
+                .init(color: bezelBright, location: 1.00)
+            ]),
+            center: .center,
+            startRadius: innerBR,
+            endRadius: outerBR
+        )
+
+        // Specular highlight: strongest around ~11 o’clock, darker around ~4–5 o’clock.
+        let angularHighlight = AngularGradient(
+            gradient: Gradient(stops: [
+                .init(color: bezelBright.opacity(0.62), location: 0.000),
+                .init(color: bezelBright.opacity(0.62), location: 0.050),
+                .init(color: bezelMid.opacity(0.22), location: 0.180),
+                .init(color: bezelMid.opacity(0.06), location: 0.320),
+                .init(color: bezelDark.opacity(0.18), location: 0.560),
+                .init(color: bezelDark.opacity(0.56), location: 0.740),
+                .init(color: bezelMid.opacity(0.18), location: 0.880),
+                .init(color: bezelBright.opacity(0.42), location: 1.000)
+            ]),
+            center: .center,
+            angle: .degrees(-135.0)
+        )
+
+        let outerRimHighlight = AngularGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.00), location: 0.000),
+                .init(color: Color.white.opacity(0.00), location: 0.820),
+                .init(color: Color.white.opacity(0.18), location: 0.900),
+                .init(color: Color.white.opacity(0.30), location: 0.940),
+                .init(color: Color.white.opacity(0.18), location: 0.980),
+                .init(color: Color.white.opacity(0.00), location: 1.000)
+            ]),
+            center: .center,
+            angle: .degrees(-135.0)
+        )
+
+        let innerRidge = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.22), location: 0.00),
+                .init(color: Color.white.opacity(0.06), location: 0.52),
+                .init(color: Color.black.opacity(0.32), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        ZStack {
+            // B) Main bezel ring (gunmetal).
+            WWClockSegmentedAnnulus(innerRadiusFraction: innerFractionB)
+                .fill(bodyFill, style: FillStyle(eoFill: true, antialiased: true))
+                .frame(width: outerB, height: outerB)
+                .overlay(
+                    WWClockSegmentedAnnulus(innerRadiusFraction: innerFractionB)
+                        .fill(angularHighlight, style: FillStyle(eoFill: true, antialiased: true))
+                        .frame(width: outerB, height: outerB)
+                        .blendMode(.overlay)
+                        .opacity(0.90)
+                )
+
+            // A) Outer rim highlight.
+            Circle()
+                .strokeBorder(outerRimHighlight, lineWidth: max(px, ringA))
+                .frame(width: outerA, height: outerA)
+                .blendMode(.screen)
+                .opacity(0.92)
+
+            // C) Inner ridge / separator between bezel and dial.
+            Circle()
+                .strokeBorder(innerRidge, lineWidth: max(px, ringC))
+                .frame(width: outerC, height: outerC)
+                .blendMode(.overlay)
+                .opacity(0.88)
+
+            // Crisp inner edge so the ridge does not blur into the dial at small widget sizes.
+            Circle()
+                .strokeBorder(Color.black.opacity(0.55), lineWidth: max(px, ringC * 0.44))
+                .frame(width: outerC, height: outerC)
+                .blendMode(.multiply)
+                .opacity(0.70)
+        }
+        .shadow(
+            color: Color.black.opacity(0.34),
+            radius: WWClock.pixel(px * 1.3, scale: scale),
+            x: 0,
+            y: WWClock.pixel(px * 1.0, scale: scale)
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Shapes
+
+private struct WWClockSegmentedAnnulus: Shape {
+    var innerRadiusFraction: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let r = min(rect.width, rect.height) * 0.5
+        let innerR = max(0.0, r * innerRadiusFraction)
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+
+        var p = Path()
+        p.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2.0, height: r * 2.0))
+        p.addEllipse(in: CGRect(x: c.x - innerR, y: c.y - innerR, width: innerR * 2.0, height: innerR * 2.0))
+        return p
     }
 }
