@@ -504,15 +504,9 @@ struct ContentView: View {
                                     }
                                 }
                             }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    duplicateDesignFromLibrary(spec)
-                                } label: {
-                                    Label("Duplicate", systemImage: "doc.on.doc")
-                                }
-
+                            .swipeActions(edge: .trailing, allowsFullSwipe: savedSpecs.count > 1) {
                                 Button(role: .destructive) {
-                                    deleteDesignFromLibrary(spec)
+                                    deleteDesignFromLibraryImmediately(spec)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -525,7 +519,10 @@ struct ContentView: View {
                                     Label("Preview", systemImage: "eye")
                                 }
 
-                                ShareLink(item: sharePackage(for: spec), preview: SharePreview(specDisplayName(spec))) {
+                                ShareLink(
+                                    item: sharePackage(for: spec),
+                                    preview: SharePreview(specDisplayName(spec))
+                                ) {
                                     Label("Share", systemImage: "square.and.arrow.up")
                                 }
 
@@ -748,6 +745,12 @@ struct ContentView: View {
         applySpec(spec)
         duplicateCurrentDesign()
         selectedTab = .editor
+    }
+
+    private func deleteDesignFromLibraryImmediately(_ spec: WidgetSpec) {
+        selectedSpecID = spec.id
+        applySpec(spec)
+        deleteCurrentDesign()
     }
 
     private func deleteDesignFromLibrary(_ spec: WidgetSpec) {
