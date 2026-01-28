@@ -337,8 +337,6 @@ private struct WWClockBaseAngles {
 
         let hourInt = Double((comps.hour ?? 0) % 12)
         let minuteInt = Double(comps.minute ?? 0)
-        let secondInt = Double(comps.second ?? 0)
-        let nano = Double(comps.nanosecond ?? 0)
 
         // Hour: includes minute contribution (minute tick style).
         let hourValue = hourInt + (minuteInt / 60.0)

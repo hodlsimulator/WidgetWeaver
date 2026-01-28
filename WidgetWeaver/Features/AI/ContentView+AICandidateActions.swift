@@ -30,6 +30,8 @@ extension ContentView {
             candidate,
             title: "Review mode is enabled. Candidate generated (not saved)."
         )
+
+        activeSheet = .aiReview(candidate: candidate, mode: .generate)
     }
 
     @MainActor
@@ -55,6 +57,8 @@ extension ContentView {
             candidate,
             title: "Review mode is enabled. Candidate patch generated (not saved)."
         )
+
+        activeSheet = .aiReview(candidate: candidate, mode: .patch)
     }
 
     // MARK: - Helpers

@@ -379,6 +379,7 @@ extension ContentView {
         case reminders
         case remindersSmartStackGuide
         case importReview
+        case aiReview(candidate: WidgetSpecAICandidate, mode: WidgetWeaverAIReviewSheet.Mode)
 
         #if DEBUG
         case clockFaceGallery
@@ -397,6 +398,7 @@ extension ContentView {
             case .reminders: return 10
             case .remindersSmartStackGuide: return 11
             case .importReview: return 9
+            case .aiReview: return 13
 
             #if DEBUG
             case .clockFaceGallery: return 12
@@ -477,6 +479,16 @@ extension ContentView {
 
         case .importReview:
             return importReviewSheetAnyView()
+
+        case .aiReview(let candidate, let mode):
+            return AnyView(
+                WidgetWeaverAIReviewSheet(
+                    candidate: candidate,
+                    mode: mode,
+                    onApply: { activeSheet = nil },
+                    onCancel: { activeSheet = nil }
+                )
+            )
 
         #if DEBUG
         case .clockFaceGallery:
