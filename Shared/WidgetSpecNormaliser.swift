@@ -19,22 +19,61 @@ public enum WidgetSpecNormaliser {
 
         // Layout (AI-controlled)
         var layout = s.layout
-        layout.spacing = finite(layout.spacing, fallback: LayoutSpec.defaultLayout.spacing)
+        let spacingBefore = layout.spacing
+        let spacingAfter = finite(spacingBefore, fallback: LayoutSpec.defaultLayout.spacing)
             .clamped(to: Limits.layoutSpacing)
+        debugLogIfChanged(
+            field: "layout.spacing",
+            before: spacingBefore,
+            after: spacingAfter,
+            limits: Limits.layoutSpacing,
+            fallback: LayoutSpec.defaultLayout.spacing
+        )
+        layout.spacing = spacingAfter
         s.layout = layout
 
         // Style (AI-controlled)
         var style = s.style
-        style.padding = finite(style.padding, fallback: StyleSpec.defaultStyle.padding)
+
+        let paddingBefore = style.padding
+        let paddingAfter = finite(paddingBefore, fallback: StyleSpec.defaultStyle.padding)
             .clamped(to: Limits.stylePadding)
-        style.cornerRadius = finite(style.cornerRadius, fallback: StyleSpec.defaultStyle.cornerRadius)
+        debugLogIfChanged(
+            field: "style.padding",
+            before: paddingBefore,
+            after: paddingAfter,
+            limits: Limits.stylePadding,
+            fallback: StyleSpec.defaultStyle.padding
+        )
+        style.padding = paddingAfter
+
+        let cornerRadiusBefore = style.cornerRadius
+        let cornerRadiusAfter = finite(cornerRadiusBefore, fallback: StyleSpec.defaultStyle.cornerRadius)
             .clamped(to: Limits.styleCornerRadius)
+        debugLogIfChanged(
+            field: "style.cornerRadius",
+            before: cornerRadiusBefore,
+            after: cornerRadiusAfter,
+            limits: Limits.styleCornerRadius,
+            fallback: StyleSpec.defaultStyle.cornerRadius
+        )
+        style.cornerRadius = cornerRadiusAfter
+
         s.style = style
 
         // Symbol (AI-controlled)
         if var sym = s.symbol {
-            sym.size = finite(sym.size, fallback: 18)
+            let sizeBefore = sym.size
+            let sizeAfter = finite(sizeBefore, fallback: 18)
                 .clamped(to: Limits.symbolSize)
+            debugLogIfChanged(
+                field: "symbol.size",
+                before: sizeBefore,
+                after: sizeAfter,
+                limits: Limits.symbolSize,
+                fallback: 18
+            )
+            sym.size = sizeAfter
             s.symbol = sym.normalised()
         }
 
@@ -47,6 +86,49 @@ public enum WidgetSpecNormaliser {
     private static func finite(_ value: Double, fallback: Double) -> Double {
         value.isFinite ? value : fallback
     }
+
+    #if DEBUG
+    private static func debugLogIfChanged(
+        field: String,
+        before: Double,
+        after: Double,
+        limits: ClosedRange<Double>,
+        fallback: Double
+    ) {
+        guard !equalsDebug(before, after) else { return }
+
+        let beforeText = debugDescribe(before)
+        let afterText = debugDescribe(after)
+        let rangeText = "\(debugDescribe(limits.lowerBound))...\(debugDescribe(limits.upperBound))"
+        let fallbackText = debugDescribe(fallback)
+
+        print("AI Normaliser: \(field) \(beforeText) → \(afterText) (limits \(rangeText), fallback \(fallbackText))")
+    }
+    #else
+    private static func debugLogIfChanged(
+        field: String,
+        before: Double,
+        after: Double,
+        limits: ClosedRange<Double>,
+        fallback: Double
+    ) {
+        // DEBUG only.
+    }
+    #endif
+
+    #if DEBUG
+    private static func equalsDebug(_ a: Double, _ b: Double) -> Bool {
+        if !a.isFinite || !b.isFinite { return false }
+        return a == b
+    }
+
+    private static func debugDescribe(_ value: Double) -> String {
+        if value.isNaN { return "NaN" }
+        if value == .infinity { return "+Inf" }
+        if value == -.infinity { return "-Inf" }
+        return String(format: "%.3f", value)
+    }
+    #endif
 
     // MARK: - Limits
 
