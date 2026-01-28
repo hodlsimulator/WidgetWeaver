@@ -139,6 +139,8 @@
 		E1E878642F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */; };
 		E1E87A0A2F0C417200C9AA14 /* SmartPhotoShuffleManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E87A092F0C416E00C9AA14 /* SmartPhotoShuffleManifest.swift */; };
 		E1E87A0B2F0C417200C9AA14 /* SmartPhotoShuffleManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E87A092F0C416E00C9AA14 /* SmartPhotoShuffleManifest.swift */; };
+		E1F8D35E2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */; };
+		E1F8D35F2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -257,6 +259,7 @@
 		E1E8783B2F08606000C9AA14 /* WWClockDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WWClockDebugLog.swift; sourceTree = "<group>"; };
 		E1E878622F0B2E5900C9AA14 /* AppGroupDarwinNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupDarwinNotifications.swift; sourceTree = "<group>"; };
 		E1E87A092F0C416E00C9AA14 /* SmartPhotoShuffleManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPhotoShuffleManifest.swift; sourceTree = "<group>"; };
+		E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecNormaliser.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -486,6 +489,7 @@
 				209AB46CCEC2437C8E0C282B /* WidgetSpec+Symbol.swift */,
 				77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */,
 				E150474B2F1D41890047863A /* WidgetSpec+VariableResolutionNow.swift */,
+				E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */,
 				E18676B02EF241130098B095 /* WidgetSpecStore.swift */,
 				E15B0BB62EF7141700760C03 /* WidgetWeaverCalendar.swift */,
 				E15047B52F252F260047863A /* WidgetWeaverClockAppearanceResolver.swift */,
@@ -776,6 +780,7 @@
 				E12EAD572EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
 				E1E878642F0B2E5B00C9AA14 /* AppGroupDarwinNotifications.swift in Sources */,
 				E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
+				E1F8D35F2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -836,6 +841,7 @@
 				E15047D52F271D890047863A /* WidgetWeaverClockIconDialColourToken.swift in Sources */,
 				E15047222F1B02E50047863A /* WidgetWeaverSpecView+Background.swift in Sources */,
 				E1785EB62EF52A6F00F7D707 /* WidgetWeaverWeather.swift in Sources */,
+				E1F8D35E2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */,
 				E12EAD582EF85AC000A0E994 /* WidgetWeaverStepsAnalytics.swift in Sources */,
 				E1C835CE2F04E53400E3AA98 /* RainSurfaceDissipationNoise.swift in Sources */,
 				F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */,
