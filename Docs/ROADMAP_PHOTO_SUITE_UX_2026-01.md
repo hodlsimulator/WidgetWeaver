@@ -1,16 +1,21 @@
 # PHOTO WIDGET SUITE — UX ROADMAP (2026-01)
 
-Updated: 2026-01-27 (rev R)
+Updated: 2026-01-28 (rev T)
 
-## Delta since rev Q (what changed)
+## Delta since rev S (what changed)
 
-- Step 2.1.4 Coverage audit is now DONE:
-  - No path found that persists raw PhotosPicker bytes without passing through the JPEG `.up` normaliser (orientation metadata == 1).
-  - Note (non-blocking): import of embedded image bytes in `.wwdesign` may warrant a later hardening micro-step if legacy payloads can carry non-`.up` orientation.
-- Step 7.1 “Memories: anti-repeat rotation” change-set is now READY (engine-only; no UI; still flagged via FeatureFlags.smartPhotoMemoriesEnabled):
-  - Requires local Build + Commit to mark fully DONE (operating rules).
+- Step 7.2 “Memories: optional year caption preset” is functionally integrated (year built-in + insert snippet + diagnostics allowlist + preview + ticking paths), but remains NOT DONE until it builds and is committed (per operating rules).
+- Step 7.3 “Memories: refresh cadence guardrails” moved from TODO to IN PROGRESS:
+  - Cadence token is encoded in SmartPhotoShuffleManifest.sourceID (no schema/spec changes):
+    - memories:onThisDay:MM-DD (daily-stable)
+    - memories:onThisWeek:YYYY-Www (weekly-stable)
+  - Auto-refresh attempt limiting is implemented via a per-mode, per-window attempt token stored in UserDefaults (prevents regen on every open, even on failure).
+  - Auto-refresh check is wired into the existing Album Shuffle controls task flow (no new top-level UI surfaces).
+  - Initial integration build issues addressed:
+    - Strict concurrency: avoid static stored UserDefaults; access under @MainActor.
+    - Candidate fetch implemented inside Memories engine (no dependency on missing helper API).
 - No schema/spec changes.
-- No new UI surfaces.
+- No new top-level UI surfaces.
 
 ## Target
 
@@ -155,7 +160,7 @@ Touched file(s):
 - `SmartPhotoAlbumShuffleControls+Logic.swift`
 - `SmartPhotoShuffleSourceSelectorRow.swift`
 
-Commit (after successful build):
+Commit:
 - `Smart Photos: Memories source selector + build (flagged)`
 
 Acceptance:
@@ -196,17 +201,59 @@ Acceptance (run after build):
 
 ### Step 7: Competitive polish (one micro-upgrade per commit) — IN PROGRESS
 
-- Step 7.1 Anti-repeat rotation policy (engine-only; no UI) — READY (build + commit pending)
-  - Goal: reduce near-duplicate bursts and repeated events while keeping deterministic fallbacks for sparse libraries.
-  - Gate: FeatureFlags.smartPhotoMemoriesEnabled (no additional flag).
-  - Commit:
-    - `Memories: anti-repeat rotation`
-- Step 7.2 Optional “year” affordance implemented as a caption preset (not a new template) — TODO
-  - Commit:
-    - `Memories: optional year caption preset`
-- Step 7.3 Refresh cadence guardrails (regen at most daily/weekly; not on every open) — TODO
-  - Commit:
-    - `Memories: refresh cadence guardrails`
+#### Step 7.1 Anti-repeat rotation policy (engine-only; no UI) — READY (build + commit pending)
+
+- Goal: reduce near-duplicate bursts and repeated events while keeping deterministic fallbacks for sparse libraries.
+- Gate: FeatureFlags.smartPhotoMemoriesEnabled (no additional flag).
+
+Commit (after successful build):
+- `Memories: anti-repeat rotation`
+
+#### Step 7.2 Optional “year” affordance implemented as a built-in caption variable (not a new template) — PENDING LAND (build + commit required)
+
+- Approach: expose year as a built-in caption variable for Smart Photos shuffle contexts (Album Shuffle / Memories), not a new template.
+
+Implementation requirements (now satisfied in code; pending land):
+- Ensure built-in key is registered (editor diagnostics allowlist) so it does not show as “unknown”.
+- Ensure the ticking/overlay variable-resolution path also injects the year variable (not just the non-ticking preview path).
+- Ensure year metadata is persisted for prepared shuffle entries (and/or backfilled deterministically where missing).
+- Add “Year (Smart Photos)” to Insert Variable as a preset/snippet (gated; no new templates).
+
+Gate:
+- FeatureFlags.smartPhotoMemoriesEnabled (no additional flag).
+
+Commit (after successful build):
+- `Memories: optional year caption preset`
+
+Acceptance:
+- For Album Shuffle / Memories, inserting `{{__smartphoto_year}}` renders a 4-digit year for the current render entry.
+- For non-shuffle contexts (single picked photo), it resolves empty (or predictable fallback if used).
+- No editor “unknown built-in keys” warnings for `__smartphoto_year`.
+
+#### Step 7.3 Refresh cadence guardrails (regen at most daily/weekly; not on every open) — IN PROGRESS (code integration underway; build + commit pending)
+
+- Goal:
+  - Prevent repeated auto-regeneration on every editor open (especially on sparse libraries / intermittent Photos access / transient failures).
+  - Keep behaviour deterministic and “quiet” (no error storms).
+
+Implementation (no schema/spec changes):
+- Encode a cadence token in SmartPhotoShuffleManifest.sourceID:
+  - On this day: memories:onThisDay:MM-DD
+  - On this week: memories:onThisWeek:YYYY-Www
+- On editor open, if a configured Memories manifest is stale (sourceID token differs from the current token):
+  - Attempt an auto-refresh at most once per cadence window (daily/weekly), tracked via a per-mode per-window attempt token in UserDefaults.
+  - Manual Build/Refresh remains unchanged and always available.
+
+Gate:
+- FeatureFlags.smartPhotoMemoriesEnabled (no additional flag).
+
+Commit (after successful build):
+- `Memories: refresh cadence guardrails`
+
+Acceptance:
+- Reopening the editor multiple times within the same day/week does not repeatedly rebuild the Memories manifest.
+- Moving the device date within the same ISO week does not trigger a rebuild for “On this week”.
+- Crossing into a new day (On this day) or a new ISO week (On this week) triggers at most one auto-refresh attempt per window.
 
 ### Step 8: Ship decision (NO CODE) — TODO
 
