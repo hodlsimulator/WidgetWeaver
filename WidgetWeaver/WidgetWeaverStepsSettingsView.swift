@@ -248,6 +248,10 @@ struct WidgetWeaverStepsSettingsView: View {
                     Text("If access was denied, enable it in the Health app: Sharing → Apps → WidgetWeaver, then allow Steps.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    if let url = URL(string: "x-apple-health://") {
+                        Link(destination: url) { Label("Open Health", systemImage: "heart.fill") }
+                    }
                 }
 
                 if let statusMessage, !statusMessage.isEmpty {
@@ -295,6 +299,7 @@ struct WidgetWeaverStepsSettingsView: View {
                 }
             }
         }
+        .refreshable { await refresh(force: true) }
         .task { await load() }
     }
 
@@ -492,10 +497,14 @@ struct WidgetWeaverActivitySettingsView: View {
                 }
                 .disabled(isRefreshing)
 
-                if access == .denied {
-                    Text("If access was denied, enable it in the Health app: Sharing → Apps → WidgetWeaver, then allow the activity types you want.")
+                if access == .denied || access == .partial {
+                    Text("Manage Activity access in the Health app: Sharing → Apps → WidgetWeaver.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    if let url = URL(string: "x-apple-health://") {
+                        Link(destination: url) { Label("Open Health", systemImage: "heart.fill") }
+                    }
                 }
 
                 if let statusMessage, !statusMessage.isEmpty {
@@ -528,6 +537,7 @@ struct WidgetWeaverActivitySettingsView: View {
                 }
             }
         }
+        .refreshable { await refresh(force: true) }
         .task { await load() }
     }
 
