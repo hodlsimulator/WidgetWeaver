@@ -217,7 +217,13 @@ extension ContentView {
                 Toggle("Make generated design default", isOn: $aiMakeGeneratedDefault)
 
                 Button {
-                    Task { await generateNewDesignFromPrompt() }
+                    Task {
+                        if WidgetWeaverFeatureFlags.aiReviewUIEnabled {
+                            await generateNewDesignCandidateFromPrompt()
+                        } else {
+                            await generateNewDesignFromPrompt()
+                        }
+                    }
                 } label: {
                     Label("Generate design", systemImage: "sparkles")
                 }
@@ -229,7 +235,13 @@ extension ContentView {
                     .lineLimit(2...6)
 
                 Button {
-                    Task { await applyPatchToCurrentDesign() }
+                    Task {
+                        if WidgetWeaverFeatureFlags.aiReviewUIEnabled {
+                            await applyPatchCandidateToCurrentDesign()
+                        } else {
+                            await applyPatchToCurrentDesign()
+                        }
+                    }
                 } label: {
                     Label("Apply patch", systemImage: "wand.and.stars")
                 }
@@ -244,9 +256,13 @@ extension ContentView {
         } header: {
             sectionHeader("AI")
         } footer: {
-            Text("AI runs on-device where available.\nGenerated designs are saved to the library like any other design.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                WidgetWeaverFeatureFlags.aiReviewUIEnabled
+                    ? "AI runs on-device where available.\nReview mode is enabled: AI outputs are not saved until applied."
+                    : "AI runs on-device where available.\nGenerated designs are saved to the library like any other design."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
