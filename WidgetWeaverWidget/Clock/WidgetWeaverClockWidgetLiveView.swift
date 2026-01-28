@@ -30,18 +30,53 @@ struct WidgetWeaverClockWidgetLiveView: View {
         self.tickSeconds = tickSeconds
     }
 
-    fileprivate static let timerStartBiasSeconds: TimeInterval = 0.25
-    fileprivate static let secondsHandTimerWindowSeconds: TimeInterval = 3600.0 - 1.0
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.redactionReasons) private var redactionReasons
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // Must match Scripts/generate_minute_hand_font.py WINDOW_HOURS.
-    fileprivate static let minuteHandTimerWindowSeconds: TimeInterval = 2.0 * 3600.0
+    @State private var lastWallSignatureSeconds: Int = Int.min
+    @State private var lastLoggedMinuteRef: Int = Int.min
+    @State private var significantTimeChangeToken: Int = 0
+    @State private var lastClockJumpUptime: TimeInterval = -1.0
 
-    fileprivate static var buildLabel: String {
+    // 2 hours forward range so Text(timerInterval:) never “runs out” while the widget is alive.
+    static let secondsHandTimerWindowSeconds: TimeInterval = 2.0 * 60.0 * 60.0
+
+    // For the minute-hand font, the GSUB mapping expects mm:ss relative to the hour anchor.
+    // Keep a multi-hour window so the timer does not fall outside the interval on long-lived widgets.
+    static let minuteHandTimerWindowSeconds: TimeInterval = 2.0 * 60.0 * 60.0
+
+    // Bias start backwards slightly so hand glyph changes are never right on a boundary, avoiding
+    // edge-case “missed tick” behaviour in some widget hosts.
+    static let timerStartBiasSeconds: TimeInterval = 0.25
+
+    // Render-proof label for debug logging.
+    static let buildLabel: String = {
         #if DEBUG
         return "debug"
         #else
         return "release"
         #endif
+    }()
+
+    static func floorToMinute(_ date: Date) -> Date {
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return cal.date(from: comps) ?? date
+    }
+
+    static func floorToHour(_ date: Date) -> Date {
+        let cal = Calendar.autoupdatingCurrent
+        let comps = cal.dateComponents([.year, .month, .day, .hour], from: date)
+        return cal.date(from: comps) ?? date
+    }
+
+    static func wallClockSignatureSeconds(now: Date, uptime: TimeInterval) -> Int {
+        // If the wall clock is changed manually, Date() jumps but uptime remains monotonic.
+        // Signature = wallSeconds - uptimeSeconds; a time jump changes this by a noticeable amount.
+        let wallSeconds = now.timeIntervalSinceReferenceDate
+        let sig = wallSeconds - uptime
+        return Int(sig.rounded())
     }
 
     var body: some View {
@@ -49,54 +84,35 @@ struct WidgetWeaverClockWidgetLiveView: View {
             WWClockRenderBody(
                 face: face,
                 palette: palette,
-                entryDate: entryDate,
                 tickMode: tickMode,
-                tickSeconds: tickSeconds
+                tickSeconds: tickSeconds,
+                displayScale: displayScale,
+                redactionReasons: redactionReasons,
+                reduceMotion: reduceMotion,
+                lastWallSignatureSeconds: $lastWallSignatureSeconds,
+                lastLoggedMinuteRef: $lastLoggedMinuteRef,
+                significantTimeChangeToken: $significantTimeChangeToken,
+                lastClockJumpUptime: $lastClockJumpUptime
             )
         }
     }
-
-    fileprivate static func floorToMinute(_ date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t / 60.0) * 60.0
-        return Date(timeIntervalSinceReferenceDate: floored)
-    }
-
-    fileprivate static func floorToHour(_ date: Date) -> Date {
-        let t = date.timeIntervalSinceReferenceDate
-        let floored = floor(t / 3600.0) * 3600.0
-        return Date(timeIntervalSinceReferenceDate: floored)
-    }
 }
 
-// MARK: - Render body
-
-fileprivate struct WWClockRenderBody: View {
+private struct WWClockRenderBody: View {
     let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
-    let entryDate: Date
     let tickMode: WidgetWeaverClockTickMode
     let tickSeconds: TimeInterval
+    let displayScale: CGFloat
+    let redactionReasons: RedactionReasons
+    let reduceMotion: Bool
 
-    @Environment(\.redactionReasons) private var redactionReasons
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var lastLoggedMinuteRef: Int = Int.min
-    @State private var significantTimeChangeToken: Int = 0
-
-    // Wall clock change detection (manual time changes, toggling Set Automatically).
-    // Uses the difference between the wall clock and monotonic uptime.
-    @State private var lastWallSignatureSeconds: Int = Int.min
-    @State private var lastClockJumpUptime: TimeInterval = -1.0
-
-    private static func wallClockSignatureSeconds(now: Date, uptime: TimeInterval) -> Int {
-        // Signature is stable under normal operation; it jumps when the wall clock changes.
-        let signature = now.timeIntervalSinceReferenceDate - uptime
-        return Int(signature.rounded())
-    }
+    @Binding var lastWallSignatureSeconds: Int
+    @Binding var lastLoggedMinuteRef: Int
+    @Binding var significantTimeChangeToken: Int
+    @Binding var lastClockJumpUptime: TimeInterval
 
     var body: some View {
-        // Wall clock.
         let wallNow = Date()
         let uptimeNow = ProcessInfo.processInfo.systemUptime
         let wallSignatureSeconds = Self.wallClockSignatureSeconds(now: wallNow, uptime: uptimeNow)
@@ -331,6 +347,12 @@ fileprivate struct WWClockRenderBody: View {
             lastLoggedMinuteRef = Int.min
         }
     }
+
+    static func wallClockSignatureSeconds(now: Date, uptime: TimeInterval) -> Int {
+        let wallSeconds = now.timeIntervalSinceReferenceDate
+        let sig = wallSeconds - uptime
+        return Int(sig.rounded())
+    }
 }
 
 private struct WWClockBaseAngles {
@@ -341,34 +363,65 @@ private struct WWClockBaseAngles {
         let cal = Calendar.autoupdatingCurrent
         let comps = cal.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
 
-        let hour24 = Double(comps.hour ?? 0)
+        let hourInt = Double((comps.hour ?? 0) % 12)
         let minuteInt = Double(comps.minute ?? 0)
         let secondInt = Double(comps.second ?? 0)
         let nano = Double(comps.nanosecond ?? 0)
 
         let sec = secondInt + (nano / 1_000_000_000.0)
-        let hour12 = hour24.truncatingRemainder(dividingBy: 12.0)
 
-        self.hour = (hour12 + minuteInt / 60.0 + sec / 3600.0) * 30.0
-        self.minute = (minuteInt + sec / 60.0) * 6.0
+        // Hour: includes minute contribution (minute tick style).
+        let hourValue = hourInt + (minuteInt / 60.0)
+        hour = hourValue * 30.0
+
+        // Minute: tick (snapped to minute boundary by caller).
+        minute = minuteInt * 6.0
+    }
+}
+
+private struct WWClockSecondsDriverText: View {
+    let timerRange: ClosedRange<Date>
+
+    var body: some View {
+        Text(timerInterval: timerRange, countsDown: false)
+            .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+            .font(.system(size: 8, weight: .regular, design: .monospaced))
+            .foregroundStyle(Color.clear)
+            .unredacted()
+            .lineLimit(1)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 1, maxHeight: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
     }
 }
 
 private struct WWClockDynamicHandID: Hashable {
     let anchorRef: Int
-    let token: Int
+    let refreshToken: Int
+    let kind: Int
+
+    init(anchorRef: Int, refreshToken: Int, kind: Int) {
+        self.anchorRef = anchorRef
+        self.refreshToken = refreshToken
+        self.kind = kind
+    }
 }
 
 private struct WWClockSecondsAndHubOverlay: View {
     let face: WidgetWeaverClockFaceToken
     let palette: WidgetWeaverClockPalette
+
     let showsMinuteHand: Bool
     let minuteTimerRange: ClosedRange<Date>
 
     let showsSeconds: Bool
     let timerRange: ClosedRange<Date>
-    let handsOpacity: Double
 
+    let handsOpacity: Double
     let refreshToken: Int
 
     @Environment(\.displayScale) private var displayScale
@@ -377,17 +430,17 @@ private struct WWClockSecondsAndHubOverlay: View {
         GeometryReader { proxy in
             let layout = WWClockDialLayout(size: proxy.size, scale: displayScale)
 
+            let dialDiameter = layout.dialDiameter
+            let hubBaseRadius = layout.hubBaseRadius
+            let hubCapRadius = layout.hubCapRadius
+
+            let minuteAnchorRef = Int(minuteTimerRange.lowerBound.timeIntervalSinceReferenceDate.rounded())
+            let secondAnchorRef = Int(timerRange.lowerBound.timeIntervalSinceReferenceDate.rounded())
+
+            let minuteID = WWClockDynamicHandID(anchorRef: minuteAnchorRef, refreshToken: refreshToken, kind: 1)
+            let secondID = WWClockDynamicHandID(anchorRef: secondAnchorRef, refreshToken: refreshToken, kind: 2)
+
             let secondHandColour: Color = (face == .icon) ? palette.iconSecondHand : palette.accent
-
-            let minuteID = WWClockDynamicHandID(
-                anchorRef: Int(minuteTimerRange.lowerBound.timeIntervalSinceReferenceDate.rounded()),
-                token: refreshToken
-            )
-
-            let secondID = WWClockDynamicHandID(
-                anchorRef: Int(timerRange.lowerBound.timeIntervalSinceReferenceDate.rounded()),
-                token: refreshToken
-            )
 
             ZStack {
                 if showsMinuteHand {
@@ -395,13 +448,9 @@ private struct WWClockSecondsAndHubOverlay: View {
                         face: face,
                         palette: palette,
                         timerRange: minuteTimerRange,
-                        diameter: layout.dialDiameter
+                        diameter: dialDiameter
                     )
                     .id(minuteID)
-                    .transition(.identity)
-                    .transaction { transaction in
-                        transaction.animation = nil
-                    }
                     .opacity(handsOpacity)
                 }
 
@@ -410,26 +459,21 @@ private struct WWClockSecondsAndHubOverlay: View {
                         palette: palette,
                         colour: secondHandColour,
                         timerRange: timerRange,
-                        diameter: layout.dialDiameter
+                        diameter: dialDiameter
                     )
                     .id(secondID)
-                    .transition(.identity)
-                    .transaction { transaction in
-                        transaction.animation = nil
-                    }
                     .opacity(handsOpacity)
                 }
 
                 WidgetWeaverClockCentreHubView(
                     palette: palette,
-                    baseRadius: layout.hubBaseRadius,
-                    capRadius: layout.hubCapRadius,
+                    baseRadius: hubBaseRadius,
+                    capRadius: hubCapRadius,
                     scale: displayScale
                 )
                 .opacity(handsOpacity)
             }
-            .frame(width: layout.dialDiameter, height: layout.dialDiameter)
-            .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.5)
+            .frame(width: dialDiameter, height: dialDiameter, alignment: .center)
             .clipShape(Circle())
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -443,7 +487,7 @@ private struct WWClockMinuteHandGlyphView: View {
     let timerRange: ClosedRange<Date>
     let diameter: CGFloat
 
-    private var glyphFont: Font {
+    private func glyphFont() -> Font {
         if face == .icon, WWClockMinuteHandIconFont.isAvailable() {
             return WWClockMinuteHandIconFont.font(size: diameter)
         }
@@ -453,7 +497,7 @@ private struct WWClockMinuteHandGlyphView: View {
     private func glyph() -> some View {
         Text(timerInterval: timerRange, countsDown: false)
             .environment(\.locale, Locale(identifier: "en_US_POSIX"))
-            .font(glyphFont)
+            .font(glyphFont())
             .unredacted()
             .lineLimit(1)
             .multilineTextAlignment(.center)
