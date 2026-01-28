@@ -433,7 +433,7 @@ private extension WidgetSpecAIService {
         // Layout edits
         var layout = s.layout
         if let axisRaw = payload.axis, let axis = LayoutAxisToken(rawValue: axisRaw) { layout.axis = axis }
-        if let alignmentRaw = payload.alignment, let align = LayoutAlignmentToken(rawValue: alignmentRaw) { layout.alignment = align }
+        if let alignmentRaw = payload.alignment, let align = LayoutAlignmentToken(rawValue: normalisedAlignmentRawValue(alignmentRaw)) { layout.alignment = align }
         if let spacing = payload.spacing { layout.spacing = spacing }
         if let v = payload.primaryLineLimitSmall { layout.primaryLineLimitSmall = v }
         if let v = payload.primaryLineLimit { layout.primaryLineLimit = v }
