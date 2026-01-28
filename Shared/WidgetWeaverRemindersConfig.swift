@@ -85,6 +85,27 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
     /// When true, reminders that start today can be included alongside due-today items.
     public var includeStartDatesInToday: Bool
 
+    // MARK: - Smart Stack scaffolding (no behaviour change in Step 2)
+
+    /// Reminders Smart Stack kit version for this design.
+    ///
+    /// Behaviour note:
+    /// - `1` represents the legacy Smart Stack kit behaviour.
+    /// - `2` (or higher) enables Smart Stack v2 behaviour once implemented.
+    ///
+    /// Default is `1` for backwards compatibility.
+    public var smartStackKitVersion: Int
+
+    /// Convenience flag used to gate Smart Stack v2 behaviour.
+    public var smartStackV2Enabled: Bool {
+        smartStackKitVersion >= 2
+    }
+
+    /// Controls whether the design title (the widget design name) is shown inside the widget.
+    ///
+    /// Default is `true` for backwards compatibility.
+    public var showsDesignTitleInWidget: Bool
+
     public init(
         mode: WidgetWeaverRemindersMode = .today,
         presentation: WidgetWeaverRemindersPresentation = .dense,
@@ -93,7 +114,9 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         showDueTimes: Bool = true,
         showProgressBadge: Bool = true,
         soonWindowMinutes: Int = WidgetWeaverRemindersConfig.defaultSoonWindowMinutes,
-        includeStartDatesInToday: Bool = true
+        includeStartDatesInToday: Bool = true,
+        smartStackKitVersion: Int = 1,
+        showsDesignTitleInWidget: Bool = true
     ) {
         self.mode = mode
         self.presentation = presentation
@@ -103,6 +126,8 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         self.showProgressBadge = showProgressBadge
         self.soonWindowMinutes = soonWindowMinutes
         self.includeStartDatesInToday = includeStartDatesInToday
+        self.smartStackKitVersion = smartStackKitVersion
+        self.showsDesignTitleInWidget = showsDesignTitleInWidget
 
         self = self.normalised()
     }
@@ -122,6 +147,9 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         let maxMinutes = 60 * 24 * 31
         c.soonWindowMinutes = max(minMinutes, min(c.soonWindowMinutes, maxMinutes))
 
+        // Smart Stack version is clamped to a sensible minimum for backwards compatibility.
+        c.smartStackKitVersion = max(1, c.smartStackKitVersion)
+
         return c
     }
 
@@ -136,6 +164,8 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         case showProgressBadge
         case soonWindowMinutes
         case includeStartDatesInToday
+        case smartStackKitVersion
+        case showsDesignTitleInWidget
     }
 
     public init(from decoder: Decoder) throws {
@@ -150,6 +180,10 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         let soonWindowMinutes = (try? c.decode(Int.self, forKey: .soonWindowMinutes)) ?? Self.defaultSoonWindowMinutes
         let includeStartDatesInToday = (try? c.decode(Bool.self, forKey: .includeStartDatesInToday)) ?? true
 
+        // Step 2 additions: default values preserve v1 behaviour when keys are missing.
+        let smartStackKitVersion = (try? c.decode(Int.self, forKey: .smartStackKitVersion)) ?? 1
+        let showsDesignTitleInWidget = (try? c.decode(Bool.self, forKey: .showsDesignTitleInWidget)) ?? true
+
         self.init(
             mode: mode,
             presentation: presentation,
@@ -158,7 +192,9 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
             showDueTimes: showDueTimes,
             showProgressBadge: showProgressBadge,
             soonWindowMinutes: soonWindowMinutes,
-            includeStartDatesInToday: includeStartDatesInToday
+            includeStartDatesInToday: includeStartDatesInToday,
+            smartStackKitVersion: smartStackKitVersion,
+            showsDesignTitleInWidget: showsDesignTitleInWidget
         )
     }
 
@@ -172,5 +208,7 @@ public struct WidgetWeaverRemindersConfig: Codable, Hashable, Sendable {
         try c.encode(showProgressBadge, forKey: .showProgressBadge)
         try c.encode(soonWindowMinutes, forKey: .soonWindowMinutes)
         try c.encode(includeStartDatesInToday, forKey: .includeStartDatesInToday)
+        try c.encode(smartStackKitVersion, forKey: .smartStackKitVersion)
+        try c.encode(showsDesignTitleInWidget, forKey: .showsDesignTitleInWidget)
     }
 }
