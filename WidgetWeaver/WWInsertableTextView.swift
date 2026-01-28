@@ -74,13 +74,16 @@ struct WWInsertableTextView: UIViewRepresentable {
             }
         }
 
+        let wasFocused = context.coordinator.lastSwiftUIIsFocused
+        context.coordinator.lastSwiftUIIsFocused = isFocused
+
         if isFocused {
             if !uiView.isFirstResponder {
                 uiView.becomeFirstResponder()
                 context.coordinator.restoreSelectionIfPossible(on: uiView)
             }
         } else {
-            if uiView.isFirstResponder {
+            if wasFocused, uiView.isFirstResponder {
                 uiView.resignFirstResponder()
             }
         }
@@ -92,6 +95,7 @@ struct WWInsertableTextView: UIViewRepresentable {
 
             context.coordinator.lastAppliedInsertionID = req.id
             context.coordinator.lastKnownSelection = outcome.selection
+            context.coordinator.hasRecordedSelection = true
 
             context.coordinator.withProgrammaticUpdate {
                 uiView.text = outcome.text
@@ -116,6 +120,9 @@ struct WWInsertableTextView: UIViewRepresentable {
         var lastAppliedInsertionID: UUID?
         var lastKnownSelection: NSRange = NSRange(location: 0, length: 0)
 
+        var lastSwiftUIIsFocused: Bool = false
+        var hasRecordedSelection: Bool = false
+
         private var isProgrammaticUpdate: Bool = false
 
         init(parent: WWInsertableTextView) {
@@ -130,17 +137,17 @@ struct WWInsertableTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            updateSelection(from: textView)
             DispatchQueue.main.async {
                 self.parent.isFocused = true
             }
-            updateSelection(from: textView)
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            updateSelection(from: textView)
             DispatchQueue.main.async {
                 self.parent.isFocused = false
             }
-            updateSelection(from: textView)
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -149,11 +156,17 @@ struct WWInsertableTextView: UIViewRepresentable {
 
         private func updateSelection(from textView: UITextView) {
             lastKnownSelection = textView.selectedRange
+            hasRecordedSelection = true
         }
 
         func restoreSelectionIfPossible(on textView: UITextView) {
             let currentText = textView.text ?? ""
-            textView.selectedRange = clampedSelection(for: currentText)
+            if hasRecordedSelection {
+                textView.selectedRange = clampedSelection(for: currentText)
+            } else {
+                let end = currentText.utf16.count
+                textView.selectedRange = NSRange(location: end, length: 0)
+            }
         }
 
         func clampedSelection(for text: String) -> NSRange {
