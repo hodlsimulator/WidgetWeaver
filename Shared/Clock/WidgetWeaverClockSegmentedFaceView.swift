@@ -32,7 +32,8 @@ private enum WWClockSegmentedFaceConstants {
 /// Step 7:
 /// - Adds Segmented-specific hands (bar-like hour/minute + yellow seconds).
 ///
-/// Segmented-specific centre hub is implemented in later steps.
+/// Step 8:
+/// - Adds a Segmented-specific centre hub (stacked discs + specular).
 struct WidgetWeaverClockSegmentedFaceView: View {
     let palette: WidgetWeaverClockPalette
 
@@ -198,7 +199,7 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                         )
 
                         if showsCentreHub {
-                            WidgetWeaverClockCentreHubView(
+                            WidgetWeaverClockSegmentedCentreHubView(
                                 palette: palette,
                                 baseRadius: hubBaseRadius,
                                 capRadius: hubCapRadius,
