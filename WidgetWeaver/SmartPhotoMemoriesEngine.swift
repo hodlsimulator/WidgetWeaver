@@ -38,19 +38,27 @@ enum SmartPhotoMemoriesMode: String, CaseIterable, Hashable, Sendable, Identifia
     }
 
     private func sourceIDSuffix(now: Date, calendar: Calendar) -> String {
-        let month = calendar.component(.month, from: now)
-        let day = calendar.component(.day, from: now)
-
         func two(_ v: Int) -> String {
             let clamped = max(0, min(v, 99))
             return String(format: "%02d", clamped)
         }
 
+        func four(_ v: Int) -> String {
+            let clamped = max(0, min(v, 9999))
+            return String(format: "%04d", clamped)
+        }
+
         switch self {
         case .onThisDay:
+            let month = calendar.component(.month, from: now)
+            let day = calendar.component(.day, from: now)
             return "\(two(month))-\(two(day))"
+
         case .onThisWeek:
-            return "weekOf-\(two(month))-\(two(day))"
+            let comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            let year = comps.yearForWeekOfYear ?? calendar.component(.year, from: now)
+            let week = comps.weekOfYear ?? 0
+            return "\(four(year))-W\(two(week))"
         }
     }
 }
@@ -86,6 +94,44 @@ enum SmartPhotoMemoriesEngine {
         var selectedCount: Int
         var preparedNow: Int
         var failedNow: Int
+    }
+
+
+    // MARK: - Auto-refresh cadence guardrails
+
+    /// Guardrails for automatic regeneration of Memories manifests.
+    ///
+    /// Purpose:
+    /// - Avoid regenerating on every editor open.
+    /// - Allow at most one regeneration attempt per cadence window (daily/weekly).
+    ///
+    /// Manual "Refresh" remains available and unchanged.
+    @MainActor
+    static func beginAutoRefreshAttemptIfNeeded(mode: SmartPhotoMemoriesMode, expectedSourceID: String) -> Bool {
+        AutoRefreshCadence.beginAttempt(mode: mode, expectedSourceID: expectedSourceID)
+    }
+
+    @MainActor
+    private enum AutoRefreshCadence {
+        private static func key(for mode: SmartPhotoMemoriesMode) -> String {
+            "widgetweaver.memories.autorefresh.lastAttemptSourceID.\(mode.rawValue)"
+        }
+
+        static func beginAttempt(mode: SmartPhotoMemoriesMode, expectedSourceID: String) -> Bool {
+            let token = expectedSourceID.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            guard !token.isEmpty else { return false }
+
+            let k = key(for: mode)
+            let last = (UserDefaults.standard.string(forKey: k) ?? "")
+                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+            if last == token {
+                return false
+            }
+
+            UserDefaults.standard.set(token, forKey: k)
+            return true
+        }
     }
 
     /// Builds a Smart Photo shuffle manifest for Memories (On this day / On this week) and
@@ -483,19 +529,19 @@ enum SmartPhotoMemoriesEngine {
 
     // MARK: - Initial prep
 
-private static func smartPhotoYearFlag(localIdentifier: String, calendar: Calendar = .current) -> String? {
-    let id = localIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !id.isEmpty else { return nil }
+    private static func smartPhotoYearFlag(localIdentifier: String, calendar: Calendar = .current) -> String? {
+        let id = localIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return nil }
 
-    let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
-    guard let asset = assets.firstObject else { return nil }
-    guard let createdAt = asset.creationDate else { return nil }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+        guard let asset = assets.firstObject else { return nil }
+        guard let createdAt = asset.creationDate else { return nil }
 
-    let year = calendar.component(.year, from: createdAt)
-    guard year >= 1900 && year <= 2200 else { return nil }
+        let year = calendar.component(.year, from: createdAt)
+        guard year >= 1900 && year <= 2200 else { return nil }
 
-    return "year:\(year)"
-}
+        return "year:\(year)"
+    }
 
     private struct PrepOutcome: Sendable {
         var preparedNow: Int
@@ -606,5 +652,10 @@ private static func smartPhotoYearFlag(localIdentifier: String, calendar: Calend
 
             return PrepOutcome(preparedNow: preparedNow, failedNow: failedNow)
         }.value
+    }
+
+    private enum PrepError: Error {
+        case missingSmartPhoto
+        case missingVariants
     }
 }

@@ -179,6 +179,69 @@ extension SmartPhotoAlbumShuffleControls {
         }
     }
 
+
+    // MARK: - Memories auto-refresh
+
+    /// Automatically refreshes a configured Memories manifest when its sourceID window is stale.
+    ///
+    /// Guardrails:
+    /// - Runs only when `FeatureFlags.smartPhotoMemoriesEnabled` is on.
+    /// - Attempts at most once per cadence window (daily/weekly), even if the attempt fails.
+    ///
+    /// Returns true when a new manifest was configured (manifest file name changed).
+    @MainActor
+    func autoRefreshMemoriesIfNeeded() async -> Bool {
+        guard FeatureFlags.smartPhotoMemoriesEnabled else { return false }
+        guard scenePhase == .active else { return false }
+        guard !importInProgress else { return false }
+        guard !isPreparingBatch else { return false }
+
+        let mf = manifestFileName
+        guard !mf.isEmpty else { return false }
+
+        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: mf) else { return false }
+
+        let sourceID = manifest.sourceID.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+        let mode: SmartPhotoMemoriesMode? = {
+            if sourceID.hasPrefix(SmartPhotoMemoriesMode.onThisDay.sourceIDPrefix) {
+                return .onThisDay
+            }
+            if sourceID.hasPrefix(SmartPhotoMemoriesMode.onThisWeek.sourceIDPrefix) {
+                return .onThisWeek
+            }
+            return nil
+        }()
+
+        guard let mode else { return false }
+
+        // Avoid surprising rebuilds while the Source selector is mid-switch.
+        if selectedSourceKey != configuredSourceKey {
+            return false
+        }
+
+        let expectedSourceID = mode.sourceID(now: Date(), calendar: .current)
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+        guard !expectedSourceID.isEmpty else { return false }
+
+        if sourceID == expectedSourceID {
+            return false
+        }
+
+        guard SmartPhotoMemoriesEngine.beginAutoRefreshAttemptIfNeeded(mode: mode, expectedSourceID: expectedSourceID) else {
+            return false
+        }
+
+        saveStatusMessage = "Updating \(mode.displayName)…"
+
+        let before = manifestFileName
+        await configureMemories(mode: mode)
+        let after = manifestFileName
+
+        return after != before
+    }
+
     func disableShuffle() {
         guard var sp = smartPhoto else { return }
         sp.shuffleManifestFileName = nil

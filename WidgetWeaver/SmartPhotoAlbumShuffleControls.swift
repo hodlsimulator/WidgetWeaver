@@ -178,6 +178,14 @@ struct SmartPhotoAlbumShuffleControls: View {
         }
         .task(id: manifestFileName) {
             await refreshFromManifest()
+
+            if FeatureFlags.smartPhotoMemoriesEnabled {
+                let didReplaceManifest = await autoRefreshMemoriesIfNeeded()
+                if didReplaceManifest {
+                    return
+                }
+            }
+
             await autoPrepareWhilePossible()
         }
     }
