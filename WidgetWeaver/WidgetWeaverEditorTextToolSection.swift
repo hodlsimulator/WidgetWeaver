@@ -504,6 +504,7 @@ struct WidgetWeaverEditorTextToolSection: View {
             "__today",
             "__time",
             "__weekday",
+            "__smartphoto_year",
         ]
 
         private static let builtInPrefixes: [String] = [
