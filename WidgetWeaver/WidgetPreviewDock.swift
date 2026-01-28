@@ -44,6 +44,18 @@ struct WidgetPreviewDock: View {
     @State private var frozenSpec: WidgetSpec? = nil
     @State private var pendingTask: Task<Void, Never>? = nil
 
+    private var isDirty: Bool {
+        guard let saved = WidgetSpecStore.shared.load(id: spec.id) else { return false }
+        return comparableSpec(spec) != comparableSpec(saved)
+    }
+
+    private func comparableSpec(_ spec: WidgetSpec) -> WidgetSpec {
+        var s = spec.normalised()
+        s.updatedAt = Date(timeIntervalSince1970: 0)
+        return s
+    }
+
+
     private var restrictToSmallOnly: Bool {
         let familySpec = spec.resolved(for: family)
         return familySpec.layout.template == .clockIcon
@@ -121,9 +133,20 @@ struct WidgetPreviewDock: View {
                 }
 
                 HStack(spacing: 10) {
-                    Text("Preview")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if isDirty {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 8, height: 8)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(isDirty ? "Preview, unsaved changes" : "Preview")
 
                     Spacer(minLength: 0)
 
@@ -221,10 +244,9 @@ struct WidgetPreviewDock: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    Text(statusLine)
+                    statusLineLabel
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
@@ -244,11 +266,48 @@ struct WidgetPreviewDock: View {
         .onTapGesture { setExpanded(true) }
     }
 
-    private var statusLine: String {
-        if liveEnabled {
-            return "\(familyLabel) • Live"
+    private var statusLineText: String {
+        var parts: [String] = [familyLabel]
+
+        if isDirty {
+            parts.append("Unsaved")
         }
-        return "\(familyLabel)"
+
+        if liveEnabled {
+            parts.append("Live")
+        }
+
+        return parts.joined(separator: " • ")
+    }
+
+    private var accessibilityStatusLineText: String {
+        var parts: [String] = [familyLabel]
+
+        if isDirty {
+            parts.append("unsaved changes")
+        }
+
+        if liveEnabled {
+            parts.append("live")
+        }
+
+        return parts.joined(separator: ", ")
+    }
+
+    private var statusLineLabel: some View {
+        HStack(spacing: 6) {
+            if isDirty {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+
+            Text(statusLineText)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityStatusLineText)
     }
 
     private var grabber: some View {
