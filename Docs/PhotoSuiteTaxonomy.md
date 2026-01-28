@@ -110,7 +110,7 @@ Legend:
 
 | Template ID | Name | Photo Source | Treatment | Overlay Content | Overlay Style | Primary spec knobs | Notes |
 |---|---|---|---|---|---|---|---|
-| `starter-photo-single` | Photo (Single) | Single Photo | Full-bleed | None | N/A | `layout.posterOverlayMode = .none`; `image.contentMode = .fill` | Baseline poster. |
+| `starter-photo-single` | Photo | Single Photo | Full-bleed | None | N/A | `layout.posterOverlayMode = .none`; `image.contentMode = .fill` | Baseline poster. |
 | `starter-photo-framed` | Photo (Framed) | Single Photo | Framed | None | N/A | `layout.posterOverlayMode = .none`; `image.contentMode = .fit` | Matte-fit variant. |
 | `starter-photo-caption` | Photo + Caption | Single Photo | Full-bleed | Caption | Scrim | `layout.posterOverlayMode = .caption`; `alignment = .bottom*` | Baseline caption poster. |
 | `starter-photo-caption-top` | Photo + Caption (Top) | Single Photo | Full-bleed | Caption | Scrim | `layout.posterOverlayMode = .caption`; `alignment = .top*` | A preset of alignment only. |

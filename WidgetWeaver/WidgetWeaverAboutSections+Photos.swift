@@ -113,7 +113,7 @@ extension WidgetWeaverAboutView {
                         .font(.subheadline.weight(.semibold))
 
                     WidgetWeaverAboutBulletList(items: [
-                        "Add Photo (Single) to your library.",
+                        "Add Photo to your library.",
                         "Choose a photo when prompted (or open Image → Choose photo).",
                         "Add a WidgetWeaver widget and pick the design.",
                     ])

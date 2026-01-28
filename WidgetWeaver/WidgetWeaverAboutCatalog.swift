@@ -38,7 +38,7 @@ extension WidgetWeaverAboutView {
     static let starterTemplatesAll: [WidgetWeaverAboutTemplate] = [
         WidgetWeaverAboutTemplate(
             id: "starter-photo-single",
-            title: "Photo (Single)",
+            title: "Photo",
             subtitle: "Full-bleed",
             description: "A clean, photo-first widget. Add it, then choose an image in the Editor.",
             tags: ["Photo", "Full-bleed", "Minimal"],
@@ -304,7 +304,7 @@ extension WidgetWeaverAboutView {
 
     static func specPhotoSingle() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
-        spec.name = "Photo (Single)"
+        spec.name = "Photo"
         spec.primaryText = "Your photo"
         spec.secondaryText = nil
         spec.symbol = nil
