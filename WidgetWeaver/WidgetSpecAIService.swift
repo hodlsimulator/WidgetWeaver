@@ -216,7 +216,7 @@ final class WidgetSpecAIService {
     func generateNewSpec(from prompt: String) async -> WidgetSpecAIGenerationResult {
         let trimmed = Self.clean(prompt, maxLength: 280, fallback: "")
         guard !trimmed.isEmpty else {
-            let spec = WidgetSpec.defaultSpec().normalised()
+            let spec = WidgetSpecNormaliser.normalisedAIOutput(WidgetSpec.defaultSpec())
             return WidgetSpecAIGenerationResult(
                 spec: spec,
                 usedModel: false,
@@ -225,7 +225,7 @@ final class WidgetSpecAIService {
         }
 
         guard WidgetWeaverFeatureFlags.aiEnabled else {
-            let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
+            let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackNewSpec(prompt: trimmed))
             return WidgetSpecAIGenerationResult(
                 spec: spec,
                 usedModel: false,
@@ -241,15 +241,15 @@ final class WidgetSpecAIService {
                     generating: WidgetSpecGenerationPayload.self
                 )
                 let payload = response.content
-                let spec = Self.widgetSpec(from: payload).normalised()
+                let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.widgetSpec(from: payload))
                 return WidgetSpecAIGenerationResult(spec: spec, usedModel: true, note: "Generated from prompt.")
             } catch {
-                let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
+                let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackNewSpec(prompt: trimmed))
                 return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Generation failed — used deterministic template.")
             }
 
         case .unavailable:
-            let spec = Self.fallbackNewSpec(prompt: trimmed).normalised()
+            let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackNewSpec(prompt: trimmed))
             return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Apple Intelligence unavailable — used deterministic template.")
         }
     }
@@ -279,15 +279,15 @@ final class WidgetSpecAIService {
                     generating: WidgetSpecPatchPayload.self
                 )
                 let payload = response.content
-                let patched = Self.apply(payload: payload, to: base).normalised()
+                let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.apply(payload: payload, to: base))
                 return WidgetSpecAIGenerationResult(spec: patched, usedModel: true, note: "Applied patch.")
             } catch {
-                let patched = Self.fallbackPatch(base: base, instruction: trimmedInstruction).normalised()
+                let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
                 return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Patch failed — used deterministic rules.")
             }
 
         case .unavailable:
-            let patched = Self.fallbackPatch(base: base, instruction: trimmedInstruction).normalised()
+            let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
             return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Apple Intelligence unavailable — used deterministic rules.")
         }
     }
