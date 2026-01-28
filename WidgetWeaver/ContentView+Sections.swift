@@ -250,19 +250,21 @@ extension ContentView {
         }
     }
 
-    // MARK: - Existing sections (unchanged)
+    // MARK: - Existing sections
     var designsSection: some View {
         Section {
             if savedSpecs.isEmpty {
                 Text("No saved designs yet.")
                     .foregroundStyle(.secondary)
             } else {
-                Picker("Design", selection: $selectedSpecID) {
-                    ForEach(savedSpecs) { spec in
-                        Text(specDisplayName(spec)).tag(spec.id)
-                    }
-                }
-                .pickerStyle(.menu)
+                WidgetWeaverDesignSwitchGuardedPicker(
+                    title: "Design",
+                    specs: savedSpecs,
+                    selectedSpecID: $selectedSpecID,
+                    displayName: specDisplayName,
+                    isDirty: { hasUnsavedChanges },
+                    onSaveCurrent: { saveSelected(makeDefault: false) }
+                )
             }
 
             if let defaultName {
