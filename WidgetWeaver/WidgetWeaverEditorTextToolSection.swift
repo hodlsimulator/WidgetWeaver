@@ -324,7 +324,7 @@ struct WidgetWeaverEditorTextToolSection: View {
         insertionRequest: Binding<WWTextInsertionRequest?>,
         accessibilityID: String
     ) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             let isFocusedBinding = Binding<Bool>(
                 get: { focusedField == focusedFieldValue },
                 set: { newValue in
@@ -332,7 +332,7 @@ struct WidgetWeaverEditorTextToolSection: View {
                 }
             )
 
-            WWInsertableTextField(
+            WWInsertableTextView(
                 placeholder: title,
                 accessibilityIdentifier: accessibilityID,
                 text: text,
@@ -350,6 +350,7 @@ struct WidgetWeaverEditorTextToolSection: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel("Insert variable")
+            .padding(.top, 6)
         }
     }
 
