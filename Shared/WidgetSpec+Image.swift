@@ -431,6 +431,17 @@ public extension ImageSpec {
             isAppExtension: isAppExtension
         )
 
+        let activeFilter: PhotoFilterSpec? = {
+            guard WidgetWeaverFeatureFlags.photoFiltersEnabled else { return nil }
+            return filter?.normalisedOrNil()
+        }()
+
+        func applyFilterIfNeeded(_ image: UIImage?) -> UIImage? {
+            guard let image else { return nil }
+            guard let activeFilter else { return image }
+            return PhotoFilterEngine.shared.apply(to: image, spec: activeFilter)
+        }
+
         // Smart Photo shuffle uses a manifest JSON in the App Group to choose the current entry’s
         // per-family render file. This selection should apply in both the app preview and the
         // widget extension.
@@ -589,7 +600,7 @@ public extension ImageSpec {
                     img == nil ? "resolve: appex downsample failed file=\(resolvedFileName)" : "resolve: appex downsample ok file=\(resolvedFileName)"
                 }
             }
-            return img
+            return applyFilterIfNeeded(img)
         }
 
         if let img = AppGroup.loadUIImage(fileName: resolvedFileName) {
@@ -603,7 +614,7 @@ public extension ImageSpec {
                     "resolve: app cached ok file=\(resolvedFileName)"
                 }
             }
-            return img
+            return applyFilterIfNeeded(img)
         }
 
         if shouldLog {
@@ -632,7 +643,7 @@ public extension ImageSpec {
                 base == nil ? "resolve: app base load failed file=\(fileName)" : "resolve: app base ok file=\(fileName)"
             }
         }
-        return base
+        return applyFilterIfNeeded(base)
     }
     #endif
 }

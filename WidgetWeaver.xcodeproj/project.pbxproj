@@ -145,6 +145,8 @@
 		E1F8D3682F2A5AF6004133CA /* WidgetSpecAICandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */; };
 		E1F8D36E2F2A6049004133CA /* PhotoFilterSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D36D2F2A6045004133CA /* PhotoFilterSpec.swift */; };
 		E1F8D36F2F2A6049004133CA /* PhotoFilterSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D36D2F2A6045004133CA /* PhotoFilterSpec.swift */; };
+		E1F8D3762F2A8E2D004133CA /* PhotoFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */; };
+		E1F8D3772F2A8E2D004133CA /* PhotoFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -266,6 +268,7 @@
 		E1F8D35D2F29B68B004133CA /* WidgetSpecNormaliser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecNormaliser.swift; sourceTree = "<group>"; };
 		E1F8D3662F2A5AF3004133CA /* WidgetSpecAICandidate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecAICandidate.swift; sourceTree = "<group>"; };
 		E1F8D36D2F2A6045004133CA /* PhotoFilterSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFilterSpec.swift; sourceTree = "<group>"; };
+		E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFilterEngine.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -470,6 +473,7 @@
 				E16011462F15EC4200A3B10B /* PawPulseCache.swift */,
 				E160114C2F15EC9C00A3B10B /* PawPulseEngine.swift */,
 				E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */,
+				E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */,
 				E16011432F15EC1000A3B10B /* PawPulseLatestItem.swift */,
 				E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */,
 				E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */,
@@ -791,6 +795,7 @@
 				E1C835CA2F03256600E3AA98 /* RainSurfaceDrawing+Rim.swift in Sources */,
 				E1F8D36E2F2A6049004133CA /* PhotoFilterSpec.swift in Sources */,
 				E1F8D35F2F29B690004133CA /* WidgetSpecNormaliser.swift in Sources */,
+				E1F8D3772F2A8E2D004133CA /* PhotoFilterEngine.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -842,6 +847,7 @@
 				E16D84692EF8B47900552DCF /* WWThumbnailRenderingPolicy.swift in Sources */,
 				2A6E3EFF16F84267A467B82E /* WidgetSpec+Image.swift in Sources */,
 				E15B0BAA2EF6CC8300760C03 /* WidgetWeaverWeatherTemplateHelpers.swift in Sources */,
+				E1F8D3762F2A8E2D004133CA /* PhotoFilterEngine.swift in Sources */,
 				E1C834D72EFB33CA00E3AA98 /* RainForecastSurfaceRenderer.swift in Sources */,
 				E15B0BB72EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
 				E16011782F19764C00A3B10B /* WidgetWeaverRemindersDebugStore.swift in Sources */,
