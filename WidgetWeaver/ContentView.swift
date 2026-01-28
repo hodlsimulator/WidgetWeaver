@@ -30,6 +30,8 @@ struct ContentView: View {
     @AppStorage("library.sort") private var librarySortRaw: String = "updated"
     @AppStorage("library.filter") private var libraryFilterRaw: String = "all"
 
+    @State private var libraryPreviewSpec: WidgetSpec? = nil
+
     @State var savedSpecs: [WidgetSpec] = []
     @State var defaultSpecID: UUID?
     @State var selectedSpecID: UUID = UUID()
@@ -487,15 +489,48 @@ struct ContentView: View {
                                 libraryRow(spec: spec)
                             }
                             .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: savedSpecs.count > 1) {
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    libraryPreviewSpec = spec.normalised()
+                                } label: {
+                                    Label("Preview", systemImage: "eye")
+                                }
+
+                                if spec.id != defaultSpecID {
+                                    Button {
+                                        makeDefaultFromLibrary(spec)
+                                    } label: {
+                                        Label("Default", systemImage: "star")
+                                    }
+                                }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button {
+                                    duplicateDesignFromLibrary(spec)
+                                } label: {
+                                    Label("Duplicate", systemImage: "doc.on.doc")
+                                }
+
                                 Button(role: .destructive) {
-                                    deleteDesignFromLibraryImmediately(spec)
+                                    deleteDesignFromLibrary(spec)
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                                 .disabled(savedSpecs.count <= 1)
                             }
                             .contextMenu {
+                                Button {
+                                    libraryPreviewSpec = spec.normalised()
+                                } label: {
+                                    Label("Preview", systemImage: "eye")
+                                }
+
+                                ShareLink(item: sharePackage(for: spec), preview: SharePreview(specDisplayName(spec))) {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+
+                                Divider()
+
                                 Button {
                                     selectDesignFromLibrary(spec)
                                 } label: {
@@ -650,6 +685,15 @@ struct ContentView: View {
                 }
             }
         }
+        .sheet(item: $libraryPreviewSpec) { spec in
+            WidgetWeaverLibraryDesignPreviewSheet(
+                spec: spec,
+                isDefault: spec.id == defaultSpecID,
+                sharePackage: sharePackage(for: spec),
+                onEdit: { selectDesignFromLibrary(spec) },
+                onMakeDefault: { makeDefaultFromLibrary(spec) }
+            )
+        }
     }
 
     private func libraryRow(spec: WidgetSpec) -> some View {
@@ -704,12 +748,6 @@ struct ContentView: View {
         applySpec(spec)
         duplicateCurrentDesign()
         selectedTab = .editor
-    }
-
-    private func deleteDesignFromLibraryImmediately(_ spec: WidgetSpec) {
-        selectedSpecID = spec.id
-        applySpec(spec)
-        deleteCurrentDesign()
     }
 
     private func deleteDesignFromLibrary(_ spec: WidgetSpec) {

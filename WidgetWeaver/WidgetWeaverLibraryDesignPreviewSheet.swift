@@ -19,6 +19,7 @@ struct WidgetWeaverLibraryDesignPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var family: WidgetFamily = .systemSmall
+    @State private var restrictToSmallOnly: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -35,6 +36,7 @@ struct WidgetWeaverLibraryDesignPreviewSheet: View {
                 }
             }
             .onAppear {
+                restrictToSmallOnly = spec.layout.template.isClock
                 clampFamilyIfNeeded()
             }
             .onChange(of: family) { _, _ in
@@ -48,10 +50,6 @@ struct WidgetWeaverLibraryDesignPreviewSheet: View {
         return trimmed.isEmpty ? "Preview" : trimmed
     }
 
-    private var restrictToSmallOnly: Bool {
-        spec.layout.template.isClock
-    }
-
     private func clampFamilyIfNeeded() {
         if restrictToSmallOnly, family != .systemSmall {
             family = .systemSmall
@@ -60,19 +58,15 @@ struct WidgetWeaverLibraryDesignPreviewSheet: View {
 
     private var previewSection: some View {
         Section {
-            if restrictToSmallOnly {
-                Text("This template previews as Small only.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Size", selection: $family) {
-                    Text("Small").tag(WidgetFamily.systemSmall)
+            Picker("Preview size", selection: $family) {
+                Text("Small").tag(WidgetFamily.systemSmall)
+                if !restrictToSmallOnly {
                     Text("Medium").tag(WidgetFamily.systemMedium)
                     Text("Large").tag(WidgetFamily.systemLarge)
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
             }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
 
             WidgetPreview(spec: spec, family: family, maxHeight: 320)
                 .frame(height: 320)

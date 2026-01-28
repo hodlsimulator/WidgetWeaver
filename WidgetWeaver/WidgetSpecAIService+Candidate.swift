@@ -180,7 +180,7 @@ private extension WidgetSpecAIService {
         case (nil, let new?):
             return ["Symbol: added \(new.name)"]
 
-        case (let old?, nil):
+        case (_?, nil):
             return ["Symbol: removed"]
 
         case (let old?, let new?):
@@ -220,7 +220,7 @@ private extension WidgetSpecAIService {
             return ""
         case (nil, let a?):
             return "\(label): added \(a)"
-        case (let b?, nil):
+        case (_?, nil):
             return "\(label): removed"
         case (let b?, let a?):
             return "\(label): \(b) → \(a)"
