@@ -1,43 +1,75 @@
-# Reminders Smart Stack v2 — Page Definitions and Non-Overlapping Rules
+# Reminders Smart Stack v2 — Behaviour Spec (pages, dedupe, ordering)
 
 Date: 2026-01-28  
-Scope: Reminders-only (Smart Stack widget pages). Spec only; no implementation details required here.
+Scope: Reminders-only (Smart Stack widget pages). Spec only; no implementation details required.
+
+## Deliverable and acceptance criteria
+
+This document defines the Smart Stack v2 behaviour as a pure partitioning of one widget snapshot of reminders into exactly six pages.
+
+Acceptance criteria:
+
+1. Smart Stack v2 contains exactly six pages, with fixed order and user-facing names:
+   1) Overdue  
+   2) Today  
+   3) Upcoming  
+   4) High priority  
+   5) Anytime  
+   6) Lists
+2. For a single widget refresh/snapshot, no reminder row (by stable reminder ID) appears in more than one Smart Stack page.
+3. “Upcoming” never includes “Today”. (The upcoming window starts at tomorrow’s local day boundary.)
+4. “Lists” never repeats any item already visible on pages 1–5. It is the true remainder.
+5. Ordering is deterministic for every page, with a stable final tie-break using reminder ID to avoid refresh reordering.
 
 ## Goals
 
-1. Clarify the six Smart Stack pages with unambiguous, user-facing names and rules.
-2. Resolve v1 overlaps:
+1. Make the six pages and their rules unambiguous.
+2. Remove overlaps present in v1:
    - “Soon” vs “Today”: “Upcoming” must exclude “Today”.
-   - “Priority” vs “Focus”: consolidate semantics into a single “High priority” page.
+   - “Priority” vs “Focus”: consolidate into a single “High priority” concept.
    - “Lists” vs everything: “Lists” must only show items not already shown elsewhere.
-3. Acceptance criterion: For a single widget refresh/snapshot, no reminder row appears in more than one Smart Stack page.
+3. Ensure a clear day-boundary contract in local time.
 
 ## Terminology
 
-Snapshot: The single set of reminder items available to the widget at one refresh (after any existing v1 baseline filters such as list selection and “incomplete only”). Smart Stack v2 operates purely on this snapshot.
+Snapshot
+- The single set of reminder items available to the widget at one refresh.
+- Smart Stack v2 does not change which reminders are eligible; it only partitions the snapshot.
 
-Eligible reminder: Any reminder item included in the snapshot input set. Smart Stack v2 does not expand or shrink the snapshot; it only partitions it.
+Eligible reminder
+- Any reminder item in the snapshot input set (after any existing kit/design baseline filtering such as list selection and “incomplete only”).
 
-Reminder ID: A stable identifier for deduplication within the snapshot (for example, EventKit calendarItemIdentifier or an app-level stable ID). Deduplication is by ID, not by title.
+Reminder ID
+- A stable identifier used for deduplication and deterministic tie-breaking.
+- Deduplication is by ID, not by title.
 
-Local day boundaries:
-- `startOfToday`: start of the current day in the user’s current calendar/time zone.
-- `startOfTomorrow`: start of the next day.
-- All day-level comparisons use the user’s local calendar day.
+Local calendar day
+- All day-level comparisons are done using the user’s current Calendar and Time Zone at the time the snapshot is built.
+- “Day boundary” means the start of a local day as defined by the Calendar (not “now minus 24 hours”). This matters around daylight saving changes.
 
-Due day:
-- If a reminder has a due date/time, it has a due day (local calendar day).
+Day-boundary anchors (conceptual)
+- `now`: the time at which the snapshot is evaluated.
+- `startOfToday`: start of the local calendar day containing `now`.
+- `startOfTomorrow`: start of the local calendar day after `startOfToday`.
+- `startOfDayPlus8`: start of the local day 8 days after `startOfToday`.
+
+Due date vs due day
+- If a reminder has a due date (date-only or timed), it has a due day: the local calendar day that contains that due date.
 - If a reminder has no due date, it has no due day.
+- If due date components are missing/invalid such that a local due day cannot be derived, treat it as “no due date” for classification.
 
-Upcoming window:
-- “Upcoming” includes reminders due from tomorrow up to 7 days ahead.
-- Formally: dueDate ∈ [startOfTomorrow, startOfToday + 8 days), i.e. tomorrow through the end of the 7th day after today (inclusive at day granularity).
+Upcoming window definition
+- “Upcoming” is tomorrow through the next 7 days (inclusive at day granularity).
+- Formally, a reminder is “Upcoming” if it has a due date and:
+  - dueDate ∈ [startOfTomorrow, startOfDayPlus8)
+  - i.e. any due day from tomorrow (day +1) through day +7 inclusive.
 
-Priority mapping:
-- A reminder is considered “high priority” if it has an explicit priority value in the high band.
-- Recommended definition for determinism: `priority` in 1...4 is “high”, where lower numbers indicate higher priority (consistent with common Reminders/EventKit conventions). If priority is missing/0, it is not high priority.
+Priority definition
+- A reminder is considered “high priority” if its priority value is in 1–4 inclusive.
+- Lower numbers indicate higher priority (1 is highest).
+- Missing/0 priority is treated as “not high priority”.
 
-## Smart Stack v2 page order and names
+## Smart Stack pages (fixed order)
 
 The Smart Stack consists of exactly these six pages, in this order:
 
@@ -48,103 +80,125 @@ The Smart Stack consists of exactly these six pages, in this order:
 5) Anytime  
 6) Lists
 
-## Partitioning rule (non-overlapping guarantee)
+## Partitioning and deduplication rule
 
-Each eligible reminder must be assigned to at most one page, determined by first-match precedence in the page order above.
+Smart Stack v2 is a non-overlapping partition of the snapshot, using first-match precedence in the page order above.
 
-Algorithm definition (conceptual):
-- Start with `unassigned = all eligible reminders in snapshot`.
-- For each page in order (Overdue → … → Lists), select from `unassigned` the reminders matching that page’s inclusion rule, assign them to that page, and remove them from `unassigned`.
-- Result: each reminder ID can appear in only one page for that snapshot.
+Conceptual algorithm:
 
-This precedence is the contract that prevents duplicates and resolves the known overlaps.
+- Start with `unassigned = all eligible reminders in the snapshot`.
+- For each page in order (Overdue → Today → Upcoming → High priority → Anytime → Lists):
+  - Select from `unassigned` the reminders matching that page’s inclusion rule.
+  - Assign them to that page.
+  - Remove them from `unassigned` by reminder ID.
+
+Result:
+- Each reminder ID appears in at most one page for that snapshot.
+- Overlaps are resolved by construction (earliest page wins).
+
+Known overlap resolutions (required):
+- Due today + high priority → Today only.
+- No due date + high priority → High priority only.
+- Due tomorrow + high priority → Upcoming only.
+- Anything captured in pages 1–5 → never appears again in Lists.
+
+## Deterministic ordering contract
+
+For each page, ordering must be deterministic and must not depend on the source array order.
+
+- Each page defines an explicit sort key.
+- The final tie-break for any sort must be reminder ID (ascending) to prevent refresh reordering.
 
 ## Page definitions
 
 ### 1) Overdue
-User-facing name: “Overdue”
+
+User-facing name: Overdue
 
 Inclusion rule:
-- Reminder has a due day AND due day is strictly before today’s day.
-- (Time of day does not change classification: any due date on a prior calendar day is overdue.)
+- Reminder has a due day AND the due day is strictly before today’s day.
+- Classification is day-based: any reminder due on a prior local calendar day is overdue, regardless of time-of-day.
 
 Exclusion rule:
-- Anything already assigned by precedence (none, since this is first).
+- None (this page has highest precedence).
 
 Ordering (within Overdue):
-1. Earliest due date/time first (most overdue at the top).
-2. If due date/time ties, higher priority first (numerically lower priority value).
-3. If still tied, stable alphabetical by title (locale-aware).
-4. Final tiebreak: reminder ID (ascending) to keep deterministic output.
+1. Earlier due date/time first (older/more overdue first).
+2. Higher priority first (numerically lower priority value).
+3. Stable alphabetical by title (locale-aware).
+4. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “Overdue”
-- Message: “Nothing overdue”
+- Heading: Overdue
+- Message: Nothing overdue
 
 ### 2) Today
-User-facing name: “Today”
+
+User-facing name: Today
 
 Inclusion rule:
-- Reminder has a due day AND due day is today’s day.
+- Reminder has a due day AND the due day is today’s day.
 
 Exclusion rule:
-- Excludes any reminder already assigned to Overdue.
+- Excludes anything already assigned to Overdue.
 
 Ordering (within Today):
-1. Timed reminders (with an explicit due time) before all-day/date-only reminders.
-2. Among timed reminders: earliest due time first.
+1. Timed reminders (explicit due time) before date-only reminders.
+2. Among timed reminders: earlier due time first.
 3. Among date-only reminders: higher priority first, then alphabetical by title.
-4. Final tiebreak: reminder ID.
+4. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “Today”
-- Message: “Nothing due today”
+- Heading: Today
+- Message: Nothing due today
 
 ### 3) Upcoming
-User-facing name: “Upcoming”
+
+User-facing name: Upcoming
 
 Inclusion rule:
-- Reminder has a due date/time AND due date/time falls within the upcoming window:
-  - Due is tomorrow or later, but within the next 7 days (as defined above).
+- Reminder has a due date AND due date is within the upcoming window:
+  - dueDate ∈ [startOfTomorrow, startOfDayPlus8)
 
 Exclusion rule:
-- Excludes any reminder already assigned to Overdue or Today.
+- Excludes anything already assigned to Overdue or Today.
 
 Ordering (within Upcoming):
-1. Earliest due date/time first.
+1. Earlier due date/time first.
 2. Higher priority first (numerically lower value).
 3. Alphabetical by title.
-4. Final tiebreak: reminder ID.
+4. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “Upcoming”
-- Message: “Nothing upcoming”
+- Heading: Upcoming
+- Message: Nothing upcoming
 
 Notes:
-- This definition deliberately eliminates the v1 “Soon vs Today” overlap by excluding today entirely.
+- This definition deliberately eliminates the “Upcoming vs Today” overlap by starting at tomorrow’s day boundary.
 
 ### 4) High priority
-User-facing name: “High priority”
+
+User-facing name: High priority
 
 Inclusion rule:
-- Reminder is high priority (priority in 1...4) AND is not already assigned to Overdue/Today/Upcoming.
+- Reminder priority is in 1–4 inclusive AND it is not already assigned to Overdue/Today/Upcoming.
 
 What this page represents:
-- A “catch high priority that is not already time-urgent in the first three pages”.
-- This resolves “Priority vs Focus” by making the concept singular and explicit: “High priority”.
+- High priority reminders that are not already time-urgent in the first three pages.
 
 Ordering (within High priority):
 1. Priority value ascending (1 before 2 before 3 before 4).
-2. If due date/time exists (e.g., due beyond the upcoming window), earlier due date/time first; if no due date, sort after any dated items.
+2. If a due date exists (e.g. due beyond the upcoming window): earlier due date/time first; reminders with no due date sort after reminders with a due date.
 3. Alphabetical by title.
-4. Final tiebreak: reminder ID.
+4. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “High priority”
-- Message: “No high priority reminders”
+- Heading: High priority
+- Message: No high priority reminders
 
 ### 5) Anytime
-User-facing name: “Anytime”
+
+User-facing name: Anytime
 
 Inclusion rule:
 - Reminder has no due date (no due day) AND is not already assigned to any prior page.
@@ -155,20 +209,21 @@ Exclusion rule:
 Ordering (within Anytime):
 1. Higher priority first (numerically lower; reminders with missing/0 priority sort after explicit priorities).
 2. Alphabetical by title.
-3. Final tiebreak: reminder ID.
+3. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “Anytime”
-- Message: “No anytime reminders”
+- Heading: Anytime
+- Message: No anytime reminders
 
 ### 6) Lists
-User-facing name: “Lists”
+
+User-facing name: Lists
 
 Inclusion rule:
-- Any remaining unassigned reminder, regardless of due date, priority, or list, after applying the first five pages.
+- Any remaining unassigned reminder, regardless of due date or priority, after applying pages 1–5.
 
 Primary purpose:
-- A true remainder/catch-all page to resolve the “Lists vs everything” overlap. It must not repeat items already visible elsewhere in the Smart Stack.
+- A true remainder/catch-all page. It must not repeat items already visible elsewhere in the Smart Stack.
 
 Presentation rule (logical, not layout):
 - Reminders are grouped by their originating Reminders list/calendar.
@@ -177,36 +232,28 @@ Presentation rule (logical, not layout):
 Ordering (lists/sections):
 1. Use the user’s existing list ordering if available from the Reminders source.
 2. Otherwise, sort list names alphabetically (locale-aware).
-3. Final tiebreak: list ID.
+3. Final tie-break: list ID.
 
 Ordering (within each list section):
-1. If due date/time exists: earliest due date/time first.
+1. If due date/time exists: earlier due date/time first.
 2. Higher priority first.
 3. Alphabetical by title.
-4. Final tiebreak: reminder ID.
+4. Final tie-break: reminder ID.
 
 Empty state:
-- Title: “Lists”
-- Message: “No other reminders”
+- Heading: Lists
+- Message: No other reminders
 
-## Additional clarifications / edge cases
+## Additional clarifications and edge cases
 
 1. Completed reminders
-- Completed items are not eligible if the v1 baseline already excludes them (expected).
-- Smart Stack v2 does not add any new completion filtering; it partitions whatever the snapshot contains.
+- Completed items are expected to be excluded by existing v1 baseline filtering.
+- Smart Stack v2 does not add completion filtering; it partitions whatever the snapshot contains.
 
 2. Missing/invalid due components
-- If due date components cannot be interpreted into a local calendar day, treat the reminder as “no due date” for classification purposes (therefore it will land in High priority if high priority, otherwise Anytime, otherwise Lists by remainder).
+- If due date components cannot be interpreted into a local calendar day, treat as “no due date” for classification.
+  - Therefore: High priority if priority is 1–4, otherwise Anytime, otherwise Lists by remainder.
 
-3. Time zone and calendar determinism
-- All day boundary comparisons use the user’s current calendar and time zone at snapshot time.
-- This keeps classification stable and prevents “Today”/“Overdue” flicker across pages within the same snapshot.
-
-4. Deterministic output
-- Sorting must be stable and include a final ID tiebreak so that two identical titles do not reorder across refreshes.
-
-## Non-goals (explicitly out of scope for Step 1)
-
-- No layout or density changes (handled later).
-- No changes to the baseline reminder query (permissions, list selection, limits).
-- No changes outside Reminders + related kit catalogue/guide copy.
+3. Snapshot time at day rollover
+- Classification uses the local calendar day containing `now` at the time the snapshot is evaluated.
+- If a refresh occurs around midnight, reminders may move between “Today” and “Overdue/Upcoming” on the next snapshot; this is expected.
