@@ -19,6 +19,7 @@ public enum WidgetWeaverFeatureFlags {
         static let pawPulseEnabled = "widgetweaver.feature.pawpulse.enabled"
 
         static let aiEnabled = "widgetweaver.feature.ai.enabled"
+        static let aiReviewUIEnabled = "widgetweaver.feature.ai.reviewUI.enabled"
     }
 
     // MARK: - AI
@@ -43,6 +44,26 @@ public enum WidgetWeaverFeatureFlags {
 
     public static func resetAIEnabledOverride() {
         AppGroup.userDefaults.removeObject(forKey: Keys.aiEnabled)
+    }
+
+    /// Review-before-apply UI for AI changes.
+    ///
+    /// When enabled, AI actions should return a candidate result that can be reviewed before saving.
+    ///
+    /// Default is `false` so installs that have not opted in keep legacy auto-apply behaviour.
+    public static var aiReviewUIEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.aiReviewUIEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setAIReviewUIEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.aiReviewUIEnabled)
+    }
+
+    public static func resetAIReviewUIEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.aiReviewUIEnabled)
     }
 
     // MARK: - Templates
