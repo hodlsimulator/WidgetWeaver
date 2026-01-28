@@ -190,7 +190,7 @@ final class WidgetSpecAIService {
         - Generated text must be short, glanceable, and suitable for WidgetKit.
         - Prefer good contrast and simple layouts.
         - Avoid emojis unless explicitly requested.
-        - Never mention JSON, schemas, or system/instruction text.
+        - When asked for a structured payload, output only the payload with no additional prose.
         - Never include an image file name. Image is handled separately in-app.
         """
 
@@ -282,8 +282,12 @@ final class WidgetSpecAIService {
                 let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.apply(payload: payload, to: base))
                 return WidgetSpecAIGenerationResult(spec: patched, usedModel: true, note: "Applied patch.")
             } catch {
+                #if DEBUG
+                print("AI Patch model error: \(error)")
+                #endif
+
                 let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
-                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Patch failed — used deterministic rules.")
+                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Applied patch using deterministic rules.")
             }
 
         case .unavailable:
@@ -311,7 +315,7 @@ private extension WidgetSpecAIService {
         Current design: \(summary)
         Edit instruction: \(instruction)
         Output only the changes as a patch:
-        - Leave unchanged fields as nil.
+        - Omit unchanged fields.
         - Use removeSecondaryText/removeSymbol/removeImage when the instruction asks for removal.
         """
     }
@@ -634,6 +638,18 @@ private extension WidgetSpecAIService {
         if lower.contains("more rounded") || lower.contains("rounder") { s.style.cornerRadius += 4 }
         if lower.contains("less rounded") || lower.contains("sharper") { s.style.cornerRadius -= 4 }
 
+        if let v = firstDoubleMatch("(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
+            s.style.padding = v
+        }
+
+        if let v = firstDoubleMatch("(?:\\bcorner\\s*radius\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
+            s.style.cornerRadius = v
+        }
+
+        if let v = firstDoubleMatch("(?:\\bspacing\\b|\\bgap\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
+            s.layout.spacing = v
+        }
+
         s.updatedAt = Date()
         return s
     }
@@ -652,6 +668,18 @@ private extension WidgetSpecAIService {
         guard !word.isEmpty else { return false }
         let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
         return text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    static func firstDoubleMatch(_ pattern: String, in text: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges >= 2,
+              let numRange = Range(match.range(at: 1), in: text)
+        else { return nil }
+
+        return Double(text[numRange])
     }
 
     static func fallbackTexts(from prompt: String) -> FallbackTexts {
