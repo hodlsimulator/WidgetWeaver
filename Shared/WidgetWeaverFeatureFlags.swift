@@ -18,6 +18,8 @@ public enum WidgetWeaverFeatureFlags {
         static let clipboardActionsEnabled = "widgetweaver.feature.clipboardActions.enabled"
         static let pawPulseEnabled = "widgetweaver.feature.pawpulse.enabled"
 
+        static let photoFiltersEnabled = "widgetweaver.feature.photoFilters.enabled"
+
         static let aiEnabled = "widgetweaver.feature.ai.enabled"
         static let aiReviewUIEnabled = "widgetweaver.feature.ai.reviewUI.enabled"
     }
@@ -126,5 +128,25 @@ public enum WidgetWeaverFeatureFlags {
 
     public static func resetPawPulseEnabledOverride() {
         AppGroup.userDefaults.removeObject(forKey: Keys.pawPulseEnabled)
+    }
+
+    // MARK: - Photo Filters (future feature)
+
+    /// Photo filter support for images.
+    ///
+    /// Default is `false` so the render path remains unchanged unless explicitly enabled.
+    public static var photoFiltersEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.photoFiltersEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setPhotoFiltersEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.photoFiltersEnabled)
+    }
+
+    public static func resetPhotoFiltersEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.photoFiltersEnabled)
     }
 }
