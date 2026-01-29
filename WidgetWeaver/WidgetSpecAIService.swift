@@ -639,20 +639,20 @@ private extension WidgetSpecAIService {
         if lower.contains("less rounded") || lower.contains("sharper") { s.style.cornerRadius -= 4 }
 
         let hardenedSimplePromptParsing = WidgetWeaverFeatureFlags.aiReviewUIEnabled
-        let paddingPattern = hardenedSimplePromptParsing ? "(?:\\bpadding\\b|\\bpad\\b|\\binset\\b|\\binsets\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
-        let cornerRadiusPattern = hardenedSimplePromptParsing ? "(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b|\\brounding\\b|\\brounded\\s*corners?\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
-        let spacingPattern = hardenedSimplePromptParsing ? "(?:\\bspacing\\b|\\bgap\\b|\\bgutter\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bspacing\\b|\\bgap\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
-
+        let paddingPattern = "(?:\\\\bpadding\\\\b|\\\\bpad\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
+        let cornerRadiusPattern = "(?:\\\\bcorner(?:\\\\s*radius|[-_]?radius)?\\\\b|\\\\bcornerradius\\\\b|\\\\bradius\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
+        let spacingPattern = "(?:\\\\bspacing\\\\b|\\\\bgap\\\\b|\\\\bspace\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
         let fragments: [String] = {
             guard hardenedSimplePromptParsing else { return [collapsedLower] }
             let splitReady = lower.replacingOccurrences(of: "\n", with: ",").replacingOccurrences(of: "\r", with: ",")
             return collapseWhitespace(splitReady).trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " and ", with: ",").split(separator: ",").map(String.init)
         }()
-
         for rawFragment in fragments {
-            let fragment = collapseWhitespace(rawFragment).trimmingCharacters(in: .whitespacesAndNewlines)
+            var fragment = collapseWhitespace(rawFragment).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !fragment.isEmpty else { continue }
-
+            if hardenedSimplePromptParsing {
+                fragment = fragment.replacingOccurrences(of: "\\b(inset|insets)\\b", with: "padding", options: .regularExpression).replacingOccurrences(of: "\\b(gap|gutter)\\b", with: "spacing", options: .regularExpression).replacingOccurrences(of: "\\brounded\\s+corners?\\b", with: "radius", options: .regularExpression).replacingOccurrences(of: "\\brounding\\b", with: "radius", options: .regularExpression)
+            }
             if let v = firstDoubleMatch(paddingPattern, in: fragment) { s.style.padding = v }
             if let v = firstDoubleMatch(cornerRadiusPattern, in: fragment) { s.style.cornerRadius = v }
             if let v = firstDoubleMatch(spacingPattern, in: fragment) { s.layout.spacing = v }
