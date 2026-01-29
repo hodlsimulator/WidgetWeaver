@@ -650,6 +650,8 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
                     let startDate = startComponents.flatMap { calendar.date(from: $0) }
                     let startHasTime = Self.componentsHaveTime(startComponents)
 
+                    let priority = max(0, min(r.priority, 9))
+
                     let isRecurring = !(r.recurrenceRules?.isEmpty ?? true)
 
                     let rawListTitle = r.calendar.title.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -663,8 +665,9 @@ public final class WidgetWeaverRemindersEngine: @unchecked Sendable {
                             dueHasTime: dueHasTime,
                             startDate: startDate,
                             startHasTime: startHasTime,
+                            priority: priority,
                             isCompleted: r.isCompleted,
-                            isFlagged: Self.isFlaggedApproximation(priority: r.priority),
+                            isFlagged: Self.isFlaggedApproximation(priority: priority),
                             isRecurring: isRecurring,
                             listID: r.calendar.calendarIdentifier,
                             listTitle: listTitle

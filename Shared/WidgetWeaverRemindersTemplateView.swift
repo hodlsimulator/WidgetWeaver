@@ -170,6 +170,10 @@ public struct WidgetWeaverRemindersTemplateView: View {
     }
 
     private static func makeModel(snapshot: WidgetWeaverRemindersSnapshot, config: WidgetWeaverRemindersConfig, now: Date) -> Model {
+        if config.smartStackV2Enabled {
+            return makeModelV2(snapshot: snapshot, config: config, now: now)
+        }
+
         let items = snapshot.items
 
         let itemsByID: [String: WidgetWeaverReminderItem] = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
@@ -228,6 +232,59 @@ public struct WidgetWeaverRemindersTemplateView: View {
 
         case .sectioned:
             let sections = buildSections(sorted)
+            return Model(progress: progress, primaryItems: [], sections: sections)
+        }
+    }
+
+    private static func makeModelV2(snapshot: WidgetWeaverRemindersSnapshot, config: WidgetWeaverRemindersConfig, now: Date) -> Model {
+        let eligible: [WidgetWeaverReminderItem] = snapshot.items.filter { item in
+            if config.hideCompleted, item.isCompleted { return false }
+            if !config.selectedListIDs.isEmpty {
+                return config.selectedListIDs.contains(item.listID)
+            }
+            return true
+        }
+
+        let partition = WidgetWeaverRemindersSmartStackV2Partitioner.partition(items: eligible, now: now)
+
+        let pageItems: [WidgetWeaverReminderItem] = {
+            switch config.mode {
+            case .overdue:
+                return partition.overdue
+            case .today:
+                return partition.today
+            case .soon:
+                return partition.upcoming
+            case .flagged:
+                return partition.highPriority
+            case .focus:
+                return partition.anytime
+            case .list:
+                return []
+            }
+        }()
+
+        let doneCount = pageItems.filter { $0.isCompleted }.count
+        let totalCount = pageItems.count
+
+        let progress: (done: Int, total: Int)? = {
+            if config.mode == .focus || config.mode == .list || config.mode == .flagged {
+                return nil
+            }
+            if totalCount <= 0 { return nil }
+            return (doneCount, totalCount)
+        }()
+
+        if config.mode == .list {
+            return Model(progress: progress, primaryItems: [], sections: partition.lists)
+        }
+
+        switch config.presentation {
+        case .dense, .focus:
+            return Model(progress: progress, primaryItems: Array(pageItems.prefix(12)), sections: [])
+
+        case .sectioned:
+            let sections = buildSections(pageItems)
             return Model(progress: progress, primaryItems: [], sections: sections)
         }
     }

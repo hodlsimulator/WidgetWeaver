@@ -25,6 +25,14 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
     public var startDate: Date?
     public var startHasTime: Bool
 
+    /// EventKit priority (0 = none; 1 is highest priority).
+    ///
+    /// Notes:
+    /// - `EKReminder.priority` uses a numeric scale where lower numbers are higher priority.
+    /// - Reminders Smart Stack v1 used `isFlagged` as a high-priority approximation.
+    /// - This value supports Smart Stack v2 ordering while keeping v1 behaviour unchanged.
+    public var priority: Int
+
     public var isCompleted: Bool
     public var isFlagged: Bool
     public var isRecurring: Bool
@@ -39,6 +47,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         dueHasTime: Bool = false,
         startDate: Date? = nil,
         startHasTime: Bool = false,
+        priority: Int = 0,
         isCompleted: Bool = false,
         isFlagged: Bool = false,
         isRecurring: Bool = false,
@@ -51,6 +60,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         self.dueHasTime = dueHasTime
         self.startDate = startDate
         self.startHasTime = startHasTime
+        self.priority = priority
         self.isCompleted = isCompleted
         self.isFlagged = isFlagged
         self.isRecurring = isRecurring
@@ -73,6 +83,9 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         let trimmedListTitle = r.listTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         r.listTitle = trimmedListTitle.isEmpty ? "Untitled" : trimmedListTitle
 
+        // EventKit documents priority as 0-9 (0 = none). Clamp to a sensible range.
+        r.priority = max(0, min(r.priority, 9))
+
         return r
     }
 
@@ -85,6 +98,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         case dueHasTime
         case startDate
         case startHasTime
+        case priority
         case isCompleted
         case isFlagged
         case isRecurring
@@ -104,6 +118,9 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         let startDate = try? c.decode(Date.self, forKey: .startDate)
         let startHasTime = (try? c.decode(Bool.self, forKey: .startHasTime)) ?? false
 
+        // v2 additive field: default preserves older snapshots.
+        let priority = (try? c.decode(Int.self, forKey: .priority)) ?? 0
+
         let isCompleted = (try? c.decode(Bool.self, forKey: .isCompleted)) ?? false
         let isFlagged = (try? c.decode(Bool.self, forKey: .isFlagged)) ?? false
         let isRecurring = (try? c.decode(Bool.self, forKey: .isRecurring)) ?? false
@@ -118,6 +135,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
             dueHasTime: dueHasTime,
             startDate: startDate,
             startHasTime: startHasTime,
+            priority: priority,
             isCompleted: isCompleted,
             isFlagged: isFlagged,
             isRecurring: isRecurring,
@@ -134,6 +152,7 @@ public struct WidgetWeaverReminderItem: Codable, Hashable, Identifiable, Sendabl
         try c.encode(dueHasTime, forKey: .dueHasTime)
         try c.encodeIfPresent(startDate, forKey: .startDate)
         try c.encode(startHasTime, forKey: .startHasTime)
+        try c.encode(priority, forKey: .priority)
         try c.encode(isCompleted, forKey: .isCompleted)
         try c.encode(isFlagged, forKey: .isFlagged)
         try c.encode(isRecurring, forKey: .isRecurring)
