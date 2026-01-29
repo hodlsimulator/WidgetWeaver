@@ -253,6 +253,18 @@ extension ContentView {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if WidgetWeaverFeatureFlags.aiReviewUIEnabled && WidgetSpecAISnapshotStore.hasSnapshot {
+                Divider()
+
+                Button {
+                    undoLastAIApplyIfAvailable()
+                } label: {
+                    Label("Undo last AI apply", systemImage: "arrow.uturn.backward")
+                }
+                .controlSize(.small)
+            }
+
         } header: {
             sectionHeader("AI")
         } footer: {

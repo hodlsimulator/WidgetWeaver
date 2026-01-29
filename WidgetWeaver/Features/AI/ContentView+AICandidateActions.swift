@@ -146,7 +146,6 @@ extension ContentView {
         return true
     }
 
-
     // MARK: - AI (review mode; undo)
 
     @MainActor
@@ -162,14 +161,16 @@ extension ContentView {
             store.setDefault(id: preDefault)
         }
 
-        if !snapshot.appliedSpecExistedBeforeApply && snapshot.appliedSpecID != snapshot.preSelectedSpecID {
-            if store.load(id: snapshot.appliedSpecID) != nil {
-                store.delete(id: snapshot.appliedSpecID)
-            }
+        if !snapshot.appliedSpecExistedBeforeApply,
+           snapshot.appliedSpecID != snapshot.preSelectedSpecID,
+           store.load(id: snapshot.appliedSpecID) != nil
+        {
+            store.delete(id: snapshot.appliedSpecID)
         } else if snapshot.appliedSpecExistedBeforeApply,
                   snapshot.appliedSpecID != snapshot.preSelectedSpecID,
-                  let overwritten = snapshot.overwrittenAppliedSpecBefore {
-            store.save(overwritten, makeDefault: false)
+                  let overwritten = snapshot.overwrittenAppliedSpecBefore
+        {
+            store.save(overwritten.normalised(), makeDefault: false)
         }
 
         switch snapshot.mode {
@@ -196,7 +197,10 @@ extension ContentView {
     }
 
     @MainActor
-    private func captureUndoSnapshotBeforeAIApply(mode: WidgetSpecAISnapshot.ApplyMode, appliedSpecID: UUID) {
+    private func captureUndoSnapshotBeforeAIApply(
+        mode: WidgetSpecAISnapshot.ApplyMode,
+        appliedSpecID: UUID
+    ) {
         guard WidgetWeaverFeatureFlags.aiReviewUIEnabled else { return }
 
         let preSelectedID = selectedSpecID
@@ -204,11 +208,10 @@ extension ContentView {
         let preDefault = store.defaultSpecID()
 
         let didExist = store.load(id: appliedSpecID) != nil
-        var overwrittenBefore: WidgetSpec? = nil
-
-        if didExist && appliedSpecID != preSelectedID {
-            overwrittenBefore = store.load(id: appliedSpecID)?.normalised()
-        }
+        let overwritten: WidgetSpec? = {
+            guard didExist, appliedSpecID != preSelectedID else { return nil }
+            return store.load(id: appliedSpecID)?.normalised()
+        }()
 
         let snapshot = WidgetSpecAISnapshot(
             mode: mode,
@@ -218,12 +221,11 @@ extension ContentView {
             preDefaultSpecID: preDefault,
             appliedSpecID: appliedSpecID,
             appliedSpecExistedBeforeApply: didExist,
-            overwrittenAppliedSpecBefore: overwrittenBefore
+            overwrittenAppliedSpecBefore: overwritten
         )
 
         WidgetSpecAISnapshotStore.save(snapshot)
     }
-
 
     // MARK: - Helpers
 
