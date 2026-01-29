@@ -57,11 +57,12 @@ private struct SegmentedOuterRingNumeralsView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Place numerals biased towards the segment's outer edge.
-        let placement = WWClock.pixel(
-            WWClock.clamp(thickness * 0.64, min: thickness * 0.58, max: thickness * 0.70),
-            scale: scale
-        )
+        // Place numerals with a fixed inset from the block outer edge.
+        // The inset is specified in physical pixels so it stays stable at 44/60.
+        let numeralOuterInsetPx: CGFloat = 10.0
+        let numeralOuterInset = WWClock.pixel(numeralOuterInsetPx / max(scale, 1.0), scale: scale)
+
+        let placement = WWClock.pixel(max(px, thickness - numeralOuterInset), scale: scale)
 
         let r = WWClock.pixel(innerRadius + placement, scale: scale)
 

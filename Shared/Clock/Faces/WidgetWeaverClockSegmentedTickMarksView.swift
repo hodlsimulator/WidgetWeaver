@@ -31,26 +31,9 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
     private func radii(dialRadius: CGFloat, scale: CGFloat) -> Radii {
         let px = WWClock.px(scale: scale)
 
-        // Matches the Segmented outer-ring geometry so tick placement stays aligned with the ring.
-        let outerInset = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.010, min: px, max: dialRadius * 0.018),
-            scale: scale
-        )
-
-        let baseOuterRadius = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
-
-        let targetThickness = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
-            scale: scale
-        )
-
-        let baseInnerRadius = WWClock.pixel(max(1.0, baseOuterRadius - targetThickness), scale: scale)
-        let baseThickness = max(px, baseOuterRadius - baseInnerRadius)
-
-        let maxInset = baseThickness * 0.28
-        let radialInset = WWClock.pixel(min(maxInset, max(px, dialRadius * 0.004)), scale: scale)
-
-        let segmentInnerRadius = WWClock.pixel(baseInnerRadius + radialInset, scale: scale)
+        // Use the Segmented outer ring style as the single source of truth so tick placement stays aligned.
+        let ringStyle = SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale)
+        let segmentInnerRadius = ringStyle.radii.blockInner
 
         // Outer tick edge sits just inside the segmented ring's inner edge.
         let ringGap = WWClock.pixel(
@@ -63,19 +46,37 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         return Radii(outerRadius: tickOuterRadius, segmentInnerRadius: segmentInnerRadius)
     }
 
-    private func tickSizes(dialRadius: CGFloat, scale: CGFloat) -> (quarter: (len: CGFloat, w: CGFloat), five: (len: CGFloat, w: CGFloat), minute: (len: CGFloat, w: CGFloat)) {
+    private func tickSizes(
+        dialRadius: CGFloat,
+        scale: CGFloat
+    ) -> (
+        quarter: (len: CGFloat, w: CGFloat),
+        five: (len: CGFloat, w: CGFloat),
+        minute: (len: CGFloat, w: CGFloat)
+    ) {
         let px = WWClock.px(scale: scale)
 
         let quarterLength = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.086, min: px * 3.0, max: dialRadius * 0.105),
             scale: scale
         )
-        let fiveLength = WWClock.pixel(
+
+        let minuteLength = WWClock.pixel(
+            WWClock.clamp(dialRadius * 0.044, min: px * 1.6, max: dialRadius * 0.065),
+            scale: scale
+        )
+
+        // Five-minute ticks: shorter (less intrusion) but thicker (more weight). All ends remain square.
+        let fiveLengthBase = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.064, min: px * 2.4, max: dialRadius * 0.085),
             scale: scale
         )
-        let minuteLength = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.044, min: px * 1.6, max: dialRadius * 0.065),
+
+        let fiveLengthReductionPx: CGFloat = 2.0
+        let fiveLengthReduction = WWClock.pixel(fiveLengthReductionPx / max(scale, 1.0), scale: scale)
+
+        let fiveLength = WWClock.pixel(
+            max(minuteLength + px, fiveLengthBase - fiveLengthReduction),
             scale: scale
         )
 
@@ -83,10 +84,12 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
             WWClock.clamp(dialRadius * 0.020, min: px * 2.0, max: dialRadius * 0.026),
             scale: scale
         )
+
         let fiveWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.014, min: px * 1.6, max: dialRadius * 0.020),
+            WWClock.clamp(dialRadius * 0.018, min: px * 2.0, max: dialRadius * 0.023),
             scale: scale
         )
+
         let minuteWidth = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.0070, min: px, max: dialRadius * 0.012),
             scale: scale

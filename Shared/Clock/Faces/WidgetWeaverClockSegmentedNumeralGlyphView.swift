@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Numeral glyph used by the Segmented clock face.
 ///
@@ -19,10 +22,7 @@ struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        let face = Text(text)
-            .font(.system(size: fontSize, weight: .heavy, design: .default))
-            .monospacedDigit()
-            .fixedSize()
+        let face = SegmentedNumeralBaseShape(text: text, fontSize: fontSize, scale: scale)
 
         let metalFill = LinearGradient(
             gradient: Gradient(stops: [
@@ -83,5 +83,62 @@ struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+private struct SegmentedNumeralBaseShape: View {
+    let text: String
+    let fontSize: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        let font = Font.system(size: fontSize, weight: .heavy, design: .default)
+
+        // Tighten internal spacing for 10/11/12 while keeping the overall width stable.
+        let isTwoDigitTightened = (text == "10" || text == "11" || text == "12")
+
+        if isTwoDigitTightened, text.count == 2 {
+            let digits = Array(text)
+            let left = String(digits[0])
+            let right = String(digits[1])
+
+            let fixedWidth = SegmentedNumeralTextMetrics.twoDigitWidth(fontSize: fontSize, scale: scale)
+
+            let kerningPx: CGFloat = 2.0
+            let spacing = WWClock.pixel(-(kerningPx / max(scale, 1.0)), scale: scale)
+
+            return AnyView(
+                HStack(spacing: spacing) {
+                    Text(left)
+                        .font(font)
+                        .monospacedDigit()
+
+                    Text(right)
+                        .font(font)
+                        .monospacedDigit()
+                }
+                .fixedSize()
+                .frame(width: fixedWidth, alignment: .center)
+            )
+        }
+
+        return AnyView(
+            Text(text)
+                .font(font)
+                .monospacedDigit()
+                .fixedSize()
+        )
+    }
+}
+
+private enum SegmentedNumeralTextMetrics {
+    static func twoDigitWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
+        #if canImport(UIKit)
+        let uiFont = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .heavy)
+        let width = ("00" as NSString).size(withAttributes: [.font: uiFont]).width
+        return WWClock.pixel(width, scale: scale)
+        #else
+        return WWClock.pixel(fontSize * 1.20, scale: scale)
+        #endif
     }
 }

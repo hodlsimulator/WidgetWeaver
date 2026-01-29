@@ -139,7 +139,7 @@ struct SegmentedOuterRingStyle {
 
         // Channel inset keeps the bed visible around the blocks and through the gaps.
         let channelInset = WWClock.pixel(
-            WWClock.clamp(bedThickness * 0.11, min: px, max: bedThickness * 0.18),
+            WWClock.clamp(bedThickness * 0.085, min: px, max: bedThickness * 0.155),
             scale: scale
         )
 
@@ -153,25 +153,23 @@ struct SegmentedOuterRingStyle {
             blockInner: blockInner
         )
 
-        // Physical-pixel gap policy: prefer a tight machined separation (mock parity).
-        // Default is 2 px. A 3 px fallback exists only for extremely small dials where WidgetKit AA can
-        // partially fill a 2 px gap.
-        let dialPixels = dialRadius * max(scale, 1.0)
-
-        let gapPixels: CGFloat = {
-            let tinyDialThresholdPx: CGFloat = 52.0
-            let desired: CGFloat = (dialPixels < tinyDialThresholdPx) ? 3.0 : 2.0
-            return WWClock.clamp(desired, min: 2.0, max: 3.0)
-        }()
+        // Physical-pixel gap policy:
+        // - Widget sizes (44/60) must show an obviously open "air" cut where the bed is visible.
+        // - Express the gap in physical pixels so it stays stable across device scales.
+        //
+        // Rule: keep at least 1 pt of gap in the current render context, clamped to 2–3 px.
+        let minGapPoints: CGFloat = 1.0
+        let desiredGapPx = (minGapPoints * max(scale, 1.0)).rounded(.up)
+        let gapPixels = WWClock.clamp(desiredGapPx, min: 2.0, max: 3.0)
 
         let gapPoints = WWClock.pixel(gapPixels / max(scale, 1.0), scale: scale)
 
         let midR = max(px, self.radii.blockMid)
         let gapAngular = max(0.0, gapPoints / midR)
 
-        // Additional trim keeps the air gap visually open after anti-aliasing, but must not read as a
-        // deliberate "divider". Expressed in physical pixels per edge.
-        let edgeTrimPx: CGFloat = (gapPixels <= 2.0) ? 0.28 : 0.20
+        // Additional trim protects the air gap from AA closure. Keep this minimal to avoid a divider read.
+        // Expressed in physical pixels per edge.
+        let edgeTrimPx: CGFloat = (gapPixels <= 2.0) ? 0.12 : 0.10
         let edgeTrimPoints = edgeTrimPx / max(scale, 1.0)
         let edgeTrimAngular = max(0.0, edgeTrimPoints / midR)
 
@@ -220,9 +218,9 @@ struct SegmentedOuterRingStyle {
 
         // Bed contact occlusion (under the blocks; shows only through gaps).
         let occlusionAlpha: Double = {
-            // Slightly stronger for the tight 2 px gaps so the cut reads as a seat, not a drawn line.
-            let a = 0.22 - Double(gapPixels - 2.0) * 0.04
-            return Double(WWClock.clamp(CGFloat(a), min: 0.16, max: 0.22))
+            // Keep the bed visible through the air gaps without turning them into dark dividers.
+            let a = 0.16 - Double(gapPixels - 2.0) * 0.04
+            return Double(WWClock.clamp(CGFloat(a), min: 0.10, max: 0.16))
         }()
 
         self.bedContactOcclusion = BedContactOcclusion(
@@ -256,7 +254,7 @@ struct SegmentedOuterRingStyle {
 
         // Radial edge accents are inset using sub-pixel values (not rounded), so the accent never lands
         // directly in the air gap even when the clip mask is antialiased.
-        let radialEdgeInsetPx: CGFloat = (gapPixels <= 2.0) ? 0.40 : 0.32
+        let radialEdgeInsetPx: CGFloat = (gapPixels <= 2.0) ? 0.52 : 0.44
         let radialEdgeInset = radialEdgeInsetPx / max(scale, 1.0)
 
         let radialEdgeEndInsetPx: CGFloat = 0.85
@@ -272,11 +270,11 @@ struct SegmentedOuterRingStyle {
                 .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.58),
             ]),
             perimeterHighlightGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.22), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.18), location: 0.00),
                 .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.68),
             ]),
             perimeterShadowGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0x000000, alpha: 0.45), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.36), location: 0.00),
                 .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.72),
             ]),
             perimeterRimStrokeWidth: max(px, rimStrokeWidth),
@@ -285,8 +283,8 @@ struct SegmentedOuterRingStyle {
             radialEdgeStrokeWidth: max(px, edgeStrokeWidth),
             radialEdgeEndInset: radialEdgeEndInset,
             radialEdgeInset: radialEdgeInset,
-            radialEdgeHighlightColour: WWClock.colour(0xFFFFFF, alpha: 0.16),
-            radialEdgeShadowColour: WWClock.colour(0x000000, alpha: 0.28)
+            radialEdgeHighlightColour: WWClock.colour(0xFFFFFF, alpha: 0.12),
+            radialEdgeShadowColour: WWClock.colour(0x000000, alpha: 0.20)
         )
 
         // Diagnostic markers: a tiny, high-contrast dot at each segment centre.

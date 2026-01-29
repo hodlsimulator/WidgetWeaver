@@ -279,17 +279,28 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
             angle: .degrees(-135.0)
         )
 
-        let outerRimHighlight = AngularGradient(
+        // Raised outer rim (outer-edge highlight, shadow falls inward towards the dial).
+        let outerRimRadius = outerA * 0.5
+
+        let outerRimMachining = RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.00), location: 0.000),
-                .init(color: Color.white.opacity(0.00), location: 0.820),
-                .init(color: Color.white.opacity(0.18), location: 0.900),
-                .init(color: Color.white.opacity(0.30), location: 0.940),
-                .init(color: Color.white.opacity(0.18), location: 0.980),
-                .init(color: Color.white.opacity(0.00), location: 1.000)
+                .init(color: Color.black.opacity(0.58), location: 0.00),
+                .init(color: Color.black.opacity(0.18), location: 0.55),
+                .init(color: Color.white.opacity(0.32), location: 1.00)
             ]),
             center: .center,
-            angle: .degrees(-135.0)
+            startRadius: max(0.0, outerRimRadius - ringA),
+            endRadius: outerRimRadius
+        )
+
+        let outerRimDirectional = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.30), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.40),
+                .init(color: Color.black.opacity(0.28), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
         )
 
         let innerRidge = LinearGradient(
@@ -330,12 +341,18 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                         .opacity(0.90)
                 )
 
-            // A) Outer rim highlight.
+            // A) Raised outer rim (no outward halo; highlight at the outer edge, shadow towards the dial).
             Circle()
-                .strokeBorder(outerRimHighlight, lineWidth: max(px, ringA))
+                .strokeBorder(outerRimMachining, lineWidth: max(px, ringA))
+                .frame(width: outerA, height: outerA)
+                .blendMode(.overlay)
+                .opacity(0.92)
+
+            Circle()
+                .strokeBorder(outerRimDirectional, lineWidth: max(px, ringA * 0.92))
                 .frame(width: outerA, height: outerA)
                 .blendMode(.screen)
-                .opacity(0.92)
+                .opacity(0.88)
 
             // C) Inner ridge / separator between bezel and dial.
             Circle()
