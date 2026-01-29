@@ -99,6 +99,43 @@ extension ContentView {
         return true
     }
 
+    /// Applies a patched candidate spec using the same persistence steps as the legacy auto-apply Patch path.
+    ///
+    /// Returns `true` when the candidate was saved (and the review sheet can be dismissed).
+    @MainActor
+    func applyPatchedDesignCandidateFromReviewSheet(_ candidate: WidgetSpecAICandidate) -> Bool {
+        aiStatusMessage = ""
+
+        let patched = candidate.candidateSpec.normalised()
+
+        designName = patched.name
+        styleDraft = StyleDraft(from: patched.style)
+
+        var d = currentFamilyDraft()
+        d.apply(flatSpec: patched)
+        setCurrentFamilyDraft(d)
+
+        var combined = draftSpec(id: selectedSpecID).normalised()
+        combined.updatedAt = Date()
+
+        store.save(combined, makeDefault: false)
+
+        lastSavedAt = combined.updatedAt
+        lastWidgetRefreshAt = Date()
+
+        aiStatusMessage = formatCandidateStatusMessage(
+            candidate,
+            title: "Review mode is enabled. Applied and saved."
+        )
+
+        aiPatchInstruction = ""
+
+        refreshSavedSpecs(preservingSelection: true)
+        saveStatusMessage = "Patched design saved.\nWidgets refreshed."
+
+        return true
+    }
+
     // MARK: - Helpers
 
     private var aiHasCapacityToSaveAnotherDesign: Bool {

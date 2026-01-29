@@ -494,7 +494,10 @@ extension ContentView {
                             }
 
                         case .patch:
-                            activeSheet = nil
+                            let didApply = applyPatchedDesignCandidateFromReviewSheet(candidate)
+                            if didApply {
+                                activeSheet = nil
+                            }
                         }
                     },
                     onCancel: {
