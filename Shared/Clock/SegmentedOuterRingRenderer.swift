@@ -93,7 +93,12 @@ struct SegmentedOuterRingRenderer {
 
             let path = Path(cgPath)
 
-            let gradient = (idx % 2 == 0) ? style.blockFillEvenGradient : style.blockFillOddGradient
+            let gradient: Gradient
+            if style.diagnostic.enabled {
+                gradient = (idx % 2 == 0) ? style.blockFillEvenGradient : style.blockFillOddGradient
+            } else {
+                gradient = style.blockFillEvenGradient
+            }
             let shading = GraphicsContext.Shading.linearGradient(
                 gradient,
                 startPoint: gradientStart,

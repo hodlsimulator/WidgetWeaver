@@ -12,7 +12,7 @@ import SwiftUI
 /// This is the single source of truth for:
 /// - Radii (bed + blocks)
 /// - Physical-pixel separator gap policy
-/// - Temporary diagnostics used to prove the Canvas renderer is active in WidgetKit
+/// - Optional diagnostics used to validate the Canvas renderer path in WidgetKit
 struct SegmentedOuterRingStyle {
 
     struct Radii {
@@ -102,6 +102,13 @@ struct SegmentedOuterRingStyle {
             angular: gapAngular
         )
 
+        let diagnosticEnabled: Bool
+        #if DEBUG
+        diagnosticEnabled = WidgetWeaverFeatureFlags.segmentedRingDiagnosticsEnabled
+        #else
+        diagnosticEnabled = false
+        #endif
+
         // Bed material (recessed channel).
         self.bedFillGradient = Gradient(stops: [
             .init(color: WWClock.colour(0x0A0C10, alpha: 1.0), location: 0.00),
@@ -110,7 +117,7 @@ struct SegmentedOuterRingStyle {
         ])
 
         // Block fill gradients.
-        // Alternating slightly to prove the new renderer path is active in WidgetKit.
+        // The odd gradient is only used when the diagnostic overlay is enabled.
         self.blockFillEvenGradient = Gradient(stops: [
             .init(color: WWClock.colour(0x6C6C2A, alpha: 0.98), location: 0.00),
             .init(color: WWClock.colour(0x5A5A22, alpha: 0.98), location: 0.48),
@@ -128,7 +135,7 @@ struct SegmentedOuterRingStyle {
         let markerRadius = WWClock.pixel(markerRadiusPx / max(scale, 1.0), scale: scale)
 
         self.diagnostic = Diagnostic(
-            enabled: true,
+            enabled: diagnosticEnabled,
             markerColour: WWClock.colour(0xFF2D55, alpha: 0.92),
             markerRadius: markerRadius
         )

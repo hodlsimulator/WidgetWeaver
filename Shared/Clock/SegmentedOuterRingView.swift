@@ -9,9 +9,9 @@ import SwiftUI
 
 /// Segmented face outer ring (bed + blocks + numerals).
 ///
-/// Step 9F.0:
+/// Step 9F.0b:
 /// - This view is the sole outer ring draw path.
-/// - A temporary diagnostic (alternating fills + tiny per-segment markers) proves the Canvas renderer
+/// - A debug-only diagnostic (feature-flagged) can be enabled to prove the Canvas renderer
 ///   is active on the Home Screen widget.
 struct SegmentedOuterRingView: View {
     let dialRadius: CGFloat

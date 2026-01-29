@@ -206,6 +206,16 @@ extension ContentView {
                 )
             )
 
+            Toggle(
+                "Debug: Segmented ring diagnostics",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.segmentedRingDiagnosticsEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setSegmentedRingDiagnosticsEnabled(newValue)
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                )
+            )
             Toggle("Debug: editor diagnostics", isOn: $showEditorDiagnostics)
             #endif
 

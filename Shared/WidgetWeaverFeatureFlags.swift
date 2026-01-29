@@ -20,6 +20,8 @@ public enum WidgetWeaverFeatureFlags {
 
         static let photoFiltersEnabled = "widgetweaver.feature.photoFilters.enabled"
 
+        static let segmentedRingDiagnosticsEnabled = "widgetweaver.feature.clock.segmentedRingDiagnostics.enabled"
+
         static let aiEnabled = "widgetweaver.feature.ai.enabled"
         static let aiReviewUIEnabled = "widgetweaver.feature.ai.reviewUI.enabled"
     }
@@ -88,6 +90,30 @@ public enum WidgetWeaverFeatureFlags {
 
     public static func resetRemindersTemplateEnabledOverride() {
         AppGroup.userDefaults.removeObject(forKey: Keys.remindersTemplateEnabled)
+    }
+
+    // MARK: - Clock
+
+    /// Debug overlay for the Segmented clock face outer ring.
+    ///
+    /// When enabled:
+    /// - Alternate segment fills and per-segment markers are drawn.
+    /// - Intended for verifying the Canvas/CGPath renderer path in WidgetKit.
+    ///
+    /// Default is `false` so shipped behaviour remains unchanged.
+    public static var segmentedRingDiagnosticsEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.segmentedRingDiagnosticsEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setSegmentedRingDiagnosticsEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.segmentedRingDiagnosticsEnabled)
+    }
+
+    public static func resetSegmentedRingDiagnosticsEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.segmentedRingDiagnosticsEnabled)
     }
 
     // MARK: - Clipboard Actions (Screen Actions scope cut)
