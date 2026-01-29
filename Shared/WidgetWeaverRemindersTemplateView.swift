@@ -61,15 +61,19 @@ public struct WidgetWeaverRemindersTemplateView: View {
         }()
 
         let content = VStack(alignment: layout.alignment.alignment, spacing: layout.spacing) {
-            if !spec.name.isEmpty {
-                headerRow()
+            if !config.smartStackV2Enabled {
+                if !spec.name.isEmpty {
+                    headerRow()
+                }
             }
 
             VStack(alignment: layout.alignment.alignment, spacing: 10) {
                 if let snapshot {
                     let model = Self.makeModel(snapshot: snapshot, config: config, now: now)
 
-                    modeHeader(title: Self.modeTitle(config: config), progress: model.progress, showProgressBadge: config.showProgressBadge)
+                    let title = config.smartStackV2Enabled ? Self.primaryHeadingTitle(specName: spec.name, config: config) : Self.modeTitle(config: config)
+
+                    modeHeader(title: title, progress: model.progress, showProgressBadge: config.showProgressBadge)
 
                     if let statusLine = gate.statusLine {
                         Text(statusLine)
@@ -92,13 +96,17 @@ public struct WidgetWeaverRemindersTemplateView: View {
 
                     remindersFooter(lastAction: lastAction, lastUpdatedAt: lastUpdatedAt)
                 } else if let lastError {
-                    modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
+                    let title = config.smartStackV2Enabled ? Self.primaryHeadingTitle(specName: spec.name, config: config) : "Reminders"
+
+                    modeHeader(title: title, progress: nil, showProgressBadge: false)
                     remindersErrorBody(lastError: lastError)
                     if let lastAction {
                         remindersActionBody(lastAction: lastAction)
                     }
                 } else {
-                    remindersPlaceholder()
+                    let title = config.smartStackV2Enabled ? Self.primaryHeadingTitle(specName: spec.name, config: config) : "Reminders"
+
+                    remindersPlaceholder(headingTitle: title)
                 }
             }
             .padding(.vertical, 2)
@@ -142,6 +150,22 @@ public struct WidgetWeaverRemindersTemplateView: View {
         return config.mode.displayName
     }
 
+    // MARK: - Smart Stack v2 heading rules
+
+    private static func primaryHeadingTitle(specName: String, config: WidgetWeaverRemindersConfig) -> String {
+        let modeTitle = modeTitle(config: config)
+
+        guard config.smartStackV2Enabled else {
+            return modeTitle
+        }
+
+        let trimmedDesignName = specName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if config.showsDesignTitleInWidget, !trimmedDesignName.isEmpty {
+            return trimmedDesignName
+        }
+
+        return modeTitle
+    }
 
     // MARK: - Header + chrome
 

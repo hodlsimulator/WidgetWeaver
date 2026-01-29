@@ -10,7 +10,7 @@ import SwiftUI
 import WidgetKit
 
 extension WidgetWeaverRemindersTemplateView {
-    func remindersPlaceholder() -> some View {
+    func remindersPlaceholder(headingTitle: String) -> some View {
         let titles: [String] = [
             "Buy milk",
             "Reply to email",
@@ -55,7 +55,7 @@ extension WidgetWeaverRemindersTemplateView {
         let visibleTitles = Array(titles.prefix(maxRows))
 
         return VStack(alignment: layout.alignment.alignment, spacing: blockSpacing) {
-            modeHeader(title: "Reminders", progress: nil, showProgressBadge: false)
+            modeHeader(title: headingTitle, progress: nil, showProgressBadge: false)
 
             if family == .systemMedium {
                 Text("No snapshot yet.")
