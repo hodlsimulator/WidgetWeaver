@@ -50,6 +50,39 @@ struct SegmentedOuterRingStyle {
         let shadowGradient: Gradient
     }
 
+    /// Subtle darkening in the bed channels adjacent to the blocks.
+    ///
+    /// The occlusion is rendered onto the bed (under the blocks) so it only shows through the gaps.
+    /// This avoids per-segment blur shadows while still giving the blocks a "seated" feel.
+    struct BedContactOcclusion {
+        /// Darkening band in the outer channel (between `blockOuter` and `bedOuter`).
+        let outerBandGradient: Gradient
+        /// Darkening band in the inner channel (between `bedInner` and `blockInner`).
+        let innerBandGradient: Gradient
+    }
+
+    /// Block bevel tokens (screen-space lighting: highlight top-left, shade bottom-right).
+    struct BlockBevel {
+        /// Highlight overlay (screen blend).
+        let highlightOverlayGradient: Gradient
+        /// Shadow overlay (multiply blend).
+        let shadowOverlayGradient: Gradient
+
+        /// Perimeter rim highlight (screen blend). Drawn as a clipped stroke so it remains inside the block.
+        let perimeterHighlightGradient: Gradient
+        /// Perimeter rim shadow (multiply blend). Drawn as a clipped stroke so it remains inside the block.
+        let perimeterShadowGradient: Gradient
+
+        /// Stroke width used for the perimeter rim strokes. This is the actual stroke width; clipping
+        /// leaves approximately half of it inside the block.
+        let perimeterRimStrokeWidth: CGFloat
+
+        /// Stroke width for the outer arc highlight accent (drawn inside the block).
+        let outerEdgeLineWidth: CGFloat
+        /// Stroke width for the inner arc shadow accent (drawn inside the block).
+        let innerEdgeLineWidth: CGFloat
+    }
+
     struct Diagnostic {
         /// When enabled, alternate block fills and per-block markers are drawn.
         let enabled: Bool
@@ -62,9 +95,11 @@ struct SegmentedOuterRingStyle {
 
     let bedFillGradient: Gradient
     let bedLips: BedLips
+    let bedContactOcclusion: BedContactOcclusion
 
     let blockFillEvenGradient: Gradient
     let blockFillOddGradient: Gradient
+    let blockBevel: BlockBevel
 
     let diagnostic: Diagnostic
 
@@ -168,6 +203,24 @@ struct SegmentedOuterRingStyle {
             shadowGradient: lipShadow
         )
 
+        // Bed contact occlusion (under the blocks; shows only through gaps).
+        let occlusionAlpha: Double = {
+            // Slightly stronger for the tight 2 px gaps so the cut reads as a seat, not a drawn line.
+            let a = 0.22 - Double(gapPixels - 2.0) * 0.04
+            return Double(WWClock.clamp(CGFloat(a), min: 0.16, max: 0.22))
+        }()
+
+        self.bedContactOcclusion = BedContactOcclusion(
+            outerBandGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: occlusionAlpha), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 1.00),
+            ]),
+            innerBandGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: occlusionAlpha), location: 1.00),
+            ])
+        )
+
         // Block fill gradients.
         // The odd gradient is only used when the diagnostic overlay is enabled.
         self.blockFillEvenGradient = Gradient(stops: [
@@ -181,6 +234,32 @@ struct SegmentedOuterRingStyle {
             .init(color: WWClock.colour(0x4E4E1D, alpha: 0.98), location: 0.48),
             .init(color: WWClock.colour(0x33330F, alpha: 0.99), location: 1.00),
         ])
+
+        // Block bevel shading (no blur): overlays + tight edge accents.
+        let rimStrokeWidth = WWClock.pixel(2.0 / max(scale, 1.0), scale: scale)
+        let edgeStrokeWidth = WWClock.pixel(1.0 / max(scale, 1.0), scale: scale)
+
+        self.blockBevel = BlockBevel(
+            highlightOverlayGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.18), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.36),
+            ]),
+            shadowOverlayGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.22), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.58),
+            ]),
+            perimeterHighlightGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.22), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.68),
+            ]),
+            perimeterShadowGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.45), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.72),
+            ]),
+            perimeterRimStrokeWidth: max(px, rimStrokeWidth),
+            outerEdgeLineWidth: max(px, edgeStrokeWidth),
+            innerEdgeLineWidth: max(px, edgeStrokeWidth)
+        )
 
         // Diagnostic markers: a tiny, high-contrast dot at each segment centre.
         let markerRadiusPx = WWClock.clamp(gapPixels * 0.55, min: 1.4, max: 2.4)

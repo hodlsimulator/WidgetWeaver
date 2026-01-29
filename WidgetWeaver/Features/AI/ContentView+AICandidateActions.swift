@@ -80,6 +80,11 @@ extension ContentView {
         var spec = candidate.candidateSpec.normalised()
         spec.updatedAt = Date()
 
+        captureUndoSnapshotBeforeAIApply(
+            mode: .generate,
+            appliedSpecID: spec.id
+        )
+
         store.save(spec, makeDefault: aiMakeGeneratedDefault)
         defaultSpecID = store.defaultSpecID()
         lastWidgetRefreshAt = Date()
@@ -105,6 +110,11 @@ extension ContentView {
     @MainActor
     func applyPatchedDesignCandidateFromReviewSheet(_ candidate: WidgetSpecAICandidate) -> Bool {
         aiStatusMessage = ""
+
+        captureUndoSnapshotBeforeAIApply(
+            mode: .patch,
+            appliedSpecID: selectedSpecID
+        )
 
         let patched = candidate.candidateSpec.normalised()
 
@@ -135,6 +145,85 @@ extension ContentView {
 
         return true
     }
+
+
+    // MARK: - AI (review mode; undo)
+
+    @MainActor
+    func undoLastAIApplyIfAvailable() {
+        aiStatusMessage = ""
+
+        guard WidgetWeaverFeatureFlags.aiReviewUIEnabled else { return }
+        guard let snapshot = WidgetSpecAISnapshotStore.load() else { return }
+
+        let preSpec = snapshot.preApplySpec.normalised()
+
+        if let preDefault = snapshot.preDefaultSpecID {
+            store.setDefault(id: preDefault)
+        }
+
+        if !snapshot.appliedSpecExistedBeforeApply && snapshot.appliedSpecID != snapshot.preSelectedSpecID {
+            if store.load(id: snapshot.appliedSpecID) != nil {
+                store.delete(id: snapshot.appliedSpecID)
+            }
+        } else if snapshot.appliedSpecExistedBeforeApply,
+                  snapshot.appliedSpecID != snapshot.preSelectedSpecID,
+                  let overwritten = snapshot.overwrittenAppliedSpecBefore {
+            store.save(overwritten, makeDefault: false)
+        }
+
+        switch snapshot.mode {
+        case .generate:
+            if store.load(id: preSpec.id) == nil {
+                store.save(preSpec, makeDefault: false)
+            }
+
+        case .patch:
+            store.save(preSpec, makeDefault: false)
+        }
+
+        refreshSavedSpecs(preservingSelection: true)
+        selectedSpecID = snapshot.preSelectedSpecID
+        applySpec(preSpec)
+
+        defaultSpecID = store.defaultSpecID()
+        lastWidgetRefreshAt = Date()
+
+        saveStatusMessage = "Undid last AI apply.\nWidgets refreshed."
+        aiStatusMessage = "Undo applied."
+
+        WidgetSpecAISnapshotStore.clear()
+    }
+
+    @MainActor
+    private func captureUndoSnapshotBeforeAIApply(mode: WidgetSpecAISnapshot.ApplyMode, appliedSpecID: UUID) {
+        guard WidgetWeaverFeatureFlags.aiReviewUIEnabled else { return }
+
+        let preSelectedID = selectedSpecID
+        let preSpec = draftSpec(id: preSelectedID).normalised()
+        let preDefault = store.defaultSpecID()
+
+        let didExist = store.load(id: appliedSpecID) != nil
+        var overwrittenBefore: WidgetSpec? = nil
+
+        if didExist && appliedSpecID != preSelectedID {
+            overwrittenBefore = store.load(id: appliedSpecID)?.normalised()
+        }
+
+        let snapshot = WidgetSpecAISnapshot(
+            mode: mode,
+            capturedAt: Date(),
+            preApplySpec: preSpec,
+            preSelectedSpecID: preSelectedID,
+            preDefaultSpecID: preDefault,
+            appliedSpecID: appliedSpecID,
+            appliedSpecExistedBeforeApply: didExist,
+            overwrittenAppliedSpecBefore: overwrittenBefore
+        )
+
+        WidgetSpecAISnapshotStore.save(snapshot)
+    }
+
 
     // MARK: - Helpers
 
