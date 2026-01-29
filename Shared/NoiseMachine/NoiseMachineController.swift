@@ -47,6 +47,10 @@ public actor NoiseMachineController {
     // happening before teardown, even if WidgetKit updates lag behind the user’s taps.
     let engineStopGraceSeconds: TimeInterval = 180.0
 
+    // On cold start, resume-on-launch can otherwise jump straight to the last saved master volume.
+    // Start from silence and ramp up to the stored level.
+    let resumeOnLaunchFadeInSeconds: TimeInterval = 1.0
+
     var currentState: NoiseMixState = .default
     var didLoadInitialStateFromStore: Bool = false
     var isEngineRunning: Bool = false
@@ -92,7 +96,70 @@ public actor NoiseMachineController {
         await apply(state: state)
 
         if store.isResumeOnLaunchEnabled(), state.wasPlaying {
-            await play()
+            await playWithFadeInOnLaunch()
+        }
+    }
+
+    private func playWithFadeInOnLaunch() async {
+        await prepareIfNeeded()
+        log("playWithFadeInOnLaunch")
+
+        cancelPendingSessionDeactivation()
+        cancelPendingEngineStop()
+
+        if currentState.wasPlaying, engine?.isRunning == true {
+            let requestID = playbackRequestID
+            let target = currentState.masterVolume
+
+            await fadeMaster(
+                to: target,
+                over: resumeOnLaunchFadeInSeconds,
+                requestID: requestID,
+                requiresWasPlaying: true,
+                abortIfOutputVolumeChangedExternally: true
+            )
+
+            if currentState.wasPlaying, playbackRequestID == requestID {
+                masterMixer?.outputVolume = currentState.masterVolume
+            }
+
+            isEngineRunning = true
+            return
+        }
+
+        let requestID = bumpPlaybackRequestID()
+
+        var s = currentState
+        s.wasPlaying = true
+        s.updatedAt = Date()
+        currentState = s
+
+        applyTargets(from: s, savePolicy: .immediate)
+
+        // Ensure a silent start; the target volume is restored via a short ramp.
+        masterMixer?.outputVolume = 0
+
+        await startEngineIfNeeded(requestID: requestID)
+
+        guard currentState.wasPlaying, playbackRequestID == requestID else { return }
+        guard engine?.isRunning == true else { return }
+
+        let target = currentState.masterVolume
+        if target <= 0 { return }
+
+        // Re-assert silence in case other state application occurred while the engine started.
+        masterMixer?.outputVolume = 0
+
+        await fadeMaster(
+            to: target,
+            over: resumeOnLaunchFadeInSeconds,
+            requestID: requestID,
+            requiresWasPlaying: true,
+            abortIfOutputVolumeChangedExternally: true
+        )
+
+        if currentState.wasPlaying, playbackRequestID == requestID {
+            masterMixer?.outputVolume = currentState.masterVolume
         }
     }
 

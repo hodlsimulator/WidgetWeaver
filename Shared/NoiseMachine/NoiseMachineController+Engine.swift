@@ -318,4 +318,45 @@ extension NoiseMachineController {
             try? await Task.sleep(nanoseconds: ns)
         }
     }
+
+    func fadeMaster(
+        to target: Float,
+        over seconds: TimeInterval,
+        requestID: UInt64,
+        requiresWasPlaying: Bool,
+        abortIfOutputVolumeChangedExternally: Bool
+    ) async {
+        guard let masterMixer else { return }
+
+        let steps = max(1, Int(seconds * 60))
+        let start = masterMixer.outputVolume
+        let delta = target - start
+
+        var lastSet = start
+
+        for i in 1...steps {
+            if Task.isCancelled { return }
+            if playbackRequestID != requestID { return }
+            if currentState.wasPlaying != requiresWasPlaying { return }
+
+            if abortIfOutputVolumeChangedExternally {
+                let current = masterMixer.outputVolume
+                if abs(current - lastSet) > 0.04 {
+                    return
+                }
+            }
+
+            let t = Float(i) / Float(steps)
+            let next = start + delta * t
+            masterMixer.outputVolume = next
+            lastSet = next
+
+            let ns = UInt64(1_000_000_000.0 / 60.0)
+            do {
+                try await Task.sleep(nanoseconds: ns)
+            } catch {
+                return
+            }
+        }
+    }
 }
