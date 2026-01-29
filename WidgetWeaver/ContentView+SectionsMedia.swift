@@ -584,7 +584,9 @@ private struct EditorResolvedImagePreview: View {
     private var liveEnabled: Bool = true
 
     @State private var compareOriginalUIImage: UIImage? = nil
-    @GestureState private var compareHeld: Bool = false
+    @State private var isComparing: Bool = false
+    @State private var compareAnchorDate: Date? = nil
+    @State private var lastPreviewRenderDate: Date = WidgetWeaverRenderClock.now
 
     private struct CompareLoadKey: Hashable {
         let sourceSpec: ImageSpec
@@ -612,7 +614,7 @@ private struct EditorResolvedImagePreview: View {
         let _ = smartPhotoShuffleUpdateToken
 
         Group {
-            if usesShuffleRotation {
+            if usesShuffleRotation && !isComparing {
                 let interval: TimeInterval = liveEnabled ? 5 : 60
                 let start = WidgetWeaverRenderClock.alignedTimelineStartDate(interval: interval)
 
@@ -622,15 +624,19 @@ private struct EditorResolvedImagePreview: View {
                     }
                 }
             } else {
-                previewBody
+                let date = isComparing ? (compareAnchorDate ?? WidgetWeaverRenderClock.now) : WidgetWeaverRenderClock.now
+                WidgetWeaverRenderClock.withNow(date) {
+                    previewBody
+                }
             }
         }
     }
 
     @ViewBuilder
     private var previewBody: some View {
+        let renderDate = WidgetWeaverRenderClock.now
         let uiImage = imageSpec.loadUIImageForRender(family: family, debugContext: nil)
-        let rotationDate: Date? = usesShuffleRotation ? WidgetWeaverRenderClock.now : nil
+        let rotationDate: Date? = usesShuffleRotation ? renderDate : nil
 
         let sourceSpec = ImageSpec(
             fileName: imageSpec.fileName,
@@ -640,7 +646,7 @@ private struct EditorResolvedImagePreview: View {
 
         let displayedUIImage: UIImage? = {
             guard compareEnabled else { return uiImage }
-            guard compareHeld else { return uiImage }
+            guard isComparing else { return uiImage }
             return compareOriginalUIImage ?? uiImage
         }()
 
@@ -657,6 +663,12 @@ private struct EditorResolvedImagePreview: View {
                 } else {
                     missingImagePlaceholder
                 }
+            }
+            .onAppear {
+                lastPreviewRenderDate = renderDate
+            }
+            .onChange(of: renderDate) { _, newValue in
+                lastPreviewRenderDate = newValue
             }
 
         if compareEnabled {
@@ -690,15 +702,27 @@ private struct EditorResolvedImagePreview: View {
                 .overlay(alignment: .bottomTrailing) {
                     compareBadge
                 }
-                .highPriorityGesture(compareGesture)
+                .onLongPressGesture(minimumDuration: 0.0, maximumDistance: 20, perform: { }, onPressingChanged: handleComparePressingChanged)
                 .accessibilityHint(Text("Press and hold to compare with the original photo."))
         } else {
             imageView
         }
     }
 
+    private func handleComparePressingChanged(_ pressing: Bool) {
+        if pressing {
+            if !isComparing {
+                compareAnchorDate = lastPreviewRenderDate
+                isComparing = true
+            }
+        } else {
+            isComparing = false
+            compareAnchorDate = nil
+        }
+    }
+
     private var compareBadge: some View {
-        Text(compareHeld ? "Original" : "Hold to compare")
+        Text(isComparing ? "Original" : "Hold to compare")
             .font(.caption2)
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
@@ -707,13 +731,6 @@ private struct EditorResolvedImagePreview: View {
             .clipShape(Capsule())
             .padding(8)
             .allowsHitTesting(false)
-    }
-
-    private var compareGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.15, maximumDistance: 20)
-            .updating($compareHeld) { value, state, _ in
-                state = value
-            }
     }
 
     private var missingImagePlaceholder: some View {
