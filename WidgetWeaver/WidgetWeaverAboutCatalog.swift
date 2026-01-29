@@ -130,7 +130,7 @@ extension WidgetWeaverAboutView {
             id: "starter-reminders-today",
             title: "Today",
             subtitle: "Reminders",
-            description: "Reminders due today.",
+            description: "Due today (by local day).",
             tags: ["Reminders", "Today"],
             requiresPro: false,
             triggersCalendarPermission: false,
@@ -140,7 +140,7 @@ extension WidgetWeaverAboutView {
             id: "starter-reminders-overdue",
             title: "Overdue",
             subtitle: "Reminders",
-            description: "Overdue reminders, sorted by due date.",
+            description: "Due before today (by local day).",
             tags: ["Reminders", "Overdue"],
             requiresPro: false,
             triggersCalendarPermission: false,
@@ -148,30 +148,30 @@ extension WidgetWeaverAboutView {
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-reminders-soon",
-            title: "Soon",
+            title: "Upcoming",
             subtitle: "Reminders",
-            description: "Upcoming reminders in the next few hours.",
-            tags: ["Reminders", "Soon"],
+            description: "Due tomorrow through the next 7 days (never includes Today).",
+            tags: ["Reminders", "Upcoming"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specRemindersSoon()
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-reminders-priority",
-            title: "Priority",
+            title: "High priority",
             subtitle: "Reminders",
-            description: "High-priority reminders (flagged approximation).",
-            tags: ["Reminders", "Priority"],
+            description: "Priority 1–4 reminders that are not already in Overdue, Today, or Upcoming.",
+            tags: ["Reminders", "High priority"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specRemindersPriority()
         ),
         WidgetWeaverAboutTemplate(
             id: "starter-reminders-focus",
-            title: "Focus",
+            title: "Anytime",
             subtitle: "Reminders",
-            description: "A calm one-thing view for a single reminder.",
-            tags: ["Reminders", "Focus"],
+            description: "Reminders with no due date (excluding anything already shown above).",
+            tags: ["Reminders", "Anytime"],
             requiresPro: false,
             triggersCalendarPermission: false,
             spec: specRemindersFocus()
@@ -180,7 +180,7 @@ extension WidgetWeaverAboutView {
             id: "starter-reminders-list",
             title: "Lists",
             subtitle: "Reminders",
-            description: "All reminders sorted by list.",
+            description: "The remainder: reminders not already shown in the other pages, grouped by list.",
             tags: ["Reminders", "Lists"],
             requiresPro: false,
             triggersCalendarPermission: false,
@@ -374,22 +374,15 @@ extension WidgetWeaverAboutView {
     static func specPhotoCaptionTop() -> WidgetSpec {
         var spec = specPhotoCaption()
         spec.name = "Photo + Caption (Top)"
-
-        // Opt-in (no schema change): top-aligned overlay anchored by layout alignment token.
         spec.layout.alignment = .topLeading
-
         return spec.normalised()
     }
 
     static func specPhotoCaptionGlass() -> WidgetSpec {
         var spec = specPhotoCaption()
         spec.name = "Photo + Caption (Glass)"
-
-        // Style hint (no schema change): use Subtle Material as the overlay token to opt into
-        // a frosted glass caption strip while keeping the full-screen overlay opacity at 0.
         spec.style.backgroundOverlay = .subtleMaterial
         spec.style.backgroundOverlayOpacity = 0
-
         return spec.normalised()
     }
 
@@ -523,7 +516,7 @@ extension WidgetWeaverAboutView {
     static func specList() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "List"
-        spec.primaryText = "• Item one\n• Item two\n• Item three"
+        spec.primaryText = "Checklist"
         spec.secondaryText = "Tap to edit"
         spec.layout.template = .classic
         spec.layout.showsAccentBar = true
@@ -533,7 +526,7 @@ extension WidgetWeaverAboutView {
         spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = false
         spec.symbol = SymbolSpec(
-            name: "checklist",
+            name: "checkmark.circle.fill",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -546,17 +539,17 @@ extension WidgetWeaverAboutView {
     static func specReading() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Reading"
-        spec.primaryText = "Reading"
-        spec.secondaryText = "{{pages_read|0}} / {{pages_goal|10}} pages"
-        spec.layout.template = .hero
+        spec.primaryText = "Read {{__pages|10}} pages"
+        spec.secondaryText = "Tap to edit"
+        spec.layout.template = .classic
         spec.layout.showsAccentBar = true
         spec.style.accent = .indigo
-        spec.style.background = .radialGlow
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
         spec.style.backgroundGlowEnabled = true
         spec.symbol = SymbolSpec(
-            name: "book.fill",
+            name: "book.closed.fill",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -569,17 +562,15 @@ extension WidgetWeaverAboutView {
     static func specSteps() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Steps"
-        spec.primaryText = "{{__steps_today|--|number:0}} steps"
-        spec.secondaryText = "{{__steps_goal_percent|--|number:0}}% • {{__steps_distance_km|--}} km\n{{__steps_active_energy_kcal|--|number:0}} kcal"
-        spec.layout.template = .hero
+        spec.primaryText = "{{__steps}}"
+        spec.secondaryText = "{{__steps_goal_progress}}"
+        spec.layout.template = .classic
         spec.layout.showsAccentBar = true
-        spec.layout.secondaryLineLimitSmall = 2
-        spec.layout.secondaryLineLimit = 2
-        spec.style.accent = .blue
-        spec.style.background = .radialGlow
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
-        spec.style.backgroundGlowEnabled = true
+        spec.style.accent = .green
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
+        spec.style.backgroundGlowEnabled = false
         spec.symbol = SymbolSpec(
             name: "figure.walk",
             size: 18,
@@ -594,19 +585,17 @@ extension WidgetWeaverAboutView {
     static func specActivity() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Activity"
-        spec.primaryText = "{{__activity_active_minutes_today|--|number:0}} min active"
-        spec.secondaryText = "{{__activity_distance_km|--}} • {{__activity_flights_today|--|number:0}} flights\n{{__activity_active_energy_kcal|--|number:0}} kcal"
-        spec.layout.template = .hero
+        spec.primaryText = "{{__activity_distance}}"
+        spec.secondaryText = "{{__activity_calories}}"
+        spec.layout.template = .classic
         spec.layout.showsAccentBar = true
-        spec.layout.secondaryLineLimitSmall = 2
-        spec.layout.secondaryLineLimit = 2
-        spec.style.accent = .orange
-        spec.style.background = .radialGlow
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
-        spec.style.backgroundGlowEnabled = true
+        spec.style.accent = .green
+        spec.style.background = .plain
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
+        spec.style.backgroundGlowEnabled = false
         spec.symbol = SymbolSpec(
-            name: "figure.walk.circle",
+            name: "figure.walk",
             size: 18,
             weight: .semibold,
             renderingMode: .hierarchical,
@@ -619,25 +608,31 @@ extension WidgetWeaverAboutView {
     static func specWeather() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Weather"
-        spec.primaryText = ""
-        spec.secondaryText = nil
-        spec.layout.template = .weather
-        spec.layout.showsAccentBar = false
+        spec.primaryText = "{{__weather_temp}}"
+        spec.secondaryText = "{{__weather_condition}}"
+        spec.layout.template = .classic
+        spec.layout.showsAccentBar = true
         spec.style.accent = .blue
         spec.style.background = .plain
-        spec.style.backgroundOverlay = .plain
-        spec.style.backgroundOverlayOpacity = 0
-        spec.style.backgroundGlowEnabled = false
-        spec.style.weatherScale = 1.0
-        spec.symbol = nil
+        spec.style.backgroundOverlay = .sunset
+        spec.style.backgroundOverlayOpacity = 0.10
+        spec.style.backgroundGlowEnabled = true
+        spec.symbol = SymbolSpec(
+            name: "cloud.sun.fill",
+            size: 18,
+            weight: .semibold,
+            renderingMode: .hierarchical,
+            tint: .accent,
+            placement: .beforeName
+        )
         return spec.normalised()
     }
 
     static func specNextUpCalendar() -> WidgetSpec {
         var spec = WidgetSpec.defaultSpec()
         spec.name = "Next Up"
-        spec.primaryText = ""
-        spec.secondaryText = nil
+        spec.primaryText = "{{__calendar_next_title}}"
+        spec.secondaryText = "{{__calendar_next_time}}"
         spec.layout.template = .nextUpCalendar
         spec.layout.showsAccentBar = false
         spec.style.accent = .green

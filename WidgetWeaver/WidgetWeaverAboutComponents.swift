@@ -169,7 +169,7 @@ struct WidgetWeaverAboutTemplateRow: View {
             VStack(alignment: .leading, spacing: 12) {
                 if showsRemindersSmartStackGroupIntro {
                     remindersSmartStackGroupLabel(
-                        text: "Reminders Smart Stack • 6 templates",
+                        text: "Reminders Smart Stack • 6 templates • no duplicates",
                         systemImage: "square.stack.3d.up.fill"
                     )
                 }
