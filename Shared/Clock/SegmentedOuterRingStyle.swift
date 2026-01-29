@@ -81,6 +81,21 @@ struct SegmentedOuterRingStyle {
         let outerEdgeLineWidth: CGFloat
         /// Stroke width for the inner arc shadow accent (drawn inside the block).
         let innerEdgeLineWidth: CGFloat
+
+        /// Stroke width for radial edge bevel accents (drawn inside the block).
+        let radialEdgeStrokeWidth: CGFloat
+
+        /// Inset from the inner/outer arcs for radial edge accents (points).
+        let radialEdgeEndInset: CGFloat
+
+        /// Inset towards the block interior for radial edge accents (points).
+        let radialEdgeInset: CGFloat
+
+        /// Colour used for the lit radial edge accent (screen blend).
+        let radialEdgeHighlightColour: Color
+
+        /// Colour used for the shaded radial edge accent (multiply blend).
+        let radialEdgeShadowColour: Color
     }
 
     struct Diagnostic {
@@ -239,6 +254,14 @@ struct SegmentedOuterRingStyle {
         let rimStrokeWidth = WWClock.pixel(2.0 / max(scale, 1.0), scale: scale)
         let edgeStrokeWidth = WWClock.pixel(1.0 / max(scale, 1.0), scale: scale)
 
+        // Radial edge accents are inset using sub-pixel values (not rounded), so the accent never lands
+        // directly in the air gap even when the clip mask is antialiased.
+        let radialEdgeInsetPx: CGFloat = (gapPixels <= 2.0) ? 0.40 : 0.32
+        let radialEdgeInset = radialEdgeInsetPx / max(scale, 1.0)
+
+        let radialEdgeEndInsetPx: CGFloat = 0.85
+        let radialEdgeEndInset = radialEdgeEndInsetPx / max(scale, 1.0)
+
         self.blockBevel = BlockBevel(
             highlightOverlayGradient: Gradient(stops: [
                 .init(color: WWClock.colour(0xFFFFFF, alpha: 0.18), location: 0.00),
@@ -258,7 +281,12 @@ struct SegmentedOuterRingStyle {
             ]),
             perimeterRimStrokeWidth: max(px, rimStrokeWidth),
             outerEdgeLineWidth: max(px, edgeStrokeWidth),
-            innerEdgeLineWidth: max(px, edgeStrokeWidth)
+            innerEdgeLineWidth: max(px, edgeStrokeWidth),
+            radialEdgeStrokeWidth: max(px, edgeStrokeWidth),
+            radialEdgeEndInset: radialEdgeEndInset,
+            radialEdgeInset: radialEdgeInset,
+            radialEdgeHighlightColour: WWClock.colour(0xFFFFFF, alpha: 0.16),
+            radialEdgeShadowColour: WWClock.colour(0x000000, alpha: 0.28)
         )
 
         // Diagnostic markers: a tiny, high-contrast dot at each segment centre.

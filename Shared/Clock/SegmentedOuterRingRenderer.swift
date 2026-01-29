@@ -244,16 +244,21 @@ struct SegmentedOuterRingRenderer {
             context.blendMode = .normal
             context.fill(path, with: baseShading)
 
-            renderBlockBevel(
-                into: &context,
-                blockPath: path,
-                centre: centre,
-                startAngle: startAngle,
-                endAngle: endAngle,
-                gradientStart: gradientStart,
-                gradientEnd: gradientEnd,
-                style: style
-            )
+            // Per-block isolation: bevel, rim, and clipped strokes are applied inside a drawLayer.
+            // This avoids state bleed across segments and keeps all shading inside the block.
+            context.drawLayer { layer in
+                layer.clip(to: path)
+                renderBlockBevel(
+                    into: &layer,
+                    blockPath: path,
+                    centre: centre,
+                    startAngle: startAngle,
+                    endAngle: endAngle,
+                    gradientStart: gradientStart,
+                    gradientEnd: gradientEnd,
+                    style: style
+                )
+            }
 
             if style.diagnostic.enabled {
                 renderMarker(
@@ -302,6 +307,14 @@ struct SegmentedOuterRingRenderer {
         context.blendMode = .multiply
         context.fill(blockPath, with: shadowShading)
 
+        renderPerimeterRimStrokes(
+            into: &context,
+            blockPath: blockPath,
+            gradientStart: gradientStart,
+            gradientEnd: gradientEnd,
+            style: style
+        )
+
         // Edge accents are inset so strokes never leak into the air gaps.
         let outerW = bevel.outerEdgeLineWidth
         if outerW > 0 {
@@ -343,6 +356,141 @@ struct SegmentedOuterRingRenderer {
                     style: StrokeStyle(lineWidth: innerW, lineCap: .butt, lineJoin: .miter)
                 )
             }
+        }
+
+        renderRadialEdgeAccents(
+            into: &context,
+            centre: centre,
+            startAngle: startAngle,
+            endAngle: endAngle,
+            style: style
+        )
+
+        context.blendMode = .normal
+    }
+
+    private func renderPerimeterRimStrokes(
+        into context: inout GraphicsContext,
+        blockPath: Path,
+        gradientStart: CGPoint,
+        gradientEnd: CGPoint,
+        style: SegmentedOuterRingStyle
+    ) {
+        let bevel = style.blockBevel
+        let w = bevel.perimeterRimStrokeWidth
+        guard w > 0 else { return }
+
+        let highlight = GraphicsContext.Shading.linearGradient(
+            bevel.perimeterHighlightGradient,
+            startPoint: gradientStart,
+            endPoint: gradientEnd
+        )
+
+        let shadow = GraphicsContext.Shading.linearGradient(
+            bevel.perimeterShadowGradient,
+            startPoint: gradientEnd,
+            endPoint: gradientStart
+        )
+
+        let stroke = StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .bevel)
+
+        context.blendMode = .screen
+        context.stroke(blockPath, with: highlight, style: stroke)
+
+        context.blendMode = .multiply
+        context.stroke(blockPath, with: shadow, style: stroke)
+
+        context.blendMode = .normal
+    }
+
+    private func renderRadialEdgeAccents(
+        into context: inout GraphicsContext,
+        centre: CGPoint,
+        startAngle: CGFloat,
+        endAngle: CGFloat,
+        style: SegmentedOuterRingStyle
+    ) {
+        let bevel = style.blockBevel
+
+        let w = bevel.radialEdgeStrokeWidth
+        guard w > 0 else { return }
+
+        let innerR = style.radii.blockInner + bevel.radialEdgeEndInset
+        let outerR = style.radii.blockOuter - bevel.radialEdgeEndInset
+        guard outerR > innerR else { return }
+
+        // Fixed screen-space light direction (top-left).
+        let light = CGPoint(x: -0.70710678, y: -0.70710678)
+
+        drawRadialEdgeAccent(
+            into: &context,
+            centre: centre,
+            angle: startAngle,
+            innerRadius: innerR,
+            outerRadius: outerR,
+            interiorTangentSign: 1.0,
+            light: light,
+            style: style
+        )
+
+        drawRadialEdgeAccent(
+            into: &context,
+            centre: centre,
+            angle: endAngle,
+            innerRadius: innerR,
+            outerRadius: outerR,
+            interiorTangentSign: -1.0,
+            light: light,
+            style: style
+        )
+    }
+
+    private func drawRadialEdgeAccent(
+        into context: inout GraphicsContext,
+        centre: CGPoint,
+        angle: CGFloat,
+        innerRadius: CGFloat,
+        outerRadius: CGFloat,
+        interiorTangentSign: CGFloat,
+        light: CGPoint,
+        style: SegmentedOuterRingStyle
+    ) {
+        let bevel = style.blockBevel
+
+        let r = CGPoint(x: cos(angle), y: sin(angle))
+        let t = CGPoint(x: -sin(angle), y: cos(angle))
+
+        let interiorTangent = CGPoint(x: t.x * interiorTangentSign, y: t.y * interiorTangentSign)
+        let outwardNormal = CGPoint(x: -interiorTangent.x, y: -interiorTangent.y)
+
+        let dot = outwardNormal.x * light.x + outwardNormal.y * light.y
+        let isLit = dot >= 0.0
+
+        let shift = CGPoint(x: interiorTangent.x * bevel.radialEdgeInset, y: interiorTangent.y * bevel.radialEdgeInset)
+
+        let p0 = CGPoint(
+            x: centre.x + r.x * innerRadius + shift.x,
+            y: centre.y + r.y * innerRadius + shift.y
+        )
+
+        let p1 = CGPoint(
+            x: centre.x + r.x * outerRadius + shift.x,
+            y: centre.y + r.y * outerRadius + shift.y
+        )
+
+        let cg = CGMutablePath()
+        cg.move(to: p0)
+        cg.addLine(to: p1)
+
+        let path = Path(cg)
+        let stroke = StrokeStyle(lineWidth: bevel.radialEdgeStrokeWidth, lineCap: .butt, lineJoin: .miter)
+
+        if isLit {
+            context.blendMode = .screen
+            context.stroke(path, with: .color(bevel.radialEdgeHighlightColour), style: stroke)
+        } else {
+            context.blendMode = .multiply
+            context.stroke(path, with: .color(bevel.radialEdgeShadowColour), style: stroke)
         }
 
         context.blendMode = .normal
