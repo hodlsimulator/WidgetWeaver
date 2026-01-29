@@ -83,7 +83,7 @@ public enum WidgetSpecAISnapshotStore {
     }
 
     public static var hasSnapshot: Bool {
-        AppGroup.userDefaults.data(forKey: Keys.snapshotData) != nil
+        load() != nil
     }
 
     public static func load() -> WidgetSpecAISnapshot? {
