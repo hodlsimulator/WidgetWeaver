@@ -30,6 +30,21 @@ public enum WidgetWeaverRemindersMode: String, Codable, CaseIterable, Hashable, 
         case .list: return "List"
         }
     }
+
+    public var smartStackV2DisplayName: String {
+        switch self {
+        case .overdue: return "Overdue"
+        case .today: return "Today"
+        case .soon: return "Upcoming"
+        case .flagged: return "High priority"
+        case .focus: return "Anytime"
+        case .list: return "Lists"
+        }
+    }
+
+    public func uiDisplayName(smartStackV2Enabled: Bool) -> String {
+        smartStackV2Enabled ? smartStackV2DisplayName : displayName
+    }
 }
 
 /// Visual style for how reminders are grouped/emphasised.

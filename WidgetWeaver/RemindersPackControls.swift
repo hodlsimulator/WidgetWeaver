@@ -218,7 +218,7 @@ struct RemindersPackControls: View {
                 set: { newValue in config.mode = newValue; config = config.normalised() }
             )) {
                 ForEach(WidgetWeaverRemindersMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
+                    Text(mode.uiDisplayName(smartStackV2Enabled: config.smartStackV2Enabled)).tag(mode)
                 }
             }
 
