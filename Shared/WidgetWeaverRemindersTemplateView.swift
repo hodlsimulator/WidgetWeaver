@@ -69,7 +69,7 @@ public struct WidgetWeaverRemindersTemplateView: View {
                 if let snapshot {
                     let model = Self.makeModel(snapshot: snapshot, config: config, now: now)
 
-                    modeHeader(title: config.mode.displayName, progress: model.progress, showProgressBadge: config.showProgressBadge)
+                    modeHeader(title: Self.modeTitle(config: config), progress: model.progress, showProgressBadge: config.showProgressBadge)
 
                     if let statusLine = gate.statusLine {
                         Text(statusLine)
@@ -115,6 +115,33 @@ public struct WidgetWeaverRemindersTemplateView: View {
             content
         }
     }
+
+    // MARK: - Smart Stack v2 naming
+
+    private static func smartStackV2ModeDisplayName(_ mode: WidgetWeaverRemindersMode) -> String {
+        switch mode {
+        case .overdue:
+            return "Overdue"
+        case .today:
+            return "Today"
+        case .soon:
+            return "Upcoming"
+        case .flagged:
+            return "High priority"
+        case .focus:
+            return "Anytime"
+        case .list:
+            return "Lists"
+        }
+    }
+
+    private static func modeTitle(config: WidgetWeaverRemindersConfig) -> String {
+        if config.smartStackV2Enabled {
+            return smartStackV2ModeDisplayName(config.mode)
+        }
+        return config.mode.displayName
+    }
+
 
     // MARK: - Header + chrome
 
