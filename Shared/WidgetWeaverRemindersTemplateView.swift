@@ -18,6 +18,8 @@ public struct WidgetWeaverRemindersTemplateView: View {
     public let style: StyleSpec
     public let accent: Color
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public init(
         spec: WidgetSpec,
         family: WidgetFamily,
@@ -513,11 +515,93 @@ public struct WidgetWeaverRemindersTemplateView: View {
         }
     }
 
+    @ViewBuilder
     private func remindersDenseList(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
-        VStack(alignment: layout.alignment.alignment, spacing: 6) {
-            ForEach(items.prefix(8)) { item in
-                remindersRow(item: item, config: config, gate: gate)
+        if shouldUseTwoColumnDenseGrid(config: config) {
+            remindersDenseTwoColumnGrid(items: items, config: config, gate: gate)
+        } else {
+            VStack(alignment: layout.alignment.alignment, spacing: 6) {
+                ForEach(items.prefix(8)) { item in
+                    remindersRow(item: item, config: config, gate: gate)
+                }
             }
+        }
+    }
+
+    private func shouldUseTwoColumnDenseGrid(config: WidgetWeaverRemindersConfig) -> Bool {
+        guard config.smartStackV2Enabled else { return false }
+        guard family == .systemMedium else { return false }
+
+        if dynamicTypeSize.isAccessibilitySize { return false }
+        if dynamicTypeSize >= .xxLarge { return false }
+
+        return true
+    }
+
+    private func remindersDenseTwoColumnGrid(items: [WidgetWeaverReminderItem], config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        let columns: [GridItem] = [
+            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 10, alignment: .leading),
+            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 10, alignment: .leading)
+        ]
+
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            ForEach(items.prefix(12)) { item in
+                remindersDenseGridRow(item: item, config: config, gate: gate)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: layout.alignment.swiftUIAlignment)
+    }
+
+    @ViewBuilder
+    private func remindersDenseGridRow(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig, gate: InteractivityGate) -> some View {
+        let row = HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                .font(.caption)
+                .foregroundStyle(item.isCompleted ? .secondary : .primary)
+
+            remindersDenseGridPrimaryLine(item: item, config: config)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+
+        if context == .widget, gate.canCompleteFromWidget {
+            Button(intent: WidgetWeaverCompleteReminderWidgetIntent(reminderID: item.id)) {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder
+    private func remindersDenseGridPrimaryLine(item: WidgetWeaverReminderItem, config: WidgetWeaverRemindersConfig) -> some View {
+        if config.showDueTimes, let due = item.dueDate, item.dueHasTime {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(item.title)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(due.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(item.title)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+        } else {
+            Text(item.title)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
         }
     }
 
