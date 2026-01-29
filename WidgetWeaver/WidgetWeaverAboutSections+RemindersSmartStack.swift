@@ -29,7 +29,7 @@ extension WidgetWeaverAboutView {
             } header: {
                 WidgetWeaverAboutSectionHeader("Smart Stack Kit", systemImage: "square.stack.3d.up.fill", accent: .orange)
             } footer: {
-                Text("Upcoming is tomorrow through the next 7 days (never Today). Lists is the remainder (no repeats per snapshot).")
+                Text("No duplicates per refresh. Precedence: Overdue → Today → Upcoming → High priority → Anytime → Lists.\nUpcoming is tomorrow through the next 7 days (never Today). Lists is the remainder (never repeats items already shown).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -77,7 +77,7 @@ extension WidgetWeaverAboutView {
                             WidgetWeaverAboutBadge("6 designs", accent: .orange)
                         }
 
-                        Text("Six Reminders templates designed to be stacked together in one Smart Stack. No duplicates per refresh: Overdue, Today, Upcoming, High priority, Anytime, and Lists.")
+                        Text("Six Reminders templates designed to be stacked together in one Smart Stack. No duplicates per refresh; each reminder is assigned to the first matching page (Overdue → Today → Upcoming → High priority → Anytime → Lists).")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }

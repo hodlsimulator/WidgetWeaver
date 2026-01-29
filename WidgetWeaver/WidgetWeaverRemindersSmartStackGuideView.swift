@@ -34,6 +34,11 @@ Add more widgets to the existing stack
           (Stack now has 3)
 """
 
+    private let v2PrecedenceDiagram = """
+No duplicates per refresh
+Overdue → Today → Upcoming → High priority → Anytime → Lists
+"""
+
     var body: some View {
         List {
             Section {
@@ -89,8 +94,29 @@ Add more widgets to the existing stack
                 WidgetWeaverAboutBulletList(items: [
                     "Open Explore → Templates (Reminders) → Reminders Smart Stack.",
                     "Tap “Add all 6” to create the six numbered designs in the Library (safe to run again).",
-                    "The Library should contain: Reminders 1 — Today, 2 — Overdue, 3 — Upcoming, 4 — High priority, 5 — Anytime, 6 — Lists."
+                    "The six pages are: Overdue, Today, Upcoming, High priority, Anytime, and Lists."
                 ])
+            }
+
+            Section("How the pages work") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Each refresh assigns every reminder to exactly one page (no duplicates). If a reminder matches multiple pages, the first match wins.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    WidgetWeaverAboutCodeBlock(v2PrecedenceDiagram, accent: .orange)
+
+                    WidgetWeaverAboutBulletList(items: [
+                        "Overdue: due before today (local day).",
+                        "Today: due today (local day).",
+                        "Upcoming: due tomorrow through the next 7 days (never includes Today).",
+                        "High priority: priority 1–4 reminders that are not already shown in Overdue, Today, or Upcoming.",
+                        "Anytime: reminders with no due date (excluding anything already shown above).",
+                        "Lists: the remainder only, grouped by list (never repeats items already shown)."
+                    ])
+                }
+                .padding(.vertical, 4)
             }
 
             Section("Step 2 — Add WidgetWeaver widgets to the Home Screen") {
@@ -111,8 +137,8 @@ Add more widgets to the existing stack
 
                     WidgetWeaverAboutBulletList(items: [
                         "Touch and hold a WidgetWeaver widget, then choose “Edit Widget”.",
-                        "Open “Design” and select “Reminders 1 — Today”.",
-                        "Repeat for the other widgets, selecting “Reminders 2 — Overdue” through “Reminders 6 — Lists”."
+                        "Open “Design” and select one of the six numbered Reminders designs (one per widget).",
+                        "If the Library still shows legacy names, use: Reminders 3 — Soon (Upcoming), Reminders 4 — Priority (High priority), Reminders 5 — Focus (Anytime)."
                     ])
                 }
                 .padding(.vertical, 4)
@@ -164,7 +190,6 @@ Add more widgets to the existing stack
                 WidgetWeaverAboutBulletList(items: [
                     "Widgets render cached snapshots only (no direct Reminders reads in the widget extension).",
                     "The six designs are numbered so they sort together in widget configuration.",
-                    "Upcoming is tomorrow through the next 7 days (never Today). Lists is the remainder (no repeats per snapshot).",
                     "This guide can be reopened from Explore → Templates (Reminders) → Guide."
                 ])
             }
