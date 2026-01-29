@@ -33,6 +33,21 @@ struct SegmentedOuterRingStyle {
         let linear: CGFloat
         /// Gap width in radians at the block mid radius.
         let angular: CGFloat
+
+        /// Extra angular trimming (per edge) applied to protect the air gap from anti-aliasing bleed.
+        ///
+        /// The nominal gap is already defined in physical pixels. This trim is intentionally small and
+        /// only exists to ensure the gap remains visibly "open" at 44/60 after edge AA.
+        let edgeTrimAngular: CGFloat
+    }
+
+    struct BedLips {
+        /// Line width used for the bed inner/outer lips.
+        let lineWidth: CGFloat
+        /// Highlight gradient used for lip strokes (direction is chosen per lip).
+        let highlightGradient: Gradient
+        /// Shadow gradient used for lip strokes (direction is chosen per lip).
+        let shadowGradient: Gradient
     }
 
     struct Diagnostic {
@@ -46,6 +61,7 @@ struct SegmentedOuterRingStyle {
     let gap: Gap
 
     let bedFillGradient: Gradient
+    let bedLips: BedLips
 
     let blockFillEvenGradient: Gradient
     let blockFillOddGradient: Gradient
@@ -96,10 +112,17 @@ struct SegmentedOuterRingStyle {
         let midR = max(px, self.radii.blockMid)
         let gapAngular = max(0.0, gapPoints / midR)
 
+        // A small additional trim protects the gap from appearing "filled" due to AA bleed at tiny sizes.
+        // The trim is expressed in physical pixels so it stays consistent at 44/60.
+        let edgeTrimPx: CGFloat = (gapPixels <= 3.0) ? 0.5 : 0.35
+        let edgeTrimPoints = edgeTrimPx / max(scale, 1.0)
+        let edgeTrimAngular = max(0.0, edgeTrimPoints / midR)
+
         self.gap = Gap(
             pixels: gapPixels,
             linear: gapPoints,
-            angular: gapAngular
+            angular: gapAngular,
+            edgeTrimAngular: edgeTrimAngular
         )
 
         let diagnosticEnabled: Bool
@@ -110,11 +133,33 @@ struct SegmentedOuterRingStyle {
         #endif
 
         // Bed material (recessed channel).
+        // Keep visible form in WidgetKit snapshots (avoid dead-black flattening).
         self.bedFillGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x0A0C10, alpha: 1.0), location: 0.00),
-            .init(color: WWClock.colour(0x050608, alpha: 1.0), location: 0.55),
-            .init(color: WWClock.colour(0x000000, alpha: 1.0), location: 1.00),
+            .init(color: WWClock.colour(0x131A24, alpha: 1.0), location: 0.00),
+            .init(color: WWClock.colour(0x0A0D13, alpha: 1.0), location: 0.55),
+            .init(color: WWClock.colour(0x030407, alpha: 1.0), location: 1.00),
         ])
+
+        let lipLineWidth = WWClock.pixel(
+            WWClock.clamp(bedThickness * 0.10, min: px, max: px * 3.0),
+            scale: scale
+        )
+
+        let lipHighlight = Gradient(stops: [
+            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.12), location: 0.00),
+            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.45),
+        ])
+
+        let lipShadow = Gradient(stops: [
+            .init(color: WWClock.colour(0x000000, alpha: 0.55), location: 0.00),
+            .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.55),
+        ])
+
+        self.bedLips = BedLips(
+            lineWidth: lipLineWidth,
+            highlightGradient: lipHighlight,
+            shadowGradient: lipShadow
+        )
 
         // Block fill gradients.
         // The odd gradient is only used when the diagnostic overlay is enabled.

@@ -58,6 +58,74 @@ struct SegmentedOuterRingRenderer {
             with: shading,
             style: FillStyle(eoFill: true, antialiased: true)
         )
+
+        renderBedLips(into: &context, centre: centre, style: style)
+    }
+
+    private func renderBedLips(
+        into context: inout GraphicsContext,
+        centre: CGPoint,
+        style: SegmentedOuterRingStyle
+    ) {
+        let w = style.bedLips.lineWidth
+        guard w > 0 else { return }
+
+        let outerR = max(0.0, style.radii.bedOuter - (w * 0.5))
+        let innerR = max(0.0, style.radii.bedInner + (w * 0.5))
+
+        guard outerR > 0.0, outerR > innerR else { return }
+
+        let start = CGPoint(x: centre.x - style.radii.bedOuter, y: centre.y - style.radii.bedOuter)
+        let end = CGPoint(x: centre.x + style.radii.bedOuter, y: centre.y + style.radii.bedOuter)
+
+        let outerPath = Path(
+            ellipseIn: CGRect(
+                x: centre.x - outerR,
+                y: centre.y - outerR,
+                width: outerR * 2.0,
+                height: outerR * 2.0
+            )
+        )
+
+        let innerPath = Path(
+            ellipseIn: CGRect(
+                x: centre.x - innerR,
+                y: centre.y - innerR,
+                width: innerR * 2.0,
+                height: innerR * 2.0
+            )
+        )
+
+        let highlightOuter = GraphicsContext.Shading.linearGradient(
+            style.bedLips.highlightGradient,
+            startPoint: start,
+            endPoint: end
+        )
+
+        let shadowOuter = GraphicsContext.Shading.linearGradient(
+            style.bedLips.shadowGradient,
+            startPoint: end,
+            endPoint: start
+        )
+
+        let highlightInner = GraphicsContext.Shading.linearGradient(
+            style.bedLips.highlightGradient,
+            startPoint: end,
+            endPoint: start
+        )
+
+        let shadowInner = GraphicsContext.Shading.linearGradient(
+            style.bedLips.shadowGradient,
+            startPoint: start,
+            endPoint: end
+        )
+
+        let stroke = StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round)
+
+        context.stroke(outerPath, with: highlightOuter, style: stroke)
+        context.stroke(outerPath, with: shadowOuter, style: stroke)
+        context.stroke(innerPath, with: shadowInner, style: stroke)
+        context.stroke(innerPath, with: highlightInner, style: stroke)
     }
 
     private func renderBlocks(
@@ -69,7 +137,7 @@ struct SegmentedOuterRingRenderer {
     ) {
         let fullSpan = CGFloat.pi * 2.0
         let segmentSpan = fullSpan / CGFloat(Self.segmentCount)
-        let halfGap = style.gap.angular * 0.5
+        let halfGap = (style.gap.angular * 0.5) + style.gap.edgeTrimAngular
 
         let gradientStart = CGPoint(x: centre.x - style.radii.blockOuter, y: centre.y - style.radii.blockOuter)
         let gradientEnd = CGPoint(x: centre.x + style.radii.blockOuter, y: centre.y + style.radii.blockOuter)
