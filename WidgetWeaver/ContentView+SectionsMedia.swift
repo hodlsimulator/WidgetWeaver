@@ -687,6 +687,9 @@ private struct EditorResolvedImagePreview: View {
 
         if compareEnabled {
             imageView
+                .overlay(alignment: .bottomTrailing) {
+                    compareBadge
+                }
                 .highPriorityGesture(compareGesture)
                 .accessibilityHint(Text("Press and hold to compare with the original photo."))
         } else {
@@ -694,10 +697,22 @@ private struct EditorResolvedImagePreview: View {
         }
     }
 
+    private var compareBadge: some View {
+        Text(compareHeld ? "Original" : "Hold to compare")
+            .font(.caption2)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .padding(8)
+            .allowsHitTesting(false)
+    }
+
     private var compareGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .updating($compareHeld) { _, state, _ in
-                state = true
+        LongPressGesture(minimumDuration: 0.15, maximumDistance: 20)
+            .updating($compareHeld) { value, state, _ in
+                state = value
             }
     }
 
