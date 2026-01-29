@@ -10,7 +10,84 @@ import SwiftUI
 import WidgetKit
 @preconcurrency import UIKit
 
-struct PhotoFilterThumbnailSource: Hashable {
+// MARK: - Background-safe work helpers
+
+private enum PhotoFilterThumbnailWork {
+    final class Cache: @unchecked Sendable {
+        private let cache: NSCache<NSString, UIImage>
+
+        init() {
+            let c = NSCache<NSString, UIImage>()
+            c.countLimit = 128
+            c.totalCostLimit = 24 * 1024 * 1024
+            self.cache = c
+        }
+
+        func object(forKey key: NSString) -> UIImage? {
+            cache.object(forKey: key)
+        }
+
+        func setObject(_ image: UIImage, forKey key: NSString, cost: Int) {
+            cache.setObject(image, forKey: key, cost: cost)
+        }
+    }
+
+    static let cache = Cache()
+
+    static func cacheKey(identity: String, token: PhotoFilterToken) -> NSString {
+        "\(identity)|\(token.rawValue)" as NSString
+    }
+
+    static func estimatedDecodedByteCount(_ image: UIImage) -> Int {
+        if let cg = image.cgImage {
+            let bytes = Int64(cg.bytesPerRow) * Int64(cg.height)
+            if bytes > Int64(Int.max) { return Int.max }
+            if bytes <= 0 { return 1 }
+            return Int(bytes)
+        }
+
+        let w = Int64(image.size.width * image.scale)
+        let h = Int64(image.size.height * image.scale)
+        let bytes = w * h * 4
+        if bytes > Int64(Int.max) { return Int.max }
+        if bytes <= 0 { return 1 }
+        return Int(bytes)
+    }
+
+    static func loadBaseImage(source: PhotoFilterThumbnailSource, maxPixel: Int) -> (UIImage, String)? {
+        let px = max(1, maxPixel)
+
+        if let img = AppGroup.loadWidgetImage(fileName: source.primaryFileName, maxPixel: px) {
+            let identity = fileIdentity(fileName: source.primaryFileName, maxPixel: px)
+            return (img, identity)
+        }
+
+        if let fallback = source.fallbackFileName,
+           let img = AppGroup.loadWidgetImage(fileName: fallback, maxPixel: px)
+        {
+            let identity = fileIdentity(fileName: fallback, maxPixel: px)
+            return (img, identity)
+        }
+
+        return nil
+    }
+
+    static func fileIdentity(fileName: String, maxPixel: Int) -> String {
+        let url = AppGroup.imageFileURL(fileName: fileName)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return "\(fileName)|px=\(maxPixel)"
+        }
+
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        let mod = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+
+        return "\(fileName)|\(size)|\(Int64(mod))|px=\(maxPixel)"
+    }
+}
+
+// MARK: - Source identity
+
+struct PhotoFilterThumbnailSource: Hashable, Sendable {
     let primaryFileName: String
     let fallbackFileName: String?
 
@@ -45,11 +122,14 @@ struct PhotoFilterThumbnailSource: Hashable {
     }
 }
 
+// MARK: - Provider
+
 @MainActor
 final class PhotoFilterThumbnailProvider: ObservableObject {
     @Published private(set) var thumbnails: [PhotoFilterToken: UIImage] = [:]
 
     private var loadTask: Task<Void, Never>?
+    private var activeRequestID: UUID?
 
     deinit {
         loadTask?.cancel()
@@ -59,111 +139,80 @@ final class PhotoFilterThumbnailProvider: ObservableObject {
         thumbnails[token]
     }
 
-    func load(source: PhotoFilterThumbnailSource?, maxPixel: Int = 180) {
+    func cancel(clearThumbnails: Bool = true) {
+        loadTask?.cancel()
+        loadTask = nil
+        activeRequestID = nil
+
+        if clearThumbnails {
+            thumbnails = [:]
+        }
+    }
+
+    func load(source: PhotoFilterThumbnailSource?, maxPixel: Int) {
         loadTask?.cancel()
         thumbnails = [:]
 
-        guard let source else { return }
+        guard let source else {
+            activeRequestID = nil
+            return
+        }
 
-        loadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        let requestID = UUID()
+        activeRequestID = requestID
 
-            guard let (base, identity) = await Self.loadBaseImage(source: source, maxPixel: maxPixel) else {
-                self.thumbnails = [:]
+        let px = max(1, maxPixel)
+
+        loadTask = Task.detached(priority: .utility) { [source] in
+            guard let (base, identity) = PhotoFilterThumbnailWork.loadBaseImage(source: source, maxPixel: px) else {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    guard self.activeRequestID == requestID else { return }
+                    self.thumbnails = [:]
+                }
                 return
             }
 
             for token in PhotoFilterToken.allCases {
                 if Task.isCancelled { return }
 
-                let key = Self.cacheKey(identity: identity, token: token)
+                let key = PhotoFilterThumbnailWork.cacheKey(identity: identity, token: token)
 
-                if let cached = Self.cache.object(forKey: key) {
-                    self.thumbnails[token] = cached
+                if let cached = PhotoFilterThumbnailWork.cache.object(forKey: key) {
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        guard self.activeRequestID == requestID else { return }
+                        self.thumbnails[token] = cached
+                    }
                     continue
                 }
 
-                let generated: UIImage = await Task.detached(priority: .utility) {
+                if Task.isCancelled { return }
+
+                let generated: UIImage = autoreleasepool {
                     if token == .none { return base }
                     let spec = PhotoFilterSpec(token: token, intensity: 1.0)
                     return PhotoFilterEngine.shared.apply(to: base, spec: spec)
-                }.value
+                }
 
                 if Task.isCancelled { return }
 
-                let cost = Self.estimatedDecodedByteCount(generated)
-                Self.cache.setObject(generated, forKey: key, cost: cost)
+                let cost = PhotoFilterThumbnailWork.estimatedDecodedByteCount(generated)
+                PhotoFilterThumbnailWork.cache.setObject(generated, forKey: key, cost: cost)
 
-                self.thumbnails[token] = generated
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    guard self.activeRequestID == requestID else { return }
+                    self.thumbnails[token] = generated
+                }
 
                 await Task.yield()
             }
         }
     }
-
-    // MARK: - Cache
-
-    private static let cache: NSCache<NSString, UIImage> = {
-        let c = NSCache<NSString, UIImage>()
-        c.countLimit = 128
-        c.totalCostLimit = 24 * 1024 * 1024
-        return c
-    }()
-
-    private static func cacheKey(identity: String, token: PhotoFilterToken) -> NSString {
-        "\(identity)|\(token.rawValue)" as NSString
-    }
-
-    private static func estimatedDecodedByteCount(_ image: UIImage) -> Int {
-        if let cg = image.cgImage {
-            let bytes = Int64(cg.bytesPerRow) * Int64(cg.height)
-            if bytes > Int64(Int.max) { return Int.max }
-            if bytes <= 0 { return 1 }
-            return Int(bytes)
-        }
-
-        let w = Int64(image.size.width * image.scale)
-        let h = Int64(image.size.height * image.scale)
-        let bytes = w * h * 4
-        if bytes > Int64(Int.max) { return Int.max }
-        if bytes <= 0 { return 1 }
-        return Int(bytes)
-    }
-
-    // MARK: - Base image load
-
-    private static func loadBaseImage(source: PhotoFilterThumbnailSource, maxPixel: Int) async -> (UIImage, String)? {
-        await Task.detached(priority: .utility) {
-            let px = max(1, maxPixel)
-
-            if let img = AppGroup.loadWidgetImage(fileName: source.primaryFileName, maxPixel: px) {
-                let identity = fileIdentity(fileName: source.primaryFileName)
-                return (img, identity)
-            }
-
-            if let fallback = source.fallbackFileName,
-               let img = AppGroup.loadWidgetImage(fileName: fallback, maxPixel: px)
-            {
-                let identity = fileIdentity(fileName: fallback)
-                return (img, identity)
-            }
-
-            return nil
-        }.value
-    }
-
-    nonisolated private static func fileIdentity(fileName: String) -> String {
-        let url = AppGroup.imageFileURL(fileName: fileName)
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else {
-            return fileName
-        }
-
-        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
-        let mod = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-
-        return "\(fileName)|\(size)|\(Int64(mod))"
-    }
 }
+
+// MARK: - Strip UI
 
 struct PhotoFilterThumbnailStrip: View {
     let imageSpec: ImageSpec
@@ -172,18 +221,33 @@ struct PhotoFilterThumbnailStrip: View {
 
     @StateObject private var provider = PhotoFilterThumbnailProvider()
 
+    @Environment(\.displayScale) private var displayScale
+
     @AppStorage(SmartPhotoShuffleManifestStore.updateTokenKey, store: AppGroup.userDefaults)
     private var smartPhotoShuffleUpdateToken: Int = 0
+
+    private enum Metrics {
+        static let thumbnailSize: CGFloat = 56
+        static let placeholderCornerRadius: CGFloat = 12
+
+        static func maxPixel(displayScale: CGFloat) -> Int {
+            let s = max(1.0, displayScale)
+            let px = Int(ceil(thumbnailSize * s))
+            return min(max(64, px), 256)
+        }
+    }
 
     private struct LoadKey: Hashable {
         let source: PhotoFilterThumbnailSource?
         let updateToken: Int
         let family: WidgetFamily
+        let maxPixel: Int
     }
 
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
         let source = PhotoFilterThumbnailSource.make(from: imageSpec, family: family)
+        let maxPixel = Metrics.maxPixel(displayScale: displayScale)
 
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 12) {
@@ -193,8 +257,11 @@ struct PhotoFilterThumbnailStrip: View {
             }
             .padding(.vertical, 4)
         }
-        .task(id: LoadKey(source: source, updateToken: smartPhotoShuffleUpdateToken, family: family)) {
-            provider.load(source: source)
+        .task(id: LoadKey(source: source, updateToken: smartPhotoShuffleUpdateToken, family: family, maxPixel: maxPixel)) {
+            provider.load(source: source, maxPixel: maxPixel)
+        }
+        .onDisappear {
+            provider.cancel()
         }
     }
 
@@ -211,9 +278,10 @@ struct PhotoFilterThumbnailStrip: View {
                     if let thumb {
                         Image(uiImage: thumb)
                             .resizable()
+                            .interpolation(.high)
                             .scaledToFill()
                     } else {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: Metrics.placeholderCornerRadius, style: .continuous)
                             .fill(.quaternary)
 
                         Image(systemName: "sparkles")
@@ -221,11 +289,11 @@ struct PhotoFilterThumbnailStrip: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(width: Metrics.thumbnailSize, height: Metrics.thumbnailSize)
+                .clipShape(RoundedRectangle(cornerRadius: Metrics.placeholderCornerRadius, style: .continuous))
                 .overlay {
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: Metrics.placeholderCornerRadius, style: .continuous)
                             .stroke(.tint, lineWidth: 2)
                     }
                 }
