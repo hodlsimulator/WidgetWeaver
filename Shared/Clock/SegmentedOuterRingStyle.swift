@@ -103,18 +103,25 @@ struct SegmentedOuterRingStyle {
             blockInner: blockInner
         )
 
-        // Physical-pixel gap policy: keep separators readable at 44/60.
-        let gapPixelsRaw = (dialRadius * scale * 0.045).rounded(.toNearestOrAwayFromZero)
-        let gapPixels = WWClock.clamp(gapPixelsRaw, min: 2.0, max: 6.0)
+        // Physical-pixel gap policy: prefer a tight machined separation (mock parity).
+        // Default is 2 px. A 3 px fallback exists only for extremely small dials where WidgetKit AA can
+        // partially fill a 2 px gap.
+        let dialPixels = dialRadius * max(scale, 1.0)
+
+        let gapPixels: CGFloat = {
+            let tinyDialThresholdPx: CGFloat = 52.0
+            let desired: CGFloat = (dialPixels < tinyDialThresholdPx) ? 3.0 : 2.0
+            return WWClock.clamp(desired, min: 2.0, max: 3.0)
+        }()
 
         let gapPoints = WWClock.pixel(gapPixels / max(scale, 1.0), scale: scale)
 
         let midR = max(px, self.radii.blockMid)
         let gapAngular = max(0.0, gapPoints / midR)
 
-        // A small additional trim protects the gap from appearing "filled" due to AA bleed at tiny sizes.
-        // The trim is expressed in physical pixels so it stays consistent at 44/60.
-        let edgeTrimPx: CGFloat = (gapPixels <= 3.0) ? 0.5 : 0.35
+        // Additional trim keeps the air gap visually open after anti-aliasing, but must not read as a
+        // deliberate "divider". Expressed in physical pixels per edge.
+        let edgeTrimPx: CGFloat = (gapPixels <= 2.0) ? 0.28 : 0.20
         let edgeTrimPoints = edgeTrimPx / max(scale, 1.0)
         let edgeTrimAngular = max(0.0, edgeTrimPoints / midR)
 
@@ -141,18 +148,18 @@ struct SegmentedOuterRingStyle {
         ])
 
         let lipLineWidth = WWClock.pixel(
-            WWClock.clamp(bedThickness * 0.10, min: px, max: px * 3.0),
+            WWClock.clamp(bedThickness * 0.075, min: px, max: px * 2.0),
             scale: scale
         )
 
         let lipHighlight = Gradient(stops: [
-            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.12), location: 0.00),
-            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.45),
+            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.08), location: 0.00),
+            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.30),
         ])
 
         let lipShadow = Gradient(stops: [
-            .init(color: WWClock.colour(0x000000, alpha: 0.55), location: 0.00),
-            .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.55),
+            .init(color: WWClock.colour(0x000000, alpha: 0.40), location: 0.00),
+            .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.34),
         ])
 
         self.bedLips = BedLips(
