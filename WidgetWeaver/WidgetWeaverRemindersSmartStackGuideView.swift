@@ -27,9 +27,9 @@ Drag one widget directly on top of the other
     private let dragToAddMoreWidgetsDiagram = """
 Add more widgets to the existing stack
 ┌─────────┐  +  ┌─────────┐
-│ Stack   │     │ Soon    │
+│ Stack   │     │ Upcoming│
 └─────────┘     └─────────┘
-        drag Soon onto Stack
+     drag Upcoming onto Stack
                 ↓
           (Stack now has 3)
 """
@@ -51,10 +51,31 @@ Add more widgets to the existing stack
                             Text("What is a Smart Stack?")
                                 .font(.subheadline.weight(.semibold))
 
-                            Text("A Smart Stack is one widget tile that contains multiple widgets. Swipe up/down on the tile to switch between Today, Overdue, Soon, Priority, Focus, and Lists.")
+                            Text("A Smart Stack is one widget tile that contains multiple widgets. Swipe up/down on the tile to switch between Overdue, Today, Upcoming, High priority, Anytime, and Lists.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Smart Stack v2 rules (Reminders)")
+                                .font(.subheadline.weight(.semibold))
+
+                            Text("For each widget refresh (snapshot), each reminder appears in at most one page. Pages take precedence in this order: Overdue → Today → Upcoming → High priority → Anytime → Lists.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            WidgetWeaverAboutBulletList(items: [
+                                "Overdue: due on a previous local day.",
+                                "Today: due today (local day).",
+                                "Upcoming: due tomorrow through the next 7 days (never includes Today).",
+                                "High priority: priority 1–4, excluding anything already shown above.",
+                                "Anytime: no due date, excluding anything already shown above.",
+                                "Lists: the remainder only, grouped by list (no repeats).",
+                            ])
                         }
                     }
 
@@ -89,7 +110,7 @@ Add more widgets to the existing stack
                 WidgetWeaverAboutBulletList(items: [
                     "Open Explore → Templates (Reminders) → Reminders Smart Stack.",
                     "Tap “Add all 6” to create the six numbered designs in the Library (safe to run again).",
-                    "The Library should contain: Reminders 1 — Today, 2 — Overdue, 3 — Soon, 4 — Priority, 5 — Focus, 6 — Lists."
+                    "The Library should contain: Reminders 1 — Today, 2 — Overdue, 3 — Soon (Upcoming), 4 — Priority (High priority), 5 — Focus (Anytime), 6 — Lists."
                 ])
             }
 
@@ -164,6 +185,7 @@ Add more widgets to the existing stack
                 WidgetWeaverAboutBulletList(items: [
                     "Widgets render cached snapshots only (no direct Reminders reads in the widget extension).",
                     "The six designs are numbered so they sort together in widget configuration.",
+                    "Upcoming never includes Today, and Lists never repeats items already shown in the other pages (per snapshot).",
                     "This guide can be reopened from Explore → Templates (Reminders) → Guide."
                 ])
             }

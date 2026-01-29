@@ -638,16 +638,24 @@ private extension WidgetSpecAIService {
         if lower.contains("more rounded") || lower.contains("rounder") { s.style.cornerRadius += 4 }
         if lower.contains("less rounded") || lower.contains("sharper") { s.style.cornerRadius -= 4 }
 
-        if let v = firstDoubleMatch("(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
-            s.style.padding = v
-        }
+        let hardenedSimplePromptParsing = WidgetWeaverFeatureFlags.aiReviewUIEnabled
+        let paddingPattern = hardenedSimplePromptParsing ? "(?:\\bpadding\\b|\\bpad\\b|\\binset\\b|\\binsets\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let cornerRadiusPattern = hardenedSimplePromptParsing ? "(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b|\\brounding\\b|\\brounded\\s*corners?\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let spacingPattern = hardenedSimplePromptParsing ? "(?:\\bspacing\\b|\\bgap\\b|\\bgutter\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)" : "(?:\\bspacing\\b|\\bgap\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
 
-        if let v = firstDoubleMatch("(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
-            s.style.cornerRadius = v
-        }
+        let fragments: [String] = {
+            guard hardenedSimplePromptParsing else { return [collapsedLower] }
+            let splitReady = lower.replacingOccurrences(of: "\n", with: ",").replacingOccurrences(of: "\r", with: ",")
+            return collapseWhitespace(splitReady).trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " and ", with: ",").split(separator: ",").map(String.init)
+        }()
 
-        if let v = firstDoubleMatch("(?:\\bspacing\\b|\\bgap\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)", in: collapsedLower) {
-            s.layout.spacing = v
+        for rawFragment in fragments {
+            let fragment = collapseWhitespace(rawFragment).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fragment.isEmpty else { continue }
+
+            if let v = firstDoubleMatch(paddingPattern, in: fragment) { s.style.padding = v }
+            if let v = firstDoubleMatch(cornerRadiusPattern, in: fragment) { s.style.cornerRadius = v }
+            if let v = firstDoubleMatch(spacingPattern, in: fragment) { s.layout.spacing = v }
         }
 
         s.updatedAt = Date()
