@@ -180,7 +180,7 @@ extension WidgetWeaverAboutView {
             id: "starter-reminders-list",
             title: "Lists",
             subtitle: "Reminders",
-            description: "The remainder: reminders not already shown in the other pages, grouped by list.",
+            description: "The remainder only: reminders not already shown in the other pages, grouped by list (never repeats items already shown).",
             tags: ["Reminders", "Lists"],
             requiresPro: false,
             triggersCalendarPermission: false,
