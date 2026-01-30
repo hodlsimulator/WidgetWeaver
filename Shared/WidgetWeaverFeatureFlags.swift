@@ -179,16 +179,17 @@ public enum WidgetWeaverFeatureFlags {
         AppGroup.userDefaults.removeObject(forKey: Keys.pawPulseEnabled)
     }
 
-    // MARK: - Photo Filters (future feature)
+    // MARK: - Photo Filters
 
     /// Photo filter support for images.
     ///
-    /// Default is `false` so the render path remains unchanged unless explicitly enabled.
+    /// Default is `true` so fresh installs ship with filters enabled.
+    /// An App Group override remains available as a kill-switch.
     public static var photoFiltersEnabled: Bool {
         if let v = AppGroup.userDefaults.object(forKey: Keys.photoFiltersEnabled) as? Bool {
             return v
         }
-        return false
+        return true
     }
 
     public static func setPhotoFiltersEnabled(_ enabled: Bool) {
