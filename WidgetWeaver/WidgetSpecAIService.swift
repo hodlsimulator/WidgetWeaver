@@ -287,7 +287,7 @@ final class WidgetSpecAIService {
                 #endif
 
                 let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
-                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Applied patch using deterministic rules.")
+                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: WidgetWeaverFeatureFlags.aiReviewUIEnabled ? "Applied patch using deterministic rules.\nModel patch failed (\(Self.clean("\(type(of: error)): \(error.localizedDescription)", maxLength: 140, fallback: String(describing: type(of: error)))))." : "Applied patch using deterministic rules.")
             }
 
         case .unavailable:
