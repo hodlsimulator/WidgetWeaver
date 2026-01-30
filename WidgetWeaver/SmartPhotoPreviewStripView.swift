@@ -61,6 +61,12 @@ struct SmartPhotoPreviewStripView: View {
         return manifest.rotationIntervalMinutes > 0
     }
 
+    private var activeFilterSpec: PhotoFilterSpec? {
+        guard WidgetWeaverFeatureFlags.photoFiltersEnabled else { return nil }
+        guard let spec = filterSpec else { return nil }
+        return spec.normalisedOrNil()
+    }
+
     var body: some View {
         let _ = smartPhotoShuffleUpdateToken
 
@@ -180,7 +186,12 @@ struct SmartPhotoPreviewStripView: View {
     private func previewImage(renderFileName: String?) -> some View {
         if let renderName = renderFileName,
            let uiImage = AppGroup.loadUIImage(fileName: renderName) {
-            Image(uiImage: uiImage)
+            let displayImage: UIImage = {
+                guard let spec = activeFilterSpec else { return uiImage }
+                return PhotoFilterEngine.shared.apply(to: uiImage, spec: spec)
+            }()
+
+            Image(uiImage: displayImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
