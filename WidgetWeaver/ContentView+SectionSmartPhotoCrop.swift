@@ -14,7 +14,8 @@ extension ContentView {
         let hasImage = editorToolContext.hasImageConfigured
         let hasSmartPhoto = editorToolContext.hasSmartPhotoConfigured
         let uxHardeningEnabled = FeatureFlags.smartPhotosUXHardeningEnabled
-
+        let filter = PhotoFilterSpec(token: d.imageFilterToken, intensity: d.imageFilterIntensity).normalisedOrNil()
+        let filterSpec: PhotoFilterSpec? = WidgetWeaverFeatureFlags.photoFiltersEnabled ? filter : nil
         return Section {
             if !hasImage {
                 EditorUnavailableStateView(
@@ -39,7 +40,7 @@ extension ContentView {
                         selectedFamily: editingFamily,
                         focus: focus,
                         isBusy: importInProgress,
-                        uxHardeningEnabled: uxHardeningEnabled,
+                        uxHardeningEnabled: uxHardeningEnabled, filterSpec: filterSpec,
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
@@ -71,7 +72,7 @@ extension ContentView {
                         smart: smart,
                         selectedFamily: editingFamily,
                         isBusy: importInProgress,
-                        uxHardeningEnabled: uxHardeningEnabled,
+                        uxHardeningEnabled: uxHardeningEnabled, filterSpec: filterSpec,
                         onSelectFamily: { fam in
                             previewFamily = widgetFamily(for: fam)
                         },
@@ -121,6 +122,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
     let selectedFamily: EditingFamily
     let isBusy: Bool
     let uxHardeningEnabled: Bool
+    let filterSpec: PhotoFilterSpec?
 
     let onSelectFamily: (EditingFamily) -> Void
     let onApplyCrop: (EditingFamily, NormalisedRect, Double, Int) async -> Void
@@ -136,7 +138,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
                 smart: smart,
                 selectedFamily: selectedFamily,
                 onSelectFamily: onSelectFamily,
-                fixedShuffleEntry: nil
+                filterSpec: filterSpec
             )
 
             sizeControls
@@ -154,9 +156,7 @@ private struct SmartPhotoSingleFramingEditorView: View {
                     initialCropRect: route.initialCropRect,
                     initialStraightenDegrees: route.initialStraightenDegrees,
                     initialRotationQuarterTurns: route.initialRotationQuarterTurns,
-                    autoCropRect: nil,
-                    focus: nil,
-                    onResetToAuto: nil,
+                    filterSpec: filterSpec,
                     onApply: { rect, straightenDegrees, rotationQuarterTurns in
                         await onApplyCrop(route.family, rect, straightenDegrees, rotationQuarterTurns)
                     }
@@ -254,6 +254,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
     let focus: Binding<EditorFocusSnapshot>
     let isBusy: Bool
     let uxHardeningEnabled: Bool
+    let filterSpec: PhotoFilterSpec?
 
     let onSelectFamily: (EditingFamily) -> Void
     let onApplyCrop: (String, EditingFamily, NormalisedRect, Double) async -> Void
@@ -333,8 +334,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                     targetPixels: route.targetPixels,
                     initialCropRect: route.initialCropRect,
                     initialStraightenDegrees: route.initialStraightenDegrees,
-                    autoCropRect: route.autoCropRect,
-                    focus: nil,
+                    autoCropRect: route.autoCropRect, filterSpec: filterSpec,
                     onResetToAuto: {
                         await onResetToAuto(route.entryID, route.family)
                     },
@@ -394,7 +394,7 @@ private struct SmartPhotoShuffleFramingEditorView: View {
                     SmartPhotoPreviewStripView(
                         smart: smart,
                         selectedFamily: selectedFamily,
-                        onSelectFamily: onSelectFamily,
+                        onSelectFamily: onSelectFamily, filterSpec: filterSpec,
                         fixedShuffleEntry: displayedEntry
                     )
 
