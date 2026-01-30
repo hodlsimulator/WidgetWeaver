@@ -181,6 +181,46 @@ struct WidgetWeaverAboutBackground: View {
     }
 }
 
+// MARK: - List helpers
+
+extension View {
+    func wwAboutListRow() -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+    }
+}
+
+// MARK: - Section header
+
+struct WidgetWeaverAboutSectionHeader: View {
+    let title: String
+    let systemImage: String
+    let accent: Color
+
+    init(_ title: String, systemImage: String, accent: Color) {
+        self.title = title
+        self.systemImage = systemImage
+        self.accent = accent
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(accent)
+
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .textCase(nil)
+        .padding(.leading, 4)
+        .padding(.top, 4)
+    }
+}
+
 // MARK: - Card surface
 
 struct WidgetWeaverAboutCard<Content: View>: View {
