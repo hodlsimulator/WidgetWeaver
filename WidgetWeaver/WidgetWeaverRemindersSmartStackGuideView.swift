@@ -35,7 +35,7 @@ Add more widgets to the existing stack
 """
 
     private let v2PrecedenceDiagram = """
-No duplicates per refresh
+Smart Stack v2 (no duplicates per refresh)
 Overdue → Today → Upcoming → High priority → Anytime → Lists
 """
 
@@ -93,14 +93,14 @@ Overdue → Today → Upcoming → High priority → Anytime → Lists
             Section("Step 1 — Prepare the six designs in WidgetWeaver") {
                 WidgetWeaverAboutBulletList(items: [
                     "Open Explore → Templates (Reminders) → Reminders Smart Stack.",
-                    "Tap “Add all 6” to create the six numbered designs in the Library (safe to run again).",
+                    "Tap “Add all 6” to upgrade any existing Smart Stack designs to v2 in place, and add any missing pages (safe to run again).",
                     "The six pages are: Overdue, Today, Upcoming, High priority, Anytime, and Lists."
                 ])
             }
 
             Section("How the pages work") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Each refresh assigns every reminder to exactly one page (no duplicates). If a reminder matches multiple pages, the first match wins.")
+                    Text("Smart Stack v2 assigns every reminder to exactly one page on each refresh (no duplicates). If a reminder matches multiple pages, the first match wins.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -110,7 +110,7 @@ Overdue → Today → Upcoming → High priority → Anytime → Lists
                     WidgetWeaverAboutBulletList(items: [
                         "Overdue: due before today (local day).",
                         "Today: due today (local day).",
-                        "Upcoming: due tomorrow through the next 7 days (never includes Today).",
+                        "Upcoming: due tomorrow through the next 7 days (never Today).",
                         "High priority: priority 1–4 reminders that are not already shown in Overdue, Today, or Upcoming.",
                         "Anytime: reminders with no due date (excluding anything already shown above).",
                         "Lists: the remainder only, grouped by list (never repeats items already shown)."
@@ -137,8 +137,8 @@ Overdue → Today → Upcoming → High priority → Anytime → Lists
 
                     WidgetWeaverAboutBulletList(items: [
                         "Touch and hold a WidgetWeaver widget, then choose “Edit Widget”.",
-                        "Open “Design” and select one of the six numbered Reminders designs (one per widget).",
-                        "If the Library still shows legacy names, use: Reminders 3 — Soon (Upcoming), Reminders 4 — Priority (High priority), Reminders 5 — Focus (Anytime)."
+                        "Open “Design” and select one of the six numbered Reminders Smart Stack designs (one per widget).",
+                        "Recommended set: Reminders 1 — Today, Reminders 2 — Overdue, Reminders 3 — Upcoming, Reminders 4 — High priority, Reminders 5 — Anytime, Reminders 6 — Lists."
                     ])
                 }
                 .padding(.vertical, 4)
