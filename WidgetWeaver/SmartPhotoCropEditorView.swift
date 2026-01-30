@@ -21,6 +21,8 @@ struct SmartPhotoCropEditorView: View {
     @State private var masterImage: UIImage?
     @State private var previewRotationQuarterTurns: Int = 0
     @State private var previewImage: UIImage?
+    @State private var filteredPreviewImage: UIImage?
+    @State private var filteredPreviewKey: FilteredPreviewKey?
     @State private var cropRect: NormalisedRect
     @State private var cropIntentRect: NormalisedRect
     @State private var straightenDegrees: Double
@@ -71,11 +73,40 @@ struct SmartPhotoCropEditorView: View {
         _cropIntentRect = State(initialValue: initialCropRect.normalised())
         _straightenDegrees = State(initialValue: Self.normalisedStraightenDegrees(initialStraightenDegrees))
     }
+
+    private var activeFilterSpec: PhotoFilterSpec? {
+        guard WidgetWeaverFeatureFlags.photoFiltersEnabled else { return nil }
+        guard let spec = filterSpec else { return nil }
+        return spec.normalisedOrNil()
+    }
+
+    private var filterRenderKey: FilteredPreviewKey? {
+        guard let spec = activeFilterSpec else { return nil }
+        guard masterImage != nil else { return nil }
+
+        let turns = SmartPhotoCropRotationPreview.normalisedQuarterTurns(previewRotationQuarterTurns)
+        let intensityPermille = Int((spec.intensity.normalised().clamped(to: 0.0...1.0) * 1000).rounded())
+
+        return FilteredPreviewKey(
+            masterFileName: masterFileName,
+            previewQuarterTurns: turns,
+            token: spec.token,
+            intensityPermille: intensityPermille
+        )
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let masterImage {
-                cropCanvas(masterImage: previewImage ?? masterImage)
+                let baseImage = previewImage ?? masterImage
+                let currentKey = filterRenderKey
+                let displayImage: UIImage = {
+                    guard let currentKey else { return baseImage }
+                    guard filteredPreviewKey == currentKey, let filtered = filteredPreviewImage else { return baseImage }
+                    return filtered
+                }()
+                cropCanvas(baseImage: baseImage, displayImage: displayImage)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
             } else if !loadErrorMessage.isEmpty {
@@ -108,7 +139,8 @@ struct SmartPhotoCropEditorView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let masterImage {
-                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: previewImage ?? masterImage)
+                let baseImage = previewImage ?? masterImage
+                let masterPixelSize = SmartPhotoCropMath.pixelSize(of: baseImage)
                 let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
                 let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
                 let normalisedRectAspect = targetAspect / masterAspect
@@ -172,6 +204,9 @@ struct SmartPhotoCropEditorView: View {
         .task {
             if masterImage != nil || !loadErrorMessage.isEmpty { return }
             loadMasterImage()
+        }
+        .task(id: filterRenderKey) {
+            await updateFilteredPreviewImage(for: filterRenderKey)
         }
         .onChange(of: straightenDegrees) { straightenInteractionToken &+= 1; applyStraightenConstraintFromIntent() }
         .onChange(of: isStraightenHolding) { straightenInteractionToken &+= 1 }
@@ -307,10 +342,51 @@ struct SmartPhotoCropEditorView: View {
             }
         }
     }
+
+    private func updateFilteredPreviewImage(for taskKey: FilteredPreviewKey?) async {
+        guard let taskKey else {
+            await MainActor.run {
+                filteredPreviewKey = nil
+                filteredPreviewImage = nil
+            }
+            return
+        }
+
+        guard let baseImage = (previewImage ?? masterImage) else { return }
+        guard let spec = activeFilterSpec else {
+            await MainActor.run {
+                filteredPreviewKey = nil
+                filteredPreviewImage = nil
+            }
+            return
+        }
+
+        if filteredPreviewKey == taskKey, filteredPreviewImage != nil { return }
+
+        await MainActor.run {
+            filteredPreviewKey = taskKey
+            filteredPreviewImage = nil
+        }
+
+        let base = baseImage
+        let specToApply = spec
+
+        let rendered: UIImage = await Task.detached(priority: .userInitiated) {
+            PhotoFilterEngine.shared.apply(to: base, spec: specToApply)
+        }.value
+
+        guard !Task.isCancelled else { return }
+
+        await MainActor.run {
+            guard filteredPreviewKey == taskKey else { return }
+            filteredPreviewImage = rendered
+        }
+    }
+
     @ViewBuilder
-    private func cropCanvas(masterImage: UIImage) -> some View {
+    private func cropCanvas(baseImage: UIImage, displayImage: UIImage) -> some View {
         GeometryReader { geo in
-            let masterPixelSize = SmartPhotoCropMath.pixelSize(of: masterImage)
+            let masterPixelSize = SmartPhotoCropMath.pixelSize(of: baseImage)
             let masterAspect = SmartPhotoCropMath.safeAspect(width: masterPixelSize.width, height: masterPixelSize.height)
             let targetAspect = SmartPhotoCropMath.safeAspect(width: targetPixels.width, height: targetPixels.height)
             let normalisedRectAspect = targetAspect / masterAspect
@@ -325,7 +401,7 @@ struct SmartPhotoCropEditorView: View {
             let showGrid = isStraightenEditing || straightenDenseGridOpacity > 0.001 || abs(straightenDegrees) > 0.01
             ZStack {
                 ZStack {
-                    Image(uiImage: masterImage)
+                    Image(uiImage: displayImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: displayRect.width, height: displayRect.height)
@@ -675,6 +751,14 @@ struct SmartPhotoCropEditorView: View {
         .tint(.white.opacity(0.85))
         .disabled(isApplying)
     }
+
+    private struct FilteredPreviewKey: Equatable {
+        let masterFileName: String
+        let previewQuarterTurns: Int
+        let token: PhotoFilterToken
+        let intensityPermille: Int
+    }
+
     private struct StraightenGridOverlay: View {
         let rect: CGRect
         let divisions: Int
