@@ -250,59 +250,152 @@ struct WidgetWeaverAboutView: View {
     }
 
     func handleAddRemindersSmartStackKit() {
-        let kitSpecs: [WidgetSpec] = [
-            Self.specRemindersToday(),
-            Self.specRemindersOverdue(),
-            Self.specRemindersSoon(),
-            Self.specRemindersPriority(),
-            Self.specRemindersFocus(),
-            Self.specRemindersLists(),
-        ]
+        typealias Upgrader = WidgetWeaverRemindersSmartStackKitUpgrader
 
         let store = WidgetSpecStore.shared
-        let existingNames = Set(store.loadAll().map(\.name))
 
-        var alreadyCount = 0
+        let slots: [(slot: Upgrader.Slot, makeBaseSpec: () -> WidgetSpec)] = [
+            (.today, { Self.specRemindersToday() }),
+            (.overdue, { Self.specRemindersOverdue() }),
+            (.upcoming, { Self.specRemindersSoon() }),
+            (.highPriority, { Self.specRemindersPriority() }),
+            (.anytime, { Self.specRemindersFocus() }),
+            (.lists, { Self.specRemindersLists() }),
+        ]
+
+        var allSpecs = store.loadAll()
+
+        func kitNamePrefix(for slot: Upgrader.Slot) -> String {
+            "Reminders \(slot.sortIndex) —"
+        }
+
+        func isKitCandidate(_ spec: WidgetSpec, for slot: Upgrader.Slot) -> Bool {
+            guard spec.layout.template == .reminders else { return false }
+            guard spec.remindersConfig?.mode == slot.mode else { return false }
+
+            let name = spec.name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if name == slot.v1DefaultDesignName { return true }
+            if name == slot.v2DefaultDesignName { return true }
+            if name.hasPrefix(kitNamePrefix(for: slot)) { return true }
+
+            return false
+        }
+
+        func pickDeterministicCandidate(from specs: [WidgetSpec], for slot: Upgrader.Slot) -> WidgetSpec? {
+            let candidates = specs.filter { isKitCandidate($0, for: slot) }
+            guard !candidates.isEmpty else { return nil }
+
+            func rank(_ name: String) -> Int {
+                if name == slot.v2DefaultDesignName { return 2 }
+                if name == slot.v1DefaultDesignName { return 1 }
+                return 0
+            }
+
+            return candidates.sorted { a, b in
+                let aName = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let bName = b.name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                let ra = rank(aName)
+                let rb = rank(bName)
+                if ra != rb { return ra > rb }
+
+                if a.updatedAt != b.updatedAt { return a.updatedAt < b.updatedAt }
+                return a.id.uuidString < b.id.uuidString
+            }.first
+        }
+
+        var upgradedCount = 0
         var addedCount = 0
+        var presentAtStartCount = 0
 
-        for spec in kitSpecs {
-            if existingNames.contains(spec.name) {
-                alreadyCount += 1
+        var presentSlots = Set<Upgrader.Slot>()
+
+        for entry in slots {
+            let slot = entry.slot
+
+            if let existing = pickDeterministicCandidate(from: allSpecs, for: slot) {
+                presentAtStartCount += 1
+                presentSlots.insert(slot)
+
+                let result = Upgrader.upgradeV1ToV2IfNeeded(spec: existing, slot: slot)
+                if result.didChange {
+                    store.save(result.spec, makeDefault: false)
+                    upgradedCount += 1
+
+                    if let idx = allSpecs.firstIndex(where: { $0.id == existing.id }) {
+                        allSpecs[idx] = result.spec
+                    } else {
+                        allSpecs = store.loadAll()
+                    }
+                }
+
                 continue
             }
 
-            let beforeCount = store.loadAll().count
-            onAddTemplate(spec, false)
-            let afterCount = store.loadAll().count
+            let beforeCount = allSpecs.count
+
+            var base = entry.makeBaseSpec()
+            let upgraded = Upgrader.upgradeV1ToV2IfNeeded(spec: base, slot: slot)
+            base = upgraded.spec
+
+            onAddTemplate(base, false)
+
+            let refreshed = store.loadAll()
+            let afterCount = refreshed.count
 
             if afterCount > beforeCount {
                 addedCount += 1
+                presentSlots.insert(slot)
+                allSpecs = refreshed
             } else {
                 break
             }
         }
 
-        let total = kitSpecs.count
-        let missingCount = total - alreadyCount
-        let remainingMissing = max(0, missingCount - addedCount)
+        let total = slots.count
+        let nowPresentCount = presentSlots.count
+        let remainingMissing = max(0, total - nowPresentCount)
 
         let message: String = {
-            if alreadyCount == total {
+            if nowPresentCount == 0 {
+                return "Unable to add (design limit)."
+            }
+
+            if remainingMissing > 0 {
+                if upgradedCount > 0 && addedCount > 0 {
+                    return "Upgraded \(upgradedCount), added \(addedCount). Unlock Pro for the rest."
+                }
+                if upgradedCount > 0 {
+                    return "Upgraded \(upgradedCount). Unlock Pro for the rest."
+                }
+                if addedCount > 0 {
+                    return "Added \(addedCount). Unlock Pro for the rest."
+                }
+                return "No changes."
+            }
+
+            if upgradedCount == 0 && addedCount == 0 {
                 return "All 6 already in Library."
             }
 
-            if remainingMissing == 0 {
-                if alreadyCount == 0 { return "Added all 6." }
-                if addedCount == 0 { return "No changes." }
-                return "Added \(addedCount). \(alreadyCount) already in Library."
+            if presentAtStartCount == 0 && addedCount == total {
+                return "Added all 6."
             }
 
-            if addedCount == 0 {
-                if alreadyCount == 0 { return "Unable to add (design limit)." }
-                return "\(alreadyCount) already in Library. Unlock Pro for the rest."
+            if upgradedCount > 0 && addedCount > 0 {
+                return "Upgraded \(upgradedCount), added \(addedCount)."
             }
 
-            return "Added \(addedCount) of \(missingCount) missing. Unlock Pro for the rest."
+            if upgradedCount > 0 {
+                return "Upgraded \(upgradedCount)."
+            }
+
+            if addedCount > 0 && presentAtStartCount > 0 {
+                return "Added \(addedCount). \(presentAtStartCount) already in Library."
+            }
+
+            return "Added \(addedCount)."
         }()
 
         withAnimation(.spring(duration: 0.35)) {
@@ -318,7 +411,7 @@ struct WidgetWeaverAboutView: View {
             }
         }
 
-        if addedCount > 0 || alreadyCount > 0 {
+        if nowPresentCount > 0 {
             onGoToLibrary()
             onShowRemindersSmartStackGuide()
         }
@@ -408,7 +501,7 @@ extension WidgetWeaverAboutView {
                     .foregroundStyle(.secondary)
 
                     if !templates.isEmpty {
-                        WidgetWeaverAboutFlowTags(tags: ["Clock", "Template", "Time‑dependent"])
+                        WidgetWeaverAboutFlowTags(tags: ["Clock", "Template", "Time-dependent"])
                     }
 
                     ScrollView(.horizontal, showsIndicators: false) {
