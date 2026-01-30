@@ -78,24 +78,16 @@ struct WidgetWeaverClockSegmentedFaceView: View {
             let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
-            let metalThicknessRatio: CGFloat = 0.062
-            let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
-
             let px = WWClock.px(scale: displayScale)
 
-            let ringA = WWClock.pixel(
-                WWClock.clamp(provisionalR * 0.020, min: px * 2.0, max: provisionalR * 0.030),
-                scale: displayScale
-            )
-            let ringC = WWClock.pixel(
-                WWClock.clamp(provisionalR * 0.0095, min: px, max: provisionalR * 0.012),
-                scale: displayScale
-            )
+            // 11A: Bezel chunkiness via ring redistribution, dial radius locked (segmented ring must not move).
+            let rings = SegmentedBezelStyle.rings(outerRadius: outerRadius, scale: displayScale)
 
-            let minB = px
-            let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: displayScale)
+            let ringA = rings.ringA
+            let ringC = rings.ringC
 
-            let R = outerRadius - ringA - ringB - ringC
+            let ringB = rings.ringB
+            let R = rings.dialRadius
             let dialDiameter = R * 2.0
 
             let occlusionWidth = WWClock.pixel(
@@ -144,7 +136,7 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 scale: displayScale
             )
 
-            // 10A: Bezel shelf coverage + gutter lock.
+            // 11A: Dial radius lock + bezel chunk + gap lock.
             // Gutter inner edge is derived from the segmented ring outer boundary so widget and in-app stay locked.
             let segmentedOuterBoundaryRadius = SegmentedOuterRingStyle.segmentedOuterBoundaryRadius(
                 dialRadius: R,
@@ -152,39 +144,24 @@ struct WidgetWeaverClockSegmentedFaceView: View {
             )
 
             let rimInnerRadius = max(px, outerRadius - ringA)
-            let availableShelfBand = max(0.0, rimInnerRadius - segmentedOuterBoundaryRadius)
+            let baselineRimInnerRadius = max(px, outerRadius - rings.baselineRingA)
 
-            let gutterMin = WWClock.pixel(px, scale: displayScale)
-            let gutterTarget = WWClock.pixel(px * 2.0, scale: displayScale)
-            let gutterMax = WWClock.pixel(px * 3.0, scale: displayScale)
+            let gutterLock = SegmentedBezelStyle.lockedGutter(
+                rimInnerRadius: rimInnerRadius,
+                baselineRimInnerRadius: baselineRimInnerRadius,
+                segmentedOuterBoundaryRadius: segmentedOuterBoundaryRadius,
+                scale: displayScale
+            )
 
-            // Shelf coverage target: ~85–95% of the rim→ring band.
-            // This keeps the metal shelf dominant while preserving the physical 1–3px gutter policy.
-            let gutterMinByCoverage = availableShelfBand * 0.05
-            let gutterMaxByCoverage = availableShelfBand * 0.15
+            #if DEBUG
+            let _ = SegmentedBezelStyle.debugValidateGutterLock(
+                containerSide: s,
+                scale: displayScale,
+                gutter: gutterLock
+            )
+            #endif
 
-            let gutterWidth: CGFloat = {
-                var minW = max(gutterMin, WWClock.pixel(gutterMinByCoverage, scale: displayScale))
-                var maxW = min(gutterMax, WWClock.pixel(gutterMaxByCoverage, scale: displayScale))
-
-                if maxW < minW {
-                    minW = gutterMin
-                    maxW = gutterMax
-                }
-
-                var w = gutterTarget
-                w = WWClock.clamp(w, min: minW, max: maxW)
-                w = WWClock.pixel(w, scale: displayScale)
-
-                let minShelf = px
-                if availableShelfBand <= (gutterMin + minShelf) {
-                    w = WWClock.pixel(min(gutterMin, availableShelfBand), scale: displayScale)
-                } else {
-                    w = min(w, availableShelfBand - minShelf)
-                }
-
-                return max(0.0, w)
-            }()
+            let gutterWidth = gutterLock.width
 
             let bezelGutterInnerRadius = segmentedOuterBoundaryRadius
             let bezelGutterOuterRadius = segmentedOuterBoundaryRadius + gutterWidth
@@ -281,9 +258,13 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 #if DEBUG
                 if WidgetWeaverFeatureFlags.segmentedBezelDiagnosticsEnabled {
                     WidgetWeaverClockSegmentedBezelDiagnosticsOverlayView(
+                        containerSide: s,
+                        rings: rings,
                         rimInnerRadius: rimInnerRadius,
+                        baselineRimInnerRadius: baselineRimInnerRadius,
                         segmentedOuterBoundaryRadius: segmentedOuterBoundaryRadius,
                         gutterOuterRadius: bezelGutterOuterRadius,
+                        gutterLock: gutterLock,
                         scale: displayScale
                     )
                 }
@@ -311,7 +292,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
         let px = WWClock.px(scale: scale)
 
         let rimCrispW = WWClock.pixel(
-            WWClock.clamp(ringA + px, min: px * 2.0, max: px * 4.0),
+            WWClock.clamp(ringA + (px * 2.0), min: px * 3.0, max: px * 6.0),
             scale: scale
         )
         let rimGrooveW = WWClock.pixel(px, scale: scale)
@@ -325,9 +306,10 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
         let innerBR = max(0.0, outerBR - ringB)
         let innerFractionB: CGFloat = (outerBR > 0.0) ? (innerBR / outerBR) : 0.01
 
-        let bezelDark = WWClock.colour(0x06070A, alpha: 1.0)
-        let bezelMid = WWClock.colour(0x141922, alpha: 1.0)
-        let bezelBright = WWClock.colour(0x2E3642, alpha: 1.0)
+        // 11A2: Lighter bezel tone (neutral gunmetal).
+        let bezelDark = SegmentedBezelStyle.bezelDark
+        let bezelMid = SegmentedBezelStyle.bezelMid
+        let bezelBright = SegmentedBezelStyle.bezelBright
 
         let bodyFill = RadialGradient(
             gradient: Gradient(stops: [
@@ -340,16 +322,17 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
             endRadius: outerBR
         )
 
+        // Broad overlays are kept lower-energy to avoid haze on light wallpapers.
         let angularHighlight = AngularGradient(
             gradient: Gradient(stops: [
-                .init(color: bezelBright.opacity(0.62), location: 0.000),
-                .init(color: bezelBright.opacity(0.62), location: 0.050),
-                .init(color: bezelMid.opacity(0.22), location: 0.180),
-                .init(color: bezelMid.opacity(0.06), location: 0.320),
-                .init(color: bezelDark.opacity(0.18), location: 0.560),
-                .init(color: bezelDark.opacity(0.56), location: 0.740),
-                .init(color: bezelMid.opacity(0.18), location: 0.880),
-                .init(color: bezelBright.opacity(0.42), location: 1.000)
+                .init(color: bezelBright.opacity(0.50), location: 0.000),
+                .init(color: bezelBright.opacity(0.50), location: 0.055),
+                .init(color: bezelMid.opacity(0.18), location: 0.190),
+                .init(color: bezelMid.opacity(0.05), location: 0.330),
+                .init(color: bezelDark.opacity(0.14), location: 0.560),
+                .init(color: bezelDark.opacity(0.44), location: 0.740),
+                .init(color: bezelMid.opacity(0.14), location: 0.885),
+                .init(color: bezelBright.opacity(0.32), location: 1.000)
             ]),
             center: .center,
             angle: .degrees(-135.0)
@@ -414,7 +397,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                         .fill(angularHighlight, style: FillStyle(eoFill: true, antialiased: true))
                         .frame(width: outerB, height: outerB)
                         .blendMode(.overlay)
-                        .opacity(0.82)
+                        .opacity(0.74)
                 )
 
             // A) Raised outer rim.
@@ -511,9 +494,10 @@ private struct WidgetWeaverClockSegmentedBezelShelfOverlayView: View {
         let outerLoc = Double(WWClock.clamp(outerRamp / band, min: 0.0, max: 0.35))
         let plateauStart = max(0.0, 1.0 - outerLoc)
 
-        let bezelDark = WWClock.colour(0x06070A, alpha: 1.0)
-        let bezelMid = WWClock.colour(0x141922, alpha: 1.0)
-        let bezelBright = WWClock.colour(0x2E3642, alpha: 1.0)
+        // 11A2: Lighter shelf metal (neutral gunmetal).
+        let bezelDark = SegmentedBezelStyle.bezelDark
+        let bezelMid = SegmentedBezelStyle.bezelMid
+        let bezelBright = SegmentedBezelStyle.bezelBright
 
         let shelfFill = RadialGradient(
             gradient: Gradient(stops: [
@@ -604,13 +588,14 @@ private struct WidgetWeaverClockSegmentedBezelGutterOverlayView: View {
         let innerFraction: CGFloat = (outerR > 0.0) ? (innerR / outerR) : 0.01
 
         let band = max(px, outerR - innerR)
-        let ramp = WWClock.pixel(min(band, px * 1.5), scale: scale)
+        let ramp = WWClock.pixel(min(band, px * 1.0), scale: scale)
 
         let rampLoc = Double(WWClock.clamp(ramp / band, min: 0.0, max: 0.45))
         let plateauStart = max(0.0, 1.0 - rampLoc)
 
-        let gutterBase = WWClock.colour(0x04050A, alpha: 1.0)
-        let gutterHi = WWClock.colour(0x0B0E15, alpha: 1.0)
+        // 11A3: Gutter reads as a recessed cut (neutral, crisp).
+        let gutterBase = SegmentedBezelStyle.gutterBase
+        let gutterHi = SegmentedBezelStyle.gutterHi
 
         let gutterFill = RadialGradient(
             gradient: Gradient(stops: [
@@ -669,9 +654,16 @@ private struct WidgetWeaverClockSegmentedBezelGutterOverlayView: View {
 
 #if DEBUG
 private struct WidgetWeaverClockSegmentedBezelDiagnosticsOverlayView: View {
+    let containerSide: CGFloat
+    let rings: SegmentedBezelStyle.Rings
+
     let rimInnerRadius: CGFloat
+    let baselineRimInnerRadius: CGFloat
+
     let segmentedOuterBoundaryRadius: CGFloat
     let gutterOuterRadius: CGFloat
+
+    let gutterLock: SegmentedBezelStyle.GutterLock
     let scale: CGFloat
 
     var body: some View {
@@ -682,7 +674,70 @@ private struct WidgetWeaverClockSegmentedBezelDiagnosticsOverlayView: View {
         let ringD = WWClock.pixel(segmentedOuterBoundaryRadius * 2.0, scale: scale)
         let gutterD = WWClock.pixel(gutterOuterRadius * 2.0, scale: scale)
 
-        return ZStack {
+        let baselineSegmentedOuterBoundaryRadius = SegmentedOuterRingStyle.segmentedOuterBoundaryRadius(
+            dialRadius: rings.baselineDialRadius,
+            scale: scale
+        )
+
+        func pxCount(_ value: CGFloat) -> Int {
+            Int((value / max(px, 0.0001)).rounded())
+        }
+
+        let rPx = pxCount(rings.dialRadius)
+        let baseRPx = pxCount(rings.baselineDialRadius)
+        let rDeltaPx = rPx - baseRPx
+
+        let segPx = pxCount(segmentedOuterBoundaryRadius)
+        let baseSegPx = pxCount(baselineSegmentedOuterBoundaryRadius)
+        let segDeltaPx = segPx - baseSegPx
+
+        let gutterPx = pxCount(gutterLock.width)
+        let baseGutterPx = pxCount(gutterLock.baselineWidth)
+        let gutterDeltaPx = gutterPx - baseGutterPx
+
+        let ringAPx = pxCount(rings.ringA)
+        let ringBPx = pxCount(rings.ringB)
+        let ringCPx = pxCount(rings.ringC)
+
+        let baseRingAPx = pxCount(rings.baselineRingA)
+        let baseRingBPx = pxCount(rings.baselineRingB)
+        let baseRingCPx = pxCount(rings.baselineRingC)
+
+        let ringADeltaPx = ringAPx - baseRingAPx
+        let ringBDeltaPx = ringBPx - baseRingBPx
+        let ringCDeltaPx = ringCPx - baseRingCPx
+
+        let rimInnerPx = pxCount(rimInnerRadius)
+        let baseRimInnerPx = pxCount(baselineRimInnerRadius)
+        let rimInnerDeltaPx = rimInnerPx - baseRimInnerPx
+
+        let shelfBandPx = pxCount(gutterLock.availableShelfBand)
+
+        let metrics = VStack(alignment: .leading, spacing: 2.0) {
+            Text("s \(containerSide, specifier: "%.1f")  scale \(scale, specifier: "%.2f")")
+            Text("R \(rPx)px  Δ\(rDeltaPx)px")
+            Text("segOut \(segPx)px  Δ\(segDeltaPx)px")
+            Text("gutter \(gutterPx)px  Δ\(gutterDeltaPx)px")
+            Text("ringA \(ringAPx)px  Δ\(ringADeltaPx)px")
+            Text("ringB \(ringBPx)px  Δ\(ringBDeltaPx)px")
+            Text("ringC \(ringCPx)px  Δ\(ringCDeltaPx)px")
+            Text("rimIn \(rimInnerPx)px  Δ\(rimInnerDeltaPx)px")
+            Text("shelfBand \(shelfBandPx)px")
+
+            if gutterLock.didClampDueToBand {
+                Text("gutter clamped")
+                    .fontWeight(.bold)
+                    .foregroundStyle(WWClock.colour(0xFF2D55, alpha: 0.92))
+            }
+        }
+        .font(.system(size: 10.0, weight: .semibold, design: .monospaced))
+        .foregroundStyle(Color.white.opacity(0.92))
+        .padding(6.0)
+        .background(Color.black.opacity(0.48))
+        .clipShape(RoundedRectangle(cornerRadius: 6.0, style: .continuous))
+        .padding(4.0)
+
+        return ZStack(alignment: .topLeading) {
             // Rim→shelf step (rim inner edge).
             Circle()
                 .stroke(Color.yellow.opacity(0.90), lineWidth: max(px, lineW))
@@ -697,6 +752,8 @@ private struct WidgetWeaverClockSegmentedBezelDiagnosticsOverlayView: View {
             Circle()
                 .stroke(WWClock.colour(0x32D7FF, alpha: 0.92), lineWidth: max(px, lineW))
                 .frame(width: gutterD, height: gutterD)
+
+            metrics
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

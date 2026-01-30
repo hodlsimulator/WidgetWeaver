@@ -9,22 +9,22 @@ import SwiftUI
 
 /// Single source of truth for Segmented bezel geometry and materials.
 ///
-/// Goals:
-/// - Dial radius stays locked while the bezel reads chunkier (v3.3).
-/// - Bezel-to-ring gutter width stays locked to the v3.2 baseline unless there is insufficient radial band.
-/// - Thickness and gap policies are expressed in physical pixels.
+/// Goals (v3.3):
+/// - Bezel reads chunkier via ring redistribution while dial radius stays locked.
+/// - Bezel→segmented-ring gutter width stays locked to the v3.2 baseline unless the shelf band is physically too thin.
+/// - Physical pixel policies are applied first (clamps in px, not ratios).
 struct SegmentedBezelStyle {
 
     // MARK: - Materials (v3.3 tone)
 
-    /// Lighter, neutral gunmetal (target +10–18% luminance vs v3.2).
-    static let bezelDark = WWClock.colour(0x07080A, alpha: 1.0)
-    static let bezelMid = WWClock.colour(0x161B23, alpha: 1.0)
-    static let bezelBright = WWClock.colour(0x323A44, alpha: 1.0)
+    /// Lighter, neutral gunmetal (+10–18% luminance vs v3.2).
+    static let bezelDark: Color = WWClock.colour(0x07090C, alpha: 1.0)
+    static let bezelMid: Color = WWClock.colour(0x171C25, alpha: 1.0)
+    static let bezelBright: Color = WWClock.colour(0x343C47, alpha: 1.0)
 
-    /// Narrow recessed channel before the segmented ring (kept neutral, no blue/green cast).
-    static let gutterBase = WWClock.colour(0x05060A, alpha: 1.0)
-    static let gutterHi = WWClock.colour(0x0C0F15, alpha: 1.0)
+    /// Narrow recessed channel before the segmented ring (neutral; no blue/green cast).
+    static let gutterBase: Color = WWClock.colour(0x05060A, alpha: 1.0)
+    static let gutterHi: Color = WWClock.colour(0x0C0F15, alpha: 1.0)
 
     // MARK: - Geometry
 
@@ -39,9 +39,7 @@ struct SegmentedBezelStyle {
         let baselineRingC: CGFloat
         let baselineDialRadius: CGFloat
 
-        /// Extra thickness applied to ring A (outer rim) in points.
         let ringAExtra: CGFloat
-        /// Extra thickness applied to ring C (inner ridge) in points.
         let ringCExtra: CGFloat
     }
 
@@ -58,18 +56,18 @@ struct SegmentedBezelStyle {
         let maxWidth: CGFloat
     }
 
-    /// Computes v3.3 rings by redistributing thickness while holding the baseline (v3.2) dial radius constant.
+    /// Computes bezel rings by redistributing thickness while holding the baseline (v3.2) dial radius constant.
     ///
     /// Policy:
-    /// - ringA +2px (target) and ringC +1px (target) at 44/60, only if ringB headroom permits.
-    /// - ringB is reduced by the same amount so the dial radius remains unchanged.
+    /// - ringA (outer rim): +2px target at 44/60.
+    /// - ringC (inner ridge): +1px target at 44/60.
+    /// - ringB (body) reduced by the same amount so the dial radius does not move.
     static func rings(outerRadius: CGFloat, scale: CGFloat) -> Rings {
         let px = WWClock.px(scale: scale)
 
         let metalThicknessRatio: CGFloat = 0.062
         let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
-        // Baseline (v3.2) ring proportions.
         let baselineRingA = WWClock.pixel(
             WWClock.clamp(provisionalR * 0.020, min: px * 2.0, max: provisionalR * 0.030),
             scale: scale
@@ -81,11 +79,14 @@ struct SegmentedBezelStyle {
         )
 
         let minB = px
-        let baselineRingB = WWClock.pixel(max(minB, outerRadius - provisionalR - baselineRingA - baselineRingC), scale: scale)
+        let baselineRingB = WWClock.pixel(
+            max(minB, outerRadius - provisionalR - baselineRingA - baselineRingC),
+            scale: scale
+        )
 
         let baselineDialRadius = outerRadius - baselineRingA - baselineRingB - baselineRingC
 
-        // v3.3 chunk: take thickness from ringB (never below 1px).
+        // v3.3 chunkiness is taken from ringB headroom (never below 1px).
         let headroom = max(0.0, baselineRingB - minB)
 
         let ringCExtraTarget = WWClock.pixel(px * 1.0, scale: scale)
@@ -96,7 +97,6 @@ struct SegmentedBezelStyle {
 
         let ringA = WWClock.pixel(baselineRingA + ringAExtra, scale: scale)
         let ringC = WWClock.pixel(baselineRingC + ringCExtra, scale: scale)
-
         let ringB = WWClock.pixel(max(minB, baselineRingB - ringAExtra - ringCExtra), scale: scale)
 
         let dialRadius = outerRadius - ringA - ringB - ringC
@@ -118,9 +118,9 @@ struct SegmentedBezelStyle {
     /// Locks the bezel→ring gutter width to the v3.2 baseline and clamps only when the shelf band becomes too thin.
     ///
     /// Inputs:
-    /// - `rimInnerRadius`: current rim inner edge (after ringA adjustments).
+    /// - `rimInnerRadius`: current rim inner edge (after ringA changes).
     /// - `baselineRimInnerRadius`: baseline rim inner edge (v3.2).
-    /// - `segmentedOuterBoundaryRadius`: outer ring boundary (derived from the outer ring style helper).
+    /// - `segmentedOuterBoundaryRadius`: outer ring boundary derived from `SegmentedOuterRingStyle`.
     static func lockedGutter(
         rimInnerRadius: CGFloat,
         baselineRimInnerRadius: CGFloat,
@@ -139,18 +139,19 @@ struct SegmentedBezelStyle {
             scale: scale
         )
 
-        let minimumShelf = px
-
         let availableShelfBand = max(0.0, rimInnerRadius - segmentedOuterBoundaryRadius)
+        let minimumShelf = px
 
         var width = baselineWidth
         var didClampDueToBand = false
 
         if availableShelfBand <= (minWidth + minimumShelf) {
+            // Not enough band: clamp hard to the minimum edge policy.
             let clamped = WWClock.pixel(min(minWidth, availableShelfBand), scale: scale)
             didClampDueToBand = clamped != width
             width = clamped
         } else {
+            // Preserve baseline unless it would crush the shelf.
             let maxAllowed = max(0.0, availableShelfBand - minimumShelf)
             if width > maxAllowed {
                 width = WWClock.pixel(maxAllowed, scale: scale)
@@ -158,7 +159,8 @@ struct SegmentedBezelStyle {
             }
         }
 
-        width = max(0.0, WWClock.clamp(width, min: 0.0, max: maxWidth))
+        // Safety clamp to the physical policy range.
+        width = WWClock.pixel(WWClock.clamp(width, min: 0.0, max: maxWidth), scale: scale)
 
         return GutterLock(
             width: width,
@@ -172,13 +174,9 @@ struct SegmentedBezelStyle {
         )
     }
 
-    // MARK: - Baseline gutter (v3.2)
+    // MARK: - Baseline (v3.2) gutter
 
     /// v3.2 gutter sizing logic used as the baseline for v3.3 "gap lock".
-    ///
-    /// Notes:
-    /// - Gutter width is expressed in physical pixels (1–3px, target 2px).
-    /// - Shelf coverage is biased so the metal shelf remains dominant.
     private static func gutterWidthV32(
         rimInnerRadius: CGFloat,
         segmentedOuterBoundaryRadius: CGFloat,
@@ -193,6 +191,7 @@ struct SegmentedBezelStyle {
         let gutterTarget = WWClock.pixel(px * 2.0, scale: scale)
         let gutterMax = WWClock.pixel(px * 3.0, scale: scale)
 
+        // Shelf coverage target: ~85–95% of the rim→ring band.
         let gutterMinByCoverage = availableShelfBand * 0.05
         let gutterMaxByCoverage = availableShelfBand * 0.15
 
@@ -218,7 +217,7 @@ struct SegmentedBezelStyle {
         return max(0.0, w)
     }
 
-    // MARK: - Debug validation
+    // MARK: - Debug guardrails
 
     #if DEBUG
     static func debugValidateGutterLock(
@@ -227,17 +226,22 @@ struct SegmentedBezelStyle {
         gutter: GutterLock
     ) {
         let px = WWClock.px(scale: scale)
-        let widthPx = Int((gutter.width / max(px, 0.0001)).rounded())
-        let minPx = Int((gutter.minWidth / max(px, 0.0001)).rounded())
-        let maxPx = Int((gutter.maxWidth / max(px, 0.0001)).rounded())
-        let targetPx = Int((gutter.targetWidth / max(px, 0.0001)).rounded())
+
+        func pxCount(_ value: CGFloat) -> Int {
+            Int((value / max(px, 0.0001)).rounded())
+        }
+
+        let widthPx = pxCount(gutter.width)
+        let minPx = pxCount(gutter.minWidth)
+        let maxPx = pxCount(gutter.maxWidth)
+        let targetPx = pxCount(gutter.targetWidth)
 
         if widthPx < minPx || widthPx > maxPx {
             print("[SegmentedBezel] gutterWidth out of bounds: width=\(widthPx)px, expected=[\(minPx)px..\((maxPx))px] (container=\(containerSide), scale=\(scale))")
         }
 
         if gutter.didClampDueToBand {
-            let bandPx = Int((gutter.availableShelfBand / max(px, 0.0001)).rounded())
+            let bandPx = pxCount(gutter.availableShelfBand)
             print("[SegmentedBezel] gutterWidth clamped due to shelf band: width=\(widthPx)px (target=\(targetPx)px, band=\(bandPx)px, container=\(containerSide), scale=\(scale))")
         }
     }
