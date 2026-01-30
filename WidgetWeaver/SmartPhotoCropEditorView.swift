@@ -15,6 +15,7 @@ struct SmartPhotoCropEditorView: View {
     let initialStraightenDegrees: Double
     let autoCropRect: NormalisedRect?
     let focus: Binding<EditorFocusSnapshot>?
+    let filterSpec: PhotoFilterSpec?
     let onResetToAuto: (() async -> Void)?
     let onApply: (NormalisedRect, Double, Int) async -> Void
     @State private var masterImage: UIImage?
@@ -52,6 +53,7 @@ struct SmartPhotoCropEditorView: View {
         initialRotationQuarterTurns _: Int = 0,
         autoCropRect: NormalisedRect? = nil,
         focus: Binding<EditorFocusSnapshot>? = nil,
+        filterSpec: PhotoFilterSpec? = nil,
         onResetToAuto: (() async -> Void)? = nil,
         onApply: @escaping (NormalisedRect, Double, Int) async -> Void
     ) {
@@ -62,6 +64,7 @@ struct SmartPhotoCropEditorView: View {
         self.initialStraightenDegrees = Self.normalisedStraightenDegrees(initialStraightenDegrees)
         self.autoCropRect = autoCropRect?.normalised()
         self.focus = focus
+        self.filterSpec = filterSpec
         self.onResetToAuto = onResetToAuto
         self.onApply = onApply
         _cropRect = State(initialValue: initialCropRect.normalised())
