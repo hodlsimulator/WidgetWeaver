@@ -35,6 +35,31 @@ struct SegmentedBezelStyle {
     static let gutterBase: Color = WWClock.colour(0x05060A, alpha: 1.0)
     static let gutterHi: Color = WWClock.colour(0x0C0F15, alpha: 1.0)
 
+    /// Dark outer boundary band at the very edge of the bezel (confined inside the silhouette).
+    ///
+    /// Policy:
+    /// - Same tonal family as the segmented-ring gutter.
+    /// - Used to keep the bezel reading as a thick mass on light wallpapers.
+    static let outerEdgeBandBase: Color = gutterBase
+    static let outerEdgeBandHi: Color = gutterHi
+
+    /// Width for the bezel's outer dark boundary band (physical pixels).
+    ///
+    /// Target: 2px, clamped to [1px..3px], and never wider than the rim (`ringA`).
+    static func outerEdgeBandWidth(ringA: CGFloat, scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+
+        let minW = WWClock.pixel(px, scale: scale)
+        let targetW = WWClock.pixel(px * 2.0, scale: scale)
+        let maxW = WWClock.pixel(px * 3.0, scale: scale)
+
+        let upper = max(px, min(maxW, ringA))
+        let lower = min(minW, upper)
+
+        return WWClock.pixel(WWClock.clamp(targetW, min: lower, max: upper), scale: scale)
+    }
+
+
     // MARK: - Geometry
 
     struct Rings {

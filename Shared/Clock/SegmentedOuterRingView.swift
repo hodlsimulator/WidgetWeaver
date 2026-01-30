@@ -25,8 +25,7 @@ struct SegmentedOuterRingView: View {
         .overlay {
             NumeralsView(
                 dialRadius: dialRadius,
-                innerRadius: style.radii.blockInner,
-                outerRadius: style.radii.blockOuter,
+                numeralRadius: style.contentRadii.numeralRadius,
                 scale: scale
             )
         }
@@ -37,21 +36,13 @@ struct SegmentedOuterRingView: View {
 
 private struct NumeralsView: View {
     let dialRadius: CGFloat
-    let innerRadius: CGFloat
-    let outerRadius: CGFloat
+    let numeralRadius: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-        let thickness = max(px, outerRadius - innerRadius)
 
-        // The inset is specified in physical pixels so it stays stable at 44/60.
-        let numeralOuterInsetPx: CGFloat = 16.0
-        let numeralOuterInset = WWClock.pixel(numeralOuterInsetPx / max(scale, 1.0), scale: scale)
-
-        let placement = WWClock.pixel(max(px, thickness - numeralOuterInset), scale: scale)
-
-        let r = WWClock.pixel(innerRadius + placement, scale: scale)
+        let r = WWClock.pixel(numeralRadius, scale: scale)
 
         let fontSizeBase = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.18, min: dialRadius * 0.16, max: dialRadius * 0.20),

@@ -27,6 +27,17 @@ struct SegmentedOuterRingStyle {
         var blockMid: CGFloat { (blockOuter + blockInner) * 0.5 }
     }
 
+    struct ContentRadii {
+        /// Midline of the block band, used for numeral placement.
+        let blockBandMidRadius: CGFloat
+
+        /// Radius used to place numeral centre points.
+        let numeralRadius: CGFloat
+
+        /// Outer radius of the tick marks (outer edge), clamped in physical pixels inside `blockInner`.
+        let ticksOuterRadius: CGFloat
+    }
+
     struct Gap {
         /// Gap width in physical pixels.
         let pixels: CGFloat
@@ -114,6 +125,7 @@ struct SegmentedOuterRingStyle {
     }
 
     let radii: Radii
+    let contentRadii: ContentRadii
     let gap: Gap
     let chamfer: Chamfer
 
@@ -138,18 +150,24 @@ struct SegmentedOuterRingStyle {
 
         let bedOuter = WWClock.pixel(max(1.0, dialRadius - outerInset), scale: scale)
 
-        // Baseline tuning (acts as the "current capture" reference for the thickness boost).
-        let baselineBedThickness = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.185, min: px * 6.0, max: dialRadius * 0.205),
-            scale: scale
+        // Dial size normalisation for 44/60 tuning.
+        let dialDiameter = dialRadius * 2.0
+        let t = WWClock.clamp((dialDiameter - 44.0) / (60.0 - 44.0), min: 0.0, max: 1.0)
+
+        // Block thickness targeting (physical pixels).
+        //
+        // Target is expressed directly in physical pixels at dialDiameter 44/60 so it cannot drift
+        // via derived baselines. This aligns with the +12–16% requirement relative to the v3.2 capture.
+        let blockThicknessPx44: CGFloat = 12.0
+        let blockThicknessPx60: CGFloat = 17.0
+
+        let blockThicknessPxRaw = blockThicknessPx44 + (t * (blockThicknessPx60 - blockThicknessPx44))
+        let blockThicknessPx = WWClock.clamp(
+            blockThicknessPxRaw.rounded(.toNearestOrAwayFromZero),
+            min: blockThicknessPx44,
+            max: blockThicknessPx60
         )
 
-        let baselineChannelInset = WWClock.pixel(
-            WWClock.clamp(baselineBedThickness * 0.085, min: px, max: baselineBedThickness * 0.155),
-            scale: scale
-        )
-
-        let baselineBlockThickness = max(px, baselineBedThickness - (baselineChannelInset * 2.0))
 
         // Channel policy (BOLD v2): fixed physical pixels so the bed stays visible around blocks at 44/60.
         // Targets: 2px outer + 2px inner (minimum 1px each).
@@ -161,9 +179,7 @@ struct SegmentedOuterRingStyle {
         let outerChannel = max(minChannel, targetOuterChannelPx / max(scale, 1.0))
         let innerChannel = max(minChannel, targetInnerChannelPx / max(scale, 1.0))
 
-        // Block thickness boost: +10–16% vs baseline (use 14% midpoint).
-        // Outer boundary is held by keeping `bedOuter` unchanged; thickness is pushed inward by extending `bedInner`.
-        let desiredBlockThickness = WWClock.pixel(max(px, baselineBlockThickness * 1.14), scale: scale)
+        let desiredBlockThickness = WWClock.pixel(blockThicknessPx / max(scale, 1.0), scale: scale)
 
         let desiredBedThicknessRaw = desiredBlockThickness + outerChannel + innerChannel
         let maxBedThickness = max(px, bedOuter - px)
@@ -186,6 +202,24 @@ struct SegmentedOuterRingStyle {
             bedInner: bedInner,
             blockOuter: blockOuter,
             blockInner: blockInner
+        )
+
+        // Content radii: numerals + tick ring move inward together when ring thickness changes.
+        let blockBandMidRadius = WWClock.pixel(self.radii.blockMid, scale: scale)
+
+        // Tick ring outer edge clearance from the segmented ring inner boundary (physical pixels).
+        let ticksOuterClearancePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        let ticksOuterClearance = WWClock.pixel(ticksOuterClearancePx / max(scale, 1.0), scale: scale)
+
+        let ticksOuterRadius = WWClock.pixel(
+            max(px, self.radii.blockInner - ticksOuterClearance),
+            scale: scale
+        )
+
+        self.contentRadii = ContentRadii(
+            blockBandMidRadius: blockBandMidRadius,
+            numeralRadius: blockBandMidRadius,
+            ticksOuterRadius: ticksOuterRadius
         )
 
         // Physical-pixel gap policy:
@@ -212,9 +246,6 @@ struct SegmentedOuterRingStyle {
         // Chamfer depth (scale-aware clamp):
         // - 2px at a 44pt dial diameter
         // - 3px at a 60pt dial diameter
-        let dialDiameter = dialRadius * 2.0
-        let t = WWClock.clamp((dialDiameter - 44.0) / (60.0 - 44.0), min: 0.0, max: 1.0)
-
         let chamferPixelsRaw = 2.0 + (t * 1.0)
         let chamferPixels = WWClock.clamp(chamferPixelsRaw.rounded(.toNearestOrAwayFromZero), min: 2.0, max: 3.0)
         let chamferPoints = chamferPixels / max(scale, 1.0)
