@@ -15,6 +15,8 @@ struct SmartPhotoPreviewStripView: View {
     let selectedFamily: EditingFamily
     let onSelectFamily: (EditingFamily) -> Void
 
+    let filterSpec: PhotoFilterSpec?
+
     /// When Album Shuffle is enabled, this view normally follows `manifest.entryForRender()`.
     /// In the manual framing editor, the selected entry should be stable so edits apply to a
     /// single photo at a time.
@@ -24,11 +26,13 @@ struct SmartPhotoPreviewStripView: View {
         smart: SmartPhotoSpec,
         selectedFamily: EditingFamily,
         onSelectFamily: @escaping (EditingFamily) -> Void,
+        filterSpec: PhotoFilterSpec? = nil,
         fixedShuffleEntry: SmartPhotoShuffleManifest.Entry? = nil
     ) {
         self.smart = smart
         self.selectedFamily = selectedFamily
         self.onSelectFamily = onSelectFamily
+        self.filterSpec = filterSpec
         self.fixedShuffleEntry = fixedShuffleEntry
     }
 
@@ -77,77 +81,99 @@ struct SmartPhotoPreviewStripView: View {
     }
 
     private var stripBody: some View {
-        let entry = fixedShuffleEntry ?? currentShuffleEntry()
-        let hint = previewStripHint(entry: entry)
+        let entry: SmartPhotoShuffleManifest.Entry? = {
+            if let fixedShuffleEntry { return fixedShuffleEntry }
+            guard shuffleEnabled else { return nil }
+            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return nil }
+            return manifest.entryForRender()
+        }()
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                previewButton(family: .small, entry: entry)
-                previewButton(family: .medium, entry: entry)
-                previewButton(family: .large, entry: entry)
-            }
+        let displayFamily = resolvedDisplayFamily(selectedFamily, entry: entry)
 
-            Text("Tap a preview to select that size.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if let hint {
-                hintView(text: hint)
-            }
+        return HStack(spacing: 8) {
+            previewCell(
+                family: .small,
+                displayFamily: displayFamily,
+                renderFileName: resolvedRenderFileName(.small, entry: entry)
+            )
+            previewCell(
+                family: .medium,
+                displayFamily: displayFamily,
+                renderFileName: resolvedRenderFileName(.medium, entry: entry)
+            )
+            previewCell(
+                family: .large,
+                displayFamily: displayFamily,
+                renderFileName: resolvedRenderFileName(.large, entry: entry)
+            )
         }
     }
 
-    @ViewBuilder
-    private func previewButton(family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> some View {
-        let renderFileName = resolvedRenderFileName(for: family, entry: entry)
+    private func resolvedDisplayFamily(_ selected: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> EditingFamily {
+        guard uxHardeningEnabled else { return selected }
+        let available = availableFamilies(entry: entry)
+        if available.contains(selected) { return selected }
+        if let first = EditingFamily.allCases.first(where: { available.contains($0) }) { return first }
+        return selected
+    }
 
+    private func availableFamilies(entry: SmartPhotoShuffleManifest.Entry?) -> Set<EditingFamily> {
+        var result: Set<EditingFamily> = []
+        if resolvedRenderFileName(.small, entry: entry) != nil { result.insert(.small) }
+        if resolvedRenderFileName(.medium, entry: entry) != nil { result.insert(.medium) }
+        if resolvedRenderFileName(.large, entry: entry) != nil { result.insert(.large) }
+        return result
+    }
+
+    private func resolvedRenderFileName(_ family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> String? {
+        if let entry {
+            let name: String? = {
+                switch family {
+                case .small:
+                    return (entry.smallManualFile ?? entry.smallFile)
+                case .medium:
+                    return (entry.mediumManualFile ?? entry.mediumFile)
+                case .large:
+                    return (entry.largeManualFile ?? entry.largeFile)
+                }
+            }()
+            let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        let name: String? = {
+            switch family {
+            case .small:
+                return smart.small?.renderFileName
+            case .medium:
+                return smart.medium?.renderFileName
+            case .large:
+                return smart.large?.renderFileName
+            }
+        }()
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func previewCell(
+        family: EditingFamily,
+        displayFamily: EditingFamily,
+        renderFileName: String?
+    ) -> some View {
         Button {
             onSelectFamily(family)
         } label: {
-            VStack(spacing: 6) {
-                ZStack(alignment: .topTrailing) {
-                    previewImage(renderFileName: renderFileName)
-                        .frame(width: 80, height: 60)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            selectionBorder(family: family)
-                        }
-
-                    if shouldShowManualBadge(for: family, entry: entry, renderFileName: renderFileName) {
-                        manualBadge
-                    }
-                }
-
-                Text(family.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 92)
-            .contentShape(Rectangle())
+            previewImage(renderFileName: renderFileName)
+                .frame(width: 62, height: 62)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(displayFamily == family ? Color.accentColor : Color.white.opacity(0.25), lineWidth: displayFamily == family ? 2 : 1)
+                )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(family.label) preview")
-        .accessibilityHint("Switch editor to \(family.label).")
-    }
-
-    @ViewBuilder
-    private func selectionBorder(family: EditingFamily) -> some View {
-        if family == selectedFamily {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.tint, lineWidth: 2)
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
-    }
-
-    private var manualBadge: some View {
-        Text("Manual")
-            .font(.caption2)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.ultraThinMaterial, in: Capsule())
-            .padding(6)
+        .accessibilityLabel(Text("\(family.label) preview"))
+        .accessibilityAddTraits(displayFamily == family ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -159,116 +185,12 @@ struct SmartPhotoPreviewStripView: View {
                 .aspectRatio(contentMode: .fill)
         } else {
             ZStack {
-                Rectangle()
-                    .fill(.quaternary)
-
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.black.opacity(0.08))
                 Image(systemName: "photo")
+                    .font(.system(size: 18, weight: .regular, design: .default))
                     .foregroundStyle(.secondary)
             }
-        }
-    }
-
-    @ViewBuilder
-    private func hintView(text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-
-            Text(text)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func currentShuffleEntry() -> SmartPhotoShuffleManifest.Entry? {
-        guard shuffleEnabled else { return nil }
-        guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else { return nil }
-        return manifest.entryForRender()
-    }
-
-    private func resolvedRenderFileName(for family: EditingFamily, entry: SmartPhotoShuffleManifest.Entry?) -> String? {
-        if shuffleEnabled, let entry {
-            return entry.fileName(for: widgetFamily(for: family))
-        }
-
-        switch family {
-        case .small: return smart.small?.renderFileName
-        case .medium: return smart.medium?.renderFileName
-        case .large: return smart.large?.renderFileName
-        }
-    }
-
-    private func fileExistsInAppGroup(_ fileName: String?) -> Bool {
-        let trimmed = (fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        let url = AppGroup.imageFileURL(fileName: trimmed)
-        return FileManager.default.fileExists(atPath: url.path)
-    }
-
-    private func previewStripHint(entry: SmartPhotoShuffleManifest.Entry?) -> String? {
-        guard uxHardeningEnabled else { return nil }
-
-        if shuffleEnabled, fixedShuffleEntry == nil {
-            guard let manifest = SmartPhotoShuffleManifestStore.load(fileName: shuffleManifestFileName) else {
-                return "Album Shuffle is enabled, but the shuffle manifest is missing.\nOpen Album Shuffle and re-select an album."
-            }
-
-            if manifest.entryForRender() == nil {
-                return "Album Shuffle is enabled, but no photos have been prepared yet.\nOpen Album Shuffle and tap “Prepare next batch”."
-            }
-        }
-
-        let checks: [(family: EditingFamily, fileName: String?)] = [
-            (.small, resolvedRenderFileName(for: .small, entry: entry)),
-            (.medium, resolvedRenderFileName(for: .medium, entry: entry)),
-            (.large, resolvedRenderFileName(for: .large, entry: entry)),
-        ]
-
-        let missing = checks.filter { pair in
-            fileExistsInAppGroup(pair.fileName) == false
-        }
-
-        guard !missing.isEmpty else { return nil }
-
-        let labels = missing.map { $0.family.label }.joined(separator: ", ")
-
-        if shuffleEnabled {
-            return "Some shuffle preview renders are missing (\(labels)).\nTap “Prepare next batch” in Album Shuffle, or tap “Regenerate smart renders”."
-        }
-
-        return "Some Smart Photo preview renders are missing (\(labels)).\nTap “Regenerate smart renders”."
-    }
-
-    private func isManual(renderFileName: String?) -> Bool {
-        guard let renderFileName else { return false }
-        return renderFileName.contains("-manual")
-    }
-
-    private func shouldShowManualBadge(
-        for family: EditingFamily,
-        entry: SmartPhotoShuffleManifest.Entry?,
-        renderFileName: String?
-    ) -> Bool {
-        if shuffleEnabled {
-            guard let entry else { return false }
-            switch family {
-            case .small:
-                return !(entry.smallManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            case .medium:
-                return !(entry.mediumManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            case .large:
-                return !(entry.largeManualFile ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-        }
-
-        return isManual(renderFileName: renderFileName)
-    }
-
-    private func widgetFamily(for family: EditingFamily) -> WidgetFamily {
-        switch family {
-        case .small: return .systemSmall
-        case .medium: return .systemMedium
-        case .large: return .systemLarge
         }
     }
 }
