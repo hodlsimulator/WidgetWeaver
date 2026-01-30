@@ -640,9 +640,9 @@ private extension WidgetSpecAIService {
         if lower.contains("less rounded") || lower.contains("sharper") { s.style.cornerRadius -= 4 }
 
         let hardenedSimplePromptParsing = WidgetWeaverFeatureFlags.aiReviewUIEnabled
-        let paddingPattern = "(?:\\\\bpadding\\\\b|\\\\bpad\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
-        let cornerRadiusPattern = "(?:\\\\bcorner(?:\\\\s*radius|[-_]?radius)?\\\\b|\\\\bcornerradius\\\\b|\\\\bradius\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
-        let spacingPattern = "(?:\\\\bspacing\\\\b|\\\\bgap\\\\b|\\\\bspace\\\\b)\\\\s*(?:to\\\\s*)?(?:=|:)?\\\\s*([0-9]+(?:\\\\.[0-9]+)?)"
+        let paddingPattern = "(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let cornerRadiusPattern = "(?:\\bcorner(?:\\s*radius|[-_]?radius)?\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let spacingPattern = "(?:\\bspacing\\b|\\bgap\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
         let fragments: [String] = {
             guard hardenedSimplePromptParsing else { return [collapsedLower] }
             let splitReady = lower.replacingOccurrences(of: "\n", with: ",").replacingOccurrences(of: "\r", with: ",")
