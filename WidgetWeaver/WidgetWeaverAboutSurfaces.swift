@@ -16,8 +16,6 @@ enum WidgetWeaverAboutTheme {
         WidgetWeaverAppThemeReader.selectedTheme().tint
     }
 
-    static let backgroundBase: Color = Color(uiColor: .systemGroupedBackground)
-
     static func sectionAccent(title: String) -> Color {
         let t = title.lowercased()
         if t.contains("photos") { return .pink }
@@ -68,14 +66,15 @@ struct WidgetWeaverAboutBackground: View {
 
     @ViewBuilder
     private var darkLayers: some View {
-        // Dark mode is intentionally unchanged (layout is constrained to avoid sizing the parent).
         let h = appTheme.darkHighlights
+        let o = appTheme.darkGlowOpacities
+        let base = appTheme.backgroundBase(for: .dark)
 
-        WidgetWeaverAboutTheme.backgroundBase
+        base
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         RadialGradient(
-            colors: [h.first.opacity(0.18), Color.clear],
+            colors: [h.first.opacity(o.first), Color.clear],
             center: .topLeading,
             startRadius: 0,
             endRadius: 600
@@ -83,7 +82,7 @@ struct WidgetWeaverAboutBackground: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         RadialGradient(
-            colors: [h.second.opacity(0.16), Color.clear],
+            colors: [h.second.opacity(o.second), Color.clear],
             center: .bottomTrailing,
             startRadius: 0,
             endRadius: 760
@@ -91,10 +90,29 @@ struct WidgetWeaverAboutBackground: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         RadialGradient(
-            colors: [h.third.opacity(0.14), Color.clear],
+            colors: [h.third.opacity(o.third), Color.clear],
             center: .top,
             startRadius: 0,
             endRadius: 820
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        Image("RainFuzzNoise_Sparse")
+            .resizable(resizingMode: .tile)
+            .scaleEffect(1.35)
+            .rotationEffect(.degrees(11))
+            .opacity(0.05)
+            .blendMode(.overlay)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        RadialGradient(
+            colors: [
+                Color.clear,
+                Color.black.opacity(0.10)
+            ],
+            center: .center,
+            startRadius: 0,
+            endRadius: 900
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -103,26 +121,27 @@ struct WidgetWeaverAboutBackground: View {
     private var lightLayers: some View {
         // Light mode: higher-contrast “paper” backdrop with soft colour energy + subtle texture.
         let h = appTheme.lightHighlights
+        let o = appTheme.lightGlowOpacities
+        let base = appTheme.backgroundBase(for: .light)
 
-        WidgetWeaverAboutTheme.backgroundBase
+        base
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         LinearGradient(
             colors: [
                 Color.white.opacity(0.92),
-                Color(uiColor: .systemGroupedBackground).opacity(0.70),
-                Color(uiColor: .systemGroupedBackground)
+                base.opacity(0.70),
+                base
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-        // Soft colour fields (kept low-saturation to avoid fighting content).
         Circle()
             .fill(
                 RadialGradient(
-                    colors: [h.first.opacity(0.18), Color.clear],
+                    colors: [h.first.opacity(o.first), Color.clear],
                     center: .center,
                     startRadius: 0,
                     endRadius: 260
@@ -135,7 +154,7 @@ struct WidgetWeaverAboutBackground: View {
         Circle()
             .fill(
                 RadialGradient(
-                    colors: [h.second.opacity(0.12), Color.clear],
+                    colors: [h.second.opacity(o.second), Color.clear],
                     center: .center,
                     startRadius: 0,
                     endRadius: 320
@@ -148,7 +167,7 @@ struct WidgetWeaverAboutBackground: View {
         Circle()
             .fill(
                 RadialGradient(
-                    colors: [h.third.opacity(0.10), Color.clear],
+                    colors: [h.third.opacity(o.third), Color.clear],
                     center: .center,
                     startRadius: 0,
                     endRadius: 420
@@ -158,7 +177,6 @@ struct WidgetWeaverAboutBackground: View {
             .blur(radius: 54)
             .offset(x: 160, y: 320)
 
-        // Subtle noise texture (to reduce banding and “flatness”).
         Image("RainFuzzNoise_Sparse")
             .resizable(resizingMode: .tile)
             .scaleEffect(1.35)
@@ -167,7 +185,6 @@ struct WidgetWeaverAboutBackground: View {
             .blendMode(.overlay)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-        // Gentle vignette to keep focus on content.
         RadialGradient(
             colors: [
                 Color.clear,

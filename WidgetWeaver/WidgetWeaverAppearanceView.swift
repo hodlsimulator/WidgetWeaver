@@ -1,5 +1,5 @@
 //
-//   WidgetWeaverAppearanceView.swift
+//  WidgetWeaverAppearanceView.swift
 //  WidgetWeaver
 //
 //  Created by . . on 1/30/26.
@@ -158,26 +158,28 @@ private struct WidgetWeaverAppThemeSwatch: View {
 
     private var dark: some View {
         let h = theme.darkHighlights
+        let o = theme.darkGlowOpacities
+        let base = theme.backgroundBase(for: .dark)
 
         return ZStack {
-            Color(uiColor: .systemGroupedBackground)
+            base
 
             RadialGradient(
-                colors: [h.first.opacity(0.18), Color.clear],
+                colors: [h.first.opacity(o.first), Color.clear],
                 center: .topLeading,
                 startRadius: 0,
                 endRadius: 220
             )
 
             RadialGradient(
-                colors: [h.second.opacity(0.16), Color.clear],
+                colors: [h.second.opacity(o.second), Color.clear],
                 center: .bottomTrailing,
                 startRadius: 0,
                 endRadius: 260
             )
 
             RadialGradient(
-                colors: [h.third.opacity(0.14), Color.clear],
+                colors: [h.third.opacity(o.third), Color.clear],
                 center: .top,
                 startRadius: 0,
                 endRadius: 280
@@ -187,15 +189,17 @@ private struct WidgetWeaverAppThemeSwatch: View {
 
     private var light: some View {
         let h = theme.lightHighlights
+        let o = theme.lightGlowOpacities
+        let base = theme.backgroundBase(for: .light)
 
         return ZStack {
-            Color(uiColor: .systemGroupedBackground)
+            base
 
             LinearGradient(
                 colors: [
                     Color.white.opacity(0.92),
-                    Color(uiColor: .systemGroupedBackground).opacity(0.70),
-                    Color(uiColor: .systemGroupedBackground)
+                    base.opacity(0.70),
+                    base
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -204,7 +208,7 @@ private struct WidgetWeaverAppThemeSwatch: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [h.first.opacity(0.18), Color.clear],
+                        colors: [h.first.opacity(o.first), Color.clear],
                         center: .center,
                         startRadius: 0,
                         endRadius: 120
@@ -217,7 +221,7 @@ private struct WidgetWeaverAppThemeSwatch: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [h.second.opacity(0.12), Color.clear],
+                        colors: [h.second.opacity(o.second), Color.clear],
                         center: .center,
                         startRadius: 0,
                         endRadius: 140
@@ -230,7 +234,7 @@ private struct WidgetWeaverAppThemeSwatch: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [h.third.opacity(0.10), Color.clear],
+                        colors: [h.third.opacity(o.third), Color.clear],
                         center: .center,
                         startRadius: 0,
                         endRadius: 170
