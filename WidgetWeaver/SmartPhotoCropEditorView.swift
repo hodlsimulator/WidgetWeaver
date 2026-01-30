@@ -171,6 +171,7 @@ struct SmartPhotoCropEditorView: View {
             guard !Task.isCancelled && !isStraightenHolding else { return }
             withAnimation(.easeOut(duration: 0.25)) { straightenDenseGridOpacity = 0 }
         }
+        #if DEBUG
         .task(id: debugOverlayEnabled) {
             if debugOverlayEnabled {
                 runDebugDetection(force: false)
@@ -178,6 +179,7 @@ struct SmartPhotoCropEditorView: View {
                 debugStatusMessage = ""
             }
         }
+        #endif
         .onAppear {
             cropIntentRect = initialCropRect.normalised()
             cropRect = cropIntentRect
