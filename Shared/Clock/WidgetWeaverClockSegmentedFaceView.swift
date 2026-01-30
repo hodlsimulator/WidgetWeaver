@@ -78,14 +78,11 @@ struct WidgetWeaverClockSegmentedFaceView: View {
             let outerDiameter = WWClock.outerBezelDiameter(containerSide: s, scale: displayScale)
             let outerRadius = outerDiameter * 0.5
 
-            // Mirror existing face geometry conventions so widget sizes remain stable.
             let metalThicknessRatio: CGFloat = 0.062
             let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
             let px = WWClock.px(scale: displayScale)
 
-            // Segmented bezel requires a chunkier raised rim at widget sizes.
-            // Physical-pixel clamps keep the rim readable without changing dial scaling behaviour.
             let ringA = WWClock.pixel(
                 WWClock.clamp(provisionalR * 0.020, min: px * 2.0, max: provisionalR * 0.030),
                 scale: displayScale
@@ -147,6 +144,43 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 scale: displayScale
             )
 
+            // 10A: Bezel shelf coverage + gutter lock.
+            // Gutter inner edge is derived from the segmented ring outer boundary so widget and in-app stay locked.
+            let segmentedOuterBoundaryRadius = SegmentedOuterRingStyle.segmentedOuterBoundaryRadius(
+                dialRadius: R,
+                scale: displayScale
+            )
+
+            let rimInnerRadius = max(px, outerRadius - ringA)
+            let availableShelfBand = max(0.0, rimInnerRadius - segmentedOuterBoundaryRadius)
+
+            let gutterMin = WWClock.pixel(px, scale: displayScale)
+            let gutterTarget = WWClock.pixel(px * 2.0, scale: displayScale)
+            let gutterMax = WWClock.pixel(px * 3.0, scale: displayScale)
+
+            let gutterMinByCoverage = availableShelfBand * 0.15
+            let gutterMaxByCoverage = availableShelfBand * 0.30
+
+            let gutterWidth: CGFloat = {
+                var w = gutterTarget
+                w = max(w, gutterMinByCoverage)
+                w = min(w, gutterMaxByCoverage)
+                w = WWClock.pixel(w, scale: displayScale)
+                w = WWClock.clamp(w, min: gutterMin, max: gutterMax)
+
+                let minShelf = px
+                if availableShelfBand <= (gutterMin + minShelf) {
+                    w = WWClock.pixel(min(gutterMin, availableShelfBand), scale: displayScale)
+                } else {
+                    w = min(w, availableShelfBand - minShelf)
+                }
+
+                return max(0.0, w)
+            }()
+
+            let bezelGutterInnerRadius = segmentedOuterBoundaryRadius
+            let bezelGutterOuterRadius = segmentedOuterBoundaryRadius + gutterWidth
+
             ZStack {
                 // Bezel placeholder ring (A/B/C rings) – annular only (transparent centre).
                 WidgetWeaverClockSegmentedBezelPlaceholderView(
@@ -167,8 +201,21 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 )
                 .frame(width: dialDiameter, height: dialDiameter)
 
+                // Raised inner shelf (covers most of the rim→segment band, stopping at the gutter).
+                WidgetWeaverClockSegmentedBezelShelfOverlayView(
+                    outerRadius: rimInnerRadius,
+                    innerRadius: bezelGutterOuterRadius,
+                    scale: displayScale
+                )
+
+                // Recessed gutter (narrow groove immediately before the segmented ring).
+                WidgetWeaverClockSegmentedBezelGutterOverlayView(
+                    innerRadius: bezelGutterInnerRadius,
+                    outerRadius: bezelGutterOuterRadius,
+                    scale: displayScale
+                )
+
                 // Segmented outer ring (Canvas/CGPath renderer).
-                // This is the sole outer ring draw path for Step 9F.
                 SegmentedOuterRingView(
                     dialRadius: R,
                     scale: displayScale
@@ -182,7 +229,6 @@ struct WidgetWeaverClockSegmentedFaceView: View {
                 )
 
                 // Hand shadows (optional).
-                // Implementation lives in Shared/Clock/Faces/WidgetWeaverClockSegmentedHandsView.swift
                 if showsHandShadows {
                     WidgetWeaverClockSegmentedHandShadowsView(
                         palette: palette,
@@ -245,14 +291,12 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
     var body: some View {
         let px = WWClock.px(scale: scale)
 
-        // Raised rim linework needs to stay crisp at 44/60; clamp in physical px.
         let rimCrispW = WWClock.pixel(
             WWClock.clamp(ringA + px, min: px * 2.0, max: px * 4.0),
             scale: scale
         )
         let rimGrooveW = WWClock.pixel(px, scale: scale)
 
-        // Ring geometry mirrors the other faces: A (outer rim), B (main body), C (inner ridge).
         let outerA = outerDiameter
         let outerB = max(1.0, outerA - (ringA * 2.0))
         let outerC = max(1.0, outerA - ((ringA + ringB) * 2.0))
@@ -261,7 +305,6 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
         let innerBR = max(0.0, outerBR - ringB)
         let innerFractionB: CGFloat = (outerBR > 0.0) ? (innerBR / outerBR) : 0.01
 
-        // Dark, gunmetal bezel material tuned for the Segmented mock.
         let bezelDark = WWClock.colour(0x06070A, alpha: 1.0)
         let bezelMid = WWClock.colour(0x141922, alpha: 1.0)
         let bezelBright = WWClock.colour(0x2E3642, alpha: 1.0)
@@ -277,7 +320,6 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
             endRadius: outerBR
         )
 
-        // Specular highlight: strongest around ~11 o’clock, darker around ~4–5 o’clock.
         let angularHighlight = AngularGradient(
             gradient: Gradient(stops: [
                 .init(color: bezelBright.opacity(0.62), location: 0.000),
@@ -293,7 +335,6 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
             angle: .degrees(-135.0)
         )
 
-        // Raised outer rim (outer-edge highlight, shadow falls inward towards the dial).
         let outerRimRadius = outerA * 0.5
 
         let outerRimMachining = RadialGradient(
@@ -327,7 +368,6 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
             endPoint: .bottomTrailing
         )
 
-        // Extra machined chamfer contrast (kept stroke-only so the dial centre stays unaffected).
         let innerChamfer = AngularGradient(
             gradient: Gradient(stops: [
                 .init(color: Color.white.opacity(0.34), location: 0.000),
@@ -355,7 +395,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                         .opacity(0.90)
                 )
 
-            // A) Raised outer rim (no outward halo; highlight at the outer edge, shadow towards the dial).
+            // A) Raised outer rim.
             Circle()
                 .strokeBorder(outerRimMachining, lineWidth: max(px, ringA))
                 .frame(width: outerA, height: outerA)
@@ -368,21 +408,18 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .blendMode(.screen)
                 .opacity(0.88)
 
-            // Crisp outer-edge highlight + inner shadow to make the rim read raised at 44/60.
             Circle()
                 .strokeBorder(Color.white.opacity(0.22), lineWidth: max(px, rimCrispW))
                 .frame(width: outerA, height: outerA)
                 .blendMode(.screen)
                 .opacity(0.82)
 
-            // Inner shadow falls inward from the rim step (no outer halo).
             Circle()
                 .strokeBorder(Color.black.opacity(0.74), lineWidth: max(px, rimCrispW))
                 .frame(width: outerB, height: outerB)
                 .blendMode(.multiply)
                 .opacity(0.86)
 
-            // Rim step separator line (prevents rim/body blending at small widget sizes).
             Circle()
                 .strokeBorder(Color.black.opacity(0.58), lineWidth: max(px, rimGrooveW))
                 .frame(width: outerB, height: outerB)
@@ -402,14 +439,12 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .blendMode(.overlay)
                 .opacity(0.92)
 
-            // Directional chamfer contrast so the ridge reads machined at 44/60.
             Circle()
                 .strokeBorder(innerChamfer, lineWidth: max(px, ringC * 0.92))
                 .frame(width: outerC, height: outerC)
                 .blendMode(.overlay)
                 .opacity(0.92)
 
-            // Tight inner highlight line (prevents the ridge from reading soft in snapshots).
             Circle()
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: max(px, ringC * 0.22))
                 .frame(
@@ -419,12 +454,147 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .blendMode(.screen)
                 .opacity(0.80)
 
-            // Crisp inner edge so the ridge does not blur into the dial at small widget sizes.
             Circle()
                 .strokeBorder(Color.black.opacity(0.62), lineWidth: max(px, ringC * 0.52))
                 .frame(width: outerC, height: outerC)
                 .blendMode(.multiply)
                 .opacity(0.78)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Bezel shelf + gutter overlays (10A)
+
+private struct WidgetWeaverClockSegmentedBezelShelfOverlayView: View {
+    let outerRadius: CGFloat
+    let innerRadius: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+
+        let outerR = max(px, outerRadius)
+        let innerR = max(0.0, min(innerRadius, outerR - px))
+        let innerFraction: CGFloat = (outerR > 0.0) ? (innerR / outerR) : 0.01
+
+        let bezelDark = WWClock.colour(0x06070A, alpha: 1.0)
+        let bezelMid = WWClock.colour(0x141922, alpha: 1.0)
+        let bezelBright = WWClock.colour(0x2E3642, alpha: 1.0)
+
+        let shelfRadialMachining = RadialGradient(
+            gradient: Gradient(stops: [
+                .init(color: bezelDark, location: 0.00),
+                .init(color: bezelMid, location: 0.54),
+                .init(color: bezelBright, location: 1.00)
+            ]),
+            center: .center,
+            startRadius: innerR,
+            endRadius: outerR
+        )
+
+        let shelfDirectionalRamp = LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white.opacity(0.22), location: 0.00),
+                .init(color: Color.white.opacity(0.00), location: 0.42),
+                .init(color: Color.black.opacity(0.24), location: 1.00)
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        let shelfSpecular = AngularGradient(
+            gradient: Gradient(stops: [
+                .init(color: bezelBright.opacity(0.46), location: 0.000),
+                .init(color: bezelBright.opacity(0.46), location: 0.060),
+                .init(color: bezelMid.opacity(0.18), location: 0.220),
+                .init(color: bezelMid.opacity(0.06), location: 0.340),
+                .init(color: bezelDark.opacity(0.16), location: 0.580),
+                .init(color: bezelDark.opacity(0.44), location: 0.760),
+                .init(color: bezelMid.opacity(0.14), location: 0.880),
+                .init(color: bezelBright.opacity(0.32), location: 1.000)
+            ]),
+            center: .center,
+            angle: .degrees(-135.0)
+        )
+
+        let outerD = outerR * 2.0
+
+        return WWClockSegmentedAnnulus(innerRadiusFraction: innerFraction)
+            .fill(shelfRadialMachining, style: FillStyle(eoFill: true, antialiased: true))
+            .frame(width: outerD, height: outerD)
+            .overlay(
+                WWClockSegmentedAnnulus(innerRadiusFraction: innerFraction)
+                    .fill(shelfDirectionalRamp, style: FillStyle(eoFill: true, antialiased: true))
+                    .frame(width: outerD, height: outerD)
+                    .blendMode(.overlay)
+                    .opacity(0.92)
+            )
+            .overlay(
+                WWClockSegmentedAnnulus(innerRadiusFraction: innerFraction)
+                    .fill(shelfSpecular, style: FillStyle(eoFill: true, antialiased: true))
+                    .frame(width: outerD, height: outerD)
+                    .blendMode(.overlay)
+                    .opacity(0.78)
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct WidgetWeaverClockSegmentedBezelGutterOverlayView: View {
+    let innerRadius: CGFloat
+    let outerRadius: CGFloat
+    let scale: CGFloat
+
+    var body: some View {
+        let px = WWClock.px(scale: scale)
+
+        let outerR = max(px, outerRadius)
+        let innerR = max(0.0, min(innerRadius, outerR - px))
+        let innerFraction: CGFloat = (outerR > 0.0) ? (innerR / outerR) : 0.01
+
+        let gutterDark = WWClock.colour(0x030407, alpha: 1.0)
+        let gutterMid = WWClock.colour(0x0A0D13, alpha: 1.0)
+
+        let gutterFill = RadialGradient(
+            gradient: Gradient(stops: [
+                .init(color: gutterMid.opacity(0.96), location: 0.00),
+                .init(color: gutterDark.opacity(0.98), location: 1.00)
+            ]),
+            center: .center,
+            startRadius: innerR,
+            endRadius: outerR
+        )
+
+        let outerD = outerR * 2.0
+        let innerD = max(1.0, innerR * 2.0)
+
+        let grooveLineW = WWClock.pixel(px, scale: scale)
+
+        return ZStack {
+            WWClockSegmentedAnnulus(innerRadiusFraction: innerFraction)
+                .fill(gutterFill, style: FillStyle(eoFill: true, antialiased: true))
+                .frame(width: outerD, height: outerD)
+
+            Circle()
+                .strokeBorder(Color.black.opacity(0.78), lineWidth: max(px, grooveLineW))
+                .frame(width: outerD, height: outerD)
+                .blendMode(.multiply)
+                .opacity(0.92)
+
+            Circle()
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: max(px, grooveLineW))
+                .frame(width: innerD, height: innerD)
+                .blendMode(.screen)
+                .opacity(0.88)
+
+            Circle()
+                .strokeBorder(Color.black.opacity(0.34), lineWidth: max(px, grooveLineW))
+                .frame(width: innerD, height: innerD)
+                .blendMode(.multiply)
+                .opacity(0.62)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

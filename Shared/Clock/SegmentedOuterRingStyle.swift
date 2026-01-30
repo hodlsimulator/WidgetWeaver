@@ -338,3 +338,11 @@ struct SegmentedOuterRingStyle {
         )
     }
 }
+
+extension SegmentedOuterRingStyle {
+    /// Read-only helper used by the Segmented bezel so the bezel→ring gutter stays locked
+    /// to the outer ring geometry in both WidgetKit and in-app rendering.
+    static func segmentedOuterBoundaryRadius(dialRadius: CGFloat, scale: CGFloat) -> CGFloat {
+        SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale).radii.bedOuter
+    }
+}
