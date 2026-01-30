@@ -400,7 +400,7 @@ private extension WidgetSpecAIService {
 
     static func smallPatchRequest(from instruction: String) -> SmallPatchRequest {
         let lower = instruction.lowercased()
-        let collapsed = collapseWhitespace(lower).trimmingCharacters(in: .whitespacesAndNewlines)
+        let collapsed = collapseWhitespaceCandidate(lower).trimmingCharacters(in: .whitespacesAndNewlines)
 
         var canonical = collapsed
         canonical = canonical.replacingOccurrences(of: "\\b(inset|insets)\\b", with: "padding", options: .regularExpression)
@@ -413,9 +413,9 @@ private extension WidgetSpecAIService {
         let cornerRadiusPattern = "(?:\\bcorner\\s*radius\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
 
         var requested: Set<PatchChangeArea> = []
-        if firstDoubleMatch(paddingPattern, in: canonical) != nil { requested.insert(.padding) }
-        if firstDoubleMatch(spacingPattern, in: canonical) != nil { requested.insert(.spacing) }
-        if firstDoubleMatch(cornerRadiusPattern, in: canonical) != nil { requested.insert(.cornerRadius) }
+        if firstDoubleMatchCandidate(paddingPattern, in: canonical) != nil { requested.insert(.padding) }
+        if firstDoubleMatchCandidate(spacingPattern, in: canonical) != nil { requested.insert(.spacing) }
+        if firstDoubleMatchCandidate(cornerRadiusPattern, in: canonical) != nil { requested.insert(.cornerRadius) }
 
         let broadKeywords = [
             "background",
@@ -440,18 +440,18 @@ private extension WidgetSpecAIService {
             "replace"
         ]
 
-        let hasBroad = broadKeywords.contains { containsWord(canonical, word: $0) }
+        let hasBroad = broadKeywords.contains { containsWordCandidate(canonical, word: $0) }
 
         return SmallPatchRequest(requestedAreas: requested, hasBroadKeywords: hasBroad)
     }
 
-    static func containsWord(_ text: String, word: String) -> Bool {
+    static func containsWordCandidate(_ text: String, word: String) -> Bool {
         guard !word.isEmpty else { return false }
         let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
         return text.range(of: pattern, options: .regularExpression) != nil
     }
 
-    static func firstDoubleMatch(_ pattern: String, in text: String) -> Double? {
+    static func firstDoubleMatchCandidate(_ pattern: String, in text: String) -> Double? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
 
@@ -463,7 +463,7 @@ private extension WidgetSpecAIService {
         return Double(text[numRange])
     }
 
-    static func collapseWhitespace(_ text: String) -> String {
+    static func collapseWhitespaceCandidate(_ text: String) -> String {
         var out = ""
         out.reserveCapacity(text.count)
 
