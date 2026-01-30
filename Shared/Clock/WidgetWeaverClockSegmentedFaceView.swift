@@ -82,13 +82,20 @@ struct WidgetWeaverClockSegmentedFaceView: View {
             let metalThicknessRatio: CGFloat = 0.062
             let provisionalR = outerRadius / (1.0 + metalThicknessRatio)
 
-            let ringA = WWClock.pixel(provisionalR * 0.010, scale: displayScale)
+            let px = WWClock.px(scale: displayScale)
+
+            // Segmented bezel requires a chunkier raised rim at widget sizes.
+            // Physical-pixel clamps keep the rim readable without changing dial scaling behaviour.
+            let ringA = WWClock.pixel(
+                WWClock.clamp(provisionalR * 0.020, min: px * 2.0, max: provisionalR * 0.030),
+                scale: displayScale
+            )
             let ringC = WWClock.pixel(
-                WWClock.clamp(provisionalR * 0.0095, min: provisionalR * 0.008, max: provisionalR * 0.012),
+                WWClock.clamp(provisionalR * 0.0095, min: px, max: provisionalR * 0.012),
                 scale: displayScale
             )
 
-            let minB = WWClock.px(scale: displayScale)
+            let minB = px
             let ringB = WWClock.pixel(max(minB, outerRadius - provisionalR - ringA - ringC), scale: displayScale)
 
             let R = outerRadius - ringA - ringB - ringC
@@ -237,7 +244,13 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
-        let rimCrispW = WWClock.pixel(2.0 / max(scale, 1.0), scale: scale)
+
+        // Raised rim linework needs to stay crisp at 44/60; clamp in physical px.
+        let rimCrispW = WWClock.pixel(
+            WWClock.clamp(ringA + px, min: px * 2.0, max: px * 4.0),
+            scale: scale
+        )
+        let rimGrooveW = WWClock.pixel(px, scale: scale)
 
         // Ring geometry mirrors the other faces: A (outer rim), B (main body), C (inner ridge).
         let outerA = outerDiameter
@@ -357,19 +370,30 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
             // Crisp outer-edge highlight + inner shadow to make the rim read raised at 44/60.
             Circle()
-                .strokeBorder(Color.white.opacity(0.28), lineWidth: max(px, rimCrispW))
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: max(px, rimCrispW))
                 .frame(width: outerA, height: outerA)
                 .blendMode(.screen)
-                .opacity(0.90)
+                .opacity(0.82)
+
+            // Inner shadow falls inward from the rim step (no outer halo).
+            Circle()
+                .strokeBorder(Color.black.opacity(0.74), lineWidth: max(px, rimCrispW))
+                .frame(width: outerB, height: outerB)
+                .blendMode(.multiply)
+                .opacity(0.86)
+
+            // Rim step separator line (prevents rim/body blending at small widget sizes).
+            Circle()
+                .strokeBorder(Color.black.opacity(0.58), lineWidth: max(px, rimGrooveW))
+                .frame(width: outerB, height: outerB)
+                .blendMode(.multiply)
+                .opacity(0.88)
 
             Circle()
-                .strokeBorder(Color.black.opacity(0.70), lineWidth: max(px, rimCrispW))
-                .frame(
-                    width: max(1.0, outerA - (ringA * 0.85)),
-                    height: max(1.0, outerA - (ringA * 0.85))
-                )
-                .blendMode(.multiply)
-                .opacity(0.84)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: max(px, rimGrooveW))
+                .frame(width: outerB, height: outerB)
+                .blendMode(.screen)
+                .opacity(0.68)
 
             // C) Inner ridge / separator between bezel and dial.
             Circle()
