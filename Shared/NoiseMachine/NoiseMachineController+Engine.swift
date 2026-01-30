@@ -114,6 +114,7 @@ extension NoiseMachineController {
 
     func teardownEngine() {
         cancelPendingEngineStop()
+        cancelAllFades()
 
         for slot in slotNodes {
             slot.stop()
@@ -131,6 +132,7 @@ extension NoiseMachineController {
         log("Rebuilding audio engine (\(reason))", level: .warning)
         cancelPendingSessionDeactivation()
         cancelPendingEngineStop()
+        cancelAllFades()
         isSessionActive = false
         teardownEngine()
         didConfigureSession = false
@@ -226,6 +228,8 @@ extension NoiseMachineController {
         await prepareIfNeeded()
         log("pause")
 
+        cancelAllFades()
+
         if !currentState.wasPlaying, engine?.isRunning != true {
             applyTargets(from: currentState, savePolicy: savePolicy)
             deactivateSessionIfPossible()
@@ -276,6 +280,7 @@ extension NoiseMachineController {
 
     func stopEngineSoon() async {
         cancelPendingEngineStop()
+        cancelAllFades()
 
         guard let engine else { return }
         if !engine.isRunning {
@@ -304,59 +309,153 @@ extension NoiseMachineController {
         deactivateSessionIfPossible()
     }
 
-    private func fadeMaster(to target: Float, over seconds: TimeInterval) async {
+    // MARK: - Volume fades
+
+    func cancelMasterFade() {
+        masterFadeTask?.cancel()
+        masterFadeTask = nil
+    }
+
+    func cancelSlotFade(index: Int) {
+        slotFadeTasks[index]?.cancel()
+        slotFadeTasks.removeValue(forKey: index)
+    }
+
+    func cancelAllFades() {
+        cancelMasterFade()
+        for task in slotFadeTasks.values {
+            task.cancel()
+        }
+        slotFadeTasks.removeAll(keepingCapacity: true)
+    }
+
+    func beginMasterFadeIn(to target: Float, over seconds: TimeInterval, requestID: UInt64) {
         guard let masterMixer else { return }
 
-        let steps = max(1, Int(seconds * 60))
-        let start = masterMixer.outputVolume
-        let delta = target - start
+        let target = target.clamped(to: 0...1)
+        guard seconds > 0 else {
+            masterMixer.outputVolume = target
+            return
+        }
 
-        for i in 1...steps {
-            let t = Float(i) / Float(steps)
-            masterMixer.outputVolume = start + delta * t
-            let ns = UInt64(1_000_000_000.0 / 60.0)
-            try? await Task.sleep(nanoseconds: ns)
+        cancelMasterFade()
+
+        masterFadeToken &+= 1
+        let token = masterFadeToken
+
+        masterFadeTask = Task { [token, target, seconds, requestID] in
+            await self.runMasterFade(token: token, to: target, over: seconds, requestID: requestID)
         }
     }
 
-    func fadeMaster(
-        to target: Float,
-        over seconds: TimeInterval,
-        requestID: UInt64,
-        requiresWasPlaying: Bool,
-        abortIfOutputVolumeChangedExternally: Bool
-    ) async {
+    func beginSlotFadeIn(index: Int, to target: Float, over seconds: TimeInterval, requestID: UInt64) {
+        guard slotNodes.indices.contains(index) else { return }
+        let target = target.clamped(to: 0...1)
+
+        guard seconds > 0 else {
+            slotNodes[index].slotMixer.outputVolume = target
+            return
+        }
+
+        cancelSlotFade(index: index)
+
+        let nextToken = (slotFadeTokens[index] ?? 0) &+ 1
+        slotFadeTokens[index] = nextToken
+
+        slotFadeTasks[index] = Task { [nextToken, index, target, seconds, requestID] in
+            await self.runSlotFade(token: nextToken, index: index, to: target, over: seconds, requestID: requestID)
+        }
+    }
+
+    private func runMasterFade(token: UInt64, to target: Float, over seconds: TimeInterval, requestID: UInt64) async {
         guard let masterMixer else { return }
 
-        let steps = max(1, Int(seconds * 60))
-        let start = masterMixer.outputVolume
+        await fadeMixerVolume(masterMixer, to: target, over: seconds) { [token, requestID] in
+            if Task.isCancelled { return false }
+            if masterFadeToken != token { return false }
+            if playbackRequestID != requestID { return false }
+            if !currentState.wasPlaying { return false }
+            if engine?.isRunning != true { return false }
+            return true
+        }
+
+        if masterFadeToken == token {
+            masterFadeTask = nil
+        }
+    }
+
+    private func runSlotFade(token: UInt64, index: Int, to target: Float, over seconds: TimeInterval, requestID: UInt64) async {
+        guard slotNodes.indices.contains(index) else { return }
+
+        let mixer = slotNodes[index].slotMixer
+
+        await fadeMixerVolume(mixer, to: target, over: seconds) { [token, index, requestID] in
+            if Task.isCancelled { return false }
+            if slotFadeTokens[index] != token { return false }
+            if playbackRequestID != requestID { return false }
+            if !currentState.wasPlaying { return false }
+            if engine?.isRunning != true { return false }
+            if !currentState.slots.indices.contains(index) { return false }
+            if !currentState.slots[index].enabled { return false }
+            return true
+        }
+
+        if slotFadeTokens[index] == token {
+            slotFadeTasks.removeValue(forKey: index)
+        }
+    }
+
+    private func fadeMixerVolume(
+        _ mixer: AVAudioMixerNode,
+        to target: Float,
+        over seconds: TimeInterval,
+        shouldContinue: () -> Bool
+    ) async {
+        let target = target.clamped(to: 0...1)
+
+        guard seconds > 0 else {
+            mixer.outputVolume = target
+            return
+        }
+
+        let start = mixer.outputVolume.clamped(to: 0...1)
         let delta = target - start
 
-        var lastSet = start
+        if abs(delta) < 0.0005 {
+            mixer.outputVolume = target
+            return
+        }
+
+        let steps = max(1, Int(seconds * fadeUpdateHz))
+        let nsPerStep = UInt64(1_000_000_000.0 / fadeUpdateHz)
 
         for i in 1...steps {
             if Task.isCancelled { return }
-            if playbackRequestID != requestID { return }
-            if currentState.wasPlaying != requiresWasPlaying { return }
-
-            if abortIfOutputVolumeChangedExternally {
-                let current = masterMixer.outputVolume
-                if abs(current - lastSet) > 0.04 {
-                    return
-                }
-            }
+            if !shouldContinue() { return }
 
             let t = Float(i) / Float(steps)
-            let next = start + delta * t
-            masterMixer.outputVolume = next
-            lastSet = next
+            let eased = smoothStep(t)
+            mixer.outputVolume = (start + delta * eased).clamped(to: 0...1)
 
-            let ns = UInt64(1_000_000_000.0 / 60.0)
             do {
-                try await Task.sleep(nanoseconds: ns)
+                try await Task.sleep(nanoseconds: nsPerStep)
             } catch {
                 return
             }
         }
+
+        if !Task.isCancelled, shouldContinue() {
+            mixer.outputVolume = target
+        }
+    }
+
+    private func fadeMaster(to target: Float, over seconds: TimeInterval) async {
+        guard let masterMixer else { return }
+        await fadeMixerVolume(masterMixer, to: target, over: seconds) { true }
+    }
+
+    private func smoothStep(_ t: Float) -> Float {
+        let x = t.clamped(to: 0...1)
+        return x * x * (3 - 2 * x)
     }
 }

@@ -10,7 +10,12 @@ import Foundation
 extension NoiseMachineController {
     // MARK: - Applying state
 
-    func applyTargets(from state: NoiseMixState, savePolicy: SavePolicy) {
+    func applyTargets(
+        from state: NoiseMixState,
+        savePolicy: SavePolicy,
+        masterVolumeOverride: Float? = nil,
+        slotVolumeOverrides: [Int: Float] = [:]
+    ) {
         let state = state.sanitised()
 
         // The engine is deliberately kept alive for a grace period after pausing to avoid
@@ -18,14 +23,41 @@ extension NoiseMachineController {
         //
         // When paused, keep the output muted so that simply applying state (e.g. when the Noise
         // Machine screen appears) cannot accidentally unmute and start playback.
-        let effectiveMasterVolume: Float = state.wasPlaying ? state.masterVolume : 0
-        masterMixer?.outputVolume = effectiveMasterVolume
+        if !state.wasPlaying {
+            cancelAllFades()
+        }
+
+        if let masterMixer {
+            if !state.wasPlaying {
+                masterMixer.outputVolume = 0
+            } else if let masterVolumeOverride {
+                masterMixer.outputVolume = masterVolumeOverride.clamped(to: 0...1)
+            } else if masterFadeTask == nil {
+                masterMixer.outputVolume = state.masterVolume
+            }
+        }
 
         for idx in 0..<NoiseMixState.slotCount {
             guard slotNodes.indices.contains(idx) else { continue }
             let slot = slotNodes[idx]
             let slotState = state.slots.indices.contains(idx) ? state.slots[idx] : .default
-            slot.apply(slot: slotState)
+
+            if !slotState.enabled {
+                cancelSlotFade(index: idx)
+            }
+
+            let volumeBehaviour: NoiseSlotNode.VolumeBehaviour
+            if !slotState.enabled {
+                volumeBehaviour = .normal
+            } else if let forced = slotVolumeOverrides[idx] {
+                volumeBehaviour = .force(forced.clamped(to: 0...1))
+            } else if slotFadeTasks[idx] != nil {
+                volumeBehaviour = .preserve
+            } else {
+                volumeBehaviour = .normal
+            }
+
+            slot.apply(slot: slotState, volumeBehaviour: volumeBehaviour)
         }
 
         switch savePolicy {

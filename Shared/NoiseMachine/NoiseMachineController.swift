@@ -47,9 +47,16 @@ public actor NoiseMachineController {
     // happening before teardown, even if WidgetKit updates lag behind the user’s taps.
     let engineStopGraceSeconds: TimeInterval = 180.0
 
-    // On cold start, resume-on-launch can otherwise jump straight to the last saved master volume.
-    // Start from silence and ramp up to the stored level.
-    let resumeOnLaunchFadeInSeconds: TimeInterval = 1.0
+    // Gain ramps are updated at a higher rate to reduce zippering on noise sources.
+    let fadeUpdateHz: Double = 240.0
+    let masterFadeInSeconds: TimeInterval = 1.35
+    let slotFadeInSeconds: TimeInterval = 0.9
+
+    var masterFadeTask: Task<Void, Never>?
+    var masterFadeToken: UInt64 = 0
+
+    var slotFadeTasks: [Int: Task<Void, Never>] = [:]
+    var slotFadeTokens: [Int: UInt64] = [:]
 
     var currentState: NoiseMixState = .default
     var didLoadInitialStateFromStore: Bool = false
@@ -83,7 +90,6 @@ public actor NoiseMachineController {
         log("Loaded initial mix from store (\(context)). wasPlaying=\(loaded.wasPlaying) updatedAt=\(loaded.updatedAt)")
     }
 
-
     // MARK: - Lifecycle
 
     public func bootstrapOnLaunch() async {
@@ -111,21 +117,17 @@ public actor NoiseMachineController {
             let requestID = playbackRequestID
             let target = currentState.masterVolume
 
-            await fadeMaster(
-                to: target,
-                over: resumeOnLaunchFadeInSeconds,
-                requestID: requestID,
-                requiresWasPlaying: true,
-                abortIfOutputVolumeChangedExternally: true
-            )
-
-            if currentState.wasPlaying, playbackRequestID == requestID {
-                masterMixer?.outputVolume = currentState.masterVolume
+            if masterFadeTask == nil {
+                masterMixer?.outputVolume = target
+            } else {
+                beginMasterFadeIn(to: target, over: masterFadeInSeconds, requestID: requestID)
             }
 
             isEngineRunning = true
             return
         }
+
+        cancelAllFades()
 
         let requestID = bumpPlaybackRequestID()
 
@@ -134,10 +136,8 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: .immediate)
-
-        // Ensure a silent start; the target volume is restored via a short ramp.
-        masterMixer?.outputVolume = 0
+        // Ensure a silent start; the target volume is restored via a short ramp after the engine starts.
+        applyTargets(from: s, savePolicy: .immediate, masterVolumeOverride: 0)
 
         await startEngineIfNeeded(requestID: requestID)
 
@@ -147,20 +147,7 @@ public actor NoiseMachineController {
         let target = currentState.masterVolume
         if target <= 0 { return }
 
-        // Re-assert silence in case other state application occurred while the engine started.
-        masterMixer?.outputVolume = 0
-
-        await fadeMaster(
-            to: target,
-            over: resumeOnLaunchFadeInSeconds,
-            requestID: requestID,
-            requiresWasPlaying: true,
-            abortIfOutputVolumeChangedExternally: true
-        )
-
-        if currentState.wasPlaying, playbackRequestID == requestID {
-            masterMixer?.outputVolume = currentState.masterVolume
-        }
+        beginMasterFadeIn(to: target, over: masterFadeInSeconds, requestID: requestID)
     }
 
     public func prepareIfNeeded() async {
@@ -190,6 +177,8 @@ public actor NoiseMachineController {
 
     public func setMasterVolume(_ v: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
+        cancelMasterFade()
+
         var s = currentState
         s.masterVolume = v
         s.updatedAt = Date()
@@ -201,21 +190,36 @@ public actor NoiseMachineController {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
 
+        cancelSlotFade(index: index)
+
+        let wasEnabled = currentState.slots[index].enabled
+        let shouldFadeIn = enabled && !wasEnabled && currentState.wasPlaying
+
         var s = currentState
         s.slots[index].enabled = enabled
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: .immediate)
+        let slotOverrides: [Int: Float] = shouldFadeIn ? [index: 0] : [:]
+        applyTargets(from: s, savePolicy: .immediate, slotVolumeOverrides: slotOverrides)
 
         if s.wasPlaying {
             await startEngineIfNeeded(requestID: playbackRequestID)
+        }
+
+        if shouldFadeIn {
+            let target = s.slots[index].volume
+            if target > 0 {
+                beginSlotFadeIn(index: index, to: target, over: slotFadeInSeconds, requestID: playbackRequestID)
+            }
         }
     }
 
     public func setSlotVolume(_ index: Int, volume: Float, savePolicy: SavePolicy) async {
         await prepareIfNeeded()
         guard currentState.slots.indices.contains(index) else { return }
+
+        cancelSlotFade(index: index)
 
         var s = currentState
         s.slots[index].volume = volume
@@ -281,11 +285,15 @@ public actor NoiseMachineController {
         cancelPendingEngineStop()
 
         if currentState.wasPlaying, engine?.isRunning == true {
-            // Playback already active; ensure the master gain is restored in case the engine was muted for pause.
-            masterMixer?.outputVolume = currentState.masterVolume
+            // Playback already active; restore the master gain in case the engine was muted for pause.
+            if masterFadeTask == nil {
+                masterMixer?.outputVolume = currentState.masterVolume
+            }
             isEngineRunning = true
             return
         }
+
+        cancelAllFades()
 
         let requestID = bumpPlaybackRequestID()
 
@@ -294,8 +302,18 @@ public actor NoiseMachineController {
         s.updatedAt = Date()
         currentState = s
 
-        applyTargets(from: s, savePolicy: .immediate)
+        // Start from silence and ramp up after the engine is running.
+        applyTargets(from: s, savePolicy: .immediate, masterVolumeOverride: 0)
+
         await startEngineIfNeeded(requestID: requestID)
+
+        guard currentState.wasPlaying, playbackRequestID == requestID else { return }
+        guard engine?.isRunning == true else { return }
+
+        let target = currentState.masterVolume
+        if target <= 0 { return }
+
+        beginMasterFadeIn(to: target, over: masterFadeInSeconds, requestID: requestID)
     }
 
     public func pause() async {
@@ -310,6 +328,7 @@ public actor NoiseMachineController {
         await prepareIfNeeded()
         log("stop")
 
+        cancelAllFades()
         cancelPendingEngineStop()
         bumpPlaybackRequestID()
 

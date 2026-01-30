@@ -10,6 +10,12 @@ import AudioToolbox
 import Foundation
 
 final class NoiseSlotNode {
+    enum VolumeBehaviour {
+        case normal
+        case force(Float)
+        case preserve
+    }
+
     let index: Int
 
     let sourceNode: AVAudioSourceNode
@@ -56,15 +62,22 @@ final class NoiseSlotNode {
 
     func stop() {
         // No-op for AVAudioSourceNode.
-        // Restore mixer to its last applied state; apply(slot:) will re-assert on next tick.
+        // Restore the mixer to its last applied state; apply(slot:volumeBehaviour:) will re-assert on next tick.
         slotMixer.outputVolume = lastEnabled ? lastVolume : 0
     }
 
-    func apply(slot: NoiseSlotState) {
+    func apply(slot: NoiseSlotState, volumeBehaviour: VolumeBehaviour = .normal) {
         lastEnabled = slot.enabled
         lastVolume = slot.volume
 
-        slotMixer.outputVolume = slot.enabled ? slot.volume : 0
+        switch volumeBehaviour {
+        case .normal:
+            slotMixer.outputVolume = slot.enabled ? slot.volume : 0
+        case .force(let v):
+            slotMixer.outputVolume = slot.enabled ? v : 0
+        case .preserve:
+            break
+        }
 
         let lowCut = slot.lowCutHz.clamped(to: 10...2000)
         let highCut = slot.highCutHz.clamped(to: 500...20_000)
