@@ -279,8 +279,8 @@ final class WidgetSpecAIService {
                     generating: WidgetSpecPatchPayload.self
                 )
                 let payload = response.content
-                let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.apply(payload: payload, to: base))
-                return WidgetSpecAIGenerationResult(spec: patched, usedModel: true, note: "Applied patch.")
+                var patched = Self.apply(payload: payload, to: base); if WidgetWeaverFeatureFlags.aiReviewUIEnabled { let lower = trimmedInstruction.lowercased(); if lower.contains("padding") || lower.contains("inset") || lower.contains("radius") || lower.contains("round") || lower.contains("spacing") || lower.contains("gap") || lower.contains("gutter") { let forced = Self.fallbackPatch(base: patched, instruction: trimmedInstruction); patched.style.padding = forced.style.padding; patched.style.cornerRadius = forced.style.cornerRadius; patched.layout.spacing = forced.layout.spacing } }
+                return WidgetSpecAIGenerationResult(spec: WidgetSpecNormaliser.normalisedAIOutput(patched), usedModel: true, note: "Applied patch.")
             } catch {
                 #if DEBUG
                 print("AI Patch fell back despite Apple Intelligence: Ready. Underlying error: \(error)")
@@ -574,12 +574,13 @@ private extension WidgetSpecAIService {
 
         if lower.contains("radialglow") || lower.contains("radial glow") || lower.contains("radial") { s.style.background = .radialGlow }
         if lower.contains("solidaccent") || lower.contains("solid accent") || lower.contains("tinted") { s.style.background = .solidAccent }
+        if lower.contains("accentglow") || lower.contains("accent glow") || lower.contains("glow") { s.style.background = .accentGlow }
+        if containsWord(lower, word: "plain") || lower.contains("clean") || lower.contains("simple") { s.style.background = .plain }
 
-        if lower.contains("more minimal") || lower.contains("make it minimal") || lower.contains("cleaner") || lower.contains("simpler") {
+        if lower.contains("minimal") || lower.contains("more minimal") || lower.contains("make it minimal") || lower.contains("simplify") {
             s.style.background = .plain
-            s.style.accent = .gray
-            s.style.padding = min(s.style.padding, 10)
-            s.style.cornerRadius = min(max(s.style.cornerRadius, 16), 28)
+            s.style.padding = min(s.style.padding, 12)
+            s.layout.spacing = min(s.layout.spacing, 6)
             s.style.primaryTextStyle = .headline
             s.style.secondaryTextStyle = .caption2
 
@@ -788,13 +789,11 @@ private extension WidgetSpecAIService {
         return out
     }
 
-    static func titleCase(_ text: String) -> String {
-        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        let cased = words.map { w -> String in
-            let lower = w.lowercased()
-            guard let first = lower.first else { return w }
-            return String(first).uppercased() + lower.dropFirst()
-        }
-        return cased.joined(separator: " ")
+    static func titleCase(_ raw: String) -> String {
+        raw.split(separator: " ").map { part in
+            let p = String(part)
+            guard let first = p.first else { return p }
+            return first.uppercased() + p.dropFirst()
+        }.joined(separator: " ")
     }
 }
