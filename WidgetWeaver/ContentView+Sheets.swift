@@ -258,104 +258,82 @@ struct WidgetWeaverProView: View {
                             .font(.title2.weight(.semibold))
 
                         Text("Unlock Pro templates, unlimited designs, and more advanced features.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
                 }
 
-                Section {
-                    if manager.isLoadingProducts || (!manager.didAttemptLoadProducts && manager.products.isEmpty) {
-                        ProgressView()
-                    } else if manager.products.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Products could not be loaded.")
-                                .font(.headline)
-
-                            if !manager.errorMessage.isEmpty {
-                                Text(manager.errorMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Button {
-                                Task { await manager.loadProducts(force: true) }
-                            } label: {
-                                Label("Try Again", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                        .padding(.vertical, 4)
-                    } else {
-                        ForEach(manager.products, id: \.id) { product in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(product.displayName)
-                                            .font(.headline)
-                                        Text(product.description)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer(minLength: 0)
-
-                                    Text(product.displayPrice)
-                                        .font(.headline)
-                                }
-
-                                Button {
-                                    Task { await manager.purchase(product) }
-                                } label: {
-                                    Text(manager.isProUnlocked ? "Purchased" : "Purchase")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(manager.isProUnlocked || manager.ownedProducts.contains(product.id))
-                            }
-                            .padding(.vertical, 4)
-                        }
+                Section("Status") {
+                    HStack {
+                        Text("Unlocked")
+                        Spacer()
+                        Text(manager.isProUnlocked ? "Yes" : "No")
+                            .foregroundStyle(manager.isProUnlocked ? .green : .secondary)
                     }
-                } header: {
-                    Text("Purchase")
-                }
 
-                Section {
-                    Button("Restore Purchases") {
-                        Task { await manager.restore() }
-                    }
-                } header: {
-                    Text("Restore")
-                }
-
-                Section {
-                    LabeledContent("Pro", value: manager.isProUnlocked ? "Unlocked" : "Locked")
-                    LabeledContent("Store environment", value: manager.storeEnvironmentLabel)
-                        .contentShape(Rectangle())
-                        .onTapGesture { manager.registerHiddenUnlockTap() }
-
-                    if let tx = manager.latestTransaction {
-                        Text("Latest transaction: \(tx.id)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if !manager.storeEnvironmentLabel.isEmpty {
+                        HStack {
+                            Text("Store environment")
+                            Spacer()
+                            Text(manager.storeEnvironmentLabel)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     if !manager.statusMessage.isEmpty {
                         Text(manager.statusMessage)
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                } header: {
-                    Text("Status")
+
+                    if !manager.errorMessage.isEmpty {
+                        Text(manager.errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Purchase") {
+                    if manager.isLoadingProducts {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Loading products…")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if manager.products.isEmpty {
+                        Button {
+                            Task { await manager.loadProducts(force: true) }
+                        } label: {
+                            Text("Load products")
+                        }
+                    } else {
+                        ForEach(manager.products) { product in
+                            Button {
+                                Task { await manager.purchase(product) }
+                            } label: {
+                                HStack {
+                                    Text(product.displayName)
+                                    Spacer()
+                                    Text(product.displayPrice)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        Task { await manager.restore() }
+                    } label: {
+                        Text("Restore purchases")
+                    }
+                }
+
+                Section {
+                    Button("Done") { dismiss() }
                 }
             }
             .navigationTitle("Pro")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                }
-            }
             .task {
                 await manager.refreshEntitlementFromStoreKit()
                 if manager.products.isEmpty {
@@ -376,6 +354,7 @@ extension ContentView {
         case weather
         case steps
         case activity
+        case appearance
         case reminders
         case remindersSmartStackGuide
         case importReview
@@ -395,6 +374,7 @@ extension ContentView {
             case .remix: return 6
             case .steps: return 7
             case .activity: return 8
+            case .appearance: return 14
             case .reminders: return 10
             case .remindersSmartStackGuide: return 11
             case .importReview: return 9
@@ -460,6 +440,13 @@ extension ContentView {
             return AnyView(
                 NavigationStack {
                     WidgetWeaverActivitySettingsView(onClose: { activeSheet = nil })
+                }
+            )
+
+        case .appearance:
+            return AnyView(
+                NavigationStack {
+                    WidgetWeaverAppearanceView(onClose: { activeSheet = nil })
                 }
             )
 

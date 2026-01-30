@@ -65,6 +65,12 @@ extension ContentView {
                 }
             }
 
+            Button {
+                activeSheet = .appearance
+            } label: {
+                Label("Appearance", systemImage: "paintpalette")
+            }
+
             Divider()
 
             Button {

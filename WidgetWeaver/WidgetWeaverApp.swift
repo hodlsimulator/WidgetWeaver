@@ -27,6 +27,13 @@ struct WidgetWeaverApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
 
+    @AppStorage(WidgetWeaverAppAppearanceKeys.theme)
+    private var appThemeRaw: String = WidgetWeaverAppTheme.defaultTheme.rawValue
+
+    private var appTheme: WidgetWeaverAppTheme {
+        WidgetWeaverAppTheme.resolve(appThemeRaw)
+    }
+
     init() {
         AppGroup.ensureImagesDirectoryExists()
 
@@ -58,7 +65,8 @@ struct WidgetWeaverApp: App {
 #if DEBUG
             .modifier(WidgetWeaverUITestEnvironmentModifier())
 #endif
-            .tint(Color("AccentColor"))
+            .tint(appTheme.tint)
+            .preferredColorScheme(appTheme.preferredColorScheme)
             .task {
 #if !DEBUG
                 await MainActor.run {
