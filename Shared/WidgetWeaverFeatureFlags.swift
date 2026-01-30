@@ -21,6 +21,7 @@ public enum WidgetWeaverFeatureFlags {
         static let photoFiltersEnabled = "widgetweaver.feature.photoFilters.enabled"
 
         static let segmentedRingDiagnosticsEnabled = "widgetweaver.feature.clock.segmentedRingDiagnostics.enabled"
+        static let segmentedBezelDiagnosticsEnabled = "widgetweaver.feature.clock.segmentedBezelDiagnostics.enabled"
 
         static let aiEnabled = "widgetweaver.feature.ai.enabled"
         static let aiReviewUIEnabled = "widgetweaver.feature.ai.reviewUI.enabled"
@@ -114,6 +115,28 @@ public enum WidgetWeaverFeatureFlags {
 
     public static func resetSegmentedRingDiagnosticsEnabledOverride() {
         AppGroup.userDefaults.removeObject(forKey: Keys.segmentedRingDiagnosticsEnabled)
+    }
+
+    /// Debug overlay for Segmented bezel boundaries.
+    ///
+    /// When enabled:
+    /// - Boundary circles for rim→shelf, segmented outer boundary, and gutter edges are drawn.
+    /// - Intended for verifying pixel alignment and shelf coverage at 44/60 in WidgetKit.
+    ///
+    /// Default is `false` so shipped behaviour remains unchanged.
+    public static var segmentedBezelDiagnosticsEnabled: Bool {
+        if let v = AppGroup.userDefaults.object(forKey: Keys.segmentedBezelDiagnosticsEnabled) as? Bool {
+            return v
+        }
+        return false
+    }
+
+    public static func setSegmentedBezelDiagnosticsEnabled(_ enabled: Bool) {
+        AppGroup.userDefaults.set(enabled, forKey: Keys.segmentedBezelDiagnosticsEnabled)
+    }
+
+    public static func resetSegmentedBezelDiagnosticsEnabledOverride() {
+        AppGroup.userDefaults.removeObject(forKey: Keys.segmentedBezelDiagnosticsEnabled)
     }
 
     // MARK: - Clipboard Actions (Screen Actions scope cut)

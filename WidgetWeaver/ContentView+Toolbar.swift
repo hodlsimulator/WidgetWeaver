@@ -216,6 +216,17 @@ extension ContentView {
                     }
                 )
             )
+
+            Toggle(
+                "Debug: Segmented bezel diagnostics",
+                isOn: Binding(
+                    get: { WidgetWeaverFeatureFlags.segmentedBezelDiagnosticsEnabled },
+                    set: { newValue in
+                        WidgetWeaverFeatureFlags.setSegmentedBezelDiagnosticsEnabled(newValue)
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                )
+            )
             Toggle("Debug: editor diagnostics", isOn: $showEditorDiagnostics)
             #endif
 
