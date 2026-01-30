@@ -180,6 +180,7 @@ final class WidgetSpecAIService {
 
     private let model: SystemLanguageModel
     private let session: LanguageModelSession
+    private let instructions: String
 
     private init() {
         self.model = SystemLanguageModel.default
@@ -194,6 +195,7 @@ final class WidgetSpecAIService {
         - Never include an image file name. Image is handled separately in-app.
         """
 
+        self.instructions = instructions
         self.session = LanguageModelSession(instructions: instructions)
     }
 
@@ -202,14 +204,21 @@ final class WidgetSpecAIService {
         switch m.availability {
         case .available:
             return "Apple Intelligence: Ready"
-        case .unavailable(.deviceNotEligible):
-            return "Apple Intelligence: Not supported on this device"
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return "Apple Intelligence: Turn on in Settings → General → Apple Intelligence"
-        case .unavailable(.modelNotReady):
-            return "Apple Intelligence: Model is downloading / not ready yet"
-        case .unavailable(let other):
-            return "Apple Intelligence: Unavailable (\(String(describing: other)))"
+
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "Apple Intelligence: Not supported on this device"
+            case .appleIntelligenceNotEnabled:
+                return "Apple Intelligence: Turn on in Settings → General → Apple Intelligence"
+            case .modelNotReady:
+                return "Apple Intelligence: Model is downloading / not ready yet"
+            @unknown default:
+                return "Apple Intelligence: Unavailable"
+            }
+
+        @unknown default:
+            return "Apple Intelligence: Unavailable"
         }
     }
 
@@ -251,6 +260,10 @@ final class WidgetSpecAIService {
         case .unavailable:
             let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackNewSpec(prompt: trimmed))
             return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Apple Intelligence unavailable — used deterministic template.")
+
+        @unknown default:
+            let spec = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackNewSpec(prompt: trimmed))
+            return WidgetSpecAIGenerationResult(spec: spec, usedModel: false, note: "Apple Intelligence unavailable — used deterministic template.")
         }
     }
 
@@ -274,25 +287,101 @@ final class WidgetSpecAIService {
         switch model.availability {
         case .available:
             do {
-                let response = try await session.respond(
+                // Step 3.0: create a fresh session per patch request to avoid transcript growth.
+                let patchSession = LanguageModelSession(instructions: instructions)
+
+                let response = try await patchSession.respond(
                     to: Self.patchPrompt(baseSpec: base, instruction: trimmedInstruction),
                     generating: WidgetSpecPatchPayload.self
                 )
+
                 let payload = response.content
-                var patched = Self.apply(payload: payload, to: base); if WidgetWeaverFeatureFlags.aiReviewUIEnabled { let lower = trimmedInstruction.lowercased(); if lower.contains("padding") || lower.contains("inset") || lower.contains("radius") || lower.contains("round") || lower.contains("spacing") || lower.contains("gap") || lower.contains("gutter") { let forced = Self.fallbackPatch(base: patched, instruction: trimmedInstruction); patched.style.padding = forced.style.padding; patched.style.cornerRadius = forced.style.cornerRadius; patched.layout.spacing = forced.layout.spacing } }
-                return WidgetSpecAIGenerationResult(spec: WidgetSpecNormaliser.normalisedAIOutput(patched), usedModel: true, note: "Applied patch.")
+                var patched = Self.apply(payload: payload, to: base)
+
+                // Review mode hardening: numeric prompts remain deterministic (last-wins) even when the model is available.
+                if WidgetWeaverFeatureFlags.aiReviewUIEnabled {
+                    let lower = trimmedInstruction.lowercased()
+                    let isLikelyNumericEdit =
+                        lower.contains("padding") ||
+                        lower.contains("inset") ||
+                        lower.contains("radius") ||
+                        lower.contains("round") ||
+                        lower.contains("spacing") ||
+                        lower.contains("gap") ||
+                        lower.contains("gutter")
+
+                    if isLikelyNumericEdit {
+                        let forced = Self.fallbackPatch(base: patched, instruction: trimmedInstruction)
+                        patched.style.padding = forced.style.padding
+                        patched.style.cornerRadius = forced.style.cornerRadius
+                        patched.layout.spacing = forced.layout.spacing
+                    }
+                }
+
+                return WidgetSpecAIGenerationResult(
+                    spec: WidgetSpecNormaliser.normalisedAIOutput(patched),
+                    usedModel: true,
+                    note: "Applied patch."
+                )
             } catch {
+                let classification = Self.classifyModelPatchFailure(error)
+
                 #if DEBUG
-                print("AI Patch fell back despite Apple Intelligence: Ready. Underlying error: \(error)")
+                print("AI patch failed. Classified=\(classification). Underlying error=\(error)")
                 #endif
 
                 let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
-                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: WidgetWeaverFeatureFlags.aiReviewUIEnabled ? "Applied patch using deterministic rules.\nModel patch failed (\(Self.clean("\(type(of: error)): \(error.localizedDescription)", maxLength: 140, fallback: String(describing: type(of: error)))))." : "Applied patch using deterministic rules.")
+
+                // Keep legacy behaviour unchanged when review UI is off.
+                let note: String = {
+                    guard WidgetWeaverFeatureFlags.aiReviewUIEnabled else {
+                        return "Applied patch using deterministic rules."
+                    }
+                    return "Model failed: \(classification)."
+                }()
+
+                return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: note)
             }
 
         case .unavailable:
             let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
             return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Apple Intelligence unavailable — used deterministic rules.")
+
+        @unknown default:
+            let patched = WidgetSpecNormaliser.normalisedAIOutput(Self.fallbackPatch(base: base, instruction: trimmedInstruction))
+            return WidgetSpecAIGenerationResult(spec: patched, usedModel: false, note: "Apple Intelligence unavailable — used deterministic rules.")
+        }
+    }
+}
+
+// MARK: - Step 3.0: failure classification
+
+private extension WidgetSpecAIService {
+    static func classifyModelPatchFailure(_ error: Error) -> String {
+        guard let e = error as? LanguageModelSession.GenerationError else {
+            return "unknown"
+        }
+
+        let caseLabel: String = {
+            if let label = Mirror(reflecting: e).children.first?.label, !label.isEmpty {
+                return label
+            }
+            return String(describing: e)
+        }()
+
+        switch caseLabel {
+        case "guardrailViolation":
+            return "guardrailViolation"
+        case "exceededContextWindowSize":
+            return "exceededContextWindowSize"
+        case "assetsUnavailable":
+            return "assetsUnavailable"
+        case "decodingFailure":
+            return "decodingFailure"
+        case "rateLimited":
+            return "rateLimited"
+        default:
+            return "unknown"
         }
     }
 }
@@ -646,13 +735,22 @@ private extension WidgetSpecAIService {
         let fragments: [String] = {
             guard hardenedSimplePromptParsing else { return [collapsedLower] }
             let splitReady = lower.replacingOccurrences(of: "\n", with: ",").replacingOccurrences(of: "\r", with: ",")
-            return collapseWhitespace(splitReady).trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " and ", with: ",").split(separator: ",").map(String.init)
+            return collapseWhitespace(splitReady)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " and ", with: ",")
+                .split(separator: ",")
+                .map(String.init)
         }()
+
         for rawFragment in fragments {
             var fragment = collapseWhitespace(rawFragment).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !fragment.isEmpty else { continue }
             if hardenedSimplePromptParsing {
-                fragment = fragment.replacingOccurrences(of: "\\b(inset|insets)\\b", with: "padding", options: .regularExpression).replacingOccurrences(of: "\\b(gap|gutter)\\b", with: "spacing", options: .regularExpression).replacingOccurrences(of: "\\brounded\\s+corners?\\b", with: "radius", options: .regularExpression).replacingOccurrences(of: "\\brounding\\b", with: "radius", options: .regularExpression)
+                fragment = fragment
+                    .replacingOccurrences(of: "\\b(inset|insets)\\b", with: "padding", options: .regularExpression)
+                    .replacingOccurrences(of: "\\b(gap|gutter)\\b", with: "spacing", options: .regularExpression)
+                    .replacingOccurrences(of: "\\brounded\\s+corners?\\b", with: "radius", options: .regularExpression)
+                    .replacingOccurrences(of: "\\brounding\\b", with: "radius", options: .regularExpression)
             }
             if let v = firstDoubleMatch(paddingPattern, in: fragment) { s.style.padding = v }
             if let v = firstDoubleMatch(cornerRadiusPattern, in: fragment) { s.style.cornerRadius = v }
