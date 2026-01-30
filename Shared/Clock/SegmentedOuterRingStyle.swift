@@ -161,8 +161,9 @@ struct SegmentedOuterRingStyle {
         let outerChannel = max(minChannel, targetOuterChannelPx / max(scale, 1.0))
         let innerChannel = max(minChannel, targetInnerChannelPx / max(scale, 1.0))
 
-        // Block thickness boost: +18–22% vs baseline (use 20% midpoint).
-        let desiredBlockThickness = WWClock.pixel(max(px, baselineBlockThickness * 1.20), scale: scale)
+        // Block thickness boost: +10–16% vs baseline (use 14% midpoint).
+        // Outer boundary is held by keeping `bedOuter` unchanged; thickness is pushed inward by extending `bedInner`.
+        let desiredBlockThickness = WWClock.pixel(max(px, baselineBlockThickness * 1.14), scale: scale)
 
         let desiredBedThicknessRaw = desiredBlockThickness + outerChannel + innerChannel
         let maxBedThickness = max(px, bedOuter - px)
@@ -188,9 +189,9 @@ struct SegmentedOuterRingStyle {
         )
 
         // Physical-pixel gap policy:
-        // - Widget sizes (44/60) must show an obviously open "air" cut where the bed is visible.
-        // - Express the gap in physical pixels so it stays stable across device scales.
-        let gapPixels: CGFloat = WWClock.clamp(4.0, min: 3.0, max: 4.0)
+        // - Target 3px at 44/60 so gaps read as open-air cuts without looking loose.
+        // - Clamp to [2px..3px] and only go outside the range if a future renderer change requires it.
+        let gapPixels: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 3.0)
         let gapPoints = gapPixels / max(scale, 1.0)
 
         let midR = max(px, self.radii.blockMid)

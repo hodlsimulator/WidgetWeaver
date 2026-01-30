@@ -22,6 +22,15 @@ struct SegmentedBezelStyle {
     static let bezelMid: Color = WWClock.colour(0x171C25, alpha: 1.0)
     static let bezelBright: Color = WWClock.colour(0x343C47, alpha: 1.0)
 
+    /// Raised inner shelf metal (between rim and gutter).
+    ///
+    /// Policy:
+    /// - Brighter than the main bezel body so the bezel reads light all the way to the gutter boundary.
+    /// - Neutral gunmetal (no blue/green cast).
+    static let shelfBase: Color = WWClock.colour(0x2F3742, alpha: 1.0)
+    static let shelfMid: Color = WWClock.colour(0x3A4451, alpha: 1.0)
+    static let shelfBright: Color = WWClock.colour(0x455062, alpha: 1.0)
+
     /// Narrow recessed channel before the segmented ring (neutral; no blue/green cast).
     static let gutterBase: Color = WWClock.colour(0x05060A, alpha: 1.0)
     static let gutterHi: Color = WWClock.colour(0x0C0F15, alpha: 1.0)

@@ -343,7 +343,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
         // Rim highlight is kept inside the rim and the outermost edge is kept dark to avoid halo.
         let outerRimMachining = RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.black.opacity(0.78), location: 0.00),
+                .init(color: Color.black.opacity(0.52), location: 0.00),
                 .init(color: Color.black.opacity(0.18), location: 0.64),
                 .init(color: Color.white.opacity(0.28), location: 0.88),
                 .init(color: Color.black.opacity(0.70), location: 1.00)
@@ -463,7 +463,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .strokeBorder(Color.black.opacity(0.62), lineWidth: max(px, ringC * 0.52))
                 .frame(width: outerC, height: outerC)
                 .blendMode(.multiply)
-                .opacity(0.78)
+                .opacity(0.52)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -486,25 +486,25 @@ private struct WidgetWeaverClockSegmentedBezelShelfOverlayView: View {
 
         let band = max(px, outerR - innerR)
 
-        // Clamp broad gradients to narrow, physical-pixel ramps.
+        // Clamp base shading to narrow, physical-pixel ramps (no broad overlays).
         let innerRamp = WWClock.pixel(min(band, px * 2.0), scale: scale)
         let outerRamp = WWClock.pixel(min(band, px * 3.0), scale: scale)
 
         let innerLoc = Double(WWClock.clamp(innerRamp / band, min: 0.0, max: 0.35))
         let outerLoc = Double(WWClock.clamp(outerRamp / band, min: 0.0, max: 0.35))
-        let plateauStart = max(0.0, 1.0 - outerLoc)
+        let plateauStart = max(innerLoc, 1.0 - outerLoc)
 
-        // 11A2: Lighter shelf metal (neutral gunmetal).
-        let bezelDark = SegmentedBezelStyle.bezelDark
-        let bezelMid = SegmentedBezelStyle.bezelMid
-        let bezelBright = SegmentedBezelStyle.bezelBright
+        // 12A0: Shelf brightness is carried all the way to the gutter boundary (no dark collar).
+        let shelfBase = SegmentedBezelStyle.shelfBase
+        let shelfMid = SegmentedBezelStyle.shelfMid
+        let shelfBright = SegmentedBezelStyle.shelfBright
 
         let shelfFill = RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: bezelDark.opacity(0.98), location: 0.00),
-                .init(color: bezelMid.opacity(1.00), location: innerLoc),
-                .init(color: bezelMid.opacity(1.00), location: plateauStart),
-                .init(color: bezelBright.opacity(0.92), location: 1.00)
+                .init(color: shelfBright.opacity(1.00), location: 0.00),
+                .init(color: shelfMid.opacity(1.00), location: innerLoc),
+                .init(color: shelfMid.opacity(1.00), location: plateauStart),
+                .init(color: shelfBase.opacity(1.00), location: 1.00)
             ]),
             center: .center,
             startRadius: innerR,
@@ -529,13 +529,13 @@ private struct WidgetWeaverClockSegmentedBezelShelfOverlayView: View {
             angle: .degrees(-135.0)
         )
 
-        let shelfInnerShadowBand = WWClock.pixel(min(band, px * 2.0), scale: scale)
+        let shelfInnerShadowBand = WWClock.pixel(min(band, px * 1.0), scale: scale)
         let shadowOuterR = innerR + shelfInnerShadowBand
         let shadowInnerFraction: CGFloat = (shadowOuterR > 0.0) ? (innerR / shadowOuterR) : 0.01
 
         let shelfInnerShadow = RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.black.opacity(0.50), location: 0.00),
+                .init(color: Color.black.opacity(0.26), location: 0.00),
                 .init(color: Color.black.opacity(0.00), location: 1.00)
             ]),
             center: .center,
@@ -568,7 +568,7 @@ private struct WidgetWeaverClockSegmentedBezelShelfOverlayView: View {
                 .fill(shelfInnerShadow, style: FillStyle(eoFill: true, antialiased: true))
                 .frame(width: shadowOuterR * 2.0, height: shadowOuterR * 2.0)
                 .blendMode(.multiply)
-                .opacity(0.78)
+                .opacity(0.52)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
