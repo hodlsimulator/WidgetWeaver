@@ -151,6 +151,8 @@
 		E1F8D39F2F2AE16E004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D39D2F2AE16C004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift */; };
 		E1F8D3A32F2BD650004133CA /* WidgetSpecAISnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A22F2BD64A004133CA /* WidgetSpecAISnapshotStore.swift */; };
 		E1F8D3A42F2BD650004133CA /* WidgetSpecAISnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A22F2BD64A004133CA /* WidgetSpecAISnapshotStore.swift */; };
+		E1F8D3AA2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */; };
+		E1F8D3AB2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -275,6 +277,7 @@
 		E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFilterEngine.swift; sourceTree = "<group>"; };
 		E1F8D39D2F2AE16C004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersSmartStackV2Partitioner.swift; sourceTree = "<group>"; };
 		E1F8D3A22F2BD64A004133CA /* WidgetSpecAISnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecAISnapshotStore.swift; sourceTree = "<group>"; };
+		E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersSmartStackKitUpgrader.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -486,6 +489,7 @@
 				E1F8D36D2F2A6045004133CA /* PhotoFilterSpec.swift */,
 				E1C834D62EFB33C000E3AA98 /* RainForecastSurfaceRenderer.swift */,
 				E1C835D12F050F5B00E3AA98 /* RainForecastSurfaceRenderer+Data.swift */,
+				E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */,
 				E1C835D42F050F8B00E3AA98 /* RainForecastSurfaceRenderer+Dissipation.swift */,
 				E1C834CD2EFAAF3600E3AA98 /* RainForecastSurfaceView.swift */,
 				E1C835CC2F04E53100E3AA98 /* RainSurfaceDissipationNoise.swift */,
@@ -806,6 +810,7 @@
 				E1F8D39F2F2AE16E004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift in Sources */,
 				E1F8D3772F2A8E2D004133CA /* PhotoFilterEngine.swift in Sources */,
 				E1F8D3A42F2BD650004133CA /* WidgetSpecAISnapshotStore.swift in Sources */,
+				E1F8D3AA2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */,
 				E15B0BC22EF78BEB00760C03 /* WidgetWeaverSteps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -846,6 +851,7 @@
 				E1C834E32EFB345B00E3AA98 /* RainSurfacePRNG.swift in Sources */,
 				E12EAD5B2EF85AEB00A0E994 /* WidgetWeaverStepsEngine.swift in Sources */,
 				E1F8D39E2F2AE16E004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift in Sources */,
+				E1F8D3AB2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */,
 				6B8E62C829F6419284F4B718 /* WidgetSpec+Symbol.swift in Sources */,
 				E1C834D22EFAB7CF00E3AA98 /* WidgetWeaverWeatherTemplateNowcastChart.swift in Sources */,
 				E1F8D36F2F2A6049004133CA /* PhotoFilterSpec.swift in Sources */,
