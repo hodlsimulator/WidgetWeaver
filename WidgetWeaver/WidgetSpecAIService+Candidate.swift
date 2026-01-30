@@ -36,7 +36,12 @@ extension WidgetSpecAIService {
             summary = ["No changes."]
         }
 
-        let warnings = result.usedModel ? [] : [result.note]
+        var warnings: [String] = []
+        if result.usedModel {
+            warnings.append(contentsOf: Self.scopeGuardWarningsForPatch(base: base, candidate: candidate, instruction: instruction))
+        } else {
+            warnings.append(result.note)
+        }
 
         return WidgetSpecAICandidate(
             candidateSpec: candidate,
@@ -260,4 +265,221 @@ private extension WidgetSpecAIService {
             return "Above name"
         }
     }
+
+    // MARK: - Patch scope guard warnings
+
+    enum PatchChangeArea: Int, Hashable, CaseIterable {
+        case name = 0
+        case primaryText
+        case secondaryText
+        case axis
+        case alignment
+        case spacing
+        case primaryLineLimitSmall
+        case primaryLineLimit
+        case secondaryLineLimit
+        case background
+        case accent
+        case padding
+        case cornerRadius
+        case primaryFont
+        case secondaryFont
+        case image
+        case symbol
+
+        var displayName: String {
+            switch self {
+            case .name:
+                return "Name"
+            case .primaryText:
+                return "Primary text"
+            case .secondaryText:
+                return "Secondary text"
+            case .axis:
+                return "Axis"
+            case .alignment:
+                return "Alignment"
+            case .spacing:
+                return "Spacing"
+            case .primaryLineLimitSmall:
+                return "Primary line limit (Small)"
+            case .primaryLineLimit:
+                return "Primary line limit"
+            case .secondaryLineLimit:
+                return "Secondary line limit"
+            case .background:
+                return "Background"
+            case .accent:
+                return "Accent"
+            case .padding:
+                return "Padding"
+            case .cornerRadius:
+                return "Corner radius"
+            case .primaryFont:
+                return "Primary font"
+            case .secondaryFont:
+                return "Secondary font"
+            case .image:
+                return "Image"
+            case .symbol:
+                return "Symbol"
+            }
+        }
+    }
+
+    struct SmallPatchRequest {
+        let requestedAreas: Set<PatchChangeArea>
+        let hasBroadKeywords: Bool
+
+        var isSmall: Bool {
+            !requestedAreas.isEmpty && requestedAreas.count <= 2 && !hasBroadKeywords
+        }
+
+        var displayLabel: String {
+            let ordered = requestedAreas.sorted { $0.rawValue < $1.rawValue }
+            return ordered.map { $0.displayName }.joined(separator: " + ")
+        }
+    }
+
+    static func scopeGuardWarningsForPatch(base: WidgetSpec, candidate: WidgetSpec, instruction: String) -> [String] {
+        guard WidgetWeaverFeatureFlags.aiReviewUIEnabled else { return [] }
+
+        let request = smallPatchRequest(from: instruction)
+        guard request.isSmall else { return [] }
+
+        let changed = patchChangeAreas(base: base, candidate: candidate)
+        let extra = changed.subtracting(request.requestedAreas)
+
+        let extraThreshold = 4
+        guard extra.count >= extraThreshold else { return [] }
+
+        let requestedLabel = request.displayLabel
+        let sortedExtra = extra.sorted { $0.rawValue < $1.rawValue }
+        let previewExtras = Array(sortedExtra.prefix(4))
+
+        let extraCountText = extra.count == 1 ? "1 other area" : "\(extra.count) other areas"
+        let extraText = previewExtras.map { $0.displayName }.joined(separator: ", ")
+        let suffix = extra.count > previewExtras.count ? ", …" : ""
+
+        return [
+            "Small request (\(requestedLabel)), but the candidate also changes \(extraCountText): \(extraText)\(suffix). Review before applying."
+        ]
+    }
+
+    static func patchChangeAreas(base: WidgetSpec, candidate: WidgetSpec) -> Set<PatchChangeArea> {
+        let b = base.normalised()
+        let c = candidate.normalised()
+
+        var out: Set<PatchChangeArea> = []
+
+        if b.name != c.name { out.insert(.name) }
+        if b.primaryText != c.primaryText { out.insert(.primaryText) }
+        if b.secondaryText != c.secondaryText { out.insert(.secondaryText) }
+
+        if b.layout.axis != c.layout.axis { out.insert(.axis) }
+        if b.layout.alignment != c.layout.alignment { out.insert(.alignment) }
+        if !equalsPoints(b.layout.spacing, c.layout.spacing) { out.insert(.spacing) }
+
+        if b.layout.primaryLineLimitSmall != c.layout.primaryLineLimitSmall { out.insert(.primaryLineLimitSmall) }
+        if b.layout.primaryLineLimit != c.layout.primaryLineLimit { out.insert(.primaryLineLimit) }
+        if b.layout.secondaryLineLimit != c.layout.secondaryLineLimit { out.insert(.secondaryLineLimit) }
+
+        if b.style.background != c.style.background { out.insert(.background) }
+        if b.style.accent != c.style.accent { out.insert(.accent) }
+        if !equalsPoints(b.style.padding, c.style.padding) { out.insert(.padding) }
+        if !equalsPoints(b.style.cornerRadius, c.style.cornerRadius) { out.insert(.cornerRadius) }
+
+        if b.style.primaryTextStyle != c.style.primaryTextStyle { out.insert(.primaryFont) }
+        if b.style.secondaryTextStyle != c.style.secondaryTextStyle { out.insert(.secondaryFont) }
+
+        if b.image != c.image { out.insert(.image) }
+        if b.symbol != c.symbol { out.insert(.symbol) }
+
+        return out
+    }
+
+    static func smallPatchRequest(from instruction: String) -> SmallPatchRequest {
+        let lower = instruction.lowercased()
+        let collapsed = collapseWhitespace(lower).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var canonical = collapsed
+        canonical = canonical.replacingOccurrences(of: "\\b(inset|insets)\\b", with: "padding", options: .regularExpression)
+        canonical = canonical.replacingOccurrences(of: "\\b(gap|gutter)\\b", with: "spacing", options: .regularExpression)
+        canonical = canonical.replacingOccurrences(of: "\\brounded\\s+corners?\\b", with: "radius", options: .regularExpression)
+        canonical = canonical.replacingOccurrences(of: "\\brounding\\b", with: "radius", options: .regularExpression)
+
+        let paddingPattern = "(?:\\bpadding\\b|\\bpad\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let spacingPattern = "(?:\\bspacing\\b|\\bspace\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+        let cornerRadiusPattern = "(?:\\bcorner\\s*radius\\b|\\bcornerradius\\b|\\bradius\\b)\\s*(?:to\\s*)?(?:=|:)?\\s*([0-9]+(?:\\.[0-9]+)?)"
+
+        var requested: Set<PatchChangeArea> = []
+        if firstDoubleMatch(paddingPattern, in: canonical) != nil { requested.insert(.padding) }
+        if firstDoubleMatch(spacingPattern, in: canonical) != nil { requested.insert(.spacing) }
+        if firstDoubleMatch(cornerRadiusPattern, in: canonical) != nil { requested.insert(.cornerRadius) }
+
+        let broadKeywords = [
+            "background",
+            "accent",
+            "colour",
+            "color",
+            "font",
+            "text",
+            "name",
+            "symbol",
+            "icon",
+            "image",
+            "photo",
+            "axis",
+            "alignment",
+            "horizontal",
+            "vertical",
+            "remove",
+            "delete",
+            "add",
+            "swap",
+            "replace"
+        ]
+
+        let hasBroad = broadKeywords.contains { containsWord(canonical, word: $0) }
+
+        return SmallPatchRequest(requestedAreas: requested, hasBroadKeywords: hasBroad)
+    }
+
+    static func containsWord(_ text: String, word: String) -> Bool {
+        guard !word.isEmpty else { return false }
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+        return text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    static func firstDoubleMatch(_ pattern: String, in text: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges >= 2,
+              let numRange = Range(match.range(at: 1), in: text)
+        else { return nil }
+
+        return Double(text[numRange])
+    }
+
+    static func collapseWhitespace(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+
+        var lastWasSpace = false
+        for ch in text {
+            if ch.isWhitespace {
+                if !lastWasSpace {
+                    out.append(" ")
+                    lastWasSpace = true
+                }
+            } else {
+                out.append(ch)
+                lastWasSpace = false
+            }
+        }
+        return out
+    }
+
 }
