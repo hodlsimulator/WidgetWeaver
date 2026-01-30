@@ -7,59 +7,46 @@
 
 import SwiftUI
 
-/// Segmented face outer ring (bed + blocks + numerals).
-///
-/// Step 9F.0b:
-/// - This view is the sole outer ring draw path.
-/// - A debug-only diagnostic (feature-flagged) can be enabled to prove the Canvas renderer
-///   is active on the Home Screen widget.
 struct SegmentedOuterRingView: View {
     let dialRadius: CGFloat
     let scale: CGFloat
 
-    private let style: SegmentedOuterRingStyle
-    private let renderer = SegmentedOuterRingRenderer()
-
-    init(
-        dialRadius: CGFloat,
-        scale: CGFloat,
-        style: SegmentedOuterRingStyle? = nil
-    ) {
-        self.dialRadius = dialRadius
-        self.scale = scale
-        self.style = style ?? SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale)
-    }
-
     var body: some View {
+        let style = SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale)
+
         Canvas { context, size in
-            renderer.render(into: &context, size: size, style: style, scale: scale)
-        }
-        .frame(width: dialRadius * 2.0, height: dialRadius * 2.0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .overlay(
-            SegmentedOuterRingNumeralsView(
-                dialRadius: dialRadius,
-                innerRadius: style.radii.blockInner,
-                thickness: style.radii.blockThickness,
+            SegmentedOuterRingRenderer().render(
+                into: &context,
+                size: size,
+                style: style,
                 scale: scale
             )
-        )
+        }
+        .overlay {
+            NumeralsView(
+                dialRadius: dialRadius,
+                innerRadius: style.radii.blockInner,
+                outerRadius: style.radii.blockOuter,
+                scale: scale
+            )
+        }
+        .frame(width: dialRadius * 2.0, height: dialRadius * 2.0)
+        .accessibilityHidden(true)
     }
 }
 
-private struct SegmentedOuterRingNumeralsView: View {
+private struct NumeralsView: View {
     let dialRadius: CGFloat
     let innerRadius: CGFloat
-    let thickness: CGFloat
+    let outerRadius: CGFloat
     let scale: CGFloat
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+        let thickness = max(px, outerRadius - innerRadius)
 
-        // Place numerals with a fixed inset from the block outer edge.
         // The inset is specified in physical pixels so it stays stable at 44/60.
-        let numeralOuterInsetPx: CGFloat = 10.0
+        let numeralOuterInsetPx: CGFloat = 16.0
         let numeralOuterInset = WWClock.pixel(numeralOuterInsetPx / max(scale, 1.0), scale: scale)
 
         let placement = WWClock.pixel(max(px, thickness - numeralOuterInset), scale: scale)
@@ -95,7 +82,7 @@ private struct SegmentedOuterRingNumeralsView: View {
                 }()
 
                 let fontSize = WWClock.pixel(
-                    WWClock.clamp(fontSizeBase, min: fontSizeBase * 0.92, max: fontSizeBase * 1.02),
+                    WWClock.clamp(fontSizeBase * 0.94, min: fontSizeBase * 0.90, max: fontSizeBase * 0.98),
                     scale: scale
                 )
 

@@ -204,6 +204,8 @@ struct SegmentedOuterRingRenderer {
     ) {
         let fullSpan = CGFloat.pi * 2.0
         let segmentSpan = fullSpan / CGFloat(Self.segmentCount)
+
+        // Encode the gap in the block geometry itself.
         let halfGap = (style.gap.angular * 0.5) + style.gap.edgeTrimAngular
 
         let gradientStart = CGPoint(x: centre.x - style.radii.blockOuter, y: centre.y - style.radii.blockOuter)
@@ -218,12 +220,13 @@ struct SegmentedOuterRingRenderer {
 
             guard endAngle > startAngle else { continue }
 
-            let cgPath = AnnularSegmentCGPath.segment(
+            let cgPath = AnnularSegmentCGPath.chamferedSegment(
                 centre: centre,
                 innerRadius: style.radii.blockInner,
                 outerRadius: style.radii.blockOuter,
                 startAngle: startAngle,
-                endAngle: endAngle
+                endAngle: endAngle,
+                chamfer: style.chamfer.depth
             )
 
             let path = Path(cgPath)
@@ -261,13 +264,26 @@ struct SegmentedOuterRingRenderer {
             }
 
             if style.diagnostic.enabled {
+                // Segment centre marker.
                 renderMarker(
                     into: &context,
                     centre: centre,
                     angle: centreAngle,
                     radius: style.radii.blockMid,
                     markerRadius: style.diagnostic.markerRadius,
-                    colour: style.diagnostic.markerColour,
+                    colour: style.diagnostic.segmentMarkerColour,
+                    scale: scale
+                )
+
+                // Gap centre marker (between segments).
+                let gapAngle = centreAngle + (segmentSpan * 0.5)
+                renderMarker(
+                    into: &context,
+                    centre: centre,
+                    angle: gapAngle,
+                    radius: style.radii.blockMid,
+                    markerRadius: style.diagnostic.markerRadius * 0.85,
+                    colour: style.diagnostic.gapMarkerColour,
                     scale: scale
                 )
             }
@@ -307,9 +323,12 @@ struct SegmentedOuterRingRenderer {
         context.blendMode = .multiply
         context.fill(blockPath, with: shadowShading)
 
+        // Rim strokes: draw only the inner/outer arcs (avoid strokes landing on the air-gap boundaries).
         renderPerimeterRimStrokes(
             into: &context,
-            blockPath: blockPath,
+            centre: centre,
+            startAngle: startAngle,
+            endAngle: endAngle,
             gradientStart: gradientStart,
             gradientEnd: gradientEnd,
             style: style
@@ -371,7 +390,9 @@ struct SegmentedOuterRingRenderer {
 
     private func renderPerimeterRimStrokes(
         into context: inout GraphicsContext,
-        blockPath: Path,
+        centre: CGPoint,
+        startAngle: CGFloat,
+        endAngle: CGFloat,
         gradientStart: CGPoint,
         gradientEnd: CGPoint,
         style: SegmentedOuterRingStyle
@@ -392,13 +413,45 @@ struct SegmentedOuterRingRenderer {
             endPoint: gradientStart
         )
 
-        let stroke = StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .bevel)
+        // Stroke only the outer and inner arcs so nothing lands on the gap boundaries.
+        let outerR = max(0.0, style.radii.blockOuter - (w * 0.50))
+        let innerR = max(0.0, style.radii.blockInner + (w * 0.50))
 
-        context.blendMode = .screen
-        context.stroke(blockPath, with: highlight, style: stroke)
+        if outerR > 0 {
+            let outerArc = arcPath(centre: centre, radius: outerR, startAngle: startAngle, endAngle: endAngle)
 
-        context.blendMode = .multiply
-        context.stroke(blockPath, with: shadow, style: stroke)
+            context.blendMode = .screen
+            context.stroke(
+                outerArc,
+                with: highlight,
+                style: StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .miter)
+            )
+
+            context.blendMode = .multiply
+            context.stroke(
+                outerArc,
+                with: shadow,
+                style: StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .miter)
+            )
+        }
+
+        if innerR > 0 {
+            let innerArc = arcPath(centre: centre, radius: innerR, startAngle: startAngle, endAngle: endAngle)
+
+            context.blendMode = .screen
+            context.stroke(
+                innerArc,
+                with: highlight,
+                style: StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .miter)
+            )
+
+            context.blendMode = .multiply
+            context.stroke(
+                innerArc,
+                with: shadow,
+                style: StrokeStyle(lineWidth: w, lineCap: .butt, lineJoin: .miter)
+            )
+        }
 
         context.blendMode = .normal
     }
@@ -415,6 +468,21 @@ struct SegmentedOuterRingRenderer {
         let w = bevel.radialEdgeStrokeWidth
         guard w > 0 else { return }
 
+        let span = endAngle - startAngle
+        guard span > 0 else { return }
+
+        // Chamfer geometry: the block ends are diagonal faces between the inner/outer arc endpoints.
+        let maxTrim = span * 0.25
+        let chamfer = max(0.0, style.chamfer.depth)
+
+        let outerTrim = min(maxTrim, max(0.0, chamfer / max(style.radii.blockOuter, 0.001)))
+        let innerTrim = min(maxTrim, max(0.0, chamfer / max(style.radii.blockInner, 0.001)))
+
+        let startOuterAngle = startAngle + outerTrim
+        let startInnerAngle = startAngle + innerTrim
+        let endOuterAngle = endAngle - outerTrim
+        let endInnerAngle = endAngle - innerTrim
+
         let innerR = style.radii.blockInner + bevel.radialEdgeEndInset
         let outerR = style.radii.blockOuter - bevel.radialEdgeEndInset
         guard outerR > innerR else { return }
@@ -422,61 +490,72 @@ struct SegmentedOuterRingRenderer {
         // Fixed screen-space light direction (top-left).
         let light = CGPoint(x: -0.70710678, y: -0.70710678)
 
-        drawRadialEdgeAccent(
+        let interiorSampleAngle = (startAngle + endAngle) * 0.5
+        let interiorSample = CGPoint(
+            x: centre.x + cos(interiorSampleAngle) * style.radii.blockMid,
+            y: centre.y + sin(interiorSampleAngle) * style.radii.blockMid
+        )
+
+        // Start face.
+        drawChamferEdgeAccent(
             into: &context,
-            centre: centre,
-            angle: startAngle,
-            innerRadius: innerR,
-            outerRadius: outerR,
-            interiorTangentSign: 1.0,
+            innerPoint: CGPoint(x: centre.x + cos(startInnerAngle) * innerR, y: centre.y + sin(startInnerAngle) * innerR),
+            outerPoint: CGPoint(x: centre.x + cos(startOuterAngle) * outerR, y: centre.y + sin(startOuterAngle) * outerR),
+            interiorSample: interiorSample,
             light: light,
             style: style
         )
 
-        drawRadialEdgeAccent(
+        // End face.
+        drawChamferEdgeAccent(
             into: &context,
-            centre: centre,
-            angle: endAngle,
-            innerRadius: innerR,
-            outerRadius: outerR,
-            interiorTangentSign: -1.0,
+            innerPoint: CGPoint(x: centre.x + cos(endInnerAngle) * innerR, y: centre.y + sin(endInnerAngle) * innerR),
+            outerPoint: CGPoint(x: centre.x + cos(endOuterAngle) * outerR, y: centre.y + sin(endOuterAngle) * outerR),
+            interiorSample: interiorSample,
             light: light,
             style: style
         )
+
+        context.blendMode = .normal
     }
 
-    private func drawRadialEdgeAccent(
+    private func drawChamferEdgeAccent(
         into context: inout GraphicsContext,
-        centre: CGPoint,
-        angle: CGFloat,
-        innerRadius: CGFloat,
-        outerRadius: CGFloat,
-        interiorTangentSign: CGFloat,
+        innerPoint: CGPoint,
+        outerPoint: CGPoint,
+        interiorSample: CGPoint,
         light: CGPoint,
         style: SegmentedOuterRingStyle
     ) {
         let bevel = style.blockBevel
 
-        let r = CGPoint(x: cos(angle), y: sin(angle))
-        let t = CGPoint(x: -sin(angle), y: cos(angle))
+        let v = CGPoint(x: outerPoint.x - innerPoint.x, y: outerPoint.y - innerPoint.y)
+        let len = max(0.0001, sqrt((v.x * v.x) + (v.y * v.y)))
 
-        let interiorTangent = CGPoint(x: t.x * interiorTangentSign, y: t.y * interiorTangentSign)
-        let outwardNormal = CGPoint(x: -interiorTangent.x, y: -interiorTangent.y)
+        let u = CGPoint(x: v.x / len, y: v.y / len)
 
-        let dot = outwardNormal.x * light.x + outwardNormal.y * light.y
+        // Candidate normals (perpendicular to the face line).
+        let n1 = CGPoint(x: -u.y, y: u.x)
+        let n2 = CGPoint(x: u.y, y: -u.x)
+
+        // Pick the normal that points towards the block interior.
+        let toSample = CGPoint(x: interiorSample.x - innerPoint.x, y: interiorSample.y - innerPoint.y)
+        let dot1 = (toSample.x * n1.x) + (toSample.y * n1.y)
+        let interiorNormal = (dot1 >= 0.0) ? n1 : n2
+        let outwardNormal = CGPoint(x: -interiorNormal.x, y: -interiorNormal.y)
+
+        // Shift the accent fully inside the block so it never "prints" into the air gap.
+        let shift = CGPoint(
+            x: interiorNormal.x * bevel.radialEdgeInset,
+            y: interiorNormal.y * bevel.radialEdgeInset
+        )
+
+        let p0 = CGPoint(x: innerPoint.x + shift.x, y: innerPoint.y + shift.y)
+        let p1 = CGPoint(x: outerPoint.x + shift.x, y: outerPoint.y + shift.y)
+
+        // Light test: highlight faces that point towards the light.
+        let dot = (outwardNormal.x * light.x) + (outwardNormal.y * light.y)
         let isLit = dot >= 0.0
-
-        let shift = CGPoint(x: interiorTangent.x * bevel.radialEdgeInset, y: interiorTangent.y * bevel.radialEdgeInset)
-
-        let p0 = CGPoint(
-            x: centre.x + r.x * innerRadius + shift.x,
-            y: centre.y + r.y * innerRadius + shift.y
-        )
-
-        let p1 = CGPoint(
-            x: centre.x + r.x * outerRadius + shift.x,
-            y: centre.y + r.y * outerRadius + shift.y
-        )
 
         let cg = CGMutablePath()
         cg.move(to: p0)

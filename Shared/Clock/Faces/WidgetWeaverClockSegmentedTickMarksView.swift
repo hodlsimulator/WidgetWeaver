@@ -66,13 +66,14 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
             scale: scale
         )
 
-        // Five-minute ticks: shorter (less intrusion) but thicker (more weight). All ends remain square.
+        // Five-minute ticks: blocky (short + thick). All ends remain square.
         let fiveLengthBase = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.064, min: px * 2.4, max: dialRadius * 0.085),
             scale: scale
         )
 
-        let fiveLengthReductionPx: CGFloat = 2.0
+        // BOLD v2 target: reduce by an additional 6 physical px vs the prior baseline.
+        let fiveLengthReductionPx: CGFloat = 8.0
         let fiveLengthReduction = WWClock.pixel(fiveLengthReductionPx / max(scale, 1.0), scale: scale)
 
         let fiveLength = WWClock.pixel(
@@ -80,13 +81,16 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
             scale: scale
         )
 
+        // BOLD v2 targets:
+        // - Quarter ticks width >= 4px
+        // - Five-minute ticks width >= 3px
         let quarterWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.020, min: px * 2.0, max: dialRadius * 0.026),
+            WWClock.clamp(dialRadius * 0.020, min: px * 4.0, max: dialRadius * 0.026),
             scale: scale
         )
 
         let fiveWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.018, min: px * 2.0, max: dialRadius * 0.023),
+            WWClock.clamp(dialRadius * 0.018, min: px * 3.0, max: dialRadius * 0.023),
             scale: scale
         )
 
@@ -141,11 +145,11 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
                     return sizes.minute.w
                 }()
 
-                // Slightly higher minute-tick opacity keeps the ring present in WidgetKit snapshots.
+                // Minute ticks stay present but do not compete with the 5-minute blocks.
                 let opacity: Double = {
                     if isQuarter { return 0.92 }
                     if isFive { return 0.78 }
-                    return 0.62
+                    return 0.48
                 }()
 
                 let yOffset = WWClock.pixel(-(safeOuterRadius - (length / 2.0)), scale: scale)

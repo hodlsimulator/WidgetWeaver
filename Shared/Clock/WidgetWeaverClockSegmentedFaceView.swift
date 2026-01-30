@@ -237,6 +237,7 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
     var body: some View {
         let px = WWClock.px(scale: scale)
+        let rimCrispW = WWClock.pixel(2.0 / max(scale, 1.0), scale: scale)
 
         // Ring geometry mirrors the other faces: A (outer rim), B (main body), C (inner ridge).
         let outerA = outerDiameter
@@ -284,9 +285,9 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
         let outerRimMachining = RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.black.opacity(0.58), location: 0.00),
-                .init(color: Color.black.opacity(0.18), location: 0.55),
-                .init(color: Color.white.opacity(0.32), location: 1.00)
+                .init(color: Color.black.opacity(0.72), location: 0.00),
+                .init(color: Color.black.opacity(0.22), location: 0.62),
+                .init(color: Color.white.opacity(0.44), location: 1.00)
             ]),
             center: .center,
             startRadius: max(0.0, outerRimRadius - ringA),
@@ -295,9 +296,9 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
 
         let outerRimDirectional = LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: Color.white.opacity(0.30), location: 0.00),
+                .init(color: Color.white.opacity(0.34), location: 0.00),
                 .init(color: Color.white.opacity(0.00), location: 0.40),
-                .init(color: Color.black.opacity(0.28), location: 1.00)
+                .init(color: Color.black.opacity(0.32), location: 1.00)
             ]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -354,6 +355,22 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .blendMode(.screen)
                 .opacity(0.88)
 
+            // Crisp outer-edge highlight + inner shadow to make the rim read raised at 44/60.
+            Circle()
+                .strokeBorder(Color.white.opacity(0.28), lineWidth: max(px, rimCrispW))
+                .frame(width: outerA, height: outerA)
+                .blendMode(.screen)
+                .opacity(0.90)
+
+            Circle()
+                .strokeBorder(Color.black.opacity(0.70), lineWidth: max(px, rimCrispW))
+                .frame(
+                    width: max(1.0, outerA - (ringA * 0.85)),
+                    height: max(1.0, outerA - (ringA * 0.85))
+                )
+                .blendMode(.multiply)
+                .opacity(0.84)
+
             // C) Inner ridge / separator between bezel and dial.
             Circle()
                 .strokeBorder(innerRidge, lineWidth: max(px, ringC))
@@ -385,12 +402,6 @@ private struct WidgetWeaverClockSegmentedBezelPlaceholderView: View {
                 .blendMode(.multiply)
                 .opacity(0.78)
         }
-        .shadow(
-            color: Color.black.opacity(0.34),
-            radius: WWClock.pixel(px * 1.3, scale: scale),
-            x: 0,
-            y: WWClock.pixel(px * 1.0, scale: scale)
-        )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
