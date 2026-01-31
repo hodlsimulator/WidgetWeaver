@@ -185,6 +185,36 @@ private enum SegmentedNumeralTextMetrics {
         return WWClock.clamp(scaleX, min: 0.88, max: 0.94)
     }
 
+    /// Small top-left trim for digit "1" (reduces the long flag/protrusion).
+    ///
+    /// Implemented as a destinationOut rectangle so the rest of the numeral pipeline
+    /// (expanded width, kerning, baseline) stays unchanged.
+    ///
+    /// Targets (physical pixels at 60/44):
+    /// - Width: ~3px (clamp 2px…4px)
+    /// - Height: ~8px (clamp 6px…10px)
+    static func digitOneTopTrimWidth(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        let pixels = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        return WWClock.pixel(px * pixels, scale: scale)
+    }
+
+    static func digitOneTopTrimHeight(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        let pixels = WWClock.clamp(8.0, min: 6.0, max: 10.0)
+        return WWClock.pixel(px * pixels, scale: scale)
+    }
+
+    static func digitOneTopTrimXOffset(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        return WWClock.pixel(px * 0.0, scale: scale)
+    }
+
+    static func digitOneTopTrimYOffset(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        return WWClock.pixel(px * 0.0, scale: scale)
+    }
+
     static func oneDigitCellWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         #if canImport(UIKit)
         let uiFont = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .heavy)
@@ -210,14 +240,33 @@ private extension View {
     @ViewBuilder
     func segmentedNumeralDigitOneSlim(digit: String, fontSize: CGFloat, scale: CGFloat) -> some View {
         if digit == "1" {
-            self.scaleEffect(
-                x: SegmentedNumeralTextMetrics.digitOneHorizontalScale(fontSize: fontSize, scale: scale),
-                y: 1.0,
-                anchor: .center
-            )
+            self
+                .segmentedNumeralDigitOneTopTrim(scale: scale)
+                .scaleEffect(
+                    x: SegmentedNumeralTextMetrics.digitOneHorizontalScale(fontSize: fontSize, scale: scale),
+                    y: 1.0,
+                    anchor: .center
+                )
         } else {
             self
         }
+    }
+
+    private func segmentedNumeralDigitOneTopTrim(scale: CGFloat) -> some View {
+        let trimWidth = SegmentedNumeralTextMetrics.digitOneTopTrimWidth(scale: scale)
+        let trimHeight = SegmentedNumeralTextMetrics.digitOneTopTrimHeight(scale: scale)
+        let trimX = SegmentedNumeralTextMetrics.digitOneTopTrimXOffset(scale: scale)
+        let trimY = SegmentedNumeralTextMetrics.digitOneTopTrimYOffset(scale: scale)
+
+        return self
+            .overlay(alignment: .topLeading) {
+                Rectangle()
+                    .foregroundStyle(Color.black)
+                    .frame(width: trimWidth, height: trimHeight)
+                    .offset(x: trimX, y: trimY)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
     }
 
     @ViewBuilder
