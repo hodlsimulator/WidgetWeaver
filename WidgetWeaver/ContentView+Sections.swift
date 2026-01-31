@@ -604,6 +604,12 @@ extension ContentView {
 
     var styleSection: some View {
         Section {
+            WidgetWeaverThemePickerRow(
+                applyToDraft: { _ in
+                    // Step 6 wires theme selection to draft application.
+                }
+            )
+
             HStack {
                 Text("Padding")
                 Slider(value: $styleDraft.padding, in: 0...40, step: 1)
