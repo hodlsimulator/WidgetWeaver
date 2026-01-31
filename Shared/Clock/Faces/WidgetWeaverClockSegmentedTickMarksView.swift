@@ -9,9 +9,8 @@ import SwiftUI
 
 /// Tick marks used by the Segmented clock face.
 ///
-/// Renders a three-level hierarchy:
-/// - Quarter-hour ticks (strongest)
-/// - Five-minute ticks (medium)
+/// Renders a two-level hierarchy:
+/// - Five-minute ticks (uniform across all 5-minute positions, including quarter-hours)
 /// - One-minute ticks (thin / short)
 ///
 /// Layout convention:
@@ -45,16 +44,10 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         dialRadius: CGFloat,
         scale: CGFloat
     ) -> (
-        quarter: (len: CGFloat, w: CGFloat),
-        five: (len: CGFloat, w: CGFloat),
+        fiveMinute: (len: CGFloat, w: CGFloat),
         minute: (len: CGFloat, w: CGFloat)
     ) {
         let px = WWClock.px(scale: scale)
-
-        let quarterLength = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.086, min: px * 3.0, max: dialRadius * 0.105),
-            scale: scale
-        )
 
         let minuteLength = WWClock.pixel(
             WWClock.clamp(dialRadius * 0.044, min: px * 1.6, max: dialRadius * 0.065),
@@ -67,20 +60,11 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
             scale: scale
         )
 
-        // BOLD v2 target: reduce by an additional 6 physical px vs the prior baseline.
         let fiveLengthReductionPx: CGFloat = 8.0
         let fiveLengthReduction = WWClock.pixel(fiveLengthReductionPx / max(scale, 1.0), scale: scale)
 
         let fiveLength = WWClock.pixel(
             max(minuteLength + px, fiveLengthBase - fiveLengthReduction),
-            scale: scale
-        )
-
-        // BOLD v2 targets:
-        // - Quarter ticks width >= 4px
-        // - Five-minute ticks width >= 3px
-        let quarterWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.020, min: px * 4.0, max: dialRadius * 0.026),
             scale: scale
         )
 
@@ -95,8 +79,7 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         )
 
         return (
-            quarter: (len: quarterLength, w: quarterWidth),
-            five: (len: fiveLength, w: fiveWidth),
+            fiveMinute: (len: fiveLength, w: fiveWidth),
             minute: (len: minuteLength, w: minuteWidth)
         )
     }
@@ -108,7 +91,7 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         let r = radii(dialRadius: dialRadius, scale: scale)
         let sizes = tickSizes(dialRadius: dialRadius, scale: scale)
 
-        // Matte, off-white tick material to match the mock (avoid a chrome read at 44/60).
+        // Matte, off-white tick material (avoid a chrome read at 44/60).
         let tickFill = LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: WWClock.colour(0xF1F3F6, alpha: 0.92), location: 0.00),
@@ -123,29 +106,14 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         let ringSafeInset = WWClock.pixel(max(px, dialRadius * 0.006), scale: scale)
         let safeOuterRadius = WWClock.pixel(min(r.outerRadius, r.segmentInnerRadius - ringSafeInset), scale: scale)
 
-        ZStack {
+        return ZStack {
             ForEach(0..<60, id: \.self) { idx in
-                let isQuarter = (idx % 15 == 0)
-                let isFive = (!isQuarter && idx % 5 == 0)
+                let isFiveMinute = (idx % 5 == 0)
 
-                let length: CGFloat = {
-                    if isQuarter { return sizes.quarter.len }
-                    if isFive { return sizes.five.len }
-                    return sizes.minute.len
-                }()
+                let length: CGFloat = isFiveMinute ? sizes.fiveMinute.len : sizes.minute.len
+                let width: CGFloat = isFiveMinute ? sizes.fiveMinute.w : sizes.minute.w
 
-                let width: CGFloat = {
-                    if isQuarter { return sizes.quarter.w }
-                    if isFive { return sizes.five.w }
-                    return sizes.minute.w
-                }()
-
-                // Minute ticks stay present but do not compete with the 5-minute blocks.
-                let opacity: Double = {
-                    if isQuarter { return 0.92 }
-                    if isFive { return 0.78 }
-                    return 0.48
-                }()
+                let opacity: Double = isFiveMinute ? 0.78 : 0.48
 
                 let yOffset = WWClock.pixel(-(safeOuterRadius - (length / 2.0)), scale: scale)
 

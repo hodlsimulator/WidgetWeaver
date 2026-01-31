@@ -12,10 +12,10 @@ import UIKit
 
 /// Numeral glyph used by the Segmented clock face.
 ///
-/// The styling is intentionally fixed (metallic matte) to match the segmented mock
+/// Styling is intentionally fixed (metallic matte) to match the segmented mock
 /// and remain consistent across colour schemes.
 ///
-/// WidgetKit snapshots heavily penalise soft blur/haze. Effects are intentionally clamped
+/// WidgetKit snapshots penalise soft blur/haze. Effects are clamped
 /// and biased towards crisp bevel lines.
 struct WidgetWeaverClockSegmentedNumeralGlyphView: View {
     let text: String
@@ -102,9 +102,10 @@ private struct SegmentedNumeralBaseShape: View {
             let left = String(digits[0])
             let right = String(digits[1])
 
-            let fixedWidth = SegmentedNumeralTextMetrics.twoDigitWidth(fontSize: fontSize, scale: scale)
+            let fixedWidthBase = SegmentedNumeralTextMetrics.twoDigitWidth(fontSize: fontSize, scale: scale)
+            let fixedWidth = WWClock.pixel(fixedWidthBase * SegmentedNumeralTextMetrics.twoDigitWidthSlackFactor, scale: scale)
 
-            let kerningPx: CGFloat = 3.0
+            let kerningPx: CGFloat = 2.0
             let spacing = WWClock.pixel(-(kerningPx / max(scale, 1.0)), scale: scale)
 
             return AnyView(
@@ -112,10 +113,12 @@ private struct SegmentedNumeralBaseShape: View {
                     Text(left)
                         .font(font)
                         .monospacedDigit()
+                        .segmentedNumeralWidth()
 
                     Text(right)
                         .font(font)
                         .monospacedDigit()
+                        .segmentedNumeralWidth()
                 }
                 .fixedSize()
                 .frame(width: fixedWidth, alignment: .center)
@@ -126,12 +129,16 @@ private struct SegmentedNumeralBaseShape: View {
             Text(text)
                 .font(font)
                 .monospacedDigit()
+                .segmentedNumeralWidth()
                 .fixedSize()
         )
     }
 }
 
 private enum SegmentedNumeralTextMetrics {
+    // Provides headroom for expanded-width numerals and the iOS < 17 fallback width scaling.
+    static let twoDigitWidthSlackFactor: CGFloat = 1.12
+
     static func twoDigitWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         #if canImport(UIKit)
         let uiFont = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .heavy)
@@ -140,5 +147,16 @@ private enum SegmentedNumeralTextMetrics {
         #else
         return WWClock.pixel(fontSize * 1.20, scale: scale)
         #endif
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func segmentedNumeralWidth() -> some View {
+        if #available(iOS 17.0, *) {
+            self.fontWidth(.expanded)
+        } else {
+            self.scaleEffect(x: 1.06, y: 1.0, anchor: .center)
+        }
     }
 }
