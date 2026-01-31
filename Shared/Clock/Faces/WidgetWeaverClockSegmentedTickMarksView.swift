@@ -69,12 +69,12 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
         )
 
         let fiveWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.018, min: px * 3.0, max: dialRadius * 0.023),
+            WWClock.clamp(dialRadius * 0.018 * 2.0, min: px * 6.0, max: dialRadius * 0.023 * 2.0),
             scale: scale
         )
 
         let minuteWidth = WWClock.pixel(
-            WWClock.clamp(dialRadius * 0.0070, min: px, max: dialRadius * 0.012),
+            WWClock.clamp(dialRadius * 0.0070 * 2.0, min: px * 2.0, max: dialRadius * 0.012 * 2.0),
             scale: scale
         )
 

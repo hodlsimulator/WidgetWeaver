@@ -105,11 +105,10 @@ private struct SegmentedNumeralBaseShape: View {
             let fixedWidthBase = SegmentedNumeralTextMetrics.twoDigitWidth(fontSize: fontSize, scale: scale)
             let fixedWidth = WWClock.pixel(fixedWidthBase * SegmentedNumeralTextMetrics.twoDigitWidthSlackFactor, scale: scale)
 
-            let kerningPx: CGFloat = 2.0
-            let spacing = WWClock.pixel(-(kerningPx / max(scale, 1.0)), scale: scale)
+            let spacing = SegmentedNumeralTextMetrics.tightenedTwoDigitInterDigitSpacing(scale: scale)
 
             return AnyView(
-                HStack(spacing: spacing) {
+                HStack(alignment: .firstTextBaseline, spacing: spacing) {
                     Text(left)
                         .font(font)
                         .monospacedDigit()
@@ -137,7 +136,18 @@ private struct SegmentedNumeralBaseShape: View {
 
 private enum SegmentedNumeralTextMetrics {
     // Provides headroom for expanded-width numerals and the iOS < 17 fallback width scaling.
-    static let twoDigitWidthSlackFactor: CGFloat = 1.12
+    static let twoDigitWidthSlackFactor: CGFloat = 1.08
+
+    /// Negative inter-digit spacing (points) for "10/11/12".
+    ///
+    /// Target: -5px at 60/44.
+    /// Clamp:  [-4px ... -6px] to keep WidgetKit rasterisation stable.
+    static func tightenedTwoDigitInterDigitSpacing(scale: CGFloat) -> CGFloat {
+        let targetPixels: CGFloat = 5.0
+        let pixels = WWClock.clamp(targetPixels, min: 4.0, max: 6.0)
+        let points = -(pixels / max(scale, 1.0))
+        return WWClock.pixel(points, scale: scale)
+    }
 
     static func twoDigitWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         #if canImport(UIKit)

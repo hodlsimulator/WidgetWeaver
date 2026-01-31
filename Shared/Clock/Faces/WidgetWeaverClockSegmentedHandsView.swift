@@ -356,6 +356,18 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
         let stemCornerRadius = max(px, stemWidth * 0.55)
         let endBarCornerRadius = max(px, endBarThickness * 0.60)
 
+        // 15C0: seconds stem tail continues through the centre hub.
+        let tailLength = WWClock.pixel(
+            max((10.0 / max(scale, 1.0)), dialRadius * 0.18),
+            scale: scale
+        )
+        let totalStemLength = stemLength + tailLength
+        let stemOffsetY = (tailLength - stemLength) / 2.0
+
+        // Keep the tail visually readable beyond the hub by shifting the leaf base further down.
+        let leafOverlap = WWClock.pixel(max(px, stemWidth * 0.35), scale: scale)
+        let leafBaseOffsetY = max(0.0, tailLength - leafOverlap)
+
         ZStack {
             // A clear, dial-sized container keeps rotation stable while avoiding any large masked gradient field.
             Color.clear
@@ -363,13 +375,13 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
             // Main seconds stem.
             RoundedRectangle(cornerRadius: stemCornerRadius, style: .continuous)
                 .fill(yellowFill)
-                .frame(width: stemWidth, height: stemLength)
-                .offset(y: -stemLength / 2.0)
+                .frame(width: stemWidth, height: totalStemLength)
+                .offset(y: stemOffsetY)
                 .overlay(
                     RoundedRectangle(cornerRadius: stemCornerRadius, style: .continuous)
                         .stroke(stemStroke, lineWidth: max(px, stemWidth * 0.35))
-                        .frame(width: stemWidth, height: stemLength)
-                        .offset(y: -stemLength / 2.0)
+                        .frame(width: stemWidth, height: totalStemLength)
+                        .offset(y: stemOffsetY)
                 )
                 .shadow(color: Color.black.opacity(0.24), radius: stemShadowRadius, x: 0, y: stemShadowY)
 
@@ -389,12 +401,12 @@ private struct WidgetWeaverClockSegmentedSecondHandView: View {
             WidgetWeaverClockSegmentedSecondHandLeafShape()
                 .fill(yellowFill)
                 .frame(width: leafWidth, height: leafLength)
-                .offset(y: leafLength / 2.0)
+                .offset(y: leafBaseOffsetY + (leafLength / 2.0))
                 .overlay(
                     WidgetWeaverClockSegmentedSecondHandLeafShape()
                         .stroke(stemStroke, lineWidth: max(px, stemWidth * 0.35))
                         .frame(width: leafWidth, height: leafLength)
-                        .offset(y: leafLength / 2.0)
+                        .offset(y: leafBaseOffsetY + (leafLength / 2.0))
                 )
         }
         .frame(width: dialDiameter, height: dialDiameter)

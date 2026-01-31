@@ -209,7 +209,10 @@ struct SegmentedOuterRingStyle {
         let blockBandMidRadius = WWClock.pixel(self.radii.blockMid, scale: scale)
 
         // Tick ring outer edge clearance from the segmented ring inner boundary (physical pixels).
-        let ticksOuterClearancePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        let ticksOuterClearanceBasePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        // 15B1: shift the tick ring inward (uniform translation), without changing tick lengths.
+        let ticksOuterShiftPx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        let ticksOuterClearancePx: CGFloat = ticksOuterClearanceBasePx + ticksOuterShiftPx
         let ticksOuterClearance = WWClock.pixel(ticksOuterClearancePx / max(scale, 1.0), scale: scale)
 
         let ticksOuterRadius = WWClock.pixel(
@@ -258,84 +261,69 @@ struct SegmentedOuterRingStyle {
 
         let diagnosticEnabled: Bool
         #if DEBUG
-        diagnosticEnabled = WidgetWeaverFeatureFlags.segmentedRingDiagnosticsEnabled
+        diagnosticEnabled = false
         #else
         diagnosticEnabled = false
         #endif
 
-        // Bed material (recessed channel).
-        // Keep visible form in WidgetKit snapshots (avoid dead-black flattening).
+        // Bed fill: dark neutral (not green), with a slight highlight on the top-left.
         self.bedFillGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x131A24, alpha: 1.0), location: 0.00),
-            .init(color: WWClock.colour(0x0A0D13, alpha: 1.0), location: 0.55),
-            .init(color: WWClock.colour(0x030407, alpha: 1.0), location: 1.00),
+            .init(color: WWClock.colour(0x0E1116, alpha: 1.00), location: 0.00),
+            .init(color: WWClock.colour(0x0C0F13, alpha: 1.00), location: 0.44),
+            .init(color: WWClock.colour(0x080A0D, alpha: 1.00), location: 1.00)
         ])
 
-        let lipLineWidth = WWClock.pixel(
-            WWClock.clamp(self.radii.bedThickness * 0.075, min: px, max: px * 2.0),
-            scale: scale
-        )
-
-        let lipHighlight = Gradient(stops: [
-            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.08), location: 0.00),
-            .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.30),
-        ])
-
-        let lipShadow = Gradient(stops: [
-            .init(color: WWClock.colour(0x000000, alpha: 0.40), location: 0.00),
-            .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.34),
-        ])
+        // Bed lips: tight strokes to create crisp bed boundaries (no blur haze).
+        let lipW = WWClock.pixel(WWClock.clamp(px * 1.2, min: px, max: px * 2.0), scale: scale)
 
         self.bedLips = BedLips(
-            lineWidth: lipLineWidth,
-            highlightGradient: lipHighlight,
-            shadowGradient: lipShadow
-        )
-
-        // Bed contact occlusion (under the blocks; shows only through gaps).
-        // BOLD v2: keep this low so gaps read as open air (no divider read).
-        let occlusionAlpha: Double = 0.06
-
-        self.bedContactOcclusion = BedContactOcclusion(
-            outerBandGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0x000000, alpha: occlusionAlpha), location: 0.00),
-                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 1.00),
+            lineWidth: lipW,
+            highlightGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.12), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.55),
             ]),
-            innerBandGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.00),
-                .init(color: WWClock.colour(0x000000, alpha: occlusionAlpha), location: 1.00),
+            shadowGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.26), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.70),
             ])
         )
 
-        // Block fill gradients (slightly darker / less saturated for mock parity).
-        // The odd gradient is only used when the diagnostic overlay is enabled.
+        // Contact occlusion: mild radial darkening in the bed channels.
+        self.bedContactOcclusion = BedContactOcclusion(
+            outerBandGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.30), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 1.00),
+            ]),
+            innerBandGradient: Gradient(stops: [
+                .init(color: WWClock.colour(0x000000, alpha: 0.30), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 1.00),
+            ])
+        )
+
+        // Block fills: olive metal (even/odd subtle alternation).
         self.blockFillEvenGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x515121, alpha: 0.98), location: 0.00),
-            .init(color: WWClock.colour(0x404018, alpha: 0.98), location: 0.48),
-            .init(color: WWClock.colour(0x2A2A0D, alpha: 0.99), location: 1.00),
+            .init(color: WWClock.colour(0x6B6A2D, alpha: 1.00), location: 0.00),
+            .init(color: WWClock.colour(0x4F4D1F, alpha: 1.00), location: 0.52),
+            .init(color: WWClock.colour(0x343312, alpha: 1.00), location: 1.00),
         ])
 
         self.blockFillOddGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x4A4A1E, alpha: 0.98), location: 0.00),
-            .init(color: WWClock.colour(0x3A3A16, alpha: 0.98), location: 0.48),
-            .init(color: WWClock.colour(0x25250B, alpha: 0.99), location: 1.00),
+            .init(color: WWClock.colour(0x67662A, alpha: 1.00), location: 0.00),
+            .init(color: WWClock.colour(0x4A481C, alpha: 1.00), location: 0.52),
+            .init(color: WWClock.colour(0x313010, alpha: 1.00), location: 1.00),
         ])
 
-        // Block bevel shading (no blur): overlays + tight edge accents.
-        let rimStrokeWidth = WWClock.pixel(2.0 / max(scale, 1.0), scale: scale)
-        let edgeStrokeWidth = WWClock.pixel(1.0 / max(scale, 1.0), scale: scale)
+        // Bevel parameters are tuned to avoid haze and rely on crisp strokes/overlays.
+        let rimStrokeWidth = WWClock.pixel(WWClock.clamp(px * 1.6, min: px, max: px * 2.0), scale: scale)
+        let edgeStrokeWidth = WWClock.pixel(WWClock.clamp(px * 1.2, min: px, max: px * 1.6), scale: scale)
 
-        // Radial/chamfer edge accents are shifted further inside the block to keep gaps clean.
-        let radialEdgeInsetPx: CGFloat = 1.10
-        let radialEdgeInset = radialEdgeInsetPx / max(scale, 1.0)
-
-        let radialEdgeEndInsetPx: CGFloat = 1.10
-        let radialEdgeEndInset = radialEdgeEndInsetPx / max(scale, 1.0)
+        let radialEdgeInset = WWClock.pixel(WWClock.clamp(chamferPoints * 0.70, min: px, max: chamferPoints), scale: scale)
+        let radialEdgeEndInset = WWClock.pixel(WWClock.clamp(px * 1.2, min: px, max: px * 2.0), scale: scale)
 
         self.blockBevel = BlockBevel(
             highlightOverlayGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.16), location: 0.00),
-                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.34),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.18), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.56),
             ]),
             shadowOverlayGradient: Gradient(stops: [
                 .init(color: WWClock.colour(0x000000, alpha: 0.20), location: 0.00),

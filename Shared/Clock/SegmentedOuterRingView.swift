@@ -73,7 +73,7 @@ private struct NumeralsView: View {
                 }()
 
                 let fontSize = WWClock.pixel(
-                    WWClock.clamp(fontSizeBase * 0.94, min: fontSizeBase * 0.90, max: fontSizeBase * 0.98),
+                    WWClock.clamp(fontSizeBase * 1.02, min: fontSizeBase * 0.98, max: fontSizeBase * 1.06),
                     scale: scale
                 )
 
