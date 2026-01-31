@@ -28,6 +28,11 @@ extension ContentView {
     }
 
     func applyThemeToDraft(themeID: String) {
+        if matchedSetEnabled {
+            applyThemeToMatchedDrafts(themeID: themeID)
+            return
+        }
+
         let preset = resolvedThemePreset(themeID: themeID)
 
         styleDraft = StyleDraft(from: preset.style)
@@ -39,6 +44,43 @@ extension ContentView {
         }
 
         saveStatusMessage = "Applied theme: \(preset.displayName) (draft only)."
+    }
+
+    func applyThemeToMatchedDrafts(themeID: String) {
+        let preset = resolvedThemePreset(themeID: themeID)
+
+        styleDraft = StyleDraft(from: preset.style)
+
+        if let clockThemeRaw = preset.clockThemeRaw {
+            let canonicalTheme = WidgetWeaverClockDesignConfig(theme: clockThemeRaw).theme
+
+            var next = matchedDrafts
+
+            func applyClockThemeIfNeeded(_ draft: inout FamilyDraft) {
+                guard draft.template == .clockIcon else { return }
+
+                let canonical = WidgetWeaverClockDesignConfig(
+                    theme: canonicalTheme,
+                    face: draft.clockFaceRaw,
+                    iconDialColourToken: draft.clockIconDialColourTokenRaw,
+                    iconSecondHandColourToken: draft.clockIconSecondHandColourTokenRaw
+                )
+
+                draft.clockThemeRaw = canonical.theme
+                draft.clockFaceRaw = canonical.face
+                draft.clockIconDialColourTokenRaw = canonical.iconDialColourToken
+                draft.clockIconSecondHandColourTokenRaw = canonical.iconSecondHandColourToken
+            }
+
+            applyClockThemeIfNeeded(&next.small)
+            applyClockThemeIfNeeded(&next.medium)
+            applyClockThemeIfNeeded(&next.large)
+
+            matchedDrafts = next
+            baseDraft = next.medium
+        }
+
+        saveStatusMessage = "Applied theme: \(preset.displayName) (draft, matched set)."
     }
 
     func applyThemeToAllDesigns(themeID: String) {
