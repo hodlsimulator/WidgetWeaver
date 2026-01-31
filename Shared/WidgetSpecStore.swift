@@ -27,7 +27,12 @@ public struct WidgetWeaverImageCleanupResult: Hashable, Sendable {
 
 public final class WidgetSpecStore: @unchecked Sendable {
     public static let shared = WidgetSpecStore()
-    
+
+    /// Debug/test hook invoked synchronously when `flushAndNotifyWidgets()` runs.
+    ///
+    /// This is intentionally `internal` so unit tests can verify "reload storms" are avoided.
+    internal var debug_onFlushAndNotifyWidgets: (() -> Void)?
+
     private static let floatStringPositiveInfinity = "Infinity"
     private static let floatStringNegativeInfinity = "-Infinity"
     private static let floatStringNaN = "NaN"
@@ -87,6 +92,43 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     public func load(id: UUID) -> WidgetSpec? {
         loadAllInternal().first(where: { $0.id == id })?.normalised()
+    }
+
+    /// Applies a pure mutation across multiple stored specs in a single load/save/flush cycle.
+    ///
+    /// - Parameters:
+    ///   - ids: Optional subset of spec IDs to update. When nil, all stored specs are considered.
+    ///   - mutate: Pure transform applied to each selected spec. `WidgetSpec.id` is treated as immutable.
+    /// - Returns: The number of specs that changed and were persisted.
+    @discardableResult
+    public func bulkUpdate(ids: Set<UUID>? = nil, mutate: (WidgetSpec) -> WidgetSpec) -> Int {
+        var specs = loadAllInternal()
+        guard !specs.isEmpty else { return 0 }
+
+        var changedCount = 0
+
+        for idx in specs.indices {
+            let current = specs[idx].normalised()
+            if let ids, !ids.contains(current.id) { continue }
+
+            var mutated = mutate(current).normalised()
+
+            if mutated.id != current.id {
+                assertionFailure("WidgetSpecStore.bulkUpdate mutate must preserve WidgetSpec.id")
+                mutated.id = current.id
+            }
+
+            if mutated == current { continue }
+
+            specs[idx] = mutated
+            changedCount += 1
+        }
+
+        guard changedCount > 0 else { return 0 }
+
+        saveAllInternal(specs)
+        flushAndNotifyWidgets()
+        return changedCount
     }
 
     /// Updates the Smart Photo album-shuffle manifest reference for a spec without overwriting other fields.
@@ -307,6 +349,7 @@ public final class WidgetSpecStore: @unchecked Sendable {
 
     private func flushAndNotifyWidgets() {
         defaults.synchronize()
+        debug_onFlushAndNotifyWidgets?()
 
         #if canImport(WidgetKit)
         let kind = WidgetWeaverWidgetKinds.main
