@@ -153,6 +153,8 @@
 		E1F8D3A42F2BD650004133CA /* WidgetSpecAISnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A22F2BD64A004133CA /* WidgetSpecAISnapshotStore.swift */; };
 		E1F8D3AA2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */; };
 		E1F8D3AB2F2C75E8004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */; };
+		E1F8D3C12F2E31B0004133CA /* WidgetWeaverThemePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3C02F2E31AC004133CA /* WidgetWeaverThemePreset.swift */; };
+		E1F8D3C22F2E31B0004133CA /* WidgetWeaverThemePreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F8D3C02F2E31AC004133CA /* WidgetWeaverThemePreset.swift */; };
 		F6ECBBEF65AE4B1D9B5F5875 /* WidgetSpec+Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E885B08F744161B7F48C01 /* WidgetSpec+Utilities.swift */; };
 		F82D89878FA14A7CBCC38F02 /* WidgetSpec+Style.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE533889D3E4CDE9E6BFFC1 /* WidgetSpec+Style.swift */; };
 		FB02480D9D0241DE8CC3C347 /* WidgetSpec+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */; };
@@ -278,6 +280,7 @@
 		E1F8D39D2F2AE16C004133CA /* WidgetWeaverRemindersSmartStackV2Partitioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersSmartStackV2Partitioner.swift; sourceTree = "<group>"; };
 		E1F8D3A22F2BD64A004133CA /* WidgetSpecAISnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSpecAISnapshotStore.swift; sourceTree = "<group>"; };
 		E1F8D3A92F2C75E5004133CA /* WidgetWeaverRemindersSmartStackKitUpgrader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverRemindersSmartStackKitUpgrader.swift; sourceTree = "<group>"; };
+		E1F8D3C02F2E31AC004133CA /* WidgetWeaverThemePreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetWeaverThemePreset.swift; sourceTree = "<group>"; };
 		F07C4CE9A0B54FFCB5E36F8B /* WidgetSpec+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WidgetSpec+Layout.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -484,6 +487,7 @@
 				E16011552F15ECE400A3B10B /* PawPulseLatestCatDetailView.swift */,
 				E16011432F15EC1000A3B10B /* PawPulseLatestItem.swift */,
 				E16011492F15EC5D00A3B10B /* PawPulseSettingsStore.swift */,
+				E1F8D3C02F2E31AC004133CA /* WidgetWeaverThemePreset.swift */,
 				E16011522F15ECCC00A3B10B /* PawPulseSettingsView.swift */,
 				E1F8D3752F2A8E2A004133CA /* PhotoFilterEngine.swift */,
 				E1F8D36D2F2A6045004133CA /* PhotoFilterSpec.swift */,
@@ -799,6 +803,7 @@
 				E197A1022F0623DD00B415B8 /* RainSurfaceSeamlessNoiseTile.swift in Sources */,
 				E15B0BAE2EF6CCC900760C03 /* WidgetWeaverWeatherTemplateModels.swift in Sources */,
 				E15B0BB82EF7141A00760C03 /* WidgetWeaverCalendar.swift in Sources */,
+				E1F8D3C12F2E31B0004133CA /* WidgetWeaverThemePreset.swift in Sources */,
 				E1C834CC2EFA5D1B00E3AA98 /* WidgetWeaverWeatherEngine.swift in Sources */,
 				E15B0BB02EF6CCE900760C03 /* WidgetWeaverWeatherTemplateLayouts.swift in Sources */,
 				E160116C2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */,
@@ -885,6 +890,7 @@
 				E160116B2F1839BC00A3B10B /* WidgetWeaverRemindersConfig.swift in Sources */,
 				E18676B22EF241160098B095 /* WidgetSpecStore.swift in Sources */,
 				E1C835C82F03250800E3AA98 /* RainSurfaceDrawing+Fuzz.swift in Sources */,
+				E1F8D3C22F2E31B0004133CA /* WidgetWeaverThemePreset.swift in Sources */,
 				E18676AB2EF240D30098B095 /* WidgetWeaverWidgetKinds.swift in Sources */,
 				E1C834E02EFB343B00E3AA98 /* RainSurfaceMath.swift in Sources */,
 				E15047BF2F25D7CA0047863A /* WidgetWeaverWidgetReloadCoordinator.swift in Sources */,
