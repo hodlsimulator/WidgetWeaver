@@ -108,9 +108,23 @@ private struct WidgetWeaverThemePickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @State private var showApplyToAllConfirmation: Bool = false
+
     private var resolvedSelectedID: String {
         WidgetWeaverThemeCatalog.preset(matching: selectedPresetIDRaw)?.id
             ?? WidgetWeaverThemeCatalog.defaultPresetID
+    }
+
+    private var resolvedSelectedPreset: WidgetWeaverThemePreset {
+        WidgetWeaverThemeCatalog.preset(matching: resolvedSelectedID)
+            ?? WidgetWeaverThemeCatalog.preset(matching: WidgetWeaverThemeCatalog.defaultPresetID)
+            ?? WidgetWeaverThemeCatalog.ordered.first
+            ?? WidgetWeaverThemePreset(
+                id: "classic",
+                displayName: "Classic",
+                detail: "System default theme.",
+                style: .defaultStyle
+            )
     }
 
     var body: some View {
@@ -144,9 +158,15 @@ private struct WidgetWeaverThemePickerSheet: View {
 
                 if showsApplyToAllDesignsAction, applyToAllDesigns != nil {
                     Section("Library") {
-                        Text("Bulk apply is disabled in this build.")
+                        Text("Applies the selected theme to every saved design. This overwrites style only (no content bindings or data sources).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        Button {
+                            showApplyToAllConfirmation = true
+                        } label: {
+                            Label("Apply to all saved designs…", systemImage: "square.on.square")
+                        }
                     }
                 }
             }
@@ -157,6 +177,16 @@ private struct WidgetWeaverThemePickerSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .alert("Apply theme to all saved designs?", isPresented: $showApplyToAllConfirmation) {
+            Button("Apply to all saved designs", role: .destructive) {
+                applyToAllDesigns?(resolvedSelectedID)
+                dismiss()
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Theme: \(resolvedSelectedPreset.displayName). This will overwrite style for every saved design. Content and data sources remain unchanged.")
         }
         .presentationDetents([.medium, .large])
     }

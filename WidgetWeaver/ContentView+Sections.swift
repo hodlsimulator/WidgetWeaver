@@ -610,7 +610,11 @@ extension ContentView {
             WidgetWeaverThemePickerRow(
                 applyToDraft: { themeID in
                     applyThemeToDraft(themeID: themeID)
-                }
+                },
+                applyToAllDesigns: { themeID in
+                    applyThemeToAllDesigns(themeID: themeID)
+                },
+                showsApplyToAllDesignsAction: true
             )
 
             if !isPoster {
