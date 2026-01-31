@@ -137,25 +137,25 @@ private struct SegmentedNumeralBaseShape: View {
 private enum SegmentedNumeralTextMetrics {
     // Provides headroom for expanded-width numerals and the iOS < 17 fallback width scaling.
     // Reduced slightly so two-digit labels do not read artificially wide.
-    static let twoDigitWidthSlackFactor: CGFloat = 1.07
+    static let twoDigitWidthSlackFactor: CGFloat = 1.05
 
     /// Negative inter-digit spacing (points) for "10/11/12".
     ///
     /// Targets (physical pixels at 60/44):
-    /// - "10": ~-8px (clamp -7px…-10px)
-    /// - "11": ~-6px (clamp -5px…-8px)
-    /// - "12": ~-6px (clamp -5px…-8px)
+    /// - "10": ~-10px (clamp -9px…-12px)
+    /// - "11": ~-7px (clamp -6px…-9px)
+    /// - "12": ~-7px (clamp -6px…-9px)
     static func tightenedTwoDigitInterDigitSpacing(text: String, scale: CGFloat) -> CGFloat {
         let (targetPixels, minPixels, maxPixels): (CGFloat, CGFloat, CGFloat) = {
             switch text {
             case "10":
-                return (8.0, 7.0, 10.0)
+                return (10.0, 9.0, 12.0)
             case "11":
-                return (6.0, 5.0, 8.0)
+                return (7.0, 6.0, 9.0)
             case "12":
-                return (6.0, 5.0, 8.0)
+                return (7.0, 6.0, 9.0)
             default:
-                return (6.0, 5.0, 8.0)
+                return (7.0, 6.0, 9.0)
             }
         }()
 
