@@ -33,8 +33,9 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
 
         // Single source of truth: tick placement derives from the segmented ring style's px-clamped radii.
         let ringStyle = SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale)
-
         let segmentInnerRadius = ringStyle.radii.blockInner
+
+        // Outer tick edge sits a fixed (px-clamped) clearance inside the segmented band.
         let tickOuterRadius = WWClock.pixel(max(px, ringStyle.contentRadii.ticksOuterRadius), scale: scale)
 
         return Radii(outerRadius: tickOuterRadius, segmentInnerRadius: segmentInnerRadius)
