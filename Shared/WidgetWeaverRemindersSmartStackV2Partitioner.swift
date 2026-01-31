@@ -83,15 +83,35 @@ public enum WidgetWeaverRemindersSmartStackV2Partitioner {
             return p <= 0 && item.isFlagged
         }
 
+        func isRecurringCarryOver(_ item: WidgetWeaverReminderItem) -> Bool {
+            guard item.isRecurring else { return false }
+            guard let due = item.dueDate else { return false }
+            let dueDay = cal.startOfDay(for: due)
+            return dueDay < startOfToday
+        }
+
         func isOverdue(_ item: WidgetWeaverReminderItem) -> Bool {
             guard let due = item.dueDate else { return false }
             let dueDay = cal.startOfDay(for: due)
             return dueDay < startOfToday
         }
 
+        func isOverdueBucketCandidate(_ item: WidgetWeaverReminderItem) -> Bool {
+            // Recurring reminders can remain "stuck" with a past due date until completed.
+            // Smart Stack v2 treats these as carry-over items for Today so routine reminders
+            // do not dominate the Overdue page.
+            if isRecurringCarryOver(item) { return false }
+            return isOverdue(item)
+        }
+
         func isToday(_ item: WidgetWeaverReminderItem) -> Bool {
             guard let due = item.dueDate else { return false }
             return due >= startOfToday && due < startOfTomorrow
+        }
+
+        func isTodayBucketCandidate(_ item: WidgetWeaverReminderItem) -> Bool {
+            if isRecurringCarryOver(item) { return true }
+            return isToday(item)
         }
 
         func isUpcoming(_ item: WidgetWeaverReminderItem) -> Bool {
@@ -120,6 +140,12 @@ public enum WidgetWeaverRemindersSmartStackV2Partitioner {
         }
 
         func compareToday(_ a: WidgetWeaverReminderItem, _ b: WidgetWeaverReminderItem) -> Bool {
+            let aCarry = isRecurringCarryOver(a)
+            let bCarry = isRecurringCarryOver(b)
+            if aCarry != bCarry {
+                return aCarry && !bCarry
+            }
+
             if a.dueHasTime != b.dueHasTime {
                 return a.dueHasTime && !b.dueHasTime
             }
@@ -215,8 +241,8 @@ public enum WidgetWeaverRemindersSmartStackV2Partitioner {
             return bucket
         }
 
-        let overdue = take(predicate: isOverdue, sort: compareOverdue)
-        let today = take(predicate: isToday, sort: compareToday)
+        let overdue = take(predicate: isOverdueBucketCandidate, sort: compareOverdue)
+        let today = take(predicate: isTodayBucketCandidate, sort: compareToday)
         let upcoming = take(predicate: isUpcoming, sort: compareUpcoming)
         let highPriority = take(predicate: isHighPriority, sort: compareHighPriority)
         let anytime = take(predicate: { $0.dueDate == nil }, sort: compareAnytime)

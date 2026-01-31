@@ -5,13 +5,6 @@
 //  Created by . . on 1/29/26.
 //
 
-//
-//  RemindersSmartStackV2PartitionerTests.swift
-//  WidgetWeaverTests
-//
-//  Created by . . on 1/29/26.
-//
-
 import Foundation
 import Testing
 @testable import WidgetWeaver
@@ -357,5 +350,67 @@ struct RemindersSmartStackV2PartitionerTests {
 
         #expect(anytimeIDs.contains("r.invalidDue.low"))
         #expect(!highPriorityIDs.contains("r.invalidDue.low"))
+    }
+
+    @Test func partition_recurringOverdueIsCarryOverForToday_notOverdue() {
+        let cal = makeCalendarUTC()
+        let now = makeDate(2026, 1, 29, 12, 0, calendar: cal)
+
+        let list = (id: "list.a", title: "Inbox")
+
+        let items: [WidgetWeaverReminderItem] = [
+            WidgetWeaverReminderItem(
+                id: "r.recurring.carry",
+                title: "Recurring carry-over",
+                dueDate: makeDate(2026, 1, 28, 0, 0, calendar: cal),
+                dueHasTime: false,
+                priority: 0,
+                isCompleted: false,
+                isFlagged: false,
+                isRecurring: true,
+                listID: list.id,
+                listTitle: list.title
+            ),
+            WidgetWeaverReminderItem(
+                id: "r.overdue.oneoff",
+                title: "Overdue one-off",
+                dueDate: makeDate(2026, 1, 28, 0, 0, calendar: cal),
+                dueHasTime: false,
+                priority: 0,
+                isCompleted: false,
+                isFlagged: false,
+                isRecurring: false,
+                listID: list.id,
+                listTitle: list.title
+            ),
+            WidgetWeaverReminderItem(
+                id: "r.today.date",
+                title: "Due today",
+                dueDate: makeDate(2026, 1, 29, 0, 0, calendar: cal),
+                dueHasTime: false,
+                priority: 0,
+                isCompleted: false,
+                isFlagged: false,
+                isRecurring: false,
+                listID: list.id,
+                listTitle: list.title
+            ),
+        ]
+
+        let p = WidgetWeaverRemindersSmartStackV2Partitioner.partition(items: items, now: now, calendar: cal)
+
+        let overdueIDs = Set(p.overdue.map { $0.id })
+        let todayIDs = Set(p.today.map { $0.id })
+
+        #expect(todayIDs.contains("r.recurring.carry"))
+        #expect(!overdueIDs.contains("r.recurring.carry"))
+
+        #expect(overdueIDs.contains("r.overdue.oneoff"))
+        #expect(!todayIDs.contains("r.overdue.oneoff"))
+
+        #expect(todayIDs.contains("r.today.date"))
+
+        #expect(p.today.count == 2)
+        #expect(p.today.first?.id == "r.recurring.carry")
     }
 }
