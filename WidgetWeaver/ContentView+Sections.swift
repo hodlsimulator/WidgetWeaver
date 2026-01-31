@@ -603,35 +603,40 @@ extension ContentView {
     }
 
     var styleSection: some View {
-        Section {
+        let template = currentFamilyDraft().template
+        let isPoster = (template == .poster)
+
+        return Section {
             WidgetWeaverThemePickerRow(
                 applyToDraft: { themeID in
                     applyThemeToDraft(themeID: themeID)
                 }
             )
 
-            HStack {
-                Text("Padding")
-                Slider(value: $styleDraft.padding, in: 0...40, step: 1)
-                Text("\(Int(styleDraft.padding))")
-                    .monospacedDigit()
+            if !isPoster {
+                HStack {
+                    Text("Padding")
+                    Slider(value: $styleDraft.padding, in: 0...40, step: 1)
+                    Text("\(Int(styleDraft.padding))")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Text("Inner corner radius")
+                    Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
+                    Text("\(Int(styleDraft.cornerRadius))")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack {
-                Text("Inner corner radius")
-                Slider(value: $styleDraft.cornerRadius, in: 0...44, step: 1)
-                Text("\(Int(styleDraft.cornerRadius))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Widget outer corners are fixed by iOS; this radius affects inner cards and panels.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if currentFamilyDraft().template == .weather {
+            if template == .weather {
                 HStack {
                     Text("Weather scale")
                     Slider(value: $styleDraft.weatherScale, in: 0.75...1.25, step: 0.01)
@@ -653,7 +658,9 @@ extension ContentView {
                 }
             }
 
-            Button { randomiseStyleDraft() } label: { Label("Randomise Style (Draft)", systemImage: "shuffle") }
+            if !isPoster {
+                Button { randomiseStyleDraft() } label: { Label("Randomise Style (Draft)", systemImage: "shuffle") }
+            }
 
             if matchedSetEnabled {
                 Text("Style is shared across Small/Medium/Large.")

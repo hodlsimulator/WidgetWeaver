@@ -47,13 +47,7 @@ extension ContentView {
             tools = EditorToolRegistry.legacyVisibleTools(for: editorToolContext)
         }
 
-        // Photo-first Poster widgets intentionally hide the generic Style tool, since most
-        // of its controls are not applicable to photo-backed rendering (padding, corner radius,
-        // background, accent). This keeps the editor focused on photo and caption controls.
-        if editorToolContext.template == .poster {
-            tools.removeAll(where: { $0 == .style })
-        }
-
+        // Poster is still themeable; the Style section hides non-applicable controls for this template.
         return tools
     }
 
