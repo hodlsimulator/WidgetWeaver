@@ -113,11 +113,13 @@ private struct SegmentedNumeralBaseShape: View {
                         .font(font)
                         .monospacedDigit()
                         .segmentedNumeralWidth()
+                        .segmentedNumeralDigitOneSlim(digit: left, fontSize: fontSize, scale: scale)
 
                     Text(right)
                         .font(font)
                         .monospacedDigit()
                         .segmentedNumeralWidth()
+                        .segmentedNumeralDigitOneSlim(digit: right, fontSize: fontSize, scale: scale)
                 }
                 .fixedSize()
                 .frame(width: fixedWidth, alignment: .center)
@@ -129,6 +131,7 @@ private struct SegmentedNumeralBaseShape: View {
                 .font(font)
                 .monospacedDigit()
                 .segmentedNumeralWidth()
+                .segmentedNumeralDigitOneSlim(digit: text, fontSize: fontSize, scale: scale)
                 .fixedSize()
         )
     }
@@ -164,6 +167,34 @@ private enum SegmentedNumeralTextMetrics {
         return WWClock.pixel(points, scale: scale)
     }
 
+    /// Local width tweak for digit "1".
+    ///
+    /// The Segmented numerals use a heavy, expanded width treatment so they read
+    /// embossed at small sizes. The "1" benefits from a small horizontal squeeze
+    /// so it reads less blocky without shifting baselines or changing spacing.
+    static func digitOneHorizontalScale(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
+        let cellWidthPoints = oneDigitCellWidth(fontSize: fontSize, scale: scale)
+        let cellWidthPixels = cellWidthPoints * max(scale, 1.0)
+
+        // Target reduction at 60/44 is ~2px. Keep clamped so it stays subtle.
+        let deltaPixels = WWClock.clamp(2.0, min: 1.0, max: 3.0)
+
+        guard cellWidthPixels > 0 else { return 0.90 }
+
+        let scaleX = (cellWidthPixels - deltaPixels) / cellWidthPixels
+        return WWClock.clamp(scaleX, min: 0.88, max: 0.94)
+    }
+
+    static func oneDigitCellWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
+        #if canImport(UIKit)
+        let uiFont = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .heavy)
+        let width = ("0" as NSString).size(withAttributes: [.font: uiFont]).width
+        return WWClock.pixel(width, scale: scale)
+        #else
+        return WWClock.pixel(fontSize * 0.60, scale: scale)
+        #endif
+    }
+
     static func twoDigitWidth(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         #if canImport(UIKit)
         let uiFont = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .heavy)
@@ -176,6 +207,19 @@ private enum SegmentedNumeralTextMetrics {
 }
 
 private extension View {
+    @ViewBuilder
+    func segmentedNumeralDigitOneSlim(digit: String, fontSize: CGFloat, scale: CGFloat) -> some View {
+        if digit == "1" {
+            self.scaleEffect(
+                x: SegmentedNumeralTextMetrics.digitOneHorizontalScale(fontSize: fontSize, scale: scale),
+                y: 1.0,
+                anchor: .center
+            )
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func segmentedNumeralWidth() -> some View {
         if #available(iOS 17.0, *) {
