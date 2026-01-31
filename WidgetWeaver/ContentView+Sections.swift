@@ -605,8 +605,8 @@ extension ContentView {
     var styleSection: some View {
         Section {
             WidgetWeaverThemePickerRow(
-                applyToDraft: { _ in
-                    // Step 6 wires theme selection to draft application.
+                applyToDraft: { themeID in
+                    applyThemeToDraft(themeID: themeID)
                 }
             )
 
