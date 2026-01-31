@@ -105,7 +105,7 @@ private struct SegmentedNumeralBaseShape: View {
             let fixedWidthBase = SegmentedNumeralTextMetrics.twoDigitWidth(fontSize: fontSize, scale: scale)
             let fixedWidth = WWClock.pixel(fixedWidthBase * SegmentedNumeralTextMetrics.twoDigitWidthSlackFactor, scale: scale)
 
-            let spacing = SegmentedNumeralTextMetrics.tightenedTwoDigitInterDigitSpacing(scale: scale)
+            let spacing = SegmentedNumeralTextMetrics.tightenedTwoDigitInterDigitSpacing(text: text, scale: scale)
 
             return AnyView(
                 HStack(alignment: .firstTextBaseline, spacing: spacing) {
@@ -136,15 +136,30 @@ private struct SegmentedNumeralBaseShape: View {
 
 private enum SegmentedNumeralTextMetrics {
     // Provides headroom for expanded-width numerals and the iOS < 17 fallback width scaling.
-    static let twoDigitWidthSlackFactor: CGFloat = 1.08
+    // Reduced slightly so two-digit labels do not read artificially wide.
+    static let twoDigitWidthSlackFactor: CGFloat = 1.07
 
     /// Negative inter-digit spacing (points) for "10/11/12".
     ///
-    /// Target: -5px at 60/44.
-    /// Clamp:  [-4px ... -6px] to keep WidgetKit rasterisation stable.
-    static func tightenedTwoDigitInterDigitSpacing(scale: CGFloat) -> CGFloat {
-        let targetPixels: CGFloat = 5.0
-        let pixels = WWClock.clamp(targetPixels, min: 4.0, max: 6.0)
+    /// Targets (physical pixels at 60/44):
+    /// - "10": ~-8px (clamp -7px…-10px)
+    /// - "11": ~-6px (clamp -5px…-8px)
+    /// - "12": ~-6px (clamp -5px…-8px)
+    static func tightenedTwoDigitInterDigitSpacing(text: String, scale: CGFloat) -> CGFloat {
+        let (targetPixels, minPixels, maxPixels): (CGFloat, CGFloat, CGFloat) = {
+            switch text {
+            case "10":
+                return (8.0, 7.0, 10.0)
+            case "11":
+                return (6.0, 5.0, 8.0)
+            case "12":
+                return (6.0, 5.0, 8.0)
+            default:
+                return (6.0, 5.0, 8.0)
+            }
+        }()
+
+        let pixels = WWClock.clamp(targetPixels, min: minPixels, max: maxPixels)
         let points = -(pixels / max(scale, 1.0))
         return WWClock.pixel(points, scale: scale)
     }
