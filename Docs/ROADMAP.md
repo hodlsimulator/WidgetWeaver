@@ -9,4 +9,5 @@ Primary roadmap documents:
 - `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md` — Photos UX micro-roadmap (Explore, Photo Essentials, Memories).
 - `Docs/RELEASE_PLAN_2026-02.md` — feature freeze → polish → ship checklist.
 - `Docs/PRODUCT_PRINCIPLES.md` — product rules that keep the app “super complex but super simple”.
+- `Docs/WIDGET_DESIGN_THEMES.md` — widget design themes (style presets) for cohesive styling across templates.
 - `Docs/CHAT_HANDOFF.txt` — copy/paste summary for starting new chats without losing context.

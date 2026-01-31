@@ -1,6 +1,6 @@
 # WidgetWeaver roadmap (Q1 2026)
 
-Last updated: 2026-01-26
+Last updated: 2026-01-31
 Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
@@ -153,7 +153,22 @@ Work items (polish window):
 These items are tracked as explicit checklist tasks in `Docs/RELEASE_PLAN_2026-02.md` (UX and product clarity + Accessibility).
 
 
-### H) AI (assistive spec authoring)
+### H) Widget design themes (cohesiveness layer)
+
+Goal: make the app feel visually coherent across templates by making styling theme-first. A theme is a curated preset that overwrites `StyleSpec` in one deterministic operation.
+
+Work items:
+
+- Theme presets + ordered catalogue in Shared (`WidgetWeaverThemePreset`, `WidgetWeaverThemeCatalog`).
+- Pure theme application for `WidgetSpec` (`WidgetWeaverThemeApplier`) with smoke tests.
+- Batch store updates (`WidgetSpecStore.bulkUpdate`) so bulk restyling does not trigger widget reload storms.
+- Editor theme picker UI component (self-contained module) backed by `@AppStorage("widgetweaver.theme.selectedPresetID")`.
+- Wire the theme picker into the Style tool and apply themes to the active draft (style-only).
+- Keep Poster templates themeable by surfacing themes + the relevant style controls while hiding irrelevant sliders.
+
+Reference: `Docs/WIDGET_DESIGN_THEMES.md`.
+
+### I) AI (assistive spec authoring)
 
 Goal: Make AI a trustworthy assistive layer for creating and editing designs, producing explicit `WidgetSpec` outputs that are reviewable and reversible.
 

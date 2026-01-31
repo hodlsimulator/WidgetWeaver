@@ -14,7 +14,8 @@ In scope (must ship):
 - Noise Machine: stable, responsive daily-use behaviour (including start/stop fade to reduce pops).
 - Reminders: Smart Stack v2 naming + non-duplicating pages (deterministic output per snapshot).
 - Variables: better discoverability and in-context insertion (bounded UX improvements only).
-- App themes: editor/library appearance themes (no widget impact).
+- App appearance themes: editor/library appearance themes (no widget impact).
+- Widget design themes: curated style presets applied to widget styling (StyleSpec) to keep templates cohesive and reduce styling complexity.
 - Editor UX: design thumbnails in Library/pickers; guarded switching when unsaved changes exist.
 - Surface-area reductions (usefulness + trust): hide/remove non-flagship templates without breaking existing user widgets, and remove unused permission declarations.
 
@@ -147,7 +148,8 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [x] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined; release builds must not define it).
 - [x] Variables: discoverability improved (built-in key browser, syntax/filters reference, one-tap snippet insertion).
 - [x] Editor: design thumbnails exist in the Library list and design picker; switching designs is guarded when there are unsaved changes.
-- [ ] App themes: contrast/readability pass across all themes (including in Light/Dark mode and with Reduce Transparency).
+- [ ] App appearance themes: contrast/readability pass across all themes (including in Light/Dark mode and with Reduce Transparency).
+- [ ] Widget design themes: contrast/readability pass across presets (including over photos) and ensure theme selection is a first-class, low-friction styling path.
 - [ ] Photos: ensure Photo Filters UX is clear and non-distracting; verify filter thumbnails and intensity slider behave well.
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
 - [ ] Weather error states are actionable (no “mystery blank widget”):
@@ -214,7 +216,8 @@ This release focuses on making WidgetWeaver feel high-quality and safe to use da
 - Noise Machine stability and polish.
 - Better Variables discoverability and usability.
 - Reminders Smart Stack v2: clearer page names and no duplicate reminders across pages per refresh.
-- New app appearance themes and a thumbnail-first design browsing workflow.
+- New app appearance themes (editor/library) and a thumbnail-first design browsing workflow.
+- New widget design themes: pick a curated theme to apply cohesive styling quickly.
 - More realistic design sharing and import review (with previews).
 
 Scope cuts to keep the release coherent:

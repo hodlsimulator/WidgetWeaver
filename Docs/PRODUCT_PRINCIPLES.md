@@ -1,6 +1,6 @@
 # Product principles
 
-Last updated: 2026-01-24
+Last updated: 2026-01-31
 
 WidgetWeaver’s differentiation is not “more widgets”. It is a repeatable workflow for building widget-safe experiences quickly, without the UI collapsing under its own feature weight.
 
@@ -95,3 +95,17 @@ Rules:
 - A clean checkout should build without local-path package dependencies.
 - Repository artefacts and backup files do not ship in targets.
 - If a dependency is optional (for example, a feature is hidden/deferred), remove it from the shipping build to reduce risk.
+
+## 14) Widget design themes are the cohesion layer
+
+Widget design themes are curated style presets applied to widget specs. They exist to make the product feel cohesive across templates and to reduce styling decision fatigue.
+
+Rules:
+
+- Themes sit on top of the existing styling pipeline (`StyleSpec` / `StyleDraft`). Rendering stays unchanged; themes are an authoring affordance.
+- Theme application is a single deterministic overwrite of `StyleSpec` followed by normalisation (no “smart merges” that create unpredictable results).
+- Themes are curated and limited. They are the primary styling affordance; background/accent/typography controls are refinements.
+- Themes must prioritise readability and contrast (especially over photos). A theme that produces illegible text is a defect.
+- Clock-only styling is optional and must be validated; clock theme tokens only apply when the active template is `.clockIcon`.
+- Do not conflate widget design themes with app appearance themes. App appearance themes change the editor/library UI only; widget design themes change widget styling.
+- Bulk theme operations must not trigger widget reload storms. Use the store bulk update API and refresh widgets once.

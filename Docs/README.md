@@ -11,3 +11,4 @@ These documents are the product and release planning reference for WidgetWeaver.
 - `PHOTO_ORIENTATION_TROUBLESHOOTING.md` — diagnosing and fixing PhotosPicker / Smart Photo orientation regressions.
 - `ClockFaceBaseline.png` — baseline screenshot artefact for the clock face gallery (used for regression checks).
 - `Reminders/Reminders Smart Stack v2 Spec.md` — Reminders Smart Stack v2 page behaviour (names, ordering, dedupe, tie-break rules).
+- `WIDGET_DESIGN_THEMES.md` — widget design themes (curated style presets) and how they drive product cohesiveness.
