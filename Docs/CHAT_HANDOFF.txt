@@ -1,5 +1,5 @@
 WidgetWeaver – chat handoff (copy/paste)
-Last updated: 2026-01-26
+Last updated: 2026-01-31
 
 Product
 - WidgetWeaver is an iOS 26+ app that builds and previews real WidgetKit widgets via an Explore (template catalogue) + context-aware editor workflow.
@@ -11,90 +11,146 @@ Strategic intent
 - Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-26.
+- Today: 2026-01-31 (feature freeze day).
 - Feature freeze: 2026-01-31 (stop adding features).
 - Polish: 2026-02-01 to 2026-02-14.
 - Target ship: 2026-02-14 to 2026-02-16.
 
-Current roadmap priorities (pre-freeze)
-1) Photos: make Smart Photos + poster/photo widgets feel flagship (fast, reliable, good defaults).
-2) Clock: Home Screen correctness and predictable customisation updates.
-3) Weather (flagship): ship the rain-first Weather template + `__weather_*` variables with a clear location flow, stable caching, and attribution.
-4) Noise Machine: promote it; keep responsiveness rock-solid; add 1–2 scoped upgrades only.
-5) Variables: make them more accessible/discoverable, especially during text editing; surface built-in keys and syntax.
-6) AI: upgrade the Pro “Generate” and “Patch” flows so they are reviewable and undoable (no silent saves), with token-mapping parity and an App Group kill-switch. Roadmap: `Docs/ROADMAP_AI_2026-01.md`.
-7) Catalogue and trust clean-up (usefulness-first; do not break existing widgets) — status (snapshot 4c7c51e9):
-   - “Reading” is hidden from Explore/starter surfaces (kept in the app for back-compat).
-   - “Photo Quote” is hidden from Explore/starter surfaces (kept in the app for back-compat).
-   - Legacy “Quote” starter template is not surfaced (any remaining `starter-quote` usage is for legacy/icon mapping only).
-   - Clipboard Actions (Screen Actions) is parked for this ship and is absent from release builds:
-     - Compile-time gated behind `CLIPBOARD_ACTIONS` (release builds must not define it).
-     - Not listed in Explore/starter surfaces.
-     - Not registered in the widget extension bundle (no Home Screen “Add Widget” gallery presence).
-     - Default build has no ScreenActionsCore dependency and no local-path SPM dependencies in the Xcode project.
-     - `NSContactsUsageDescription` does not exist in `WidgetWeaver/Info.plist` (nor InfoPlist.strings).
-   - PawPulse / “Latest Cat” is treated as a future feature:
-     - Compile-time gated (no widget gallery presence unless `PAWPULSE` is defined).
-     - Background refresh is runtime gated (`WidgetWeaverFeatureFlags.pawPulseEnabled`, default off) and refresh scheduling is cancelled when disabled or when no base URL is configured.
-   - Weather location safety: `WidgetWeaver/Info.plist` contains `NSLocationWhenInUseUsageDescription` with a user-facing explanation. Keep the permission request in-context (“Use Current Location” only).
-
+Current roadmap priorities (freeze + polish window)
+1) Photos: Smart Photos + crop tools + filters should feel flagship (fast, reliable, good defaults, deterministic widget renders).
+2) Clock: Home Screen correctness and predictable customisation; Segmented face hardening (third face).
+3) Reminders: Smart Stack v2 behaviour (names + no duplicates) + stability in the widget.
+4) AI: keep it safe (review-before-apply + undo + kill-switch) with token-mapping parity; do not jeopardise core edit → save flow.
+5) Noise Machine: keep responsiveness rock-solid; fade improvements and small polish only.
+6) App themes: finalise contrast/readability and ensure themes don’t fight the editor.
+7) Weather: stable caching + clear permission flow + attribution. (Already in good shape; keep it boring.)
+8) Variables: keep discoverable (built-in browser + syntax reference + snippet insertion).
 
 Recent progress check-in (what is now implemented)
-- Weather usefulness: unconfigured Weather widgets deep-link into Weather settings (tap opens `widgetweaver://weather/settings`), routed via `WidgetWeaverWeatherDeepLinkHost`.
-- Weather reliability: refresh throttling (`shouldAttemptRefresh`, `lastRefreshAttemptAt`) plus a small WeatherKit retry/backoff; minute forecast and attribution are best-effort.
-- Weather store hardening: decoding failures clear corrupt data; App Group / standard defaults healing exists; clearing the saved location clears snapshot/attribution and refresh timestamps.
-- Variables: in-app built-in key browser + syntax/filters reference + one-tap snippet insertion; built-ins intentionally override custom keys; docs are in `Docs/VARIABLES.md`.
-- Design exchange: `.wwdesign` import review exists, including an import preview sheet that renders Small/Medium/Large previews before import.
-- Widget reload discipline: a reload coordinator exists to coalesce/debounce reload requests and reload known widget kinds rather than using `reloadAllTimelines()`.
-- Smart Photos correctness: crop decision logic is isolated (family-specific; subject-aware framing), tightening preview vs Home Screen consistency.
-- Clock correctness: appearance resolves through a single resolver to reduce preview vs Home Screen drift.
+
+AI
+- Master AI kill-switch exists (App Group) so all AI surfaces can be disabled quickly: `WidgetWeaverFeatureFlags.aiEnabled`.
+- Review-before-apply mode exists behind an App Group flag (`WidgetWeaverFeatureFlags.aiReviewUIEnabled`):
+  - Generate/patch return a candidate result shown in a review sheet (preview + Apply/Cancel).
+  - One-tap “Undo last AI apply” exists when a snapshot is available.
+- Apple Intelligence availability is surfaced next to AI controls, and deterministic fallbacks remain supported.
+- AI prompt context redacts image file names (context summarises image presence/specs, not file paths).
+
+Clock
+- Clock faces are first-class and selectable in-editor:
+  - Ceramic + Icon are established.
+  - Segmented is the third face and is still being hardened (geometry/pixel alignment/diagnostics).
+- Segmented diagnostics overlays exist behind App Group flags:
+  - `WidgetWeaverFeatureFlags.segmentedRingDiagnosticsEnabled`
+  - `WidgetWeaverFeatureFlags.segmentedBezelDiagnosticsEnabled`
+- A debug “clock face gallery” exists to capture/update the baseline artefact (`Docs/ClockFaceBaseline.png`).
+
+App themes
+- Appearance sheet exists (toolbar menu → Appearance).
+- App themes are persisted per-device via `@AppStorage` and applied immediately; “Paper” forces a light appearance.
+
+Editor (design browsing/switching)
+- Design thumbnails are used in the Library list and in the design picker (thumbnail-first browsing).
+- Switching designs is guarded when there are unsaved changes (Save & Switch / Discard & Switch / Cancel).
+
+Photos (filters + crop tools)
+- Photo filters are implemented as a non-destructive render-time step:
+  - Filter token + intensity stored in the spec (`PhotoFilterSpec` via `ImageSpec.filter`).
+  - Editor UI includes a thumbnail strip + intensity slider, and an “original vs filtered” compare preview.
+  - Kill-switch exists: `WidgetWeaverFeatureFlags.photoFiltersEnabled` (default on).
+- Smart Photo crop editor supports manual crop tooling that persists metadata:
+  - crop rect (normalised)
+  - straighten (degrees)
+  - quarter-turn rotation (90° steps)
+  - filter-aware previews where relevant
+
+Reminders (Smart Stack v2 names + no duplicates)
+- Smart Stack v2 behaviour is defined and implemented:
+  - Six pages in fixed order: Overdue → Today → Upcoming → High priority → Anytime → Lists.
+  - Strict deduplication per snapshot: a reminder ID appears on at most one page for that refresh.
+  - Deterministic ordering in every page with a stable tie-break by reminder ID.
+- The mode labels in the editor update based on `smartStackKitVersion` (v1 labels vs v2 page names).
+
+Noise Machine
+- Start/stop now uses a master-volume fade (fade in/out) to reduce pops/hard transitions.
+- Engine stop includes a short grace period to avoid thrashing when the user toggles rapidly.
 
 Still worth tracking (non-blockers, but visible)
-- “Reading” and “Photo Quote” are hidden from Explore, not deleted. If the goal is full removal, there is further catalogue/spec clean-up to do.
-- Some App Intents and editor actions still call `WidgetCenter.shared.reloadAllTimelines()` directly. Migrate them to `WidgetWeaverWidgetReloadCoordinator` (or targeted `reloadTimelines(ofKind:)`) to match the newer reload discipline.
+- Segmented clock face is still in progress; continue hardening against Home Screen rendering and tiny sizes (44/60) before calling it “done”.
+- AI review UI has no toolbar toggle; if it needs broader internal testing, consider adding a DEBUG toggle (or keep using the App Group defaults key).
+- Photo filter rendering should be re-checked on Home Screen for budget/performance (especially when combined with Smart Photos).
+- Some editor actions / App Intents may still call `WidgetCenter.shared.reloadAllTimelines()` directly. Prefer `WidgetWeaverWidgetReloadCoordinator` or targeted `reloadTimelines(ofKind:)` to match the newer reload discipline.
 
 Key repo pointers
-- AI service (prompt → spec + patching): WidgetWeaver/WidgetSpecAIService.swift
-- Design export/import Transferable: WidgetWeaver/ContentView+SharePackage.swift (`.wwdesign` files)
-- Import review + preview UI: WidgetWeaver/Features/ImportReview/*
-- Document type registration: WidgetWeaver/Info.plist (UTType export + document type + open-in-place declaration)
-- Privacy usage strings: WidgetWeaver/Info.plist (Location / Photos / etc.)
+- Feature flags (App Group, shared by app + widget): `Shared/WidgetWeaverFeatureFlags.swift`
+- AI:
+  - Service + schema mapping: `WidgetWeaver/WidgetSpecAIService.swift`
+  - Candidate pipeline: `WidgetWeaver/WidgetSpecAIService+Candidate.swift`
+  - Review UI: `WidgetWeaver/Features/AI/WidgetWeaverAIReviewSheet.swift`
+  - Editor wiring: `WidgetWeaver/Features/AI/ContentView+AICandidateActions.swift`, `WidgetWeaver/ContentView+Sections.swift`
+  - Undo snapshot store: `WidgetWeaver/Features/AI/WidgetSpecAISnapshotStore.swift`
+- Design export/import Transferable: `WidgetWeaver/ContentView+SharePackage.swift` (`.wwdesign` files)
+- Import review + preview UI: `WidgetWeaver/Features/ImportReview/*`
+- Document type registration: `WidgetWeaver/Info.plist` (UTType export + document type + open-in-place declaration)
+- Privacy usage strings: `WidgetWeaver/Info.plist` (Location / Photos / etc.)
+- App themes:
+  - Theme definitions: `WidgetWeaver/WidgetWeaverAppAppearance.swift`
+  - Theme picker UI: `WidgetWeaver/WidgetWeaverAppearanceView.swift`
+- Design thumbnails + guarded switching:
+  - Thumbnail renderer: `WidgetWeaver/WidgetPreviewThumbnail.swift`
+  - Guarded design picker: `WidgetWeaver/WidgetWeaverDesignSwitchGuardedPicker.swift`
+  - Library list row: `WidgetWeaver/ContentView.swift` (`libraryRow(spec:)`)
+- Photo filters:
+  - Filter engine: `Shared/PhotoFilterEngine.swift`
+  - Filter spec: `Shared/PhotoFilterSpec.swift`
+  - Editor UI: `WidgetWeaver/ContentView+SectionsMedia.swift`
 - Smart Photos pipeline:
-  - WidgetWeaver/SmartPhotoPipeline.swift
-  - WidgetWeaver/SmartPhotoPipeline+CropDecision.swift
-  - Crop editor: WidgetWeaver/SmartPhotoCropEditorView.swift
-- Poster background/overlay: Shared/WidgetWeaverSpecView+Background.swift, Shared/WidgetWeaverSpecView.swift
-- Home Screen clock widget: WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift
-- Clock appearance resolver: Shared/WidgetWeaverClockAppearanceResolver.swift
-- Clock live view: WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift
+  - `WidgetWeaver/SmartPhotoPipeline.swift`
+  - `WidgetWeaver/SmartPhotoPipeline+CropDecision.swift`
+  - Crop editor: `WidgetWeaver/SmartPhotoCropEditorView.swift`
+  - Manual crop renderer: `WidgetWeaver/SmartPhotoManualCropRenderer.swift`
+- Reminders:
+  - Engine (EventKit, app-only): `Shared/WidgetWeaverRemindersEngine.swift`
+  - Snapshot store (App Group): `Shared/WidgetWeaverRemindersStore.swift`
+  - Template view: `Shared/WidgetWeaverRemindersTemplateView.swift`
+  - Config/schema: `Shared/WidgetWeaverRemindersConfig.swift`
+  - Smart Stack v2 partitioner: `Shared/WidgetWeaverRemindersSmartStackV2Partitioner.swift`
+  - Smart Stack kit upgrader: `Shared/WidgetWeaverRemindersSmartStackKitUpgrader.swift`
+  - Behaviour spec: `Docs/Reminders/Reminders Smart Stack v2 Spec.md`
+- Clock:
+  - Home Screen widget: `WidgetWeaverWidget/WidgetWeaverHomeScreenClockWidget.swift`
+  - Appearance resolver: `Shared/WidgetWeaverClockAppearanceResolver.swift`
+  - Face model + render: `Shared/Clock/*`
+  - Clock live view: `WidgetWeaverWidget/Clock/WidgetWeaverClockWidgetLiveView.swift`
 - Weather pipeline:
-  - Engine (fetch + throttling): Shared/WidgetWeaverWeatherEngine.swift
-  - Store (App Group): Shared/WidgetWeaverWeatherStore.swift
-  - Template views: Shared/WidgetWeaverWeatherTemplateView.swift (and related `*NowcastChart*`, `*Layouts*`, `*Components*`)
-  - Deep-link host: WidgetWeaver/WidgetWeaverWeatherDeepLinkHost.swift
-  - Settings UX: WidgetWeaver/WidgetWeaverWeatherSettingsView.swift
-  - Widget integration: WidgetWeaverWidget/WidgetWeaverWidget.swift (weather body)
-- Noise Machine widget: WidgetWeaverWidget/WidgetWeaverNoiseMachineWidget.swift
-- Template catalogue entries: WidgetWeaver/WidgetWeaverAboutCatalog.swift
-- Widget reload coordinator: Shared/WidgetWeaverWidgetReloadCoordinator.swift
-- Variable resolution: Shared/WidgetSpec+Utilities.swift, Shared/WidgetSpec+VariableResolutionNow.swift
-- Variables UI: WidgetWeaver/WidgetWeaverVariablesView.swift (and related sheets)
-- Variables reference: Docs/VARIABLES.md (syntax, filters, built-in keys, and Now formats including Unix milliseconds).
+  - Engine (fetch + throttling): `Shared/WidgetWeaverWeatherEngine.swift`
+  - Store (App Group): `Shared/WidgetWeaverWeatherStore.swift`
+  - Template views: `Shared/WidgetWeaverWeatherTemplateView.swift` (and related `*NowcastChart*`, `*Layouts*`, `*Components*`)
+  - Deep-link host: `WidgetWeaver/WidgetWeaverWeatherDeepLinkHost.swift`
+  - Settings UX: `WidgetWeaver/WidgetWeaverWeatherSettingsView.swift`
+  - Widget integration: `WidgetWeaverWidget/WidgetWeaverWidget.swift` (weather body)
+- Noise Machine:
+  - Controller + engine (fade): `Shared/NoiseMachine/NoiseMachineController+Engine.swift`
+  - Widget: `WidgetWeaverWidget/NoiseMachine/*`
+- Widget reload coordinator: `Shared/WidgetWeaverWidgetReloadCoordinator.swift`
+- Variable resolution: `Shared/WidgetSpec+Utilities.swift`, `Shared/WidgetSpec+VariableResolutionNow.swift`
+- Variables UI: `WidgetWeaver/WidgetWeaverVariablesView.swift` (and related sheets)
+- Variables reference: `Docs/VARIABLES.md` (syntax, filters, built-in keys, and Now formats including Unix milliseconds)
 
 Feature removal / hiding pointers
-- “Reading” template surfaces: WidgetWeaver/WidgetWeaverAboutCatalog.swift (and any Explore listings)
-- “Photo Quote” template: WidgetWeaver/WidgetWeaverAboutCatalog.swift, Shared/WidgetSpec+Utilities.swift (spec helper)
+- “Reading” template surfaces: `WidgetWeaver/WidgetWeaverAboutCatalog.swift` (and any Explore listings)
+- “Photo Quote” template: `WidgetWeaver/WidgetWeaverAboutCatalog.swift`, `Shared/WidgetSpec+Utilities.swift` (spec helper)
 - Clipboard Actions (parked; must be absent in release builds):
-  - Widget registration: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (gate behind the compiler flag `CLIPBOARD_ACTIONS`; release builds must not define it)
-  - Widget: WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift
-  - App intents (auto-detect + inbox): WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift (contact creation disabled; must not ship as a surfaced feature)
-  - Xcode project dependency: WidgetWeaver.xcodeproj/project.pbxproj (must remain clean: no `XCLocalSwiftPackageReference`; ScreenActionsCore must be absent from the default build)
+  - Widget registration: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (gate behind the compiler flag `CLIPBOARD_ACTIONS`; release builds must not define it)
+  - Widget: `WidgetWeaverWidget/WidgetWeaverClipboardActionsWidget.swift`
+  - App intents (auto-detect + inbox): `WidgetWeaver/WidgetWeaverClipboardInboxIntents.swift` (contact creation disabled; must not ship as a surfaced feature)
+  - Xcode project dependency: `WidgetWeaver.xcodeproj/project.pbxproj` (must remain clean: no `XCLocalSwiftPackageReference`; ScreenActionsCore must be absent from the default build)
 - PawPulse / “Latest Cat”:
-  - Widget registration gate: WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift (`#if PAWPULSE`)
-  - Widget: WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift
-  - App views/settings: Shared/PawPulseLatestCatDetailView.swift, Shared/PawPulseSettingsView.swift
-  - Runtime gating helper: Shared/WidgetWeaverFeatureFlags.swift (`pawPulseEnabled`, default off)
-  - Background tasks: Shared/PawPulseBackgroundTasks.swift (runtime gated; cancels pending requests when disabled or when no base URL is configured)
+  - Widget registration gate: `WidgetWeaverWidget/WidgetWeaverWidgetBundle.swift` (`#if PAWPULSE`)
+  - Widget: `WidgetWeaverWidget/WidgetWeaverPawPulseLatestCatWidget.swift`
+  - App views/settings: `Shared/PawPulseLatestCatDetailView.swift`, `Shared/PawPulseSettingsView.swift`
+  - Runtime gating helper: `Shared/WidgetWeaverFeatureFlags.swift` (`pawPulseEnabled`, default off)
+  - Background tasks: `Shared/PawPulseBackgroundTasks.swift` (runtime gated; cancels pending requests when disabled or when no base URL is configured)
 
 Non-negotiables
 - Do not run heavy work in widgets.

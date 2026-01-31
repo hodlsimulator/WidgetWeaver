@@ -1,6 +1,6 @@
 # WidgetWeaver release plan (Feb 2026)
 
-Last updated: 2026-01-26
+Last updated: 2026-01-31
 
 ## 1) Scope summary
 
@@ -8,11 +8,14 @@ This release is about shipping a coherent, public-quality WidgetWeaver that feel
 
 In scope (must ship):
 
-- Photos + Smart Photos: reliability, performance, and “good by default” results.
-- Clock: Home Screen correctness and predictable update propagation.
+- Photos + Smart Photos: reliability, performance, and “good by default” results (manual crop tools and optional Photo Filters).
+- Clock: Home Screen correctness and predictable update propagation (including Segmented face hardening work).
 - Weather (flagship): a rain-first Weather template plus `__weather_*` variables, with a clear location flow, stable caching, and correct attribution.
-- Noise Machine: stable, responsive daily-use behaviour.
+- Noise Machine: stable, responsive daily-use behaviour (including start/stop fade to reduce pops).
+- Reminders: Smart Stack v2 naming + non-duplicating pages (deterministic output per snapshot).
 - Variables: better discoverability and in-context insertion (bounded UX improvements only).
+- App themes: editor/library appearance themes (no widget impact).
+- Editor UX: design thumbnails in Library/pickers; guarded switching when unsaved changes exist.
 - Surface-area reductions (usefulness + trust): hide/remove non-flagship templates without breaking existing user widgets, and remove unused permission declarations.
 
 In scope (targeted; ship if stable; feature-flagged):
@@ -44,8 +47,11 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 - [ ] Photo widgets: no blank tiles after edits; images load reliably from App Group.
 - [x] Smart Photos: crop decision logic is isolated (family-specific defaults, subject-aware framing), reducing preview vs Home Screen drift.
+- [ ] Photo Filters: verify filter rendering is reliable and within budget in widgets (and that the kill-switch works: `WidgetWeaverFeatureFlags.photoFiltersEnabled`).
+- [ ] Smart Photo manual crop tools: crop/straighten/rotate persist correctly across families and across export/import.
 - [ ] Photo Clock: time variables resolve against the timeline entry date (no “frozen minute” strings).
 - [x] Clock appearance resolves through a single resolver (`WidgetWeaverClockAppearanceResolver`) to reduce preview vs Home Screen drift.
+- [ ] Clock (Segmented face): verify geometry/pixel-snapping across Small/Medium/Large; keep diagnostics flags off by default.
 - [ ] Weather: renders a useful widget state everywhere:
   - [ ] With a saved location: shows cached weather immediately and updates within expected intervals.
   - [x] Without a saved location or snapshot: shows a stable “Set location” state (no blank tiles).
@@ -53,14 +59,18 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
   - [x] Minute forecast and WeatherKit attribution are treated as best-effort so they cannot block a useful widget state.
   - [ ] Weather attribution is present (legal link appears after first successful update).
 - [ ] Noise Machine: first tap after cold start updates UI immediately; state reconciles correctly.
+- [x] Noise Machine: start/stop uses a short master-volume fade and a stop grace period to reduce pops and avoid engine thrash.
+- [ ] Reminders (Smart Stack v2): verify v2 page names + strict dedupe (Overdue → Today → Upcoming → High priority → Anytime → Lists) in widgets.
 
 ### Gate B: Data integrity and safe deprecations
 
 - [ ] Edits do not corrupt saved widget specs.
 - [ ] AI (if shipped): generation/patching produces valid specs and cannot corrupt saved designs:
-  - [ ] Review-before-apply is enforced (no silent saves).
-  - [ ] Kill-switch exists and works (AI can be disabled without removing code).
-  - [ ] Deterministic fallback remains usable when Apple Intelligence is unavailable.
+  - [x] Review-before-apply UI exists behind `WidgetWeaverFeatureFlags.aiReviewUIEnabled` (no silent saves when enabled).
+  - [x] One-step undo exists when review UI is enabled.
+  - [x] Kill-switch exists and works (AI can be disabled without removing code) via `WidgetWeaverFeatureFlags.aiEnabled`.
+  - [x] Deterministic fallback remains usable when Apple Intelligence is unavailable.
+  - [ ] Decide ship posture (review UI default on/off) and QA both states.
 - [x] Design sharing/export: exporting a widget design produces a `.wwdesign` file; importing from Files works; legacy `.json` import remains supported for internal builds.
 - [x] Import review flow exists, including an import preview sheet that renders Small/Medium/Large previews before import.
 - [ ] App Group storage migrations (if any) are forward compatible.
@@ -128,7 +138,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
   - [ ] Curate a “Top templates” set (6–10) and move advanced/edge templates behind “More”.
   - [ ] Default advanced editor controls to collapsed; surface them via “More” / “Advanced” panels.
   - [ ] Validate the primary path is linear: Explore → select → edit → save → add widget, with minimal branching.
-- [ ] AI (if shipped): Generate/Patch is reviewable and undoable (no silent saves).
+- [x] AI (if shipped): review sheet + undo exist behind `WidgetWeaverFeatureFlags.aiReviewUIEnabled` (no silent saves when enabled).
 - [ ] Weather is surfaced as a flagship template (not hidden/experimental in shipped surfaces).
 - [x] Weather settings is easy to find from the widget when unconfigured (tap deep-links to settings).
 - [x] “Reading” is removed from visible catalogue surfaces.
@@ -136,6 +146,9 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [x] Clipboard Actions is absent from release builds (no Explore listing, no widget gallery registration).
 - [x] PawPulse / “Latest Cat” is hidden from Explore and first-run paths (future feature; no widget gallery presence unless `PAWPULSE` is defined; release builds must not define it).
 - [x] Variables: discoverability improved (built-in key browser, syntax/filters reference, one-tap snippet insertion).
+- [x] Editor: design thumbnails exist in the Library list and design picker; switching designs is guarded when there are unsaved changes.
+- [ ] App themes: contrast/readability pass across all themes (including in Light/Dark mode and with Reduce Transparency).
+- [ ] Photos: ensure Photo Filters UX is clear and non-distracting; verify filter thumbnails and intensity slider behave well.
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
 - [ ] Weather error states are actionable (no “mystery blank widget”):
   - [x] “No location saved” provides an obvious route to set a location (widget tap deep-link).
@@ -195,11 +208,13 @@ These are not blockers for this check-in, but should be tracked during the polis
 
 This release focuses on making WidgetWeaver feel high-quality and safe to use daily:
 
-- More reliable photo widgets and Smart Photos behaviour.
+- More reliable photo widgets and Smart Photos behaviour, including manual crop tools and optional Photo Filters.
 - Improved Home Screen clock correctness.
 - Flagship Weather template with rain-first nowcast + built-in `__weather_*` variables.
 - Noise Machine stability and polish.
 - Better Variables discoverability and usability.
+- Reminders Smart Stack v2: clearer page names and no duplicate reminders across pages per refresh.
+- New app appearance themes and a thumbnail-first design browsing workflow.
 - More realistic design sharing and import review (with previews).
 
 Scope cuts to keep the release coherent:
