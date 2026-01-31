@@ -11,9 +11,9 @@ Strategic intent
 - Ship a coherent flagship set, not a wide permission-heavy grab bag.
 
 Near-term schedule
-- Today: 2026-01-31 (feature freeze day).
-- Feature freeze: 2026-01-31 (stop adding features).
-- Polish: 2026-02-01 to 2026-02-14.
+- Today: 2026-01-31.
+- Feature freeze: end of day 2026-02-02 (Europe/Dublin) (stop adding features).
+- Polish: 2026-02-03 to 2026-02-14.
 - Target ship: 2026-02-14 to 2026-02-16.
 
 Current roadmap priorities (freeze + polish window)
@@ -90,7 +90,7 @@ Still worth tracking (non-blockers, but visible)
 - Segmented clock face is still in progress; continue hardening against Home Screen rendering and tiny sizes (44/60) before calling it “done”.
 - Widget design themes are not wired into the Style tool yet; after wiring, verify that theme application is style-only and does not trigger reload storms.
 - AI review UI has no toolbar toggle; if it needs broader internal testing, consider adding a DEBUG toggle (or keep using the App Group defaults key).
-- Photo filter rendering should be re-checked on Home Screen for budget/performance (especially when combined with Smart Photos).
+- Photo Filters are verified on Home Screen (budget-safe); keep a light sanity check in worst-case combinations during QA, but treat the feature as “done”.
 - Some editor actions / App Intents may still call `WidgetCenter.shared.reloadAllTimelines()` directly. Prefer `WidgetWeaverWidgetReloadCoordinator` or targeted `reloadTimelines(ofKind:)` to match the newer reload discipline.
 
 Key repo pointers

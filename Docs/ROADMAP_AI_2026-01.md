@@ -44,8 +44,8 @@ Key implementation files:
 
 ## Schedule constraints
 
-- Feature freeze: 2026-01-31
-- Polish: 2026-02-01 → 2026-02-14
+- Feature freeze: end of day 2026-02-02 (Europe/Dublin)
+- Polish: 2026-02-03 → 2026-02-14
 - Target ship: 2026-02-14 → 2026-02-16
 
 AI is not a release gate for Feb, but it can ship if stable behind flags and if it does not create regressions in the editor.

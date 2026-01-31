@@ -5,7 +5,7 @@ Owner: Conor (engineering) / ChatGPT (PM support)
 
 ## Executive summary
 
-We will ship the next public-quality release in mid-February 2026, with a hard feature freeze on 2026-01-31. The roadmap concentrates on making Photos + Clock + Weather feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
+We will ship the next public-quality release in mid-February 2026, with a hard feature freeze at the end of 2026-02-02 (Europe/Dublin). The roadmap concentrates on making Photos + Clock + Weather feel like flagship capabilities, promoting Noise Machine to a higher-quality “daily use” widget, improving Variables discoverability, and reducing surface area that increases maintenance and App Review risk.
 
 UX is the primary success metric for this cycle; the Photos track has a dedicated micro-roadmap: `Docs/ROADMAP_PHOTO_SUITE_UX_2026-01.md`.
 
@@ -50,8 +50,8 @@ Weather is not deferred. It is a flagship widget/template for the Feb ship and m
 
 ## Dates and milestones
 
-- Feature freeze: 2026-01-31
-- Polish: 2026-02-01 → 2026-02-14
+- Feature freeze: end of day 2026-02-02 (Europe/Dublin)
+- Polish: 2026-02-03 → 2026-02-14
 - Target ship: 2026-02-14 → 2026-02-16
 
 ## Themes and workstreams

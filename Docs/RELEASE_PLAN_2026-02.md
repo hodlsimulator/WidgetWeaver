@@ -38,9 +38,18 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 ## 2) Dates
 
-- Feature freeze: 2026-01-31
-- Polish: 2026-02-01 to 2026-02-14
+- Feature freeze: end of day 2026-02-02 (Europe/Dublin)
+- Polish: 2026-02-03 to 2026-02-14
 - Target ship: 2026-02-14 to 2026-02-16
+
+### Pre-freeze focus (must be done by feature freeze)
+
+- Clock (Segmented face): finish pixel-snapping/geometry across Small/Medium/Large and confirm Home Screen renders match previews (diagnostics overlays off by default).
+- Widget design themes: wire the theme picker into the editor Style tool and apply presets to the draft spec deterministically (style-only; no schema/render changes).
+- Widget reload discipline: replace remaining `WidgetCenter.shared.reloadAllTimelines()` call sites in shipping/user-driven paths (especially App Intents) with `WidgetWeaverWidgetReloadCoordinator` or targeted `reloadTimelines(ofKind:)` calls.
+- Editor save state: make “saved vs unsaved” unambiguous, keep Save disabled when clean, and keep guarded design switching flows stable.
+- Weather trust: confirm Location prompts are strictly in-context and that attribution appears reliably after the first successful update.
+- AI (if shipped): decide the default posture for review UI (on/off), and QA both modes behind flags to ensure no editor regressions.
 
 ## 3) Release gates
 
@@ -48,7 +57,7 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 
 - [ ] Photo widgets: no blank tiles after edits; images load reliably from App Group.
 - [x] Smart Photos: crop decision logic is isolated (family-specific defaults, subject-aware framing), reducing preview vs Home Screen drift.
-- [ ] Photo Filters: verify filter rendering is reliable and within budget in widgets (and that the kill-switch works: `WidgetWeaverFeatureFlags.photoFiltersEnabled`).
+- [x] Photo Filters: verified reliable and within budget in widgets; kill-switch works (`WidgetWeaverFeatureFlags.photoFiltersEnabled`).
 - [ ] Smart Photo manual crop tools: crop/straighten/rotate persist correctly across families and across export/import.
 - [ ] Photo Clock: time variables resolve against the timeline entry date (no “frozen minute” strings).
 - [x] Clock appearance resolves through a single resolver (`WidgetWeaverClockAppearanceResolver`) to reduce preview vs Home Screen drift.
@@ -149,8 +158,8 @@ Weather is not deferred. It is a flagship widget/template and a release gate.
 - [x] Variables: discoverability improved (built-in key browser, syntax/filters reference, one-tap snippet insertion).
 - [x] Editor: design thumbnails exist in the Library list and design picker; switching designs is guarded when there are unsaved changes.
 - [ ] App appearance themes: contrast/readability pass across all themes (including in Light/Dark mode and with Reduce Transparency).
-- [ ] Widget design themes: contrast/readability pass across presets (including over photos) and ensure theme selection is a first-class, low-friction styling path.
-- [ ] Photos: ensure Photo Filters UX is clear and non-distracting; verify filter thumbnails and intensity slider behave well.
+- [ ] Widget design themes: wire the theme picker into the Style tool, apply presets to drafts deterministically, and do a contrast/readability pass across presets (including over photos).
+- [x] Photos: Photo Filters UX is clear and non-distracting; filter thumbnails and intensity slider behave well.
 - [ ] Error states: Smart Photos prep failures explain what to do (permissions, storage, retries).
 - [ ] Weather error states are actionable (no “mystery blank widget”):
   - [x] “No location saved” provides an obvious route to set a location (widget tap deep-link).
