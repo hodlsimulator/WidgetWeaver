@@ -16,6 +16,7 @@ struct SegmentedOuterRingRenderer {
 
     private static let segmentCount: Int = 12
 
+    /// Primary entry point used by existing call sites.
     func render(
         into context: inout GraphicsContext,
         size: CGSize,
@@ -27,6 +28,24 @@ struct SegmentedOuterRingRenderer {
         context.blendMode = .normal
 
         let centre = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+
+        renderBed(into: &context, size: size, centre: centre, style: style)
+        renderBlocks(into: &context, size: size, centre: centre, style: style, scale: scale)
+
+        context.blendMode = .normal
+    }
+
+    /// Compatibility overload (supports earlier variants that passed the centre explicitly).
+    func render(
+        into context: inout GraphicsContext,
+        size: CGSize,
+        centre: CGPoint,
+        style: SegmentedOuterRingStyle,
+        scale: CGFloat
+    ) {
+        guard size.width > 1, size.height > 1 else { return }
+
+        context.blendMode = .normal
 
         renderBed(into: &context, size: size, centre: centre, style: style)
         renderBlocks(into: &context, size: size, centre: centre, style: style, scale: scale)
@@ -202,31 +221,53 @@ struct SegmentedOuterRingRenderer {
         style: SegmentedOuterRingStyle,
         scale: CGFloat
     ) {
+        let px = PixelSnapping.px(scale: scale)
+
         let fullSpan = CGFloat.pi * 2.0
         let segmentSpan = fullSpan / CGFloat(Self.segmentCount)
 
-        // Encode the gap in the block geometry itself.
-        let halfGap = (style.gap.angular * 0.5) + style.gap.edgeTrimAngular
+        // Pixel-snapped radii for tighter WidgetKit raster parity.
+        let blockOuter = PixelSnapping.snap(style.radii.blockOuter, scale: scale)
+        let blockInner = PixelSnapping.snap(style.radii.blockInner, scale: scale)
+        let blockMid = PixelSnapping.snap(style.radii.blockMid, scale: scale)
+        let chamfer = PixelSnapping.snap(style.chamfer.depth, scale: scale)
 
-        let gradientStart = CGPoint(x: centre.x - style.radii.blockOuter, y: centre.y - style.radii.blockOuter)
-        let gradientEnd = CGPoint(x: centre.x + style.radii.blockOuter, y: centre.y + style.radii.blockOuter)
+        // Gap handling (v3.4.2):
+        // A 3px target gap is split into integer pixels on each side (1px + 2px),
+        // then converted to angles at the block mid radius.
+        // This avoids anti-alias "fattening" for odd pixel gaps and keeps the cuts reading as open air.
+        let gapPxTotal = max(0.0, style.gap.pixels.rounded(.toNearestOrAwayFromZero))
+        let gapStartPx = floor(gapPxTotal * 0.5)
+        let gapEndPx = max(0.0, gapPxTotal - gapStartPx)
+
+        let midR = max(px, blockMid)
+
+        let startGapAngle = ((gapStartPx * px) / midR) + style.gap.edgeTrimAngular
+        let endGapAngle = ((gapEndPx * px) / midR) + style.gap.edgeTrimAngular
+
+        // Centre correction keeps each segment centred at its nominal angle even with an odd gap split.
+        let centreAngleAdjust = (endGapAngle - startGapAngle) * 0.5
+
+        let gradientStart = CGPoint(x: centre.x - blockOuter, y: centre.y - blockOuter)
+        let gradientEnd = CGPoint(x: centre.x + blockOuter, y: centre.y + blockOuter)
 
         for idx in 0..<Self.segmentCount {
             // Centre at 12 o'clock for idx == 0.
-            let centreAngle = (-CGFloat.pi * 0.5) + (CGFloat(idx) * segmentSpan)
+            let baseCentreAngle = (-CGFloat.pi * 0.5) + (CGFloat(idx) * segmentSpan)
+            let centreAngle = baseCentreAngle + centreAngleAdjust
 
-            let startAngle = centreAngle - (segmentSpan * 0.5) + halfGap
-            let endAngle = centreAngle + (segmentSpan * 0.5) - halfGap
+            let startAngle = centreAngle - (segmentSpan * 0.5) + startGapAngle
+            let endAngle = centreAngle + (segmentSpan * 0.5) - endGapAngle
 
             guard endAngle > startAngle else { continue }
 
             let cgPath = AnnularSegmentCGPath.chamferedSegment(
                 centre: centre,
-                innerRadius: style.radii.blockInner,
-                outerRadius: style.radii.blockOuter,
+                innerRadius: blockInner,
+                outerRadius: blockOuter,
                 startAngle: startAngle,
                 endAngle: endAngle,
-                chamfer: style.chamfer.depth
+                chamfer: chamfer
             )
 
             let path = Path(cgPath)
@@ -268,20 +309,20 @@ struct SegmentedOuterRingRenderer {
                 renderMarker(
                     into: &context,
                     centre: centre,
-                    angle: centreAngle,
-                    radius: style.radii.blockMid,
+                    angle: baseCentreAngle,
+                    radius: blockMid,
                     markerRadius: style.diagnostic.markerRadius,
                     colour: style.diagnostic.segmentMarkerColour,
                     scale: scale
                 )
 
                 // Gap centre marker (between segments).
-                let gapAngle = centreAngle + (segmentSpan * 0.5)
+                let gapAngle = baseCentreAngle + (segmentSpan * 0.5)
                 renderMarker(
                     into: &context,
                     centre: centre,
                     angle: gapAngle,
-                    radius: style.radii.blockMid,
+                    radius: blockMid,
                     markerRadius: style.diagnostic.markerRadius * 0.85,
                     colour: style.diagnostic.gapMarkerColour,
                     scale: scale
