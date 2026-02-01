@@ -4,16 +4,14 @@
 //
 //  Created by . . on 12/23/25.
 //
-//  Split out of WidgetWeaverWeather.swift on 12/23/25.
+//  WeatherKit-backed engine that maintains cached weather state in the App Group store.
 //
 
 import Foundation
 import CoreLocation
-
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
-
 #if canImport(WeatherKit)
 import WeatherKit
 #endif
@@ -93,10 +91,15 @@ public actor WidgetWeaverWeatherEngine {
         let now = Date()
 
         // Fast-path: if the cached snapshot is fresh enough, skip WeatherKit.
-        if !force, let existing = store.loadSnapshot() {
+        //
+        // A stored error must not be cleared here. If the most recent attempt failed, the widget can
+        // surface a light status until a successful refresh occurs.
+        if !force, store.loadLastError() == nil, let existing = store.loadSnapshot() {
             let age = now.timeIntervalSince(existing.fetchedAt)
             if age >= 0, age < minimumUpdateInterval {
-                store.saveLastError(nil)
+                #if canImport(WeatherKit)
+                await ensureAttributionIfMissing()
+                #endif
                 return Result(snapshot: existing, attribution: store.loadAttribution(), errorDescription: nil)
             }
         }
@@ -108,6 +111,9 @@ public actor WidgetWeaverWeatherEngine {
             lastAttemptAt: store.loadLastRefreshAttemptAt(),
             minimumUpdateInterval: minimumUpdateInterval
         ) {
+            #if canImport(WeatherKit)
+            await ensureAttributionIfMissing()
+            #endif
             return Result(
                 snapshot: store.loadSnapshot(),
                 attribution: store.loadAttribution(),
@@ -135,12 +141,10 @@ public actor WidgetWeaverWeatherEngine {
             store.saveSnapshot(snap)
             store.saveLastSuccessfulRefreshAt(snap.fetchedAt)
 
-            // Attribution is best-effort. Keep existing attribution if fetch fails.
-            let existingAttr = store.loadAttribution()
-            if let newAttr = await fetchAttributionBestEffort() {
+            // Attribution is required for display in both the app and widgets.
+            // Persist it as soon as a first successful weather update occurs.
+            if store.loadAttribution() == nil, let newAttr = await fetchAttributionBestEffort() {
                 store.saveAttribution(newAttr)
-            } else if existingAttr == nil {
-                // No-op.
             }
 
             store.saveLastError(nil)
@@ -174,6 +178,16 @@ public actor WidgetWeaverWeatherEngine {
     #if canImport(WeatherKit)
 
     // MARK: - Fetching (robust)
+
+    private func ensureAttributionIfMissing() async {
+        let store = WidgetWeaverWeatherStore.shared
+        guard store.loadAttribution() == nil else { return }
+
+        if let attr = await fetchAttributionBestEffort() {
+            store.saveAttribution(attr)
+            notifyWidgetsWeatherUpdated()
+        }
+    }
 
     private func fetchCoreWeatherWithRetry(
         for location: CLLocation,
@@ -215,14 +229,21 @@ public actor WidgetWeaverWeatherEngine {
         }
     }
 
-    private func fetchAttributionBestEffort() async -> WidgetWeaverWeatherAttribution? {
-        do {
-            let attribution = try await WeatherService.shared.attribution
-            return WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
-        } catch {
-            return nil
+    private func fetchAttributionBestEffort(maxAttempts: Int = 3) async -> WidgetWeaverWeatherAttribution? {
+        for attempt in 1...maxAttempts {
+            do {
+                let attribution = try await WeatherService.shared.attribution
+                return WidgetWeaverWeatherAttribution(legalPageURLString: attribution.legalPageURL.absoluteString)
+            } catch {
+                if attempt < maxAttempts {
+                    let delayNanos: UInt64 = (attempt == 1) ? 250_000_000 : 650_000_000
+                    try? await Task.sleep(nanoseconds: delayNanos)
+                }
+            }
         }
+        return nil
     }
+
 
     private static func describe(error: Error) -> String {
         if let urlError = error as? URLError {

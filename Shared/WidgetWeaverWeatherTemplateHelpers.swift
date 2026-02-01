@@ -14,6 +14,30 @@ func wwTempString(_ celsius: Double, unit: UnitTemperature) -> String {
 }
 
 @inline(__always)
+func wwTempDegreesString(_ celsius: Double, unit: UnitTemperature) -> String {
+    "\(wwTempString(celsius, unit: unit))°"
+}
+
+@inline(__always)
+func wwUnitSuffix(_ unit: UnitTemperature) -> String {
+    let symbol = unit.symbol.uppercased()
+    if symbol.contains("F") { return "F" }
+    if symbol.contains("C") { return "C" }
+
+    let trimmed = symbol
+        .replacingOccurrences(of: "°", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    if trimmed.isEmpty { return "C" }
+    return trimmed
+}
+
+@inline(__always)
+func wwTempDegreesWithUnitString(_ celsius: Double, unit: UnitTemperature) -> String {
+    "\(wwTempString(celsius, unit: unit))°\(wwUnitSuffix(unit))"
+}
+
+@inline(__always)
 func wwHourString(_ date: Date) -> String {
     let hour = Calendar.current.component(.hour, from: date)
     return String(format: "%02d", hour)

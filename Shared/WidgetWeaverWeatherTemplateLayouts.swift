@@ -28,6 +28,16 @@ struct WeatherSmallRainLayout: View {
         let nowcast = WeatherNowcast(snapshot: snapshot, now: now)
         let visualMax = WeatherNowcast.visualMaxIntensityMMPerHour(forPeak: nowcast.peakIntensityMMPerHour)
 
+        let store = WidgetWeaverWeatherStore.shared
+        let hasRecentFailure: Bool = {
+            guard store.loadLastError() != nil else { return false }
+            guard let attempt = store.loadLastRefreshAttemptAt() else { return true }
+            if let success = store.loadLastSuccessfulRefreshAt() {
+                return attempt > success
+            }
+            return true
+        }()
+
         VStack(alignment: .leading, spacing: metrics.sectionSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -60,12 +70,12 @@ struct WeatherSmallRainLayout: View {
             Spacer(minLength: 0)
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(wwTempString(snapshot.temperatureC, unit: unit))
+                Text(wwTempDegreesWithUnitString(snapshot.temperatureC, unit: unit))
                     .font(.system(size: metrics.temperatureFontSizeSmall, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                    Text("H \(wwTempString(hi, unit: unit)) L \(wwTempString(lo, unit: unit))")
+                    Text("H \(wwTempDegreesString(hi, unit: unit)) L \(wwTempDegreesString(lo, unit: unit))")
                         .font(.system(size: metrics.detailsFontSize, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -73,6 +83,12 @@ struct WeatherSmallRainLayout: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if hasRecentFailure {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: metrics.updatedFontSize, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -115,7 +131,7 @@ struct WeatherMediumRainLayout: View {
 
                 Spacer(minLength: 0)
 
-                Text(wwTempString(snapshot.temperatureC, unit: unit))
+                Text(wwTempDegreesWithUnitString(snapshot.temperatureC, unit: unit))
                     .font(.system(size: metrics.temperatureFontSizeMedium, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
             }
@@ -178,12 +194,12 @@ struct WeatherLargeRainLayout: View {
                 Spacer(minLength: 0)
 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(wwTempString(snapshot.temperatureC, unit: unit))
+                    Text(wwTempDegreesWithUnitString(snapshot.temperatureC, unit: unit))
                         .font(.system(size: metrics.temperatureFontSizeLarge, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
 
                     if let hi = snapshot.highTemperatureC, let lo = snapshot.lowTemperatureC {
-                        Text("H \(wwTempString(hi, unit: unit)) L \(wwTempString(lo, unit: unit))")
+                        Text("H \(wwTempDegreesString(hi, unit: unit)) L \(wwTempDegreesString(lo, unit: unit))")
                             .font(.system(size: metrics.detailsFontSizeLarge, weight: .medium, design: .rounded))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -221,13 +237,18 @@ private struct WeatherUpdatedLabel: View {
 
     var body: some View {
         let store = WidgetWeaverWeatherStore.shared
-        let cadenceSeconds = store.recommendedDataRefreshIntervalSeconds()
-        let staleThresholdSeconds = cadenceSeconds * 2
+        let updated = wwUpdatedAgoString(from: fetchedAt, now: now)
 
-        let ageSeconds = max(0.0, now.timeIntervalSince(fetchedAt))
-        let dataAgeText: String? = (ageSeconds >= staleThresholdSeconds) ? wwUpdatedAgoString(from: fetchedAt, now: now) : nil
+        let hasRecentFailure: Bool = {
+            guard store.loadLastError() != nil else { return false }
+            guard let attempt = store.loadLastRefreshAttemptAt() else { return true }
+            if let success = store.loadLastSuccessfulRefreshAt() {
+                return attempt > success
+            }
+            return true
+        }()
 
-        let text = dataAgeText.map { "Refreshed now · Data \($0)" } ?? "Refreshed now"
+        let text = hasRecentFailure ? "Updated \(updated) · Update failed" : "Updated \(updated)"
 
         return Text(text)
             .font(.system(size: fontSize, weight: .medium, design: .rounded))
