@@ -337,13 +337,15 @@ enum SmartPhotoMemoriesEngine {
         let earliestYear = earliestAssetYear(calendar: calendar) ?? (currentYear - clampedYearsBack)
         let startYear = max(earliestYear, currentYear - clampedYearsBack)
 
-        if startYear > currentYear {
+        if startYear > (currentYear - 1) {
             return (0, [])
         }
 
         var perYearCandidates: [Int: [Candidate]] = [:]
 
-        for year in stride(from: currentYear, through: startYear, by: -1) {
+        // Memories is intentionally "past years" only.
+        // Exclude the current year to avoid the most recent bursts dominating the set.
+        for year in stride(from: (currentYear - 1), through: startYear, by: -1) {
             guard let window = dateWindow(mode: mode, year: year, now: now, calendar: calendar) else {
                 continue
             }
