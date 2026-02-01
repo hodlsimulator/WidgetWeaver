@@ -37,6 +37,9 @@ struct WidgetWeaverAboutView: View {
     @State var statusMessage: String = ""
     @State private var isPreheatingThumbnails: Bool = false
 
+    @AppStorage("widgetweaver.theme.selectedPresetID")
+    private var selectedThemePresetIDRaw: String = ""
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
 
@@ -47,6 +50,24 @@ struct WidgetWeaverAboutView: View {
         case .more:
             return "More"
         }
+    }
+
+    private var resolvedSelectedThemePreset: WidgetWeaverThemePreset {
+        if let preset = WidgetWeaverThemeCatalog.preset(matching: selectedThemePresetIDRaw) {
+            return preset
+        }
+
+        if let preset = WidgetWeaverThemeCatalog.preset(matching: WidgetWeaverThemeCatalog.defaultPresetID) {
+            return preset
+        }
+
+        return WidgetWeaverThemeCatalog.ordered.first
+            ?? WidgetWeaverThemePreset(
+                id: "classic",
+                displayName: "Classic",
+                detail: "System default theme.",
+                style: StyleSpec.defaultStyle
+            )
     }
 
     var body: some View {
@@ -208,6 +229,10 @@ struct WidgetWeaverAboutView: View {
 
 // MARK: - Helpers
 
+    private func applySelectedTheme(to spec: WidgetSpec) -> WidgetSpec {
+        WidgetWeaverThemeApplier.apply(preset: resolvedSelectedThemePreset, to: spec)
+    }
+
     var appVersionString: String {
         let bundle = Bundle.main
         let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -232,7 +257,7 @@ struct WidgetWeaverAboutView: View {
     }
 
     func handleAdd(template: WidgetWeaverAboutTemplate, makeDefault: Bool) {
-        onAddTemplate(template.spec, makeDefault)
+        onAddTemplate(applySelectedTheme(to: template.spec), makeDefault)
         withAnimation(.spring(duration: 0.35)) {
             statusMessage = makeDefault ? "Added & set as default" : "Added"
         }
@@ -339,7 +364,7 @@ struct WidgetWeaverAboutView: View {
             let upgraded = Upgrader.upgradeV1ToV2IfNeeded(spec: base, slot: slot)
             base = upgraded.spec
 
-            onAddTemplate(base, false)
+            onAddTemplate(applySelectedTheme(to: base), false)
 
             let refreshed = store.loadAll()
             let afterCount = refreshed.count
