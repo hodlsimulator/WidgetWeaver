@@ -193,12 +193,12 @@ private enum SegmentedNumeralTextMetrics {
     /// without changing the "0" elsewhere.
     ///
     /// Targets (physical pixels at 60/44):
-    /// - Width reduction: ~1px (clamp 1px…2px)
+    /// - Width reduction: ~2px (clamp 2px…3px)
     static func digitZeroInTenHorizontalScale(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         let cellWidthPoints = oneDigitCellWidth(fontSize: fontSize, scale: scale)
         let cellWidthPixels = cellWidthPoints * max(scale, 1.0)
 
-        let deltaPixels = WWClock.clamp(1.0, min: 1.0, max: 2.0)
+        let deltaPixels = WWClock.clamp(2.0, min: 2.0, max: 3.0)
 
         guard cellWidthPixels > 0 else { return 0.95 }
 
