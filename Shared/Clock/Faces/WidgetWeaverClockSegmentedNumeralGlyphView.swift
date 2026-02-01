@@ -120,6 +120,7 @@ private struct SegmentedNumeralBaseShape: View {
                         .monospacedDigit()
                         .segmentedNumeralWidth()
                         .segmentedNumeralDigitOneSlim(digit: right, fontSize: fontSize, scale: scale)
+                        .segmentedNumeralDigitZeroInTenSquarer(parentText: text, digit: right, fontSize: fontSize, scale: scale)
                 }
                 .fixedSize()
                 .frame(width: fixedWidth, alignment: .center)
@@ -185,6 +186,26 @@ private enum SegmentedNumeralTextMetrics {
         return WWClock.clamp(scaleX, min: 0.88, max: 0.94)
     }
 
+    /// Context-only width tweak for the "0" in "10".
+    ///
+    /// The heavy monospaced "0" reads overly circular in the compact two-digit label.
+    /// A tiny horizontal squeeze nudges it towards the mock's squarer silhouette
+    /// without changing the "0" elsewhere.
+    ///
+    /// Targets (physical pixels at 60/44):
+    /// - Width reduction: ~1px (clamp 1px…2px)
+    static func digitZeroInTenHorizontalScale(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
+        let cellWidthPoints = oneDigitCellWidth(fontSize: fontSize, scale: scale)
+        let cellWidthPixels = cellWidthPoints * max(scale, 1.0)
+
+        let deltaPixels = WWClock.clamp(1.0, min: 1.0, max: 2.0)
+
+        guard cellWidthPixels > 0 else { return 0.95 }
+
+        let scaleX = (cellWidthPixels - deltaPixels) / cellWidthPixels
+        return WWClock.clamp(scaleX, min: 0.90, max: 0.99)
+    }
+
     /// Small top-left trim for digit "1" (reduces the long flag/protrusion).
     ///
     /// Implemented as a destinationOut rectangle so the rest of the numeral pipeline
@@ -244,6 +265,20 @@ private extension View {
                 .segmentedNumeralDigitOneTopTrim(scale: scale)
                 .scaleEffect(
                     x: SegmentedNumeralTextMetrics.digitOneHorizontalScale(fontSize: fontSize, scale: scale),
+                    y: 1.0,
+                    anchor: .center
+                )
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func segmentedNumeralDigitZeroInTenSquarer(parentText: String, digit: String, fontSize: CGFloat, scale: CGFloat) -> some View {
+        if parentText == "10" && digit == "0" {
+            self
+                .scaleEffect(
+                    x: SegmentedNumeralTextMetrics.digitZeroInTenHorizontalScale(fontSize: fontSize, scale: scale),
                     y: 1.0,
                     anchor: .center
                 )
