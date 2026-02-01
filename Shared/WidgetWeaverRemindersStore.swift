@@ -76,9 +76,6 @@ public final class WidgetWeaverRemindersStore: @unchecked Sendable {
 
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            #if DEBUG
-            WidgetCenter.shared.reloadAllTimelines()
-            #endif
         }
         #endif
     }

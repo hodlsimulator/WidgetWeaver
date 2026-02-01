@@ -48,7 +48,6 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         let newValue = existing + amount
 
         store.setValue(String(newValue), for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result()
     }
@@ -137,7 +136,6 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
         }()
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result()
     }

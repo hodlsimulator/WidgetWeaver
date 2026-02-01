@@ -49,7 +49,6 @@ struct WidgetWeaverSetVariableIntent: AppIntent {
         }
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result(dialog: "Set \(canonical) to \(value).")
     }
@@ -117,7 +116,6 @@ struct WidgetWeaverRemoveVariableIntent: AppIntent {
         }
 
         WidgetWeaverVariableStore.shared.removeValue(for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result(dialog: "Removed \(canonical).")
     }
@@ -163,7 +161,6 @@ struct WidgetWeaverIncrementVariableIntent: AppIntent {
         let newValue = existing + amount
 
         store.setValue(String(newValue), for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result(value: String(newValue), dialog: "Updated \(canonical) to \(newValue).")
     }
@@ -258,7 +255,6 @@ struct WidgetWeaverSetVariableToNowIntent: AppIntent {
         }()
 
         WidgetWeaverVariableStore.shared.setValue(value, for: canonical)
-        WidgetCenter.shared.reloadAllTimelines()
 
         return .result(value: value, dialog: "Set \(canonical) to \(value).")
     }

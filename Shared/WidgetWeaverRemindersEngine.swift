@@ -749,9 +749,6 @@ public struct WidgetWeaverCompleteReminderWidgetIntent: AppIntent {
 
         await MainActor.run {
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
-            #if DEBUG
-            WidgetCenter.shared.reloadAllTimelines()
-            #endif
         }
 
         return .result()

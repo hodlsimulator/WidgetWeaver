@@ -161,7 +161,6 @@ public final class WidgetWeaverVariableStore: @unchecked Sendable {
         let kind = WidgetWeaverWidgetKinds.main
         Task { @MainActor in
             WidgetCenter.shared.reloadTimelines(ofKind: kind)
-            WidgetCenter.shared.reloadAllTimelines()
             if #available(iOS 17.0, *) {
                 WidgetCenter.shared.invalidateConfigurationRecommendations()
             }
