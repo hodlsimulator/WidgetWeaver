@@ -52,7 +52,7 @@ struct WidgetWeaverDesignInspectorView: View {
                     Menu {
                         Button {
                             statusMessage = "Reloading variables…"
-                            WidgetCenter.shared.reloadAllTimelines()
+                            WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines(debounceSeconds: 0.0)
                             statusMessage = "Requested widget refresh."
                         } label: {
                             Label("Reload variables", systemImage: "arrow.clockwise")

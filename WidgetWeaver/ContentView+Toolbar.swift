@@ -145,7 +145,7 @@ extension ContentView {
                     set: { newValue in
                         WidgetWeaverFeatureFlags.setPhotoFiltersEnabled(newValue)
                         EditorToolRegistry.capabilitiesDidChange(reason: .unknown)
-                        WidgetCenter.shared.reloadAllTimelines()
+                        WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines(debounceSeconds: 0.0)
                     }
                 )
             )
@@ -218,7 +218,7 @@ extension ContentView {
                     get: { WidgetWeaverFeatureFlags.segmentedRingDiagnosticsEnabled },
                     set: { newValue in
                         WidgetWeaverFeatureFlags.setSegmentedRingDiagnosticsEnabled(newValue)
-                        WidgetCenter.shared.reloadAllTimelines()
+                        WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines(debounceSeconds: 0.0)
                     }
                 )
             )
@@ -229,7 +229,7 @@ extension ContentView {
                     get: { WidgetWeaverFeatureFlags.segmentedBezelDiagnosticsEnabled },
                     set: { newValue in
                         WidgetWeaverFeatureFlags.setSegmentedBezelDiagnosticsEnabled(newValue)
-                        WidgetCenter.shared.reloadAllTimelines()
+                        WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines(debounceSeconds: 0.0)
                     }
                 )
             )

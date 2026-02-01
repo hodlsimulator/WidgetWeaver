@@ -609,7 +609,7 @@ extension ContentView {
     }
 
     func refreshWidgets() {
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetWeaverWidgetReloadCoordinator.shared.scheduleReloadAllKnownTimelines(debounceSeconds: 0.0)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetWeaverWidgetKinds.main)
 
         if #available(iOS 17.0, *) {
