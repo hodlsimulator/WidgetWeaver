@@ -55,17 +55,26 @@ struct WidgetPreviewDock: View {
         return s
     }
 
-
-    private var restrictToSmallOnly: Bool {
-        let familySpec = spec.resolved(for: family)
-        return familySpec.layout.template == .clockIcon
+    private func isClockTemplate(_ family: WidgetFamily) -> Bool {
+        spec.resolved(for: family).layout.template == .clockIcon
     }
 
     private var allowedFamilies: [WidgetFamily] {
-        if restrictToSmallOnly {
-            return [.systemSmall]
+        var allowed: [WidgetFamily] = [.systemSmall]
+
+        if !isClockTemplate(.systemMedium) {
+            allowed.append(.systemMedium)
         }
-        return [.systemSmall, .systemMedium, .systemLarge]
+
+        if !isClockTemplate(.systemLarge) {
+            allowed.append(.systemLarge)
+        }
+
+        return allowed
+    }
+
+    private var restrictToSmallOnly: Bool {
+        allowedFamilies.count <= 1
     }
 
     var body: some View {
@@ -174,8 +183,12 @@ struct WidgetPreviewDock: View {
 
                     Picker("Size", selection: $family) {
                         Text("Small").tag(WidgetFamily.systemSmall)
-                        if !restrictToSmallOnly {
+
+                        if allowedFamilies.contains(.systemMedium) {
                             Text("Medium").tag(WidgetFamily.systemMedium)
+                        }
+
+                        if allowedFamilies.contains(.systemLarge) {
                             Text("Large").tag(WidgetFamily.systemLarge)
                         }
                     }
@@ -328,10 +341,14 @@ struct WidgetPreviewDock: View {
             Button { family = .systemSmall } label: {
                 Label("Small", systemImage: "square")
             }
-            if !restrictToSmallOnly {
+
+            if allowedFamilies.contains(.systemMedium) {
                 Button { family = .systemMedium } label: {
                     Label("Medium", systemImage: "rectangle")
                 }
+            }
+
+            if allowedFamilies.contains(.systemLarge) {
                 Button { family = .systemLarge } label: {
                     Label("Large", systemImage: "rectangle.portrait")
                 }
