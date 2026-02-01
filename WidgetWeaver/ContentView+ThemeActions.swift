@@ -47,6 +47,11 @@ extension ContentView {
     }
 
     func applyThemeToMatchedDrafts(themeID: String) {
+        guard matchedSetEnabled else {
+            applyThemeToDraft(themeID: themeID)
+            return
+        }
+
         let preset = resolvedThemePreset(themeID: themeID)
 
         styleDraft = StyleDraft(from: preset.style)
