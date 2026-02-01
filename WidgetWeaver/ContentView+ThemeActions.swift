@@ -7,7 +7,21 @@
 
 import Foundation
 
+private enum WidgetWeaverThemeSelectionStorage {
+    static let selectedPresetIDKey: String = "widgetweaver.theme.selectedPresetID"
+}
+
 extension ContentView {
+
+    private func resolvedSelectedThemePresetFromStorage() -> WidgetWeaverThemePreset {
+        let rawID = UserDefaults.standard.string(forKey: WidgetWeaverThemeSelectionStorage.selectedPresetIDKey) ?? ""
+        return resolvedThemePreset(themeID: rawID)
+    }
+
+    func applySelectedThemeToExploreTemplate(_ spec: WidgetSpec) -> WidgetSpec {
+        let preset = resolvedSelectedThemePresetFromStorage()
+        return WidgetWeaverThemeApplier.apply(preset: preset, to: spec)
+    }
 
     private func resolvedThemePreset(themeID: String) -> WidgetWeaverThemePreset {
         if let match = WidgetWeaverThemeCatalog.preset(matching: themeID) {

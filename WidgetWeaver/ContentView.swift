@@ -432,7 +432,7 @@ struct ContentView: View {
             proManager: proManager,
             onAddTemplate: { spec, makeDefault in
                 let previousSpecID = selectedSpecID
-                addTemplateDesign(spec, makeDefault: makeDefault)
+                addTemplateDesign(applySelectedThemeToExploreTemplate(spec), makeDefault: makeDefault)
 
                 // After adding a template, jumping straight into the Editor keeps the flow tight:
                 // add -> tweak (or choose a photo) -> done.
