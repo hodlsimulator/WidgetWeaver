@@ -141,25 +141,25 @@ private struct SegmentedNumeralBaseShape: View {
 private enum SegmentedNumeralTextMetrics {
     // Provides headroom for expanded-width numerals and the iOS < 17 fallback width scaling.
     // Reduced slightly so two-digit labels do not read artificially wide.
-    static let twoDigitWidthSlackFactor: CGFloat = 1.05
+    static let twoDigitWidthSlackFactor: CGFloat = 1.02
 
     /// Negative inter-digit spacing (points) for "10/11/12".
     ///
     /// Targets (physical pixels at 60/44):
-    /// - "10": ~-10px (clamp -9px…-12px)
-    /// - "11": ~-7px (clamp -6px…-9px)
-    /// - "12": ~-7px (clamp -6px…-9px)
+    /// - "10": ~-16px (clamp -14px…-18px)
+    /// - "11": ~-12px (clamp -10px…-14px)
+    /// - "12": ~-12px (clamp -10px…-14px)
     static func tightenedTwoDigitInterDigitSpacing(text: String, scale: CGFloat) -> CGFloat {
         let (targetPixels, minPixels, maxPixels): (CGFloat, CGFloat, CGFloat) = {
             switch text {
             case "10":
-                return (10.0, 9.0, 12.0)
+                return (16.0, 14.0, 18.0)
             case "11":
-                return (7.0, 6.0, 9.0)
+                return (12.0, 10.0, 14.0)
             case "12":
-                return (7.0, 6.0, 9.0)
+                return (12.0, 10.0, 14.0)
             default:
-                return (7.0, 6.0, 9.0)
+                return (12.0, 10.0, 14.0)
             }
         }()
 
@@ -193,17 +193,45 @@ private enum SegmentedNumeralTextMetrics {
     /// without changing the "0" elsewhere.
     ///
     /// Targets (physical pixels at 60/44):
-    /// - Width reduction: ~2px (clamp 2px…3px)
+    /// - Width reduction: ~4px (clamp 3px…5px)
     static func digitZeroInTenHorizontalScale(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
         let cellWidthPoints = oneDigitCellWidth(fontSize: fontSize, scale: scale)
         let cellWidthPixels = cellWidthPoints * max(scale, 1.0)
 
-        let deltaPixels = WWClock.clamp(2.0, min: 2.0, max: 3.0)
+        let deltaPixels = WWClock.clamp(4.0, min: 3.0, max: 5.0)
 
         guard cellWidthPixels > 0 else { return 0.95 }
 
         let scaleX = (cellWidthPixels - deltaPixels) / cellWidthPixels
         return WWClock.clamp(scaleX, min: 0.90, max: 0.99)
+    }
+
+    /// Context-only side trims for the "0" in "10" (further reduces the circular read).
+    ///
+    /// Implemented as symmetric destinationOut rounded rectangles so the trims do not read as hard cuts.
+    ///
+    /// Targets (physical pixels at 60/44):
+    /// - Trim width (each side): ~2px (clamp 1px…2px)
+    /// - Inset (each side): ~1px (clamp 1px…2px)
+    static func digitZeroInTenSideTrimWidth(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        let pixels = WWClock.clamp(2.0, min: 1.0, max: 2.0)
+        return WWClock.pixel(px * pixels, scale: scale)
+    }
+
+    static func digitZeroInTenSideTrimInset(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        let pixels = WWClock.clamp(1.0, min: 1.0, max: 2.0)
+        return WWClock.pixel(px * pixels, scale: scale)
+    }
+
+    static func digitZeroInTenSideTrimCornerRadius(scale: CGFloat) -> CGFloat {
+        let px = WWClock.px(scale: scale)
+        return WWClock.pixel(px * 1.0, scale: scale)
+    }
+
+    static func digitZeroInTenSideTrimHeight(fontSize: CGFloat, scale: CGFloat) -> CGFloat {
+        WWClock.pixel(fontSize * 1.25, scale: scale)
     }
 
     /// Small top-left trim for digit "1" (reduces the long flag/protrusion).
@@ -213,7 +241,7 @@ private enum SegmentedNumeralTextMetrics {
     ///
     /// Targets (physical pixels at 60/44):
     /// - Width: ~3px (clamp 2px…4px)
-    /// - Height: ~8px (clamp 6px…10px)
+    /// - Height: ~11px (clamp 9px…13px)
     static func digitOneTopTrimWidth(scale: CGFloat) -> CGFloat {
         let px = WWClock.px(scale: scale)
         let pixels = WWClock.clamp(3.0, min: 2.0, max: 4.0)
@@ -222,7 +250,7 @@ private enum SegmentedNumeralTextMetrics {
 
     static func digitOneTopTrimHeight(scale: CGFloat) -> CGFloat {
         let px = WWClock.px(scale: scale)
-        let pixels = WWClock.clamp(8.0, min: 6.0, max: 10.0)
+        let pixels = WWClock.clamp(11.0, min: 9.0, max: 13.0)
         return WWClock.pixel(px * pixels, scale: scale)
     }
 
@@ -282,9 +310,37 @@ private extension View {
                     y: 1.0,
                     anchor: .center
                 )
+                .segmentedNumeralDigitZeroInTenSideTrims(fontSize: fontSize, scale: scale)
         } else {
             self
         }
+    }
+
+    private func segmentedNumeralDigitZeroInTenSideTrims(fontSize: CGFloat, scale: CGFloat) -> some View {
+        let trimWidth = SegmentedNumeralTextMetrics.digitZeroInTenSideTrimWidth(scale: scale)
+        let trimHeight = SegmentedNumeralTextMetrics.digitZeroInTenSideTrimHeight(fontSize: fontSize, scale: scale)
+        let inset = SegmentedNumeralTextMetrics.digitZeroInTenSideTrimInset(scale: scale)
+        let cornerRadius = SegmentedNumeralTextMetrics.digitZeroInTenSideTrimCornerRadius(scale: scale)
+
+        return self
+            .overlay(alignment: .center) {
+                HStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .foregroundStyle(Color.black)
+                        .frame(width: trimWidth, height: trimHeight)
+                        .offset(x: inset, y: 0)
+
+                    Spacer(minLength: 0)
+
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .foregroundStyle(Color.black)
+                        .frame(width: trimWidth, height: trimHeight)
+                        .offset(x: -inset, y: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .blendMode(.destinationOut)
+            }
+            .compositingGroup()
     }
 
     private func segmentedNumeralDigitOneTopTrim(scale: CGFloat) -> some View {

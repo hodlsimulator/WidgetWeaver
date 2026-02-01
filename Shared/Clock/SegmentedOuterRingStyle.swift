@@ -212,8 +212,9 @@ struct SegmentedOuterRingStyle {
         let blockBandMidRadius = WWClock.pixel(self.radii.blockMid, scale: scale)
 
         // Tick ring outer edge clearance from the segmented ring inner boundary (physical pixels).
-        // 16G: keep the ring→tick gap tight and obvious at 44/60.
-        let ticksOuterClearancePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
+        // Tuned for 60/44: increased clearance so ticks sit further in while keeping tick lengths unchanged.
+        // Target: 6px (clamp 5px…7px).
+        let ticksOuterClearancePx: CGFloat = WWClock.clamp(6.0, min: 5.0, max: 7.0)
         let ticksOuterClearance = WWClock.pixel(ticksOuterClearancePx / max(scale, 1.0), scale: scale)
 
         let ticksOuterRadius = WWClock.pixel(
