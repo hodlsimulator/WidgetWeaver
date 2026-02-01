@@ -61,7 +61,7 @@ public struct WidgetWeaverSpecView: View {
     @Environment(\.colorScheme)
     private var colorScheme
 
-    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, now: Date = Date()) {
+    public init(spec: WidgetSpec, family: WidgetFamily, context: WidgetWeaverRenderContext, now: Date = WidgetWeaverRenderClock.now) {
         self.spec = spec
         self.family = family
         self.context = context
