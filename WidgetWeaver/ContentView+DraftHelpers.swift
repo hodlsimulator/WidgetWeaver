@@ -189,17 +189,43 @@ extension ContentView {
         }
 
         if enabled {
-            matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+            if baseDraft.template == .clockIcon {
+                let seed = seededNonClockDraft(from: baseDraft)
+                matchedDrafts = MatchedDrafts(small: baseDraft, medium: seed, large: seed)
+            } else {
+                matchedDrafts = MatchedDrafts(small: baseDraft, medium: baseDraft, large: baseDraft)
+            }
             matchedSetEnabled = true
         } else {
-            baseDraft = matchedDrafts.medium
+            let chosen = matchedDrafts[editingFamily]
+            baseDraft = chosen.template == .clockIcon ? matchedDrafts.small : chosen
             matchedSetEnabled = false
         }
+    }
+
+    private func seededNonClockDraft(from base: FamilyDraft) -> FamilyDraft {
+        var d = base
+
+        if d.template == .clockIcon {
+            d.template = .classic
+
+            if d.primaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                d.primaryText = "Hello"
+            }
+        }
+
+        return d
     }
 
     func copyCurrentSizeToAllSizes() {
         guard matchedSetEnabled else { return }
         let d = matchedDrafts[editingFamily]
+
+        if d.template == .clockIcon {
+            saveStatusMessage = "Clock templates are Small-only.\nCopy to all sizes is unavailable."
+            return
+        }
+
         matchedDrafts = MatchedDrafts(small: d, medium: d, large: d)
         saveStatusMessage = "Copied \(editingFamilyLabel) settings to Small/Medium/Large (draft only)."
     }
