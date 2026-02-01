@@ -156,12 +156,15 @@ struct SegmentedOuterRingStyle {
 
         // Block thickness targeting (physical pixels).
         //
-        // Previous values (12px/17px) render as a thin trim line. The mock requires a materially thicker
+        // Previous values (12px/17px) rendered as a thin trim line. The mock requires a materially thicker
         // band with the added thickness coming from the inner edge moving inward (towards centre).
         //
-        // These targets are ~2.7x thicker than the prior band and are applied inward-only via bedInner.
-        let blockThicknessPx44: CGFloat = 32.0
-        let blockThicknessPx60: CGFloat = 46.0
+        // 16G: thicken inward by moving the block inner edge towards centre by ~4px at 44/60 (clamp 3–6px).
+        // The outer boundary remains stable; the added thickness is applied inward-only via `bedInner`.
+        let blockInnerShiftPx: CGFloat = WWClock.clamp(4.0, min: 3.0, max: 6.0)
+
+        let blockThicknessPx44: CGFloat = 32.0 + blockInnerShiftPx
+        let blockThicknessPx60: CGFloat = 46.0 + blockInnerShiftPx
 
         let blockThicknessPxRaw = blockThicknessPx44 + (t * (blockThicknessPx60 - blockThicknessPx44))
         let blockThicknessPx = WWClock.clamp(
@@ -209,10 +212,8 @@ struct SegmentedOuterRingStyle {
         let blockBandMidRadius = WWClock.pixel(self.radii.blockMid, scale: scale)
 
         // Tick ring outer edge clearance from the segmented ring inner boundary (physical pixels).
-        let ticksOuterClearanceBasePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
-        // 15B1: shift the tick ring inward (uniform translation), without changing tick lengths.
-        let ticksOuterShiftPx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
-        let ticksOuterClearancePx: CGFloat = ticksOuterClearanceBasePx + ticksOuterShiftPx
+        // 16G: keep the ring→tick gap tight and obvious at 44/60.
+        let ticksOuterClearancePx: CGFloat = WWClock.clamp(3.0, min: 2.0, max: 4.0)
         let ticksOuterClearance = WWClock.pixel(ticksOuterClearancePx / max(scale, 1.0), scale: scale)
 
         let ticksOuterRadius = WWClock.pixel(
@@ -300,17 +301,18 @@ struct SegmentedOuterRingStyle {
             ])
         )
 
-        // Block fills: olive metal (even/odd subtle alternation).
+        // Block fills: near-black olive (even/odd subtle alternation).
+        // 16G: darken the segmented band so it reads as "black olive" at 60/44 (not bright olive).
         self.blockFillEvenGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x6B6A2D, alpha: 1.00), location: 0.00),
-            .init(color: WWClock.colour(0x4F4D1F, alpha: 1.00), location: 0.52),
-            .init(color: WWClock.colour(0x343312, alpha: 1.00), location: 1.00),
+            .init(color: WWClock.colour(0x313015, alpha: 1.00), location: 0.00),
+            .init(color: WWClock.colour(0x22210C, alpha: 1.00), location: 0.52),
+            .init(color: WWClock.colour(0x151403, alpha: 1.00), location: 1.00),
         ])
 
         self.blockFillOddGradient = Gradient(stops: [
-            .init(color: WWClock.colour(0x67662A, alpha: 1.00), location: 0.00),
-            .init(color: WWClock.colour(0x4A481C, alpha: 1.00), location: 0.52),
-            .init(color: WWClock.colour(0x313010, alpha: 1.00), location: 1.00),
+            .init(color: WWClock.colour(0x2F2E14, alpha: 1.00), location: 0.00),
+            .init(color: WWClock.colour(0x201F0B, alpha: 1.00), location: 0.52),
+            .init(color: WWClock.colour(0x141303, alpha: 1.00), location: 1.00),
         ])
 
         // Bevel parameters are tuned to avoid haze and rely on crisp strokes/overlays.
@@ -322,7 +324,7 @@ struct SegmentedOuterRingStyle {
 
         self.blockBevel = BlockBevel(
             highlightOverlayGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.18), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.08), location: 0.00),
                 .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.56),
             ]),
             shadowOverlayGradient: Gradient(stops: [
@@ -330,11 +332,11 @@ struct SegmentedOuterRingStyle {
                 .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.58),
             ]),
             perimeterHighlightGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.16), location: 0.00),
+                .init(color: WWClock.colour(0xFFFFFF, alpha: 0.10), location: 0.00),
                 .init(color: WWClock.colour(0xFFFFFF, alpha: 0.00), location: 0.70),
             ]),
             perimeterShadowGradient: Gradient(stops: [
-                .init(color: WWClock.colour(0x000000, alpha: 0.32), location: 0.00),
+                .init(color: WWClock.colour(0x000000, alpha: 0.30), location: 0.00),
                 .init(color: WWClock.colour(0x000000, alpha: 0.00), location: 0.74),
             ]),
             perimeterRimStrokeWidth: max(px, rimStrokeWidth),
@@ -343,7 +345,7 @@ struct SegmentedOuterRingStyle {
             radialEdgeStrokeWidth: max(px, edgeStrokeWidth),
             radialEdgeEndInset: radialEdgeEndInset,
             radialEdgeInset: radialEdgeInset,
-            radialEdgeHighlightColour: WWClock.colour(0xFFFFFF, alpha: 0.06),
+            radialEdgeHighlightColour: WWClock.colour(0xFFFFFF, alpha: 0.03),
             radialEdgeShadowColour: WWClock.colour(0x000000, alpha: 0.10)
         )
 

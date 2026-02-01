@@ -24,7 +24,6 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
 
     private struct Radii {
         let outerRadius: CGFloat
-        let segmentInnerRadius: CGFloat
     }
 
     private func radii(dialRadius: CGFloat, scale: CGFloat) -> Radii {
@@ -32,12 +31,11 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
 
         // Single source of truth: tick placement derives from the segmented ring style's px-clamped radii.
         let ringStyle = SegmentedOuterRingStyle(dialRadius: dialRadius, scale: scale)
-        let segmentInnerRadius = ringStyle.radii.blockInner
 
         // Outer tick edge sits a fixed (px-clamped) clearance inside the segmented band.
         let tickOuterRadius = WWClock.pixel(max(px, ringStyle.contentRadii.ticksOuterRadius), scale: scale)
 
-        return Radii(outerRadius: tickOuterRadius, segmentInnerRadius: segmentInnerRadius)
+        return Radii(outerRadius: tickOuterRadius)
     }
 
     private func tickSizes(
@@ -85,7 +83,6 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
     }
 
     var body: some View {
-        let px = WWClock.px(scale: scale)
         let dialDiameter = dialRadius * 2.0
 
         let r = radii(dialRadius: dialRadius, scale: scale)
@@ -102,9 +99,6 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
             endPoint: .bottomTrailing
         )
 
-        // Keeps the tick ring away from the dial occlusion ring and avoids touching the segmented ring.
-        let ringSafeInset = WWClock.pixel(max(px, dialRadius * 0.006), scale: scale)
-        let safeOuterRadius = WWClock.pixel(min(r.outerRadius, r.segmentInnerRadius - ringSafeInset), scale: scale)
 
         return ZStack {
             ForEach(0..<60, id: \.self) { idx in
@@ -115,7 +109,7 @@ struct WidgetWeaverClockSegmentedTickMarksView: View {
 
                 let opacity: Double = isFiveMinute ? 0.78 : 0.48
 
-                let yOffset = WWClock.pixel(-(safeOuterRadius - (length / 2.0)), scale: scale)
+                let yOffset = WWClock.pixel(-(r.outerRadius - (length / 2.0)), scale: scale)
 
                 Rectangle()
                     .fill(tickFill)
